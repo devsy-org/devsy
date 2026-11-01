@@ -35,24 +35,7 @@ var _ = ginkgo.Describe(
 				selector := "devsy.sh/created=true,issue-1423=" + id
 				source, sha := privateSSHGitFixture(ctx, initialDir, id, pubKey)
 
-				fixtureCommand(ctx, 2*time.Minute, nil, "kubectl", "create", "namespace", namespace)
-				ginkgo.DeferCleanup(func(specCtx ginkgo.SpecContext) {
-					cleanupCtx, cancel := context.WithTimeout(
-						context.WithoutCancel(specCtx),
-						time.Minute,
-					)
-					defer cancel()
-					fixtureCommand(
-						cleanupCtx,
-						2*time.Minute,
-						nil,
-						"kubectl",
-						"delete",
-						"namespace",
-						namespace,
-						"--wait=false",
-					)
-				})
+				createFixtureNamespace(ctx, 2*time.Minute, namespace)
 				framework.ExpectNoError(f.DevsyProviderAdd(ctx, "kubernetes", "--name", id,
 					"-o", "KUBERNETES_NAMESPACE="+namespace, "-o", "LABELS=issue-1423="+id))
 				ginkgo.DeferCleanup(func(specCtx ginkgo.SpecContext) {
@@ -80,54 +63,25 @@ var _ = ginkgo.Describe(
 					if !ginkgo.CurrentSpecReport().Failed() {
 						return
 					}
-					for _, args := range [][]string{
-						{"describe", "pods", "-n", namespace},
-						{"get", "events", "-n", namespace, "--sort-by=.lastTimestamp"},
-						{"logs", "-n", namespace, "-l", selector, "--all-containers", "--tail=200"},
-					} {
-						output, err := runFixtureCommand(
-							cleanupCtx,
-							2*time.Minute,
-							nil,
-							append([]string{"kubectl"}, args...)...)
-						ginkgo.GinkgoWriter.Printf(
-							"Kubernetes failure diagnostics: %s\n%s\nerror: %v\n",
-							args,
-							output,
-							err,
-						)
-					}
+					dumpFixtureDiagnostics(cleanupCtx, namespace, selector)
 				})
 
 				// Check the pod-to-service route before testing Devsy, so fixture failures
 				// cannot be confused with a first-up failure.
 				host, _, _ := strings.Cut(strings.TrimPrefix(source, "ssh://git@"), "/")
-				fixtureCommand(
+				kubectlFixture(
 					ctx,
 					2*time.Minute,
-					nil,
-					"kubectl",
-					"run",
-					"git-route",
-					"-n",
-					namespace,
-					"--image=alpine:3.22",
-					"--restart=Never",
-					"--command",
-					"--",
-					"sh",
-					"-c",
-					"nc -z -w 10 "+host+" 22",
+					"run", "git-route", "-n", namespace, "--image=alpine:3.22", "--restart=Never",
+					"--command", "--", "sh", "-c", "nc -z -w 10 "+host+" 22",
 				)
 				gomega.Eventually(func() string {
 					pollCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 					defer cancel()
 					return strings.TrimSpace(
-						fixtureCommand(
+						kubectlFixture(
 							pollCtx,
 							2*time.Minute,
-							nil,
-							"kubectl",
 							"get",
 							"pod",
 							"git-route",

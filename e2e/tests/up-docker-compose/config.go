@@ -45,32 +45,29 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 		})
 
-		ginkgo.It("root folder", func(ctx context.Context) {
-			tempDir, workspace, err := tc.setupAndStartWorkspace(
-				ctx,
+		ginkgo.DescribeTable(
+			"starts workspace from testdata",
+			func(ctx context.Context, testDataPath string) {
+				tempDir, workspace, err := tc.setupAndStartWorkspace(ctx, testDataPath)
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
+			},
+			ginkgo.Entry(
+				"root folder",
 				"tests/up-docker-compose/testdata/docker-compose",
-			)
-			framework.ExpectNoError(err)
-			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
-
-		ginkgo.It("sub-folder", func(ctx context.Context) {
-			tempDir, workspace, err := tc.setupAndStartWorkspace(
-				ctx,
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			),
+			ginkgo.Entry(
+				"sub-folder",
 				"tests/up-docker-compose/testdata/docker-compose-subfolder",
-			)
-			framework.ExpectNoError(err)
-			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
-
-		ginkgo.It("overrides", func(ctx context.Context) {
-			tempDir, workspace, err := tc.setupAndStartWorkspace(
-				ctx,
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			),
+			ginkgo.Entry(
+				"overrides",
 				"tests/up-docker-compose/testdata/docker-compose-overrides",
-			)
-			framework.ExpectNoError(err)
-			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			),
+		)
 
 		ginkgo.It("env-file", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -89,15 +86,7 @@ var _ = ginkgo.Describe(
 			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 			gomega.Expect(devsyUpOutput).
 				NotTo(gomega.ContainSubstring("Defaulting to a blank string."))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -116,15 +105,7 @@ var _ = ginkgo.Describe(
 			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			initialIds, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(initialIds).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
 			framework.ExpectNoError(err)
@@ -266,15 +247,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			err = tc.f.ExecCommand(
 				ctx,
@@ -284,6 +257,34 @@ var _ = ginkgo.Describe(
 				[]string{cmdWorkspace, cmdSSH, flagCommand, "echo $FOO", workspace.ID},
 			)
 			framework.ExpectNoError(err)
+
+			identity, err := tc.f.DevsySSH(
+				ctx,
+				workspace.ID,
+				"echo $"+pkgconfig.EnvWorkspaceID+" $"+pkgconfig.EnvWorkspaceUID,
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.Fields(identity)).To(
+				gomega.Equal([]string{workspace.ID, workspace.UID}),
+			)
+
+			infoOutput, err := tc.f.DevsySSH(
+				ctx,
+				workspace.ID,
+				"devsy container info --result-format json",
+			)
+			framework.ExpectNoError(err)
+			var info struct {
+				SSHCommand string `json:"sshCommand"`
+				SSHHost    string `json:"sshHost"`
+				RemoteUser string `json:"remoteUser"`
+			}
+			framework.ExpectNoError(json.Unmarshal([]byte(infoOutput), &info))
+			gomega.Expect(info.SSHHost).To(gomega.Equal(workspace.ID + pkgconfig.SSHHostSuffix))
+			gomega.Expect(info.RemoteUser).NotTo(gomega.BeEmpty())
+			gomega.Expect(info.SSHCommand).To(
+				gomega.Equal("ssh " + info.RemoteUser + "@" + info.SSHHost),
+			)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("user", func(ctx context.Context) {
@@ -293,15 +294,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			err = tc.f.ExecCommand(
 				ctx,
@@ -502,15 +495,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			err = tc.f.ExecCommand(
 				ctx,
@@ -550,18 +535,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(
-				gomega.HaveLen(1),
-				"1 compose container to be created",
-			)
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			// Verify SET_VAR is set
 			err = tc.f.ExecCommand(
@@ -599,15 +573,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			err = tc.f.ExecCommand(
 				ctx,
@@ -632,15 +598,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			devContainerID, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/dev-container-id.out")
 			framework.ExpectNoError(err)

@@ -3,6 +3,7 @@ package pty
 import (
 	"context"
 	"os/exec"
+	"syscall"
 )
 
 // StartOption represents a configuration option passed to Start.
@@ -25,11 +26,12 @@ func WithPTYOption(opts ...Option) StartOption {
 // start the command using the `exec` library, so we have to manage the context
 // ourselves.
 type Cmd struct {
-	Context context.Context
-	Path    string
-	Args    []string
-	Env     []string
-	Dir     string
+	Context     context.Context
+	Path        string
+	Args        []string
+	Env         []string
+	Dir         string
+	SysProcAttr *syscall.SysProcAttr
 }
 
 func CommandContext(ctx context.Context, name string, arg ...string) *Cmd {
@@ -51,6 +53,7 @@ func (c *Cmd) AsExec() *exec.Cmd {
 	execCmd := exec.CommandContext(c.Context, c.Path, c.Args[1:]...)
 	execCmd.Dir = c.Dir
 	execCmd.Env = c.Env
+	execCmd.SysProcAttr = c.SysProcAttr
 	return execCmd
 }
 

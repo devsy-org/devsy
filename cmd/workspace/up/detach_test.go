@@ -141,3 +141,10 @@ func assertWorkerLockReleased(t *testing.T, store *task.Store, id string) {
 		t.Fatalf("release worker lock: %v", err)
 	}
 }
+
+func TestDetachedArgsRetainsNoStatus(t *testing.T) {
+	got := detachedArgs([]string{"--detach", "--no-status", "."})
+	if len(got) != 2 || got[0] != "--no-status" || got[1] != "." {
+		t.Fatalf("detachedArgs() = %v", got)
+	}
+}

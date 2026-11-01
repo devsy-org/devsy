@@ -10,7 +10,10 @@ import (
 	"github.com/devsy-org/ssh"
 )
 
-func cmdSysProcAttr() *syscall.SysProcAttr {
+func mergeCommandSysProcAttr(existing *syscall.SysProcAttr) *syscall.SysProcAttr {
+	if existing != nil {
+		return existing
+	}
 	return &syscall.SysProcAttr{}
 }
 

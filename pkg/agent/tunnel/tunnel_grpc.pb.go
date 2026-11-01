@@ -27,6 +27,7 @@ const (
 	Tunnel_SendResult_FullMethodName            = "/tunnel.Tunnel/SendResult"
 	Tunnel_DockerCredentials_FullMethodName     = "/tunnel.Tunnel/DockerCredentials"
 	Tunnel_GitCredentials_FullMethodName        = "/tunnel.Tunnel/GitCredentials"
+	Tunnel_GitHubCredentials_FullMethodName     = "/tunnel.Tunnel/GitHubCredentials"
 	Tunnel_GitSSHSignature_FullMethodName       = "/tunnel.Tunnel/GitSSHSignature"
 	Tunnel_GitUser_FullMethodName               = "/tunnel.Tunnel/GitUser"
 	Tunnel_DevsyConfig_FullMethodName           = "/tunnel.Tunnel/DevsyConfig"
@@ -50,6 +51,7 @@ type TunnelClient interface {
 	SendResult(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Empty, error)
 	DockerCredentials(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
 	GitCredentials(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
+	GitHubCredentials(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Message, error)
 	GitSSHSignature(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
 	GitUser(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Message, error)
 	DevsyConfig(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
@@ -125,6 +127,16 @@ func (c *tunnelClient) GitCredentials(ctx context.Context, in *Message, opts ...
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Message)
 	err := c.cc.Invoke(ctx, Tunnel_GitCredentials_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *tunnelClient) GitHubCredentials(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Message, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Message)
+	err := c.cc.Invoke(ctx, Tunnel_GitHubCredentials_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -278,6 +290,7 @@ type TunnelServer interface {
 	SendResult(context.Context, *Message) (*Empty, error)
 	DockerCredentials(context.Context, *Message) (*Message, error)
 	GitCredentials(context.Context, *Message) (*Message, error)
+	GitHubCredentials(context.Context, *Empty) (*Message, error)
 	GitSSHSignature(context.Context, *Message) (*Message, error)
 	GitUser(context.Context, *Empty) (*Message, error)
 	DevsyConfig(context.Context, *Message) (*Message, error)
@@ -316,6 +329,9 @@ func (UnimplementedTunnelServer) DockerCredentials(context.Context, *Message) (*
 }
 func (UnimplementedTunnelServer) GitCredentials(context.Context, *Message) (*Message, error) {
 	return nil, status.Error(codes.Unimplemented, "method GitCredentials not implemented")
+}
+func (UnimplementedTunnelServer) GitHubCredentials(context.Context, *Empty) (*Message, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitHubCredentials not implemented")
 }
 func (UnimplementedTunnelServer) GitSSHSignature(context.Context, *Message) (*Message, error) {
 	return nil, status.Error(codes.Unimplemented, "method GitSSHSignature not implemented")
@@ -475,6 +491,24 @@ func _Tunnel_GitCredentials_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TunnelServer).GitCredentials(ctx, req.(*Message))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Tunnel_GitHubCredentials_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TunnelServer).GitHubCredentials(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Tunnel_GitHubCredentials_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TunnelServer).GitHubCredentials(ctx, req.(*Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -686,6 +720,10 @@ var Tunnel_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GitCredentials",
 			Handler:    _Tunnel_GitCredentials_Handler,
+		},
+		{
+			MethodName: "GitHubCredentials",
+			Handler:    _Tunnel_GitHubCredentials_Handler,
 		},
 		{
 			MethodName: "GitSSHSignature",

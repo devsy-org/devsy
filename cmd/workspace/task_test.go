@@ -16,6 +16,7 @@ import (
 
 const (
 	testResultContainerID = "abc123"
+	testResultSuccess     = "success"
 	testBuild             = "build"
 	testPhase             = "building_image"
 	testOp                = "op-1"
@@ -183,26 +184,62 @@ func checkTaskTransitionJSON(t *testing.T, output string, expected config.Status
 	require.ErrorIs(t, decoder.Decode(&extra), io.EOF)
 }
 
-func TestResultEnvelopeFrom_PopulatedResult(t *testing.T) {
-	state := &task.State{
-		Result: &config.Result{
-			HostWarnings:      []string{"warn"},
-			RecoveryContainer: true,
-			ContainerDetails: &config.ContainerDetails{
-				ID: testResultContainerID,
+func TestReportTaskStateJSON_SucceededResult(t *testing.T) {
+	tests := []struct {
+		name   string
+		result *config.Result
+		want   config.ResultEnvelope
+	}{
+		{
+			name: "resolved workspace folder and metadata",
+			result: &config.Result{
+				HostWarnings:      []string{"warn"},
+				RecoveryContainer: true,
+				SubstitutionContext: &config.SubstitutionContext{
+					ContainerWorkspaceFolder: "/workspaces/python/app",
+				},
+				MergedConfig: &config.MergedDevContainerConfig{
+					DevContainerConfigBase: config.DevContainerConfigBase{
+						RemoteUser: "workspace-user",
+					},
+				},
+				ContainerDetails: &config.ContainerDetails{ID: testResultContainerID},
 			},
+			want: config.ResultEnvelope{
+				Kind: config.KindResult, Outcome: testResultSuccess,
+				ContainerID: testResultContainerID, RemoteUser: "workspace-user",
+				RemoteWorkspaceFolder: "/workspaces/python/app",
+				Warnings:              []string{"warn"}, Recovery: true,
+			},
+		},
+		{
+			name:   "nil substitution context",
+			result: &config.Result{},
+			want: config.ResultEnvelope{
+				Kind: config.KindResult, Outcome: testResultSuccess, RemoteUser: "root",
+			},
+		},
+		{
+			name: "nil result",
+			want: config.ResultEnvelope{Kind: config.KindResult, Outcome: testResultSuccess},
 		},
 	}
 
-	got := resultEnvelopeFrom(state)
-	if got.ContainerID != testResultContainerID {
-		t.Errorf("ContainerID = %q, want %q", got.ContainerID, testResultContainerID)
-	}
-	if !got.Recovery {
-		t.Error("expected Recovery = true")
-	}
-	if len(got.Warnings) != 1 || got.Warnings[0] != "warn" {
-		t.Errorf("Warnings = %v", got.Warnings)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := &task.State{Status: task.StatusSucceeded, Result: tt.result}
+			output := captureTaskTransitionStdout(t, func() {
+				require.NoError(t, reportTaskStateJSON(state))
+			})
+			require.Equal(t, 1, strings.Count(output, "\n"))
+
+			decoder := json.NewDecoder(strings.NewReader(output))
+			var got config.ResultEnvelope
+			require.NoError(t, decoder.Decode(&got))
+			require.Equal(t, tt.want, got)
+			var extra any
+			require.ErrorIs(t, decoder.Decode(&extra), io.EOF)
+		})
 	}
 }
 

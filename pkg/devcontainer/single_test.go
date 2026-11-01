@@ -205,9 +205,11 @@ func TestSecretsEnvironmentTmpfsMount(t *testing.T) {
 	if err != nil {
 		t.Fatal("create secret environment mount")
 	}
-	if mount == nil || mount.Type != "tmpfs" || mount.Target != config.SecretsEnvDir {
-		t.Error("secret environment mount is not configured for the protected directory")
-	}
+	require.NotNil(t, mount)
+	require.Equal(t, "tmpfs", mount.Type)
+	require.Equal(t, config.SecretsEnvDir, mount.Target)
+	// Docker syntax is the shared contract; the Apple driver translates it.
+	require.Equal(t, []string{"tmpfs-mode=0700"}, mount.Other)
 	if _, err := secretsEnvironmentTmpfsMount(true, false); err == nil {
 		t.Error("unsupported tmpfs provider was allowed to store workspace secrets")
 	}
@@ -223,6 +225,7 @@ func TestWithSecretsMountUsesCurrentUpRequest(t *testing.T) {
 	require.Len(t, mounts, 1)
 	require.Equal(t, config.SecretsMountDir, mounts[0].Target)
 	require.Equal(t, "tmpfs", mounts[0].Type)
+	require.Equal(t, []string{"tmpfs-mode=0755"}, mounts[0].Other)
 
 	mounts, err = r.withSecretsMount(nil, false)
 	require.NoError(t, err)

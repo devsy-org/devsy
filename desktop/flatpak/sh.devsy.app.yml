@@ -34,8 +34,10 @@ modules:
       - cp -r opt/Devsy /app/devsy
       # Install the CLI binary
       - install -Dm755 opt/Devsy/resources/bin/devsy /app/bin/devsy
-      # Install desktop file, icon, and wrapper
+      # Install desktop file, exported icons, and wrapper
       - install -Dm644 Devsy.desktop /app/share/applications/sh.devsy.app.desktop
+      - install -Dm644 icon-32.png /app/share/icons/hicolor/32x32/apps/sh.devsy.app.png
+      - install -Dm644 icon-128.png /app/share/icons/hicolor/128x128/apps/sh.devsy.app.png
       - install -Dm755 devsy-wrapper /app/bin/devsy-wrapper
     sources:
       - type: file
@@ -44,3 +46,10 @@ modules:
         path: Devsy.desktop
       - type: file
         path: devsy-wrapper
+      # Flatpak exports only icons up to 512x512 from share/icons/hicolor.
+      - type: file
+        path: ../resources/icons/32x32.png
+        dest-filename: icon-32.png
+      - type: file
+        path: ../resources/icons/128x128.png
+        dest-filename: icon-128.png

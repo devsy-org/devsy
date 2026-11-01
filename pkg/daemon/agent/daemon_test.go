@@ -88,6 +88,35 @@ func TestDaemonUnitStateLocationSupportsQuotedRoot(t *testing.T) {
 	assert.Equal(t, StateLocation{Root: "/state/dev sy", Layout: StateLayoutAgentHome}, location)
 }
 
+func TestIsMissingUnitOutput(t *testing.T) {
+	tests := map[string]struct {
+		out  string
+		want bool
+	}{
+		"stop on unloaded unit": {
+			out:  "Failed to stop devsy.service: Unit devsy.service not loaded.",
+			want: true,
+		},
+		"disable on absent unit": {
+			out:  "Failed to disable unit: Unit file devsy.service does not exist.",
+			want: true,
+		},
+		"other failure": {
+			out:  "Failed to start devsy.service: Access denied",
+			want: false,
+		},
+		"empty output": {
+			out:  "",
+			want: false,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, isMissingUnitOutput(tc.out))
+		})
+	}
+}
+
 func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -126,6 +155,7 @@ func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 				&provider2.Workspace{},
 				&config.SubstitutionContext{},
 				merged,
+				LifecycleOptions{},
 			)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)

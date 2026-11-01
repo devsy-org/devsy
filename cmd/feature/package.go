@@ -7,7 +7,6 @@ import (
 	"regexp"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/extract"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -90,7 +89,7 @@ func (cmd *PackageCmd) Run() error {
 		return err
 	}
 
-	features, err := cmd.discoverFeatures(target)
+	features, err := discoverLocalFeatures(target, "read target directory", warnSkippedFeature)
 	if err != nil {
 		return err
 	}
@@ -133,43 +132,11 @@ func (cmd *PackageCmd) prepareOutputFolder() (string, error) {
 
 var validFeatureID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-type featureSource struct {
-	dir    string
-	config *config.FeatureConfig
+func warnSkippedFeature(name string, err error) {
+	log.Warnf("skipping %s: %v", name, err)
 }
 
-func (cmd *PackageCmd) discoverFeatures(targetDir string) ([]featureSource, error) {
-	entries, err := os.ReadDir(targetDir)
-	if err != nil {
-		return nil, fmt.Errorf("read target directory: %w", err)
-	}
-
-	var features []featureSource
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		featureDir := filepath.Join(targetDir, entry.Name())
-		featureCfg, parseErr := config.ParseDevContainerFeature(featureDir)
-		if parseErr != nil {
-			log.Warnf("skipping %s: %v", entry.Name(), parseErr)
-			continue
-		}
-
-		features = append(features, featureSource{
-			dir:    entry.Name(),
-			config: featureCfg,
-		})
-	}
-
-	if len(features) == 0 {
-		return nil, fmt.Errorf("no features found in %s", targetDir)
-	}
-	return features, nil
-}
-
-func validateFeatureSource(feat featureSource, featureDir string) error {
+func validateFeatureSource(feat localFeature, featureDir string) error {
 	if !validFeatureID.MatchString(feat.config.ID) {
 		return fmt.Errorf(
 			"invalid feature ID %q: must match [a-z0-9][a-z0-9-]*", feat.config.ID,
@@ -203,7 +170,7 @@ func validateFeatureSource(feat featureSource, featureDir string) error {
 }
 
 func (cmd *PackageCmd) packageFeature(
-	feat featureSource, targetDir, outputFolder string,
+	feat localFeature, targetDir, outputFolder string,
 ) (packageResult, error) {
 	featureDir := filepath.Join(targetDir, feat.dir)
 

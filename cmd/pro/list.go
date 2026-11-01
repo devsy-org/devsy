@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -21,20 +21,20 @@ import (
 
 // ListCmd holds the list cmd flags.
 type ListCmd struct {
-	proflags.GlobalFlags
+	platformflags.GlobalFlags
 
 	Login bool
 }
 
 // NewListCmd creates a new command.
-func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewListCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &ListCmd{
 		GlobalFlags: *flags,
 	}
 	listCmd := &cobra.Command{
 		Use:         "list",
 		Aliases:     []string{"ls"},
-		Short:       "List available Devsy Pro instances",
+		Short:       "List available Devsy Platform instances",
 		Args:        cobra.NoArgs,
 		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
@@ -48,7 +48,7 @@ func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
 			&cmd.Login,
 			names.Login,
 			false,
-			"Check if the user is logged into the pro instance",
+			"Check if the user is logged into the platform instance",
 		),
 	)
 	return listCmd
@@ -61,7 +61,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -72,9 +72,9 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 	}
 	switch mode {
 	case output.ModePlain:
-		cmd.printPlain(ctx, devsyConfig, proInstances)
+		cmd.printPlain(ctx, devsyConfig, platformInstances)
 	case output.ModeJSON:
-		return cmd.printJSON(ctx, devsyConfig, proInstances)
+		return cmd.printJSON(ctx, devsyConfig, platformInstances)
 	}
 
 	return nil
@@ -83,17 +83,17 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 func (cmd *ListCmd) printPlain(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	proInstances []*provider.ProInstance,
+	platformInstances []*provider.PlatformInstance,
 ) {
 	tableEntries := [][]string{}
-	for _, proInstance := range proInstances {
+	for _, platformInstance := range platformInstances {
 		entry := []string{
-			proInstance.Host,
-			proInstance.Provider,
-			time.Since(proInstance.CreationTimestamp.Time).Round(1 * time.Second).String(),
+			platformInstance.Host,
+			platformInstance.Provider,
+			time.Since(platformInstance.CreationTimestamp.Time).Round(1 * time.Second).String(),
 		}
 		if cmd.Login {
-			err := checkLogin(ctx, devsyConfig, proInstance)
+			err := checkLogin(ctx, devsyConfig, platformInstance)
 			entry = append(entry, fmt.Sprintf("%t", err == nil))
 		}
 
@@ -118,17 +118,17 @@ func (cmd *ListCmd) printPlain(
 func (cmd *ListCmd) printJSON(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	proInstances []*provider.ProInstance,
+	platformInstances []*provider.PlatformInstance,
 ) error {
-	tableEntries := []*proTableEntry{}
-	for _, proInstance := range proInstances {
-		entry := &proTableEntry{
-			ProInstance:  proInstance,
-			Context:      devsyConfig.DefaultContext,
-			Capabilities: getCapabilities(devsyConfig, proInstance),
+	tableEntries := []*platformTableEntry{}
+	for _, platformInstance := range platformInstances {
+		entry := &platformTableEntry{
+			PlatformInstance: platformInstance,
+			Context:          devsyConfig.DefaultContext,
+			Capabilities:     getCapabilities(devsyConfig, platformInstance),
 		}
 		if cmd.Login {
-			err := checkLogin(ctx, devsyConfig, proInstance)
+			err := checkLogin(ctx, devsyConfig, platformInstance)
 			isAuthenticated := err == nil
 			entry.Authenticated = &isAuthenticated
 		}
@@ -148,8 +148,8 @@ func (cmd *ListCmd) printJSON(
 	return nil
 }
 
-type proTableEntry struct {
-	*provider.ProInstance
+type platformTableEntry struct {
+	*provider.PlatformInstance
 
 	Authenticated *bool        `json:"authenticated,omitempty"`
 	Context       string       `json:"context,omitempty"`
@@ -167,19 +167,19 @@ var (
 func checkLogin(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	proInstance *provider.ProInstance,
+	platformInstance *provider.PlatformInstance,
 ) error {
-	// for every pro instance, check auth status by calling login
+	// for every platform instance, check auth status by calling login
 	if err := login(
 		ctx,
 		devsyConfig,
-		proInstance.Host,
-		proInstance.Provider,
+		platformInstance.Host,
+		platformInstance.Provider,
 		"",
 		true,
 		false,
 	); err != nil {
-		return fmt.Errorf("not logged into %s", proInstance.Host)
+		return fmt.Errorf("not logged into %s", platformInstance.Host)
 	}
 
 	return nil
@@ -187,10 +187,10 @@ func checkLogin(
 
 func getCapabilities(
 	devsyConfig *config.Config,
-	proInstance *provider.ProInstance,
+	platformInstance *provider.PlatformInstance,
 ) []Capability {
 	capabilities := []Capability{}
-	provider, err := workspace.FindProvider(devsyConfig, proInstance.Provider)
+	provider, err := workspace.FindProvider(devsyConfig, platformInstance.Provider)
 	if err != nil {
 		return capabilities
 	}

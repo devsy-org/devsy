@@ -11,10 +11,12 @@ import (
 )
 
 const (
-	installLinuxCommand          = "install-linux"
-	runSuiteCommand              = "run"
-	verifyReportCommand          = "verify-report"
-	buildPerformanceToolsCommand = "build-performance-tools"
+	installLinuxCommand           = "install-linux"
+	runSuiteCommand               = "run"
+	verifyReportCommand           = "verify-report"
+	buildPerformanceToolsCommand  = "build-performance-tools"
+	managedPolicyE2ECommand       = "managed-policy-e2e"
+	managedPolicyNamespaceCommand = "managed-policy-namespace"
 )
 
 func main() {
@@ -25,9 +27,12 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(
 			stderr,
-			"usage: devsy-ci-microsandbox <install-linux|run|verify-report|build-performance-tools>",
+			"usage: devsy-ci-microsandbox <install-linux|run|verify-report|build-performance-tools|managed-policy-e2e>",
 		)
 		return 2
+	}
+	if code, ok := runManagedPolicyCommand(args, stderr); ok {
+		return code
 	}
 	switch args[0] {
 	case installLinuxCommand:
@@ -41,6 +46,19 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	default:
 		_, _ = fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		return 2
+	}
+}
+
+// runManagedPolicyCommand dispatches the managed-policy commands and reports
+// whether args[0] named one of them.
+func runManagedPolicyCommand(args []string, stderr io.Writer) (int, bool) {
+	switch args[0] {
+	case managedPolicyE2ECommand:
+		return managedPolicyE2ECLI(args[1:], stderr), true
+	case managedPolicyNamespaceCommand:
+		return managedPolicyNamespaceCLI(args[1:], stderr), true
+	default:
+		return 0, false
 	}
 }
 

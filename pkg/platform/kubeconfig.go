@@ -107,7 +107,7 @@ func kubeConfigForSpaceInstance(
 		return nil, err
 	}
 
-	spaceInstance, err := managementClient.Loft().
+	spaceInstance, err := managementClient.Devsy().
 		ManagementV1().
 		SpaceInstances(namespace).
 		Get(ctx, spaceInstanceName, metav1.GetOptions{})
@@ -130,7 +130,7 @@ func kubeConfigForSpaceInstance(
 	ttl := int64(configTTL.Seconds())
 
 	// direct cluster access?
-	if hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint] != "" {
+	if hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint] != "" {
 		return directClusterEndpointKubeConfigForSpace(directClusterEndpointForSpaceParams{
 			ctx:              ctx,
 			managementClient: managementClient,
@@ -180,7 +180,7 @@ func directClusterEndpointKubeConfigForSpace(
 			TTL:   p.ttl,
 		},
 	}
-	directClusterEndpointToken, err := p.managementClient.Loft().
+	directClusterEndpointToken, err := p.managementClient.Devsy().
 		ManagementV1().
 		DirectClusterEndpointTokens().
 		Create(p.ctx, tok, metav1.CreateOptions{})
@@ -188,7 +188,7 @@ func directClusterEndpointKubeConfigForSpace(
 		return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
 	}
 
-	directClusterEndpoint := p.hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint]
+	directClusterEndpoint := p.hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint]
 	host := fmt.Sprintf(
 		"https://%s/kubernetes/project/%s/space/%s",
 		directClusterEndpoint,
@@ -230,7 +230,7 @@ func kubeConfigViaAccessKey(p accessKeyKubeConfigParams) (*clientcmdapi.Config, 
 			},
 		},
 	}
-	ownedAccessKey, err := p.managementClient.Loft().
+	ownedAccessKey, err := p.managementClient.Devsy().
 		ManagementV1().
 		OwnedAccessKeys().
 		Create(p.ctx, key, metav1.CreateOptions{})
@@ -264,7 +264,7 @@ func kubeConfigForVirtualClusterInstance(
 		return nil, err
 	}
 
-	virtualClusterInstance, err := managementClient.Loft().
+	virtualClusterInstance, err := managementClient.Devsy().
 		ManagementV1().
 		VirtualClusterInstances(namespace).
 		Get(ctx, virtualClusterInstanceName, metav1.GetOptions{})
@@ -373,7 +373,7 @@ func directVirtualClusterKubeConfig(
 	}
 
 	// direct cluster access?
-	if hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint] != "" {
+	if hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint] != "" {
 		cfg, err = directClusterEndpointKubeConfig(p.req, hostCluster)
 		return cfg, true, err
 	}
@@ -398,7 +398,7 @@ func directIngressKubeConfig(req vClusterKubeConfigRequest) (*clientcmdapi.Confi
 			CertificateTTL: &certTTL,
 		},
 	}
-	directVirtualClusterKubeConfig, err := req.managementClient.Loft().
+	directVirtualClusterKubeConfig, err := req.managementClient.Devsy().
 		ManagementV1().
 		VirtualClusterInstances(req.namespace).
 		GetKubeConfig(req.ctx, req.instance.Name, config, metav1.CreateOptions{})
@@ -424,7 +424,7 @@ func directClusterEndpointKubeConfig(
 			TTL:   req.ttl,
 		},
 	}
-	directClusterEndpointToken, err := req.managementClient.Loft().
+	directClusterEndpointToken, err := req.managementClient.Devsy().
 		ManagementV1().
 		DirectClusterEndpointTokens().
 		Create(req.ctx, tok, metav1.CreateOptions{})
@@ -432,7 +432,7 @@ func directClusterEndpointKubeConfig(
 		return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
 	}
 
-	directClusterEndpoint := hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint]
+	directClusterEndpoint := hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint]
 	host := fmt.Sprintf(
 		"https://%s/kubernetes/project/%s/virtualcluster/%s",
 		directClusterEndpoint,
@@ -457,7 +457,7 @@ func findHostCluster(
 	if err != nil {
 		return managementv1.Cluster{}, err
 	}
-	projectClusters, err := managementClient.Loft().
+	projectClusters, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		ListClusters(ctx, projectName, metav1.GetOptions{})

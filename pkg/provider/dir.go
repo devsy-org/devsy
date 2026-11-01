@@ -2,7 +2,6 @@ package provider
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,17 +16,17 @@ import (
 )
 
 const (
-	WorkspaceConfigFile   = "workspace.json"
-	WorkspaceResultFile   = "workspace_result.json"
-	MachineConfigFile     = "machine.json"
-	ProInstanceConfigFile = "pro.json"
-	ProviderConfigFile    = "provider.json"
+	WorkspaceConfigFile        = "workspace.json"
+	WorkspaceResultFile        = "workspace_result.json"
+	MachineConfigFile          = "machine.json"
+	PlatformInstanceConfigFile = "pro.json"
+	ProviderConfigFile         = "provider.json"
 
 	DaemonStateFile = config.BinaryName + "_ts.state"
 )
 
-func GetProInstancesDir(context string) (string, error) {
-	return config.DefaultPathManager().ProInstancesDir(context)
+func GetPlatformInstancesDir(context string) (string, error) {
+	return config.DefaultPathManager().PlatformInstancesDir(context)
 }
 
 func GetMachinesDir(context string) (string, error) {
@@ -46,6 +45,16 @@ func GetProvidersDir(context string) (string, error) {
 	return config.DefaultPathManager().ProvidersDir(context)
 }
 
+// GetProviderAssetsDir returns the immutable icon cache alongside provider.json.
+func GetProviderAssetsDir(context, providerName string) (string, error) {
+	providerDir, err := GetProviderDir(context, providerName)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(providerDir, ProviderAssetsDirName), nil
+}
+
 func GetProviderDir(context, providerName string) (string, error) {
 	return config.DefaultPathManager().ProviderDir(context, providerName)
 }
@@ -59,16 +68,16 @@ func GetProviderBinariesDir(context, providerName string) (string, error) {
 }
 
 func GetMachineDir(context, machineID string) (string, error) {
-	if machineID == "" {
-		return "", fmt.Errorf("machine id is empty")
+	if err := requireID("machine id", machineID); err != nil {
+		return "", err
 	}
 
 	return config.DefaultPathManager().MachineDir(context, machineID)
 }
 
 func GetWorkspaceDir(context, workspaceID string) (string, error) {
-	if workspaceID == "" {
-		return "", fmt.Errorf("workspace id is empty")
+	if err := requireID("workspace id", workspaceID); err != nil {
+		return "", err
 	}
 
 	return config.DefaultPathManager().WorkspaceDir(context, workspaceID)
@@ -78,8 +87,8 @@ func GetWorkspaceDir(context, workspaceID string) (string, error) {
 // (.../workspaces/<id>/agent). Container-side agent code keeps using
 // FindAgentHomeDir.
 func GetWorkspaceAgentDir(context, workspaceID string) (string, error) {
-	if workspaceID == "" {
-		return "", fmt.Errorf("workspace id is empty")
+	if err := requireID("workspace id", workspaceID); err != nil {
+		return "", err
 	}
 
 	return config.DefaultPathManager().WorkspaceAgentDir(context, workspaceID)
@@ -94,8 +103,8 @@ func GetWorkspaceContentsDir(context string) (string, error) {
 // GetWorkspaceContentDir returns the host-side bind-mount source for a
 // workspace (.../contexts/<ctx>/contents/<id>).
 func GetWorkspaceContentDir(context, workspaceID string) (string, error) {
-	if workspaceID == "" {
-		return "", fmt.Errorf("workspace id is empty")
+	if err := requireID("workspace id", workspaceID); err != nil {
+		return "", err
 	}
 
 	return config.DefaultPathManager().WorkspaceContentDir(context, workspaceID)
@@ -104,30 +113,34 @@ func GetWorkspaceContentDir(context, workspaceID string) (string, error) {
 // GetWorkspaceLogDir returns the per-workspace log dir
 // (.../workspaces/<id>/logs) used by the desktop's streaming-log store.
 func GetWorkspaceLogDir(context, workspaceID string) (string, error) {
-	if workspaceID == "" {
-		return "", fmt.Errorf("workspace id is empty")
+	if err := requireID("workspace id", workspaceID); err != nil {
+		return "", err
 	}
 
 	return config.DefaultPathManager().WorkspaceLogDir(context, workspaceID)
 }
 
-func GetProInstanceDir(context, proInstanceHost string) (string, error) {
-	if proInstanceHost == "" {
-		return "", fmt.Errorf("pro instance host is empty")
+func GetPlatformInstanceDir(context, platformInstanceHost string) (string, error) {
+	if err := requireID("platform instance host", platformInstanceHost); err != nil {
+		return "", err
 	}
 
-	return config.DefaultPathManager().ProInstanceDir(context, ToProInstanceID(proInstanceHost))
+	return config.DefaultPathManager().
+		PlatformInstanceDir(context, ToPlatformInstanceID(platformInstanceHost))
 }
 
 var (
-	proInstanceIDRegEx1 = regexp.MustCompile(`[^\w\-]`)
-	proInstanceIDRegEx2 = regexp.MustCompile(`[^0-9a-z\-]+`)
+	platformInstanceIDRegEx1 = regexp.MustCompile(`[^\w\-]`)
+	platformInstanceIDRegEx2 = regexp.MustCompile(`[^0-9a-z\-]+`)
 )
 
-func ToProInstanceID(url string) string {
+func ToPlatformInstanceID(url string) string {
 	url = strings.TrimPrefix(url, "https://")
 	url = strings.ToLower(url)
-	url = proInstanceIDRegEx2.ReplaceAllString(proInstanceIDRegEx1.ReplaceAllString(url, "-"), "")
+	url = platformInstanceIDRegEx2.ReplaceAllString(
+		platformInstanceIDRegEx1.ReplaceAllString(url, "-"),
+		"",
+	)
 	url = strings.Trim(url, "-")
 	return id.SafeConcatNameMax([]string{url}, 32)
 }
@@ -142,13 +155,13 @@ func WorkspaceExists(context, workspaceID string) bool {
 	return err == nil
 }
 
-func ProInstanceExists(context, proInstanceID string) bool {
-	proDir, err := GetProInstanceDir(context, proInstanceID)
+func PlatformInstanceExists(context, platformInstanceID string) bool {
+	platformInstanceDir, err := GetPlatformInstanceDir(context, platformInstanceID)
 	if err != nil {
 		return false
 	}
 
-	_, err = os.Stat(proDir)
+	_, err = os.Stat(platformInstanceDir)
 	return err == nil
 }
 
@@ -158,50 +171,16 @@ func SaveProviderConfig(context string, provider *ProviderConfig) error {
 		return err
 	}
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(providerDir, 0o755)
-	if err != nil {
-		return err
-	}
-
-	providerDirBytes, err := json.Marshal(provider)
-	if err != nil {
-		return err
-	}
-
-	providerConfigFile := filepath.Join(providerDir, ProviderConfigFile)
-	err = WriteFileAtomic(providerConfigFile, providerDirBytes, 0o600)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return saveJSON(providerDir, ProviderConfigFile, provider, 0o600)
 }
 
-func SaveProInstanceConfig(context string, proInstance *ProInstance) error {
-	providerDir, err := GetProInstanceDir(context, proInstance.Host)
+func SavePlatformInstanceConfig(context string, platformInstance *PlatformInstance) error {
+	platformInstanceDir, err := GetPlatformInstanceDir(context, platformInstance.Host)
 	if err != nil {
 		return err
 	}
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(providerDir, 0o755)
-	if err != nil {
-		return err
-	}
-
-	proInstanceBytes, err := json.Marshal(proInstance)
-	if err != nil {
-		return err
-	}
-
-	proInstanceConfigFile := filepath.Join(providerDir, ProInstanceConfigFile)
-	err = WriteFileAtomic(proInstanceConfigFile, proInstanceBytes, 0o600)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return saveJSON(platformInstanceDir, PlatformInstanceConfigFile, platformInstance, 0o600)
 }
 
 func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
@@ -210,6 +189,8 @@ func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
 		return err
 	}
 
+	// Unlike saveJSON, this never creates the workspace dir: a result is only
+	// valid while the workspace config exists.
 	if _, err := os.Stat(filepath.Join(workspaceDir, WorkspaceConfigFile)); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("workspace %s no longer exists", workspace.ID)
@@ -217,18 +198,7 @@ func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
 		return err
 	}
 
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return err
-	}
-
-	workspaceResultFile := filepath.Join(workspaceDir, WorkspaceResultFile)
-	err = WriteFileAtomic(workspaceResultFile, resultBytes, 0o600)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return writeJSONFile(filepath.Join(workspaceDir, WorkspaceResultFile), result, 0o600)
 }
 
 func SaveWorkspaceConfig(workspace *Workspace) error {
@@ -237,25 +207,7 @@ func SaveWorkspaceConfig(workspace *Workspace) error {
 		return err
 	}
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(workspaceDir, 0o755)
-	if err != nil {
-		return err
-	}
-
-	workspaceConfigBytes, err := json.Marshal(workspace)
-	if err != nil {
-		return err
-	}
-
-	workspaceConfigFile := filepath.Join(workspaceDir, WorkspaceConfigFile)
-	// #nosec G306 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = WriteFileAtomic(workspaceConfigFile, workspaceConfigBytes, 0o644)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return saveJSON(workspaceDir, WorkspaceConfigFile, workspace, 0o644)
 }
 
 func SaveMachineConfig(machine *Machine) error {
@@ -264,24 +216,7 @@ func SaveMachineConfig(machine *Machine) error {
 		return err
 	}
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(machineDir, 0o755)
-	if err != nil {
-		return err
-	}
-
-	machineConfigBytes, err := json.Marshal(machine)
-	if err != nil {
-		return err
-	}
-
-	machineConfigFile := filepath.Join(machineDir, MachineConfigFile)
-	err = WriteFileAtomic(machineConfigFile, machineConfigBytes, 0o600)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return saveJSON(machineDir, MachineConfigFile, machine, 0o600)
 }
 
 func MachineExists(context, machineID string) bool {
@@ -344,7 +279,7 @@ func embeddedProviderConfig(sourceID string) *ProviderConfig {
 	if raw == "" {
 		return nil
 	}
-	parsed, err := ParseProvider(strings.NewReader(raw))
+	parsed, err := ParseAuthorProvider(strings.NewReader(raw))
 	if err != nil {
 		// Embedded YAML failing to parse is a build-time regression; log rather
 		// than silently fall back to the stale stored config this refresh fixes.
@@ -361,13 +296,7 @@ func LoadMachineConfig(context, machineID string) (*Machine, error) {
 	}
 
 	machineConfigFile := filepath.Join(machineDir, MachineConfigFile)
-	machineConfigBytes, err := os.ReadFile(machineConfigFile)
-	if err != nil {
-		return nil, err
-	}
-
-	machineConfig := &Machine{}
-	err = json.Unmarshal(machineConfigBytes, machineConfig)
+	machineConfig, err := loadJSON[Machine](machineConfigFile)
 	if err != nil {
 		return nil, err
 	}
@@ -377,25 +306,15 @@ func LoadMachineConfig(context, machineID string) (*Machine, error) {
 	return machineConfig, nil
 }
 
-func LoadProInstanceConfig(context, proInstanceHost string) (*ProInstance, error) {
-	proDir, err := GetProInstanceDir(context, proInstanceHost)
+func LoadPlatformInstanceConfig(context, platformInstanceHost string) (*PlatformInstance, error) {
+	platformInstanceDir, err := GetPlatformInstanceDir(context, platformInstanceHost)
 	if err != nil {
 		return nil, err
 	}
 
-	proConfigFile := filepath.Join(proDir, ProInstanceConfigFile)
-	proConfigBytes, err := os.ReadFile(proConfigFile)
-	if err != nil {
-		return nil, err
-	}
-
-	proInstanceConfig := &ProInstance{}
-	err = json.Unmarshal(proConfigBytes, proInstanceConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return proInstanceConfig, nil
+	return loadJSON[PlatformInstance](
+		filepath.Join(platformInstanceDir, PlatformInstanceConfigFile),
+	)
 }
 
 func LoadWorkspaceConfig(context, workspaceID string) (*Workspace, error) {
@@ -405,13 +324,7 @@ func LoadWorkspaceConfig(context, workspaceID string) (*Workspace, error) {
 	}
 
 	workspaceConfigFile := filepath.Join(workspaceDir, WorkspaceConfigFile)
-	workspaceConfigBytes, err := os.ReadFile(workspaceConfigFile)
-	if err != nil {
-		return nil, err
-	}
-
-	workspaceConfig := &Workspace{}
-	err = json.Unmarshal(workspaceConfigBytes, workspaceConfig)
+	workspaceConfig, err := loadJSON[Workspace](workspaceConfigFile)
 	if err != nil {
 		return nil, err
 	}
@@ -427,17 +340,12 @@ func LoadWorkspaceResult(context, workspaceID string) (*config2.Result, error) {
 		return nil, err
 	}
 
-	workspaceResultFile := filepath.Join(workspaceDir, WorkspaceResultFile)
-	workspaceResultBytes, err := os.ReadFile(workspaceResultFile)
+	workspaceResult, err := loadJSON[config2.Result](
+		filepath.Join(workspaceDir, WorkspaceResultFile),
+	)
 	if os.IsNotExist(err) {
 		return nil, nil
 	} else if err != nil {
-		return nil, err
-	}
-
-	workspaceResult := &config2.Result{}
-	err = json.Unmarshal(workspaceResultBytes, workspaceResult)
-	if err != nil {
 		return nil, err
 	}
 

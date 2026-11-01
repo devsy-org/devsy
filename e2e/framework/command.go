@@ -527,11 +527,19 @@ func (f *Framework) DevsyWorkspaceDelete(
 	return f.ExecCommand(ctx, false, true, fmt.Sprintf("deleted workspace %s", workspace), baseArgs)
 }
 
-// CleanupWorkspace gives cleanup a fresh, bounded context. Ginkgo cleanup may
-// run after the spec context has expired, so inheriting its cancellation can
-// silently skip the workspace deletion.
+// DetachedCleanupContext bounds cleanup work to timeout without inheriting
+// parent's cancellation. Ginkgo cleanup may run after the spec context has
+// expired, and inheriting that cancellation silently skips the cleanup.
+func DetachedCleanupContext(
+	parent context.Context,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), timeout)
+}
+
+// CleanupWorkspace deletes workspace under a DetachedCleanupContext.
 func (f *Framework) CleanupWorkspace(ctx context.Context, workspace string) error {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	cleanupCtx, cancel := DetachedCleanupContext(ctx, time.Minute)
 	defer cancel()
 	err := f.DevsyWorkspaceDelete(cleanupCtx, workspace)
 	if err != nil {

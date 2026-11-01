@@ -49,6 +49,8 @@ export interface CliInvocationOptions {
   allowUnlockPrompt?: boolean
   /** Internal retry guard: never repeatedly prompt for one invocation. */
   unlockRetried?: boolean
+  /** Raises the stdout cap of run() above Node's 1 MiB default. */
+  maxBuffer?: number
 }
 
 export interface CliInvocationPolicy {
@@ -367,6 +369,9 @@ export class CliRunner {
           ? (
               await execFile(this.execPath, fullArgs, {
                 env: this.invocationEnv(args, options),
+                ...(options.maxBuffer === undefined
+                  ? {}
+                  : { maxBuffer: options.maxBuffer }),
               })
             ).stdout
           : await this.spawnWithStdin(

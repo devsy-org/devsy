@@ -167,11 +167,107 @@ describe("WorkspaceWizard", () => {
 
   it("renders the provider step by default", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, unmount } = render(WorkspaceWizard, {
+    const { getByText, getByRole, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
     expect(getByText("Choose a Provider")).toBeTruthy()
+    expect(getByRole("heading", { name: "Create Workspace" })).toBeTruthy()
+    expect(getByRole("list", { name: "Workspace creation steps" })).toBeTruthy()
+    expect(
+      getByRole("progressbar", { name: "Step 1 of 5: Provider" }),
+    ).toBeTruthy()
+    expect(
+      document.querySelector('[aria-current="step"]')?.textContent,
+    ).toContain("Provider")
+    expect(
+      getByRole("button", { name: "docker" }).getAttribute("aria-pressed"),
+    ).toBe("false")
+    unmount()
+  })
+
+  it("associates source inputs with labels and exposes the selected template", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, getByLabelText, getByRole, unmount } = render(
+      WorkspaceWizard,
+      { props: { open: true } },
+    )
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    expect(getByLabelText("Repository URL *")).toBeTruthy()
+    const pythonTemplate = getByText("Python").closest(
+      "button",
+    ) as HTMLButtonElement
+    expect(pythonTemplate).toBeTruthy()
+    await fireEvent.click(pythonTemplate)
+    await flushAsync()
+    expect(pythonTemplate.getAttribute("aria-pressed")).toBe("true")
+    expect(
+      (getByLabelText("Repository URL *") as HTMLInputElement).value,
+    ).toContain("vscode-remote-try-python")
+
+    await fireEvent.click(
+      getByRole("button", { name: "Show advanced options" }),
+    )
+    expect(getByLabelText("Dev container source")).toBeTruthy()
+    unmount()
+  })
+
+  it("lets the user edit reviewed provider and source without launching", async () => {
+    providers.set([makeProvider("docker"), makeProvider("ssh")])
+    const { getByText, getByLabelText, getByRole, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true },
+      },
+    )
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "docker" }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    const sourceInput = getByLabelText("Repository URL *") as HTMLInputElement
+    const longSource = `https://example.test/team/${"workspace-path-segment/".repeat(8)}application`
+    await fireEvent.input(sourceInput, {
+      target: { value: longSource },
+    })
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+
+    expect(getByText(longSource)).toBeTruthy()
+    expect(workspaceUp).not.toHaveBeenCalled()
+
+    await fireEvent.click(getByRole("button", { name: "Edit source" }))
+    await flushAsync()
+    expect((getByLabelText("Repository URL *") as HTMLInputElement).value).toBe(
+      longSource,
+    )
+
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "Edit provider" }))
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "ssh" }))
+    await flushAsync()
+    expect(
+      getByRole("button", { name: "ssh" }).getAttribute("aria-pressed"),
+    ).toBe("true")
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+
+    expect(getByText("ssh")).toBeTruthy()
+    expect(workspaceUp).not.toHaveBeenCalled()
     unmount()
   })
 
@@ -257,7 +353,7 @@ describe("WorkspaceWizard", () => {
 
   it("defaults to git source type and accepts a repo url", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, unmount } = render(WorkspaceWizard, {
+    const { getByText, getByLabelText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
@@ -281,8 +377,45 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
 
     expect(getByText("Choose an IDE")).toBeTruthy()
+    expect(getByLabelText("IDE (optional)")).toBeTruthy()
+    expect(getByText(/select “None” to open the workspace later/i)).toBeTruthy()
     unmount()
   })
+
+  it.each([
+    ["Local Directory", "/var/home/dev/Projects/Backend", "Local Directory *"],
+    ["Git Repository", "https://example.com/Backend.git", "Repository URL *"],
+  ])(
+    "derives a valid ID from %s without changing the source",
+    async (tab, source, label) => {
+      providers.set([makeProvider("docker")])
+      const { getByText, getByLabelText, unmount } = render(WorkspaceWizard, {
+        props: { open: true },
+      })
+      await flushAsync()
+      await fireEvent.click(getByText("docker"))
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      if (tab === "Local Directory")
+        await fireEvent.click(getByText("Local Directory"))
+      await fireEvent.input(getByLabelText(label), {
+        target: { value: source },
+      })
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      expect(
+        (document.querySelector("#workspace-name") as HTMLInputElement).value,
+      ).toBe("backend")
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: "backend", source }),
+      )
+      unmount()
+    },
+  )
 
   it("shows the image picker when the Image tab is selected", async () => {
     providers.set([makeProvider("docker")])
@@ -333,6 +466,32 @@ describe("WorkspaceWizard", () => {
     expect(launchBtn.disabled).toBe(false)
     unmount()
   })
+
+  it.each(["Backend", "back_end", "back.end", "back end", "a".repeat(49)])(
+    "blocks invalid explicit ID %s with an accessible rule",
+    async (id) => {
+      providers.set([makeProvider("docker")])
+      const { getByText, unmount } = render(WorkspaceWizard, {
+        props: { open: true },
+      })
+      await flushAsync()
+      await advanceToReview(getByText)
+      const input = document.querySelector(
+        "#workspace-name",
+      ) as HTMLInputElement
+      await fireEvent.input(input, { target: { value: id } })
+      await flushAsync()
+      expect(input.value).toBe(id)
+      expect(input.getAttribute("aria-invalid")).toBe("true")
+      expect(input.getAttribute("aria-describedby")).toBe(
+        "workspace-name-invalid",
+      )
+      expect(getByText(/1-48 lowercase letters/)).toBeTruthy()
+      expect(getLaunchButton().disabled).toBe(true)
+      expect(workspaceUp).not.toHaveBeenCalled()
+      unmount()
+    },
+  )
 
   it("blocks Launch when the user edits the name into a conflict", async () => {
     providers.set([makeProvider("docker")])
@@ -587,6 +746,33 @@ describe("WorkspaceWizard", () => {
     ).toBeTruthy()
     expect(queryByText("Workspace ready")).toBeNull()
     unmount()
+  })
+
+  it("keeps a log failure unconfirmed without a status spinner or completion", async () => {
+    providers.set([makeProvider("docker")])
+    const oncomplete = vi.fn()
+    const ui = render(WorkspaceWizard, { props: { open: true, oncomplete } })
+    await flushAsync()
+    await advanceToReview(ui.getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "reconciling",
+        phase: "",
+        logError: "Workspace log could not be saved: disk unavailable",
+      },
+    })
+    await flushAsync()
+    expect(ui.getByText(/Workspace log could not be saved/)).toBeTruthy()
+    expect(ui.queryByText("Workspace ready")).toBeNull()
+    expect(ui.queryByText("Confirming workspace status")).toBeNull()
+    expect(ui.queryByRole("button", { name: "Retry status" })).toBeNull()
+    expect(ui.getByRole("button", { name: /^Retry$/ })).toBeTruthy()
+    expect(oncomplete).not.toHaveBeenCalled()
+    ui.unmount()
   })
 
   it("keeps a refresh-only failure stale until Retry status confirms the workspace", async () => {
@@ -937,7 +1123,7 @@ describe("WorkspaceWizard", () => {
     const nameInput = document.querySelector(
       'input[placeholder*="derived from source"]',
     ) as HTMLInputElement
-    expect(nameInput.value).toBe("ubuntu-22.04")
+    expect(nameInput.value).toBe("ubuntu-22-04")
 
     const launchBtn = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent?.trim() === "Launch",

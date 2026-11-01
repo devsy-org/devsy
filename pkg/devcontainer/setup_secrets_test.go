@@ -4,11 +4,17 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/compress"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/stretchr/testify/require"
 )
 
-const testTerminalSecretName = "API_KEY"
+const (
+	testTerminalSecretName    = "API_KEY"
+	testTransportArchitecture = "arm64"
+)
 
 // Secret values must never ride in the compressed CLIOptions embedded in the
 // setup command's arguments; the container pulls them over the tunnel instead.
@@ -31,7 +37,7 @@ func TestCompressWorkspaceConfig_StripsSecretValues(t *testing.T) {
 		},
 	}
 
-	compressed, err := r.compressWorkspaceConfig()
+	compressed, err := r.compressWorkspaceConfig(&config.MergedDevContainerConfig{}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,4 +70,29 @@ func TestCompressWorkspaceConfig_StripsSecretValues(t *testing.T) {
 			t.Errorf("%s must be stripped from the setup-command CLIOptions", field)
 		}
 	}
+}
+
+func TestCompressWorkspaceConfigKeepsImageConfigFileLocal(t *testing.T) {
+	const path = "/operator/image-config.json"
+	r := &runner{
+		workspaceConfig: &provider.AgentWorkspaceInfo{
+			Workspace: &provider.Workspace{},
+			Agent: provider.ProviderAgentConfig{
+				Kubernetes: provider.ProviderKubernetesDriverConfig{
+					ImageConfigFile: path,
+					Architecture:    testTransportArchitecture,
+					ServiceAccount:  "cluster-account",
+				},
+			},
+		},
+	}
+	compressed, err := r.compressWorkspaceConfig(&config.MergedDevContainerConfig{}, false, false)
+	require.NoError(t, err)
+	info, raw, err := agent.DecodeContainerWorkspaceInfo(compressed)
+	require.NoError(t, err)
+	require.Empty(t, info.Agent.Kubernetes.ImageConfigFile)
+	require.NotContains(t, raw, path)
+	require.Equal(t, path, r.workspaceConfig.Agent.Kubernetes.ImageConfigFile)
+	require.Equal(t, testTransportArchitecture, info.Agent.Kubernetes.Architecture)
+	require.Equal(t, "cluster-account", info.Agent.Kubernetes.ServiceAccount)
 }

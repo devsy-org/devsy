@@ -73,14 +73,11 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("specify a provider to delete")
 	}
 
-	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, provider)
+	unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, provider)
 	if err != nil {
-		return fmt.Errorf("get operation lock: %w", err)
+		return err
 	}
-	if err := opLock.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock: %w", err)
-	}
-	defer func() { _ = opLock.Unlock() }()
+	defer unlock()
 
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
@@ -103,18 +100,18 @@ func DeleteProvider(
 	provider string,
 	ignoreNotFound, force bool,
 ) error {
-	// if force is not set, check if the provider is associated with a pro instance or workspace
+	// if force is not set, check if the provider is associated with a platform instance or workspace
 	if !force {
-		// check if this provider is associated with a pro instance
-		proInstances, err := workspace.ListProInstances(devsyConfig)
+		// check if this provider is associated with a platform instance
+		platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 		if err != nil {
-			return fmt.Errorf("list pro instances: %w", err)
+			return fmt.Errorf("list platform instances: %w", err)
 		}
-		for _, instance := range proInstances {
+		for _, instance := range platformInstances {
 			if instance.Provider == provider {
 				return fmt.Errorf(
-					"cannot delete provider %q, because it is connected to Pro instance %q. "+
-						"Removing the Pro instance will automatically delete this provider",
+					"cannot delete provider %q, because it is connected to Platform instance %q. "+
+						"Removing the Platform instance will automatically delete this provider",
 					instance.Provider,
 					instance.Host,
 				)

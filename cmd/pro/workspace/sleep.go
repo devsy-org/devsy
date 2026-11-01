@@ -53,13 +53,13 @@ func NewSleepCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			names.PreventWakeup,
 			-1,
 			"The amount of seconds this workspace should sleep until it can be woken up again (use 0 for infinite sleeping). "+
-				"During this time the space can only be woken up by `devsy pro workspace wakeup`, "+
+				"During this time the space can only be woken up by `devsy platform workspace wakeup`, "+
 				"manually deleting the annotation on the namespace or through the UI",
 		),
 	)
 	_ = c.MarkFlagRequired(names.Project)
 	flags.BindEnv(c.Flags(), names.Project)
-	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The platform instance to use"))
 	_ = c.MarkFlagRequired(names.Host)
 	flags.BindEnv(c.Flags(), names.Host)
 
@@ -152,7 +152,7 @@ func (cmd *SleepCmd) patchSleep(
 		return fmt.Errorf("create patch: %w", err)
 	}
 
-	_, err = managementClient.Loft().
+	_, err = managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
 		Patch(ctx, workspaceInstance.Name, patch.Type(), patchData, metav1.PatchOptions{})
@@ -177,7 +177,7 @@ func waitForWorkspacePhase(
 		platform.Timeout(),
 		false,
 		func(ctx context.Context) (done bool, err error) {
-			workspaceInstance, err := params.managementClient.Loft().
+			workspaceInstance, err := params.managementClient.Devsy().
 				ManagementV1().
 				DevsyWorkspaceInstances(project.ProjectNamespace(params.projectName)).
 				Get(ctx, params.name, metav1.GetOptions{})

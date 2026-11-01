@@ -4,7 +4,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	procluster "github.com/devsy-org/devsy/cmd/pro/cluster"
 	"github.com/devsy-org/devsy/cmd/pro/daemon"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	proproject "github.com/devsy-org/devsy/cmd/pro/project"
 	"github.com/devsy-org/devsy/cmd/pro/provider"
 	protemplate "github.com/devsy-org/devsy/cmd/pro/template"
@@ -13,37 +13,38 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewProCmd returns a new command.
-func NewProCmd(flags *flags.GlobalFlags) *cobra.Command {
-	globalFlags := &proflags.GlobalFlags{GlobalFlags: flags}
-	proCmd := &cobra.Command{
-		Use:           "pro",
-		Short:         "Devsy Pro commands",
+// NewPlatformCmd returns a new command.
+func NewPlatformCmd(flags *flags.GlobalFlags) *cobra.Command {
+	globalFlags := &platformflags.GlobalFlags{GlobalFlags: flags}
+	platformCmd := &cobra.Command{
+		Use:           "platform",
+		Aliases:       []string{"pro"},
+		Short:         "Devsy Platform commands",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
-			globalFlags = proflags.SetGlobalFlags(c.PersistentFlags())
+			globalFlags = platformflags.SetGlobalFlags(c.PersistentFlags())
 			return nil
 		},
 	}
 
-	proCmd.AddCommand(NewLoginCmd(globalFlags))
-	proCmd.AddCommand(NewLogoutCmd(globalFlags))
-	proCmd.AddCommand(NewListCmd(globalFlags))
-	proCmd.AddCommand(NewStartCmd(globalFlags))
-	proCmd.AddCommand(NewSelfCmd(globalFlags))
-	proCmd.AddCommand(NewVersionCmd(globalFlags))
-	proCmd.AddCommand(NewHealthCmd(globalFlags))
-	proCmd.AddCommand(NewCheckUpdateCmd(globalFlags))
-	proCmd.AddCommand(NewUpdateProviderCmd(globalFlags))
+	platformCmd.AddCommand(NewLoginCmd(globalFlags))
+	platformCmd.AddCommand(NewLogoutCmd(globalFlags))
+	platformCmd.AddCommand(NewListCmd(globalFlags))
+	platformCmd.AddCommand(NewStartCmd(globalFlags))
+	platformCmd.AddCommand(NewSelfCmd(globalFlags))
+	platformCmd.AddCommand(NewVersionCmd(globalFlags))
+	platformCmd.AddCommand(NewHealthCmd(globalFlags))
+	platformCmd.AddCommand(NewCheckUpdateCmd(globalFlags))
+	platformCmd.AddCommand(NewUpdateProviderCmd(globalFlags))
 
-	proCmd.AddCommand(procluster.NewClusterCmd(globalFlags))
-	proCmd.AddCommand(proproject.NewProjectCmd(globalFlags))
-	proCmd.AddCommand(protemplate.NewTemplateCmd(globalFlags))
-	proCmd.AddCommand(prouser.NewUserCmd(globalFlags))
-	proCmd.AddCommand(proworkspace.NewWorkspaceCmd(globalFlags))
-	proCmd.AddCommand(daemon.NewCmd(globalFlags))
-	proCmd.AddCommand(provider.NewProProviderCmd(globalFlags))
-	return proCmd
+	platformCmd.AddCommand(procluster.NewClusterCmd(globalFlags))
+	platformCmd.AddCommand(proproject.NewProjectCmd(globalFlags))
+	platformCmd.AddCommand(protemplate.NewTemplateCmd(globalFlags))
+	platformCmd.AddCommand(prouser.NewUserCmd(globalFlags))
+	platformCmd.AddCommand(proworkspace.NewWorkspaceCmd(globalFlags))
+	platformCmd.AddCommand(daemon.NewCmd(globalFlags))
+	platformCmd.AddCommand(provider.NewPlatformProviderCmd(globalFlags))
+	return platformCmd
 }

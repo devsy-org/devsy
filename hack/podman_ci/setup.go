@@ -25,11 +25,14 @@ func (osFileSystem) OpenAppend(path string) (io.WriteCloser, error) {
 }
 
 type Dependencies struct {
-	Runner Runner
-	Clock  Clock
-	Log    *Logger
-	Files  FileSystem
-	Budget *Budget
+	Runner         Runner
+	Clock          Clock
+	Log            *Logger
+	Files          FileSystem
+	Budget         *Budget
+	Download       Downloader
+	NewClusterName ClusterNamer
+	CreateCluster  ClusterCreator
 }
 
 func newRootCommand() *cobra.Command {
@@ -40,15 +43,18 @@ func newRootCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.AddCommand(newSetupCommand())
+	root.AddCommand(newInstallCommand())
+	root.AddCommand(newInstallKindCommand())
 	return root
 }
 
 func newSetupCommand() *cobra.Command {
 	cfg := SetupConfig{
-		PodmanPath:       platformDefaultPodmanPath(),
-		CrunPath:         "/usr/local/bin/crun",
-		BootstrapTimeout: 270 * time.Second,
-		GitHubEnvPath:    os.Getenv("GITHUB_ENV"),
+		PodmanPath:            platformDefaultPodmanPath(),
+		CrunPath:              "/usr/local/bin/crun",
+		BootstrapTimeout:      270 * time.Second,
+		GitHubEnvPath:         os.Getenv("GITHUB_ENV"),
+		GitHubStepSummaryPath: os.Getenv("GITHUB_STEP_SUMMARY"),
 	}
 	cmd := &cobra.Command{
 		Use: "setup", Short: "Configure and validate a Podman CI runtime", Args: cobra.NoArgs,
@@ -60,7 +66,7 @@ func newSetupCommand() *cobra.Command {
 				Log:    logger,
 				Files:  osFileSystem{},
 			}
-			return classifySetupError(setup(context.Background(), deps, cfg))
+			return classifyOperationalError(setup(context.Background(), deps, cfg))
 		},
 	}
 	cmd.Flags().StringVar(&cfg.PodmanPath, "podman-path", cfg.PodmanPath, "Podman executable path")
@@ -70,6 +76,12 @@ func newSetupCommand() *cobra.Command {
 		DurationVar(&cfg.BootstrapTimeout, "bootstrap-timeout", cfg.BootstrapTimeout, "maximum bootstrap duration")
 	cmd.Flags().
 		StringVar(&cfg.GitHubEnvPath, "github-env", cfg.GitHubEnvPath, "GitHub Actions environment file")
+	cmd.Flags().StringVar(
+		&cfg.GitHubStepSummaryPath,
+		"github-step-summary",
+		cfg.GitHubStepSummaryPath,
+		"GitHub Actions step summary file",
+	)
 	cmd.Flags().Var(newModeValue(&cfg.Mode), "mode", "Podman mode: rootless or rootful")
 	_ = cmd.MarkFlagRequired("mode")
 	return cmd

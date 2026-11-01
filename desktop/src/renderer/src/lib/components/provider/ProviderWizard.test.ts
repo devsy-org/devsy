@@ -8,20 +8,24 @@ import {
 import { get } from "svelte/store"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { providers } from "$lib/stores/providers.js"
-import type { Provider } from "$lib/types/index.js"
+import type { Provider, ProviderOption } from "$lib/types/index.js"
 
 const {
   providerAdd,
+  providerAvailable,
   providerInitStreaming,
   providerList,
+  providerIcon,
   providerOptions,
   providerReleaseJob,
   providerSetOptions,
   onCommandProgress,
 } = vi.hoisted(() => ({
   providerAdd: vi.fn(),
+  providerAvailable: vi.fn(),
   providerInitStreaming: vi.fn(),
   providerList: vi.fn(),
+  providerIcon: vi.fn(),
   providerOptions: vi.fn(),
   providerReleaseJob: vi.fn(),
   providerSetOptions: vi.fn(),
@@ -30,8 +34,10 @@ const {
 
 vi.mock("$lib/ipc/commands.js", () => ({
   providerAdd,
+  providerAvailable,
   providerInitStreaming,
   providerList,
+  providerIcon,
   providerOptions,
   providerReleaseJob,
   providerSetOptions,
@@ -56,6 +62,16 @@ function renderWizard() {
   return render(ProviderWizard, { open: true })
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe("ProviderWizard", () => {
   afterEach(() => cleanup())
 
@@ -63,6 +79,7 @@ describe("ProviderWizard", () => {
     vi.clearAllMocks()
     providers.set([])
     providerAdd.mockResolvedValue(undefined)
+    providerAvailable.mockResolvedValue([])
     providerInitStreaming.mockResolvedValue("init-command")
     providerOptions.mockResolvedValue({})
     providerList.mockResolvedValue([])
@@ -73,11 +90,19 @@ describe("ProviderWizard", () => {
 
   it("adds a fresh Microsandbox preset with the latest source and keeps it selected", async () => {
     const page = renderWizard()
+    const steps = screen.getByRole("list", { name: "Provider setup steps" })
+    expect(
+      screen.getByRole("progressbar", { name: "Provider setup progress" }),
+    ).toBeDefined()
+    expect(steps.querySelector('[aria-current="step"]')?.textContent).toContain(
+      "Select",
+    )
     const preset = screen.getByRole("button", {
       name: /microsandbox Hardware-isolated microVMs/,
     })
 
     await fireEvent.click(preset)
+    expect(preset.getAttribute("aria-pressed")).toBe("true")
     expect(preset.className).toContain("ring-primary")
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
@@ -91,7 +116,358 @@ describe("ProviderWizard", () => {
     page.unmount()
   })
 
-  it("shows structured enum labels and saves their values with defaults", async () => {
+  it("shows discovered catalog providers without replacing the preset list", async () => {
+    providerAvailable.mockResolvedValue([
+      "docker",
+      "terraform",
+      "terraform",
+      " ",
+      "civo",
+    ])
+    const page = renderWizard()
+    const terraform = await screen.findByRole("button", { name: /terraform/ })
+    expect(terraform.getAttribute("aria-pressed")).toBe("false")
+    expect(screen.getAllByRole("button", { name: /terraform/ })).toHaveLength(1)
+    expect(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    ).toBeDefined()
+
+    await fireEvent.click(terraform)
+    expect(terraform.getAttribute("aria-pressed")).toBe("true")
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "terraform",
+        undefined,
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("keeps custom sources usable when provider discovery fails and can retry", async () => {
+    providerAvailable
+      .mockRejectedValueOnce(new Error("catalog unavailable"))
+      .mockResolvedValueOnce(["terraform"])
+    const page = renderWizard()
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "catalog unavailable",
+    )
+    const sourceInput = screen.getByLabelText("Provider source")
+    expect((sourceInput as HTMLInputElement).disabled).toBe(false)
+    await fireEvent.input(sourceInput, { target: { value: "my-org/provider" } })
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Retry provider list" }),
+    )
+
+    expect(
+      await screen.findByRole("button", { name: /terraform/ }),
+    ).toBeDefined()
+    expect(
+      (screen.getByLabelText("Provider source") as HTMLInputElement).value,
+    ).toBe("my-org/provider")
+    expect(providerAdd).not.toHaveBeenCalled()
+    page.unmount()
+  })
+
+  it("leaves untouched optional defaults to CLI initialization", async () => {
+    providerOptions.mockResolvedValue({
+      REGION: { name: "REGION", default: "us-west-2" },
+    })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /aws Amazon Web Services/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Configure aws" }),
+    ).toBeDefined()
+    expect(screen.getByLabelText("REGION").getAttribute("placeholder")).toBe(
+      "us-west-2",
+    )
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerSetOptions).not.toHaveBeenCalled()
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("aws")
+    })
+    page.unmount()
+  })
+
+  it("does not submit an untouched expression default", async () => {
+    const expression = "${PROVIDER_FOLDER}/config.json"
+    providerOptions.mockResolvedValue({
+      CONFIG: { name: "CONFIG", default: expression },
+    })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    const configInput = await screen.findByRole("textbox", { name: "CONFIG" })
+    expect((configInput as HTMLInputElement).value).toBe(expression)
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Initializing docker" }),
+    ).toBeDefined()
+    expect(providerSetOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+    page.unmount()
+  })
+
+  it("submits an explicitly edited expression default", async () => {
+    const expression = "${PROVIDER_FOLDER}/config.json"
+    providerOptions.mockResolvedValue({
+      CONFIG: { name: "CONFIG", default: expression },
+    })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    const configInput = (await screen.findByRole("textbox", {
+      name: "CONFIG",
+    })) as HTMLInputElement
+    await fireEvent.input(configInput, {
+      target: { value: "/tmp/custom.json" },
+    })
+    await fireEvent.input(configInput, { target: { value: expression } })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        {
+          CONFIG: expression,
+        },
+        false,
+      )
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+    })
+    page.unmount()
+  })
+
+  it.each([true, false])(
+    "preserves Reuse machine %s while saving edited options",
+    async (reuseMachine) => {
+      providerOptions.mockResolvedValue({
+        REGION: { name: "REGION", default: "local" },
+      })
+      const page = renderWizard()
+      await fireEvent.click(
+        screen.getByRole("button", { name: /docker Local Docker/ }),
+      )
+      if (reuseMachine)
+        await fireEvent.click(
+          screen.getByRole("switch", { name: "Reuse machine" }),
+        )
+      await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+      await fireEvent.input(
+        await screen.findByRole("textbox", { name: "REGION" }),
+        { target: { value: "remote" } },
+      )
+      await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+      await waitFor(() => {
+        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+          "docker",
+          { REGION: "remote" },
+          reuseMachine,
+        )
+        expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+      })
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        undefined,
+        reuseMachine,
+      )
+      page.unmount()
+    },
+  )
+
+  it("retries loading options without adding the provider a second time", async () => {
+    providerOptions
+      .mockRejectedValueOnce(new Error("temporary read failure"))
+      .mockResolvedValueOnce({ REGION: { name: "REGION", default: "local" } })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Configure docker" }),
+    ).toBeDefined()
+    expect(
+      await screen.findByText(/Failed to load options: temporary read failure/),
+    ).toBeDefined()
+    expect(
+      screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled"),
+    ).toBe(true)
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Retry loading options" }),
+    )
+
+    expect(await screen.findByRole("textbox", { name: "REGION" })).toBeDefined()
+    expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+      "docker",
+      undefined,
+      false,
+    )
+    expect(providerOptions).toHaveBeenCalledTimes(2)
+    page.unmount()
+  })
+
+  it("continues initialization after a retry loads no visible options", async () => {
+    providerOptions
+      .mockRejectedValueOnce(new Error("temporary read failure"))
+      .mockResolvedValueOnce({})
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Configure docker" }),
+    ).toBeDefined()
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Retry loading options" }),
+    )
+    const continueButton = await screen.findByRole("button", {
+      name: "Continue",
+    })
+    expect(continueButton.hasAttribute("disabled")).toBe(false)
+
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(
+      await screen.findByRole("heading", { name: "Initializing docker" }),
+    ).toBeDefined()
+    expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+      "docker",
+      undefined,
+      false,
+    )
+    expect(providerOptions).toHaveBeenCalledTimes(2)
+    expect(providerSetOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+    page.unmount()
+  })
+
+  it("keeps a failed init-start retryable and only reports ready after success", async () => {
+    let progressCallback:
+      | ((progress: {
+          commandId: string
+          done: boolean
+          success?: boolean
+        }) => void)
+      | undefined
+    onCommandProgress.mockImplementation(async (callback) => {
+      progressCallback = callback
+      return () => undefined
+    })
+    providerInitStreaming
+      .mockRejectedValueOnce(new Error("worker unavailable"))
+      .mockResolvedValueOnce("init-command")
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Initializing docker" }),
+    ).toBeDefined()
+    expect(
+      await screen.findByText(
+        /Failed to start initialization: worker unavailable/,
+      ),
+    ).toBeDefined()
+    expect(screen.queryByText(/is ready to use/)).toBeNull()
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(providerInitStreaming).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText(/is ready to use/)).toBeNull()
+
+    progressCallback?.({ commandId: "init-command", done: true, success: true })
+    expect(await screen.findByText("docker is ready to use.")).toBeDefined()
+    page.unmount()
+  })
+
+  it("labels a skipped init as installed but not initialized", async () => {
+    providerInitStreaming.mockRejectedValueOnce(new Error("worker unavailable"))
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await screen.findByText(
+      /Failed to start initialization: worker unavailable/,
+    )
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Skip initialization" }),
+    )
+
+    expect(
+      await screen.findByText(/was added but is not initialized yet/),
+    ).toBeDefined()
+    expect(screen.queryByText(/is ready to use/)).toBeNull()
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    page.unmount()
+  })
+
+  it("shows the bundled fallback until the manifest is installed, then the provider's own icon", async () => {
+    const dataUrl = "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="
+    providerInitStreaming.mockRejectedValueOnce(new Error("worker unavailable"))
+    providerIcon.mockResolvedValue({ revision: "rev-a", dataUrl })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await screen.findByText(/Failed to start initialization/)
+
+    expect(screen.getByAltText("docker icon").getAttribute("src")).toBe(
+      "./icons/providers/docker.svg",
+    )
+    expect(providerIcon).not.toHaveBeenCalled()
+
+    const installed = {
+      ...makeProvider("docker"),
+      icon: "assets/logo.svg",
+      iconRevision: "rev-a",
+    }
+    providerList.mockResolvedValue([installed])
+    providers.set([installed])
+
+    await waitFor(() =>
+      expect(screen.getByAltText("docker icon").getAttribute("src")).toBe(
+        dataUrl,
+      ),
+    )
+    expect(providerIcon).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        providerName: "docker",
+        theme: "light",
+        expectedRevision: "rev-a",
+      }),
+    )
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Skip initialization" }),
+    )
+    await screen.findByText(/was added but is not initialized yet/)
+    await waitFor(() =>
+      expect(screen.getByAltText("docker icon").getAttribute("src")).toBe(
+        dataUrl,
+      ),
+    )
+    page.unmount()
+  })
+
+  it("shows enum defaults but submits only explicitly selected options", async () => {
     providerOptions.mockResolvedValue({
       SIZE: {
         name: "SIZE",
@@ -131,14 +507,20 @@ describe("ProviderWizard", () => {
       await screen.findByRole("option", { name: "Fast mode" }),
       { button: 0, pointerType: "mouse" },
     )
+    await fireEvent.input(screen.getByRole("textbox", { name: "ENABLED" }), {
+      target: { value: "false" },
+    })
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
     await waitFor(() => {
-      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("docker", {
-        SIZE: "micro",
-        MODE: "fast",
-        ENABLED: "false",
-      })
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        {
+          MODE: "fast",
+          ENABLED: "false",
+        },
+        false,
+      )
     })
     page.unmount()
   })
@@ -146,6 +528,7 @@ describe("ProviderWizard", () => {
   it("saves a selected empty enum value while leaving an unset enum omitted", async () => {
     providerOptions.mockResolvedValue({
       TOKEN: { name: "TOKEN", displayName: "Token", required: true },
+      STORED_TEXT: { name: "STORED_TEXT", value: "existing" },
       STORED_MODE: {
         name: "STORED_MODE",
         value: "",
@@ -176,6 +559,7 @@ describe("ProviderWizard", () => {
           { value: "safe", displayName: "Safe" },
         ],
       },
+      HIDDEN_MODE: { name: "HIDDEN_MODE", value: "hidden", hidden: true },
     })
     const page = renderWizard()
     await fireEvent.click(
@@ -199,18 +583,20 @@ describe("ProviderWizard", () => {
       await screen.findByRole("option", { name: "No extra settings" }),
       { button: 0, pointerType: "mouse" },
     )
-    await fireEvent.input(screen.getByRole("textbox"), {
+    await fireEvent.input(screen.getByRole("textbox", { name: /Token/ }), {
       target: { value: "secret" },
     })
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
     await waitFor(() => {
-      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("docker", {
-        TOKEN: "secret",
-        STORED_MODE: "",
-        DEFAULT_MODE: "",
-        UNSET_MODE: "",
-      })
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        {
+          TOKEN: "secret",
+          UNSET_MODE: "",
+        },
+        false,
+      )
     })
     page.unmount()
   })
@@ -240,12 +626,18 @@ describe("ProviderWizard", () => {
         target: { value: "microsandbox" },
       },
     )
+    await fireEvent.input(
+      screen.getByPlaceholderText("Defaults to source name"),
+      {
+        target: { value: "microsandbox-lab" },
+      },
+    )
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
     await waitFor(() => {
       expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "microsandbox-lab",
         "microsandbox",
-        undefined,
         false,
       )
     })
@@ -292,10 +684,118 @@ describe("ProviderWizard", () => {
     )
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
+    expect(
+      await screen.findByText(
+        "Enter an installation name for this custom source.",
+      ),
+    ).toBeDefined()
+    expect(providerAdd).not.toHaveBeenCalled()
+    await fireEvent.input(
+      screen.getByPlaceholderText("Defaults to source name"),
+      { target: { value: "custom-provider" } },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     await waitFor(() => {
       expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "custom-provider",
         "https://example.test/provider.yaml",
-        undefined,
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("requires an explicit name and source when typing a short source that matches the name", async () => {
+    const page = renderWizard()
+    await fireEvent.input(screen.getByLabelText("Provider source"), {
+      target: { value: "my-provider" },
+    })
+    await fireEvent.input(screen.getByLabelText(/Name/), {
+      target: { value: "" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByText(
+        "Enter an installation name for this custom source.",
+      ),
+    ).toBeDefined()
+    expect(providerAdd).not.toHaveBeenCalled()
+
+    await fireEvent.input(screen.getByLabelText(/Name/), {
+      target: { value: "my-provider" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "my-provider",
+        "my-provider",
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("treats an initial short source as custom and sends it explicitly", async () => {
+    const page = render(ProviderWizard, {
+      props: { open: true, initialSource: "work" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByText(
+        "Enter an installation name for this custom source.",
+      ),
+    ).toBeDefined()
+    expect(providerAdd).not.toHaveBeenCalled()
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Defaults to source name"),
+      {
+        target: { value: "work-lab" },
+      },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "work-lab",
+        "work",
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("clears preset selection when manually entering the same preset source", async () => {
+    const page = renderWizard()
+    const dockerPreset = screen.getByRole("button", {
+      name: /docker Local Docker/,
+    })
+    await fireEvent.click(dockerPreset)
+    expect(dockerPreset.getAttribute("aria-pressed")).toBe("true")
+    await fireEvent.input(screen.getByLabelText("Provider source"), {
+      target: { value: "docker" },
+    })
+    expect(dockerPreset.getAttribute("aria-pressed")).toBe("false")
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByText(
+        "Enter an installation name for this custom source.",
+      ),
+    ).toBeDefined()
+    expect(providerAdd).not.toHaveBeenCalled()
+    await fireEvent.input(
+      screen.getByPlaceholderText("Defaults to source name"),
+      {
+        target: { value: "docker-custom" },
+      },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "docker-custom",
+        "docker",
         false,
       )
     })
@@ -321,5 +821,175 @@ describe("ProviderWizard", () => {
     expect(providerAdd).not.toHaveBeenCalled()
     expect(get(providers)).toEqual([existing])
     page.unmount()
+  })
+
+  it("releases an installed provider when the wizard is unmounted during configuration", async () => {
+    providerOptions.mockResolvedValue({ TOKEN: { name: "TOKEN" } })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await screen.findByRole("heading", { name: "Configure docker" })
+
+    page.unmount()
+
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("releases a provider added after unmount without continuing setup", async () => {
+    const add = deferred<void>()
+    providerAdd.mockReturnValueOnce(add.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerAdd).toHaveBeenCalledOnce())
+
+    page.unmount()
+    add.resolve()
+
+    await waitFor(() => {
+      expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    })
+    expect(providerOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("does not release a provider when an abandoned add fails", async () => {
+    const add = deferred<void>()
+    providerAdd.mockReturnValueOnce(add.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerAdd).toHaveBeenCalledOnce())
+
+    page.unmount()
+    add.reject(new Error("add failed"))
+    await add.promise.catch(() => undefined)
+    await Promise.resolve()
+
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+    expect(providerOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("does not let abandoned option loading initialize a reopened wizard", async () => {
+    const options = deferred<Record<string, ProviderOption>>()
+    providerOptions.mockReturnValueOnce(options.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerOptions).toHaveBeenCalledOnce())
+
+    await page.rerender({ open: false })
+    await page.rerender({ open: true })
+    options.resolve({})
+
+    await screen.findByRole("heading", { name: "Select a Provider" })
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+    expect(providerSetOptions).not.toHaveBeenCalled()
+    page.unmount()
+  })
+
+  it("releases the installed provider when option loading is pending at unmount", async () => {
+    const options = deferred<Record<string, ProviderOption>>()
+    providerOptions.mockReturnValueOnce(options.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerOptions).toHaveBeenCalledOnce())
+
+    page.unmount()
+    options.resolve({})
+    await Promise.resolve()
+
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("does not initialize when an option save resolves after unmount", async () => {
+    const save = deferred<void>()
+    providerOptions.mockResolvedValue({ TOKEN: { name: "TOKEN" } })
+    providerSetOptions.mockReturnValueOnce(save.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await fireEvent.input(
+      await screen.findByRole("textbox", { name: "TOKEN" }),
+      {
+        target: { value: "secret" },
+      },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerSetOptions).toHaveBeenCalledOnce())
+
+    page.unmount()
+    save.resolve()
+
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    await Promise.resolve()
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("keeps the job owned by the main process across close and unmount during init", async () => {
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() =>
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker"),
+    )
+
+    await page.rerender({ open: false })
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+
+    page.unmount()
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+  })
+
+  it("keeps a pending init owned until the main command resolves", async () => {
+    const initialization = deferred<string>()
+    providerInitStreaming.mockReturnValueOnce(initialization.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() =>
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker"),
+    )
+
+    page.unmount()
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+    initialization.resolve("init-command")
+    await Promise.resolve()
+
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+    expect(providerList).not.toHaveBeenCalled()
+  })
+
+  it("unlistens if progress-listener registration finishes after unmount", async () => {
+    const registration = deferred<() => void>()
+    const stopListening = vi.fn()
+    onCommandProgress.mockReturnValueOnce(registration.promise)
+    const page = renderWizard()
+
+    page.unmount()
+    registration.resolve(stopListening)
+
+    await waitFor(() => expect(stopListening).toHaveBeenCalledOnce())
   })
 })

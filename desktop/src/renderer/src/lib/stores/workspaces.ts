@@ -50,6 +50,7 @@ function apply(
     ([id, job]) =>
       !updated.some((workspace) => workspace.id === id) &&
       (job.state === "running" ||
+        !!job.logError ||
         (job.activity === "creating" && job.state !== "succeeded")),
   )
   workspaces.set([...updated, ...pending.map(([id]) => ({ id }))])

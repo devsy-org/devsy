@@ -59,6 +59,7 @@ var (
 type SSHSessionOptions struct {
 	TermMode        string
 	InstallTerminfo bool
+	EnvVars         map[string]string
 }
 
 type StartSSHSessionOptions struct {
@@ -150,7 +151,11 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 		},
 		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			c := strings.Builder{}
-			_, _ = fmt.Fprintf(&c, "'%s' internal ssh-server --stdio", machineClient.AgentPath())
+			_, _ = fmt.Fprintf(
+				&c,
+				"%s internal ssh-server --stdio",
+				shellescape.Quote(machineClient.AgentPath()),
+			)
 			if cmd.Debug {
 				_, _ = c.WriteString(" --debug")
 			}
@@ -242,6 +247,11 @@ func RunSSHSession(ctx context.Context, sshClient *ssh.Client, options RunSSHSes
 		return err
 	}
 	defer func() { _ = session.Close() }()
+	for key, value := range options.SessionOptions.EnvVars {
+		if err := session.Setenv(key, value); err != nil {
+			return fmt.Errorf("set SSH session environment: %w", err)
+		}
+	}
 
 	if err := configureAgentForwarding(sshClient, session, options.AgentForwarding); err != nil {
 		return err

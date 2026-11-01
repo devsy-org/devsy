@@ -17,6 +17,15 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 		return "", err
 	}
 	defer func() { r.wslgSnapshot = nil }()
+	r.imageDetails = nil
+	r.imageDetailsImage = ""
+	if d, ok := r.driver.(driver.ImageDetailsDriver); ok {
+		if _, err := d.ImageDetails(
+			driver.ImageDetailsRequest{UnsupportedReason: "standalone workspace build"},
+		); err != nil {
+			return "", err
+		}
+	}
 	if r.imageBackend == nil {
 		return "", fmt.Errorf("building requires an image backend")
 	}

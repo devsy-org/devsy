@@ -13,24 +13,21 @@ import (
 func newStatusReporter(
 	resultFormat string,
 	out io.Writer,
-	verbose ...bool,
+	verbose bool,
+	noStatus bool,
 ) (status.Reporter, error) {
-	showDurations := len(verbose) > 0 && verbose[0]
-	r, err := status.NewReporter(status.ReporterOptions{
-		Format:                 resultFormat,
-		Out:                    out,
-		Prefix:                 "provider",
-		Labels:                 phaseLabels,
-		Verbose:                showDurations,
-		SuppressFailureDetails: true,
+	return status.NewCLIReporter(status.CLIOptions{
+		Format:   resultFormat,
+		Out:      out,
+		Prefix:   "provider",
+		Verbose:  verbose,
+		NoStatus: noStatus,
+		Pipeline: status.PipelineProvider,
+		Labels:   phaseLabels,
 		Envelope: func(e status.Event) error {
 			return config2.WriteStatusJSON(out, e)
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
-	return status.ForPipeline(r, status.PipelineProvider), nil
 }
 
 var phaseLabels = map[status.Phase]string{

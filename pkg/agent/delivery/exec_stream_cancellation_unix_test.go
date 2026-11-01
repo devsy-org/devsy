@@ -129,27 +129,17 @@ func cancellationDeliveryExecutor(
 	t *testing.T, runtime driver.ArgvExecDriver, canceled chan<- error,
 ) func(context.Context, []string, driver.Streams) error {
 	return func(ctx context.Context, argv []string, streams driver.Streams) error {
+		err := runtime.CommandContainerArgv(ctx, "owned-delivery-test", argv, streams)
 		if streams.Stdin != nil {
-			callbackDone := make(chan struct{})
-			stop := context.AfterFunc(ctx, func() {
-				defer close(callbackDone)
+			if cause := context.Cause(ctx); cause != nil {
 				select {
-				case canceled <- context.Cause(ctx):
+				case canceled <- cause:
 				default:
 					t.Error("unexpected extra attempt cancellation")
 				}
-			})
-			defer func() {
-				if !stop() {
-					select {
-					case <-callbackDone:
-					case <-time.After(execStreamCancellationTestBound):
-						t.Error("attempt observer callback did not join")
-					}
-				}
-			}()
+			}
 		}
-		return runtime.CommandContainerArgv(ctx, "owned-delivery-test", argv, streams)
+		return err
 	}
 }
 

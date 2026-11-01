@@ -58,8 +58,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerAddInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Source == "" {
-			return errorResult(fmt.Errorf("source is required")), opOK{}, nil
+		if err := requireField("source", in.Source); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderAdd(ctx, g, in) })
 	}))
@@ -70,8 +70,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderDelete(ctx, g, in.Name) })
 	}))
@@ -84,8 +84,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderUse(ctx, g, in.Name) })
 	}))
@@ -148,14 +148,11 @@ func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) e
 		return err
 	}
 
-	opLock, err := provider.GetProviderOperationLock(devsyConfig.DefaultContext, name)
+	unlock, err := provider.LockProvider(devsyConfig.DefaultContext, name)
 	if err != nil {
-		return fmt.Errorf("get operation lock: %w", err)
+		return err
 	}
-	if err := opLock.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock: %w", err)
-	}
-	defer func() { _ = opLock.Unlock() }()
+	defer unlock()
 
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, g.Provider)
 	if err != nil {

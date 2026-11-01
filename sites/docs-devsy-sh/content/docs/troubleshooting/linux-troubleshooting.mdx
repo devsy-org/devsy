@@ -15,9 +15,33 @@ sudo chown -R $(id -un):$(id -gn) .
 
 Local folders suit early work. Once the devcontainer works, push it to a Git repository and use that instead.
 
-### Fish shell
+### SSH host login shells
 
-Anything in `config.fish` runs on every `fish -c` call, which can interfere with `devsy agent workspace up`. Move your customizations inside the `if status is-interactive` block:
+The SSH provider supports Bash, Zsh, and Fish login shells on Linux. Agent installation runs through the host's executable `/bin/sh`; interactive terminals and environment probing continue to use the account's configured shell. The workspace container's shell is configured separately.
+
+Dockerless containers are a separate bootstrap case: before their image filesystem is built, core can use the fixed `/.dockerless/bin/sh` bundle when `DOCKERLESS=true`, `/bin/sh` is not executable, and that bundled shell is executable. `/bin/sh` remains preferred when available. This does not change the SSH host prerequisite above.
+
+The host needs standard bootstrap tools, including `mkdir`, `mktemp`, `head` with `-c`, `wc`, `chmod`, `mv`, and `rm`. A download uses `curl` or `wget`; when neither is available, Devsy can transfer the agent over the SSH connection. The agent directory must permit execution and either be writable by the account or allow noninteractive privilege escalation.
+
+Both the external OpenSSH client and the built-in SSH transport use the same bootstrap launcher; switching transports does not repair a missing `/bin/sh` or a restricted account.
+
+For locked-down accounts, ask the administrator to permit `/bin/sh` and the required tools, provide a writable executable agent directory, and check forced-command restrictions. Keep noninteractive shell startup output off stdout: it carries the bootstrap protocol and the live SSH tunnel. Send diagnostics to stderr and limit banners and prompts to interactive sessions.
+
+### VS Code SSH connection timeout
+
+If Remote - SSH reports `Connection timed out during banner exchange`, a slow provider connection can exceed its default timeout. Increase `remote.SSH.connectTimeout` in VS Code user settings, for example to `60` seconds, and reconnect. This applies to all Remote - SSH hosts.
+
+### Workspace waits for the Devsy agent
+
+If container logs repeatedly report `waiting for devsy agent to be available`, check whether the container's `DEVSY_AGENT_PATH` exists and whether its agent volume is mounted. A container created without the agent mount must be recreated after updating Devsy; restarting it cannot change its mounts.
+
+If a configured mount uses `/opt/devsy` or a path inside it, Devsy preserves that mount and installs the agent after the container starts. Docker mount flags in `runArgs` also use post-start installation.
+
+Recreating a container discards changes in its writable layer. Back up any data outside persistent workspace mounts before recreating it.
+
+### Fish startup configuration
+
+Anything in `config.fish` runs on every `fish -c` call, which can interfere with `devsy internal agent workspace up`. Move your customizations inside the `if status is-interactive` block:
 
 ```
 if status is-interactive
@@ -39,6 +63,22 @@ With SELinux, a mounted volume can fail with "Permission denied" even when owner
     ]
 }
 ```
+
+### Generic application icon on GNOME
+
+GNOME on Wayland associates a running application with an installed desktop entry. Devsy uses the desktop filename `sh.devsy.app.desktop` and window identity `sh.devsy.app`. Flatpak exports a theme icon named `sh.devsy.app`; electron-builder's DEB/RPM packages retain the icon name `devsy-desktop`. The icon name must match the package's desktop entry, not necessarily its application ID.
+
+Directly executing an AppImage does not install its embedded desktop entry. Choose **Add to applications** in the first-launch prompt, or open **Settings > Applications menu**. Devsy writes `$XDG_DATA_HOME/applications/sh.devsy.app.desktop` and copies the 128-pixel icon to `$XDG_DATA_HOME/icons/hicolor/128x128/apps/sh.devsy.app.png` (default data home: `~/.local/share`). The launcher uses the permanent AppImage path, never its temporary mount.
+
+Declining leaves the AppImage usable, but a generic or ungrouped GNOME Wayland icon can remain until desktop integration is installed. If a third-party integrator already manages this AppImage, keep using that integration; Devsy reports the existing launcher rather than creating a duplicate. An existing system or Flatpak Devsy launcher also blocks installation. Remove the conflicting installation or manage its launcher yourself before retrying.
+
+If you move the AppImage, launch it once from its new path to update Devsy's owned launcher automatically. Settings also offers **Update launcher** and **Remove**. Paths containing `=` cannot be represented in a desktop launcher; move the AppImage to another path. Read-only data directories and other integration failures are reported without preventing normal Devsy use.
+
+If you edit a launcher created by Devsy, Devsy leaves the entire edited file unchanged, including during updates or removal. Settings reports the conflict; manage that launcher manually or move it aside before using **Add to applications** again. A customized, shared or pre-existing icon is preserved when repairing or re-adding a launcher and is not claimed for later deletion.
+
+For manual integration, both the desktop entry and a persistent icon file must be installed. Do not reference an icon inside `/tmp/.mount_*`: it disappears when the AppImage exits. Use the package-specific icon name described above, or copy an icon to the user's icon-theme directory and reference that name. Refreshing the icon cache alone cannot repair a missing desktop entry or asset.
+
+After upgrading from v1.24.0, an old pinned launcher may still reference a previous desktop filename. Unpin that launcher and pin Devsy again. Check the applications directories for older `devsy-desktop.desktop` entries before creating another launcher; do not delete entries owned by another package.
 
 ### `ENAMETOOLONG` when opening a workspace in VS Code
 
@@ -82,7 +122,7 @@ devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/
 sudo apt-get install -y podman-compose
 ```
 
-Install this on the host that runs Podman to support Compose-based workspaces. It does not install Compose inside the workspace container. If workspace scripts call `docker-compose` or `podman compose`, install those tools separately in the container.
+Install it on the host that runs Podman to support Compose-based workspaces. If scripts inside the workspace container call `docker-compose` or `podman compose`, install those tools in the container too.
 
 #### BuildKit syntax
 

@@ -57,23 +57,17 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	lock1, err := provider.GetProviderOperationLock(devsyConfig.DefaultContext, names[0])
+	unlock1, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[0])
 	if err != nil {
-		return fmt.Errorf("get operation lock for %s: %w", names[0], err)
+		return err
 	}
-	if err := lock1.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock for %s: %w", names[0], err)
-	}
-	defer func() { _ = lock1.Unlock() }()
+	defer unlock1()
 
-	lock2, err := provider.GetProviderOperationLock(devsyConfig.DefaultContext, names[1])
+	unlock2, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[1])
 	if err != nil {
-		return fmt.Errorf("get operation lock for %s: %w", names[1], err)
+		return err
 	}
-	if err := lock2.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock for %s: %w", names[1], err)
-	}
-	defer func() { _ = lock2.Unlock() }()
+	defer unlock2()
 
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
@@ -240,8 +234,8 @@ func (r *renameState) restoreProviderState(ctx context.Context) error {
 	return errs
 }
 
-// validateProviderRename verifies that the provider exists, is not a pro
-// provider, is not backing a pro instance, and has configuration state.
+// validateProviderRename verifies that the provider exists, is not a platform
+// provider, is not backing a platform instance, and has configuration state.
 func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 	providerWithOptions, err := workspace.FindProvider(devsyConfig, oldName)
 	if err != nil {
@@ -250,17 +244,19 @@ func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 
 	if providerWithOptions.Config.IsProxyProvider() ||
 		providerWithOptions.Config.IsDaemonProvider() {
-		return fmt.Errorf("cannot rename a pro provider; pro providers are managed by the platform")
+		return fmt.Errorf(
+			"cannot rename a platform provider; platform providers are managed by the platform",
+		)
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
-		return fmt.Errorf("listing pro instances: %w", err)
+		return fmt.Errorf("listing platform instances: %w", err)
 	}
-	for _, inst := range proInstances {
+	for _, inst := range platformInstances {
 		if inst.Provider == oldName {
 			return fmt.Errorf(
-				"cannot rename provider %s: it is used by pro instance %s",
+				"cannot rename provider %s: it is used by platform instance %s",
 				oldName,
 				inst.Host,
 			)

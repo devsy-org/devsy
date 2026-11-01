@@ -77,7 +77,7 @@ func Templates(
 		return nil, err
 	}
 
-	templateList, err := managementClient.Loft().
+	templateList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		ListTemplates(ctx, projectName, metav1.GetOptions{})
@@ -99,7 +99,7 @@ func FindTemplate(
 	managementClient kube.Interface,
 	projectName, templateName string,
 ) (*managementv1.DevsyWorkspaceTemplate, error) {
-	templateList, err := managementClient.Loft().
+	templateList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		ListTemplates(ctx, projectName, metav1.GetOptions{})

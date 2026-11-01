@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -12,7 +13,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
 const (
@@ -23,15 +25,26 @@ const (
 	snapshotImageLabel = "sh.devsy.snapshot=true"
 )
 
+func (d *dockerDriver) requireDevContainer(
+	ctx context.Context,
+	workspaceID string,
+) (*config.ContainerDetails, error) {
+	container, err := d.FindDevContainer(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	} else if container == nil {
+		return nil, fmt.Errorf("container not found")
+	}
+	return container, nil
+}
+
 func (d *dockerDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
 ) error {
-	container, err := d.FindDevContainer(ctx, params.WorkspaceID)
+	container, err := d.requireDevContainer(ctx, params.WorkspaceID)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	if err := d.ensureContainerRunning(ctx, container); err != nil {
@@ -172,22 +185,30 @@ func (d *dockerDriver) waitForRestart(
 	}
 }
 
-func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error {
+// runLoggedDockerCommand runs a docker subcommand and streams its output to the info log.
+func (d *dockerDriver) runLoggedDockerCommand(
+	ctx context.Context,
+	subcommand string,
+	args []string,
+) error {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
+	log.Debugf(
+		"running docker %s command: command=%s, args=%s",
+		subcommand,
+		d.Docker.DockerCommand,
+		strings.Join(args, " "),
+	)
+	return d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
+}
+
+func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error {
 	args := []string{
 		"push",
 		image,
 	}
-
-	log.Debugf(
-		"running docker push command: command=%s, args=%s",
-		d.Docker.DockerCommand,
-		strings.Join(args, " "),
-	)
-	err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
-	if err != nil {
+	if err := d.runLoggedDockerCommand(ctx, "push", args); err != nil {
 		return fmt.Errorf("push image: %w", err)
 	}
 
@@ -195,22 +216,12 @@ func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error
 }
 
 func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	args := []string{
 		"tag",
 		image,
 		tag,
 	}
-
-	log.Debugf(
-		"running docker tag command: command=%s, args=%s",
-		d.Docker.DockerCommand,
-		strings.Join(args, " "),
-	)
-	err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
-	if err != nil {
+	if err := d.runLoggedDockerCommand(ctx, "tag", args); err != nil {
 		return fmt.Errorf("tag image: %w", err)
 	}
 
@@ -225,17 +236,8 @@ func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag str
 		return fmt.Errorf("container not found: workspaceID=%s", workspaceID)
 	}
 
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	args := []string{"commit", "--change", "LABEL " + snapshotImageLabel, container.ID, tag}
-
-	log.Debugf(
-		"running docker commit command: command=%s, args=%s",
-		d.Docker.DockerCommand,
-		strings.Join(args, " "),
-	)
-	if err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer}); err != nil {
+	if err := d.runLoggedDockerCommand(ctx, "commit", args); err != nil {
 		return fmt.Errorf("commit container %s: %w", container.ID, err)
 	}
 
@@ -262,22 +264,18 @@ func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 }
 
 func (d *dockerDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
-	container, err := d.FindDevContainer(ctx, workspaceId)
+	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	return d.Docker.StartContainer(ctx, container.ID)
 }
 
 func (d *dockerDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
-	container, err := d.FindDevContainer(ctx, workspaceId)
+	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	return d.Docker.Stop(ctx, container.ID)
@@ -300,11 +298,9 @@ func (d *dockerDriver) GetDevContainerLogs(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	container, err := d.FindDevContainer(ctx, workspaceId)
+	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	return d.Docker.GetContainerLogs(ctx, container.ID, stdout, stderr)
@@ -339,8 +335,9 @@ func (d *dockerDriver) RunImageDevContainer(
 }
 
 var (
-	imageInspectPollInterval = 500 * time.Millisecond
-	imageInspectPollTimeout  = 10 * time.Second
+	imageInspectPollInterval    = 500 * time.Millisecond
+	imageInspectPollMaxAttempts = 20
+	imageInspectAttemptTimeout  = 10 * time.Second
 )
 
 func (d *dockerDriver) EnsureImage(
@@ -384,30 +381,32 @@ func (d *dockerDriver) inspectImage(ctx context.Context, options *driver.RunOpti
 	return d.waitForLocalImage(ctx, options.Image)
 }
 
-// waitForLocalImage inspects image, retrying while the only failure is
-// ErrImageNotFound. Any other inspect error (e.g. daemon unreachable) stops
-// the retry immediately. Returns nil once found, or the last ErrImageNotFound
-// once imageInspectPollTimeout elapses without the image appearing.
+// waitForLocalImage retries image-not-found failures up to a bounded number
+// of attempts. Each inspection also has its own deadline so a stalled Docker
+// CLI cannot block workspace startup indefinitely.
 func (d *dockerDriver) waitForLocalImage(ctx context.Context, image string) error {
 	var lastErr error
-	pollErr := wait.PollUntilContextTimeout(
-		ctx, imageInspectPollInterval, imageInspectPollTimeout, true,
-		func(ctx context.Context) (bool, error) {
-			_, err := d.Docker.InspectImage(ctx, image, false)
-			if err == nil {
-				return true, nil
+	for attempt := 1; attempt <= imageInspectPollMaxAttempts; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(imageInspectPollInterval):
 			}
-			if errors.Is(err, docker.ErrImageNotFound) {
-				lastErr = err
-				return false, nil
-			}
-			return false, err
-		},
-	)
-	if pollErr != nil && lastErr != nil {
-		return lastErr
+		}
+
+		inspectCtx, cancel := context.WithTimeout(ctx, imageInspectAttemptTimeout)
+		_, err := d.Docker.InspectImage(inspectCtx, image, false)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, docker.ErrImageNotFound) {
+			return err
+		}
+		lastErr = err
 	}
-	return pollErr
+	return lastErr
 }
 
 func (d *dockerDriver) startContainer(
@@ -426,7 +425,15 @@ func (d *dockerDriver) startContainer(
 	logHostEnvOnce(ctx, d.Docker)
 	logBindSources(args)
 
-	err := d.Docker.RunWithDir(ctx, dir, args, docker.Streams{Stdout: writer, Stderr: writer})
+	stderr := subprocess.NewBuffer(
+		secrets.NewEnvironmentRedactor(append(os.Environ(), d.Docker.Environment...)),
+	)
+	err := d.Docker.RunWithDir(
+		ctx,
+		dir,
+		args,
+		docker.Streams{Stdout: writer, Stderr: io.MultiWriter(writer, stderr)},
+	)
 	if err != nil {
 		log.Errorf(
 			"docker container failed to start: error=%v, command=%s, args=%s, cwd=%s",
@@ -435,6 +442,9 @@ func (d *dockerDriver) startContainer(
 			strings.Join(args, " "),
 			dir,
 		)
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return fmt.Errorf("failed to start dev container: %w: %s", err, detail)
+		}
 		return fmt.Errorf("failed to start dev container: %w", err)
 	}
 	return nil

@@ -1,5 +1,12 @@
 {
   "id": "overlay-feature",
   "version": "1.0.0",
-  "name": "overlay-feature"
+  "name": "overlay-feature",
+  "postStartCommand": "echo overlay >> /tmp/overlay-starts",
+  "options": {
+    "marker": {
+      "type": "string",
+      "default": "first"
+    }
+  }
 }

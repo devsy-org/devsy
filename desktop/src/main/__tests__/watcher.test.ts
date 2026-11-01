@@ -1,6 +1,15 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
+import { DaemonState } from "../state.js"
 import { parseProviderEntries, Watcher } from "../watcher.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
+
+const fixtureDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../test-fixtures/provider-icons",
+)
 
 function makeWatcher(
   runProviderList: () => Promise<Record<string, unknown>>,
@@ -9,6 +18,8 @@ function makeWatcher(
 ) {
   const state = {
     updateProviders: vi.fn().mockReturnValue(false),
+    updateWorkspaces: vi.fn().mockReturnValue(false),
+    providerReadRevision: vi.fn().mockReturnValue(0),
     providerList: vi.fn().mockReturnValue([]),
     workspaceList: vi.fn().mockReturnValue(workspaces),
     updateWorkspaceStatus: vi.fn((id: string, status: string) => {
@@ -63,6 +74,33 @@ describe("parseProviderEntries", () => {
     expect(legacy).toMatchObject({ name: "legacy-provider", deprecated: false })
     expect(external).toMatchObject({ name: "microsandbox", deprecated: false })
   })
+
+  it("carries provider-owned icon fields from the CLI list JSON to renderer fields", () => {
+    const raw = JSON.parse(
+      readFileSync(join(fixtureDir, "provider-list.json"), "utf8"),
+    )
+
+    const [provider] = parseProviderEntries(raw)
+
+    expect(provider).toMatchObject({
+      name: "my-docker-fleet",
+      icon: "assets/light.svg",
+      iconDark: "assets/dark.svg",
+      iconRevision: "rev-a",
+    })
+  })
+
+  it("defaults icon fields to empty strings for providers without icons", () => {
+    const [provider] = parseProviderEntries({
+      plain: { config: { name: "plain" } },
+    })
+
+    expect(provider).toMatchObject({
+      icon: "",
+      iconDark: "",
+      iconRevision: "",
+    })
+  })
 })
 
 describe("Watcher.refreshProviders", () => {
@@ -107,6 +145,80 @@ describe("Watcher.refreshProviders", () => {
     await Promise.all([first, second])
 
     expect(events).toEqual(["start-1", "end-1", "start-2", "end-2"])
+  })
+
+  it("discards a provider snapshot read before a confirmed mode write", async () => {
+    let release!: (value: Record<string, unknown>) => void
+    const state = new DaemonState()
+    state.updateProviders([
+      { name: "docker", state: { initialized: true, singleMachine: true } },
+    ])
+    const cli = {
+      run: vi.fn(
+        () =>
+          new Promise<Record<string, unknown>>((resolve) => {
+            release = resolve
+          }),
+      ),
+    }
+    const watcher = new Watcher({
+      cli: cli as never,
+      state,
+      getMainWindow: () => null,
+      providerJobs: { snapshot: () => ({}) } as never,
+      workspaceJobs: new WorkspaceJobs(),
+    })
+
+    const polling = watcher.refreshProviders()
+    await vi.waitFor(() => expect(cli.run).toHaveBeenCalledOnce())
+    state.confirmProviderSingleMachine("docker", false)
+    release({
+      docker: {
+        config: { name: "docker" },
+        state: { initialized: true, singleMachine: true },
+      },
+    })
+    await polling
+
+    expect(state.providerList()[0].state?.singleMachine).toBe(false)
+  })
+
+  it("reads providers from the CLI after a mode write instead of the daemon cache", async () => {
+    const state = new DaemonState()
+    state.updateProviders([
+      { name: "docker", state: { initialized: true, singleMachine: false } },
+    ])
+    state.confirmProviderSingleMachine("docker", false)
+    const daemon = {
+      listProviders: vi.fn(async () => ({
+        docker: {
+          config: { name: "docker" },
+          state: { initialized: true, singleMachine: false },
+        },
+      })),
+    }
+    const cli = {
+      run: vi.fn(async () => ({
+        docker: {
+          config: { name: "docker" },
+          state: { initialized: true, singleMachine: true },
+        },
+      })),
+    }
+    const watcher = new Watcher({
+      cli: cli as never,
+      daemon: daemon as never,
+      state,
+      getMainWindow: () => null,
+      providerJobs: { snapshot: () => ({}) } as never,
+      workspaceJobs: new WorkspaceJobs(),
+    })
+
+    await watcher.refreshProviders()
+
+    expect(daemon.listProviders).not.toHaveBeenCalled()
+    expect(cli.run).toHaveBeenCalledExactlyOnceWith(["provider", "list"])
+    expect(state.providerList()[0].state?.singleMachine).toBe(true)
   })
 })
 
@@ -253,4 +365,132 @@ describe("workspace status ordering", () => {
     cli.runRaw.mockResolvedValue('{"state":"Stopped"}')
     await expect(watcher.refreshWorkspaceStatus("ws")).resolves.toBeUndefined()
   })
+})
+
+describe("Watcher job broadcasts", () => {
+  it.each(
+    ["success", "failure"].flatMap((outcome) =>
+      ["send", "lookup", "window", "contents"].map((boundary) => [
+        outcome,
+        boundary,
+      ]),
+    ),
+  )(
+    "keeps %s reconciliation independent of renderer %s failure",
+    async (outcome, boundary) => {
+      const state = new DaemonState()
+      const workspaceJobs = new WorkspaceJobs()
+      const send = vi.fn()
+      const win = {
+        isDestroyed: vi.fn(() => false),
+        webContents: { isDestroyed: vi.fn(() => false), send },
+      }
+      const getMainWindow = vi.fn(() => win)
+      const cli = {
+        run: vi.fn(async () => [{ id: "ws", context: "default" }]),
+        runRaw: vi.fn(async () => JSON.stringify({ state: "running" })),
+      }
+      const watcher = new Watcher({
+        cli: cli as never,
+        state,
+        getMainWindow: getMainWindow as never,
+        providerJobs: { snapshot: () => ({}) } as never,
+        workspaceJobs,
+      })
+      workspaceJobs.onChange(() => watcher.broadcastWorkspaces())
+      const refresh = vi.fn(async () => {
+        await watcher.refreshWorkspaces()
+        await watcher.refreshWorkspaceStatus("ws")
+        watcher.broadcastWorkspaces()
+      })
+      workspaceJobs.setRefresh(refresh)
+      const generation = workspaceJobs.start("ws", "creating", "first")
+      send.mockClear()
+      if (boundary === "send")
+        send.mockImplementation(() => {
+          throw new Error("renderer delivery failed")
+        })
+      if (boundary === "lookup")
+        getMainWindow.mockImplementation(() => {
+          throw new Error("window lookup failed")
+        })
+      if (boundary === "window") win.isDestroyed.mockReturnValue(true)
+      if (boundary === "contents")
+        win.webContents.isDestroyed.mockReturnValue(true)
+      expect(() =>
+        workspaceJobs.phase("ws", "first", "Launching command"),
+      ).not.toThrow()
+      expect(() =>
+        workspaceJobs.progress("ws", "first", {
+          phase: "building_image",
+          state: "started",
+        }),
+      ).not.toThrow()
+      const originalError = outcome === "failure" ? "invalid ID" : undefined
+      await expect(
+        workspaceJobs.finish("ws", generation, originalError),
+      ).resolves.toBeUndefined()
+      expect(refresh).toHaveBeenCalledOnce()
+      expect(cli.run).toHaveBeenCalledExactlyOnceWith([
+        "workspace",
+        "list",
+        "--skip-platform",
+      ])
+      expect(cli.runRaw).toHaveBeenCalledOnce()
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        state: outcome === "failure" ? "failed" : "succeeded",
+        error: originalError,
+        refreshError: undefined,
+      })
+      if (boundary === "window" || boundary === "contents")
+        expect(send).not.toHaveBeenCalled()
+      expect(() => workspaceJobs.start("ws", "creating", "retry")).not.toThrow()
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        commandId: "retry",
+        state: "running",
+      })
+    },
+  )
+})
+
+describe("Watcher log confirmation", () => {
+  it.each([undefined, "command denied"])(
+    "preserves log failures through polling and manual refresh (%s)",
+    async (error) => {
+      const { watcher, workspaceJobs } = makeWatcher(async () => ({}))
+      const refresh = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("offline"))
+        .mockResolvedValue(undefined)
+      workspaceJobs.setRefresh(refresh)
+      const generation = workspaceJobs.start("ws", "creating", "first")
+      await workspaceJobs.finish(
+        "ws",
+        generation,
+        error,
+        "Workspace log could not be saved: disk unavailable",
+      )
+      await (watcher as unknown as { pollOnce(): Promise<void> }).pollOnce()
+      expect(refresh).not.toHaveBeenCalled()
+      await workspaceJobs.retryRefresh("ws")
+      expect(workspaceJobs.get("ws")?.refreshError).toBe("offline")
+      await (watcher as unknown as { pollOnce(): Promise<void> }).pollOnce()
+      for (let i = 0; i < 20; i++) await Promise.resolve()
+      if (error) await workspaceJobs.retryRefresh("ws")
+      expect(refresh).toHaveBeenCalledTimes(2)
+      await workspaceJobs.retryRefresh("ws")
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        state: error ? "failed" : "reconciling",
+        logError: "Workspace log could not be saved: disk unavailable",
+        refreshError: undefined,
+        error,
+      })
+      const next = workspaceJobs.start("ws", "creating", "retry")
+      expect(next).not.toBe(generation)
+      expect(workspaceJobs.get("ws")?.state).toBe("running")
+      expect(workspaceJobs.get("ws")?.logError).toBeUndefined()
+      await workspaceJobs.finish("ws", generation)
+      expect(workspaceJobs.get("ws")?.commandId).toBe("retry")
+    },
+  )
 })

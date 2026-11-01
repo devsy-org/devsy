@@ -44,7 +44,7 @@ To check whether a workspace is running, use `devsy workspace status <name> --re
 
 ## Agent skill
 
-Devsy also publishes an agent skill that teaches an agent how to pick workspaces and providers, run commands, and recover from timeouts. It is separate from the MCP server: installing it does not install Devsy or configure MCP. It needs Node.js for `npx`.
+Devsy also publishes an agent skill that teaches an agent how to pick workspaces and providers, run commands, and recover from timeouts. It is separate from the MCP server, so install Devsy and configure MCP on their own. Installing the skill needs Node.js for `npx`.
 
 ```sh
 npx skills add devsy-org/devsy --skill devsy

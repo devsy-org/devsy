@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/config"
+	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/sharedfile"
@@ -22,10 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	activityHeartbeatInterval = 10 * time.Second
-	activityFileMode          = 0o666
-)
+const activityFileMode = 0o666
 
 // shutdownTimeout bounds the grace period for in-flight SSH connections to
 // drain on context cancel before the listener is force-closed.
@@ -62,7 +59,7 @@ func NewSSHServerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	f.BoolVar(&cmd.stdio, names.Stdio, false,
 		"Listen on stdin/stdout instead of an address")
 	f.BoolVar(&cmd.trackActivity, names.TrackActivity, false,
-		"Touch the activity file every "+activityHeartbeatInterval.String()+" (only with --stdio)")
+		"Record activity while connected (only with --stdio)")
 	f.StringVar(&cmd.reuseSSHAuthSock, names.ReuseSSHAuthSock, "",
 		"If set, reuse a pre-existing SSH_AUTH_SOCK in the workspace under /tmp")
 	_ = f.MarkHidden(names.ReuseSSHAuthSock)
@@ -106,12 +103,21 @@ func (cmd *sshServerCmd) run(ctx context.Context) error {
 
 func (cmd *sshServerCmd) serveStdio(ctx context.Context, server sshserver.Server) error {
 	if cmd.trackActivity {
-		go runActivityHeartbeat(ctx, config.ContainerActivityFile)
+		workCtx, stop, err := agentd.StartActivityWriter(ctx, agentd.DefaultActivityInterval)
+		if err != nil {
+			return fmt.Errorf("register SSH activity: %w", err)
+		}
+		ctx = workCtx
+		defer stop()
 	}
 	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
 	lis := stdio.NewStdioListener(os.Stdin, os.Stdout)
 	log.Debug("serving ssh on stdio")
-	return ignoreServerClosed(server.Serve(lis))
+	err := ignoreServerClosed(server.Serve(lis))
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+		return cause
+	}
+	return err
 }
 
 func (cmd *sshServerCmd) serveListener(ctx context.Context, server sshserver.Server) error {
@@ -204,44 +210,11 @@ func decodeBase64Bytes(encoded, label string) ([]byte, error) {
 	return out, nil
 }
 
-// runActivityHeartbeat periodically updates the activity file's mtime so
-// outside watchers can detect liveness. Exits when ctx is canceled. Logs
-// only on success/failure transitions so a permanently broken file does
-// not spam the log.
-func runActivityHeartbeat(ctx context.Context, path string) {
-	if err := ensureActivityFile(path); err != nil {
-		log.Errorf("activity heartbeat: ensure file: %v", err)
-		return
-	}
-
-	t := time.NewTicker(activityHeartbeatInterval)
-	defer t.Stop()
-
-	var lastErr error
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-t.C:
-			err := os.Chtimes(path, now, now)
-			if (err == nil) != (lastErr == nil) {
-				if err != nil {
-					log.Errorf("activity heartbeat: %v", err)
-				} else {
-					log.Infof("activity heartbeat recovered")
-				}
-			}
-			lastErr = err
-		}
-	}
-}
-
 func ensureActivityFile(path string) error {
 	return sharedfile.EnsureMode(path, activityFileMode)
 }
 
-// touchActivityFile is for callers reporting activity on discrete events
-// rather than runActivityHeartbeat's fixed interval (e.g. fleet-server).
+// touchActivityFile records discrete legacy activity (for example fleet-server).
 func touchActivityFile(path string) {
 	if err := ensureActivityFile(path); err != nil {
 		log.Errorf("touch activity file: ensure file: %v", err)

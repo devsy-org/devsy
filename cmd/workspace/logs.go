@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -64,7 +65,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	sshServerCmd := fmt.Sprintf("'%s' internal ssh-server --stdio", client.AgentPath())
+	sshServerCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
 	if log.DebugEnabled() {
 		sshServerCmd += " --debug"
 	}
@@ -167,10 +168,10 @@ func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) er
 	defer func() { _ = session.Close() }()
 
 	agentCommand := fmt.Sprintf(
-		"%q internal agent workspace logs --context %q --id %q",
-		client.AgentPath(),
-		client.Context(),
-		client.Workspace(),
+		"%s internal agent workspace logs --context %s --id %s",
+		shellescape.Quote(client.AgentPath()),
+		shellescape.Quote(client.Context()),
+		shellescape.Quote(client.Workspace()),
 	)
 	if log.DebugEnabled() {
 		agentCommand += " --debug"

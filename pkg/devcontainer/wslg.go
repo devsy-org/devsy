@@ -154,6 +154,21 @@ func (r *runner) checkWSLgReuse(details *config.ContainerDetails, recreate bool)
 	)
 }
 
+// A stopped container keeps display values and socket mounts from creation.
+func checkWSLgResume(details *config.ContainerDetails) error {
+	replay, err := readWSLgReplay(details)
+	if err != nil {
+		return err
+	}
+	if replay == nil {
+		return nil
+	}
+	return fmt.Errorf(
+		"WSLg workspace container is stopped; rerun workspace up with --recreate " +
+			"to refresh display environment and socket mounts before connecting",
+	)
+}
+
 func replayMatches(previous, current *wslgReplay) bool {
 	return previous != nil && current != nil && previous.Target == current.Target &&
 		maps.Equal(previous.Environment, current.Environment)

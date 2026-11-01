@@ -11,7 +11,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	loftclient "github.com/devsy-org/api/pkg/clientset/versioned"
+	devsyclient "github.com/devsy-org/api/pkg/clientset/versioned"
 	informers "github.com/devsy-org/api/pkg/informers/externalversions"
 	informermanagementv1 "github.com/devsy-org/api/pkg/informers/externalversions/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
@@ -49,15 +49,15 @@ func NewWorkspacesCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return c
 }
 
-type ProWorkspaceInstance struct {
+type WorkspaceInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
 
 	Spec   managementv1.DevsyWorkspaceInstanceSpec `json:"spec"`
-	Status ProWorkspaceInstanceStatus              `json:"status"`
+	Status WorkspaceInstanceStatus                 `json:"status"`
 }
 
-type ProWorkspaceInstanceStatus struct {
+type WorkspaceInstanceStatus struct {
 	managementv1.DevsyWorkspaceInstanceStatus `json:",inline"`
 
 	Source *provider.WorkspaceSource    `json:"source,omitempty"`
@@ -74,7 +74,7 @@ func (cmd *WorkspacesCmd) Run(
 		cmd.Context = config.DefaultContext
 	}
 
-	projectName := os.Getenv(config.EnvLoftProject)
+	projectName := os.Getenv(config.EnvProject)
 	if projectName == "" {
 		return fmt.Errorf("project name not found")
 	}
@@ -89,7 +89,7 @@ func (cmd *WorkspacesCmd) Run(
 		return err
 	}
 
-	clientset, err := loftclient.NewForConfig(managementConfig)
+	clientset, err := devsyclient.NewForConfig(managementConfig)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (cmd *WorkspacesCmd) Run(
 	workspaceInformer := factory.Management().V1().DevsyWorkspaceInstances()
 
 	self := baseClient.Self()
-	filterByOwner := os.Getenv(config.EnvLoftFilterByOwner) == config.BoolTrue
+	filterByOwner := os.Getenv(config.EnvFilterByOwner) == config.BoolTrue
 	instanceStore := newStore(workspaceInformer, self, cmd.Context, filterByOwner)
 
 	_, err = workspaceInformer.Informer().
@@ -175,7 +175,7 @@ type instanceStore struct {
 	filterByOwner bool
 
 	m         sync.Mutex
-	instances map[string]*ProWorkspaceInstance
+	instances map[string]*WorkspaceInstance
 }
 
 func newStore(
@@ -189,7 +189,7 @@ func newStore(
 		self:          self,
 		context:       context,
 		filterByOwner: filterByOwner,
-		instances:     map[string]*ProWorkspaceInstance{},
+		instances:     map[string]*WorkspaceInstance{},
 	}
 }
 
@@ -198,11 +198,11 @@ func (s *instanceStore) Add(instance *managementv1.DevsyWorkspaceInstance) {
 		return
 	}
 
-	proInstance := s.buildProInstance(instance)
+	platformInstance := s.buildInstance(instance)
 
 	key := s.key(instance.ObjectMeta)
 	s.m.Lock()
-	s.instances[key] = proInstance
+	s.instances[key] = platformInstance
 	s.m.Unlock()
 }
 
@@ -224,8 +224,8 @@ func (s *instanceStore) Delete(instance *managementv1.DevsyWorkspaceInstance) {
 	delete(s.instances, key)
 }
 
-func (s *instanceStore) List() []*ProWorkspaceInstance {
-	instanceList := []*ProWorkspaceInstance{}
+func (s *instanceStore) List() []*WorkspaceInstance {
+	instanceList := []*WorkspaceInstance{}
 	// Check local imported workspaces
 	// Eventually this should be implemented by filtering based on ownership and access
 	// on the CRD, for now we're stuck with this approach...
@@ -235,8 +235,8 @@ func (s *instanceStore) List() []*ProWorkspaceInstance {
 	)
 	if err == nil {
 		for _, workspace := range localWorkspaces {
-			if proInstance := s.importedProInstance(workspace); proInstance != nil {
-				instanceList = append(instanceList, proInstance)
+			if instance := s.importedInstance(workspace); instance != nil {
+				instanceList = append(instanceList, instance)
 			}
 		}
 	}
@@ -254,9 +254,9 @@ func (s *instanceStore) key(meta metav1.ObjectMeta) string {
 	return fmt.Sprintf("%s/%s", meta.Namespace, meta.Name)
 }
 
-func (s *instanceStore) buildProInstance(
+func (s *instanceStore) buildInstance(
 	instance *managementv1.DevsyWorkspaceInstance,
-) *ProWorkspaceInstance {
+) *WorkspaceInstance {
 	var source *provider.WorkspaceSource
 	if instance.GetAnnotations() != nil &&
 		instance.GetAnnotations()[storagev1.DevsyWorkspaceSourceAnnotation] != "" {
@@ -274,11 +274,11 @@ func (s *instanceStore) buildProInstance(
 		}
 	}
 
-	return &ProWorkspaceInstance{
+	return &WorkspaceInstance{
 		TypeMeta:   instance.TypeMeta,
 		ObjectMeta: instance.ObjectMeta,
 		Spec:       instance.Spec,
-		Status: ProWorkspaceInstanceStatus{
+		Status: WorkspaceInstanceStatus{
 			DevsyWorkspaceInstanceStatus: instance.Status,
 			Source:                       source,
 			IDE:                          ideConfig,
@@ -286,10 +286,10 @@ func (s *instanceStore) buildProInstance(
 	}
 }
 
-func (s *instanceStore) importedProInstance(
+func (s *instanceStore) importedInstance(
 	workspace *provider.Workspace,
-) *ProWorkspaceInstance {
-	if !workspace.Imported || workspace.Pro == nil {
+) *WorkspaceInstance {
+	if !workspace.Imported || workspace.Platform == nil {
 		return nil
 	}
 
@@ -304,7 +304,7 @@ func (s *instanceStore) importedProInstance(
 	}
 
 	l, err := s.informer.Lister().
-		DevsyWorkspaceInstances(project.ProjectFromNamespace(workspace.Pro.Project)).
+		DevsyWorkspaceInstances(project.ProjectFromNamespace(workspace.Platform.Project)).
 		List(selector)
 	if err != nil {
 		return nil
@@ -320,10 +320,10 @@ func (s *instanceStore) importedProInstance(
 	}
 	s.m.Unlock()
 
-	return s.buildProInstance(instance)
+	return s.buildInstance(instance)
 }
 
-func printInstances(w io.Writer, instances []*ProWorkspaceInstance) {
+func printInstances(w io.Writer, instances []*WorkspaceInstance) {
 	out, err := json.Marshal(instances)
 	if err != nil {
 		return

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
@@ -20,9 +19,7 @@ const wslgTestWindows = "windows"
 var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func() {
 	ginkgo.DescribeTable("creates and cleans up a workspace using the selected WSL user's display",
 		func(ctx context.Context, compose bool) {
-			if runtime.GOOS != wslgTestWindows {
-				ginkgo.Skip("native Windows WSL fixture required")
-			}
+			framework.SkipUnlessOS(wslgTestWindows, "native Windows WSL fixture required")
 			target := wslg.Target{
 				Distro: requireEnv("DEVSY_WSLG_TEST_DISTRO"),
 				User:   requireEnv("DEVSY_WSLG_TEST_USER"),
@@ -38,8 +35,8 @@ var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func
 				To(gomega.Equal(requireEnv(wslDaemonEnv)))
 
 			// A private Devsy home keeps owner authorization and provider state isolated.
-			setProcessEnv(pkgconfig.EnvHome, ginkgo.GinkgoT().TempDir())
-			setProcessEnv(pkgconfig.EnvConfig, "")
+			framework.SetEnvForSpec(pkgconfig.EnvHome, ginkgo.GinkgoT().TempDir())
+			framework.SetEnvForSpec(pkgconfig.EnvConfig, "")
 			cwd, err := os.Getwd()
 			framework.ExpectNoError(err)
 			f := framework.NewDefaultFramework(filepath.Join(cwd, "bin"))

@@ -2,20 +2,23 @@ package devcontainer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
-	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/dockerfile"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/google/go-containerregistry/pkg/name"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,6 +29,8 @@ var featureFolderCopyPattern = regexp.MustCompile(
 	`(COPY|ADD)(\s+)\./` + regexp.QuoteMeta(config.DevsyContextFeatureFolder) + `/`,
 )
 
+const composeDefaultPlatformEnv = "DOCKER_DEFAULT_PLATFORM"
+
 // prepareComposeBuildInfo modifies a compose project's devcontainer Dockerfile
 // to ensure it can be extended with features. If an Image is specified instead
 // of a Build, the metadata from the Image is used to populate the build info.
@@ -34,9 +39,10 @@ func (r *runner) prepareComposeBuildInfo(
 	subCtx *config.SubstitutionContext,
 	composeService *composetypes.ServiceConfig,
 	buildTarget string,
+	resolvedImage *config.ImageDetails,
 ) (composeBuildInfo, error) {
 	if composeService.Build == nil {
-		imageBuildInfo, err := r.getImageBuildInfoFromImage(ctx, subCtx, composeService.Image)
+		imageBuildInfo, err := imageBuildInfoFromDetails(subCtx, resolvedImage)
 		if err != nil {
 			return composeBuildInfo{}, err
 		}
@@ -140,22 +146,17 @@ func (r *runner) buildAndExtendDockerCompose(
 		return composeExtendResult{buildImageName: target.buildImageName}, err
 	}
 
-	imageMetadata, err := metadata.GetDevContainerMetadata(
-		params.substitutionContext,
-		prepared.imageBuildInfo.Metadata,
-		params.parsedConfig,
-		prepared.extendImageBuildInfo.Features,
-	)
-	if err != nil {
-		return composeExtendResult{buildImageName: target.buildImageName}, err
-	}
-
-	return composeExtendResult{
+	result := composeExtendResult{
 		buildImageName:       target.buildImageName,
 		composeBuildFilePath: target.dockerComposeFilePath,
-		imageMetadata:        imageMetadata,
-		metadataLabel:        prepared.extendImageBuildInfo.MetadataLabel,
-	}, nil
+		imageMetadata:        prepared.extendImageBuildInfo.MetadataConfig,
+	}
+	if params.composeService.Build == nil && !hasFeatureBuildInfo(prepared.extendImageBuildInfo) {
+		// Image-only services retain the same resolved image through metadata
+		// planning and runtime pinning, even if another operation moves the tag.
+		result.imageDetails = prepared.imageBuildInfo.ImageDetails
+	}
+	return result, nil
 }
 
 // composeBuildTarget holds the resolved image name, override compose file
@@ -251,12 +252,21 @@ func (r *runner) prepareExtendedComposeBuild(
 	params *buildAndExtendParams,
 ) (preparedComposeBuild, error) {
 	const defaultBuildTarget = "dev_container_auto_added_stage_label"
+	var resolvedImage *config.ImageDetails
+	if params.composeService.Build == nil {
+		var err error
+		resolvedImage, err = prepareComposeServiceImage(ctx, params)
+		if err != nil {
+			return preparedComposeBuild{}, err
+		}
+	}
 
 	buildInfo, err := r.prepareComposeBuildInfo(
 		ctx,
 		params.substitutionContext,
 		params.composeService,
 		defaultBuildTarget,
+		resolvedImage,
 	)
 	if err != nil {
 		return preparedComposeBuild{}, err
@@ -286,6 +296,104 @@ func (r *runner) prepareExtendedComposeBuild(
 		dockerfileContents:   buildInfo.dockerfileContents,
 		buildTarget:          buildInfo.buildTarget,
 	}, nil
+}
+
+// Resolve image-backed services locally before reading their metadata so the
+// creation plan describes the runtime's platform and immutable image identity.
+func prepareComposeServiceImage(
+	ctx context.Context,
+	params *buildAndExtendParams,
+) (*config.ImageDetails, error) {
+	service := params.composeService
+	helper := params.composeHelper.Docker
+	platform := composeServicePlatform(service, helper.Environment)
+	details, inspectErr := helper.InspectImageForPlatform(ctx, service.Image, platform)
+	if inspectErr != nil && !errors.Is(inspectErr, docker.ErrImageNotFound) {
+		return nil, inspectErr
+	}
+	pull, err := composeServiceImageNeedsPull(params, details, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if !pull {
+		return details, inspectErr
+	}
+	writer := log.Writer(log.LevelInfo)
+	defer func() { _ = writer.Close() }()
+	if err := helper.Pull(ctx, docker.PullOptions{
+		Image: service.Image, Platform: platform, Stdout: writer, Stderr: writer,
+	}); err != nil {
+		return nil, fmt.Errorf("pull compose service image: %w", err)
+	}
+	return helper.InspectImageForPlatform(ctx, service.Image, platform)
+}
+
+func composeServicePlatform(service *composetypes.ServiceConfig, environment []string) string {
+	if service.Platform != "" {
+		return service.Platform
+	}
+	platform := os.Getenv(composeDefaultPlatformEnv)
+	for _, entry := range environment {
+		key, value, _ := strings.Cut(entry, "=")
+		if key == composeDefaultPlatformEnv {
+			platform = value
+		}
+	}
+	return platform
+}
+
+func composeServiceImageNeedsPull(
+	params *buildAndExtendParams,
+	details *config.ImageDetails,
+	now time.Time,
+) (bool, error) {
+	service := params.composeService
+	if len(params.parsedConfig.Config.Features) == 0 {
+		return composeImageNeedsPull(service, details, now)
+	}
+	// Feature extension turns this image into a Dockerfile FROM input. --pull
+	// refreshes it independently of the final service's pull policy. Otherwise,
+	// absent an explicit policy, preserve the build's local-cache default,
+	// including locally tagged latest images that have no registry counterpart.
+	if params.pull {
+		return true, nil
+	}
+	if service.PullPolicy == "" {
+		return details == nil, nil
+	}
+	return composeImageNeedsPull(service, details, now)
+}
+
+func composeImageNeedsPull(
+	service *composetypes.ServiceConfig,
+	details *config.ImageDetails,
+	now time.Time,
+) (bool, error) {
+	policy, interval, err := service.GetPullPolicy()
+	if err != nil {
+		return false, err
+	}
+	switch policy {
+	case composetypes.PullPolicyNever, composetypes.PullPolicyBuild:
+		return false, nil
+	case composetypes.PullPolicyAlways:
+		return true, nil
+	case composetypes.PullPolicyRefresh:
+		if details == nil || details.Metadata == nil {
+			return true, nil
+		}
+		return now.After(details.Metadata.LastTagTime.Add(interval)), nil
+	default:
+		return missingOrLatestComposeImage(service.Image, details)
+	}
+}
+
+func missingOrLatestComposeImage(image string, details *config.ImageDetails) (bool, error) {
+	if details == nil {
+		return true, nil
+	}
+	ref, err := name.ParseReference(image)
+	return err == nil && ref.Identifier() == "latest", err
 }
 
 // hasFeatureBuildInfo reports whether the extended build info carries a feature

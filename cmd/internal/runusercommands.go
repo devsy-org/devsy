@@ -77,13 +77,15 @@ func newLifecycleStatusReporter(
 	resultFormat string,
 	out *os.File,
 	verbose bool,
+	noStatus bool,
 ) (status.Reporter, error) {
-	reporter, err := status.NewReporter(status.ReporterOptions{
-		Format:                 resultFormat,
-		Out:                    out,
-		Prefix:                 "lifecycle",
-		Verbose:                verbose,
-		SuppressFailureDetails: true,
+	return status.NewCLIReporter(status.CLIOptions{
+		Format:   resultFormat,
+		Out:      out,
+		Prefix:   "lifecycle",
+		Verbose:  verbose,
+		NoStatus: noStatus,
+		Pipeline: status.PipelineWorkspaceUp,
 		Labels: map[status.Phase]string{
 			status.PhaseRunningLifecycleHook: "running lifecycle hooks",
 			status.PhaseReady:                "ready",
@@ -92,10 +94,6 @@ func newLifecycleStatusReporter(
 			return devcconfig.WriteStatusJSON(out, e)
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
-	return status.ForPipeline(reporter, status.PipelineWorkspaceUp), nil
 }
 
 // Run executes the run-user-commands logic.
@@ -107,6 +105,7 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 		cmd.ResultFormat,
 		os.Stderr,
 		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
 	)
 	if err != nil {
 		return err

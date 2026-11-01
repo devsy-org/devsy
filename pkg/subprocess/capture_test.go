@@ -180,6 +180,32 @@ func TestRunCapturesFailureOutput(t *testing.T) {
 	}
 }
 
+func TestRunKeepsFunctionalStdoutIndependentOfDiagnosticLimits(t *testing.T) {
+	if runtime.GOOS == testWindows {
+		t.Skip("test command uses sh")
+	}
+	payload := captureTestSecret + "\n" + strings.Repeat("extension\n", MaxCapturedLines+20) +
+		captureTestSecret + "\n"
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), "sh", []string{"-c", "cat"}, Options{
+		Stdin:    strings.NewReader(payload),
+		Stdout:   &stdout,
+		Redactor: secrets.NewRedactor([]string{captureToken + captureTestSecret}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != payload {
+		t.Fatal("functional stdout was truncated or redacted")
+	}
+	if !result.Truncated || strings.Contains(result.Stdout, captureTestSecret) {
+		t.Fatal("diagnostic stdout must remain bounded and redacted")
+	}
+	if !strings.Contains(result.Stdout, "***") {
+		t.Fatal("trailing credential should be masked in diagnostics")
+	}
+}
+
 func TestRunRedactsSensitiveEnvironmentAndArgvValues(t *testing.T) {
 	if runtime.GOOS == testWindows {
 		t.Skip("test command uses sh")

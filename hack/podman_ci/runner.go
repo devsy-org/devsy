@@ -15,6 +15,7 @@ type CommandSpec struct {
 	Args    []string
 	Timeout time.Duration
 	Reserve time.Duration
+	CmdLine string // Windows-only verbatim command line; used instead of Args when set.
 }
 
 type CommandResult struct {
@@ -53,6 +54,11 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) CommandResult {
 	defer capture.Close()
 
 	cmd := exec.Command(spec.Path, spec.Args...)
+	if spec.CmdLine != "" {
+		if err := setCmdLine(cmd, spec.CmdLine); err != nil {
+			return commandError(spec, err)
+		}
+	}
 	cmd.Stdout, cmd.Stderr = capture.stdout, capture.stderr
 	if err := cmd.Start(); err != nil {
 		return commandError(spec, err)

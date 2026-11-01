@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
-	cliflags "github.com/devsy-org/devsy/pkg/flags"
-	"github.com/devsy-org/devsy/pkg/flags/names"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -37,9 +36,7 @@ func NewUpdateProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
-	_ = c.MarkFlagRequired(names.Host)
-	flags.BindEnv(c.Flags(), names.Host)
+	cmdutil.AddHostFlag(c, &cmd.Host)
 
 	return c
 }
@@ -62,14 +59,11 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	if provider.Source.Internal {
 		return nil
 	}
-	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, provider.Name)
+	unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, provider.Name)
 	if err != nil {
-		return fmt.Errorf("get operation lock: %w", err)
+		return err
 	}
-	if err := opLock.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock: %w", err)
-	}
-	defer func() { _ = opLock.Unlock() }()
+	defer unlock()
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err

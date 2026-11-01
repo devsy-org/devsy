@@ -46,6 +46,12 @@ func (h *Host) call(
 		RuntimeBinary: binary, Args: h.config.External.Args,
 		Env: append(slices.Clone(h.environment), h.config.External.Binary+"="+binary),
 	})
+	// Routine helper lifecycle diagnostics belong at trace; runtime stderr is
+	// preserved independently below, including unstructured backend failures.
+	frameworkLogLevel := hclog.Warn
+	if log.LevelString() == log.LevelTraceName {
+		frameworkLogLevel = hclog.Trace
+	}
 	client := hplugin.NewClient(&hplugin.ClientConfig{
 		HandshakeConfig: sdkplugin.Handshake(),
 		VersionedPlugins: map[int]hplugin.PluginSet{
@@ -53,8 +59,10 @@ func (h *Host) call(
 		},
 		AllowedProtocols: []hplugin.Protocol{hplugin.ProtocolGRPC},
 		StartTimeout:     h.timeout,
-		Logger:           hclog.New(&hclog.LoggerOptions{Output: diagnostic, Level: hclog.Debug}),
-		Stderr:           diagnostic,
+		Logger: hclog.New(&hclog.LoggerOptions{
+			Output: diagnostic, Level: frameworkLogLevel,
+		}),
+		Stderr: diagnostic,
 		RunnerFunc: func(logger hclog.Logger, command *exec.Cmd, socketDir string) (runner.Runner, error) {
 			process, err := owned(logger, command, socketDir)
 			if err != nil {

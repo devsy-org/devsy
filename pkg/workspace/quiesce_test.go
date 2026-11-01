@@ -3,6 +3,8 @@ package workspace
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -11,6 +13,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Above the PID ceiling of Linux (4194304) and macOS (99999), so the real
+// kernel never has a live process group with this ID. Cleanup paths probe the
+// real group with kill(-pgid, 0); a small literal like 4242 can collide with a
+// live group on a busy CI host and flake the test.
+const unusedProcessGroupPID = 99999999
 
 func newTaskStore(t *testing.T) *task.Store {
 	t.Helper()
@@ -39,7 +47,7 @@ func TestQuiesceUpTasksCancelsOnlyActiveUpTasksForWorkspace(t *testing.T) {
 	targetB := createUpTask(t, store, "ws-1")
 	terminal := createUpTask(t, store, "ws-1")
 	require.NoError(t, terminal.SetProcess(command.ProcessRef{
-		PID: 4242, TreeKind: command.ProcessTreeUnixGroup, TreeID: "4242",
+		PID: unusedProcessGroupPID, TreeKind: command.ProcessTreeUnixGroup, TreeID: "99999999",
 	}))
 	require.NoError(t, terminal.Succeed(nil))
 	otherWorkspace := createUpTask(t, store, "ws-2")
@@ -97,9 +105,9 @@ func TestQuiesceUpTasksCleansTerminalTaskTreeInsteadOfCancelling(t *testing.T) {
 	store := newTaskStore(t)
 	crashed := createUpTask(t, store, "ws-1")
 	require.NoError(t, crashed.SetProcess(command.ProcessRef{
-		PID:      4242,
+		PID:      unusedProcessGroupPID,
 		TreeKind: command.ProcessTreeUnixGroup,
-		TreeID:   "4242",
+		TreeID:   "99999999",
 	}))
 	require.NoError(t, crashed.HoldWorkerLock())
 	require.NoError(t, crashed.ReleaseWorkerLock())
@@ -122,7 +130,7 @@ func TestQuiesceUpTasksCleansTerminalTaskTreeInsteadOfCancelling(t *testing.T) {
 func TestQuiesceUpTasksCleansWorkerThatBecomesAbandonedDuringCancel(t *testing.T) {
 	store := newTaskStore(t)
 	tk := createUpTask(t, store, "ws-1")
-	ref := command.ProcessRef{PID: 99999999, TreeKind: command.ProcessTreeUnixGroup}
+	ref := command.ProcessRef{PID: unusedProcessGroupPID, TreeKind: command.ProcessTreeUnixGroup}
 	if runtime.GOOS == "windows" {
 		ref.TreeKind = command.ProcessTreeWindowsJob
 		ref.TreeID = "devsy-test-missing-job"
@@ -153,4 +161,33 @@ func TestQuiesceUpTasksBoundsEachCancellation(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
+}
+
+func TestQuiesceUpTasksRejectsUnverifiedTerminalLaunch(t *testing.T) {
+	dir := t.TempDir()
+	store, err := task.NewStoreAt(dir)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "interrupted.json"), []byte(
+		`{"id":"interrupted","command":"up","workspaceId":"ws-1","status":"failed","launchPending":true}`,
+	), 0o600))
+
+	err = QuiesceUpTasks(store, "ws-1")
+	require.ErrorContains(t, err, "cannot verify cleanup of a legacy abandoned launch")
+	assert.True(t, taskState(t, store, "interrupted").LaunchPending)
+}
+
+func TestQuiesceUpTasksRejectsMalformedTaskRecord(t *testing.T) {
+	dir := t.TempDir()
+	store, err := task.NewStoreAt(dir)
+	require.NoError(t, err)
+	tk := createUpTask(t, store, "ws-1")
+	path := filepath.Join(dir, tk.ID()+".json")
+	require.NoError(t, os.WriteFile(path, []byte("{"), 0o600))
+	called := false
+	err = quiesceUpTasks(context.Background(), store, "ws-1", func(context.Context, string) error {
+		called = true
+		return nil
+	})
+	require.ErrorContains(t, err, "list up tasks for workspace ws-1")
+	require.False(t, called)
 }

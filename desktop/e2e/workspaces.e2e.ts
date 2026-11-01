@@ -162,6 +162,57 @@ test.describe("Workspace detail flow", () => {
       [channel, args] as const,
     )
 
+  test("groups project and editor settings while keeping technical details available", async () => {
+    await page
+      .locator("tbody tr")
+      .filter({ hasText: "test-workspace" })
+      .first()
+      .click()
+    const main = page.locator('[data-slot="sidebar-inset"] main')
+    await expect(
+      main.getByRole("heading", { name: "Project", exact: true }),
+    ).toBeVisible()
+    await expect(
+      main.getByRole("heading", { name: "Editor and folder" }),
+    ).toBeVisible()
+    await expect(
+      main.getByRole("region", { name: "Project", exact: true }),
+    ).toContainText("https://github.com/example/repo")
+    await expect(
+      main.getByRole("button", { name: "Workspace IDE", exact: true }),
+    ).toBeVisible()
+    await expect(
+      main.getByText(
+        "Uses the folder resolved from your project configuration.",
+        { exact: false },
+      ),
+    ).toBeVisible()
+
+    const technical = main
+      .locator("details")
+      .filter({ hasText: "Technical details" })
+    await expect(technical).not.toHaveAttribute("open", "")
+    await technical.locator("summary").focus()
+    await page.keyboard.press("Enter")
+    await expect(technical).toHaveAttribute("open", "")
+    await expect(technical).toContainText("ws-001")
+
+    await main
+      .getByRole("button", { name: "Edit workspace folder", exact: true })
+      .click()
+    await main
+      .getByRole("textbox", { name: "Workspace folder override" })
+      .fill("/workspaces/temporary-override")
+    await main.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(main.getByText("Automatic", { exact: true })).toBeVisible()
+    await expect(
+      main.getByText("/workspaces/temporary-override", { exact: true }),
+    ).not.toBeVisible()
+    await expect(
+      main.getByRole("button", { name: "Copy SSH command" }),
+    ).toBeEnabled()
+  })
+
   test("supports a start/stop playthrough from the workspaces list", async () => {
     const workspaceName = "flow-playthrough"
     await api("workspace_up", {
@@ -372,6 +423,101 @@ test.describe
         'input[placeholder*="derived from source"]',
       )
       await expect(nameInput).toHaveValue("python")
+
+      const window = await app.browserWindow(page)
+      const bounds = await window.evaluate((browserWindow) =>
+        browserWindow.getBounds(),
+      )
+      const originalSource =
+        "https://github.com/microsoft/vscode-remote-try-python"
+      const longSource = `https://example.test/team/${"long-repository-name-".repeat(12)}project`
+      try {
+        await window.evaluate((browserWindow) =>
+          browserWindow.setBounds({ width: 1000, height: 700 }),
+        )
+        await dialog
+          .getByRole("button", { name: "Edit source", exact: true })
+          .click()
+        const advanced = dialog.getByRole("button", {
+          name: "Show advanced options",
+          exact: true,
+        })
+        await advanced.focus()
+        const advancedBottom = await advanced.evaluate(
+          (element) => element.getBoundingClientRect().bottom,
+        )
+        const footerTop = await dialog
+          .getByRole("button", { name: /^Continue$/ })
+          .evaluate(
+            (element) =>
+              element.parentElement?.getBoundingClientRect().top ?? -1,
+          )
+        expect(advancedBottom).toBeLessThanOrEqual(footerTop)
+        expect(
+          await advanced.evaluate((element) => {
+            const rect = element.getBoundingClientRect()
+            const hit = document.elementFromPoint(
+              rect.x + rect.width / 2,
+              rect.y + rect.height / 2,
+            )
+            return (
+              rect.top >= 0 &&
+              rect.bottom <= innerHeight &&
+              (hit === element || element.contains(hit))
+            )
+          }),
+        ).toBe(true)
+        await dialog
+          .getByRole("textbox", { name: "Repository URL *", exact: true })
+          .fill(longSource)
+        await dialog.getByRole("button", { name: /^Continue$/ }).click()
+        await dialog.getByRole("button", { name: /^Continue$/ }).click()
+        const fullSource = dialog.getByText(longSource, { exact: true })
+        await expect(fullSource).toBeVisible()
+        const sourceFits = await fullSource.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          const parentDialog = element.closest('[role="dialog"]')
+          if (!parentDialog) return false
+          const dialogRect = parentDialog.getBoundingClientRect()
+          return (
+            element.scrollWidth <= element.clientWidth + 1 &&
+            rect.right <= dialogRect.right
+          )
+        })
+        expect(sourceFits).toBe(true)
+        const launch = dialog.getByRole("button", { name: /^Launch$/ })
+        await launch.focus()
+        expect(
+          await launch.evaluate((element) => {
+            const rect = element.getBoundingClientRect()
+            const hit = document.elementFromPoint(
+              rect.x + rect.width / 2,
+              rect.y + rect.height / 2,
+            )
+            return (
+              rect.top >= 0 &&
+              rect.bottom <= innerHeight &&
+              (hit === element || element.contains(hit))
+            )
+          }),
+        ).toBe(true)
+      } finally {
+        const editSource = dialog.getByRole("button", {
+          name: "Edit source",
+          exact: true,
+        })
+        if (await editSource.isVisible()) await editSource.click()
+        await dialog
+          .getByRole("textbox", { name: "Repository URL *", exact: true })
+          .fill(originalSource)
+        await dialog.getByRole("button", { name: /^Continue$/ }).click()
+        await dialog.getByRole("button", { name: /^Continue$/ }).click()
+        await window.evaluate(
+          (browserWindow, previousBounds) =>
+            browserWindow.setBounds(previousBounds),
+          bounds,
+        )
+      }
     })
 
     test("should launch workspace and stream output", async () => {

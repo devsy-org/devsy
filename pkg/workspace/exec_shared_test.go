@@ -3,6 +3,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestExecWithRunner covers the shared exec path used by both the Docker and
@@ -97,4 +100,29 @@ func exitErr(t *testing.T, code int) error {
 		t.Fatalf("could not synthesize exit error: %v", err)
 	}
 	return ee
+}
+
+func TestExecWithRunnerPreservesInputAndTTY(t *testing.T) {
+	input := strings.NewReader("stdin bytes")
+	run := func(_ context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+		require.Equal(t, []string{"exec", "-i", "-t", "container", testExecCat}, args)
+		require.Same(t, input, stdin)
+		_, err := io.Copy(stdout, stdin)
+		return err
+	}
+	var output bytes.Buffer
+	code, err := execWithRunner(
+		t.Context(),
+		ExecRequest{
+			Target: ContainerTarget{ContainerID: "container"},
+			Argv:   []string{testExecCat},
+			Stdin:  input,
+			Stdout: &output,
+			TTY:    true,
+		},
+		run,
+	)
+	require.NoError(t, err)
+	require.Zero(t, code)
+	require.Equal(t, "stdin bytes", output.String())
 }

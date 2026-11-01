@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -69,9 +68,7 @@ func newMicrosandboxPrebuildFixture(
 	providerName, providerSource string,
 ) *microsandboxPrebuildTest {
 	// The test process and local Docker daemon must share host loopback.
-	if runtime.GOOS != "linux" {
-		ginkgo.Skip("requires the Linux CI host's local Docker daemon")
-	}
+	framework.SkipUnlessOS("linux", "requires the Linux CI host's local Docker daemon")
 	skipIfNoMicrosandbox(ctx)
 	ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
 	ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")

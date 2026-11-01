@@ -10,7 +10,7 @@ import (
 type Config struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// host is the http endpoint of how to access loft
+	// host is the http endpoint of how to access devsy
 	// +optional
 	Host string `json:"host,omitempty"`
 
@@ -18,15 +18,15 @@ type Config struct {
 	// +optional
 	LastInstallContext string `json:"lastInstallContext,omitempty"`
 
-	// insecure specifies if the loft instance is insecure
+	// insecure specifies if the devsy instance is insecure
 	// +optional
 	Insecure bool `json:"insecure,omitempty"`
 
-	// access key is the access key for the given loft host
+	// access key is the access key for the given devsy host
 	// +optional
 	AccessKey string `json:"accesskey,omitempty"`
 
-	// virtual cluster access key is the access key for the given loft host to create virtual clusters
+	// virtual cluster access key is the access key for the given devsy host to create virtual clusters
 	// +optional
 	VirtualClusterAccessKey string `json:"virtualClusterAccessKey,omitempty"`
 

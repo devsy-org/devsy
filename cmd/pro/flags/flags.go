@@ -8,7 +8,7 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-// BindEnv re-exports pkgflags.BindEnv so pro subcommands can wire env vars
+// BindEnv re-exports pkgflags.BindEnv so platform subcommands can wire env vars
 // through their existing local `flags` import alias.
 func BindEnv(fs *flag.FlagSet, flagName string) {
 	pkgflags.BindEnv(fs, flagName)

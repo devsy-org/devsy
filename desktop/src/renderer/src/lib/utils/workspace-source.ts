@@ -1,3 +1,5 @@
+import type { WorkspaceSource } from "$lib/types/index.js"
+
 export type WorkspaceSourceType = "git" | "local" | "image"
 export type GitRefType = "branch" | "commit" | "pr"
 export type DevcontainerMode = "auto" | "path" | "image" | "id" | "none"
@@ -130,4 +132,19 @@ export function buildWorkspaceSource(
     devcontainer: buildDevcontainerArg(form.devcontainer),
     prebuildRepository: optional(form.prebuildRepository),
   }
+}
+
+export function describeWorkspaceSource(source?: WorkspaceSource): {
+  label: string
+  value: string
+} {
+  if (source?.gitRepository)
+    return { label: "Repository", value: source.gitRepository }
+  if (source?.localFolder)
+    return { label: "Local folder", value: source.localFolder }
+  if (source?.image) return { label: "Container image", value: source.image }
+  if (source?.container)
+    return { label: "Existing container", value: source.container }
+  if (source?.snapshot) return { label: "Snapshot", value: source.snapshot }
+  return { label: "Source", value: "Not available" }
 }

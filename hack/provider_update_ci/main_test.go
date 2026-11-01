@@ -18,12 +18,16 @@ const (
 	fakeModeEnv    = "DEVSY_PROVIDER_UPDATE_CI_FAKE_MODE"
 	cliModeEnv     = "DEVSY_PROVIDER_UPDATE_CI_RUN_CLI"
 	fakeExitEnv    = "DEVSY_PROVIDER_UPDATE_CI_FAKE_EXIT"
+	attemptsEnv    = "DEVSY_PROVIDER_UPDATE_CI_ATTEMPTS_FILE"
 	largeLineEnv   = "DEVSY_PROVIDER_UPDATE_CI_LARGE_LINE"
 	fakeGoBasename = "go"
 	missingMode    = "missing"
 	skipMode       = "skip"
 	noPassMode     = "no-pass"
 	multipleMode   = "multiple"
+	crashOnceMode  = "crash-once"
+	crashTwiceMode = "crash-twice"
+	crashFailMode  = "crash-after-failure"
 )
 
 var fixtureTests = []testID{
@@ -45,6 +49,8 @@ var fakeCaseExceptions = map[string]map[int][]string{
 	},
 }
 
+var fakeCrashCounts = map[string]int{crashOnceMode: 1, crashTwiceMode: 2, crashFailMode: 1}
+
 func TestMain(m *testing.M) {
 	if isFakeGoInvocation(os.Args[0]) {
 		os.Exit(runFakeGo())
@@ -63,9 +69,40 @@ func runFakeGo() int {
 	if os.Args[len(os.Args)-2] == "-list" {
 		return emitFakeDiscovery(os.Getenv(fakeModeEnv))
 	}
+	attempt := recordFakeAttempt()
+	if attempt > 0 && attempt <= fakeCrashCounts[os.Getenv(fakeModeEnv)] {
+		emitFakeCrash(os.Getenv(fakeModeEnv))
+		return 2
+	}
 	emitFakeTestEvents(os.Getenv(fakeModeEnv))
 	reportf(os.Stderr, "fake Go stderr\n")
 	return fakeGoExitCode()
+}
+
+func recordFakeAttempt() int {
+	path := os.Getenv(attemptsEnv)
+	if path == "" {
+		return 0
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return 0
+	}
+	defer func() { _ = file.Close() }()
+	_, _ = file.WriteString("x")
+	info, err := file.Stat()
+	if err != nil {
+		return 0
+	}
+	return int(info.Size())
+}
+
+func emitFakeCrash(mode string) {
+	writeFakeEvent("run", fixtureTests[0], "")
+	writeFakeEvent("output", fixtureTests[0], "fatal error: found pointer to free object\n")
+	if mode == crashFailMode {
+		writeFakeEvent("fail", fixtureTests[0], "")
+	}
 }
 
 func isFakeGoInvocation(path string) bool {
@@ -74,12 +111,12 @@ func isFakeGoInvocation(path string) bool {
 }
 
 func isExpectedGoCommand(args []string) bool {
-	if len(args) != 10 || (args[8] != "-run" && args[8] != "-list") {
+	if len(args) != 9 || (args[7] != "-run" && args[7] != "-list") {
 		return false
 	}
 	expected := []string{
-		"test", "-race", "-json", "-count=1", "-timeout", "10m",
-		providerUpdatePackages[0], providerUpdatePackages[1], args[8], providerUpdateRunPattern,
+		"test", "-json", "-count=1", "-timeout", "10m",
+		providerUpdatePackages[0], providerUpdatePackages[1], args[7], providerUpdateRunPattern,
 	}
 	return equalStrings(args, expected)
 }
@@ -310,6 +347,66 @@ func TestDefaultArtifactsDirectoryUsesRunnerTemp(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, defaultArtifactName+".jsonl")); err != nil {
 		t.Fatalf("JSON artifact missing under RUNNER_TEMP: %v", err)
 	}
+}
+
+func TestCLIRetriesRuntimeCrashOnce(t *testing.T) {
+	attempts := setUpFakeGoWithAttempts(t, crashOnceMode, "0")
+	_, stderr, code := runCLIProcess(t, "--artifacts-dir", t.TempDir())
+	if code != 0 {
+		t.Fatalf("CLI failed after a recoverable runtime crash: %q", stderr)
+	}
+	if got := countAttempts(t, attempts); got != 2 {
+		t.Fatalf("attempts = %d, want 2", got)
+	}
+	if !strings.Contains(stderr, "::warning::") || !strings.Contains(stderr, "attempt 2 of 2") {
+		t.Fatalf("retry warning missing: %q", stderr)
+	}
+}
+
+func TestCLIFailsWhenRuntimeCrashRepeats(t *testing.T) {
+	attempts := setUpFakeGoWithAttempts(t, crashTwiceMode, "0")
+	_, _, code := runCLIProcess(t, "--artifacts-dir", t.TempDir())
+	if code != 2 {
+		t.Fatalf("CLI exit code = %d, want 2", code)
+	}
+	if got := countAttempts(t, attempts); got != 2 {
+		t.Fatalf("attempts = %d, want 2", got)
+	}
+}
+
+func TestCLIDoesNotRetryRealFailures(t *testing.T) {
+	for _, mode := range []string{crashFailMode, "success"} {
+		t.Run(mode, func(t *testing.T) {
+			attempts := setUpFakeGoWithAttempts(t, mode, "2")
+			_, stderr, code := runCLIProcess(t, "--artifacts-dir", t.TempDir())
+			if code != 2 {
+				t.Fatalf("CLI exit code = %d, want 2", code)
+			}
+			if got := countAttempts(t, attempts); got != 1 {
+				t.Fatalf("attempts = %d, want 1", got)
+			}
+			if strings.Contains(stderr, "::warning::") {
+				t.Fatalf("unexpected retry warning: %q", stderr)
+			}
+		})
+	}
+}
+
+func setUpFakeGoWithAttempts(t *testing.T, mode, exitCode string) string {
+	t.Helper()
+	setUpFakeGo(t, mode, exitCode)
+	attempts := filepath.Join(t.TempDir(), "attempts")
+	t.Setenv(attemptsEnv, attempts)
+	return attempts
+}
+
+func countAttempts(t *testing.T, path string) int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(data)
 }
 
 func setUpFakeGo(t *testing.T, mode, exitCode string) {

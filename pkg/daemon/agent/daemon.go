@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,6 +30,7 @@ type DaemonConfig struct {
 	Ssh            SshConfig             `json:"ssh"`
 	Timeout        string                `json:"timeout"`
 	ShutdownAction string                `json:"shutdownAction,omitempty"`
+	Lifecycle      LifecycleConfig       `json:"lifecycle,omitzero"`
 }
 
 func BuildWorkspaceDaemonConfig(
@@ -39,6 +38,7 @@ func BuildWorkspaceDaemonConfig(
 	workspaceConfig *provider2.Workspace,
 	substitutionContext *config.SubstitutionContext,
 	mergedConfig *config.MergedDevContainerConfig,
+	lifecycle LifecycleOptions,
 ) (*DaemonConfig, error) {
 	var workdir string
 	if workspaceConfig.Source.GitSubPath != "" {
@@ -55,25 +55,28 @@ func BuildWorkspaceDaemonConfig(
 		workdir = substitutionContext.ContainerWorkspaceFolder
 	}
 
-	// Get remote user; default to "root" if empty.
-	user := mergedConfig.RemoteUser
-	if user == "" {
-		user = "root"
-	}
-
-	// build info isn't required in the workspace and can be omitted
-	platformOptions.Build = nil
-
-	shutdownAction := mergedConfig.ShutdownAction
-
 	daemonConfig := &DaemonConfig{
-		Platform: platformOptions,
-		Ssh: SshConfig{
-			Workdir: workdir,
-			User:    user,
-		},
-		ShutdownAction: shutdownAction,
+		Platform:       platformOptions,
+		Timeout:        FormatTimeout(lifecycle.Timeout),
+		ShutdownAction: mergedConfig.ShutdownAction,
 	}
+	if lifecycle.Managed {
+		daemonConfig.Lifecycle = LifecycleConfig{
+			Owner:          LifecycleOwnerManagedDaemon,
+			SetupArmsTimer: true,
+		}
+	}
+
+	// A timeout-only config must not request the embedded SSH or network server.
+	if platformOptions.AccessKey != "" {
+		user := mergedConfig.RemoteUser
+		if user == "" {
+			user = "root"
+		}
+		daemonConfig.Ssh = SshConfig{Workdir: workdir, User: user}
+	}
+	// build info isn't required in the workspace and can be omitted
+	daemonConfig.Platform.Build = nil
 
 	return daemonConfig, nil
 }
@@ -83,23 +86,20 @@ func GetEncodedWorkspaceDaemonConfig(
 	workspaceConfig *provider2.Workspace,
 	substitutionContext *config.SubstitutionContext,
 	mergedConfig *config.MergedDevContainerConfig,
+	lifecycle LifecycleOptions,
 ) (string, error) {
 	daemonConfig, err := BuildWorkspaceDaemonConfig(
 		platformOptions,
 		workspaceConfig,
 		substitutionContext,
 		mergedConfig,
+		lifecycle,
 	)
 	if err != nil {
 		return "", err
 	}
 
-	data, err := json.Marshal(daemonConfig)
-	if err != nil {
-		return "", err
-	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return encoded, nil
+	return EncodeDaemonConfig(daemonConfig)
 }
 
 const systemdDir = "/etc/systemd/system"
@@ -143,10 +143,23 @@ func isServiceInstalled() bool {
 	return err == nil
 }
 
+//nolint:gosec // systemctl args are internal constants, never user input
+func runSystemctl(args ...string) (string, error) {
+	out, err := exec.Command("systemctl", args...).CombinedOutput()
+	return string(out), err
+}
+
+func runServiceAction(action string) (string, error) {
+	return runSystemctl(action, pkgconfig.BinaryName)
+}
+
+func systemctlErr(action, out string, err error) error {
+	return fmt.Errorf("systemctl %s: %s: %w", action, out, err)
+}
+
 func isServiceRunning() bool {
-	//nolint:gosec // BinaryName is a compile-time constant, not tainted input
-	out, err := exec.Command("systemctl", "is-active", pkgconfig.BinaryName).CombinedOutput()
-	return err == nil && strings.TrimSpace(string(out)) == "active"
+	out, err := runServiceAction("is-active")
+	return err == nil && strings.TrimSpace(out) == "active"
 }
 
 // quoteSystemdArg wraps an argument in double quotes if it contains characters
@@ -341,10 +354,8 @@ func installOrUpdateUnit(unitContent string) (bool, error) {
 		return false, fmt.Errorf("write service file: %w", err)
 	}
 
-	if out, err := exec.Command(
-		"systemctl", "daemon-reload",
-	).CombinedOutput(); err != nil {
-		return false, fmt.Errorf("systemctl daemon-reload: %s: %w", string(out), err)
+	if out, err := runSystemctl("daemon-reload"); err != nil {
+		return false, systemctlErr("daemon-reload", out, err)
 	}
 
 	return true, nil
@@ -354,27 +365,19 @@ func installOrUpdateUnit(unitContent string) (bool, error) {
 // needed. If systemctl fails, it falls back to a background process.
 func ensureServiceRunning(needsReload bool, executable string, args []string) error {
 	// Always enable so the service starts on boot, even if it was previously disabled.
-	//nolint:gosec // BinaryName is a compile-time constant, not tainted input
-	if out, err := exec.Command("systemctl", "enable", pkgconfig.BinaryName).
-		CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl enable: %s: %w", string(out), err)
+	if out, err := runServiceAction("enable"); err != nil {
+		return systemctlErr("enable", out, err)
 	}
 
 	// Restart if the unit file changed, otherwise just ensure it's running.
 	if needsReload && isServiceRunning() {
-		//nolint:gosec // BinaryName is a compile-time constant
-		if out, err := exec.Command(
-			"systemctl", "restart", pkgconfig.BinaryName,
-		).CombinedOutput(); err != nil {
+		if out, err := runServiceAction("restart"); err != nil {
 			log.Warnf("Error restarting service: %s: %v", string(out), err)
 			return startFallbackDaemon(executable, args, machinediagnostics.SystemRuntimePaths())
 		}
 		log.Infof("restarted Devsy daemon with updated config")
 	} else if !isServiceRunning() {
-		//nolint:gosec // BinaryName is a compile-time constant, not tainted input
-		if out, err := exec.Command(
-			"systemctl", "start", pkgconfig.BinaryName,
-		).CombinedOutput(); err != nil {
+		if out, err := runServiceAction("start"); err != nil {
 			log.Warnf("Error starting service: %s: %v", string(out), err)
 			return startFallbackDaemon(executable, args, machinediagnostics.SystemRuntimePaths())
 		}
@@ -462,16 +465,18 @@ func RemoveDaemon() error {
 // systemctlIgnoringNotLoaded runs a systemctl action against the daemon service,
 // treating a "not loaded" result (the unit does not exist) as a no-op.
 func systemctlIgnoringNotLoaded(action string) error {
-	//nolint:gosec // BinaryName is a compile-time constant
-	out, err := exec.Command("systemctl", action, pkgconfig.BinaryName).CombinedOutput()
-	// A missing unit reports "not loaded" (stop) or "does not exist" (disable);
-	// both mean there is nothing to act on, so treat them as a no-op.
-	outStr := string(out)
-	if err != nil && !strings.Contains(outStr, "not loaded") &&
-		!strings.Contains(outStr, "does not exist") {
-		return fmt.Errorf("systemctl %s: %s: %w", action, outStr, err)
+	out, err := runServiceAction(action)
+	if err != nil && !isMissingUnitOutput(out) {
+		return systemctlErr(action, out, err)
 	}
 	return nil
+}
+
+// isMissingUnitOutput reports whether systemctl output says the daemon unit does
+// not exist. A missing unit reports "not loaded" (stop) or "does not exist"
+// (disable); both mean there is nothing to act on.
+func isMissingUnitOutput(out string) bool {
+	return strings.Contains(out, "not loaded") || strings.Contains(out, "does not exist")
 }
 
 func removeServiceUnit() error {
@@ -479,8 +484,8 @@ func removeServiceUnit() error {
 		return fmt.Errorf("remove service file: %w", err)
 	}
 
-	if out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl daemon-reload: %s: %w", string(out), err)
+	if out, err := runSystemctl("daemon-reload"); err != nil {
+		return systemctlErr("daemon-reload", out, err)
 	}
 
 	return nil

@@ -2,7 +2,7 @@
 "use strict"
 // Mock devsy binary for e2e tests (cross-platform Node.js version)
 // Returns canned JSON responses for each subcommand
-// Handles --result-format json, --skip-pro, and other flags the app sends
+// Handles --result-format json, --skip-platform, --skip-pro, and other flags the app sends
 // Persists state to a JSON file so provider/workspace CRUD works across calls
 
 const fs = require("node:fs")
@@ -31,7 +31,10 @@ function defaultState() {
               type: "string",
             },
           },
-          optionGroups: [],
+          optionGroups: [
+            { name: "Connection", options: ["DOCKER_HOST"] },
+            { name: "Storage", options: ["DISK_SIZE"] },
+          ],
         },
         state: { initialized: true },
         default: true,
@@ -203,7 +206,12 @@ function parseArgs(args) {
       i += 2
       continue
     }
-    if (arg === "--skip-pro" || arg === "--force" || arg.startsWith("--use=")) {
+    if (
+      arg === "--skip-platform" ||
+      arg === "--skip-pro" ||
+      arg === "--force" ||
+      arg.startsWith("--use=")
+    ) {
       i++
       continue
     }
@@ -678,7 +686,9 @@ switch (cmd) {
   case "provider":
     switch (sub) {
       case "list":
-        out(state.providers)
+        out(rawArgs.includes("--available")
+          ? ["docker", "kubernetes", "microsandbox", "terraform", "civo"]
+          : state.providers)
         break
       case "get":
       case "options":
@@ -702,7 +712,7 @@ switch (cmd) {
         })
         break
       case "add": {
-        const provName = extra
+        const provName = nameFlag || extra
         if (provName) {
           const takesDefault = !rawArgs.includes("--use=false")
           if (takesDefault) {
@@ -716,7 +726,7 @@ switch (cmd) {
               version: "v0.1.0",
               icon: "",
               description: "",
-              source: {},
+              source: { raw: extra },
               options: {},
               optionGroups: [],
             },
@@ -854,6 +864,7 @@ switch (cmd) {
           DOTFILES_SCRIPT: { value: "" },
           SSH_INJECT_DOCKER_CREDENTIALS: { value: "true" },
           SSH_INJECT_GIT_CREDENTIALS: { value: "true" },
+          SSH_INJECT_GITHUB_CREDENTIALS: { value: "false" },
           GIT_SSH_SIGNATURE_FORWARDING: { value: "true" },
           SSH_AGENT_FORWARDING: { value: "true" },
           SSH_ADD_PRIVATE_KEYS: { value: "true" },
@@ -864,10 +875,28 @@ switch (cmd) {
           EXIT_AFTER_TIMEOUT: { value: "true" },
           SSH_CONFIG_PATH: { value: "" },
           SSH_CONFIG_INCLUDE_PATH: { value: "" },
+          ...(state.contextOptions?.[variableContext] || {}),
         })
         break
+      case "set": {
+        if (state.failContextSave) {
+          process.stderr.write("fixture context save failure\n")
+          process.exit(1)
+        }
+        const name = extra || variableContext
+        state.contextOptions ??= {}
+        state.contextOptions[name] ??= {}
+        for (let i = 0; i < rawArgs.length; i++) {
+          if (rawArgs[i] === "-o") {
+            const [key, ...values] = rawArgs[++i].split("=")
+            state.contextOptions[name][key] = {value: values.join("=")}
+          }
+        }
+        saveState(state)
+        out("")
+        break
+      }
       case "use":
-      case "set":
       case "create":
       case "delete":
         out("")

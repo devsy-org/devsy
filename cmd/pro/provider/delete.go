@@ -65,7 +65,7 @@ func (cmd *DeleteCmd) Run(
 		return err
 	}
 
-	err = managementClient.Loft().
+	err = managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(workspace.Namespace).
 		Delete(ctx, workspace.Name, metav1.DeleteOptions{})

@@ -51,7 +51,7 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	projectList, err := managementClient.Loft().
+	projectList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		List(ctx, metav1.ListOptions{})
@@ -59,11 +59,11 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("list projects: %w", err)
 	} else if len(projectList.Items) == 0 {
 		return fmt.Errorf(
-			"you don't have access to any projects within Devsy Pro, make sure you have at least access to 1 project",
+			"you don't have access to any projects within Devsy Platform, make sure you have at least access to 1 project",
 		)
 	}
 
-	filterByOwner := os.Getenv(config.EnvLoftFilterByOwner) == config.BoolTrue
+	filterByOwner := os.Getenv(config.EnvFilterByOwner) == config.BoolTrue
 	workspaces := []*managementv1.DevsyWorkspaceInstance{}
 	for _, p := range projectList.Items {
 		workspaces = append(
@@ -98,7 +98,7 @@ func projectWorkspaces(
 	params projectWorkspacesParams,
 ) []*managementv1.DevsyWorkspaceInstance {
 	ns := project.ProjectNamespace(params.projectName)
-	workspaceList, err := params.managementClient.Loft().
+	workspaceList, err := params.managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(ns).
 		List(ctx, metav1.ListOptions{})

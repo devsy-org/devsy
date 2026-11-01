@@ -1,11 +1,12 @@
 import type { ElectronApplication, Page } from "@playwright/test"
 import { expect, test } from "@playwright/test"
-import { launchApp } from "./electron-app.js"
+import { launchApp, resetMockState } from "./electron-app.js"
 
 let app: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
+  resetMockState()
   ;({ app, page } = await launchApp())
   await page.click('[data-sidebar="sidebar"] a[href="#/providers"]')
   await page
@@ -72,6 +73,128 @@ test.describe("Providers Page", () => {
     }
   })
 
+  test("searches installed sources and clears an unmatched query", async () => {
+    const search = page.getByRole("textbox", {
+      name: "Search installed providers",
+    })
+    await search.fill("devsy-provider-kubernetes")
+    const main = page.locator('[data-slot="sidebar-inset"] main')
+    await expect(
+      main.getByRole("button", { name: /kubernetes icon/ }),
+    ).toBeVisible()
+    await expect(main.getByRole("button", { name: /docker icon/ })).toHaveCount(
+      0,
+    )
+    await search.fill("no-provider-matches-this")
+    await expect(
+      main.getByText("No providers match your search."),
+    ).toBeVisible()
+    await main.getByRole("button", { name: "Clear search" }).click()
+    await expect(search).toHaveValue("")
+    await expect(
+      main.getByRole("button", { name: /docker icon/ }),
+    ).toBeVisible()
+  })
+
+  test("discovers additional providers and reviews optional settings before initialization", async () => {
+    const window = await app.browserWindow(page)
+    const bounds = await window.evaluate((browserWindow) =>
+      browserWindow.getBounds(),
+    )
+    try {
+      await window.evaluate((browserWindow) =>
+        browserWindow.setBounds({ width: 1000, height: 700 }),
+      )
+      await page
+        .getByRole("button", { name: "Add Provider", exact: true })
+        .click()
+      const wizard = page.getByRole("dialog", {
+        name: "Add Provider",
+        exact: true,
+      })
+      await expect(
+        wizard.getByRole("list", { name: "Provider setup steps" }),
+      ).toBeVisible()
+      await wizard
+        .getByLabel("Provider source", { exact: true })
+        .fill("https://example.test/provider.yaml")
+      await wizard
+        .getByRole("button", { name: "Continue", exact: true })
+        .click()
+      await expect(
+        wizard.getByText("Enter an installation name for this custom source."),
+      ).toBeVisible()
+      const terraform = wizard.getByRole("button", { name: /terraform/ })
+      await terraform.scrollIntoViewIfNeeded()
+      await terraform.click()
+      await expect(terraform).toHaveAttribute("aria-pressed", "true")
+      await wizard.getByLabel("Name (optional)").fill("catalog-probe")
+      const next = wizard.getByRole("button", { name: "Continue", exact: true })
+      await next.focus()
+      expect(
+        await next.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          const hit = document.elementFromPoint(
+            rect.x + rect.width / 2,
+            rect.y + rect.height / 2,
+          )
+          return (
+            rect.top >= 0 &&
+            rect.bottom <= innerHeight &&
+            (hit === element || element.contains(hit))
+          )
+        }),
+      ).toBe(true)
+      await next.click()
+      await expect(
+        wizard.getByRole("heading", { name: "Configure catalog-probe" }),
+      ).toBeVisible()
+      await expect(wizard.getByLabel("Docker Host")).toHaveValue(
+        "unix:///var/run/docker.sock",
+      )
+      await expect(wizard.getByLabel("Disk Size")).toHaveValue("30")
+      await wizard.getByLabel("Disk Size").fill("32")
+      await wizard
+        .getByRole("button", { name: "Continue", exact: true })
+        .click()
+      await expect(
+        wizard.getByText("catalog-probe is ready to use."),
+      ).toBeVisible({ timeout: 15000 })
+      await wizard.getByRole("button", { name: "Done", exact: true }).click()
+      await expect(wizard).toBeHidden()
+      await expect(
+        page
+          .locator('[data-slot="sidebar-inset"] main')
+          .getByRole("button", { name: /catalog-probe/ }),
+      ).toBeVisible()
+      await expect(
+        page
+          .locator('[data-slot="sidebar-inset"] main')
+          .getByRole("button", { name: /docker icon docker Default/ }),
+      ).toBeVisible()
+    } finally {
+      const dialog = page.getByRole("dialog")
+      if (await dialog.isVisible()) await page.keyboard.press("Escape")
+      await page.evaluate(async () => {
+        await (
+          window as unknown as {
+            electronAPI: {
+              invoke: (
+                channel: string,
+                args: Record<string, unknown>,
+              ) => Promise<unknown>
+            }
+          }
+        ).electronAPI.invoke("provider_delete", { name: "catalog-probe" })
+      })
+      await window.evaluate(
+        (browserWindow, previousBounds) =>
+          browserWindow.setBounds(previousBounds),
+        bounds,
+      )
+    }
+  })
+
   test("should open provider detail sheet when clicking a provider card", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
     // Click on the docker provider card
@@ -84,6 +207,51 @@ test.describe("Providers Page", () => {
 })
 
 test.describe("Provider lifecycle badges", () => {
+  test("releases an unfinished install when navigating away from provider setup", async () => {
+    const name = "abandon-probe"
+    const dialog = page.getByRole("dialog")
+    if (await dialog.isVisible()) await page.keyboard.press("Escape")
+    try {
+      await page
+        .getByRole("button", { name: "Add Provider", exact: true })
+        .click()
+      const wizard = page.getByRole("dialog", {
+        name: "Add Provider",
+        exact: true,
+      })
+      await wizard.getByRole("button", { name: /docker Local Docker/ }).click()
+      await wizard.getByLabel("Name (optional)").fill(name)
+      await wizard
+        .getByRole("button", { name: "Continue", exact: true })
+        .click()
+      await expect(
+        wizard.getByRole("heading", { name: `Configure ${name}` }),
+      ).toBeVisible()
+
+      await page.keyboard.press("Control+3")
+      await expect(wizard).toBeHidden()
+      const card = page
+        .locator('[data-slot="sidebar-inset"] main')
+        .getByRole("button", { name: new RegExp(name) })
+      await expect(card).toContainText(/not initialized/i, { timeout: 10000 })
+      await expect(card).not.toContainText(/installing|initializing/i)
+    } finally {
+      if (await dialog.isVisible()) await page.keyboard.press("Escape")
+      await page.evaluate(async (providerName) => {
+        await (
+          window as unknown as {
+            electronAPI: {
+              invoke: (
+                channel: string,
+                args: Record<string, unknown>,
+              ) => Promise<unknown>
+            }
+          }
+        ).electronAPI.invoke("provider_delete", { name: providerName })
+      }, name)
+    }
+  })
+
   test("never shows 'not initialized' while add+init is in flight", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
 

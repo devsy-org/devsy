@@ -73,8 +73,8 @@ func ToOptionsWorkspace(workspace *Workspace) map[string]string {
 
 	addWorkspaceIdentityEnv(retVars, workspace)
 	addWorkspaceMachineEnv(retVars, workspace)
-	if workspace.Pro != nil && workspace.Pro.Project != "" {
-		retVars[config.EnvLoftProject] = workspace.Pro.Project
+	if workspace.Platform != nil && workspace.Platform.Project != "" {
+		retVars[config.EnvProject] = workspace.Platform.Project
 	}
 	maps.Copy(retVars, GetBaseEnvironment(workspace.Context, workspace.Provider.Name))
 	return retVars

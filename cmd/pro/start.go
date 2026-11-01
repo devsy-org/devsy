@@ -20,8 +20,8 @@ import (
 
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/api/pkg/auth"
-	loftclientset "github.com/devsy-org/api/pkg/clientset/versioned"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	devsyclientset "github.com/devsy-org/api/pkg/clientset/versioned"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
@@ -38,27 +38,26 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubectl/pkg/util/term"
 )
 
 const (
-	LoftRouterDomainSecret = "loft-router-domain" // #nosec G101
-	passwordChangedHint    = "(has been changed)"
-	defaultUser            = "admin"
+	DevsyRouterDomainSecret = "loft-router-domain" // #nosec G101
+	passwordChangedHint     = "(has been changed)"
+	defaultUser             = "admin"
 
 	ingressNginx         = "ingress-nginx"
 	helmRepositoryConfig = "--repository-config=''"
 	trueString           = "true"
 )
 
-var defaultReleaseName = config.ProReleaseName
+var defaultReleaseName = config.PlatformReleaseName
 
 var defaultDeploymentName = "loft" // Need to update helm chart if we change this!
 
 // StartCmd holds the login cmd flags.
 type StartCmd struct {
-	proflags.GlobalFlags
+	platformflags.GlobalFlags
 
 	KubeClient       kubernetes.Interface
 	RestConfig       *rest.Config
@@ -87,15 +86,15 @@ type StartCmd struct {
 }
 
 // NewStartCmd creates a new command.
-func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewStartCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &StartCmd{
 		GlobalFlags: *flags,
-		Product:     config.ProReleaseName,
-		ChartName:   config.ProReleaseName,
+		Product:     config.PlatformReleaseName,
+		ChartName:   config.PlatformReleaseName,
 	}
 	startCmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start a Devsy Pro instance",
+		Short: "Start a Devsy Platform instance",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},
@@ -132,7 +131,7 @@ func (cmd *StartCmd) Run(ctx context.Context) error {
 	}
 
 	// Install Devsy
-	log.Info("Welcome to Devsy Pro!")
+	log.Info("Welcome to Devsy Platform!")
 	log.Info("This installer will help you to get started.")
 
 	// make sure we are ready for installing
@@ -154,8 +153,7 @@ func (cmd *StartCmd) prepareKubernetes(ctx context.Context) (bool, error) {
 			ctx,
 			cmd.KubeClient,
 			cmd.RestConfig,
-			cmd.Context,
-			cmd.Namespace,
+			uninstallTarget{kubeContext: cmd.Context, namespace: cmd.Namespace},
 		)
 		if err != nil {
 			return false, err
@@ -333,8 +331,8 @@ func (cmd *StartCmd) upgrade(ctx context.Context) error {
 		if !cmd.Reset {
 			return errors.New(
 				err.Error() + fmt.Sprintf(
-					"\n\nIf want to purge and reinstall Devsy Pro, run: %s\n",
-					greenBold("devsy pro start --reset"),
+					"\n\nIf want to purge and reinstall Devsy Platform, run: %s\n",
+					greenBold("devsy platform start --reset"),
 				),
 			)
 		}
@@ -366,14 +364,14 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	}
 
 	// wait until deployment is ready
-	loftPod, err := cmd.waitForDeployment(ctx)
+	devsyPod, err := cmd.waitForDeployment(ctx)
 	if err != nil {
 		return err
 	}
 
 	// check if installed locally
 	if isInstalledLocally(ctx, cmd.KubeClient, cmd.Namespace) {
-		return cmd.successLocalOrRouter(ctx, loftPod)
+		return cmd.successLocalOrRouter(ctx, devsyPod)
 	}
 
 	// get login link
@@ -394,15 +392,15 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	return cmd.successRemote(ctx, host)
 }
 
-func (cmd *StartCmd) successLocalOrRouter(ctx context.Context, loftPod *corev1.Pod) error {
-	// check if loft domain secret is there
+func (cmd *StartCmd) successLocalOrRouter(ctx context.Context, devsyPod *corev1.Pod) error {
+	// check if devsy domain secret is there
 	if !cmd.NoTunnel {
-		loftRouterDomain, err := cmd.pingLoftRouter(ctx, loftPod)
+		devsyRouterDomain, err := cmd.pingDevsyRouter(ctx, devsyPod)
 		if err != nil {
-			log.Errorf("Error retrieving loft router domain: %v", err)
+			log.Errorf("Error retrieving devsy router domain: %v", err)
 			log.Info("Fallback to use port-forwarding")
-		} else if loftRouterDomain != "" {
-			return cmd.successLoftRouter(loftRouterDomain)
+		} else if devsyRouterDomain != "" {
+			return cmd.successDevsyRouter(devsyRouterDomain)
 		}
 	}
 
@@ -453,7 +451,7 @@ func (cmd *StartCmd) successRemote(ctx context.Context, host string) error {
 		return err
 	}
 
-	log.Info("Devsy Pro is reachable at https://" + host)
+	log.Info("Devsy Platform is reachable at https://" + host)
 
 	cmd.printRemoteSuccessMessage(host)
 	return nil
@@ -472,7 +470,7 @@ func (cmd *StartCmd) printRemoteSuccessMessage(host string) {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -483,12 +481,12 @@ Follow this guide to add a valid certificate: %s
 
 #################################################################
 
-Devsy Pro was successfully installed and can now be reached at: %s
+Devsy Platform was successfully installed and can now be reached at: %s
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `,
 		greenBold(url),
-		greenBold("devsy pro login "+url),
+		greenBold("devsy platform login "+url),
 		"https://devsy.sh/docs/administration/ssl",
 		url)
 }
@@ -511,12 +509,12 @@ EXTERNAL-IP may be 'pending' for a while until your cloud provider has created a
 
 #########################################################################################################
 
-The command will wait until Devsy Pro is reachable under the host.
+The command will wait until Devsy Platform is reachable under the host.
 
 `)
 
 	log.Info(
-		"Waiting for you to configure DNS, so Devsy Pro can be reached on https://" + host,
+		"Waiting for you to configure DNS, so Devsy Platform can be reached on https://" + host,
 	)
 }
 
@@ -552,7 +550,7 @@ func (cmd *StartCmd) successLocal() error {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -561,10 +559,10 @@ Login via CLI: %s
 
 #################################################################
 
-Devsy Pro was successfully installed.
+Devsy Platform was successfully installed.
 
-Thanks for using Devsy Pro!
-`, greenBold(url), greenBold("devsy pro login"+" --insecure "+url))
+Thanks for using Devsy Platform!
+`, greenBold(url), greenBold("devsy platform login"+" --insecure "+url))
 	blockChan := make(chan bool)
 	<-blockChan
 	return nil
@@ -576,8 +574,7 @@ func (cmd *StartCmd) prepareInstall(ctx context.Context) error {
 		ctx,
 		cmd.KubeClient,
 		cmd.RestConfig,
-		cmd.Context,
-		cmd.Namespace,
+		uninstallTarget{kubeContext: cmd.Context, namespace: cmd.Namespace},
 	)
 }
 
@@ -651,7 +648,7 @@ func (cmd *StartCmd) resolveKubeConfig(
 		contextToLoad = cmd.Context
 	} else if cfg.LastInstallContext != "" && cfg.LastInstallContext != contextToLoad {
 		contextToLoad, err = log.QuestionDefault(&survey.QuestionOptions{
-			Question: "Seems like you try to use 'devsy pro start' with a different kubernetes context than before. " +
+			Question: "Seems like you try to use 'devsy platform start' with a different kubernetes context than before. " +
 				"Choose which kubernetes context you want to use",
 			DefaultValue: contextToLoad,
 			Options:      []string{contextToLoad, cfg.LastInstallContext},
@@ -677,7 +674,7 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 	_, err := exec.LookPath("helm")
 	if err != nil {
 		return fmt.Errorf(
-			"seems like helm is not installed. Helm is required for the installation of loft. " +
+			"seems like helm is not installed. Helm is required for the installation of devsy. " +
 				"Visit https://helm.sh/docs/intro/install/ for install instructions",
 		)
 	}
@@ -690,7 +687,7 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 	_, err = exec.LookPath("kubectl")
 	if err != nil {
 		return fmt.Errorf(
-			"seems like kubectl is not installed. Kubectl is required for the installation of loft. " +
+			"seems like kubectl is not installed. Kubectl is required for the installation of devsy. " +
 				"Visit https://kubernetes.io/docs/tasks/tools/install-kubectl/ for install instructions",
 		)
 	}
@@ -846,9 +843,9 @@ func (cmd *StartCmd) ensureHostAndIngress(ctx context.Context) error {
 }
 
 func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error) {
-	// wait for loft pod to start
-	log.Info("waiting for Devsy Pro pod to be running")
-	loftPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace)
+	// wait for devsy pod to start
+	log.Info("waiting for Devsy Platform pod to be running")
+	devsyPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace)
 	log.Infof("release Pod started")
 	if err != nil {
 		return nil, err
@@ -870,27 +867,27 @@ func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error)
 		cmd.Password = ""
 	}
 
-	return loftPod, nil
+	return devsyPod, nil
 }
 
-func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (string, error) {
-	loftRouterSecret, err := cmd.KubeClient.CoreV1().
-		Secrets(loftPod.Namespace).
-		Get(ctx, LoftRouterDomainSecret, metav1.GetOptions{})
+func (cmd *StartCmd) pingDevsyRouter(ctx context.Context, devsyPod *corev1.Pod) (string, error) {
+	devsyRouterSecret, err := cmd.KubeClient.CoreV1().
+		Secrets(devsyPod.Namespace).
+		Get(ctx, DevsyRouterDomainSecret, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			return "", nil
 		}
 
-		return "", fmt.Errorf("find loft router domain secret: %w", err)
-	} else if loftRouterSecret.Data == nil || len(loftRouterSecret.Data["domain"]) == 0 {
+		return "", fmt.Errorf("find devsy router domain secret: %w", err)
+	} else if devsyRouterSecret.Data == nil || len(devsyRouterSecret.Data["domain"]) == 0 {
 		return "", nil
 	}
 
 	// get the domain from secret
-	loftRouterDomain := string(loftRouterSecret.Data["domain"])
+	devsyRouterDomain := string(devsyRouterSecret.Data["domain"])
 
-	// wait until loft is reachable at the given url
+	// wait until devsy is reachable at the given url
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -898,7 +895,7 @@ func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (s
 			},
 		},
 	}
-	log.Infof("Waiting until Devsy Pro is reachable at https://%s", loftRouterDomain)
+	log.Infof("Waiting until Devsy Platform is reachable at https://%s", devsyRouterDomain)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second*3,
@@ -908,7 +905,7 @@ func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (s
 			req, err := http.NewRequestWithContext(
 				ctx,
 				http.MethodGet,
-				"https://"+loftRouterDomain+"/version",
+				"https://"+devsyRouterDomain+"/version",
 				nil,
 			)
 			if err != nil {
@@ -927,10 +924,10 @@ func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (s
 		return "", err
 	}
 
-	return loftRouterDomain, nil
+	return devsyRouterDomain, nil
 }
 
-func (cmd *StartCmd) successLoftRouter(url string) error {
+func (cmd *StartCmd) successDevsyRouter(url string) error {
 	if !cmd.NoLogin {
 		err := cmd.login(url)
 		if err != nil {
@@ -950,19 +947,19 @@ func (cmd *StartCmd) successLoftRouter(url string) error {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
 
 #################################################################
 
-Devsy Pro was successfully installed and can now be reached at: %s
+Devsy Platform was successfully installed and can now be reached at: %s
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `,
 		greenBold(url),
-		greenBold("devsy pro login"+" "+url),
+		greenBold("devsy platform login"+" "+url),
 		url,
 	)
 	return nil
@@ -1033,7 +1030,7 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 		return err
 	}
 
-	// log into loft
+	// log into devsy
 	loader, err := client.NewClientFromPath(cmd.Config)
 	if err != nil {
 		return err
@@ -1082,155 +1079,6 @@ func (cmd *StartCmd) isLoggedIn(url string) bool {
 		)
 }
 
-func uninstall(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	restConfig *rest.Config,
-	kubeContext, namespace string,
-) error {
-	if err := runHelmUninstall(ctx, kubeClient, kubeContext, namespace); err != nil {
-		return err
-	}
-
-	if err := cleanupProResources(ctx, kubeClient, restConfig, namespace); err != nil {
-		return err
-	}
-
-	fmt.Fprint(os.Stderr, "\n")
-	log.Info("uninstalled Devsy Pro")
-	fmt.Fprint(os.Stderr, "\n")
-
-	return nil
-}
-
-func runHelmUninstall(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	kubeContext, namespace string,
-) error {
-	releaseName, err := resolveReleaseName(ctx, kubeClient, namespace)
-	if err != nil {
-		return err
-	}
-
-	args := []string{
-		"uninstall",
-		releaseName,
-		"--kube-context",
-		kubeContext,
-		"--namespace",
-		namespace,
-	}
-	log.Infof("Executing command: helm %s", strings.Join(args, " "))
-	helmCmd := exec.CommandContext(ctx, "helm", args...) // #nosec G204 -- internally constructed
-	output, err := helmCmd.CombinedOutput()
-	if err != nil {
-		log.Errorf("error during helm command: %s (%v)", string(output), err)
-	}
-
-	return nil
-}
-
-func cleanupProResources(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	restConfig *rest.Config,
-	namespace string,
-) error {
-	apiRegistrationClient, err := clientset.NewForConfig(restConfig)
-	if err != nil {
-		return err
-	}
-
-	err = deleteIgnoreNotFound(func() error {
-		return apiRegistrationClient.ApiregistrationV1().
-			APIServices().
-			Delete(ctx, "v1.management.devsy.sh", metav1.DeleteOptions{})
-	})
-	if err != nil {
-		return err
-	}
-
-	if err := deleteUser(ctx, restConfig, "admin"); err != nil {
-		return err
-	}
-
-	return deleteRemainingAgentResources(ctx, kubeClient, apiRegistrationClient, namespace)
-}
-
-func deleteRemainingAgentResources(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	apiRegistrationClient *clientset.Clientset,
-	namespace string,
-) error {
-	return deleteIgnoreNotFound(
-		func() error {
-			return kubeClient.CoreV1().
-				Secrets(namespace).
-				Delete(ctx, "loft-user-secret-admin", metav1.DeleteOptions{})
-		},
-		func() error {
-			return kubeClient.CoreV1().
-				Secrets(namespace).
-				Delete(ctx, LoftRouterDomainSecret, metav1.DeleteOptions{})
-		},
-		func() error {
-			return kubeClient.AdmissionregistrationV1().
-				ValidatingWebhookConfigurations().
-				Delete(ctx, "loft-agent", metav1.DeleteOptions{})
-		},
-		func() error {
-			return apiRegistrationClient.ApiregistrationV1().
-				APIServices().
-				Delete(ctx, "v1alpha1.tenancy.kiosk.sh", metav1.DeleteOptions{})
-		},
-		func() error {
-			return apiRegistrationClient.ApiregistrationV1().
-				APIServices().
-				Delete(ctx, "v1.cluster.devsy.sh", metav1.DeleteOptions{})
-		},
-		func() error {
-			return kubeClient.CoreV1().
-				ConfigMaps(namespace).
-				Delete(ctx, "loft-agent-controller", metav1.DeleteOptions{})
-		},
-		func() error {
-			return kubeClient.CoreV1().
-				ConfigMaps(namespace).
-				Delete(ctx, "loft-applied-defaults", metav1.DeleteOptions{})
-		},
-	)
-}
-
-func resolveReleaseName(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	namespace string,
-) (string, error) {
-	releaseName := config.ProReleaseName
-	deploy, err := kubeClient.AppsV1().
-		Deployments(namespace).
-		Get(ctx, defaultDeploymentName, metav1.GetOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return "", err
-	} else if deploy != nil && deploy.Labels != nil && deploy.Labels["release"] != "" {
-		releaseName = deploy.Labels["release"]
-	}
-
-	return releaseName, nil
-}
-
-func deleteIgnoreNotFound(deletes ...func() error) error {
-	for _, del := range deletes {
-		if err := del(); err != nil && !kerrors.IsNotFound(err) {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func isAlreadyInstalled(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
@@ -1255,10 +1103,10 @@ func getDefaultPassword(
 	kubeClient kubernetes.Interface,
 	namespace string,
 ) (string, error) {
-	loftNamespace, err := kubeClient.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	devsyNamespace, err := kubeClient.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			loftNamespace, err := kubeClient.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+			devsyNamespace, err := kubeClient.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: namespace,
 				},
@@ -1267,13 +1115,13 @@ func getDefaultPassword(
 				return "", err
 			}
 
-			return string(loftNamespace.UID), nil
+			return string(devsyNamespace.UID), nil
 		}
 
 		return "", err
 	}
 
-	return string(loftNamespace.UID), nil
+	return string(devsyNamespace.UID), nil
 }
 
 func isInstalledLocally(
@@ -1298,7 +1146,7 @@ func enterHostNameQuestion() (string, error) {
 	return log.QuestionDefault(&survey.QuestionOptions{
 		Question: fmt.Sprintf(
 			"Enter a hostname for your %s instance (e.g. loft.my-domain.tld): \n ",
-			config.ProductNamePro,
+			config.ProductNamePlatform,
 		),
 		ValidationFunc: func(answer string) error {
 			u, err := netUrl.Parse("https://" + answer)
@@ -1428,52 +1276,23 @@ func labelIngressSecret(
 	return nil
 }
 
-func deleteUser(ctx context.Context, restConfig *rest.Config, name string) error {
-	loftClient, err := loftclientset.NewForConfig(restConfig)
-	if err != nil {
-		return err
-	}
-
-	user, err := loftClient.StorageV1().Users().Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil
-	} else if len(user.Finalizers) > 0 {
-		user.Finalizers = nil
-		_, err = loftClient.StorageV1().Users().Update(ctx, user, metav1.UpdateOptions{})
-		if err != nil {
-			if kerrors.IsConflict(err) {
-				return deleteUser(ctx, restConfig, name)
-			}
-
-			return err
-		}
-	}
-
-	err = loftClient.StorageV1().Users().Delete(ctx, name, metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return err
-	}
-
-	return nil
-}
-
 func ensureAdminPassword(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	restConfig *rest.Config,
 	password string,
 ) (bool, error) {
-	loftClient, err := loftclientset.NewForConfig(restConfig)
+	devsyClient, err := devsyclientset.NewForConfig(restConfig)
 	if err != nil {
 		return false, err
 	}
 
-	admin, err := loftClient.StorageV1().Users().Get(ctx, "admin", metav1.GetOptions{})
+	admin, err := devsyClient.StorageV1().Users().Get(ctx, "admin", metav1.GetOptions{})
 	switch {
 	case err != nil && !kerrors.IsNotFound(err):
 		return false, err
 	case admin == nil:
-		admin, err = loftClient.StorageV1().Users().Create(ctx, &storagev1.User{
+		admin, err = devsyClient.StorageV1().Users().Create(ctx, &storagev1.User{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "admin",
 			},
@@ -1600,7 +1419,7 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	// wait until loft is reachable at the given url
+	// wait until devsy is reachable at the given url
 	client := &http.Client{Transport: transport}
 	url := "https://" + host + "/version"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -1621,14 +1440,14 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 				"error decoding response from %s: %w. Try running '%s --reset'",
 				url,
 				err,
-				"devsy pro start",
+				"devsy platform start",
 			)
 		} else if v.Version == "" {
 			return false, fmt.Errorf(
 				"unexpected response from %s: %s. Try running '%s --reset'",
 				url,
 				string(out),
-				"devsy pro start",
+				"devsy platform start",
 			)
 		}
 
@@ -1643,7 +1462,7 @@ func upgradeRelease(
 	chartName, chartRepo, kubeContext, namespace string,
 	extraArgs []string,
 ) error {
-	// now we install loft
+	// now we install devsy
 	args := []string{
 		"upgrade",
 		defaultReleaseName,
@@ -1681,7 +1500,7 @@ func upgradeRelease(
 		return fmt.Errorf("error during helm command: %s (%w)", string(output), err)
 	}
 
-	log.Infof("Devsy Pro has been deployed to your cluster!")
+	log.Infof("Devsy Platform has been deployed to your cluster!")
 	return nil
 }
 

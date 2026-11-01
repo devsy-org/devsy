@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/credentials"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -294,7 +296,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 		return err
 	}
 
-	cmd.startServicesDaemon(ctx, devsyConfig, client, toolSSHClient)
+	githubEnv := cmd.startServicesDaemon(ctx, devsyConfig, client, toolSSHClient)
 
 	gpgTunnel := newGPGTunnel(cmd, devsyConfig)
 	defer runGPGTunnelInBackground(ctx, gpgTunnel, toolSSHClient)()
@@ -318,6 +320,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 			SessionOptions: machine.SSHSessionOptions{
 				TermMode:        cmd.TermMode,
 				InstallTerminfo: cmd.InstallTerminfo,
+				EnvVars:         githubEnv,
 			},
 			Stderr: os.Stderr,
 		},
@@ -329,26 +332,22 @@ func (cmd *SSHCmd) startServicesDaemon(
 	devsyConfig *config.Config,
 	client client2.DaemonClient,
 	sshClient *ssh.Client,
-) {
+) map[string]string {
 	if !cmd.StartServices {
-		return
+		return tunnel.GitHubSessionEnvironment(credentials.Readiness{GitHubState: "disabled"})
 	}
-	go func() {
-		err := clientimplementation.StartServicesDaemon(
-			ctx,
-			clientimplementation.StartServicesDaemonOptions{
-				DevsyConfig:  devsyConfig,
-				Client:       client,
-				SSHClient:    sshClient,
-				User:         cmd.User,
-				ForwardPorts: false,
-				ExtraPorts:   nil,
-			},
-		)
-		if err != nil {
-			log.Errorf("error starting services: %v", err)
-		}
-	}()
+	status := clientimplementation.StartPreparedServicesDaemon(
+		ctx,
+		clientimplementation.StartServicesDaemonOptions{
+			DevsyConfig:  devsyConfig,
+			Client:       client,
+			SSHClient:    sshClient,
+			User:         cmd.User,
+			ForwardPorts: false,
+			ExtraPorts:   nil,
+		},
+	)
+	return tunnel.GitHubSessionEnvironment(status)
 }
 
 func (cmd *SSHCmd) startProxyTunnel(
@@ -445,7 +444,7 @@ func (cmd *SSHCmd) startTunnel(
 		return err
 	}
 
-	cmd.startTunnelServices(ctx, devsyConfig, containerClient, workspaceClient)
+	githubEnv := cmd.startTunnelServices(ctx, devsyConfig, containerClient, workspaceClient)
 
 	writer, cleanup := cmd.setupTunnelWriter(ctx, devsyConfig, containerClient)
 	defer cleanup()
@@ -459,6 +458,7 @@ func (cmd *SSHCmd) startTunnel(
 	if err != nil {
 		return err
 	}
+	maps.Copy(envVars, githubEnv)
 
 	// Traffic is coming in from the outside, we need to forward it to the container
 	if cmd.Stdio {
@@ -541,6 +541,7 @@ func (cmd *SSHCmd) runInteractiveTunnelSession(
 		SessionOptions: machine.SSHSessionOptions{
 			TermMode:        cmd.TermMode,
 			InstallTerminfo: cmd.InstallTerminfo,
+			EnvVars:         params.envVars,
 		},
 		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, _ io.Writer) error {
 			if cmd.SSHKeepAliveInterval != DisableSSHKeepAlive {
@@ -565,14 +566,17 @@ func (cmd *SSHCmd) startTunnelServices(
 	devsyConfig *config.Config,
 	containerClient *ssh.Client,
 	workspaceClient client2.BaseWorkspaceClient,
-) {
+) map[string]string {
 	if !cmd.StartServices {
-		return
+		return tunnel.GitHubSessionEnvironment(credentials.Readiness{GitHubState: "disabled"})
 	}
 
 	opts := startServicesOptions{
 		ConfigureDockerCredentials: devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectDockerCredentials,
+		) == config.BoolTrue,
+		ConfigureGitHubCredentials: devsyConfig.ContextOption(
+			config.ContextOptionGitHubCLIForwarding,
 		) == config.BoolTrue,
 		ConfigureGitCredentials: devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectGitCredentials,
@@ -582,7 +586,14 @@ func (cmd *SSHCmd) startTunnelServices(
 		) == config.BoolTrue,
 		GitSSHSigningKey: cmd.GitSSHSigningKey,
 	}
-	go cmd.startServices(ctx, devsyConfig, containerClient, workspaceClient.WorkspaceConfig(), opts)
+	status := cmd.startServices(
+		ctx,
+		devsyConfig,
+		containerClient,
+		workspaceClient.WorkspaceConfig(),
+		opts,
+	)
+	return tunnel.GitHubSessionEnvironment(status)
 }
 
 func (cmd *SSHCmd) buildSSHServerCommand(
@@ -656,6 +667,7 @@ func resolveMergedWorkspaceFolder(
 type startServicesOptions struct {
 	ConfigureDockerCredentials     bool
 	ConfigureGitCredentials        bool
+	ConfigureGitHubCredentials     bool
 	ConfigureGitSSHSignatureHelper bool
 	GitSSHSigningKey               string
 }
@@ -666,9 +678,9 @@ func (cmd *SSHCmd) startServices(
 	containerClient *ssh.Client,
 	workspace *provider.Workspace,
 	opts startServicesOptions,
-) {
+) credentials.Readiness {
 	if cmd.User != "" {
-		err := tunnel.RunServices(
+		return tunnel.StartPreparedServices(
 			ctx,
 			tunnel.RunServicesOptions{
 				DevsyConfig:                    devsyConfig,
@@ -680,14 +692,13 @@ func (cmd *SSHCmd) startServices(
 				Workspace:                      workspace,
 				ConfigureDockerCredentials:     opts.ConfigureDockerCredentials,
 				ConfigureGitCredentials:        opts.ConfigureGitCredentials,
+				ConfigureGitHubCredentials:     opts.ConfigureGitHubCredentials,
 				ConfigureGitSSHSignatureHelper: opts.ConfigureGitSSHSignatureHelper,
 				GitSSHSigningKey:               opts.GitSSHSigningKey,
 			},
 		)
-		if err != nil {
-			log.Debugf("error running credential server: %v", err)
-		}
 	}
+	return credentials.Readiness{GitHubState: "unavailable"}
 }
 
 type sshKeepAliveClient interface {

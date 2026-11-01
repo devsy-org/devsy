@@ -325,7 +325,7 @@ func installPrivilegedFile(ctx context.Context, deps Dependencies, target, conte
 		deps,
 		CommandSpec{
 			Path:    commandSudo,
-			Args:    []string{"install", "-d", "-m", "0755", filepath.Dir(target)},
+			Args:    []string{commandInstall, "-d", "-m", "0755", filepath.Dir(target)},
 			Timeout: 15 * time.Second,
 		},
 	); err != nil {
@@ -336,7 +336,7 @@ func installPrivilegedFile(ctx context.Context, deps Dependencies, target, conte
 		deps,
 		CommandSpec{
 			Path:    commandSudo,
-			Args:    []string{"install", "-m", "0644", name, target},
+			Args:    []string{commandInstall, "-m", "0644", name, target},
 			Timeout: 15 * time.Second,
 		},
 	)

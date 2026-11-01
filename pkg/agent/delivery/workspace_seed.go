@@ -164,9 +164,5 @@ func (d *LocalDockerDelivery) copyDirIntoVolume(
 		d.helperImageName(),
 		"sh", "-c", script.String(),
 	}
-	result, err := runCaptured(ctx, d.cmd(ctx, args...))
-	if err != nil {
-		return fmt.Errorf("%s: %w", capturedOutput(result), err)
-	}
-	return nil
+	return runDockerCLI(ctx, d.cmd(ctx, args...))
 }

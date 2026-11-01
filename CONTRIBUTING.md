@@ -16,7 +16,7 @@ posting a comment on the pull request with the exact text the bot provides.
 **CLI Development:**
 
 - [Go 1.26+](https://go.dev/doc/install)
-- [Task](https://taskfile.dev/) (optional, but recommended for running tasks)
+- [mise](https://mise.jdx.dev/) (installs the pinned toolchain and runs project tasks via `mise run <task>`)
 
 **Desktop Application Development:**
 
@@ -34,24 +34,24 @@ posting a comment on the pull request with the exact text the bot provides.
 
 2. If you want to change Devsy agent code:
    - Exchange the URL in [DefaultAgentDownloadURL](./pkg/config/repo.go) with a custom public repository release
-   - Build devsy via: `task cli:build:dev`
+   - Build devsy via: `mise run cli:build:dev`
    - Upload `dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64` and ARM64 variant to your public repository release assets
 
 ## Building from Source
 
 ### CLI
 
-**Using Task (recommended):**
+**Using mise (recommended):**
 
 ```bash
 # Build CLI for development
-task cli:build:dev
+mise run cli:build:dev
 
 # Build CLI for production
-task cli:build
+mise run cli:build
 
 # Build with Pro features
-task cli:build:dev:pro
+mise run cli:build:dev:pro
 ```
 
 **Using Go directly:**
@@ -64,17 +64,17 @@ The binary will be output as `devsy` in the current directory.
 
 ### Desktop Application
 
-**Using Task (recommended):**
+**Using mise (recommended):**
 
 ```bash
 # Setup Electron environment (first time only)
-task desktop:setup
+mise run desktop:setup
 
 # Run in development mode
-task desktop:dev
+mise run desktop:dev
 
 # Build the application
-task desktop:build
+mise run desktop:build
 ```
 
 **Manual build:**
@@ -93,16 +93,16 @@ The packaged application will be in `desktop/release/`
 
 ```bash
 # Tidy dependencies
-task cli:tidy
+mise run cli:tidy
 
 # Run linters
-task cli:lint
+mise run cli:lint
 
 # Run unit tests
-task cli:test
+mise run cli:test
 
 # Build for development
-task cli:build:dev
+mise run cli:build:dev
 ```
 
 ### Desktop Development
@@ -123,35 +123,35 @@ cd desktop
 npm ci
 
 # Check code quality (type check + svelte-check)
-task desktop:check
+mise run desktop:check
 
 # Run unit tests
-task desktop:test
+mise run desktop:test
 
 # Run e2e tests
-task desktop:test:e2e
+mise run desktop:test:e2e
 ```
 
 ### E2E Testing
 
 ```bash
 # Build for e2e tests
-task cli:test:e2e:build
+mise run cli:test:e2e:build
 
 # Run all e2e tests
-task cli:test:e2e
+mise run cli:test:e2e
 
 # Run specific test suite
-task cli:test:e2e:suite -- "suite-name"
+mise run cli:test:e2e:suite "suite-name"
 
 # Run focused tests
-task cli:test:e2e:focus -- "test-pattern"
+mise run cli:test:e2e:focus "test-pattern"
 
 # Setup kind cluster for testing
-task cli:test:e2e:kind:setup
+mise run cli:test:e2e:kind:setup
 
 # Teardown kind cluster
-task cli:test:e2e:kind:teardown
+mise run cli:test:e2e:kind:teardown
 ```
 
 ### gRPC Development
@@ -159,7 +159,7 @@ task cli:test:e2e:kind:teardown
 If you need to modify the gRPC tunnel code:
 
 ```bash
-task cli:build:grpc
+mise run cli:build:grpc
 ```
 
 This requires:
@@ -172,7 +172,7 @@ This requires:
 
 1. Build Devsy:
    ```bash
-   task cli:build:dev
+   mise run cli:build:dev
    ```
 
 2. Add a provider:
@@ -194,16 +194,16 @@ This requires:
 
 ```bash
 # Build UI using act
-task desktop:act:build:ui
+mise run desktop:act:build:ui
 
 # Build desktop app using act
-task desktop:act:build:app
+mise run desktop:act:build:app
 
 # Build flatpak using act
-task desktop:act:build:flatpak
+mise run desktop:act:build:flatpak
 
 # Run e2e tests with focus
-task cli:test:e2e:act:focus -- "test-pattern"
+mise run cli:test:e2e:act:focus "test-pattern"
 ```
 
 ## Developing Providers
@@ -264,33 +264,6 @@ devsy://import?workspace_id=<id>&workspace_uid=<uid>&devsy_pro_host=<host>&optio
 - `devsy_pro_host` (required): Devsy Pro host URL
 - `options` (optional): Additional options
 
-## Useful Task Commands
-
-```bash
-# View all available tasks
-task --list
-
-# CLI tasks
-task cli:build              # Build CLI for production
-task cli:build:dev          # Build CLI for development
-task cli:lint               # Run linters
-task cli:test               # Run unit tests
-task cli:tidy               # Tidy go.mod and go.sum
-
-# Desktop tasks
-task desktop:build          # Build desktop application
-task desktop:check          # Check code quality
-task desktop:dev            # Run in development mode
-task desktop:setup          # Setup Electron environment
-task desktop:test           # Run unit tests
-task desktop:test:e2e       # Run e2e tests
-
-# E2E testing
-task cli:test:e2e           # Run all e2e tests
-task cli:test:e2e:suite     # Run specific test suite
-task cli:test:e2e:focus     # Run focused tests
-```
-
 ## Repository Structure
 
 - `/cmd` - CLI command implementations
@@ -300,6 +273,14 @@ task cli:test:e2e:focus     # Run focused tests
 - `/providers` - Built-in provider definitions
 - `/sites` - Documentation and download websites
 - `/hack` - Build and development scripts
+
+## Pull Requests
+
+The pull request template asks for three things reviewers rely on:
+
+- **AI disclosure.** AI-assisted code is welcome. State the tool, model, and what it was used for, and make sure you understand every line you submit.
+- **Integration tests.** CLI behavior changes need Ginkgo e2e coverage under `e2e/tests/`. Desktop behavior changes need Playwright e2e coverage under `desktop/e2e/`. Unit tests alone are not enough. If you believe no integration test is needed, say why in the PR.
+- **Conventional Commit title.** The title becomes the squash commit subject.
 
 ## Getting Help
 

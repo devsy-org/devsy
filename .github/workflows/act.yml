@@ -20,13 +20,8 @@ jobs:
         with:
           node-version: "24"
 
-      - name: setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      - name: install task
-        run: go install github.com/go-task/task/v3/cmd/task@latest
+      - name: setup mise tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
 
       - name: install goreleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
@@ -39,7 +34,7 @@ jobs:
         run: docker version && docker ps -a
 
       - name: build test binary
-        run: task cli:test:e2e:build
+        run: mise run cli:test:e2e:build
 
       - name: generate GitHub App token
         id: app-token
@@ -61,7 +56,7 @@ jobs:
             KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
             PATH="${PATH}" \
             GOROOT="${GOROOT}" \
-            ${{ github.event.inputs.test_focus == '' && 'task cli:test:e2e' || format('task cli:test:e2e:focus -- "{0}"', github.event.inputs.test_focus) }}
+            ${{ github.event.inputs.test_focus == '' && 'mise run cli:test:e2e' || format('mise run cli:test:e2e:focus -- "{0}"', github.event.inputs.test_focus) }}
 
   build-ui:
     name: Build User Interface

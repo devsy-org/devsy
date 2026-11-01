@@ -9,11 +9,10 @@ locked = true
 [tools]
 go = "1.26.9"
 node = "24"
-task = "3.53.1"
-golangci-lint = "2.13.2"
+golangci-lint = "2.14.0"
 prek = "0.5.3"
-protoc = "36.1"
-gh = "2.100.0"
+protoc = "36.2"
+gh = "2.101.0"
 
 [tasks.setup]
 depends = ["setup:dependencies", "setup:hooks"]
@@ -28,4 +27,293 @@ npm ci
 [tasks."setup:hooks"]
 run = '''
 prek install
+'''
+
+[tasks."agent-skill:validate"]
+description = "validate the end-user Devsy skill and installer discovery (requires Node 22.20+ and Python 3.11+)"
+run = "go run ./hack/validate_agent_skill"
+
+[tasks."cli:tidy"]
+description = "tidy go.mod and go.sum"
+run = "go mod tidy"
+
+[tasks."cli:licenses"]
+description = "regenerate THIRD_PARTY_LICENSES.md and enforce the license allowlist"
+run = "go run ./hack/licenses"
+
+[tasks."cli:licenses:check"]
+description = "verify THIRD_PARTY_LICENSES.md is in sync and all licenses are allowed (CI)"
+run = "go run ./hack/licenses --check"
+
+[tasks."cli:lint"]
+description = "lint go code using golangci-lint"
+run = "golangci-lint run ./..."
+
+[tasks."cli:lint:ci"]
+description = "lint using golangci-lint with CI parity"
+run = '''
+golangci-lint config verify
+git fetch --quiet origin main
+patch="$(mktemp)"
+trap 'rm -f "$patch"' EXIT
+git diff "$(git merge-base HEAD origin/main)" > "$patch"
+golangci-lint run --new-from-patch="$patch" --new=false ./...
+'''
+
+[tasks."cli:lint:fix"]
+description = "fix lint issues using golangci-lint"
+run = "golangci-lint run --fix ./..."
+
+[tasks."cli:format"]
+description = "format go code using golangci-lint formatters"
+run = "golangci-lint fmt ./..."
+
+[tasks."cli:act:lint"]
+description = "run devsy linters using act"
+run = "act workflow_dispatch -W .github/workflows/lint.yml"
+
+[tasks."cli:build"]
+description = "build devsy CLI"
+env = { GITHUB_REPOSITORY_OWNER = "devsy-org" }
+run = "go tool goreleaser build --id devsy --snapshot --clean"
+
+[tasks."cli:build:dev"]
+description = "build devsy CLI for development"
+env = { GITHUB_REPOSITORY_OWNER = "devsy-org", DEVSY_CLI_VERSION = "v0.0.0" }
+run = "go tool goreleaser build --id devsy-dev --snapshot --clean"
+
+[tasks."cli:build:dev:pro"]
+description = "build devsy CLI for pro feature (namespace from NS, default: default)"
+env = { GITHUB_REPOSITORY_OWNER = "devsy-org" }
+run = 'DEVSY_PRO_NS="${NS:-default}" go tool goreleaser build --id devsy-pro-dev --snapshot --clean'
+
+[tasks."cli:build:setup-cache"]
+description = "setup cache for CLI builds"
+depends = ["cli:build:dev"]
+run = [
+  { task = "cli:build:teardown-cache" },
+  'mkdir -p "${TMPDIR:-/tmp/}devsy-cache"',
+  'cp dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 "${TMPDIR:-/tmp/}devsy-cache/devsy-linux-amd64"',
+]
+
+[tasks."cli:build:teardown-cache"]
+description = "teardown cache for CLI builds"
+run = 'rm -rf "${TMPDIR:-/tmp/}devsy-cache"'
+
+[tasks."cli:build:grpc"]
+description = "build devsy gRPC code"
+dir = "pkg/agent/tunnel"
+run = '''
+# protoc invokes protoc-gen-go and protoc-gen-go-grpc from PATH, so install the plugins to GOBIN first.
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+export PATH="$(go env GOPATH)/bin:$PATH"
+protoc -I . tunnel.proto --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative
+'''
+
+[tasks."cli:test"]
+description = "run the unit-test tier defined in hack/ci/suites.yaml"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+go run ./hack/ci unit --coverprofile=dist/profile.out
+'''
+
+[tasks."cli:test:e2e:build"]
+description = "build devsy for e2e tests"
+run = [
+  { task = "cli:build:dev" },
+  "mkdir -p e2e/bin",
+  'for binary in dist/devsy-dev_linux_*/devsy-linux-*; do cp "$binary" e2e/bin/; done',
+  'for arch in amd64 arm64; do CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "e2e/bin/ghfixture-linux-$arch" ./e2e/cmd/ghfixture; done',
+  '''
+host_os="$(go env GOOS)"
+host_arch="$(go env GOARCH)"
+host_binary="devsy-${host_os}-${host_arch}"
+if [ "$host_os" = "windows" ]; then
+  host_binary="${host_binary}.exe"
+fi
+host_dir=""
+for candidate in dist/devsy-dev_${host_os}_${host_arch}_*; do
+  if [ -d "$candidate" ]; then
+    if [ -n "$host_dir" ]; then
+      echo "multiple host build directories match ${host_os}/${host_arch}" >&2
+      exit 1
+    fi
+    host_dir="$candidate"
+  fi
+done
+test -n "$host_dir"
+test -f "${host_dir}/${host_binary}"
+cp "${host_dir}/${host_binary}" "e2e/bin/${host_binary}"
+''',
+]
+
+[tasks."cli:test:e2e"]
+description = "run e2e tests"
+depends = ["cli:test:e2e:build"]
+dir = "e2e"
+run = "go tool ginkgo"
+
+[tasks."cli:test:e2e:suite"]
+description = "run e2e tests suite (usage: mise run cli:test:e2e:suite <label>)"
+usage = 'arg "<label>" help="Ginkgo label filter"'
+depends = ["cli:test:e2e:build"]
+dir = "e2e"
+run = 'go tool ginkgo --label-filter "$usage_label"'
+
+[tasks."cli:test:e2e:focus"]
+description = "run focused e2e tests (usage: mise run cli:test:e2e:focus <pattern>)"
+usage = 'arg "<pattern>" help="Ginkgo focus pattern"'
+depends = ["cli:test:e2e:build"]
+dir = "e2e"
+run = 'go tool ginkgo --focus "$usage_pattern"'
+
+[tasks."cli:test:e2e:kind:setup"]
+description = "setup kind cluster for e2e tests"
+run = '''
+kind_version="$(kind version -q)"
+kind_version="${kind_version#v}"
+kind_major="${kind_version%%.*}"
+kind_minor_patch="${kind_version#*.}"
+kind_minor="${kind_minor_patch%%.*}"
+kind_patch="${kind_minor_patch#*.}"
+kind_version_valid=true
+case "$kind_version" in
+  *.*.*) ;;
+  *) kind_version_valid=false ;;
+esac
+case "$kind_major" in
+  ''|*[!0-9]*) kind_version_valid=false ;;
+esac
+case "$kind_minor" in
+  ''|*[!0-9]*) kind_version_valid=false ;;
+esac
+case "$kind_patch" in
+  ''|*[!0-9]*) kind_version_valid=false ;;
+esac
+if [ "$kind_version_valid" != true ]; then
+  echo "kind v0.33.0 or newer is required for Kubernetes v1.36.4 (found $kind_version)" >&2
+  exit 1
+fi
+case "$kind_major" in
+  0)
+    if [ "$kind_minor" -lt 33 ]; then
+      echo "kind v0.33.0 or newer is required for Kubernetes v1.36.4 (found $kind_version)" >&2
+      exit 1
+    fi
+    ;;
+  [1-9]|[1-9][0-9]*) ;;
+  *)
+    echo "kind v0.33.0 or newer is required for Kubernetes v1.36.4 (found $kind_version)" >&2
+    exit 1
+    ;;
+esac
+kind create cluster --image kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+'''
+
+[tasks."cli:test:e2e:kind:teardown"]
+description = "teardown kind cluster for e2e tests"
+run = "kind delete cluster"
+
+[tasks."cli:test:e2e:ginkgo:install"]
+description = "install ginkgo for e2e tests"
+env = { GOPROXY = "direct" }
+run = "command -v ginkgo >/dev/null 2>&1 || go install github.com/onsi/ginkgo/v2/ginkgo"
+
+[tasks."cli:test:e2e:act:focus"]
+description = "run e2e tests using act with focus (usage: mise run cli:test:e2e:act:focus <pattern>)"
+usage = 'arg "<pattern>" help="Ginkgo focus pattern"'
+run = 'act workflow_dispatch -W .github/workflows/act.yml -j e2e-test --input "test_focus=$usage_pattern"'
+
+[tasks."desktop:deps"]
+description = "install Linux desktop runtime dependencies for Electron and Playwright"
+run = [
+  "sudo apt-get update",
+  '''
+sudo apt-get install -y \
+  libglib2.0-0 libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+  libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 \
+  libcairo2 libxshmfence1 libgtk-3-0 libxss1 libatspi2.0-0 libnotify4 libxtst6 xdg-utils \
+  libuuid1 xvfb
+''',
+]
+
+[tasks."desktop:setup"]
+description = "setup Electron desktop application"
+depends = ["desktop:deps"]
+dir = "desktop"
+run = [
+  { task = "cli:build:dev" },
+  "mkdir -p resources/bin",
+  "cp ../dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 ./resources/bin/devsy",
+  "chmod +x ./resources/bin/devsy",
+  "npm ci",
+]
+
+[tasks."desktop:dev"]
+description = "run desktop application in dev mode"
+dir = "desktop"
+run = "npm run electron:dev"
+
+[tasks."desktop:build"]
+description = "build desktop application"
+dir = "desktop"
+run = [
+  "npm ci",
+  { task = "desktop:check" },
+  "npm run build",
+]
+
+[tasks."desktop:check"]
+description = "check desktop application"
+dir = "desktop"
+run = [
+  "npm run check",
+  "npm run lint:check",
+]
+
+[tasks."desktop:test"]
+description = "run desktop unit tests"
+dir = "desktop"
+run = "npm run test"
+
+[tasks."desktop:test:e2e"]
+description = "run desktop e2e tests"
+depends = ["desktop:deps"]
+dir = "desktop"
+run = '''
+export DISPLAY=:99
+if [ ! -f /tmp/.X99-lock ]; then
+  Xvfb :99 -screen 0 1280x720x24 >/tmp/devsy-xvfb.log 2>&1 &
+  # Wait for Xvfb to be ready (max 10 seconds)
+  for i in $(seq 1 50); do
+    if [ -f /tmp/.X99-lock ]; then
+      break
+    fi
+    sleep 0.2
+  done
+fi
+npm run test:e2e
+'''
+
+[tasks."desktop:act:build:ui"]
+description = "build desktop ui using act"
+run = "act workflow_dispatch -W .github/workflows/act.yml -j build-ui"
+
+[tasks."desktop:act:build:app"]
+description = "build desktop application using act"
+run = "act workflow_dispatch -W .github/workflows/act.yml -j build-desktop"
+
+[tasks."desktop:act:build:flatpak"]
+description = "build desktop flatpak using act"
+run = "act workflow_dispatch -W .github/workflows/act.yml -j build-flatpak"
+
+[tasks."github:dev-release:upload"]
+description = "upload dev binaries to GitHub release tag v0.0.0-10 for testing"
+run = '''
+TMP_DIR="$(mktemp -d)"
+cp dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 "$TMP_DIR/devsy-linux-amd64"
+gh release upload v0.0.0-10 dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 --repo devsy-org/devsy --clobber
+rm -rf "$TMP_DIR"
 '''

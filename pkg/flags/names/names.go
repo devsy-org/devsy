@@ -61,7 +61,8 @@ const (
 	Reset                     = "reset"
 	Secret                    = "secret"
 	SecretsFile               = "secrets-file"
-	SkipPro                   = "skip-pro"
+	SkipPlatform              = "skip-platform"
+	SkipProAlias              = "skip-pro"
 	Source                    = "source"
 	UpdateRemoteUserUID       = "update-remote-user-uid"
 	UserEnvProbe              = "user-env-probe"
@@ -206,6 +207,7 @@ const (
 	LogLevel             = "log-level"
 	LogFormat            = "log-format"
 	ResultFormat         = "result-format"
+	NoStatus             = "no-status"
 	SetupInfo            = "setup-info"
 	SecretsEnv           = "secrets-env"
 	OwnerTrust           = "ownertrust"
@@ -260,11 +262,12 @@ const (
 	FromExisting   = "from-existing"
 	Prerelease     = "prerelease"
 	ProviderSource = "provider-source"
+	Theme          = "theme"
 	Use            = "use"
 	Version        = "version"
 )
 
-// Pro / platform commands.
+// Platform commands.
 const (
 	Channel          = "channel"
 	ChartPath        = "chart-path"

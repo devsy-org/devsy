@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/ci"
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
+	"github.com/devsy-org/devsy/cmd/container"
 	"github.com/devsy-org/devsy/cmd/context"
 	envcmd "github.com/devsy-org/devsy/cmd/env"
 	"github.com/devsy-org/devsy/cmd/feature"
@@ -55,10 +56,10 @@ const (
 	flagLogOutput = "--" + names.LogOutput
 	flagLogFormat = "--" + names.LogFormat
 
-	// envProEnabled gates registration of the `pro` command tree. The pro
+	// envPlatformEnabled gates registration of the `pro` command tree. The pro
 	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
 	// expose it (e.g. for internal testing).
-	envProEnabled = "DEVSY_PRO_ENABLED"
+	envPlatformEnabled = "DEVSY_PRO_ENABLED"
 
 	internalCommand = "internal"
 
@@ -78,8 +79,8 @@ const (
     $ devsy provider add docker`
 )
 
-func proEnabled() bool {
-	return os.Getenv(envProEnabled) == "true"
+func platformEnabled() bool {
+	return os.Getenv(envPlatformEnabled) == "true"
 }
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
@@ -290,6 +291,12 @@ func passthroughExitCode(err error, machineMode bool) (int, bool) {
 		}
 		return execExitErr.ExitCode(), true
 	}
+	if commandExit, ok := errors.AsType[*workspace.CommandExitError](err); ok {
+		if machineMode {
+			renderCLIError(clierr.Classify(commandExit), true)
+		}
+		return commandExit.Code, true
+	}
 	return 0, false
 }
 
@@ -415,6 +422,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	rootCmd.AddCommand(
 		ci.NewCICmd(globalFlags),
 		cliconfig.NewConfigCmd(globalFlags),
+		container.NewContainerCmd(globalFlags, rootCmd.PersistentPreRunE),
 		context.NewContextCmd(globalFlags),
 		envcmd.NewEnvCmd(globalFlags),
 		feature.NewFeatureCmd(globalFlags),
@@ -429,7 +437,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		wsCmdPkg.NewWorkspaceCmd(globalFlags),
 		cmdinternal.NewInternalCmd(globalFlags),
 	)
-	if proEnabled() {
-		rootCmd.AddCommand(pro.NewProCmd(globalFlags))
+	if platformEnabled() {
+		rootCmd.AddCommand(pro.NewPlatformCmd(globalFlags))
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -30,21 +29,17 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 			"should forward port with onAutoForward=silent and skip port with onAutoForward=ignore",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
+				framework.SkipOnWindows("skipping on windows")
 
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ports-attributes")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/ports-attributes", initialDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
+				err := f.DevsyProviderUse(ctx, "docker")
 				framework.ExpectNoError(err)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				err = f.DevsyUp(ctx, tempDir)
@@ -132,21 +127,17 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 			"should forward port with notify policy and apply label metadata",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
+				framework.SkipOnWindows("skipping on windows")
 
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ports-attributes")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/ports-attributes", initialDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
+				err := f.DevsyProviderUse(ctx, "docker")
 				framework.ExpectNoError(err)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				err = f.DevsyUp(ctx, tempDir)
@@ -209,9 +200,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 			"should skip forwarding when requireLocalPort=true and host port is occupied",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
+				framework.SkipOnWindows("skipping on windows")
 
 				requirePort := 9503
 
@@ -225,8 +214,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 					_ = hostListener.Close()
 				})
 
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ports-attributes")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/ports-attributes", initialDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				_ = f.DevsyProviderAdd(ctx, "docker")
@@ -235,7 +223,6 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				err = f.DevsyUp(ctx, tempDir)

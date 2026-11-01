@@ -3,7 +3,9 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/random"
 	"github.com/gofrs/flock"
+	"tailscale.com/atomicfile"
 )
 
 // lockTimeout bounds how long update waits to acquire a task's file lock.
@@ -24,6 +27,8 @@ type Store struct {
 	processController          command.ProcessController
 	afterClaimHook             func()
 	afterCancelLockClaimedHook func()
+	afterStateLockBlockedHook  func()
+	stateLockTimeout           time.Duration
 }
 
 func NewStore() (*Store, error) {
@@ -45,20 +50,12 @@ func NewStoreAt(dir string) (*Store, error) {
 }
 
 func (s *Store) Create(opts CreateOptions) (*Task, error) {
-	id := random.String(12)
-	now := time.Now()
-	state := &State{
-		ID:          id,
-		Command:     opts.Command,
-		WorkspaceID: opts.WorkspaceID,
-		Status:      StatusPending,
-		StartedAt:   now,
-		UpdatedAt:   now,
-	}
-	if err := s.write(state); err != nil {
-		return nil, err
-	}
-	return &Task{store: s, id: id}, nil
+	return s.create(opts, false)
+}
+
+// CreateLaunch acquires launch ownership before the task becomes visible.
+func (s *Store) CreateLaunch(opts CreateOptions) (*Task, error) {
+	return s.create(opts, true)
 }
 
 // Open returns a handle without reading the task's state.
@@ -84,20 +81,12 @@ func (s *Store) Delete(id string, force bool) error {
 	// Locked across the check and the removal so a concurrent update can't
 	// commit its atomic rename after the check and recreate the task.
 	return s.withLock(id, func() error {
-		state, err := s.Get(id)
+		state, err := s.readState(id)
 		if err != nil {
 			return err
 		}
-		if state.NeedsExitedWorkerCleanup() || state.NeedsCanceledWorkerCleanup() {
-			return fmt.Errorf("task %s still needs process tree cleanup", id)
-		}
-		if !force {
-			if !state.Status.Terminal() {
-				return fmt.Errorf(
-					"task %s is still %s; cancel it first or delete with force",
-					id, state.Status,
-				)
-			}
+		if err := state.checkDeletion(force); err != nil {
+			return err
 		}
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("delete task %s: %w", id, err)
@@ -107,19 +96,13 @@ func (s *Store) Delete(id string, force bool) error {
 }
 
 func (s *Store) Get(id string) (*State, error) {
-	path, err := s.path(id)
-	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(path) // #nosec G304 -- path validated by s.path
-	if err != nil {
-		return nil, fmt.Errorf("read task %s: %w", id, err)
-	}
-	state := &State{}
-	if err := json.Unmarshal(data, state); err != nil {
-		return nil, fmt.Errorf("parse task %s: %w", id, err)
-	}
-	return state, nil
+	var state *State
+	err := s.withLock(id, func() error {
+		var err error
+		state, err = s.readState(id)
+		return err
+	})
+	return state, err
 }
 
 // Abandoned reports whether a non-terminal task's worker is gone.
@@ -145,7 +128,10 @@ func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !needsReconciliation(current) {
+	if current.LaunchPending {
+		return s.reconcilePendingLaunch(ctx, id)
+	}
+	if !current.NeedsReconciliation() {
 		return current, nil
 	}
 	lock, ok := s.claimDeadWorkerLock(id)
@@ -159,16 +145,14 @@ func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
 	return s.reconcileClaimedTask(ctx, id)
 }
 
-func needsReconciliation(state *State) bool {
-	return state != nil && !state.Status.Terminal() &&
-		!state.LaunchPending
-}
-
 // ReconcileState marks a task after its worker exits without a result. A
 // requested cancellation completes cleanup here; an abandoned task's tree is
 // cleaned up by the next workspace stop or delete.
 func (s *Store) ReconcileState(state *State) *State {
-	if !needsStateReconciliation(state) {
+	if state.hasPendingLaunch() {
+		return s.pendingLaunchState(state)
+	}
+	if !state.NeedsReconciliation() {
 		return state
 	}
 	lock, ok := s.claimDeadWorkerLock(state.ID)
@@ -177,18 +161,18 @@ func (s *Store) ReconcileState(state *State) *State {
 	}
 	defer func() { _ = lock.Unlock() }()
 	current, err := s.Get(state.ID)
-	if err != nil || !needsStateReconciliation(current) {
-		if err == nil {
-			return current
-		}
+	if err != nil {
 		return state
+	}
+	if !current.NeedsReconciliation() {
+		return current
 	}
 	if current.CancelRequested {
 		reconciled, err := s.reconcileClaimedCancellation(context.Background(), current)
-		if err == nil {
-			return reconciled
+		if err != nil {
+			return current
 		}
-		return current
+		return reconciled
 	}
 	return s.failAbandoned(current)
 }
@@ -197,7 +181,7 @@ func (s *Store) ReconcileState(state *State) *State {
 // Claiming the worker lock proves no worker is running, so a saved reference
 // that still points at live processes belongs to a crashed worker's tree.
 func (s *Store) CleanupExitedWorkerTree(id string) error {
-	state, err := s.Get(id)
+	state, err := s.stateAfterLaunchCleanup(id)
 	if err != nil {
 		return err
 	}
@@ -241,11 +225,6 @@ func (s *Store) CleanupCanceledWorkerTree(ctx context.Context, id string) error 
 	return s.waitCanceledWorkerCleanup(ctx, id, ref)
 }
 
-func needsStateReconciliation(state *State) bool {
-	return state != nil && !state.Status.Terminal() &&
-		!state.LaunchPending
-}
-
 func hasProcessReference(state *State) bool {
 	_, ok := state.ProcessReference()
 	return ok
@@ -264,11 +243,22 @@ func (s *Store) List() ([]*State, error) {
 			continue
 		}
 		id := entry.Name()[:len(entry.Name())-len(".json")]
-		state, err := s.Get(id)
+		var state *State
+		err := s.withLock(id, func() error {
+			var readErr error
+			state, readErr = s.readState(id)
+			// Only an absent state read under the lock confirms concurrent deletion.
+			if errors.Is(readErr, os.ErrNotExist) {
+				return nil
+			}
+			return readErr
+		})
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("list task %s: %w", id, err)
 		}
-		states = append(states, state)
+		if state != nil {
+			states = append(states, state)
+		}
 	}
 
 	sort.Slice(states, func(i, j int) bool {
@@ -336,6 +326,29 @@ func (s *Store) WaitForWorkerObservation(
 		case <-ticker.C:
 		}
 	}
+}
+
+// The caller must hold the state lock: Windows replacement can briefly make
+// the path unavailable, and lock-owning callbacks cannot acquire it again.
+func (s *Store) readState(id string) (*State, error) {
+	path, err := s.path(id)
+	if err != nil {
+		return nil, err
+	}
+	file, err := openTaskFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read task %s: %w", id, err)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("read task %s: %w", id, err)
+	}
+	state := &State{}
+	if err := json.Unmarshal(data, state); err != nil {
+		return nil, fmt.Errorf("parse task %s: %w", id, err)
+	}
+	return state, nil
 }
 
 func (s *Store) markProcessCleanupComplete(id string) error {
@@ -429,7 +442,7 @@ func (s *Store) workerObservation(id string) (WorkerObservation, bool, error) {
 
 func (s *Store) reconcileClaimedTask(ctx context.Context, id string) (*State, error) {
 	current, err := s.Get(id)
-	if err != nil || !needsReconciliation(current) {
+	if err != nil || !current.NeedsReconciliation() {
 		return current, err
 	}
 	if current.CancelRequested {
@@ -499,23 +512,18 @@ func (s *Store) failAbandoned(state *State) *State {
 // tryWorkerLock claims the task's worker lock when no worker owns it. Unlike
 // claimDeadWorkerLock, it creates the lock file if the worker has not started.
 func (s *Store) tryWorkerLock(id string) (*flock.Flock, bool, error) {
-	path, err := s.workerLockPath(id)
-	if err != nil {
-		return nil, false, err
-	}
-	lock := flock.New(path)
-	locked, err := lock.TryLock()
-	if err != nil {
-		return nil, false, err
-	}
-	if !locked {
-		return nil, false, nil
-	}
-	return lock, true, nil
+	return s.tryLock(id, s.workerLockPath)
 }
 
 func (s *Store) tryLauncherLock(id string) (*flock.Flock, bool, error) {
-	path, err := s.launcherLockPath(id)
+	return s.tryLock(id, s.launcherLockPath)
+}
+
+func (s *Store) tryLock(
+	id string,
+	lockPath func(string) (string, error),
+) (*flock.Flock, bool, error) {
+	path, err := lockPath(id)
 	if err != nil {
 		return nil, false, err
 	}
@@ -530,24 +538,59 @@ func (s *Store) tryLauncherLock(id string) (*flock.Flock, bool, error) {
 	return lock, true, nil
 }
 
-// claimDeadWorkerLock acquires the task's worker lock, which only succeeds when
-// no worker holds it.
+// claimDeadWorkerLock claims reconciliation ownership after a worker releases
+// its lock or its saved identity proves it exited before claiming one.
 func (s *Store) claimDeadWorkerLock(id string) (*flock.Flock, bool) {
 	path, err := s.workerLockPath(id)
 	if err != nil {
 		return nil, false
 	}
-	// No lock file means the worker never got far enough to claim one.
-	if _, statErr := os.Stat(path); statErr != nil {
+	_, statErr := os.Stat(path)
+	if errors.Is(statErr, os.ErrNotExist) {
+		// Reconciliation must never manufacture evidence that a worker claimed its lock.
+		return claimConfirmedWorkerExit(
+			path+".reconcile",
+			func() bool { return s.workerExitConfirmed(id) },
+		)
+	}
+	if statErr != nil {
 		return nil, false
 	}
-
 	lock := flock.New(path)
 	locked, err := lock.TryLock()
 	if err != nil || !locked {
 		return nil, false
 	}
 	return lock, true
+}
+
+func claimConfirmedWorkerExit(path string, confirmed func() bool) (*flock.Flock, bool) {
+	if !confirmed() {
+		return nil, false
+	}
+	lock := flock.New(path)
+	locked, err := lock.TryLock()
+	if err != nil || !locked {
+		return nil, false
+	}
+	if !confirmed() {
+		_ = lock.Unlock()
+		return nil, false
+	}
+	return lock, true
+}
+
+func (s *Store) workerExitConfirmed(id string) bool {
+	state, err := s.Get(id)
+	if err != nil {
+		return false
+	}
+	ref, ok := state.ProcessReference()
+	if !ok {
+		return false
+	}
+	exited, err := command.ProcessExited(ref)
+	return err == nil && exited
 }
 
 // workerLockPath is distinct from the read-modify-write lock in withLock: this
@@ -571,7 +614,7 @@ func (s *Store) launcherLockPath(id string) (string, error) {
 
 func (s *Store) update(id string, mutate func(*State)) error {
 	return s.withLock(id, func() error {
-		state, err := s.Get(id)
+		state, err := s.readState(id)
 		if err != nil {
 			return err
 		}
@@ -591,9 +634,24 @@ func (s *Store) withLock(id string, fn func() error) error {
 	}
 
 	lock := flock.New(path + ".lock")
-	ctx, cancel := context.WithTimeout(context.Background(), lockTimeout)
+	locked, err := lock.TryLock()
+	if err != nil {
+		return fmt.Errorf("lock task %s: %w", id, err)
+	}
+	if locked {
+		defer func() { _ = lock.Unlock() }()
+		return fn()
+	}
+	if s.afterStateLockBlockedHook != nil {
+		s.afterStateLockBlockedHook()
+	}
+	timeout := s.stateLockTimeout
+	if timeout == 0 {
+		timeout = lockTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	locked, err := lock.TryLockContext(ctx, 20*time.Millisecond)
+	locked, err = lock.TryLockContext(ctx, 20*time.Millisecond)
 	if err != nil {
 		return fmt.Errorf("lock task %s: %w", id, err)
 	}
@@ -644,7 +702,7 @@ func (s *Store) write(state *State) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp task file: %w", err)
 	}
-	if err := os.Rename(tmpPath, target); err != nil {
+	if err := atomicfile.Rename(tmpPath, target); err != nil {
 		return fmt.Errorf("commit task state: %w", err)
 	}
 	syncDir(s.dir)
@@ -659,4 +717,31 @@ func syncDir(dir string) {
 	}
 	defer func() { _ = d.Close() }()
 	_ = d.Sync()
+}
+
+func (s *Store) create(opts CreateOptions, launch bool) (*Task, error) {
+	id := random.String(12)
+	t := &Task{store: s, id: id}
+	if launch {
+		if err := t.claimLaunchOwnership(); err != nil {
+			return nil, err
+		}
+	}
+	now := time.Now()
+	state := &State{
+		ID:          id,
+		Command:     opts.Command,
+		WorkspaceID: opts.WorkspaceID,
+		Status:      StatusPending,
+		StartedAt:   now,
+		UpdatedAt:   now,
+	}
+	if launch {
+		state.LaunchPending = true
+		state.LaunchProtocol = 1
+	}
+	if err := s.withLock(id, func() error { return s.write(state) }); err != nil {
+		return nil, errors.Join(err, releaseLauncherLock(t))
+	}
+	return t, nil
 }

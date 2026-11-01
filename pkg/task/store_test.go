@@ -3,6 +3,8 @@ package task
 import (
 	"context"
 	"errors"
+	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +15,53 @@ import (
 const workspaceOne = "ws-1"
 
 const testProcessIdentity = "sess-1"
+
+func TestGetWaitsForWriterWhenRecordTemporarilyMissing(t *testing.T) {
+	assertTaskReadWaitsForWriter(t, func(path string) func() {
+		previous := path + ".previous"
+		require.NoError(t, os.Rename(path, previous))
+		return func() { require.NoError(t, os.Rename(previous, path)) }
+	})
+}
+
+func assertTaskReadWaitsForWriter(t *testing.T, interruptRead func(string) func()) {
+	t.Helper()
+	writer := newTestStore(t)
+	reader, err := NewStoreAt(writer.dir)
+	require.NoError(t, err)
+	tk, err := writer.Create(CreateOptions{})
+	require.NoError(t, err)
+	state, err := writer.Get(tk.ID())
+	require.NoError(t, err)
+	path, err := writer.path(tk.ID())
+	require.NoError(t, err)
+	blocked := make(chan struct{})
+	reader.afterStateLockBlockedHook = func() { close(blocked) }
+	type readResult struct {
+		state *State
+		err   error
+	}
+	read := make(chan readResult, 1)
+	require.NoError(t, writer.withLock(tk.ID(), func() error {
+		restore := sync.OnceFunc(interruptRead(path))
+		defer restore()
+		go func() {
+			state, err := reader.Get(tk.ID())
+			read <- readResult{state, err}
+		}()
+		select {
+		case <-blocked:
+		case result := <-read:
+			t.Fatalf("reader bypassed active writer: state=%+v error=%v", result.state, result.err)
+		}
+		restore()
+		state.Phase = "replacement-committed"
+		return writer.write(state)
+	}))
+	result := <-read
+	require.NoError(t, result.err)
+	require.Equal(t, "replacement-committed", result.state.Phase)
+}
 
 func createTaskWith(t *testing.T, store *Store, opts CreateOptions) *Task {
 	t.Helper()
@@ -434,4 +483,87 @@ func TestActiveForWorkspaceTreatsLiveWorkerAsActive(t *testing.T) {
 	if len(active) != 1 || active[0].ID != tk.ID() {
 		t.Errorf("live worker task not reported active: %+v", active)
 	}
+}
+
+func TestStateNeedsReconciliation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state *State
+		want  bool
+	}{
+		{name: "nil", state: nil, want: false},
+		{name: "pending", state: &State{Status: StatusPending}, want: true},
+		{name: "running", state: &State{Status: StatusRunning}, want: true},
+		{name: "launch pending", state: &State{Status: StatusRunning, LaunchPending: true}, want: false},
+		{name: "succeeded", state: &State{Status: StatusSucceeded}, want: false},
+		{name: "failed", state: &State{Status: StatusFailed}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, tc.state.NeedsReconciliation())
+		})
+	}
+}
+
+func TestTaskQueriesRejectUncertainRecords(t *testing.T) {
+	for _, failure := range []string{"state-lock", "malformed-state"} {
+		t.Run(failure, func(t *testing.T) {
+			store := newTestStore(t)
+			tk := createTaskWith(t, store, CreateOptions{WorkspaceID: workspaceOne, Command: "up"})
+			queries := map[string]func() ([]*State, error){
+				"List":               store.List,
+				"ForWorkspace":       func() ([]*State, error) { return store.ForWorkspace(workspaceOne, "up") },
+				"ActiveForWorkspace": func() ([]*State, error) { return store.ActiveForWorkspace(workspaceOne, "up") },
+			}
+			check := func() error {
+				for name, query := range queries {
+					t.Run(name, func(t *testing.T) {
+						states, err := query()
+						require.Error(t, err)
+						require.Nil(t, states)
+					})
+				}
+				return nil
+			}
+			if failure == "state-lock" {
+				store.stateLockTimeout = -time.Nanosecond
+				require.NoError(t, store.withLock(tk.ID(), check))
+			} else {
+				path, err := store.path(tk.ID())
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(path, []byte("{"), 0o600))
+				require.NoError(t, check())
+			}
+		})
+	}
+}
+
+func TestListOmitsRecordDeletedWhileWaitingForStateLock(t *testing.T) {
+	writer := newTestStore(t)
+	reader, err := NewStoreAt(writer.dir)
+	require.NoError(t, err)
+	tk := createTaskWith(t, writer, CreateOptions{})
+	path, err := writer.path(tk.ID())
+	require.NoError(t, err)
+	blocked := make(chan struct{})
+	reader.afterStateLockBlockedHook = func() { close(blocked) }
+	type result struct {
+		states []*State
+		err    error
+	}
+	read := make(chan result, 1)
+	require.NoError(t, writer.withLock(tk.ID(), func() error {
+		go func() {
+			states, err := reader.List()
+			read <- result{states, err}
+		}()
+		select {
+		case <-blocked:
+		case r := <-read:
+			t.Fatalf("listing bypassed writer: %+v", r)
+		}
+		return os.Remove(path)
+	}))
+	r := <-read
+	require.NoError(t, r.err)
+	require.Empty(t, r.states)
 }

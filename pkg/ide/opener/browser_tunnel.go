@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/open"
@@ -71,6 +73,9 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 	}
 
 	terminateTunnelProcess(state.PID)
+	if preparation, err := browserPreparation(contextName, workspaceID, state); err == nil {
+		preparation.Close()
+	}
 	_ = os.Remove(statePath)
 }
 
@@ -157,15 +162,16 @@ type inheritedListenerSetup struct {
 // browserIDEInvocation bundles the per-call IDE-specific knobs that aren't
 // part of the lower-level tunnel parameters.
 type browserIDEInvocation struct {
-	Label       string // e.g. "vscode", "jupyter", "rstudio" - used in user-facing log lines
-	OpenBrowser bool   // whether to launch a host browser pointing at TargetURL
+	Label              string // e.g. "vscode", "jupyter", "rstudio" - used in user-facing log lines
+	OpenBrowser        bool   // whether to launch a host browser pointing at TargetURL
+	RequirePreparation bool
 }
 
 // startDetachedBrowserTunnel spawns `devsy internal browser-tunnel ...` as a
 // detached background process so the CLI can return to the prompt while the
 // tunnel remains running.
 //
-// If params.Client is a DaemonClient (pro mode) this falls back to running
+// If params.Client is a DaemonClient (platform mode) this falls back to running
 // the tunnel inline because the daemon already runs out-of-process.
 //
 // If a tunnel is already running for this workspace, no new process is
@@ -182,6 +188,9 @@ func startDetachedBrowserTunnel(
 	openBrowser := inv.OpenBrowser
 	contextName := params.Client.Context()
 	workspaceID := params.Client.Workspace()
+	inv.RequirePreparation = params.DevsyConfig.ContextOption(
+		config.ContextOptionGitHubCLIForwarding,
+	) == config.BoolTrue
 
 	if _, ok := params.Client.(client.DaemonClient); ok {
 		return runDaemonBrowserTunnel(ctx, daemonTunnelArgs{
@@ -202,11 +211,14 @@ func startDetachedBrowserTunnel(
 			err,
 		)
 	}
+	unlock = sync.OnceFunc(unlock)
 	defer unlock()
 
 	// Reuse an existing live tunnel if present; clear stale state otherwise.
-	if reusedURL, ok := tryReuseExistingTunnel(ctx, contextName, workspaceID, inv); ok {
-		return reusedURL, nil
+	if existing, ok := tryReuseExistingTunnel(contextName, workspaceID, inv); ok {
+		unlock()
+		inv.openReusedBrowser(ctx, contextName, workspaceID, existing)
+		return existing.TargetURL, nil
 	}
 
 	pid, logLocation, err := spawnTunnelHelper(spawnHelperOpts{
@@ -337,10 +349,11 @@ func recordHelperState(proc *os.Process, pid int, opts recordHelperStateOpts) er
 		return fmt.Errorf("identify helper pid %d: %w", pid, err)
 	}
 	state := TunnelState{
-		PID:        pid,
-		CreateTime: createTime,
-		TargetURL:  opts.TargetURL,
-		Label:      opts.Label,
+		PID:                pid,
+		CreateTime:         createTime,
+		TargetURL:          opts.TargetURL,
+		Label:              opts.Label,
+		PreparationVersion: 1,
 	}
 	if err := WriteTunnelState(opts.ContextName, opts.WorkspaceID, state); err != nil {
 		_ = proc.Kill()
@@ -453,31 +466,45 @@ func openBrowserAsync(ctx context.Context, url string) {
 // workspace, if any. On reuse it returns the recorded TargetURL so the
 // caller can surface the live URL (not its own freshly-computed one).
 // If state exists but the recorded PID is dead, the stale state file is
-// removed and ("", false) is returned so the caller can proceed with a
+// removed and (nil, false) is returned so the caller can proceed with a
 // fresh spawn.
 func tryReuseExistingTunnel(
-	ctx context.Context,
 	contextName, workspaceID string,
 	inv browserIDEInvocation,
-) (string, bool) {
+) (*TunnelState, bool) {
 	existing, _ := ReadTunnelState(contextName, workspaceID)
 	if existing == nil {
-		return "", false
+		return nil, false
 	}
 	if helperMatchesState(existing) {
 		pkglog.Infof(
 			"%s browser tunnel already running (PID %d). Reusing existing tunnel at %s",
 			inv.Label, existing.PID, existing.TargetURL,
 		)
-		if inv.OpenBrowser {
-			go openBrowserAsync(ctx, existing.TargetURL)
-		}
-		return existing.TargetURL, true
+		return existing, true
 	}
 	if statePath, err := TunnelStateFilePath(contextName, workspaceID); err == nil {
 		_ = os.Remove(statePath)
 	}
-	return "", false
+	return nil, false
+}
+
+func (inv browserIDEInvocation) openReusedBrowser(
+	ctx context.Context,
+	contextName, workspaceID string,
+	existing *TunnelState,
+) {
+	if !inv.OpenBrowser {
+		return
+	}
+	if existing.PreparationVersion == 0 && !inv.RequirePreparation ||
+		waitBrowserPreparation(ctx, contextName, workspaceID, existing) {
+		go openBrowserAsync(ctx, existing.TargetURL)
+	} else if ctx.Err() == nil {
+		pkglog.Warn(
+			"Browser tunnel preparation unavailable; restart the workspace connection before opening its URL",
+		)
+	}
 }
 
 // daemonTunnelArgs bundles the parameters for runDaemonBrowserTunnel to keep
@@ -501,10 +528,13 @@ func runDaemonBrowserTunnel(ctx context.Context, a daemonTunnelArgs) (string, er
 			err,
 		)
 	}
+	unlock = sync.OnceFunc(unlock)
 	defer unlock()
 
-	if reusedURL, ok := tryReuseExistingTunnel(ctx, a.ContextName, a.WorkspaceID, a.Inv); ok {
-		return reusedURL, nil
+	if existing, ok := tryReuseExistingTunnel(a.ContextName, a.WorkspaceID, a.Inv); ok {
+		unlock()
+		a.Inv.openReusedBrowser(ctx, a.ContextName, a.WorkspaceID, existing)
+		return existing.TargetURL, nil
 	}
 
 	// Derive a cancellable context for the probe goroutine. When
@@ -515,8 +545,10 @@ func runDaemonBrowserTunnel(ctx context.Context, a daemonTunnelArgs) (string, er
 	probeCtx, cancelProbe := context.WithCancel(ctx)
 	defer cancelProbe()
 
-	if a.OpenBrowser {
-		go openBrowserWhenReachable(probeCtx, a.TunnelParams.TargetURL)
+	a.TunnelParams.OnPrepared = func(context.Context) {
+		if a.OpenBrowser {
+			go openBrowserWhenReachable(probeCtx, a.TunnelParams.TargetURL)
+		}
 	}
 	return a.TunnelParams.TargetURL, tunnel.StartBrowserTunnel(ctx, a.TunnelParams)
 }

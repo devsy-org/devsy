@@ -32,6 +32,7 @@ type outputCapture struct {
 	states        map[testID]testState
 	listed        map[testID]struct{}
 	writeErr      error
+	runtimeFatal  bool
 }
 
 func newOutputCapture(log, stdout, stderr io.Writer) *outputCapture {
@@ -91,9 +92,7 @@ func (c *outputCapture) writeArtifact(data []byte, stdout bool) {
 			return
 		}
 		line := (*pending)[:newline+1]
-		if stdout {
-			c.readEvent(line[:newline])
-		}
+		c.readLine(line[:newline], stdout)
 		if err := writeAll(c.log, line); err != nil {
 			c.recordError(fmt.Errorf("write artifact: %w", err))
 		}
@@ -101,11 +100,21 @@ func (c *outputCapture) writeArtifact(data []byte, stdout bool) {
 	}
 }
 
+func (c *outputCapture) readLine(line []byte, stdout bool) {
+	if stdout {
+		c.readEvent(line)
+		return
+	}
+	c.noteRuntimeFatal(string(line))
+}
+
 func (c *outputCapture) readEvent(line []byte) {
 	var event testEvent
 	if json.Unmarshal(bytes.TrimSpace(line), &event) != nil || event.Package == "" {
+		c.noteRuntimeFatal(string(line))
 		return
 	}
+	c.noteRuntimeFatal(event.Output)
 	if event.Test == "" {
 		c.readListedTests(event.Package, event.Output)
 		return
@@ -157,14 +166,26 @@ func (c *outputCapture) finish() {
 		if len(*stream.pending) == 0 {
 			continue
 		}
-		if stream.stdout {
-			c.readEvent(*stream.pending)
-		}
+		c.readLine(*stream.pending, stream.stdout)
 		if err := writeAll(c.log, *stream.pending); err != nil {
 			c.recordError(fmt.Errorf("write artifact: %w", err))
 		}
 		*stream.pending = nil
 	}
+}
+
+func (c *outputCapture) noteRuntimeFatal(output string) {
+	for line := range strings.SplitSeq(output, "\n") {
+		if isRuntimeFatalLine(strings.TrimSuffix(line, "\r")) {
+			c.runtimeFatal = true
+		}
+	}
+}
+
+func (c *outputCapture) sawRuntimeFatal() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.runtimeFatal
 }
 
 func (c *outputCapture) events() map[testID]testState {

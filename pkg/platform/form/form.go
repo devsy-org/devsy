@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 
 	"charm.land/huh/v2"
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
@@ -16,24 +15,57 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/parameters"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
 
-const parameterTypeBoolean = "boolean"
+const ParameterTypeBoolean = "boolean"
 
 func CreateInstance(
 	ctx context.Context,
 	baseClient client.Client,
 	id, uid, source, picture string,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
+	instance, _, err := createInstance(ctx, baseClient, InstanceIdentity{
+		ID:      id,
+		UID:     uid,
+		Source:  source,
+		Picture: picture,
+	})
+	return instance, err
+}
+
+func CreateInstanceOnCluster(
+	ctx context.Context,
+	baseClient client.Client,
+	identity InstanceIdentity,
+) (*managementv1.DevsyWorkspaceInstance, error) {
+	instance, selection, err := createInstance(ctx, baseClient, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	instance.Spec.Target.Cluster = &storagev1.WorkspaceTargetName{Name: selection.cluster.GetName()}
+	return instance, nil
+}
+
+type InstanceIdentity struct {
+	ID, UID, Source, Picture string
+}
+
+func createInstance(
+	ctx context.Context,
+	baseClient client.Client,
+	identity InstanceIdentity,
+) (*managementv1.DevsyWorkspaceInstance, createSelection, error) {
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
 
 	selection, err := runCreateSelectionForm(ctx, baseClient, formCtx, cancelForm)
 	if err != nil {
-		return nil, err
+		return nil, createSelection{}, err
 	}
 
 	renderedParameters, err := renderedParametersForCreate(
@@ -42,23 +74,16 @@ func CreateInstance(
 		selection.templateVersion,
 	)
 	if err != nil {
-		return nil, err
+		return nil, createSelection{}, err
 	}
 
-	return buildCreatedInstance(buildCreatedInstanceParams{
-		id:                      id,
-		uid:                     uid,
-		source:                  source,
-		picture:                 picture,
-		selectedProject:         selection.project,
-		selectedTemplate:        selection.template,
-		selectedTemplateVersion: selection.templateVersion,
-		renderedParameters:      renderedParameters,
-	}), nil
+	instance := buildCreatedInstance(identity, selection, renderedParameters)
+	return instance, selection, nil
 }
 
 type createSelection struct {
 	project         *managementv1.Project
+	cluster         *managementv1.Cluster
 	template        *managementv1.DevsyWorkspaceTemplate
 	templateVersion string
 }
@@ -73,7 +98,7 @@ func runCreateSelectionForm(
 	var selectedProject *managementv1.Project
 	var selectedTemplate *managementv1.DevsyWorkspaceTemplate
 	selectedTemplateVersion := ""
-	projectOptions, err := projectOptions(ctx, baseClient)
+	projectOptions, err := ProjectOptions(ctx, baseClient)
 	if err != nil {
 		return createSelection{}, err
 	}
@@ -86,20 +111,20 @@ func runCreateSelectionForm(
 			huh.NewSelect[*managementv1.Cluster]().
 				Title("Cluster").
 				OptionsFunc(func() []huh.Option[*managementv1.Cluster] {
-					return getClusterOptions(ctx, baseClient, selectedProject, cancelForm)
+					return ClusterOptions(ctx, baseClient, selectedProject, cancelForm)
 				}, &selectedProject).
 				Value(&selectedCluster).
 				WithHeight(5),
 			huh.NewSelect[*managementv1.DevsyWorkspaceTemplate]().
 				Title("Template").
 				OptionsFunc(func() []huh.Option[*managementv1.DevsyWorkspaceTemplate] {
-					return getTemplateOptions(ctx, baseClient, selectedProject, cancelForm)
+					return TemplateOptions(ctx, baseClient, selectedProject, cancelForm)
 				}, &selectedProject).
 				Value(&selectedTemplate),
 			huh.NewSelect[string]().
 				Title("Template Version").
 				OptionsFunc(func() []huh.Option[string] {
-					return getTemplateVersionOptions(selectedTemplate)
+					return TemplateVersionOptions(selectedTemplate)
 				}, &selectedTemplate).
 				Value(&selectedTemplateVersion).
 				WithHeight(8),
@@ -111,6 +136,7 @@ func runCreateSelectionForm(
 
 	return createSelection{
 		project:         selectedProject,
+		cluster:         selectedCluster,
 		template:        selectedTemplate,
 		templateVersion: selectedTemplateVersion,
 	}, nil
@@ -129,41 +155,37 @@ func renderedParametersForCreate(
 		return "", nil
 	}
 
-	fieldParameters := prepareParameters(parameters)
+	fieldParameters := PrepareParameters(parameters)
 	return runParameterForm(formCtx, fieldParameters)
 }
 
-type buildCreatedInstanceParams struct {
-	id, uid, source, picture string
-	selectedProject          *managementv1.Project
-	selectedTemplate         *managementv1.DevsyWorkspaceTemplate
-	selectedTemplateVersion  string
-	renderedParameters       string
-}
-
-func buildCreatedInstance(p buildCreatedInstanceParams) *managementv1.DevsyWorkspaceInstance {
+func buildCreatedInstance(
+	identity InstanceIdentity,
+	selection createSelection,
+	renderedParameters string,
+) *managementv1.DevsyWorkspaceInstance {
 	return &managementv1.DevsyWorkspaceInstance{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: encoding.SafeConcatNameMax([]string{p.id}, 53) + "-",
-			Namespace:    project.ProjectNamespace(p.selectedProject.GetName()),
+			GenerateName: encoding.SafeConcatNameMax([]string{identity.ID}, 53) + "-",
+			Namespace:    project.ProjectNamespace(selection.project.GetName()),
 			Labels: map[string]string{
-				storagev1.DevsyWorkspaceIDLabel:  p.id,
-				storagev1.DevsyWorkspaceUIDLabel: p.uid,
-				config.K8sProjectLabel:           p.selectedProject.GetName(),
+				storagev1.DevsyWorkspaceIDLabel:  identity.ID,
+				storagev1.DevsyWorkspaceUIDLabel: identity.UID,
+				config.K8sProjectLabel:           selection.project.GetName(),
 			},
 			Annotations: map[string]string{
-				storagev1.DevsyWorkspacePictureAnnotation: p.picture,
-				storagev1.DevsyWorkspaceSourceAnnotation:  p.source,
+				storagev1.DevsyWorkspacePictureAnnotation: identity.Picture,
+				storagev1.DevsyWorkspaceSourceAnnotation:  identity.Source,
 			},
 		},
 		Spec: managementv1.DevsyWorkspaceInstanceSpec{
 			DevsyWorkspaceInstanceSpec: storagev1.DevsyWorkspaceInstanceSpec{
-				DisplayName: p.id,
+				DisplayName: identity.ID,
 				TemplateRef: &storagev1.TemplateRef{
-					Name:    p.selectedTemplate.GetName(),
-					Version: p.selectedTemplateVersion,
+					Name:    selection.template.GetName(),
+					Version: selection.templateVersion,
 				},
-				Parameters: p.renderedParameters,
+				Parameters: renderedParameters,
 			},
 		},
 	}
@@ -187,12 +209,12 @@ func resolveTemplateParameters(
 
 func runParameterForm(formCtx context.Context, fieldParameters []*FieldParameter) (string, error) {
 	if err := huh.NewForm(
-		huh.NewGroup(parameterFields(fieldParameters)...),
+		huh.NewGroup(ParameterFields(fieldParameters)...),
 	).RunWithContext(formCtx); err != nil {
 		return "", err
 	}
 
-	return renderParameters(fieldParameters)
+	return RenderParameters(fieldParameters)
 }
 
 func UpdateInstance(
@@ -223,16 +245,12 @@ func UpdateInstance(
 		return nil, err
 	}
 
-	newInstance := instance.DeepCopy()
-	applyInstanceChanges(applyInstanceChangesParams{
-		instance:                instance,
-		newInstance:             newInstance,
-		selectedTemplate:        selectedTemplate,
-		selectedTemplateVersion: selectedTemplateVersion,
-		renderedParameters:      renderedParameters,
-	})
-
-	return newInstance, nil
+	return applyInstanceChanges(
+		instance,
+		selectedTemplate,
+		selectedTemplateVersion,
+		renderedParameters,
+	), nil
 }
 
 func selectUpdateTemplate(
@@ -268,7 +286,7 @@ func selectUpdateTemplate(
 			huh.NewSelect[string]().
 				Title("Template Version").
 				OptionsFunc(func() []huh.Option[string] {
-					return getTemplateVersionOptions(selectedTemplate)
+					return TemplateVersionOptions(selectedTemplate)
 				}, &selectedTemplate).
 				Value(&selectedTemplateVersion).
 				WithHeight(8),
@@ -331,7 +349,7 @@ func renderedParametersForUpdate(
 }
 
 func buildFieldParameters(
-	parameters []storagev1.AppParameter,
+	appParameters []storagev1.AppParameter,
 	instance *managementv1.DevsyWorkspaceInstance,
 	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
 	selectedTemplateVersion string,
@@ -351,10 +369,10 @@ func buildFieldParameters(
 
 	fieldParameters := []*FieldParameter{}
 	// reuse existing parameters as starting point
-	for _, p := range parameters {
+	for _, p := range appParameters {
 		var value any = p.DefaultValue
 		if existingParameters != nil {
-			value = getDeepValue(existingParameters, p.Variable)
+			value = parameters.GetDeepValue(existingParameters, p.Variable)
 		}
 		fieldParameter := FieldParameter{AppParameter: p}
 		assignFieldValue(&fieldParameter, value)
@@ -365,7 +383,7 @@ func buildFieldParameters(
 }
 
 func assignFieldValue(fieldParameter *FieldParameter, value any) {
-	if fieldParameter.Type == parameterTypeBoolean {
+	if fieldParameter.Type == ParameterTypeBoolean {
 		assignBoolFieldValue(fieldParameter, value)
 		return
 	}
@@ -394,31 +412,25 @@ func assignBoolFieldValue(fieldParameter *FieldParameter, value any) {
 	}
 }
 
-type applyInstanceChangesParams struct {
-	instance                *managementv1.DevsyWorkspaceInstance
-	newInstance             *managementv1.DevsyWorkspaceInstance
-	selectedTemplate        *managementv1.DevsyWorkspaceTemplate
-	selectedTemplateVersion string
-	renderedParameters      string
-}
+func applyInstanceChanges(
+	instance *managementv1.DevsyWorkspaceInstance,
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion, renderedParameters string,
+) *managementv1.DevsyWorkspaceInstance {
+	newInstance := instance.DeepCopy()
+	if instance.Spec.TemplateRef != nil &&
+		instance.Spec.TemplateRef.Name != selectedTemplate.GetName() {
+		newInstance.Spec.TemplateRef.Name = selectedTemplate.GetName()
+	}
+	if instance.Spec.TemplateRef != nil &&
+		instance.Spec.TemplateRef.Version != selectedTemplateVersion {
+		newInstance.Spec.TemplateRef.Version = selectedTemplateVersion
+	}
+	if instance.Spec.Parameters != renderedParameters {
+		newInstance.Spec.Parameters = renderedParameters
+	}
 
-func applyInstanceChanges(params applyInstanceChangesParams) {
-	instance := params.instance
-	newInstance := params.newInstance
-	// template
-	if instance.Spec.TemplateRef != nil &&
-		instance.Spec.TemplateRef.Name != params.selectedTemplate.GetName() {
-		newInstance.Spec.TemplateRef.Name = params.selectedTemplate.GetName()
-	}
-	// version
-	if instance.Spec.TemplateRef != nil &&
-		instance.Spec.TemplateRef.Version != params.selectedTemplateVersion {
-		newInstance.Spec.TemplateRef.Version = params.selectedTemplateVersion
-	}
-	// parameters
-	if instance.Spec.Parameters != params.renderedParameters {
-		newInstance.Spec.Parameters = params.renderedParameters
-	}
+	return newInstance
 }
 
 type (
@@ -432,7 +444,8 @@ var latestTemplateVersion = huh.Option[string]{
 	Value: "",
 }
 
-func projectOptions(ctx context.Context, client client.Client) ([]ProjectOption, error) {
+// ProjectOptions lists projects as huh options.
+func ProjectOptions(ctx context.Context, client client.Client) ([]ProjectOption, error) {
 	projects, err := list.Projects(ctx, client)
 	if err != nil {
 		return nil, err
@@ -449,7 +462,8 @@ func projectOptions(ctx context.Context, client client.Client) ([]ProjectOption,
 	return projectOptions, nil
 }
 
-func getClusterOptions(
+// ClusterOptions lists clusters of a project as huh options.
+func ClusterOptions(
 	ctx context.Context,
 	client client.Client,
 	project *managementv1.Project,
@@ -478,7 +492,8 @@ func getClusterOptions(
 	return opts
 }
 
-func getTemplateOptions(
+// TemplateOptions lists templates of a project as huh options, default first.
+func TemplateOptions(
 	ctx context.Context,
 	client client.Client,
 	project *managementv1.Project,
@@ -518,7 +533,8 @@ func getTemplateOptions(
 	return opts
 }
 
-func getTemplateVersionOptions(
+// TemplateVersionOptions lists template versions, latest first.
+func TemplateVersionOptions(
 	template *managementv1.DevsyWorkspaceTemplate,
 ) []huh.Option[string] {
 	opts := []huh.Option[string]{latestTemplateVersion}
@@ -543,11 +559,11 @@ type FieldParameter struct {
 	BoolValue   bool
 }
 
-func prepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
+func PrepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
 	retParams := []*FieldParameter{}
 	for _, p := range parameters {
 		fieldParameter := FieldParameter{AppParameter: p}
-		if p.Type == parameterTypeBoolean {
+		if p.Type == ParameterTypeBoolean {
 			v, err := strconv.ParseBool(p.DefaultValue)
 			if err == nil {
 				fieldParameter.BoolValue = v
@@ -562,7 +578,7 @@ func prepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
 	return retParams
 }
 
-func parameterFields(fieldParameters []*FieldParameter) []huh.Field {
+func ParameterFields(fieldParameters []*FieldParameter) []huh.Field {
 	fields := []huh.Field{}
 	for _, param := range fieldParameters {
 		title := param.Label
@@ -579,7 +595,7 @@ func parameterFields(fieldParameters []*FieldParameter) []huh.Field {
 				Value(&param.StringValue)
 		case "password", "number", "string":
 			field = stringParameterField(param, title)
-		case parameterTypeBoolean:
+		case ParameterTypeBoolean:
 			field = huh.NewConfirm().
 				Title(title).
 				Description(param.Description).
@@ -631,7 +647,7 @@ func stringParameterField(param *FieldParameter, title string) huh.Field {
 	return input
 }
 
-func renderParameters(fieldParameters []*FieldParameter) (string, error) {
+func RenderParameters(fieldParameters []*FieldParameter) (string, error) {
 	p := map[string]any{}
 	for _, fp := range fieldParameters {
 		if fp.StringValue != "" {
@@ -647,47 +663,4 @@ func renderParameters(fieldParameters []*FieldParameter) (string, error) {
 	}
 
 	return string(rawParameters), nil
-}
-
-func getDeepValue(parameters any, path string) any {
-	if parameters == nil {
-		return nil
-	}
-
-	pathSegments := strings.Split(path, ".")
-	switch t := parameters.(type) {
-	case map[string]any:
-		return getDeepValueFromMap(t, pathSegments)
-	case []any:
-		return getDeepValueFromSlice(t, pathSegments)
-	}
-
-	return nil
-}
-
-func getDeepValueFromMap(t map[string]any, pathSegments []string) any {
-	val, ok := t[pathSegments[0]]
-	if !ok {
-		return nil
-	} else if len(pathSegments) == 1 {
-		return val
-	}
-
-	return getDeepValue(val, strings.Join(pathSegments[1:], "."))
-}
-
-func getDeepValueFromSlice(t []any, pathSegments []string) any {
-	index, err := strconv.Atoi(pathSegments[0])
-	if err != nil {
-		return nil
-	} else if index < 0 || index >= len(t) {
-		return nil
-	}
-
-	val := t[index]
-	if len(pathSegments) == 1 {
-		return val
-	}
-
-	return getDeepValue(val, strings.Join(pathSegments[1:], "."))
 }

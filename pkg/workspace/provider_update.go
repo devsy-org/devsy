@@ -13,38 +13,42 @@ import (
 	"github.com/devsy-org/devsy/pkg/version"
 )
 
-// CheckProviderUpdate currently only ensures the local provider is in sync with the remote for Devsy Pro instances.
+// CheckProviderUpdate only ensures the local provider is in sync with the remote for Devsy Platform instances.
 // Potentially auto-upgrade other providers in the future.
 func CheckProviderUpdate(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	proInstance *provider2.ProInstance,
+	platformInstance *provider2.PlatformInstance,
 ) error {
 	if version.GetVersion() == version.DevVersion {
 		log.Debugf("skipping provider upgrade check during development")
 		return nil
 	}
-	if proInstance == nil {
-		log.Debug("no pro instance available, skipping provider upgrade check")
+	if platformInstance == nil {
+		log.Debug("no platform instance available, skipping provider upgrade check")
 		return nil
 	}
 
-	return checkProviderUpdateForInstance(ctx, devsyConfig, proInstance)
+	return checkProviderUpdateForInstance(ctx, devsyConfig, platformInstance)
 }
 
 func checkProviderUpdateForInstance(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	proInstance *provider2.ProInstance,
+	platformInstance *provider2.PlatformInstance,
 ) error {
-	newVersion, err := platform.GetProInstanceDevsyVersion(proInstance)
+	newVersion, err := platform.GetPlatformInstanceDevsyVersion(platformInstance)
 	if err != nil {
-		return fmt.Errorf("version for pro instance %s: %w", proInstance.Host, err)
+		return fmt.Errorf("version for platform instance %s: %w", platformInstance.Host, err)
 	}
 
-	p, err := FindProvider(devsyConfig, proInstance.Provider)
+	p, err := FindProvider(devsyConfig, platformInstance.Provider)
 	if err != nil {
-		return fmt.Errorf("get provider config for pro provider %s: %w", proInstance.Provider, err)
+		return fmt.Errorf(
+			"get provider config for platform provider %s: %w",
+			platformInstance.Provider,
+			err,
+		)
 	}
 
 	if shouldSkipProviderUpdate(p.Config.Version == version.DevVersion, p.Config.Source.Internal) {
@@ -61,12 +65,12 @@ func checkProviderUpdateForInstance(
 
 	log.Infof(
 		"New provider version available, attempting to update %s from %s to %s",
-		proInstance.Provider,
+		platformInstance.Provider,
 		p.Config.Version,
 		newVersion,
 	)
 
-	return applyProviderUpdate(ctx, devsyConfig, proInstance.Provider, newVersion)
+	return applyProviderUpdate(ctx, devsyConfig, platformInstance.Provider, newVersion)
 }
 
 func providerVersionNeedsUpdate(newVersion, currentVersion string) (bool, error) {
@@ -142,7 +146,7 @@ func providerUpdateSkipReason(
 	originalSource, currentSource provider2.ProviderSource,
 	currentVersion, newVersion string,
 ) string {
-	if originalSource != currentSource {
+	if !sameProviderSource(originalSource, currentSource) {
 		return "provider source changed"
 	}
 	newV, newErr := semver.Parse(strings.TrimPrefix(newVersion, "v"))
@@ -153,24 +157,33 @@ func providerUpdateSkipReason(
 	return ""
 }
 
+// sameProviderSource compares the user-chosen source identity. The resolved
+// release provenance only records which snapshot was installed, so an update
+// to a newer snapshot of the same source is not a source change.
+func sameProviderSource(a, b provider2.ProviderSource) bool {
+	a.ResolvedRef, a.ResolvedManifestURL = "", ""
+	b.ResolvedRef, b.ResolvedManifestURL = "", ""
+	return a == b
+}
+
 // GetProInstance returns the ProInstance associated with the given provider name, or nil if not found.
 func GetProInstance(
 	devsyConfig *config.Config,
 	providerName string,
-) *provider2.ProInstance {
-	proInstances, err := ListProInstances(devsyConfig)
+) *provider2.PlatformInstance {
+	platformInstances, err := ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return nil
-	} else if len(proInstances) == 0 {
+	} else if len(platformInstances) == 0 {
 		return nil
 	}
 
-	proInstance, ok := FindProviderProInstance(proInstances, providerName)
+	platformInstance, ok := FindProviderPlatformInstance(platformInstances, providerName)
 	if !ok {
 		return nil
 	}
 
-	return proInstance
+	return platformInstance
 }
 
 // shouldSkipProviderUpdate returns true if the provider update check should be skipped.

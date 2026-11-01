@@ -3,11 +3,11 @@ title: Prebuild a Workspace
 sidebar_label: Prebuild a Workspace
 ---
 
-A prebuild is an image built ahead of time from `devcontainer.json`, its features, and any Dockerfile. When a prebuild exists, Devsy starts from it instead of building, which saves time on complex environments.
+A prebuild is an image built ahead of time from `devcontainer.json`, its features, and any Dockerfile. When a matching prebuild exists, Devsy uses it instead of building.
 
 ## How it works
 
-Devsy hashes the devcontainer configuration and uses `devsy-` plus the hash as the image tag. When you point Devsy at an image repository, it looks for that tag and uses the image if found.
+Devsy computes a prebuild hash from the target architecture, the build-relevant parts of `devcontainer.json` (name, features, image, Dockerfile and build settings), the Dockerfile contents, and the build context, excluding files matched by `.dockerignore`. The image tag is `devsy-` followed by 32 hex characters. Devsy looks for that tag in each prebuild repository and uses the image if found.
 
 Build and push a prebuild:
 
@@ -15,7 +15,7 @@ Build and push a prebuild:
 devsy workspace build github.com/my-org/my-repo --repository ghcr.io/my-org/my-repo
 ```
 
-Devsy skips the build if the repository already has an image with the matching tag. It uses your current provider, so you can prebuild on a remote provider or a dedicated one.
+If the repository already has the matching tag, the build is skipped and nothing is pushed. Otherwise Devsy builds and pushes the image. Pushing requires write access to the repository; if the push permission check fails, the build fails with `cannot push to repository`.
 
 ## Use a prebuild
 
@@ -25,7 +25,7 @@ Pass the repository when you create a workspace:
 devsy workspace up github.com/my-org/my-repo --prebuild-repo ghcr.io/my-org/my-repo
 ```
 
-Or set it in `devcontainer.json`, which suits builds run from CI:
+Or set it in `devcontainer.json`. The value can be a string or an array. Devsy checks every entry when looking for a prebuild, and pushes to the first entry:
 
 ```json
 {
@@ -38,4 +38,4 @@ Or set it in `devcontainer.json`, which suits builds run from CI:
 }
 ```
 
-If no matching image is found, or you lack credentials for the repository, Devsy skips it and builds as usual.
+If a repository lookup fails, including because of missing credentials, Devsy continues with the next repository. If no matching image is found, it falls back to building as usual. If Devsy finds an image but cannot inspect it, the build fails.

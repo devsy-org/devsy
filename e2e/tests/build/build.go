@@ -16,7 +16,6 @@ import (
 
 const (
 	prebuildRepoName = "test-repo"
-	osWindows        = "windows"
 )
 
 func prepareDockerfileContent(dockerfilePath string) (string, error) {
@@ -73,12 +72,10 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDir("tests/build/testdata/docker")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/build/testdata/docker", initialDir)
 
 			_ = f.DevsyProviderDelete(ctx, "docker")
-			err = f.DevsyProviderAdd(ctx, "docker")
+			err := f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
@@ -147,12 +144,10 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDir("tests/build/testdata/docker")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/build/testdata/docker", initialDir)
 
 			_ = f.DevsyProviderDelete(ctx, "docker")
-			err = f.DevsyProviderAdd(ctx, "docker")
+			err := f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
@@ -198,12 +193,10 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDir("tests/build/testdata/docker-compose")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/build/testdata/docker-compose", initialDir)
 
 			_ = f.DevsyProviderDelete(ctx, "docker")
-			err = f.DevsyProviderAdd(ctx, "docker")
+			err := f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
@@ -226,14 +219,13 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 			// This fixture uses a local no-op feature so it exercises feature
 			// installation without depending on distro package mirrors. Package
 			// upgrades are unrelated to the compose build-context behavior here.
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/build/testdata/docker-compose-features-context",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			_ = f.DevsyProviderDelete(ctx, "docker")
-			err = f.DevsyProviderAdd(ctx, "docker")
+			err := f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
@@ -249,12 +241,10 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDir("tests/build/testdata/docker")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/build/testdata/docker", initialDir)
 
 			_ = f.DevsyProviderDelete(ctx, "docker")
-			err = f.DevsyProviderAdd(ctx, "docker")
+			err := f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
@@ -275,12 +265,10 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDir("tests/build/testdata/docker")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/build/testdata/docker", initialDir)
 
 			_ = f.DevsyProviderDelete(ctx, "docker")
-			err = f.DevsyProviderAdd(ctx, "docker")
+			err := f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
@@ -331,17 +319,13 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 	ginkgo.It("build kubernetes dockerless",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
-			if runtime.GOOS == osWindows {
-				ginkgo.Skip("skipping on windows")
-			}
+			framework.SkipOnWindows("skipping on windows")
 
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDir("tests/build/testdata/kubernetes")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/build/testdata/kubernetes", initialDir)
 
 			_ = f.DevsyProviderDelete(ctx, "kubernetes")
-			err = f.DevsyProviderAdd(ctx, "kubernetes")
+			err := f.DevsyProviderAdd(ctx, "kubernetes")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(
 				ctx,
@@ -391,17 +375,13 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		"kubernetes dockerless build cleans up .devsy-internal after streaming",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
-			if runtime.GOOS == osWindows {
-				ginkgo.Skip("skipping on windows")
-			}
+			framework.SkipOnWindows("skipping on windows")
 
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDir("tests/build/testdata/kubernetes")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/build/testdata/kubernetes", initialDir)
 
 			_ = f.DevsyProviderDelete(ctx, "kubernetes")
-			err = f.DevsyProviderAdd(ctx, "kubernetes")
+			err := f.DevsyProviderAdd(ctx, "kubernetes")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(ctx, "kubernetes", "-o", "KUBERNETES_NAMESPACE=devsy")
 			framework.ExpectNoError(err)
@@ -436,17 +416,13 @@ func validateKubernetesDeploymentWithoutDocker(
 	initialDir string,
 	action func(context.Context, *framework.Framework, string) error,
 ) {
-	if runtime.GOOS == osWindows {
-		ginkgo.Skip("skipping on Windows")
-	}
+	framework.SkipOnWindows("skipping on Windows")
 
 	f := framework.NewDefaultFramework(initialDir + "/bin")
-	tempDir, err := framework.CopyToTempDir("tests/build/testdata/kubernetes")
-	framework.ExpectNoError(err)
-	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+	tempDir := framework.CopyTestdata("tests/build/testdata/kubernetes", initialDir)
 
 	_ = f.DevsyProviderDelete(ctx, "kubernetes")
-	err = f.DevsyProviderAdd(ctx, "kubernetes")
+	err := f.DevsyProviderAdd(ctx, "kubernetes")
 	framework.ExpectNoError(err)
 	err = f.DevsyProviderUse(
 		ctx,

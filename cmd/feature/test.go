@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/table"
@@ -86,7 +85,7 @@ func (cmd *TestCmd) Run() error {
 	srcDir := filepath.Join(projectFolder, "src")
 	testDir := filepath.Join(projectFolder, "test")
 
-	features, err := cmd.discoverFeatures(srcDir)
+	features, err := discoverLocalFeatures(srcDir, "read src/ directory", nil)
 	if err != nil {
 		return err
 	}
@@ -112,28 +111,7 @@ func (cmd *TestCmd) Run() error {
 	return nil
 }
 
-type featureEntry struct {
-	id     string
-	config *config.FeatureConfig
-}
-
-func (cmd *TestCmd) discoverFeatures(srcDir string) ([]featureEntry, error) {
-	docs, err := scanFeatures(srcDir)
-	if err != nil {
-		return nil, err
-	}
-
-	features := make([]featureEntry, 0, len(docs))
-	for _, doc := range docs {
-		features = append(features, featureEntry{
-			id:     doc.dir,
-			config: doc.config,
-		})
-	}
-	return features, nil
-}
-
-func (cmd *TestCmd) filterFeatures(features []featureEntry) []featureEntry {
+func (cmd *TestCmd) filterFeatures(features []localFeature) []localFeature {
 	if cmd.Features == "" {
 		return features
 	}
@@ -143,9 +121,9 @@ func (cmd *TestCmd) filterFeatures(features []featureEntry) []featureEntry {
 		filter[strings.TrimSpace(f)] = true
 	}
 
-	var filtered []featureEntry
+	var filtered []localFeature
 	for _, feat := range features {
-		if filter[feat.id] {
+		if filter[feat.dir] {
 			filtered = append(filtered, feat)
 		}
 	}
@@ -159,11 +137,11 @@ type testCase struct {
 }
 
 func (cmd *TestCmd) testFeature(
-	feat featureEntry, projectFolder, testDir string,
+	feat localFeature, projectFolder, testDir string,
 ) []testResult {
 	var results []testResult
 
-	featureTestDir := filepath.Join(testDir, feat.id)
+	featureTestDir := filepath.Join(testDir, feat.dir)
 	globalTestScript := filepath.Join(featureTestDir, "test.sh")
 
 	if _, err := os.Stat(globalTestScript); err == nil {
@@ -221,10 +199,10 @@ func (cmd *TestCmd) loadScenarioOptions(scenarioDir string) map[string]string {
 }
 
 func (cmd *TestCmd) runTest(
-	feat featureEntry, projectFolder string, tc testCase,
+	feat localFeature, projectFolder string, tc testCase,
 ) testResult {
 	result := testResult{
-		FeatureID: feat.id,
+		FeatureID: feat.dir,
 		Scenario:  tc.scenario,
 	}
 
@@ -237,9 +215,9 @@ func (cmd *TestCmd) runTest(
 
 	dockerfile := cmd.generateDockerfileWithTest(feat, tc.options, testScriptRel)
 
-	containerName := fmt.Sprintf("devsy-test-%s", feat.id)
+	containerName := fmt.Sprintf("devsy-test-%s", feat.dir)
 	if tc.scenario != "" {
-		containerName = fmt.Sprintf("devsy-test-%s-%s", feat.id, tc.scenario)
+		containerName = fmt.Sprintf("devsy-test-%s-%s", feat.dir, tc.scenario)
 	}
 
 	imageName := containerName + ":latest"
@@ -267,24 +245,24 @@ func (cmd *TestCmd) runTest(
 }
 
 func (cmd *TestCmd) generateDockerfileWithTest(
-	feat featureEntry, options map[string]string, testScriptRelPath string,
+	feat localFeature, options map[string]string, testScriptRelPath string,
 ) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "FROM %s\n", cmd.BaseImage)
 
-	featureSrcDir := filepath.Join("src", feat.id)
-	fmt.Fprintf(&b, "COPY %s /tmp/build-features/%s\n", featureSrcDir, feat.id)
+	featureSrcDir := filepath.Join("src", feat.dir)
+	fmt.Fprintf(&b, "COPY %s /tmp/build-features/%s\n", featureSrcDir, feat.dir)
 
 	for k, v := range options {
-		envKey := strings.ReplaceAll(strings.ToUpper(feat.id), "-", "_") + "_" + strings.ToUpper(k)
+		envKey := strings.ReplaceAll(strings.ToUpper(feat.dir), "-", "_") + "_" + strings.ToUpper(k)
 		fmt.Fprintf(&b, "ENV %s=%q\n", envKey, v)
 	}
 
 	fmt.Fprintf(
 		&b,
 		"RUN chmod +x /tmp/build-features/%s/install.sh && /tmp/build-features/%s/install.sh\n",
-		feat.id, feat.id,
+		feat.dir, feat.dir,
 	)
 
 	if testScriptRelPath != "" {

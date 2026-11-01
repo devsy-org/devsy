@@ -9,11 +9,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
@@ -31,7 +31,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/gofrs/flock"
 )
 
 func NewWorkspaceClient(
@@ -47,21 +46,20 @@ func NewWorkspaceClient(
 		return nil, errors.New("machine id empty for machine provider")
 	}
 
-	return &workspaceClient{
+	c := &workspaceClient{
 		devsyConfig:       devsyConfig,
 		providerConfig:    providerConfig,
 		providerWorkspace: workspace,
 		providerMachine:   machine,
-	}, nil
+	}
+	c.locks = newClientLocks(c.lockIDs)
+	return c, nil
 }
 
 type workspaceClient struct {
 	m sync.Mutex
 
-	workspaceLockOnce sync.Once
-	workspaceLockErr  error
-	workspaceLock     *flock.Flock
-	machineLock       *flock.Flock
+	locks *clientLocks
 
 	devsyConfig       *config.Config
 	providerConfig    *provider.ProviderConfig
@@ -155,44 +153,11 @@ func (s *workspaceClient) AgentInfo(
 }
 
 func (s *workspaceClient) Lock(ctx context.Context) error {
-	if err := s.initLock(); err != nil {
-		return fmt.Errorf("init lock: %w", err)
-	}
-
-	log.Debug("acquire workspace lock")
-	if err := tryLock(ctx, s.workspaceLock, "workspace"); err != nil {
-		return fmt.Errorf("lock workspace: %w", err)
-	}
-	log.Debug("acquired workspace lock")
-
-	if s.machineLock != nil {
-		log.Debug("acquire machine lock")
-		if err := tryLock(ctx, s.machineLock, "machine"); err != nil {
-			return fmt.Errorf("lock machine: %w", err)
-		}
-		log.Debug("acquired machine lock")
-	}
-
-	return nil
+	return s.locks.Lock(ctx)
 }
 
 func (s *workspaceClient) Unlock() {
-	if err := s.initLock(); err != nil {
-		log.Warnf("init lock: %v", err)
-		return
-	}
-
-	if s.machineLock != nil {
-		if err := s.machineLock.Unlock(); err != nil {
-			log.Warnf("unlock machine: %v", err)
-		}
-	}
-
-	if s.workspaceLock != nil {
-		if err := s.workspaceLock.Unlock(); err != nil {
-			log.Warnf("unlock workspace: %v", err)
-		}
-	}
+	s.locks.Unlock()
 }
 
 func (s *workspaceClient) Create(ctx context.Context) error {
@@ -757,10 +722,10 @@ func (s *workspaceClient) agentWorkspaceCommand(subcommand string) (string, erro
 	}
 
 	return fmt.Sprintf(
-		"%q internal agent workspace %s --workspace-info %q",
-		info.Agent.Path,
+		"%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(info.Agent.Path),
 		subcommand,
-		compressed,
+		shellescape.Quote(compressed),
 	), nil
 }
 
@@ -796,32 +761,16 @@ func (s *workspaceClient) buildEnvironment(command string) ([]string, error) {
 	})
 }
 
-func (s *workspaceClient) initLock() error {
-	s.workspaceLockOnce.Do(func() {
-		s.m.Lock()
-		defer s.m.Unlock()
+func (s *workspaceClient) lockIDs() (string, string, string) {
+	s.m.Lock()
+	defer s.m.Unlock()
 
-		workspaceLocksDir, err := provider.GetLocksDir(s.providerWorkspace.Context)
-		if err != nil {
-			s.workspaceLockErr = fmt.Errorf("get workspaces dir: %w", err)
-			return
-		}
-		if err = os.MkdirAll(workspaceLocksDir, 0o755); err != nil { // #nosec G301
-			s.workspaceLockErr = fmt.Errorf("create workspace locks dir: %w", err)
-			return
-		}
+	machineID := ""
+	if s.providerMachine != nil {
+		machineID = s.providerMachine.ID
+	}
 
-		s.workspaceLock = flock.New(
-			filepath.Join(workspaceLocksDir, s.providerWorkspace.ID+".workspace.lock"),
-		)
-
-		if s.providerMachine != nil {
-			s.machineLock = flock.New(
-				filepath.Join(workspaceLocksDir, s.providerMachine.ID+".machine.lock"),
-			)
-		}
-	})
-	return s.workspaceLockErr
+	return s.providerWorkspace.Context, s.providerWorkspace.ID, machineID
 }
 
 func stripProviderOptions(info *provider.AgentWorkspaceInfo) {
@@ -1170,10 +1119,10 @@ func buildAgentCommand(
 	agentCommand, workspaceInfo string,
 ) string {
 	command := fmt.Sprintf(
-		"%q internal agent workspace %s --workspace-info %q",
-		workspaceClient.AgentPath(),
+		"%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(workspaceClient.AgentPath()),
 		agentCommand,
-		workspaceInfo,
+		shellescape.Quote(workspaceInfo),
 	)
 	if log.DebugEnabled() {
 		command += " --debug"

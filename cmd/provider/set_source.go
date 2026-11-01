@@ -62,14 +62,11 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 	}
 	providerName := args[0]
 
-	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, providerName)
+	unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, providerName)
 	if err != nil {
-		return fmt.Errorf("get operation lock: %w", err)
+		return err
 	}
-	if err := opLock.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock: %w", err)
-	}
-	defer func() { _ = opLock.Unlock() }()
+	defer unlock()
 
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
@@ -90,7 +87,12 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		providerSource = args[1]
 	}
 
-	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
+	reporter, err := newStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
+	)
 	if err != nil {
 		return err
 	}

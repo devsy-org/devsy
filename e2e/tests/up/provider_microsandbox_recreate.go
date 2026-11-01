@@ -148,7 +148,7 @@ func (f *safeRecreateFixture) registerCleanup() {
 		if !f.volumeOwned {
 			return nil
 		}
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		out, err := microsandboxResourceCommand(cleanupCtx, "volume", "rm", f.volume)
 		if err != nil {
@@ -157,7 +157,7 @@ func (f *safeRecreateFixture) registerCleanup() {
 		return nil
 	})
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		out, err := microsandboxResourceCommand(cleanupCtx, "list", "--quiet")
 		if err != nil {

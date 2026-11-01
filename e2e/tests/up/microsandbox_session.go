@@ -18,7 +18,8 @@ import (
 const (
 	microsandboxResourceBuiltin  = provider.DeprecatedMicrosandboxSource
 	osLinux                      = "linux"
-	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
+	osDarwin                     = "darwin"
+	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.10"
 	microsandboxRootUser         = "root"
 )
 
@@ -31,7 +32,7 @@ func skipIfNoMicrosandbox(ctx context.Context) {
 			microsandboxUnavailable("microsandbox requires KVM (/dev/kvm not accessible)")
 		}
 		_ = kvm.Close()
-	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
+	case runtime.GOOS == osDarwin && runtime.GOARCH == "arm64":
 		// Apple silicon supports microsandbox via the hypervisor framework.
 	default:
 		microsandboxUnavailable("microsandbox requires Apple silicon or Linux with KVM")
@@ -111,16 +112,13 @@ func (s *microsandboxTestSession) newWorkspace() string {
 }
 
 func (s *microsandboxTestSession) copyWorkspace(source string) string {
-	workspace, err := framework.CopyToTempDir(source)
-	framework.ExpectNoError(err)
-	ginkgo.DeferCleanup(framework.CleanupTempDir, s.initialDir, workspace)
-	return workspace
+	return framework.CopyTestdata(source, s.initialDir)
 }
 
 func (s *microsandboxTestSession) addProvider(ctx context.Context, source, name string) {
 	framework.ExpectNoError(s.framework.DevsyProviderAdd(ctx, source, "--name", name))
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		return s.framework.DevsyProviderDelete(cleanupCtx, name)
 	})

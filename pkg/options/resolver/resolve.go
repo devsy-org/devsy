@@ -347,35 +347,15 @@ func (r *Resolver) refreshSubOptions(
 	optionName string,
 	resolvedOptionValues map[string]config.OptionValue,
 ) error {
-	option, ok := r.graph.GetNode(optionName)
-	if !ok {
-		return nil
-	}
-
-	if !r.resolveSubOptions || option.SubOptionsCommand == "" {
-		return nil
-	}
-
-	_, ok = resolvedOptionValues[optionName]
-	if !ok {
-		return nil
-	}
-
-	// execute the command
-	newDynamicOptions, err := resolveSubOptions(ctx, option, resolvedOptionValues, r.extraValues)
+	subOptions, err := r.retrieveSubOptions(ctx, optionName, resolvedOptionValues)
 	if err != nil {
 		return err
 	}
-
-	r.pruneChangedChildren(optionName, newDynamicOptions, resolvedOptionValues)
-	r.dropInvalidUserValues(newDynamicOptions)
-	setChildren(optionName, newDynamicOptions, resolvedOptionValues)
-
-	if err := addOptionsToGraph(r.graph, newDynamicOptions, resolvedOptionValues); err != nil {
-		return fmt.Errorf("add sub options: %w", err)
+	if subOptions == nil {
+		return nil
 	}
 
-	if err := resolveDynamicOptions(ctx, newDynamicOptions, r, resolvedOptionValues); err != nil {
+	if err := resolveDynamicOptions(ctx, subOptions, r, resolvedOptionValues); err != nil {
 		return fmt.Errorf("resolve dynamic sub options: %w", err)
 	}
 

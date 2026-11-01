@@ -145,6 +145,11 @@ func (r *runner) checkOverlayRecreation(
 	if err := r.checkWSLgReuse(details, options.Recreate); err != nil {
 		return err
 	}
+	if details != nil {
+		if err := r.checkComposeFeatureRecreation(details, parsed, options); err != nil {
+			return err
+		}
+	}
 	if details == nil ||
 		!r.overlayStructureChanged(details, parsed, r.workspaceConfig.LastDevContainerConfig) {
 		return nil
@@ -302,7 +307,7 @@ func (r *runner) composeTeardownArgs(
 	if err != nil {
 		return nil, err
 	}
-	invocation, found, err := persistedComposeTeardownArgs(details, projectName)
+	invocation, found, err := persistedComposeInvocationArgs(details, projectName)
 	if found || err != nil {
 		return invocation, err
 	}
@@ -310,7 +315,7 @@ func (r *runner) composeTeardownArgs(
 	return &composeTeardownInvocation{Args: args}, err
 }
 
-func persistedComposeTeardownArgs(
+func persistedComposeInvocationArgs(
 	details *config.ContainerDetails,
 	projectName string,
 ) (*composeTeardownInvocation, bool, error) {

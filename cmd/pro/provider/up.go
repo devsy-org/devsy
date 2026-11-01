@@ -85,9 +85,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	if instance.Spec.TemplateRef != nil && templateUpdateRequired(instance) {
 		log.Info("Template update required")
 		oldInstance := instance.DeepCopy()
-		instance.Spec.TemplateRef.SyncOnce = true
-
-		instance, err = platform.UpdateInstance(
+		instance, err = platform.UpdateInstanceSyncTemplate(
 			ctx,
 			baseClient,
 			oldInstance,
@@ -157,5 +155,5 @@ func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 		Template:   instance.Spec.TemplateRef,
 		Parameters: instance.Spec.Parameters,
 	})
-	log.Debugf("Starting pro workspace with configuration %s", string(workspaceConfig))
+	log.Debugf("Starting platform workspace with configuration %s", string(workspaceConfig))
 }

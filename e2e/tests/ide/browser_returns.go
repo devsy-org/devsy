@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -29,11 +28,9 @@ const gpgTestKeyFingerprint = "07F681B9FD6C3411F679BFD1F51769DB572DDD3F"
 // the standard cleanup deferred to DeferCleanup.
 func setupBrowserIDE(ctx context.Context, initialDir string) (*framework.Framework, string) {
 	f := framework.NewDefaultFramework(initialDir + "/bin")
-	tempDir, err := framework.CopyToTempDir("tests/ide/testdata")
-	framework.ExpectNoError(err)
-	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+	tempDir := framework.CopyTestdata("tests/ide/testdata", initialDir)
 
-	err = f.DevsyProviderAdd(ctx, "docker")
+	err := f.DevsyProviderAdd(ctx, "docker")
 	framework.ExpectNoError(err)
 	err = f.DevsyProviderUse(ctx, "docker")
 	framework.ExpectNoError(err)
@@ -221,8 +218,12 @@ var _ = ginkgo.Describe(
 				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
 					Should(gomega.Succeed(), "helper port-forward at %s never came up", addr)
 
-				// Now sleep past the OLD 5s idle window with NO connections.
-				time.Sleep(8 * time.Second)
+				// The helper must outlive an idle period with no client connections.
+				gomega.Consistently(func() error {
+					return syscall.Kill(state.PID, 0)
+				}).WithTimeout(8*time.Second).WithPolling(500*time.Millisecond).
+					Should(gomega.Succeed(),
+						"expected helper PID %d to stay alive through 8s idle", state.PID)
 
 				// And the listener must still accept.
 				conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
@@ -240,9 +241,7 @@ var _ = ginkgo.Describe(
 			"passes --open-browser to the helper when --ide-launch=auto",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
-				if runtime.GOOS != "linux" {
-					ginkgo.Skip("/proc/<pid>/cmdline inspection requires Linux")
-				}
+				framework.SkipUnlessOS("linux", "/proc/<pid>/cmdline inspection requires Linux")
 				f, tempDir := setupBrowserIDE(ctx, initialDir)
 
 				err := f.DevsyUpWithIDE(ctx,
@@ -279,11 +278,12 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
-				tempDir, err := framework.CopyToTempDir("tests/ide/testdata-codeserver-nonroot")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata(
+					"tests/ide/testdata-codeserver-nonroot",
+					initialDir,
+				)
 
-				err = f.DevsyProviderAdd(ctx, "docker")
+				err := f.DevsyProviderAdd(ctx, "docker")
 				framework.ExpectNoError(err)
 				err = f.DevsyProviderUse(ctx, "docker")
 				framework.ExpectNoError(err)
@@ -319,11 +319,9 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
-				tempDir, err := framework.CopyToTempDir("tests/ide/testdata-gpg-nonroot")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/ide/testdata-gpg-nonroot", initialDir)
 
-				err = f.DevsyProviderAdd(ctx, "docker")
+				err := f.DevsyProviderAdd(ctx, "docker")
 				framework.ExpectNoError(err)
 				err = f.DevsyProviderUse(ctx, "docker")
 				framework.ExpectNoError(err)
@@ -379,12 +377,10 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
-				tempDir, err := framework.CopyToTempDir("tests/ide/testdata-gpg-nonroot")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/ide/testdata-gpg-nonroot", initialDir)
 
 				contextName := fmt.Sprintf("gpg-ctx-%d", time.Now().UnixNano())
-				err = f.DevsyContextCreate(ctx, contextName)
+				err := f.DevsyContextCreate(ctx, contextName)
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyContextUse(cleanupCtx, config.DefaultContext)

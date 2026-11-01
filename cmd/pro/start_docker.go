@@ -25,8 +25,8 @@ import (
 
 var (
 	ErrMissingContainer = errors.New("missing container")
-	//nolint:staticcheck // ST1005: "Devsy Pro" is a proper noun
-	ErrPlatformNotReachable = errors.New("Devsy Pro is not reachable")
+	//nolint:staticcheck // ST1005: "Devsy Platform" is a proper noun
+	ErrPlatformNotReachable = errors.New("Devsy Platform is not reachable")
 )
 
 type ContainerDetails struct {
@@ -59,8 +59,8 @@ type ContainerDetailsState struct {
 }
 
 func (cmd *StartCmd) startDocker(ctx context.Context) error {
-	log.Infof("Starting Devsy Pro in Docker")
-	name := config.ProReleaseName
+	log.Infof("Starting Devsy Platform in Docker")
+	name := config.PlatformReleaseName
 
 	// prepare installation
 	err := cmd.prepareDocker()
@@ -68,8 +68,8 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 		return err
 	}
 
-	// try to find loft container
-	containerID, err := cmd.findLoftContainer(ctx, name, true)
+	// try to find devsy container
+	containerID, err := cmd.findDevsyContainer(ctx, name, true)
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 	}
 
 	// Install Devsy
-	log.Info("Welcome to Devsy Pro!")
+	log.Info("Welcome to Devsy Platform!")
 	log.Info("This installer will help you get started.")
 
 	// make sure we are ready for installing
@@ -132,13 +132,13 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 	}
 
 	// wait until Devsy is ready
-	host, err := cmd.waitForLoftDocker(ctx, containerID)
+	host, err := cmd.waitForDevsyDocker(ctx, containerID)
 	if err != nil {
 		return err
 	}
 
 	// wait for domain to become reachable
-	log.Infof("Wait for Devsy Pro to become available at %s", host)
+	log.Infof("Wait for Devsy Platform to become available at %s", host)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -147,7 +147,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 		func(ctx context.Context) (bool, error) {
 			containerDetails, err := cmd.inspectContainer(ctx, containerID)
 			if err != nil {
-				return false, fmt.Errorf("inspect loft container: %w", err)
+				return false, fmt.Errorf("inspect devsy container: %w", err)
 			} else if containerDetails.State.Status == devcconfig.ContainerStatusExited ||
 				containerDetails.State.Status == devcconfig.ContainerStatusDead {
 				logs, _ := cmd.logsContainer(ctx, containerID)
@@ -162,7 +162,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("error waiting for Devsy Pro: %w", err)
+		return fmt.Errorf("error waiting for Devsy Platform: %w", err)
 	}
 
 	// print success message
@@ -184,18 +184,18 @@ Login via CLI: %s
 
 #################################################################
 
-Devsy Pro was successfully installed and can now be reached at: %s
+Devsy Platform was successfully installed and can now be reached at: %s
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `,
 		greenBold(url),
-		greenBold("devsy pro login"+" "+url),
+		greenBold("devsy platform login"+" "+url),
 		url,
 	)
 }
 
-func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) (string, error) {
-	log.Info("Wait for Devsy Pro to become available")
+func (cmd *StartCmd) waitForDevsyDocker(ctx context.Context, containerID string) (string, error) {
+	log.Info("Wait for Devsy Platform to become available")
 
 	// check for local port
 	containerDetails, err := cmd.inspectContainer(ctx, containerID)
@@ -211,7 +211,7 @@ func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) 
 		return "", fmt.Errorf(
 			"%w: %s",
 			ErrPlatformNotReachable,
-			"cannot connect to Devsy Pro as it has no exposed port and --no-tunnel is enabled",
+			"cannot connect to Devsy Platform as it has no exposed port and --no-tunnel is enabled",
 		)
 	}
 
@@ -223,7 +223,7 @@ func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) 
 		time.Minute*10,
 		true,
 		func(ctx context.Context) (bool, error) {
-			url, err = cmd.findLoftRouter(ctx, containerID)
+			url, err = cmd.findDevsyRouter(ctx, containerID)
 			if err != nil {
 				return false, nil
 			}
@@ -232,13 +232,13 @@ func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) 
 		},
 	)
 	if waitErr != nil {
-		return "", fmt.Errorf("error waiting for loft router domain: %w", waitErr)
+		return "", fmt.Errorf("error waiting for devsy router domain: %w", waitErr)
 	}
 
 	return url, nil
 }
 
-func (cmd *StartCmd) findLoftRouter(ctx context.Context, id string) (string, error) {
+func (cmd *StartCmd) findDevsyRouter(ctx context.Context, id string) (string, error) {
 	out, err := cmd.buildDockerCmd(ctx, "exec", id, "cat", "/var/lib/loft/loft-domain.txt").Output()
 	if err != nil {
 		return "", WrapCommandError(out, err)
@@ -252,7 +252,7 @@ func (cmd *StartCmd) prepareDocker() error {
 	_, err := exec.LookPath("docker")
 	if err != nil {
 		return fmt.Errorf(
-			"seems like docker is not installed. Docker is required for the installation of loft. " +
+			"seems like docker is not installed. Docker is required for the installation of devsy. " +
 				"Visit https://docs.docker.com/engine/install/ for install instructions",
 		)
 	}
@@ -316,7 +316,7 @@ func (cmd *StartCmd) runInDocker(ctx context.Context, name string) (string, erro
 		args = append(args, "ghcr.io/devsy-org/devsy-pro:latest")
 	}
 
-	log.Infof("Start Devsy Pro via 'docker %s'", strings.Join(args, " "))
+	log.Infof("Start Devsy Platform via 'docker %s'", strings.Join(args, " "))
 	runCmd := cmd.buildDockerCmd(ctx, args...)
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
@@ -325,7 +325,7 @@ func (cmd *StartCmd) runInDocker(ctx context.Context, name string) (string, erro
 		return "", err
 	}
 
-	return cmd.findLoftContainer(ctx, name, false)
+	return cmd.findDevsyContainer(ctx, name, false)
 }
 
 func (cmd *StartCmd) logsContainer(ctx context.Context, id string) (string, error) {
@@ -366,7 +366,7 @@ func (cmd *StartCmd) removeContainer(ctx context.Context, id string) error {
 	return nil
 }
 
-func (cmd *StartCmd) findLoftContainer(
+func (cmd *StartCmd) findDevsyContainer(
 	ctx context.Context,
 	name string,
 	onlyRunning bool,

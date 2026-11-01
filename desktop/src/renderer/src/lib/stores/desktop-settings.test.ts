@@ -35,6 +35,7 @@ function appState(enabled: boolean): AppSettingsState {
       trayNotifications: "failures",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     },
     startup: {
       applied: true,

@@ -128,11 +128,26 @@ func darwinProcessGroupMemberMatches(
 	pgid, wantSession int,
 	identity string,
 ) (matches, leaderMismatch bool, err error) {
-	processGroupID := int(process.Eproc.Pgid)
-	if processGroupID != pgid {
+	if int(process.Eproc.Pgid) != pgid {
 		return false, false, nil
 	}
 	pid := int(process.Proc.P_pid)
+	isLeader := pid == pgid
+	if isLeader && !darwinLeaderStartMatches(process, identity) {
+		return false, true, nil
+	}
+	// kill(-pgid, sig) returns EPERM for a zombie-only group on darwin.
+	if darwinProcessIsZombie(process) {
+		return false, false, nil
+	}
+	return darwinSessionMatches(pid, isLeader, wantSession)
+}
+
+func darwinSessionMatches(
+	pid int,
+	isLeader bool,
+	wantSession int,
+) (matches, leaderMismatch bool, err error) {
 	sessionID, err := darwinSessionID(pid)
 	if errors.Is(err, syscall.ESRCH) {
 		return false, false, nil
@@ -140,18 +155,52 @@ func darwinProcessGroupMemberMatches(
 	if err != nil {
 		return false, false, err
 	}
-	if pid == pgid {
-		leaderIdentity, err := processTreeIdentity(pid)
-		if err != nil {
-			return false, false, err
-		}
-		if leaderIdentity != "" && leaderIdentity != identity {
-			return false, true, nil
-		}
+	if isLeader && sessionID != wantSession {
+		return false, true, nil
 	}
 	return sessionID == wantSession, false, nil
 }
 
 func darwinSessionID(pid int) (int, error) {
 	return unix.Getsid(pid)
+}
+
+// x/sys/unix does not export SZOMB.
+const darwinProcessStateZombie = 5
+
+func darwinProcessIsZombie(process unix.KinfoProc) bool {
+	return process.Proc.P_stat == darwinProcessStateZombie
+}
+
+func darwinLeaderStartMatches(process unix.KinfoProc, identity string) bool {
+	parts := strings.Split(identity, ":")
+	if len(parts) != 3 {
+		return false
+	}
+	return parts[1] == strconv.FormatInt(int64(process.Proc.P_starttime.Sec), 10) &&
+		parts[2] == strconv.FormatInt(int64(process.Proc.P_starttime.Usec), 10)
+}
+
+func processIsLive(pid int) (bool, error) {
+	process, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		if processLookupConfirmsExit(pid, err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return !darwinProcessIsZombie(*process), nil
+}
+
+func processGroupHasLivingMembers(pgid int) (bool, error) {
+	processes, err := unix.SysctlKinfoProcSlice("kern.proc.all")
+	if err != nil {
+		return false, err
+	}
+	for _, process := range processes {
+		if int(process.Eproc.Pgid) == pgid && !darwinProcessIsZombie(process) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

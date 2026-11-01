@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -37,7 +37,7 @@ func NewWatchCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Watch workspaces",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := proutil.FindProProvider(
+			devsyConfig, provider, err := cmdutil.FindPlatformProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -51,7 +51,7 @@ func NewWatchCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The platform instance to use"))
 	_ = c.MarkFlagRequired(names.Host)
 	flags.BindEnv(c.Flags(), names.Host)
 	cliflags.Add(c, cliflags.String(&cmd.Project, names.Project, "", "The project to use"))
@@ -80,9 +80,9 @@ func (cmd *WatchWorkspacesCmd) Run(
 	defer cancel()
 
 	if cmd.FilterByOwner {
-		opts[config.EnvLoftFilterByOwner] = config.OptionValue{Value: "true"}
+		opts[config.EnvFilterByOwner] = config.OptionValue{Value: config.BoolTrue}
 	}
-	opts[config.EnvLoftProject] = config.OptionValue{Value: cmd.Project}
+	opts[config.EnvProject] = config.OptionValue{Value: cmd.Project}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT)

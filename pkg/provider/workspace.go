@@ -78,8 +78,9 @@ type Workspace struct {
 	// Origin is the place where this config file was loaded from
 	Origin string `json:"-"`
 
-	// Pro signals this workspace is remote and doesn't necessarily exist locally. It also has more metadata about the pro workspace
-	Pro *ProMetadata `json:"pro,omitempty"`
+	// Platform signals this workspace is remote and doesn't necessarily exist locally.
+	// It also has more metadata about the platform workspace
+	Platform *PlatformMetadata `json:"pro,omitempty"`
 
 	// Path to the file where the SSH config to access the workspace is stored
 	SSHConfigPath string `json:"sshConfigPath,omitempty"`
@@ -88,7 +89,7 @@ type Workspace struct {
 	SSHConfigIncludePath string `json:"sshConfigIncludePath,omitempty"`
 }
 
-type ProMetadata struct {
+type PlatformMetadata struct {
 	// InstanceName is the platform CRD name for this workspace
 	InstanceName string `json:"instanceName,omitempty"`
 
@@ -153,6 +154,13 @@ type WorkspaceSource struct {
 	Snapshot string `json:"snapshot,omitempty"`
 }
 
+// ContainerLifecycleOwner identifies who owns inactivity shutdown in a container.
+type ContainerLifecycleOwner string
+
+// ContainerLifecycleOwnerManagedDaemon means the container's main process is the
+// Devsy daemon, which owns the inactivity timer.
+const ContainerLifecycleOwnerManagedDaemon ContainerLifecycleOwner = "managedDaemon"
+
 type ContainerWorkspaceInfo struct {
 	// IDE holds the ide config options
 	IDE WorkspaceIDEConfig `json:"ide"`
@@ -163,9 +171,13 @@ type ContainerWorkspaceInfo struct {
 	// Dockerless holds custom dockerless configuration
 	Dockerless ProviderDockerlessOptions `json:"dockerless"`
 
-	// ContainerTimeout is the timeout in minutes to wait until the agent tries
-	// to delete the container.
+	// ContainerTimeout is the effective Go duration of inactivity after which
+	// the container is stopped. Empty disables it.
 	ContainerTimeout string `json:"containerInactivityTimeout,omitempty"`
+
+	// LifecycleOwner names the process that owns inactivity shutdown inside the
+	// container. Empty means the legacy detached daemon.
+	LifecycleOwner ContainerLifecycleOwner `json:"lifecycleOwner,omitempty"`
 
 	// Source is a WorkspaceSource to be used inside the container
 	Source WorkspaceSource `json:"source"`
@@ -550,6 +562,6 @@ func isPlausibleGitSource(s string) bool {
 	return !strings.Contains(u.Host, ":") || u.Port() != ""
 }
 
-func (w *Workspace) IsPro() bool {
-	return w.Pro != nil
+func (w *Workspace) IsPlatform() bool {
+	return w.Platform != nil
 }

@@ -28,26 +28,11 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should rename a stopped workspace to a new, valid name",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-
 				providerName := "rename-provider1"
 				workspaceName := "rename-ws1"
 				renamedWorkspaceName := "renamed-ws1"
 
-				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
-				framework.ExpectNoError(err)
-
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-
-				err = f.DevsyProviderAddDocker(ctx, providerName)
-				framework.ExpectNoError(err)
-				err = f.DevsyProviderUse(ctx, providerName)
-				framework.ExpectNoError(err)
-
-				err = f.DevsyUp(ctx, tempDir, "--id", workspaceName)
-				framework.ExpectNoError(err)
+				f := setupNoDevcontainerWorkspace(ctx, initialDir, providerName, workspaceName)
 
 				gomega.Eventually(func() string {
 					status, err := f.DevsyStatus(ctx, workspaceName)
@@ -59,7 +44,7 @@ var _ = ginkgo.Describe(
 					WithPolling(1 * time.Second).
 					Should(gomega.Equal("Running"))
 
-				err = f.DevsyStop(ctx, workspaceName)
+				err := f.DevsyStop(ctx, workspaceName)
 				framework.ExpectNoError(err)
 
 				err = f.DevsyRename(ctx, workspaceName, renamedWorkspaceName)
@@ -107,26 +92,11 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should auto-stop a running workspace and rename it",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-
 				providerName := "rename-provider2"
 				workspaceName := "rename-ws2"
 				renamedWorkspaceName := "renamed-ws2"
 
-				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
-				framework.ExpectNoError(err)
-
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-
-				err = f.DevsyProviderAddDocker(ctx, providerName)
-				framework.ExpectNoError(err)
-				err = f.DevsyProviderUse(ctx, providerName)
-				framework.ExpectNoError(err)
-
-				err = f.DevsyUp(ctx, tempDir, "--id", workspaceName)
-				framework.ExpectNoError(err)
+				f := setupNoDevcontainerWorkspace(ctx, initialDir, providerName, workspaceName)
 
 				gomega.Eventually(func() string {
 					status, err := f.DevsyStatus(ctx, workspaceName)
@@ -139,7 +109,7 @@ var _ = ginkgo.Describe(
 					Should(gomega.Equal("Running"))
 
 				// Rename while running - should auto-stop
-				err = f.DevsyRename(ctx, workspaceName, renamedWorkspaceName)
+				err := f.DevsyRename(ctx, workspaceName, renamedWorkspaceName)
 				framework.ExpectNoError(err)
 
 				_, err = f.FindWorkspace(ctx, workspaceName)
@@ -175,9 +145,7 @@ var _ = ginkgo.Describe(
 				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
 
 				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
@@ -225,26 +193,11 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should fail to rename a workspace to an invalid name",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-
 				providerName := "rename-provider5"
 				workspaceName := "rename-ws5"
 
-				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
-				framework.ExpectNoError(err)
-
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-
-				err = f.DevsyProviderAddDocker(ctx, providerName)
-				framework.ExpectNoError(err)
-				err = f.DevsyProviderUse(ctx, providerName)
-				framework.ExpectNoError(err)
-
-				err = f.DevsyUp(ctx, tempDir, "--id", workspaceName)
-				framework.ExpectNoError(err)
-				err = f.DevsyStop(ctx, workspaceName)
+				f := setupNoDevcontainerWorkspace(ctx, initialDir, providerName, workspaceName)
+				err := f.DevsyStop(ctx, workspaceName)
 				framework.ExpectNoError(err)
 
 				// Invalid characters
@@ -270,27 +223,12 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should update workspace ID in config after rename",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-
 				providerName := "rename-provider6"
 				workspaceName := "rename-ws6"
 				renamedWorkspaceName := "renamed-ws6"
 
-				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
-				framework.ExpectNoError(err)
-
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-
-				err = f.DevsyProviderAddDocker(ctx, providerName)
-				framework.ExpectNoError(err)
-				err = f.DevsyProviderUse(ctx, providerName)
-				framework.ExpectNoError(err)
-
-				err = f.DevsyUp(ctx, tempDir, "--id", workspaceName)
-				framework.ExpectNoError(err)
-				err = f.DevsyStop(ctx, workspaceName)
+				f := setupNoDevcontainerWorkspace(ctx, initialDir, providerName, workspaceName)
+				err := f.DevsyStop(ctx, workspaceName)
 				framework.ExpectNoError(err)
 
 				// Get workspace UID before rename
@@ -325,3 +263,25 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 			})
 	})
+
+func setupNoDevcontainerWorkspace(
+	ctx context.Context,
+	initialDir, providerName, workspaceName string,
+) *framework.Framework {
+	f := framework.NewDefaultFramework(initialDir + "/bin")
+
+	err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
+	framework.ExpectNoError(err)
+
+	tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
+
+	err = f.DevsyProviderAddDocker(ctx, providerName)
+	framework.ExpectNoError(err)
+	err = f.DevsyProviderUse(ctx, providerName)
+	framework.ExpectNoError(err)
+
+	err = f.DevsyUp(ctx, tempDir, "--id", workspaceName)
+	framework.ExpectNoError(err)
+
+	return f
+}

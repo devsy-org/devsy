@@ -3,9 +3,14 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os/exec"
+	"runtime"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -180,6 +185,87 @@ func TestExecOneShot_PartialOutputOnError(t *testing.T) {
 	if stdout.String() != "partial" {
 		t.Fatalf("expected partial stdout %q to be preserved, got %q", "partial", stdout.String())
 	}
+}
+
+func TestExecWithRunnerPreservesWrappedContextError(t *testing.T) {
+	for _, contextErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(contextErr.Error(), func(t *testing.T) {
+			ctx := context.Background()
+			var cancel context.CancelFunc
+			if errors.Is(contextErr, context.Canceled) {
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			} else {
+				ctx, cancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
+			}
+			t.Cleanup(cancel)
+
+			guestExit := testProcessExitError(t, 17)
+			run := func(context.Context, []string, io.Reader, io.Writer, io.Writer) error {
+				return errors.Join(contextErr, guestExit)
+			}
+			code, err := execWithRunner(
+				ctx,
+				ExecRequest{Target: ContainerTarget{ContainerID: "canceled-container"}},
+				run,
+			)
+
+			if code != -1 {
+				t.Fatalf("exit code = %d, want -1 for canceled exec", code)
+			}
+			if !errors.Is(err, contextErr) {
+				t.Fatalf("error %v does not preserve %v", err, contextErr)
+			}
+			if _, ok := errors.AsType[*exec.ExitError](err); !ok {
+				t.Fatalf("error %v does not preserve runner exit error", err)
+			}
+		})
+	}
+}
+
+func TestExecWithRunnerKeepsExitCodeWhenContextCancelsAfterRun(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	guestExit := testProcessExitError(t, 7)
+	run := func(context.Context, []string, io.Reader, io.Writer, io.Writer) error {
+		cancel()
+		return guestExit
+	}
+
+	code, err := execWithRunner(
+		ctx,
+		ExecRequest{Target: ContainerTarget{ContainerID: "completed-container"}},
+		run,
+	)
+	if err != nil {
+		t.Fatalf("execWithRunner error = %v, want nil", err)
+	}
+	if code != 7 {
+		t.Fatalf("exit code = %d, want 7", code)
+	}
+}
+
+const execTestWindowsOS = "windows"
+
+func testProcessExitError(t *testing.T, code int) *exec.ExitError {
+	t.Helper()
+	var command *exec.Cmd
+	if runtime.GOOS == execTestWindowsOS {
+		// #nosec G204 -- fixed test executable and integer-only fixture exit code
+		command = exec.Command("cmd.exe", "/d", "/c", "exit", strconv.Itoa(code))
+	} else {
+		// #nosec G204 -- fixed test shell and integer-only fixture exit code
+		command = exec.Command("sh", "-c", "exit "+strconv.Itoa(code))
+	}
+	err := command.Run()
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok {
+		t.Fatalf("command error = %v, want *exec.ExitError", err)
+	}
+	if got := exitErr.ExitCode(); got != code {
+		t.Fatalf("process exit code = %d, want %d", got, code)
+	}
+	return exitErr
 }
 
 type fakeLockClient struct {

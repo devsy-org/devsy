@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -20,9 +19,9 @@ import (
 // properly signaled on shutdown. SSH client signals are forwarded to the
 // process.
 func execNonPTY(sess ssh.Session, cmd *exec.Cmd) (err error) {
-	log.Debugf("execute SSH server command: %s", strings.Join(cmd.Args, " "))
+	log.Debugf("execute SSH server command")
 
-	cmd.SysProcAttr = cmdSysProcAttr()
+	cmd.SysProcAttr = mergeCommandSysProcAttr(cmd.SysProcAttr)
 	cmd.Stdout = sess
 	cmd.Stderr = sess.Stderr()
 
@@ -128,7 +127,7 @@ type ptyExecParams struct {
 //
 // - Neovim issue: https://github.com/neovim/neovim/issues/3875
 func execPTY(p ptyExecParams) (retErr error) {
-	log.Debugf("execute SSH server PTY command: %s", strings.Join(p.cmd.Args, " "))
+	log.Debugf("execute SSH server PTY command")
 	p.sess.DisablePTYEmulation()
 
 	// Build an explicit Env so we can inject TERM without losing inherited
@@ -141,10 +140,11 @@ func execPTY(p ptyExecParams) (retErr error) {
 		env = append(os.Environ(), fmt.Sprintf("TERM=%s", p.ptyReq.Term))
 	}
 	ptycmd := &pty.Cmd{
-		Path: p.cmd.Path,
-		Args: p.cmd.Args,
-		Env:  env,
-		Dir:  p.cmd.Dir,
+		Path:        p.cmd.Path,
+		Args:        p.cmd.Args,
+		Env:         env,
+		Dir:         p.cmd.Dir,
+		SysProcAttr: p.cmd.SysProcAttr,
 	}
 
 	pc, proc, err := pty.Start(ptycmd, pty.WithPTYOption(pty.WithSSHRequest(p.ptyReq)))

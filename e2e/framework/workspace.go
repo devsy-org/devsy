@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"os"
 
 	"github.com/onsi/ginkgo/v2"
 )
@@ -23,6 +24,25 @@ func SetupDockerWorkspace(testdataPath, initialDir string) (string, *Framework, 
 	ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 	return tempDir, f, nil
+}
+
+// CopyTestdata copies testdataPath to a temp dir, changes into it, and registers
+// cleanup that removes the temp dir and changes back to initialDir.
+func CopyTestdata(testdataPath, initialDir string) string {
+	tempDir, err := CopyToTempDir(testdataPath)
+	ExpectNoErrorWithOffset(1, err)
+	ginkgo.DeferCleanup(CleanupTempDir, initialDir, tempDir)
+
+	return tempDir
+}
+
+// CopyTestdataNoChdir copies testdataPath to a temp dir and removes it on cleanup.
+func CopyTestdataNoChdir(testdataPath string) string {
+	tempDir, err := CopyToTempDirWithoutChdir(testdataPath)
+	ExpectNoErrorWithOffset(1, err)
+	ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+
+	return tempDir
 }
 
 // SetupDockerWorkspaceAndUp is SetupDockerWorkspace followed by devsy up.

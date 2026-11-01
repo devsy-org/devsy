@@ -11,7 +11,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
@@ -29,7 +29,7 @@ import (
 )
 
 type ClusterCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	Namespace        string
 	ServiceAccount   string
@@ -45,14 +45,14 @@ type ClusterCmd struct {
 }
 
 // NewAddCmd creates a new command.
-func NewAddCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
+func NewAddCmd(globalFlags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &ClusterCmd{
 		GlobalFlags: globalFlags,
 	}
 
 	c := &cobra.Command{
 		Use:   "add <cluster-name>",
-		Short: "Add current cluster to Devsy Pro",
+		Short: "Add current cluster to Devsy Platform",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
@@ -142,7 +142,7 @@ func (cmd *ClusterCmd) setupCluster(
 
 	devsyVersion, err := baseClient.Version()
 	if err != nil {
-		return clusterSetup{}, fmt.Errorf("get pro version: %w", err)
+		return clusterSetup{}, fmt.Errorf("get platform version: %w", err)
 	}
 
 	user, team := getUserOrTeam(baseClient)
@@ -155,7 +155,7 @@ func (cmd *ClusterCmd) setupCluster(
 		return clusterSetup{}, err
 	}
 
-	accessKey, err := managementClient.Loft().
+	accessKey, err := managementClient.Devsy().
 		ManagementV1().
 		Clusters().
 		GetAccessKey(ctx, clusterName, metav1.GetOptions{})
@@ -175,7 +175,7 @@ func (cmd *ClusterCmd) createClusterResource(
 	managementClient kube.Interface,
 	params createClusterParams,
 ) error {
-	_, err := managementClient.Loft().ManagementV1().Clusters().Create(ctx, &managementv1.Cluster{
+	_, err := managementClient.Devsy().ManagementV1().Clusters().Create(ctx, &managementv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: params.clusterName,
 		},
@@ -401,7 +401,7 @@ func waitForClusterInitialized(
 		5*time.Minute,
 		false,
 		func(ctx context.Context) (done bool, err error) {
-			clusterInstance, err := managementClient.Loft().
+			clusterInstance, err := managementClient.Devsy().
 				ManagementV1().
 				Clusters().
 				Get(ctx, clusterName, metav1.GetOptions{})
@@ -425,21 +425,21 @@ func ensureHost(devsyConfig *config.Config, host string) (string, error) {
 		return host, nil
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
-		return "", fmt.Errorf("list pro instances: %w", err)
+		return "", fmt.Errorf("list platform instances: %w", err)
 	}
 	options := []string{}
-	for _, pro := range proInstances {
-		options = append(options, pro.Host)
+	for _, instance := range platformInstances {
+		options = append(options, instance.Host)
 	}
 	h, err := log.QuestionDefault(&survey.QuestionOptions{
-		Question:     "Select Pro instance to connect your cluster to",
+		Question:     "Select Platform instance to connect your cluster to",
 		Options:      options,
 		DefaultValue: options[0],
 	})
 	if err != nil {
-		return "", fmt.Errorf("select pro instance: %w", err)
+		return "", fmt.Errorf("select platform instance: %w", err)
 	}
 
 	return h, nil

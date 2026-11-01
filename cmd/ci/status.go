@@ -6,13 +6,14 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
-func newStatusReporter(out io.Writer, verbose bool) (status.Reporter, error) {
-	reporter, err := status.NewReporter(status.ReporterOptions{
-		Format:                 "plain",
-		Out:                    out,
-		Prefix:                 "ci",
-		Verbose:                verbose,
-		SuppressFailureDetails: true,
+func newStatusReporter(out io.Writer, verbose bool, noStatus bool) (status.Reporter, error) {
+	return status.NewCLIReporter(status.CLIOptions{
+		Format:   "plain",
+		Out:      out,
+		Prefix:   "ci",
+		Verbose:  verbose,
+		NoStatus: noStatus,
+		Pipeline: status.PipelineWorkspaceUp,
 		Labels: map[status.Phase]string{
 			status.PhaseCloningRepository:     "cloning repository",
 			status.PhaseResolvingConfig:       "resolving devcontainer config",
@@ -29,8 +30,4 @@ func newStatusReporter(out io.Writer, verbose bool) (status.Reporter, error) {
 		},
 		Envelope: func(status.Event) error { return nil },
 	})
-	if err != nil {
-		return nil, err
-	}
-	return status.ForPipeline(reporter, status.PipelineWorkspaceUp), nil
 }

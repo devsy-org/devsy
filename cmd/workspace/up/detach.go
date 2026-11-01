@@ -1,6 +1,7 @@
 package up
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -36,7 +37,7 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	t, err := store.Create(task.CreateOptions{
+	t, err := store.CreateLaunch(task.CreateOptions{
 		Command:     "up",
 		WorkspaceID: workspaceID,
 	})
@@ -44,14 +45,8 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 		return err
 	}
 
-	if err := t.BeginLaunch(); err != nil {
-		_ = t.Fail(err)
-		return fmt.Errorf("prepare detached up: %w", err)
-	}
 	if err := launchDetached(t, cmd.detachedInvocationEnvironment()); err != nil {
-		_ = t.FinishLaunch()
-		_ = t.Fail(err)
-		return fmt.Errorf("launch detached up: %w", err)
+		return errors.Join(fmt.Errorf("launch detached up: %w", err), t.FailLaunch(err))
 	}
 	return cmd.renderDetachedTask(t)
 }
@@ -74,6 +69,9 @@ func (cmd *UpCmd) prepareDetached(cfg *config.Config) error {
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
 		return err
 	}
+	if err := workspace2.ValidateID(cmd.ID); err != nil {
+		return err
+	}
 	return cmd.preflightLocalValues(cfg)
 }
 
@@ -85,9 +83,17 @@ func launchDetached(t *task.Task, invocationEnv []string) error {
 
 	args := append(detachedArgs(os.Args[1:]), names.Flag(names.TaskID), t.ID())
 	return command.StartSupervisedBackground(command.SupervisedStartOptions{
-		Name: task.WorkerProcessName(t.ID()),
+		Name:            task.WorkerProcessName(t.ID()),
+		Lease:           t.LaunchLease(),
+		AtomicOwnership: true,
+		OnPrepared:      t.PrepareProcessOwnership,
 		OnStarted: func(ref command.ProcessRef) error {
-			return t.SetProcess(ref)
+			if err := t.PublishProcess(ref); err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return t.CommitLaunch(ctx)
 		},
 	}, func() (*exec.Cmd, error) {
 		return &exec.Cmd{
@@ -149,58 +155,168 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 	}
 	t := store.Open(cmd.taskID)
 	if err := t.HoldWorkerLock(); err != nil {
-		failTask(t, err)
+		traceDetachedAdmission("worker lock")
 		return nil, err
 	}
+	verifiedOwner, err := waitForTaskLaunch(t, store)
+	if err != nil {
+		if verifiedOwner {
+			return nil, finalizeWorkerTask(t, err)
+		}
+		if releaseErr := t.ReleaseWorkerLock(); releaseErr != nil {
+			err = errors.Join(err, fmt.Errorf("release detached worker lock: %w", releaseErr))
+		}
+		return nil, err
+	}
+	return t, nil
+}
+
+type workerLaunchProgress struct {
+	leaseRetained bool
+	verifiedOwner bool
+}
+
+func waitForTaskLaunch(t *task.Task, store *task.Store) (bool, error) {
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
+	progress := workerLaunchProgress{}
 	for {
-		state, err := store.Get(cmd.taskID)
+		state, err := readWorkerLaunchState(t, store)
 		if err != nil {
-			failTask(t, err)
-			_ = t.ReleaseWorkerLock()
-			return nil, err
+			traceDetachedAdmission("reading launch state")
+			return progress.verifiedOwner, err
 		}
-		if state.Status.Terminal() || state.CancelRequested {
-			if err := t.ReleaseWorkerLock(); err != nil {
-				return nil, fmt.Errorf("release canceled worker lock: %w", err)
-			}
-			return nil, task.ErrCanceled
+		ready, err := advanceTaskLaunch(t, store, state, &progress)
+		if err != nil {
+			return progress.verifiedOwner, err
 		}
-		if !state.LaunchPending {
-			if _, ok := state.ProcessReference(); !ok {
-				err := errors.New("detached worker launch did not publish process metadata")
-				failTask(t, err)
-				_ = t.ReleaseWorkerLock()
-				return nil, err
-			}
-			return t, nil
+		if ready {
+			return progress.verifiedOwner, nil
 		}
 		select {
 		case <-deadline.C:
-			err := errors.New("timed out waiting for detached worker launch metadata")
-			failTask(t, err)
-			_ = t.ReleaseWorkerLock()
-			return nil, err
+			traceDetachedAdmission("waiting for launch commit")
+			return progress.verifiedOwner, errors.New(
+				"timed out waiting for detached worker launch metadata",
+			)
 		case <-ticker.C:
 		}
 	}
 }
 
-func failTask(t *task.Task, err error) {
-	if t == nil {
-		return
+func readWorkerLaunchState(t *task.Task, store *task.Store) (*task.State, error) {
+	state, err := store.Get(t.ID())
+	if err != nil {
+		return nil, err
 	}
-	_ = t.Fail(err)
+	if state.Status.Terminal() || state.CancelRequested {
+		return nil, task.ErrCanceled
+	}
+	return state, nil
 }
 
-func succeedTask(t *task.Task, result *config2.Result) {
-	if t == nil {
-		return
+func advanceTaskLaunch(
+	t *task.Task,
+	store *task.Store,
+	state *task.State,
+	progress *workerLaunchProgress,
+) (bool, error) {
+	owner, err := verifyWorkerTaskOwner(state)
+	progress.verifiedOwner = owner
+	if err != nil {
+		traceDetachedAdmission("verifying owner")
+		return false, err
 	}
-	_ = t.Succeed(result)
+	if !state.LaunchPending {
+		return true, nil
+	}
+	if state.LaunchProtocol != 1 {
+		progress.verifiedOwner = false
+		return false, nil
+	}
+	if err := retainWorkerLaunchLease(&progress.leaseRetained); err != nil {
+		traceDetachedAdmission("retaining launch lease")
+		return false, err
+	}
+	if err := checkWorkerLauncher(t, store); err != nil {
+		traceDetachedAdmission("checking launcher")
+		return false, err
+	}
+	if state.PID != 0 && !state.WorkerReady {
+		if err := t.WorkerLaunchReady(os.Getpid()); err != nil {
+			traceDetachedAdmission("acknowledging worker")
+			return false, err
+		}
+		return false, nil
+	}
+	return false, nil
+}
+
+func traceDetachedAdmission(stage string) {
+	if os.Getenv("DEVSY_DETACHED_DIAGNOSTICS") == "1" {
+		fmt.Fprintln(os.Stderr, "detached worker admission failed:", stage)
+	}
+}
+
+// The worker lock excludes concurrent invocations; only the saved kernel identity
+// authorizes this invocation to acknowledge launch or persist startup failures.
+func verifyWorkerTaskOwner(state *task.State) (bool, error) {
+	ref, ok := state.ProcessReference()
+	if !ok {
+		if state.LaunchPending {
+			return false, nil
+		}
+		return false, errors.New("detached worker launch did not publish process metadata")
+	}
+	if ref.PID != os.Getpid() || ref.Identity == "" {
+		return false, errors.New("detached task belongs to a different or unverified worker")
+	}
+	identity, err := command.ProcessTreeIdentity(os.Getpid())
+	if err != nil {
+		return false, fmt.Errorf("verify detached worker identity: %w", err)
+	}
+	if identity == "" || identity != ref.Identity {
+		return false, errors.New("detached worker identity does not match task ownership")
+	}
+	return true, nil
+}
+
+func retainWorkerLaunchLease(retained *bool) error {
+	if *retained {
+		return nil
+	}
+	if err := command.RetainLaunchLease(); err != nil {
+		return err
+	}
+	*retained = true
+	return nil
+}
+
+func checkWorkerLauncher(t *task.Task, store *task.Store) error {
+	alive, err := t.LauncherAlive()
+	if err != nil {
+		return err
+	}
+	if alive {
+		return nil
+	}
+	latest, err := store.Get(t.ID())
+	if err != nil {
+		return err
+	}
+	if latest.LaunchPending {
+		return errors.New("detached worker launcher exited before commit")
+	}
+	return nil
+}
+
+func succeedTask(t *task.Task, result *config2.Result) error {
+	if t == nil {
+		return nil
+	}
+	return t.Succeed(result)
 }
 
 func (cmd *UpCmd) detachedInvocationEnvironment() []string {

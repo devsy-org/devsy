@@ -2,7 +2,6 @@ package jetbrains
 
 import (
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/ide"
 )
 
 const (
@@ -11,21 +10,7 @@ const (
 	RubyMineDownloadArm64Template = "https://download.jetbrains.com/ruby/RubyMine-%s-aarch64.tar.gz"
 )
 
-var RubyMineOptions = ide.Options{
-	VersionOption: {
-		Name:        VersionOption,
-		Description: versionOptionDescription,
-		Default:     versionOptionDefault,
-	},
-	DownloadArm64Option: {
-		Name:        DownloadArm64Option,
-		Description: downloadArm64OptionDescription,
-	},
-	DownloadAmd64Option: {
-		Name:        DownloadAmd64Option,
-		Description: downloadAmd64OptionDescription,
-	},
-}
+var RubyMineOptions = newProductOptions()
 
 func NewRubyMineServer(
 	userName string,

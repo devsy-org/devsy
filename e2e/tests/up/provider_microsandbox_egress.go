@@ -259,7 +259,7 @@ func newMicrosandboxEgressEndpoint(ctx context.Context) *microsandboxEgressEndpo
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), 10*time.Second)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, 10*time.Second)
 		defer cancel()
 		closeErr := server.Close()
 		select {
@@ -297,7 +297,7 @@ func createMicrosandboxEgressInterface(ctx context.Context, name, address string
 	// v0.7.7 classifies this benchmark range as Public and dials non-gateway IPs directly.
 	framework.ExpectNoError(microsandboxEgressIP(ctx, "link", "add", "name", name, "type", "dummy"))
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		return microsandboxEgressIP(cleanupCtx, "link", "delete", "dev", name)
 	})
@@ -425,7 +425,7 @@ func cleanupMicrosandboxEgressProvider(
 	f *framework.Framework,
 	provider string,
 ) error {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	cleanupCtx, cancel := framework.DetachedCleanupContext(ctx, time.Minute)
 	defer cancel()
 	return f.DevsyProviderDelete(cleanupCtx, provider)
 }

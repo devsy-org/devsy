@@ -98,12 +98,40 @@ type stubRunner struct {
 	findErr    error
 	upErr      error
 	commandErr error
+	upOptions  *devcontainer.UpOptions
 }
 
 func (s stubRunner) Up(
-	context.Context, devcontainer.UpOptions, time.Duration, status.Reporter,
+	_ context.Context, options devcontainer.UpOptions, _ time.Duration, _ status.Reporter,
 ) (*config.Result, error) {
+	if s.upOptions != nil {
+		*s.upOptions = options
+	}
 	return nil, s.upErr
+}
+
+func TestStartDevContainerDoesNotReplayCreationOptions(t *testing.T) {
+	var received devcontainer.UpOptions
+	runner := stubRunner{
+		findResult: &config.ContainerDetails{State: config.ContainerDetailsState{
+			Status: config.ContainerStatusExited,
+		}},
+		upOptions: &received,
+	}
+	workspace := &provider2.AgentWorkspaceInfo{CLIOptions: provider2.CLIOptions{
+		Recreate:              true,
+		Reset:                 true,
+		ExtraDevContainerPath: "/deleted/overlay.json",
+	}}
+	if err := startDevContainer(context.Background(), workspace, runner); err != nil {
+		t.Fatal(err)
+	}
+	if !received.NoBuild || received.Recreate || received.Reset ||
+		received.ExtraDevContainerPath != "" {
+		t.Fatal(
+			"SSH restart must resume without replaying destructive or transient creation options",
+		)
+	}
 }
 
 func (stubRunner) Build(context.Context, provider2.BuildOptions) (string, error) {

@@ -35,6 +35,17 @@ func homeOverrideDir(sub ...string) (string, bool, error) {
 	return dir, true, err
 }
 
+// joinUnder returns elems joined beneath the directory produced by parent.
+// A parent error is returned unchanged.
+func joinUnder(parent func() (string, error), elems ...string) (string, error) {
+	dir, err := parent()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(append([]string{dir}, elems...)...), nil
+}
+
 // PathManager centralises filesystem paths. Layout:
 //
 //	ConfigDir()/DataDir()  (same directory today; both may be $DEVSY_HOME)
@@ -44,7 +55,7 @@ func homeOverrideDir(sub ...string) (string, bool, error) {
 //	    ├── contents/<id>                   (WorkspaceContentsDir/WorkspaceContentDir - parent never removed)
 //	    ├── machines/<id>                   (MachineDir)
 //	    ├── providers/<name>/{binaries,daemon} (ProviderDir)
-//	    ├── pro_instances/<id>              (ProInstanceDir)
+//	    ├── pro_instances/<id>              (PlatformInstanceDir)
 //	    └── locks/                          (LocksDir)
 //	CacheDir()                              (default $HOME/.cache/devsy, or $DEVSY_HOME/cache when set)
 //	├── agents/, providers/, features/<hash>/, platform/, keys/
@@ -80,8 +91,8 @@ type PathManager interface {
 	ProviderDir(context, providerName string) (string, error)
 	ProviderBinariesDir(context, providerName string) (string, error)
 	ProviderDaemonDir(context, providerName string) (string, error)
-	ProInstancesDir(context string) (string, error)
-	ProInstanceDir(context, proInstanceHost string) (string, error)
+	PlatformInstancesDir(context string) (string, error)
+	PlatformInstanceDir(context, platformInstanceHost string) (string, error)
 	LocksDir(context string) (string, error)
 
 	// Cache sub-paths.
@@ -128,30 +139,15 @@ func (b *basePathManager) ConfigFilePath() (string, error) {
 // --- Data sub-paths (context-relative) ---
 
 func (b *basePathManager) ContextDir(context string) (string, error) {
-	dir, err := b.pm.DataDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "contexts", context), nil
+	return joinUnder(b.pm.DataDir, "contexts", context)
 }
 
 func (b *basePathManager) WorkspacesDir(context string) (string, error) {
-	dir, err := b.ContextDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "workspaces"), nil
+	return b.inContext(context, "workspaces")
 }
 
 func (b *basePathManager) WorkspaceDir(context, workspaceID string) (string, error) {
-	dir, err := b.WorkspacesDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, workspaceID), nil
+	return b.inContext(context, "workspaces", workspaceID)
 }
 
 // WorkspaceAgentDir is where host-side `devsy internal agent workspace ...` invocations
@@ -160,12 +156,7 @@ func (b *basePathManager) WorkspaceDir(context, workspaceID string) (string, err
 // agent invocations still resolve their home via FindAgentHomeDir and are
 // unaffected.
 func (b *basePathManager) WorkspaceAgentDir(context, workspaceID string) (string, error) {
-	dir, err := b.WorkspaceDir(context, workspaceID)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "agent"), nil
+	return b.inContext(context, "workspaces", workspaceID, "agent")
 }
 
 // WorkspaceContentsDir is the per-context parent of workspace content folders.
@@ -173,239 +164,121 @@ func (b *basePathManager) WorkspaceAgentDir(context, workspaceID string) (string
 // source's parent across up -> delete -> up (avoids Docker Desktop's stale
 // file-share inode cache).
 func (b *basePathManager) WorkspaceContentsDir(context string) (string, error) {
-	dir, err := b.ContextDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "contents"), nil
+	return b.inContext(context, "contents")
 }
 
 // WorkspaceContentDir is the bind-mount source leaf under WorkspaceContentsDir.
 func (b *basePathManager) WorkspaceContentDir(context, workspaceID string) (string, error) {
-	dir, err := b.WorkspaceContentsDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, workspaceID), nil
+	return b.inContext(context, "contents", workspaceID)
 }
 
 // WorkspaceLogDir is the per-workspace log directory used by the desktop's
 // streaming-log store. Lives under WorkspaceDir for the same reason as
 // WorkspaceAgentDir.
 func (b *basePathManager) WorkspaceLogDir(context, workspaceID string) (string, error) {
-	dir, err := b.WorkspaceDir(context, workspaceID)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "logs"), nil
+	return b.inContext(context, "workspaces", workspaceID, "logs")
 }
 
 func (b *basePathManager) MachinesDir(context string) (string, error) {
-	dir, err := b.ContextDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "machines"), nil
+	return b.inContext(context, "machines")
 }
 
 func (b *basePathManager) MachineDir(context, machineID string) (string, error) {
-	dir, err := b.MachinesDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, machineID), nil
+	return b.inContext(context, "machines", machineID)
 }
 
 func (b *basePathManager) ProvidersDir(context string) (string, error) {
-	dir, err := b.ContextDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "providers"), nil
+	return b.inContext(context, "providers")
 }
 
 func (b *basePathManager) ProviderDir(context, providerName string) (string, error) {
-	dir, err := b.ProvidersDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, providerName), nil
+	return b.inContext(context, "providers", providerName)
 }
 
 func (b *basePathManager) ProviderBinariesDir(context, providerName string) (string, error) {
-	dir, err := b.ProviderDir(context, providerName)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "binaries"), nil
+	return b.inContext(context, "providers", providerName, "binaries")
 }
 
 func (b *basePathManager) ProviderDaemonDir(context, providerName string) (string, error) {
-	dir, err := b.ProviderDir(context, providerName)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "daemon"), nil
+	return b.inContext(context, "providers", providerName, "daemon")
 }
 
-func (b *basePathManager) ProInstancesDir(context string) (string, error) {
-	dir, err := b.ContextDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "pro_instances"), nil
+func (b *basePathManager) PlatformInstancesDir(context string) (string, error) {
+	return b.inContext(context, "pro_instances")
 }
 
-func (b *basePathManager) ProInstanceDir(context, proInstanceHost string) (string, error) {
-	dir, err := b.ProInstancesDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, proInstanceHost), nil
+func (b *basePathManager) PlatformInstanceDir(
+	context, platformInstanceHost string,
+) (string, error) {
+	return b.inContext(context, "pro_instances", platformInstanceHost)
 }
 
 func (b *basePathManager) LocksDir(context string) (string, error) {
-	dir, err := b.ContextDir(context)
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "locks"), nil
+	return b.inContext(context, "locks")
 }
 
 // --- Cache sub-paths ---
 
 func (b *basePathManager) AgentCacheDir() (string, error) {
-	dir, err := b.pm.CacheDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "agents"), nil
+	return joinUnder(b.pm.CacheDir, "agents")
 }
 
 func (b *basePathManager) ProviderDownloadCacheDir() (string, error) {
-	dir, err := b.pm.CacheDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "providers"), nil
+	return joinUnder(b.pm.CacheDir, "providers")
 }
 
 func (b *basePathManager) FeatureCacheDir(hashedID string) (string, error) {
-	dir, err := b.pm.CacheDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "features", hashedID), nil
+	return joinUnder(b.pm.CacheDir, "features", hashedID)
 }
 
 func (b *basePathManager) PlatformCacheDir() (string, error) {
-	dir, err := b.pm.CacheDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "platform"), nil
+	return joinUnder(b.pm.CacheDir, "platform")
 }
 
 func (b *basePathManager) SSHKeysDir() (string, error) {
-	dir, err := b.pm.CacheDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "keys"), nil
+	return joinUnder(b.pm.CacheDir, "keys")
 }
 
 // --- Runtime sub-paths ---
 
 func (b *basePathManager) DaemonPIDFile() (string, error) {
-	dir, err := b.pm.RuntimeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, DaemonProcessName+".pid"), nil
+	return joinUnder(b.pm.RuntimeDir, DaemonProcessName+".pid")
 }
 
 func (b *basePathManager) DaemonLockFile() (string, error) {
-	dir, err := b.pm.RuntimeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, DaemonProcessName+".lock"), nil
+	return joinUnder(b.pm.RuntimeDir, DaemonProcessName+".lock")
 }
 
 func (b *basePathManager) DaemonStreamsFile() (string, error) {
-	dir, err := b.pm.RuntimeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, DaemonProcessName+".streams"), nil
+	return joinUnder(b.pm.RuntimeDir, DaemonProcessName+".streams")
 }
 
 func (b *basePathManager) ProcessPIDFile(name string) (string, error) {
-	dir, err := b.pm.RuntimeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, name+".pid"), nil
+	return joinUnder(b.pm.RuntimeDir, name+".pid")
 }
 
 func (b *basePathManager) ProcessLockFile(name string) (string, error) {
-	dir, err := b.pm.RuntimeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, name+".lock"), nil
+	return joinUnder(b.pm.RuntimeDir, name+".lock")
 }
 
 func (b *basePathManager) ProcessStreamsFile(name string) (string, error) {
-	dir, err := b.pm.RuntimeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, name+".streams"), nil
+	return joinUnder(b.pm.RuntimeDir, name+".streams")
 }
 
 // --- State sub-paths ---
 
 func (b *basePathManager) LogDir() (string, error) {
-	dir, err := b.pm.StateDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, "logs"), nil
+	return joinUnder(b.pm.StateDir, "logs")
 }
 
 // TaskDir holds state files for detached background tasks.
 func (b *basePathManager) TaskDir() (string, error) {
-	dir, err := b.pm.StateDir()
-	if err != nil {
-		return "", err
-	}
+	return joinUnder(b.pm.StateDir, "tasks")
+}
 
-	return filepath.Join(dir, "tasks"), nil
+// inContext returns elems joined beneath ContextDir(context).
+func (b *basePathManager) inContext(context string, elems ...string) (string, error) {
+	return joinUnder(func() (string, error) { return b.ContextDir(context) }, elems...)
 }
 
 var (

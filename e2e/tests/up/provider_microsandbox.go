@@ -43,6 +43,7 @@ var _ = ginkgo.Describe(
 				tempDir, err := framework.CopyToTempDir("tests/up/testdata/microsandbox")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				setMicrosandboxExecRemoteEnv(tempDir)
 
 				err = f.DevsyProviderAdd(ctx, source, "--name", name)
 				framework.ExpectNoError(err)
@@ -74,6 +75,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsySSHEchoTestString(ctx, tempDir)
 				framework.ExpectNoError(err)
 				assertMicrosandboxSSHStreams(ctx, f, tempDir)
+				assertMicrosandboxWorkspaceExec(ctx, f, tempDir)
 
 				workspacePath := filepath.Join("/workspaces", filepath.Base(tempDir))
 				_, err = f.DevsySSHOnce(ctx, tempDir, fmt.Sprintf(
@@ -181,7 +183,7 @@ var _ = ginkgo.Describe(
 				provider.MicrosandboxDriver,
 				ginkgo.Label("microsandbox-builtin"), ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
-				"external v0.1.8",
+				"external pinned release",
 				microsandboxExternalProvider,
 				"microsandbox-external-parity",
 				provider.ExternalDriver,
@@ -190,6 +192,119 @@ var _ = ginkgo.Describe(
 		)
 	},
 )
+
+func setMicrosandboxExecRemoteEnv(workspace string) {
+	configPath := filepath.Join(workspace, ".devcontainer.json")
+	// #nosec G304 -- config is copied into this test-owned temporary workspace.
+	data, err := os.ReadFile(configPath)
+	framework.ExpectNoError(err)
+	var devConfig map[string]any
+	framework.ExpectNoError(json.Unmarshal(data, &devConfig))
+	devConfig["remoteEnv"] = map[string]string{"DEVSY_EXEC_ROUTE": "from-config"}
+	data, err = json.Marshal(devConfig)
+	framework.ExpectNoError(err)
+	framework.ExpectNoError(os.WriteFile(configPath, data, 0o600))
+}
+
+func assertMicrosandboxWorkspaceExec(
+	ctx context.Context,
+	f *framework.Framework,
+	workspace string,
+) {
+	const script = `
+printf 'cwd=%s\nuser=%s\nenv=%s\narg1=<%s>\narg2=<%s>\narg3=<%s>\nstdin=' \
+ "$PWD" "$(id -un)" "$DEVSY_EXEC_ROUTE" "$1" "$2" "$3"
+cat
+printf '\n'
+printf 'exec-stderr-marker\n' >&2
+exit 17`
+	stdin := []byte("stdin-payload\n")
+	stdout, stderr, err := captureWorkspaceExec(
+		ctx,
+		f,
+		workspace,
+		microsandboxExecRequest{Stdin: stdin, Args: []string{
+			"--remote-env", "DEVSY_EXEC_ROUTE=from-cli", "--",
+			"sh", "-c", script, "exec-probe", "space value", "", "semi;$HOME*",
+		}},
+	)
+	var exit *exec.ExitError
+	gomega.Expect(errors.As(err, &exit)).To(gomega.BeTrue(),
+		"expected workspace exec to return guest exit 17, got %v (stderr %q)", err, stderr)
+	gomega.Expect(exit.ExitCode()).To(gomega.Equal(17))
+	for _, expected := range []string{
+		"cwd=" + filepath.Join("/workspaces", filepath.Base(workspace)),
+		"user=vscode",
+		"env=from-cli",
+		"arg1=<space value>",
+		"arg2=<>",
+		"arg3=<semi;$HOME*>",
+		"stdin=stdin-payload\n",
+	} {
+		gomega.Expect(stdout).To(gomega.ContainSubstring(expected))
+	}
+	gomega.Expect(stderr).To(gomega.ContainSubstring("exec-stderr-marker"))
+	assertMicrosandboxNumericExecIdentity(ctx, f, workspace)
+}
+
+func assertMicrosandboxNumericExecIdentity(
+	ctx context.Context,
+	f *framework.Framework,
+	folder string,
+) {
+	workspace, err := f.FindWorkspace(ctx, folder)
+	framework.ExpectNoError(err)
+	result, err := provider.LoadWorkspaceResult(workspace.Context, workspace.ID)
+	framework.ExpectNoError(err)
+	gomega.Expect(result.MergedConfig).NotTo(gomega.BeNil())
+	originalUser := result.MergedConfig.RemoteUser
+	defer func() {
+		result.MergedConfig.RemoteUser = originalUser
+		framework.ExpectNoError(provider.SaveWorkspaceResult(workspace, result))
+	}()
+	identity, stderr, err := captureWorkspaceExec(ctx, f, folder, microsandboxExecRequest{
+		Args: []string{"--", "sh", "-c", "printf '%s:%s' \"$(id -u)\" \"$(id -g)\""},
+	})
+	framework.ExpectNoError(err, "read fixture identity: %s", stderr)
+	uid, gid, found := strings.Cut(identity, ":")
+	gomega.Expect(found).To(gomega.BeTrue())
+	for user, expected := range map[string]string{
+		uid:        uid + ":" + gid,
+		uid + ":0": uid + ":0",
+	} {
+		result.MergedConfig.RemoteUser = user
+		framework.ExpectNoError(provider.SaveWorkspaceResult(workspace, result))
+		actual, stderr, err := captureWorkspaceExec(ctx, f, folder, microsandboxExecRequest{
+			Args: []string{"--", "sh", "-c", "printf '%s:%s' \"$(id -u)\" \"$(id -g)\""},
+		})
+		framework.ExpectNoError(err, "exec as %s: %s", user, stderr)
+		gomega.Expect(actual).To(gomega.Equal(expected))
+	}
+}
+
+type microsandboxExecRequest struct {
+	Stdin []byte
+	Args  []string
+}
+
+func captureWorkspaceExec(
+	ctx context.Context,
+	f *framework.Framework,
+	workspace string,
+	request microsandboxExecRequest,
+) (string, string, error) {
+	cliArgs := []string{cmdWorkspace, compatibilityExecCommand, workspace}
+	cliArgs = append(cliArgs, request.Args...)
+	// #nosec G204 -- test binary, test-owned workspace and fixed guest argv
+	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), cliArgs...)
+	docker.PrepareForGroupCancellation(cmd)
+	cmd.WaitDelay = 30 * time.Second
+	cmd.Stdin = bytes.NewReader(request.Stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	return stdout.String(), stderr.String(), err
+}
 
 func assertMicrosandboxSSHStreams(ctx context.Context, f *framework.Framework, workspace string) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
@@ -249,7 +364,7 @@ func assertMicrosandboxHostEntries(
 
 func microsandboxHostOwner(ctx context.Context, entry string) string {
 	args := []string{"-c", "%u:%g", entry}
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == osDarwin {
 		args = []string{"-f", "%u:%g", entry}
 	}
 	// #nosec G204 -- fixed stat executable and test-created path

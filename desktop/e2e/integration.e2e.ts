@@ -95,7 +95,15 @@ test.describe
 
       await wizard.getByRole("button", { name: /^Continue$/ }).click()
 
-      // The mock provider has no required options, so the wizard advances to Complete.
+      await expect(
+        wizard.getByRole("heading", { name: "Configure docker" }),
+      ).toBeVisible()
+      await expect(wizard.getByLabel("Docker Host")).toHaveValue(
+        "unix:///var/run/docker.sock",
+      )
+      await expect(wizard.getByLabel("Disk Size")).toHaveValue("30")
+      await wizard.getByRole("button", { name: /^Continue$/ }).click()
+
       await wizard
         .getByRole("button", { name: "Done" })
         .waitFor({ timeout: 15000 })
@@ -117,10 +125,21 @@ test.describe
 
       await sheet.getByRole("button", { name: "Rename" }).click()
 
-      const renameInput = sheet.locator("input").first()
+      const renameForm = sheet.locator("form").filter({
+        has: page.getByRole("textbox", { name: "Provider name", exact: true }),
+      })
+      const renameInput = renameForm.getByRole("textbox", {
+        name: "Provider name",
+        exact: true,
+      })
+      await expect(renameInput).toBeVisible()
+      await expect(renameInput).toHaveValue("docker")
       await renameInput.fill("my-docker")
+      await expect(renameInput).toHaveValue("my-docker")
 
-      await sheet.getByRole("button", { name: "Save" }).first().click()
+      await renameForm
+        .getByRole("button", { name: "Save", exact: true })
+        .click()
 
       await sheet.waitFor({ state: "hidden", timeout: 10000 })
 
@@ -163,6 +182,14 @@ test.describe
         .filter({ hasText: "Local Docker containers" })
         .click()
 
+      await wizard.getByRole("button", { name: /^Continue$/ }).click()
+      await expect(
+        wizard.getByRole("heading", { name: "Configure docker" }),
+      ).toBeVisible()
+      await expect(wizard.getByLabel("Docker Host")).toHaveValue(
+        "unix:///var/run/docker.sock",
+      )
+      await expect(wizard.getByLabel("Disk Size")).toHaveValue("30")
       await wizard.getByRole("button", { name: /^Continue$/ }).click()
 
       await wizard
@@ -258,11 +285,10 @@ test.describe
 
       await page.waitForTimeout(5000)
 
-      // The header has: h1, provider badge, status badge - target the status badge near h1
-      const headerArea = page
-        .locator("h1", { hasText: "node-js" })
-        .locator("..")
-      await expect(headerArea).toContainText("Stopped", { timeout: 10000 })
+      const status = page
+        .getByRole("region", { name: "Workspace status and actions" })
+        .getByRole("status")
+      await expect(status).toContainText("Stopped", { timeout: 10000 })
     })
 
     test("can rename a workspace", async () => {

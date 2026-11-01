@@ -14,7 +14,7 @@ MCP `workspace_status` confirms saved configuration, not live state. Use CLI
 Resume a stopped workspace with `workspace_start` when the task requires it.
 If CLI is unavailable, start is the available resume action, not a state probe.
 Inspect runtime/command errors; do not claim a successful configuration lookup
-proved readiness. Check events/logs as needed. `workspace ping` is Pro-only,
+proved readiness. Check events/logs as needed. `workspace ping` is Platform-only,
 and logs do not support proxy providers. Do not default to delete/recreate/reset.
 
 ## Creation timed out

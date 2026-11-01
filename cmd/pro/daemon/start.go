@@ -10,13 +10,10 @@ import (
 	"syscall"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
-	"github.com/devsy-org/devsy/cmd/pro/completion"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
-	cliflags "github.com/devsy-org/devsy/pkg/flags"
-	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
@@ -25,50 +22,22 @@ import (
 
 // StartCmd holds the devsy daemon flags.
 type StartCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	Host string
 }
 
 // NewStartCmd creates a new command.
-func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewStartCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &StartCmd{
 		GlobalFlags: flags,
 	}
 	c := &cobra.Command{
 		Use:   "start",
 		Short: "Start the client daemon",
-		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := proutil.FindProProvider(
-				cobraCmd.Context(),
-				cmd.Context,
-				cmd.Provider,
-				cmd.Host,
-			)
-			if err != nil {
-				return err
-			}
-
-			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
-		},
+		RunE:  cmdutil.HostRunE(flags, &cmd.Host, cmd.Run),
 	}
-
-	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
-	_ = c.MarkFlagRequired(names.Host)
-	proflags.BindEnv(c.Flags(), names.Host)
-	_ = c.RegisterFlagCompletionFunc(
-		names.Host,
-		func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return completion.GetPlatformHostSuggestions(
-				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
-			)
-		},
-	)
+	cmdutil.AddHostFlag(c, &cmd.Host, cmdutil.WithHostCompletion(flags))
 
 	return c
 }

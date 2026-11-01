@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -120,9 +119,10 @@ var _ = ginkgo.Describe("microsandbox Dockerless parity",
 func newMicrosandboxDockerlessFixture(
 	ctx context.Context, providerName, providerSource string,
 ) *microsandboxDockerlessFixtureState {
-	if runtime.GOOS != osLinux {
-		ginkgo.Skip("Dockerless parity fixture currently targets the supported Linux KVM job")
-	}
+	framework.SkipUnlessOS(
+		"linux",
+		"Dockerless parity fixture currently targets the supported Linux KVM job",
+	)
 	skipIfNoMicrosandbox(ctx)
 	ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
 	ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")

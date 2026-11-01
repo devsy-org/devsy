@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -24,11 +25,13 @@ const (
 	DevContainerName  = pkgconfig.BinaryName
 	InitContainerName = pkgconfig.BinaryName + "-init"
 
-	DevsyCreatedLabel          = pkgconfig.K8sCreatedLabel
-	DevsyWorkspaceLabel        = pkgconfig.K8sWorkspaceLabel
-	DevsyWorkspaceUIDLabel     = pkgconfig.K8sWorkspaceUIDLabel
-	DevsyInfoAnnotation        = pkgconfig.K8sInfoAnnotation
-	DevsyLastAppliedAnnotation = pkgconfig.K8sLastAppliedAnnotation
+	DevsyCreatedLabel              = pkgconfig.K8sCreatedLabel
+	DevsyWorkspaceLabel            = pkgconfig.K8sWorkspaceLabel
+	DevsyWorkspaceUIDLabel         = pkgconfig.K8sWorkspaceUIDLabel
+	DevsyInfoAnnotation            = pkgconfig.K8sInfoAnnotation
+	DevsyLastAppliedAnnotation     = pkgconfig.K8sLastAppliedAnnotation
+	DevsyDockerlessAnnotation      = DevsyInfoAnnotation + "-dockerless"
+	DevsyImageEntrypointAnnotation = DevsyInfoAnnotation + "-image-entrypoint"
 )
 
 var ExtraDevsyLabels = map[string]string{
@@ -48,16 +51,39 @@ func (k *KubernetesDriver) RunDevContainer(
 	log.Debugf("Running devcontainer for workspace %q", workspaceId)
 	workspaceId = getID(workspaceId)
 
-	if err := k.ensureNamespace(ctx); err != nil {
-		return err
-	}
-
 	initialize, options, err := k.ensureDevContainerPvc(ctx, workspaceId, options)
 	if err != nil {
 		return err
 	}
 
-	return k.runContainer(ctx, workspaceId, options, initialize)
+	if err := k.runContainer(ctx, workspaceId, options, initialize); err != nil {
+		return err
+	}
+	return k.verifyDesiredPod(ctx, workspaceId, options)
+}
+
+func (k *KubernetesDriver) ValidateRunImageDevContainer(
+	params *driver.RunImageDevContainerParams,
+) error {
+	_, err := k.resolveRunOptions(nil, params.Options)
+	return err
+}
+
+// preflightTemplate rejects an unusable pod template before any cluster object,
+// including the workspace volume, is created.
+func (k *KubernetesDriver) preflightTemplate(options *driver.RunOptions) error {
+	if options == nil {
+		return nil
+	}
+	pod, err := loadPodTemplate(k.options.PodManifestTemplate)
+	if err != nil {
+		return err
+	}
+	timeout, err := lifecycleTimeout(options)
+	if err != nil {
+		return fmt.Errorf("read lifecycle policy: %w", err)
+	}
+	return validateNoExtraContainers(pod, timeout)
 }
 
 func (k *KubernetesDriver) ensureNamespace(ctx context.Context) error {
@@ -77,12 +103,16 @@ func (k *KubernetesDriver) ensureDevContainerPvc(
 	if err != nil {
 		return false, nil, err
 	}
+	options, err = k.resolveRunOptions(containerInfo, options)
+	if err != nil {
+		return false, nil, err
+	}
+	if err := k.verifyExistingPodOwner(ctx, workspaceId, options.UID); err != nil {
+		return false, nil, err
+	}
 	if pvc == nil {
-		if options == nil {
-			return false, nil, fmt.Errorf(
-				"no options provided and no persistent volume claim found for workspace %q",
-				workspaceId,
-			)
+		if err := k.ensureNamespace(ctx); err != nil {
+			return false, nil, err
 		}
 
 		if err := k.createPersistentVolumeClaim(ctx, workspaceId, options); err != nil {
@@ -92,8 +122,8 @@ func (k *KubernetesDriver) ensureDevContainerPvc(
 		return true, options, nil
 	}
 
-	if options == nil && containerInfo != nil {
-		options = containerInfo.Options
+	if err := k.persistRunOptions(ctx, pvc, containerInfo, options); err != nil {
+		return false, nil, err
 	}
 
 	return false, options, nil
@@ -114,7 +144,15 @@ func (k *KubernetesDriver) runContainer(
 		return err
 	}
 
-	skip, err := k.reconcileExistingPod(ctx, id)
+	timeout, err := lifecycleTimeout(options)
+	if err != nil {
+		return fmt.Errorf("read lifecycle policy: %w", err)
+	}
+	if err := validatePodTopology(pod, timeout); err != nil {
+		return err
+	}
+
+	skip, err := k.reconcileExistingPod(ctx, id, options)
 	if err != nil {
 		return err
 	}
@@ -122,7 +160,7 @@ func (k *KubernetesDriver) runContainer(
 		return nil
 	}
 
-	return k.runPod(ctx, id, pod)
+	return k.runPod(ctx, id, pod, timeout)
 }
 
 func (k *KubernetesDriver) buildPod(
@@ -138,6 +176,14 @@ func (k *KubernetesDriver) buildPod(
 
 	pod, err := loadPodTemplate(k.options.PodManifestTemplate)
 	if err != nil {
+		return nil, err
+	}
+	// Reject before any cluster object is created for this run.
+	timeout, err := lifecycleTimeout(options)
+	if err != nil {
+		return nil, fmt.Errorf("read lifecycle policy: %w", err)
+	}
+	if err := validateNoExtraContainers(pod, timeout); err != nil {
 		return nil, err
 	}
 
@@ -180,6 +226,11 @@ func (k *KubernetesDriver) buildPod(
 	}); err != nil {
 		return nil, err
 	}
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[DevsyDockerlessAnnotation] = strconv.FormatBool(options.Dockerless)
+	pod.Annotations[DevsyImageEntrypointAnnotation] = strconv.FormatBool(options.ImageEntrypoint)
 
 	return pod, nil
 }
@@ -261,7 +312,9 @@ func (k *KubernetesDriver) resolveWorkspaceMount(
 			mount.Target,
 		)
 	default:
-		mount.Target = k.options.WorkspaceVolumeMount
+		podMount := *mount
+		podMount.Target = k.options.WorkspaceVolumeMount
+		mount = &podMount
 		log.Debugf("Using workspace volume mount: %s", k.options.WorkspaceVolumeMount)
 	}
 
@@ -493,45 +546,16 @@ func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecre
 	pod.Spec.RestartPolicy = corev1.RestartPolicyNever
 }
 
-func (k *KubernetesDriver) reconcileExistingPod(ctx context.Context, id string) (bool, error) {
-	existingPod, err := k.getPod(ctx, id)
-	if err != nil {
-		return false, fmt.Errorf("get pod: %s: %w", id, err)
-	}
-	if existingPod == nil {
-		return false, nil
-	}
-
-	existingOptions := &provider2.ProviderKubernetesDriverConfig{}
-	if raw := existingPod.GetAnnotations()[DevsyLastAppliedAnnotation]; raw != "" {
-		if err = json.Unmarshal([]byte(raw), existingOptions); err != nil {
-			log.Errorf("Error unmarshalling existing provider options, continuing...: %s", err)
-		}
-	}
-
-	// Nothing changed, can safely return
-	if optionsEqual(existingOptions, k.options) {
-		log.Debugf(
-			"Pod %q already exists and nothing changed, skipping update",
-			existingPod.Name,
-		)
-		return true, nil
-	}
-
-	// Stop the current pod
-	log.Debug("Provider options changed")
-	if err := k.waitPodDeleted(ctx, id); err != nil {
-		return false, fmt.Errorf("stop devcontainer: %s: %w", id, err)
-	}
-
-	return false, nil
-}
-
-func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Pod) error {
+func (k *KubernetesDriver) runPod(
+	ctx context.Context,
+	id string,
+	pod *corev1.Pod,
+	timeout time.Duration,
+) error {
 	var err error
 
 	// set configuration before creating the pod
-	lastAppliedConfigRaw, err := json.Marshal(k.options)
+	lastAppliedConfigRaw, err := json.Marshal(withoutLocalOptions(k.options))
 	if err != nil {
 		return fmt.Errorf("marshal last applied config: %w", err)
 	}
@@ -552,9 +576,15 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 
 	// create the pod
 	log.Debugf("Create Pod %q", id)
-	_, err = k.client.Client().CoreV1().Pods(k.namespace).Create(ctx, pod, metav1.CreateOptions{})
+	created, err := k.client.Client().
+		CoreV1().
+		Pods(k.namespace).
+		Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("create pod: %w", err)
+	}
+	if err := k.rejectAdmittedPod(ctx, created, pod, timeout); err != nil {
+		return err
 	}
 
 	// wait for pod running
@@ -703,20 +733,7 @@ func (k *KubernetesDriver) StartDevContainer(ctx context.Context, workspaceId st
 	log.Debugf("Starting devcontainer for workspace %q", workspaceId)
 	defer log.Debugf("Done starting devcontainer for workspace %q", workspaceId)
 
-	workspaceId = getID(workspaceId)
-	_, containerInfo, err := k.getDevContainerPvc(ctx, workspaceId)
-	if err != nil {
-		return err
-	} else if containerInfo == nil {
-		return fmt.Errorf("persistent volume %q not found", workspaceId)
-	}
-
-	return k.runContainer(
-		ctx,
-		workspaceId,
-		containerInfo.Options,
-		false,
-	)
+	return k.RunDevContainer(ctx, workspaceId, nil)
 }
 
 func getID(workspaceID string) string {
@@ -733,18 +750,26 @@ func getDaemonSecretName(workspaceID string) string {
 
 func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
 	// copy a and b and the compare them without the context, config, namespace and podTimeout
-	aCopy := *a
+	aCopy := withoutLocalOptions(a)
 	aCopy.KubernetesContext = ""
 	aCopy.KubernetesConfig = ""
 	aCopy.KubernetesNamespace = ""
 	aCopy.PodTimeout = ""
 
-	bCopy := *b
+	bCopy := withoutLocalOptions(b)
 	bCopy.KubernetesContext = ""
 	bCopy.KubernetesConfig = ""
 	bCopy.KubernetesNamespace = ""
 	bCopy.PodTimeout = ""
 	return aCopy == bCopy
+}
+
+func withoutLocalOptions(
+	options *provider2.ProviderKubernetesDriverConfig,
+) provider2.ProviderKubernetesDriverConfig {
+	c := *options
+	c.ImageConfigFile = ""
+	return c
 }
 
 func (k *KubernetesDriver) createNamespace(ctx context.Context) error {

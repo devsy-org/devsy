@@ -1,6 +1,7 @@
 package devcontainer
 
 import (
+	"maps"
 	"reflect"
 	"strings"
 
@@ -62,10 +63,15 @@ func (r *runner) generateDockerComposeUpProject(params *composeUpParams) *compos
 		params.imageDetails,
 	)
 
+	// Copy so the workspace identity does not leak into the shared merged config.
+	containerEnv := make(map[string]string, len(mergedConfig.ContainerEnv)+2)
+	maps.Copy(containerEnv, mergedConfig.ContainerEnv)
+	r.addWorkspaceEnvVars(containerEnv)
+
 	overrideService := &composetypes.ServiceConfig{
 		Name:        composeService.Name,
 		Entrypoint:  buildOverrideEntrypoint(mergedConfig, userEntrypoint),
-		Environment: r.composeContainerEnvironment(mergedConfig.ContainerEnv),
+		Environment: r.composeContainerEnvironment(containerEnv),
 		Init:        mergedConfig.Init,
 		CapAdd:      mergedConfig.CapAdd,
 		SecurityOpt: mergedConfig.SecurityOpt,
@@ -74,6 +80,9 @@ func (r *runner) generateDockerComposeUpProject(params *composeUpParams) *compos
 
 	if params.originalImageName != params.overrideImageName {
 		overrideService.Image = params.overrideImageName
+	}
+	if params.pinImage {
+		overrideService.PullPolicy = composetypes.PullPolicyNever
 	}
 
 	if !reflect.DeepEqual(userCommand, composeService.Command) {

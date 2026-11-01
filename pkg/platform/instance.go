@@ -94,7 +94,7 @@ func findInstanceByUID(
 	listOpts := metav1.ListOptions{
 		LabelSelector: storagev1.DevsyWorkspaceUIDLabel + "=" + uid,
 	}
-	workspaceList, err := managementClient.Loft().ManagementV1().
+	workspaceList, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(namespace).List(ctx, listOpts)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func findInstanceByName(
 	name string,
 	namespace string,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
-	workspace, err := managementClient.Loft().ManagementV1().
+	workspace, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
@@ -193,9 +193,10 @@ func DialInstance(
 	}
 	log.Debugf("Connect to workspace using host: %s", host)
 
-	loftURL := "wss://" + host + "/kubernetes/management/apis/management.devsy.sh/v1/namespaces/" + workspace.Namespace + "/devsyworkspaceinstances/" + workspace.Name + "/" + subResource
+	devsyURL := "wss://" + host + "/kubernetes/management/apis/management.devsy.sh/v1/namespaces/" +
+		workspace.Namespace + "/devsyworkspaceinstances/" + workspace.Name + "/" + subResource
 	if len(values) > 0 {
-		loftURL += "?" + values.Encode()
+		devsyURL += "?" + values.Encode()
 	}
 
 	dialer := websocket.Dialer{
@@ -204,7 +205,7 @@ func DialInstance(
 		HandshakeTimeout: 45 * time.Second,
 	}
 
-	conn, response, err := dialer.Dial(loftURL, map[string][]string{
+	conn, response, err := dialer.Dial(devsyURL, map[string][]string{
 		"Authorization": {"Bearer " + restConfig.BearerToken},
 	})
 	if err != nil {
@@ -213,11 +214,11 @@ func DialInstance(
 			headers, _ := json.Marshal(response.Header)
 			return nil, fmt.Errorf(
 				"%s: error dialing websocket %s (code %d): headers - %s, error -: %w",
-				string(out), loftURL, response.StatusCode, string(headers), err,
+				string(out), devsyURL, response.StatusCode, string(headers), err,
 			)
 		}
 
-		return nil, fmt.Errorf("error dialing websocket %s: %w", loftURL, err)
+		return nil, fmt.Errorf("error dialing websocket %s: %w", devsyURL, err)
 	}
 
 	return conn, nil
@@ -251,7 +252,7 @@ func UpdateInstance(
 		return newInstance, nil
 	}
 
-	res, err := managementClient.Loft().ManagementV1().
+	res, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(oldInstance.GetNamespace()).
 		Patch(ctx, oldInstance.GetName(), patch.Type(), data, metav1.PatchOptions{})
 	if err != nil {
@@ -295,7 +296,7 @@ func getInstanceIfReady(
 	managementClient kube.Interface,
 	instance *managementv1.DevsyWorkspaceInstance,
 ) (*managementv1.DevsyWorkspaceInstance, bool, error) {
-	updatedInstance, err := managementClient.Loft().ManagementV1().
+	updatedInstance, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(instance.GetNamespace()).
 		Get(ctx, instance.GetName(), metav1.GetOptions{})
 	if err != nil {

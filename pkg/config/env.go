@@ -39,8 +39,11 @@ const (
 	// EnvDisableTelemetry disables telemetry collection.
 	EnvDisableTelemetry = "DEVSY_DISABLE_TELEMETRY"
 
-	// EnvProRunner is set by the Devsy Pro runner pod to mark runner-side CLI invocations.
-	EnvProRunner = "DEVSY_PRO_RUNNER"
+	// EnvPlatformRunner is set by the Devsy Platform runner pod to mark runner-side CLI invocations.
+	EnvPlatformRunner = "DEVSY_PLATFORM_RUNNER"
+
+	// EnvPlatformRunnerLegacy is the pre-rename runner marker still set by existing runner pods.
+	EnvPlatformRunnerLegacy = "DEVSY_PRO_RUNNER"
 
 	// EnvTelemetryDistinctID is set by the desktop app on spawned CLI
 	// processes so their events share the desktop's analytics identity.
@@ -114,7 +117,7 @@ const (
 	// EnvFlagsStatus holds extra flags for the status command.
 	EnvFlagsStatus = "DEVSY_FLAGS_STATUS"
 
-	// EnvSubdomain is the subdomain configuration for Devsy Pro.
+	// EnvSubdomain is the subdomain configuration for Devsy Platform.
 	EnvSubdomain = "DEVSY_SUBDOMAIN"
 
 	// EnvPrefix is the base prefix for all Devsy environment variables.
@@ -171,11 +174,11 @@ const (
 	// EnvProviderFolder is the provider folder path passed to providers.
 	EnvProviderFolder = "PROVIDER_FOLDER"
 
-	// EnvLoftProject is the Devsy project name for pro features.
-	EnvLoftProject = "DEVSY_PROJECT"
+	// EnvProject is the Devsy project name for platform features.
+	EnvProject = "DEVSY_PROJECT"
 
-	// EnvLoftFilterByOwner enables filtering by owner in Devsy.
-	EnvLoftFilterByOwner = "DEVSY_FILTER_BY_OWNER"
+	// EnvFilterByOwner enables filtering by owner in Devsy.
+	EnvFilterByOwner = "DEVSY_FILTER_BY_OWNER"
 
 	// EnvDevcontainerID is the devcontainer identifier.
 	EnvDevcontainerID = "DEVCONTAINER_ID"

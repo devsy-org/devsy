@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -119,19 +118,6 @@ func uniqueTag() string {
 	return fmt.Sprintf("devsy-internal-buildkit:%d", time.Now().UnixNano())
 }
 
-// setProcessEnv overrides a process variable for one spec only.
-func setProcessEnv(name, value string) {
-	previous, had := os.LookupEnv(name)
-	framework.ExpectNoError(os.Setenv(name, value))
-	ginkgo.DeferCleanup(func() {
-		if had {
-			_ = os.Setenv(name, previous)
-		} else {
-			_ = os.Unsetenv(name)
-		}
-	})
-}
-
 var _ = ginkgo.Describe(
 	"docker internal buildkit transport",
 	ginkgo.Label("docker-internal-buildkit"),
@@ -143,9 +129,7 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.BeforeEach(func(ctx context.Context) {
-			if runtime.GOOS != "windows" {
-				ginkgo.Skip("Windows only")
-			}
+			framework.SkipUnlessOS("windows", "Windows only")
 			sshHost = requireEnv(sshHostEnv)
 			wslID = requireEnv(wslDaemonEnv)
 			envVars = providerEnv(sshHost)
@@ -263,8 +247,8 @@ var _ = ginkgo.Describe(
 			func(ctx context.Context) {
 				// Make the process daemon reachable (the same WSL daemon) so a
 				// silent fallback would succeed.
-				setProcessEnv("DOCKER_HOST", sshHost)
-				setProcessEnv(dockerContextEnv, "")
+				framework.SetEnvForSpec("DOCKER_HOST", sshHost)
+				framework.SetEnvForSpec(dockerContextEnv, "")
 
 				tag := uniqueTag()
 				ginkgo.DeferCleanup(func(ctx context.Context) {
@@ -340,9 +324,7 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.BeforeEach(func() {
-			if runtime.GOOS != "windows" {
-				ginkgo.Skip("Windows only")
-			}
+			framework.SkipUnlessOS("windows", "Windows only")
 			sshHost = requireEnv(sshHostEnv)
 			wslID = requireEnv(wslDaemonEnv)
 			configDir = ginkgo.GinkgoT().TempDir()
@@ -352,8 +334,8 @@ var _ = ginkgo.Describe(
 			"BuildDevContainer builds on the named Docker context's daemon despite a dead process DOCKER_HOST",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
-				setProcessEnv("DOCKER_HOST", deadProcessHost)
-				setProcessEnv(dockerContextEnv, "")
+				framework.SetEnvForSpec("DOCKER_HOST", deadProcessHost)
+				framework.SetEnvForSpec(dockerContextEnv, "")
 				_, err := dockerRun(ctx, nil, "info")
 				gomega.Expect(err).To(gomega.HaveOccurred(),
 					"process-env daemon must be unreachable for this regression to mean anything")
@@ -427,8 +409,8 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				// Make the process daemon reachable so a silent fallback would succeed.
-				setProcessEnv("DOCKER_HOST", sshHost)
-				setProcessEnv(dockerContextEnv, "")
+				framework.SetEnvForSpec("DOCKER_HOST", sshHost)
+				framework.SetEnvForSpec(dockerContextEnv, "")
 				gomega.Expect(dockerOutput(ctx, nil, "info", "--format", "{{.ID}}")).
 					To(gomega.Equal(wslID), "process daemon must be reachable for this negative control")
 

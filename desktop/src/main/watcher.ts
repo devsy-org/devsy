@@ -7,6 +7,7 @@ import type { CliRunner } from "./cli.js"
 import type { DaemonClient } from "./daemon-client.js"
 import { mainLog } from "./logging.js"
 import type { ProviderJobs } from "./provider-jobs.js"
+import { sendRendererEvent } from "./renderer-events.js"
 import type { DaemonState, Machine, Workspace } from "./state.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
@@ -30,6 +31,8 @@ export interface ProviderEntry {
     name?: string
     version?: string
     icon?: string
+    iconDark?: string
+    iconRevision?: string
     description?: string
     source?: Record<string, unknown>
     options?: Record<string, unknown>
@@ -46,6 +49,8 @@ export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
     name: entry.config.name ?? "",
     version: entry.config.version ?? "",
     icon: entry.config.icon ?? "",
+    iconDark: entry.config.iconDark ?? "",
+    iconRevision: entry.config.iconRevision ?? "",
     description: entry.config.description ?? "",
     source: entry.config.source ?? {},
     options: entry.config.options ?? {},
@@ -264,7 +269,11 @@ export class Watcher {
       const workspaces = await this.queryWithFallback(
         daemon ? () => daemon.listWorkspaces<Workspace[]>() : undefined,
         () =>
-          this.deps.cli.run<Workspace[]>(["workspace", "list", "--skip-pro"]),
+          this.deps.cli.run<Workspace[]>([
+            "workspace",
+            "list",
+            "--skip-platform",
+          ]),
       )
       if (generation !== this.deps.workspaceJobs.epoch) {
         if (strict)
@@ -312,20 +321,16 @@ export class Watcher {
   }
 
   private async pollProviders(): Promise<void> {
-    const daemon = this.deps.daemon
+    const readRevision = this.deps.state.providerReadRevision()
     try {
-      const raw = await this.queryWithFallback(
-        daemon
-          ? () => daemon.listProviders<Record<string, ProviderEntry>>()
-          : undefined,
-        () =>
-          this.deps.cli.run<Record<string, ProviderEntry>>([
-            "provider",
-            "list",
-          ]),
-      )
+      // Provider settings are written through the CLI; the daemon's provider
+      // list cache may lag that successful write.
+      const raw = await this.deps.cli.run<Record<string, ProviderEntry>>([
+        "provider",
+        "list",
+      ])
       const providers = parseProviderEntries(raw)
-      const changed = this.deps.state.updateProviders(providers)
+      const changed = this.deps.state.updateProviders(providers, readRevision)
       if (changed) {
         this.broadcastProviders()
       }
@@ -385,9 +390,6 @@ export class Watcher {
   }
 
   private send(channel: string, payload: unknown): void {
-    const win = this.deps.getMainWindow()
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(channel, payload)
-    }
+    sendRendererEvent(this.deps.getMainWindow, channel, payload)
   }
 }

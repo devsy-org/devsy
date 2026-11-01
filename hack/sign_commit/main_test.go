@@ -1,29 +1,13 @@
 package main
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 )
-
-func testKey(t *testing.T) *rsa.PrivateKey {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("generate rsa key: %v", err)
-	}
-	return key
-}
 
 const (
 	testSubject = "subject"
@@ -268,48 +252,6 @@ func TestCommitVars(t *testing.T) {
 	}
 }
 
-func TestGenerateJWT(t *testing.T) {
-	key := testKey(t)
-	now := time.Now()
-	tokenStr, err := generateJWT("123456", key, now)
-	if err != nil {
-		t.Fatalf("generateJWT: %v", err)
-	}
-	claims := &jwt.RegisteredClaims{}
-	parsed, err := jwt.ParseWithClaims(tokenStr, claims, func(*jwt.Token) (any, error) {
-		return &key.PublicKey, nil
-	})
-	if err != nil || !parsed.Valid {
-		t.Fatalf("parse jwt: %v valid=%v", err, parsed.Valid)
-	}
-	if claims.Issuer != "123456" {
-		t.Errorf("iss: got %q", claims.Issuer)
-	}
-}
-
-func TestGenerateJWTMissingID(t *testing.T) {
-	if _, err := generateJWT("", testKey(t), time.Now()); err == nil {
-		t.Fatal("expected error for missing app id")
-	}
-}
-
-func TestLoadPrivateKeyMissing(t *testing.T) {
-	if _, err := loadPrivateKey("", ""); err == nil {
-		t.Fatal("expected error when no key provided")
-	}
-}
-
-func TestLoadPrivateKeyFromContents(t *testing.T) {
-	key := testKey(t)
-	loaded, err := loadPrivateKey("", string(rsaPEM(t, key)))
-	if err != nil {
-		t.Fatalf("loadPrivateKey: %v", err)
-	}
-	if loaded.N.Cmp(key.N) != 0 {
-		t.Error("loaded key does not match")
-	}
-}
-
 func TestInstallationURL(t *testing.T) {
 	const want = "https://api.github.com/orgs/devsy-org/installation"
 	if got := installationURL("devsy-org"); got != want {
@@ -432,14 +374,4 @@ func TestChangedFilesDetectsWorkingTree(t *testing.T) {
 			t.Errorf("expected %q in changed files, got %v", f, got)
 		}
 	}
-}
-
-func rsaPEM(t *testing.T, key *rsa.PrivateKey) []byte {
-	t.Helper()
-	der := x509.MarshalPKCS1PrivateKey(key)
-	enc := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
-	if !strings.HasPrefix(string(enc), "-----BEGIN") {
-		t.Fatalf("unexpected pem: %s", enc)
-	}
-	return enc
 }

@@ -15,6 +15,7 @@ import type {
   SshKeyInfo,
   Workspace,
 } from "$lib/types/index.js"
+import type { LinuxDesktopIntegrationStatus } from "$shared/linux-desktop-integration.js"
 
 // ── Sample data ──────────────────────────────────────────────────────
 
@@ -90,6 +91,8 @@ const PROVIDERS: Provider[] = [
   },
 ]
 
+const AVAILABLE_PROVIDERS = ["docker", "terraform"]
+
 const MACHINES: Machine[] = [
   {
     id: "docker-desktop",
@@ -114,6 +117,7 @@ let MOCK_APP_SETTINGS = {
     trayNotifications: "failures",
     desktopLogLevel: "info",
     cliCaptureLogLevel: "info",
+    appImageIntegrationPromptDismissed: false,
   },
   startup: { applied: true, enabled: false, status: "disabled" },
 } as {
@@ -123,6 +127,7 @@ let MOCK_APP_SETTINGS = {
     trayNotifications: "off" | "failures" | "all"
     desktopLogLevel: "error" | "warn" | "info" | "debug" | "trace"
     cliCaptureLogLevel: "error" | "warn" | "info" | "debug" | "trace"
+    appImageIntegrationPromptDismissed: boolean
   }
   startup: {
     applied: boolean
@@ -130,6 +135,14 @@ let MOCK_APP_SETTINGS = {
     status: "enabled" | "disabled" | "denied" | "unavailable" | "error"
     detail?: string
   }
+}
+
+// The browser mock behaves like a Devsy AppImage that was started directly.
+let MOCK_LINUX_INTEGRATION: LinuxDesktopIntegrationStatus = {
+  supported: true,
+  appImagePath: "/home/user/Applications/Devsy.AppImage",
+  installed: false,
+  needsUpdate: false,
 }
 
 const CONTEXTS: Context[] = [{ name: "default" }, { name: "staging" }]
@@ -217,6 +230,7 @@ const COMMANDS: Record<string, Handler> = {
 
   // Providers
   provider_list: () => PROVIDERS,
+  provider_available: () => AVAILABLE_PROVIDERS,
   provider_add: () => undefined,
   provider_delete: () => undefined,
   provider_use: () => undefined,
@@ -342,6 +356,20 @@ const COMMANDS: Record<string, Handler> = {
       },
     }
     return MOCK_APP_SETTINGS
+  },
+
+  get_linux_desktop_integration: () => MOCK_LINUX_INTEGRATION,
+  install_linux_desktop_integration: () => {
+    MOCK_LINUX_INTEGRATION = {
+      ...MOCK_LINUX_INTEGRATION,
+      installed: true,
+      needsUpdate: false,
+    }
+    return { status: MOCK_LINUX_INTEGRATION }
+  },
+  remove_linux_desktop_integration: () => {
+    MOCK_LINUX_INTEGRATION = { ...MOCK_LINUX_INTEGRATION, installed: false }
+    return { status: MOCK_LINUX_INTEGRATION }
   },
 
   // Release channel

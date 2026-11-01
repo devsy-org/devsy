@@ -94,9 +94,7 @@ var _ = ginkgo.Describe("published MicroSandbox provider remote agent binaries",
 				)
 				server := startRemoteAgentArtifactServer(runtimeBytes, agentPath)
 				ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
-					closeCtx, cancel := context.WithTimeout(
-						context.WithoutCancel(cleanupCtx), 10*time.Second,
-					)
+					closeCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, 10*time.Second)
 					defer cancel()
 					return server.close(closeCtx)
 				})
@@ -122,14 +120,22 @@ var _ = ginkgo.Describe("published MicroSandbox provider remote agent binaries",
 
 				workspace := session.newWorkspace()
 				ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
-					boundedCtx, cancel := context.WithTimeout(
-						context.WithoutCancel(cleanupCtx), 20*time.Second,
+					boundedCtx, cancel := framework.DetachedCleanupContext(
+						cleanupCtx,
+						20*time.Second,
 					)
 					defer cancel()
 					return removeRemoteAgentContainer(boundedCtx, containerName)
 				})
 				ginkgo.DeferCleanup(session.framework.CleanupWorkspace, workspace)
 				framework.ExpectNoError(session.framework.DevsyUp(ctx, workspace))
+				stdout, stderr, err := captureWorkspaceExec(
+					ctx, session.framework, workspace,
+					microsandboxExecRequest{Args: []string{"--", "printf", "remote-agent-exec-ok"}},
+				)
+				framework.ExpectNoError(err, stderr)
+				gomega.Expect(stdout).To(gomega.Equal("remote-agent-exec-ok"),
+					"workspace exec must reach the guest through the remote agent")
 				gomega.Expect(server.runtimeRequests.Load()).To(gomega.Equal(int32(1)),
 					"remote agent must fetch the published provider binary exactly once")
 				gomega.Expect(server.agentRequests.Load()).To(gomega.BeNumerically(">", 0),

@@ -13,6 +13,10 @@ import (
 
 type Option func(*tunnelServer) *tunnelServer
 
+func WithAllowGitHubCredentials(allow bool) Option {
+	return func(s *tunnelServer) *tunnelServer { s.allowGitHubCredentials = allow; return s }
+}
+
 func WithWorkspace(workspace *provider2.Workspace) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.workspace = workspace
@@ -88,6 +92,14 @@ func WithSecrets(env, mount []string) Option {
 func WithGitToken(token *provider2.GitToken) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.gitToken = token
+		return s
+	}
+}
+
+// WithGitSSHSigningKey configures the host Git SSH signing key for fallback resolution.
+func WithGitSSHSigningKey(signingKey string) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.gitSSHSigningKey = signingKey
 		return s
 	}
 }

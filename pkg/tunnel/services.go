@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -50,8 +52,10 @@ type RunServicesOptions struct {
 	Workspace                      *provider.Workspace
 	ConfigureDockerCredentials     bool
 	ConfigureGitCredentials        bool
+	ConfigureGitHubCredentials     bool
 	ConfigureGitSSHSignatureHelper bool
 	GitSSHSigningKey               string
+	HostOwner                      string
 	// ExtraListeners holds pre-bound listeners keyed by "host:port" so the
 	// helper can skip net.Listen and avoid a probe-to-listen TOCTOU race.
 	ExtraListeners map[string]net.Listener
@@ -59,6 +63,15 @@ type RunServicesOptions struct {
 	// the EXIT_AFTER_TIMEOUT context option. Used by callers reaped
 	// out-of-band rather than by idle activity.
 	DisableIdleTimeout bool
+}
+
+type tunnelServerParams struct {
+	opts             RunServicesOptions
+	stdoutReader     *os.File
+	stdinWriter      *os.File
+	forwarder        netstat.Forwarder
+	gitSSHSigningKey string
+	errChan          chan error
 }
 
 // getExitAfterTimeout resolves the per-forward idle-shutdown duration.
@@ -89,15 +102,6 @@ func createForwarder(
 	return newForwarder(opts.ContainerClient, ports, resolver)
 }
 
-// tunnelServerParams contains parameters for running the tunnel server.
-type tunnelServerParams struct {
-	opts         RunServicesOptions
-	stdoutReader *os.File
-	stdinWriter  *os.File
-	forwarder    netstat.Forwarder
-	errChan      chan error
-}
-
 // runTunnelServer runs the tunnel server in a goroutine.
 func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelServerParams) {
 	defer cancel()
@@ -112,6 +116,8 @@ func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelSer
 		p.forwarder,
 		p.opts.Workspace,
 		tunnelserver.WithPlatformOptions(p.opts.PlatformOptions),
+		tunnelserver.WithAllowGitHubCredentials(p.opts.ConfigureGitHubCredentials),
+		tunnelserver.WithGitSSHSigningKey(p.gitSSHSigningKey),
 	)
 	if err != nil {
 		p.errChan <- fmt.Errorf("run tunnel server: %w", err)
@@ -119,35 +125,59 @@ func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelSer
 	close(p.errChan)
 }
 
-// addGitSSHSigningKey adds SSH signing key to command if configured.
-// When explicitKey is set (from --git-ssh-signing-key flag), it takes
-// precedence over the host's .gitconfig. This ensures signing works
-// even when user.signingkey is not in the host git configuration.
+func resolveGitSSHSigningKey(ctx context.Context, opts RunServicesOptions) string {
+	if !opts.ConfigureGitSSHSignatureHelper {
+		return ""
+	}
+	workingDir := ""
+	if opts.Workspace != nil {
+		workingDir = opts.Workspace.Source.LocalFolder
+	}
+	return resolveHostGitSSHSigningKey(ctx, opts.GitSSHSigningKey, workingDir)
+}
+
+func resolveHostGitSSHSigningKey(
+	ctx context.Context,
+	explicitKey string,
+	workingDir string,
+) string {
+	if explicitKey != "" {
+		return gitsshsigning.ExpandSigningKeyPath(explicitKey)
+	}
+	format, extracted, err := gitsshsigning.ExtractGitConfiguration(ctx, workingDir)
+	if err != nil {
+		log.Debugf("failed to extract git configuration: %v", err)
+		return ""
+	}
+	if format != gitsshsigning.GPGFormatSSH || extracted == "" {
+		return ""
+	}
+	return extracted
+}
+
+func appendGitSSHSigningKey(command, signingKey string) string {
+	if signingKey == "" {
+		return command
+	}
+	encodedKey := base64.StdEncoding.EncodeToString([]byte(signingKey))
+	return command + fmt.Sprintf(" --git-user-signing-key %s", encodedKey)
+}
+
 func addGitSSHSigningKey(
 	ctx context.Context,
 	command string,
 	explicitKey string,
 	workingDir string,
 ) string {
-	userSigningKey := explicitKey
-	if userSigningKey == "" {
-		format, extracted, err := gitsshsigning.ExtractGitConfiguration(ctx, workingDir)
-		if err != nil {
-			log.Debugf("failed to extract git configuration: %v", err)
-			return command
-		}
-		if format != gitsshsigning.GPGFormatSSH || extracted == "" {
-			return command
-		}
-		userSigningKey = extracted
-	}
-	encodedKey := base64.StdEncoding.EncodeToString([]byte(userSigningKey))
-	command += fmt.Sprintf(" --git-user-signing-key %s", encodedKey)
-	return command
+	signingKey := resolveHostGitSSHSigningKey(ctx, explicitKey, workingDir)
+	return appendGitSSHSigningKey(command, signingKey)
 }
 
-// buildCredentialsCommand builds the credentials server command.
 func buildCredentialsCommand(ctx context.Context, opts RunServicesOptions) string {
+	return formatCredentialsCommand(opts, resolveGitSSHSigningKey(ctx, opts))
+}
+
+func formatCredentialsCommand(opts RunServicesOptions, gitSSHSigningKey string) string {
 	command := fmt.Sprintf(
 		"%s internal agent container credentials-server --user %s",
 		shellescape.Quote(config.ContainerDevsyHelperLocation),
@@ -156,13 +186,11 @@ func buildCredentialsCommand(ctx context.Context, opts RunServicesOptions) strin
 	if opts.ConfigureGitCredentials {
 		command += " --configure-git-helper"
 	}
-	if opts.ConfigureGitSSHSignatureHelper {
-		workingDir := ""
-		if opts.Workspace != nil {
-			workingDir = opts.Workspace.Source.LocalFolder
-		}
-		command = addGitSSHSigningKey(ctx, command, opts.GitSSHSigningKey, workingDir)
+	if opts.ConfigureGitHubCredentials {
+		command += " --host-owner " + shellescape.Quote(opts.HostOwner)
+		command += " --configure-github-helper"
 	}
+	command = appendGitSSHSigningKey(command, gitSSHSigningKey)
 	if opts.ConfigureDockerCredentials {
 		command += " --configure-docker-helper"
 	}
@@ -199,14 +227,16 @@ func runServicesIteration(
 	defer cancel()
 
 	forwarder := createForwarder(opts, forwardedPorts, resolver)
+	gitSSHSigningKey := resolveGitSSHSigningKey(ctx, opts)
 
 	errChan := make(chan error, 1)
 	go runTunnelServer(cancelCtx, cancel, tunnelServerParams{
-		opts:         opts,
-		stdoutReader: stdoutReader,
-		stdinWriter:  stdinWriter,
-		forwarder:    forwarder,
-		errChan:      errChan,
+		opts:             opts,
+		stdoutReader:     stdoutReader,
+		stdinWriter:      stdinWriter,
+		forwarder:        forwarder,
+		gitSSHSigningKey: gitSSHSigningKey,
+		errChan:          errChan,
 	})
 
 	writer, writerDone := log.PipeJSONStream()
@@ -215,14 +245,15 @@ func runServicesIteration(
 		<-writerDone
 	}()
 
-	command := buildCredentialsCommand(ctx, opts)
+	command := formatCredentialsCommand(opts, gitSSHSigningKey)
+	diagnostic := &boundedPreparationOutput{}
 
 	err = devssh.Run(cancelCtx, devssh.RunOptions{
 		Client:  opts.ContainerClient,
 		Command: command,
 		Stdin:   stdinReader,
 		Stdout:  stdoutWriter,
-		Stderr:  writer,
+		Stderr:  io.MultiWriter(writer, diagnostic),
 	})
 	if err != nil {
 		// Drain errChan to allow goroutine to exit cleanly
@@ -230,7 +261,7 @@ func runServicesIteration(
 		case <-errChan:
 		default:
 		}
-		return err
+		return classifyServicesStartupError(err, diagnostic)
 	}
 	return <-errChan
 }
@@ -239,6 +270,9 @@ func runServicesIteration(
 // to run the credentials server remotely and the services server locally to
 // communicate with the container.
 func RunServices(ctx context.Context, opts RunServicesOptions) error {
+	if opts.HostOwner == "" {
+		opts.HostOwner = hostCredentialOwner()
+	}
 	exitAfterTimeout := getExitAfterTimeout(opts.DevsyConfig, opts.DisableIdleTimeout)
 
 	fp := portForwardParams{
@@ -264,8 +298,54 @@ func RunServices(ctx context.Context, opts RunServicesOptions) error {
 	}, func(err error) bool {
 		return ctx.Err() == nil
 	}, func() error {
-		return runServicesIteration(ctx, opts, forwardedPorts, resolver)
+		return runOptionalGitHubServices(ctx, opts, func(current RunServicesOptions) error {
+			return runServicesIteration(ctx, current, forwardedPorts, resolver)
+		})
 	})
+}
+
+func runOptionalGitHubServices(
+	ctx context.Context,
+	opts RunServicesOptions,
+	run func(RunServicesOptions) error,
+) error {
+	err := run(opts)
+	if !errors.Is(err, errUnsupportedGitHubServiceOptions) ||
+		!opts.ConfigureGitHubCredentials || ctx.Err() != nil {
+		return err
+	}
+	log.Debug("GitHub credential service unavailable; retrying other credential services")
+	opts.ConfigureGitHubCredentials = false
+	opts.HostOwner = ""
+	return run(opts)
+}
+
+var errUnsupportedGitHubServiceOptions = errors.New(
+	"agent does not support GitHub credential service options",
+)
+
+func classifyServicesStartupError(err error, diagnostic *boundedPreparationOutput) error {
+	var exit *devssh.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode == 0 || diagnostic.overflow {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(diagnostic.data))
+	for {
+		var record struct {
+			Kind    string `json:"kind"`
+			Message string `json:"message"`
+		}
+		if decoder.Decode(&record) != nil {
+			return err
+		}
+		if record.Kind != "error" {
+			continue
+		}
+		switch record.Message {
+		case "unknown flag: --host-owner", "unknown flag: --configure-github-helper":
+			return fmt.Errorf("%w: %w", errUnsupportedGitHubServiceOptions, err)
+		}
+	}
 }
 
 // buildPortAttributeResolver loads port attributes from the container result.

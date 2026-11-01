@@ -25,6 +25,20 @@ Open **Workspaces** and click **Create**. The wizard has five steps:
 
 The desktop app runs `devsy workspace up` for you.
 
+### Workspace IDs
+
+The workspace name is its ID. Use lowercase ASCII letters (`a-z`), digits (`0-9`), and hyphens (`-`), with a maximum of 48 characters.
+
+Desktop suggests a valid ID from your source. For example, a local folder named `Backend` suggests `backend`; the source path keeps its original case. If you enter a name yourself, it must follow the same rules:
+
+```sh
+devsy workspace up ./Projects/Backend --id backend
+```
+
+<Callout title="Workspace creation fix">
+Uppercase workspace IDs are rejected before detached creation starts. Startup failures are recorded as failed tasks and shown in Desktop instead of leaving creation waiting indefinitely. Mixed-case source folder and repository names remain supported.
+</Callout>
+
 ### Devsy CLI
 
 [Install the CLI](../getting-started/install.mdx#install-devsy-cli) and add a provider, for example Docker:
@@ -92,8 +106,8 @@ build/
 ```
 
 - A missing or empty file uploads everything.
-- An unreadable file or an invalid pattern stops the upload with an error that names the file.
-- It does not apply to extra bind mounts, to local Docker bind mounts, to remote Git clones, or to image builds, which use their own rules. `.gitignore` and `.dockerignore` are not used in its place.
+- An unreadable file or invalid pattern stops the upload with an error naming the file.
+- Only the workspace folder upload is filtered. Extra bind mounts, local Docker bind mounts, remote Git clones and image builds follow their own rules, and `.gitignore` and `.dockerignore` are not read.
 
 ## Inspect a workspace
 

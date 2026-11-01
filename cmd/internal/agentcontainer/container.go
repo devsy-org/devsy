@@ -27,6 +27,7 @@ func NewContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 		containerCmd.AddCommand(newBrowserAsyncCmd(b))
 	}
 	containerCmd.AddCommand(NewCredentialsServerCmd(flags))
+	containerCmd.AddCommand(NewCredentialsStatusCmd())
 	containerCmd.AddCommand(NewSetupDevsyPlatformAccessCmd(flags))
 	containerCmd.AddCommand(NewSSHServerCmd(flags))
 	return containerCmd

@@ -46,3 +46,49 @@ func isInterestingWindowsProcess(name string) bool {
 		return false
 	}
 }
+
+// terminateStrayProcessesHook is the seam setupWindows and armWatchdog call
+// through; tests override it to avoid sweeping real podman/wsl/gvproxy/
+// win-sshproxy processes that may be running on a developer's machine for
+// unrelated work.
+var terminateStrayProcessesHook = terminateStrayWindowsProcesses
+
+// terminateStrayWindowsProcesses forcefully terminates any Podman/WSL helper
+// processes still running system-wide (podman, wsl, gvproxy, win-sshproxy).
+// It is called when devsy-ci-podman.exe is about to exit after a terminal
+// failure (including the hard watchdog deadline) so that no descendant
+// process is left behind holding handles or keeping a VM alive past our own
+// bootstrap budget: per-command timeouts deliberately leave descendants
+// running to let recovery/readiness polling observe a still-booting
+// machine, but once setup gives up for good there is no further attempt to
+// reap them.
+func terminateStrayWindowsProcesses(log *Logger) {
+	terminateWindowsProcesses(matchingWindowsProcesses(), log)
+}
+
+// terminateWindowsProcesses force-kills exactly the given processes. It is
+// split out from terminateStrayWindowsProcesses so tests can exercise the
+// real OpenProcess/TerminateProcess kill mechanics against a single
+// known-owned helper process without sweeping the whole host.
+func terminateWindowsProcesses(processes []processInfo, log *Logger) {
+	for _, process := range processes {
+		handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, process.PID)
+		if err != nil {
+			log.Printf(
+				"[podman-windows] stray_process_open_failed pid=%d name=%s err=%v",
+				process.PID,
+				process.Name,
+				err,
+			)
+			continue
+		}
+		killErr := windows.TerminateProcess(handle, 124)
+		_ = windows.CloseHandle(handle)
+		log.Printf(
+			"[podman-windows] stray_process_terminated pid=%d name=%s err=%v",
+			process.PID,
+			process.Name,
+			killErr,
+		)
+	}
+}

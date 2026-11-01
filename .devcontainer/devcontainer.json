@@ -1,11 +1,12 @@
 {
   "image": "mcr.microsoft.com/devcontainers/go:1.26",
   "features": {
-    "ghcr.io/skevetter/features/go-task:1": {},
+    "ghcr.io/devcontainers-extra/features/mise:1": {},
     "ghcr.io/skevetter/features/prek:1": {},
     "ghcr.io/skevetter/features/uv:1": {},
     "ghcr.io/devcontainers/features/node:2": {
       "version": "24"
     }
-  }
+  },
+  "postCreateCommand": "mise trust && mise install"
 }

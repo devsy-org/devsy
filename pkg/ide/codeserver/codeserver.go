@@ -14,9 +14,9 @@ import (
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/internal/serverutil"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/util"
 )
 
 // Release URL format: tag has the `v` prefix; the asset filename does not.
@@ -60,6 +60,14 @@ var Options = ide.Options{
 		Name:        DownloadAmd64Option,
 		Description: "The download url for the amd64 code-server binary",
 	},
+}
+
+var downloadSpec = serverutil.ReleaseSpec{
+	Options:       Options,
+	Amd64Option:   DownloadAmd64Option,
+	Arm64Option:   DownloadArm64Option,
+	Amd64Template: downloadAmd64Template,
+	Arm64Template: downloadArm64Template,
 }
 
 // DefaultCodeServerPort sits next to openvscode's 10800 so a host running both
@@ -126,10 +134,8 @@ func (c *CodeServer) Install() error {
 		return err
 	}
 
-	if c.userName != "" {
-		if err := copy2.ChownR(location, c.userName); err != nil {
-			return fmt.Errorf("chown: %w", err)
-		}
+	if err := serverutil.ChownIfNeeded(c.userName, location); err != nil {
+		return err
 	}
 
 	if err := c.installSettings(); err != nil {
@@ -162,7 +168,7 @@ func (c *CodeServer) Start() error {
 		return fmt.Errorf("find binary: %w", err)
 	}
 
-	homeFolder, err := userHome(c.userName)
+	homeFolder, err := serverutil.UserHome(c.userName)
 	if err != nil {
 		return err
 	}
@@ -180,26 +186,13 @@ func (c *CodeServer) Start() error {
 				"--disable-telemetry --disable-update-check",
 			binaryPath, c.host+":"+c.port, userDataDir,
 		)
-		return suOrSh(c.userName, runCommand, location), nil
+		return serverutil.SuOrSh(c.userName, runCommand, location), nil
 	})
 }
 
 func (c *CodeServer) getReleaseURL() string {
 	version := Options.GetValue(c.values, VersionOption)
-
-	var url string
-	if runtime.GOARCH == "arm64" {
-		url = Options.GetValue(c.values, DownloadArm64Option)
-		if url == "" {
-			url = fmt.Sprintf(downloadArm64Template, version, version)
-		}
-	} else {
-		url = Options.GetValue(c.values, DownloadAmd64Option)
-		if url == "" {
-			url = fmt.Sprintf(downloadAmd64Template, version, version)
-		}
-	}
-	return url
+	return downloadSpec.URL(c.values, runtime.GOARCH, version, version)
 }
 
 func (c *CodeServer) installExtensions() error {
@@ -212,31 +205,15 @@ func (c *CodeServer) installExtensions() error {
 		return err
 	}
 
-	out := log.Writer(log.LevelInfo)
-	defer func() { _ = out.Close() }()
-
 	binaryPath := filepath.Join(location, "bin", "code-server")
-	var failed []string
-	for _, extension := range c.extensions {
-		log.Info("Install extension " + extension)
-		runCommand := fmt.Sprintf("%s --install-extension %q", binaryPath, extension)
-		cmd := suOrSh(c.userName, runCommand, "")
-		cmd.Stdout = out
-		cmd.Stderr = out
-		if err := cmd.Run(); err != nil {
-			log.Errorf("failed installing extension: extension=%s, error=%v", extension, err)
-			failed = append(failed, extension)
-		} else {
-			log.Infof("installed extension: extension=%s", extension)
-		}
-	}
-
-	// Escalate only on total failure - partial failures stay as logged
-	// warnings to match openvscode's behavior.
-	if len(failed) == len(c.extensions) {
-		return fmt.Errorf("all %d extensions failed to install: %v", len(failed), failed)
-	}
-	return nil
+	return serverutil.ExtensionInstall{
+		UserName:   c.userName,
+		Extensions: c.extensions,
+		Command: func(extension string) string {
+			return fmt.Sprintf("%s --install-extension %q", binaryPath, extension)
+		},
+		FailOnTotalFailure: true,
+	}.Run()
 }
 
 // installSettings writes settings.json to code-server's user config dir,
@@ -247,7 +224,7 @@ func (c *CodeServer) installSettings() error {
 		return nil
 	}
 
-	homeFolder, err := userHome(c.userName)
+	homeFolder, err := serverutil.UserHome(c.userName)
 	if err != nil {
 		return err
 	}
@@ -271,44 +248,9 @@ func (c *CodeServer) installSettings() error {
 	return nil
 }
 
-// suOrSh builds an *exec.Cmd that runs runCommand either as the unprivileged
-// user (via `su <user> -c`) or as the current user (via `sh -c`). All arg
-// elements are constants from this package - runCommand itself is built from
-// constants plus internal values, not user-controlled binary paths.
-func suOrSh(userName, runCommand, workingDir string) *exec.Cmd {
-	var cmd *exec.Cmd
-	if userName != "" {
-		// #nosec G204 -- args are fixed constants; runCommand is internally built.
-		cmd = exec.Command("su", userName, "-c", runCommand)
-	} else {
-		// #nosec G204 -- args are fixed constants; runCommand is internally built.
-		cmd = exec.Command("sh", "-c", runCommand)
-	}
-	if workingDir != "" {
-		cmd.Dir = workingDir
-	}
-	return cmd
-}
-
-func userHome(userName string) (string, error) {
-	if userName != "" {
-		return command.GetHome(userName)
-	}
-	return util.UserHomeDir()
-}
-
 // prepareCodeServerLocation returns the install dir for code-server, creating
 // it if needed. Layout mirrors the upstream tarball after StripLevels(1):
 // <home>/.code-server/bin/code-server.
 func prepareCodeServerLocation(userName string) (string, error) {
-	homeFolder, err := userHome(userName)
-	if err != nil {
-		return "", err
-	}
-	folder := filepath.Join(homeFolder, ".code-server")
-	// #nosec G301 -- match openvscode-server convention for parity.
-	if err := os.MkdirAll(folder, 0o755); err != nil {
-		return "", err
-	}
-	return folder, nil
+	return serverutil.PrepareLocation(userName, ".code-server")
 }

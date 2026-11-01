@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -25,6 +26,7 @@ import (
 type ContainerTunnel struct {
 	client               client.WorkspaceClient
 	updateConfigInterval time.Duration
+	user                 string
 }
 
 // NewContainerTunnel constructs a ContainerTunnel using the workspace client, if proxy is True then
@@ -39,6 +41,14 @@ func NewContainerTunnel(client client.WorkspaceClient) *ContainerTunnel {
 
 // Handler defines what to do once the tunnel has a client established.
 type Handler func(ctx context.Context, containerClient *ssh.Client) error
+
+// AsUser selects the inner workspace SSH identity on a copy of the tunnel.
+// Host transport and agent injection retain their existing identity.
+func (c *ContainerTunnel) AsUser(user string) *ContainerTunnel {
+	selected := *c
+	selected.user = user
+	return &selected
+}
 
 // Run creates an "outer" tunnel to the host to start the SSH server so that the "inner" tunnel can
 // connect to the container over SSH.
@@ -122,7 +132,7 @@ func (c *ContainerTunnel) runHostTunnel(
 	defer closeAndDrain()
 	defer log.Debugf("Tunnel to host closed")
 
-	command := fmt.Sprintf("'%s' internal ssh-server --stdio", c.client.AgentPath())
+	command := shellescape.Quote(c.client.AgentPath()) + " internal ssh-server --stdio"
 	if log.DebugEnabled() {
 		command += " --debug"
 	}
@@ -177,14 +187,14 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 				break
 			}
 
-			buf := &bytes.Buffer{}
+			buf := &containerTunnelOutput{}
 			command := fmt.Sprintf(
-				"%q internal agent workspace update-config --workspace-info %q",
-				c.client.AgentPath(),
-				workspaceInfo,
+				"%s internal agent workspace update-config --workspace-info %s",
+				shellescape.Quote(c.client.AgentPath()),
+				shellescape.Quote(workspaceInfo),
 			)
 			if agentInfo.Agent.DataPath != "" {
-				command += fmt.Sprintf(" --agent-dir %q", agentInfo.Agent.DataPath)
+				command += " --agent-dir " + shellescape.Quote(agentInfo.Agent.DataPath)
 			}
 
 			log.Debugf("Run command in container: %s", command)
@@ -219,9 +229,9 @@ func (c *ContainerTunnel) runInContainer(
 	defer closeAndDrain()
 
 	command := fmt.Sprintf(
-		"%q internal agent container-tunnel --workspace-info %q",
-		c.client.AgentPath(),
-		workspaceInfo,
+		"%s internal agent container-tunnel --workspace-info %s",
+		shellescape.Quote(c.client.AgentPath()),
+		shellescape.Quote(workspaceInfo),
 	)
 	if log.DebugEnabled() {
 		command += " --debug"
@@ -245,7 +255,7 @@ func (c *ContainerTunnel) runInContainer(
 		},
 		Handler: func(ctx context.Context) error {
 			containerClient, err := devssh.ClientFromManagedConn(
-				ctx, containerConn, devssh.ManagedClientOptions{},
+				ctx, containerConn, devssh.ManagedClientOptions{User: c.user},
 			)
 			if err != nil {
 				return fmt.Errorf("ssh client: %w", err)
@@ -255,4 +265,21 @@ func (c *ContainerTunnel) runInContainer(
 			return handler(ctx, containerClient)
 		},
 	})
+}
+
+type containerTunnelOutput struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *containerTunnelOutput) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *containerTunnelOutput) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
 }

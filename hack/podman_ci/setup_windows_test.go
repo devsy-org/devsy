@@ -3,7 +3,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,16 +33,6 @@ type recordedWindowsCommand struct {
 	path    string
 	args    []string
 	timeout time.Duration
-}
-
-func successResult(out string) CommandResult {
-	code := 0
-	return CommandResult{ExitCode: &code, Stdout: out}
-}
-
-func failureResult(out string) CommandResult {
-	code := 1
-	return CommandResult{ExitCode: &code, Stderr: out}
 }
 
 func (r *windowsFakeRunner) Run(_ context.Context, spec CommandSpec) CommandResult {
@@ -100,11 +92,24 @@ func windowsDependencies(r *windowsFakeRunner, clock *fakeClock) Dependencies {
 
 func windowsConfig(t *testing.T) SetupConfig {
 	t.Helper()
+	stubStrayProcessSweep(t)
 	podman := filepath.Join(t.TempDir(), "podman.exe")
 	if err := os.WriteFile(podman, []byte(""), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return SetupConfig{Mode: ModeRootful, PodmanPath: podman, BootstrapTimeout: 270 * time.Second}
+}
+
+// stubStrayProcessSweep replaces the real system-wide process sweep with a
+// no-op for the duration of the test: fake-runner tests exercise setup
+// failure paths that call terminateStrayProcessesHook, and letting that
+// reach the real OS-level kill could terminate unrelated podman/wsl
+// processes on a developer's machine.
+func stubStrayProcessSweep(t *testing.T) {
+	t.Helper()
+	original := terminateStrayProcessesHook
+	terminateStrayProcessesHook = func(*Logger) {}
+	t.Cleanup(func() { terminateStrayProcessesHook = original })
 }
 
 func TestWindowsHealthyBootstrapAndExistingMachine(t *testing.T) {
@@ -182,6 +187,46 @@ func TestWindowsFirstInitReservesDiagnosticsAndRecovery(t *testing.T) {
 	}
 }
 
+func TestWindowsInitBudgetExhaustionAndRootfulTimeoutAreHangs(t *testing.T) {
+	tests := map[string]struct {
+		budget    time.Duration
+		durations map[string]time.Duration
+	}{
+		"init budget exhausted": {budget: time.Second},
+		"rootful timeout": {
+			budget:    270 * time.Second,
+			durations: map[string]time.Duration{"machine set --rootful": time.Minute},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			clock := &fakeClock{now: time.Unix(1, 0)}
+			runner := &windowsFakeRunner{
+				clock:     clock,
+				results:   map[string][]CommandResult{},
+				durations: test.durations,
+			}
+			budget, err := NewBudget(test.budget, clock)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clock.Sleep(2 * time.Second)
+			state := &windowsSetup{
+				ctx:    context.Background(),
+				deps:   windowsDependencies(runner, clock),
+				budget: budget,
+				cfg:    windowsConfig(t),
+			}
+
+			err = state.startMachineAttempt(1)
+
+			if _, ok := errors.AsType[*hangError](err); !ok {
+				t.Fatalf("error = %v, want a hang error", err)
+			}
+		})
+	}
+}
+
 func TestWindowsPartialInitRecoveryRetriesWithFreshBudget(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(1, 0)}
 	runner := &windowsFakeRunner{
@@ -222,6 +267,47 @@ func TestWindowsPartialInitRecoveryRetriesWithFreshBudget(t *testing.T) {
 	}
 	if secondInit != 95*time.Second {
 		t.Fatalf("second init timeout = %s, want 95s", secondInit)
+	}
+}
+
+func TestWindowsMachineInitRetriesTransientPullError(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	runner := &windowsFakeRunner{clock: clock, results: map[string][]CommandResult{
+		testMachineInit: {
+			failureResult("Error: writing blob: happened during read: unexpected EOF"),
+			successResult(""),
+		},
+	}, durations: map[string]time.Duration{}}
+	if err := setupWindows(
+		context.Background(),
+		windowsDependencies(runner, clock),
+		windowsConfig(t),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if countWindowsCalls(runner, testMachineInit) != 2 {
+		t.Fatalf("transient pull error did not retry machine init: %+v", runner.calls)
+	}
+	if countWindowsCalls(runner, "machine stop") != 0 {
+		t.Fatalf("transient pull retry should not trigger full recovery: %+v", runner.calls)
+	}
+}
+
+func TestWindowsMachineInitTransientPullRetryIsBounded(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	transientFailure := failureResult("Error: writing blob: happened during read: unexpected EOF")
+	runner := &windowsFakeRunner{clock: clock, results: map[string][]CommandResult{
+		testMachineInit: {
+			transientFailure, transientFailure, transientFailure,
+			transientFailure, transientFailure, transientFailure,
+		},
+	}, durations: map[string]time.Duration{}}
+	err := setupWindows(context.Background(), windowsDependencies(runner, clock), windowsConfig(t))
+	if err == nil || !strings.Contains(err.Error(), "unexpected EOF") {
+		t.Fatalf("expected terminal transient-pull failure, got %v", err)
+	}
+	if countWindowsCalls(runner, testMachineInit) != (maxTransientPullRetries+1)*2 {
+		t.Fatalf("expected bounded retries across both attempts: %+v", runner.calls)
 	}
 }
 
@@ -281,6 +367,89 @@ func TestWindowsSecondFailedAttemptReturnsStableRecoveryMarker(t *testing.T) {
 	}
 }
 
+func TestWindowsStartHangIsAnnotatedAndRetriedOnce(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	runner := &windowsFakeRunner{
+		clock:   clock,
+		results: map[string][]CommandResult{},
+		durationQueues: map[string][]time.Duration{
+			testMachineStart: {windowsStartTimeout + time.Second},
+		},
+	}
+	var output bytes.Buffer
+	files := &summaryFS{}
+	deps := windowsDependencies(runner, clock)
+	deps.Log = &Logger{Out: &output, Err: io.Discard}
+	deps.Files = files
+	cfg := windowsConfig(t)
+	cfg.GitHubStepSummaryPath = testSummaryPath
+
+	if err := setupWindows(context.Background(), deps, cfg); err != nil {
+		t.Fatalf("retry after hang should recover: %v", err)
+	}
+
+	wantAnnotation := "::warning title=Windows podman start hang::" +
+		"PODMAN_WINDOWS_MACHINE_START_TIMEOUT attempt=1"
+	if strings.Count(output.String(), wantAnnotation) != 1 {
+		t.Fatalf("annotation missing or repeated: %s", output.String())
+	}
+	summary := files.appended[testSummaryPath].String()
+	if !strings.Contains(summary, "machine list") || !strings.Contains(summary, "wsl.exe -l -v") {
+		t.Fatalf("summary lacks diagnostics: %s", summary)
+	}
+	if countWindowsCalls(runner, testMachineStart) != 2 {
+		t.Fatalf("start calls = %d, want 2", countWindowsCalls(runner, testMachineStart))
+	}
+}
+
+func TestWindowsSecondStartHangFailsStepWithBothAnnotations(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	hang := windowsStartTimeout + time.Second
+	runner := &windowsFakeRunner{
+		clock:          clock,
+		results:        map[string][]CommandResult{},
+		durationQueues: map[string][]time.Duration{testMachineStart: {hang, hang}},
+	}
+	var output bytes.Buffer
+	deps := windowsDependencies(runner, clock)
+	deps.Log = &Logger{Out: &output, Err: io.Discard}
+
+	err := setupWindows(context.Background(), deps, windowsConfig(t))
+
+	if err == nil || !strings.HasPrefix(err.Error(), "PODMAN_WINDOWS_RECOVERY_FAILED:") {
+		t.Fatalf("second hang must fail the step, got %v", err)
+	}
+	for _, attempt := range []string{"attempt=1", "attempt=2"} {
+		want := "::warning title=Windows podman start hang::" +
+			"PODMAN_WINDOWS_MACHINE_START_TIMEOUT " + attempt
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing annotation for %s: %s", attempt, output.String())
+		}
+	}
+}
+
+func TestWindowsNonHangFailureIsNotAnnotatedAsHang(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	runner := &windowsFakeRunner{
+		clock: clock,
+		results: map[string][]CommandResult{
+			testMachineStart: {failureResult("pipe busy"), failureResult("pipe busy")},
+		},
+		durations: map[string]time.Duration{},
+	}
+	var output bytes.Buffer
+	deps := windowsDependencies(runner, clock)
+	deps.Log = &Logger{Out: &output, Err: io.Discard}
+
+	if err := setupWindows(context.Background(), deps, windowsConfig(t)); err == nil {
+		t.Fatal("expected failure")
+	}
+
+	if strings.Contains(output.String(), "::warning") {
+		t.Fatalf("non-timeout failure annotated as a hang: %s", output.String())
+	}
+}
+
 func TestWindowsBudgetExhaustionRejectsLateSuccess(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(1, 0)}
 	runner := &windowsFakeRunner{
@@ -322,6 +491,11 @@ func TestWindowsWatchdogTerminatesAndCanBeDisarmed(t *testing.T) {
 }
 
 func runWatchdogChild(mode string) {
+	// This process is a fresh re-exec of the test binary, so package vars
+	// are back to their defaults; neutralize the real system-wide sweep so
+	// the watchdog firing in these tests cannot kill unrelated podman/wsl
+	// processes on the host.
+	terminateStrayProcessesHook = func(*Logger) {}
 	if mode == "blocked-stderr" {
 		reader, stderr, err := os.Pipe()
 		if err != nil {
@@ -339,10 +513,14 @@ func runWatchdogChild(mode string) {
 			os.Exit(1)
 		case <-time.After(100 * time.Millisecond):
 		}
-		armWatchdog(750*time.Millisecond, &Logger{Out: io.Discard, Err: stderr})
+		armWatchdog(750*time.Millisecond, &Logger{Out: io.Discard, Err: stderr}, hangReporter{})
 		select {}
 	}
-	wd := armWatchdog(750*time.Millisecond, &Logger{Out: os.Stdout, Err: os.Stderr})
+	wd := armWatchdog(
+		750*time.Millisecond,
+		&Logger{Out: os.Stdout, Err: os.Stderr},
+		hangReporter{},
+	)
 	if mode == "complete" {
 		wd.Stop()
 		wd.Stop()
@@ -362,6 +540,7 @@ func verifyWatchdogExpires(t *testing.T) {
 		t.Fatalf("blocked watchdog exit=%v output=%s", err, output)
 	}
 	if !strings.Contains(string(output), "hard_deadline_armed") ||
+		!strings.Contains(string(output), "hard_deadline_exceeded") ||
 		strings.Contains(string(output), "PODMAN_WINDOWS_BOOTSTRAP_HARD_TIMEOUT") {
 		t.Fatalf("watchdog markers missing: %s", output)
 	}

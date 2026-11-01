@@ -74,25 +74,19 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		return err
 	}
 	emitJSON := mode == output.ModeJSON
-	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
+	reporter, err := newStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
+	)
 	if err != nil {
 		return err
 	}
 
 	helper := &docker.DockerHelper{DockerCommand: cmd.resolveDockerPath()}
 
-	var containerDetails *devcconfig.ContainerDetails
-	var result *devcconfig.Result
-	err = status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseResolvingConfig},
-		func(ctx context.Context) error {
-			var resolveErr error
-			containerDetails, result, resolveErr = cmd.prepareContainer(ctx, helper)
-			return resolveErr
-		},
-	)
+	containerDetails, result, err := cmd.resolveContainer(ctx, reporter, helper)
 	if err != nil {
 		return err
 	}
@@ -105,12 +99,7 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		ctx,
 		reporter,
 		status.Operation{Phase: status.PhaseRunningLifecycleHook, Step: "install features"},
-		func(ctx context.Context) error {
-			if err := cmd.installFeatures(ctx, helper, result, emitJSON); err != nil {
-				return fmt.Errorf("feature installation: %w", err)
-			}
-			return nil
-		},
+		cmd.installFeaturesStep(helper, result, emitJSON),
 	); err != nil {
 		return err
 	}
@@ -156,6 +145,39 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 	return nil
 }
 
+func (cmd *ApplyCmd) resolveContainer(
+	ctx context.Context,
+	reporter status.Reporter,
+	helper *docker.DockerHelper,
+) (*devcconfig.ContainerDetails, *devcconfig.Result, error) {
+	var containerDetails *devcconfig.ContainerDetails
+	var result *devcconfig.Result
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingConfig},
+		func(ctx context.Context) error {
+			var resolveErr error
+			containerDetails, result, resolveErr = cmd.prepareContainer(ctx, helper)
+			return resolveErr
+		},
+	)
+	return containerDetails, result, err
+}
+
+func (cmd *ApplyCmd) installFeaturesStep(
+	helper *docker.DockerHelper,
+	result *devcconfig.Result,
+	emitJSON bool,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		if err := cmd.installFeatures(ctx, helper, result, emitJSON); err != nil {
+			return fmt.Errorf("feature installation: %w", err)
+		}
+		return nil
+	}
+}
+
 func (cmd *ApplyCmd) prepareContainer(
 	ctx context.Context,
 	helper *docker.DockerHelper,
@@ -172,13 +194,19 @@ func (cmd *ApplyCmd) prepareContainer(
 	return containerDetails, result, nil
 }
 
-func newStatusReporter(resultFormat string, out io.Writer, verbose bool) (status.Reporter, error) {
-	reporter, err := status.NewReporter(status.ReporterOptions{
-		Format:                 resultFormat,
-		Out:                    out,
-		Prefix:                 "config",
-		Verbose:                verbose,
-		SuppressFailureDetails: true,
+func newStatusReporter(
+	resultFormat string,
+	out io.Writer,
+	verbose bool,
+	noStatus bool,
+) (status.Reporter, error) {
+	return status.NewCLIReporter(status.CLIOptions{
+		Format:   resultFormat,
+		Out:      out,
+		Prefix:   "config",
+		Verbose:  verbose,
+		NoStatus: noStatus,
+		Pipeline: status.PipelineWorkspaceUp,
 		Labels: map[status.Phase]string{
 			status.PhaseResolvingConfig:      "resolving devcontainer config",
 			status.PhaseRunningLifecycleHook: "applying lifecycle configuration",
@@ -188,10 +216,6 @@ func newStatusReporter(resultFormat string, out io.Writer, verbose bool) (status
 			return devcconfig.WriteStatusJSON(out, e)
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
-	return status.ForPipeline(reporter, status.PipelineWorkspaceUp), nil
 }
 
 func (cmd *ApplyCmd) resolveDockerPath() string {

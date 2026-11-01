@@ -95,7 +95,7 @@ func (c *client) deleteInstance(
 	workspace *managementv1.DevsyWorkspaceInstance,
 	force bool,
 ) error {
-	err := managementClient.Loft().
+	err := managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(workspace.Namespace).
 		Delete(ctx, workspace.Name, metav1.DeleteOptions{})
@@ -130,7 +130,7 @@ func (c *client) waitForWorkspaceDeleted(
 		waitTimeout,
 		false,
 		func(ctx context.Context) (done bool, err error) {
-			workspaceInstance, err := managementClient.Loft().
+			workspaceInstance, err := managementClient.Devsy().
 				ManagementV1().
 				DevsyWorkspaceInstances(workspace.Namespace).
 				Get(ctx, workspace.Name, metav1.GetOptions{})

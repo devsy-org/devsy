@@ -16,7 +16,7 @@ func NewDefaultFramework(path string) *Framework {
 		binName += "darwin-"
 	case "linux":
 		binName += "linux-"
-	case "windows":
+	case osWindows:
 		binName += "windows-"
 	}
 
@@ -27,7 +27,7 @@ func NewDefaultFramework(path string) *Framework {
 		binName += "arm64"
 	}
 
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == osWindows {
 		binName += ".exe"
 	}
 

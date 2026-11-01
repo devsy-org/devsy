@@ -6,8 +6,8 @@ import (
 	"time"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -33,7 +33,7 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "List Workspaces",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, providerConfig, err := proutil.FindProProvider(
+			devsyConfig, providerConfig, err := cmdutil.FindPlatformProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,
@@ -47,7 +47,7 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The platform instance to use"))
 	_ = c.MarkFlagRequired(names.Host)
 	flags.BindEnv(c.Flags(), names.Host)
 
@@ -59,7 +59,7 @@ func (cmd *ListWorkspacesCmd) Run(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Project", "Age"}
+	headers := []string{cmdutil.HeaderName, cmdutil.HeaderDisplayName, "Project", "Age"}
 
 	return proxycmd.RunAndPrintTable(ctx, proxycmd.Options{
 		Command:     provider.Exec.Proxy.List.Workspaces,

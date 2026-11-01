@@ -3,14 +3,16 @@ package ssh
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -31,12 +33,9 @@ var _ = ginkgo.Describe(
 			"should launch a workspace through an executable path containing spaces",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
-				if runtime.GOOS != osWindows {
-					ginkgo.Skip("skipping on non-Windows")
-				}
+				framework.SkipUnlessOS("windows", "skipping on non-Windows")
 
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				baseFramework := framework.NewDefaultFramework(initialDir + "/bin")
 				sourcePath := filepath.Join(baseFramework.DevsyBinDir, baseFramework.DevsyBinName)
@@ -55,7 +54,6 @@ var _ = ginkgo.Describe(
 				sshConfigPath := filepath.Join(ginkgo.GinkgoT().TempDir(), "ssh config")
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				upCtx, cancelUp := context.WithTimeout(ctx, 5*time.Minute)
@@ -79,6 +77,18 @@ var _ = ginkgo.Describe(
 				sshPath, err := exec.LookPath("ssh.exe")
 				framework.ExpectNoError(err)
 				host := filepath.Base(tempDir) + ".devsy"
+				traceDir := ginkgo.GinkgoT().TempDir()
+				traceRoot, err := os.OpenRoot(traceDir)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(traceRoot.Close)
+				tracePath := filepath.Join(traceDir, proxyCommandTraceFile)
+				traceFile, err := traceRoot.OpenFile(
+					proxyCommandTraceFile,
+					os.O_CREATE|os.O_EXCL|os.O_WRONLY,
+					0o600,
+				)
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(traceFile.Close())
 				sshCtx, cancelSSH := context.WithTimeout(ctx, 30*time.Second)
 				defer cancelSSH()
 				// #nosec G204 -- controlled OpenSSH invocation for the E2E test
@@ -86,6 +96,7 @@ var _ = ginkgo.Describe(
 					sshCtx,
 					sshPath,
 					"-F", sshConfigPath,
+					"-vvv", "-E", tracePath,
 					"-o", "BatchMode=yes",
 					host,
 					"printf",
@@ -94,12 +105,31 @@ var _ = ginkgo.Describe(
 				var stdout, stderr bytes.Buffer
 				cmd.Stdout = &stdout
 				cmd.Stderr = &stderr
+				started := time.Now()
 				err = cmd.Run()
-				framework.ExpectNoError(
-					err,
-					"OpenSSH should launch ProxyCommand; stdout=%q stderr=%q",
-					stdout.String(), stderr.String(),
+				elapsed := time.Since(started)
+				sshErr, cause, parentErr := sshCtx.Err(), context.Cause(sshCtx), ctx.Err()
+				exitCode := -1
+				if cmd.ProcessState != nil {
+					exitCode = cmd.ProcessState.ExitCode()
+				}
+				diagnostic := fmt.Sprintf(
+					"started=%s elapsed=%s sshContext=%v cause=%v parentContext=%v exitCode=%d; %s",
+					started.UTC().
+						Format(time.RFC3339Nano),
+					elapsed,
+					sshErr,
+					cause,
+					parentErr,
+					exitCode,
+					proxyCommandOutputDiagnostic(traceRoot, stdout.String(), stderr.String()),
 				)
+				ginkgo.AddReportEntry(
+					"OpenSSH ProxyCommand diagnostic",
+					diagnostic,
+					ginkgo.ReportEntryVisibilityFailureOrVerbose,
+				)
+				framework.ExpectNoError(err, "OpenSSH should launch ProxyCommand; %s", diagnostic)
 				gomega.Expect(strings.TrimSpace(stdout.String())).To(
 					gomega.Equal("proxy-command-ok"),
 				)
@@ -107,3 +137,31 @@ var _ = ginkgo.Describe(
 		)
 	},
 )
+
+func proxyCommandOutputDiagnostic(traceRoot *os.Root, stdout, stderr string) string {
+	trace, err := traceRoot.ReadFile(proxyCommandTraceFile)
+	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	return fmt.Sprintf(
+		"stdout=%s stderr=%s traceReadError=%s trace=%s",
+		proxyCommandExcerpt(redactor, stdout),
+		proxyCommandExcerpt(redactor, stderr),
+		proxyCommandExcerpt(
+			redactor,
+			fmt.Sprint(err),
+		),
+		proxyCommandExcerpt(redactor, string(trace)),
+	)
+}
+
+const (
+	proxyCommandTraceFile    = "ssh trace.log"
+	proxyCommandExcerptLimit = 8192
+)
+
+func proxyCommandExcerpt(redactor *secrets.Redactor, text string) string {
+	quoted := strconv.QuoteToASCII(redactor.Redact(text))
+	if len(quoted) <= proxyCommandExcerptLimit {
+		return quoted
+	}
+	return "[truncated]" + quoted[len(quoted)-proxyCommandExcerptLimit:]
+}

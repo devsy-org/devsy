@@ -14,6 +14,7 @@ import (
 const (
 	cmdWorkspace = "workspace"
 	cmdSSH       = "ssh"
+	flagCommand  = "--command"
 )
 
 var _ = ginkgo.Describe(
@@ -33,17 +34,15 @@ var _ = ginkgo.Describe(
 			"should not surface credentials-server port errors when two ssh sessions race for the same workspace",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
+				err := f.DevsyProviderUse(ctx, "docker")
 				framework.ExpectNoError(err)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				upDeadline := time.Now().Add(5 * time.Minute)
@@ -66,7 +65,7 @@ var _ = ginkgo.Describe(
 						)
 						defer cancelSSH()
 						_, stderr, sshErr := f.ExecCommandCapture(sshCtx, []string{
-							cmdWorkspace, cmdSSH, tempDir, "--command", "sleep 2",
+							cmdWorkspace, cmdSSH, tempDir, flagCommand, "sleep 2",
 						})
 						stderrs[i] = stderr
 						runErrs[i] = sshErr

@@ -1,17 +1,24 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -80,11 +87,11 @@ esac
 
 func withShortImageInspectPoll(t *testing.T) {
 	t.Helper()
-	origInterval, origTimeout := imageInspectPollInterval, imageInspectPollTimeout
+	origInterval, origMaxAttempts := imageInspectPollInterval, imageInspectPollMaxAttempts
 	imageInspectPollInterval = 5 * time.Millisecond
-	imageInspectPollTimeout = 300 * time.Millisecond
+	imageInspectPollMaxAttempts = 2
 	t.Cleanup(func() {
-		imageInspectPollInterval, imageInspectPollTimeout = origInterval, origTimeout
+		imageInspectPollInterval, imageInspectPollMaxAttempts = origInterval, origMaxAttempts
 	})
 }
 
@@ -114,7 +121,7 @@ func TestEnsureImage_BuiltImageNeverFoundDoesNotPull(t *testing.T) {
 
 func TestEnsureImage_TransientMissRecoversWithoutPulling(t *testing.T) {
 	withShortImageInspectPoll(t)
-	imageInspectPollTimeout = time.Second // must outlast a couple of retries
+	imageInspectPollMaxAttempts = 5 // must outlast a couple of retries
 
 	tmp := t.TempDir()
 	marker := filepath.Join(tmp, "pulled")
@@ -151,9 +158,33 @@ esac
 		"a transient miss that resolves on retry must not fall back to pull")
 }
 
+func TestWaitForLocalImage_BoundsEachInspectAttempt(t *testing.T) {
+	origTimeout := imageInspectAttemptTimeout
+	imageInspectAttemptTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		imageInspectAttemptTimeout = origTimeout
+	})
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "docker-fake")
+	script := `#!/bin/sh
+case "$1" in
+  inspect) sleep 5 ;;
+esac
+`
+	//nolint:gosec // test helper script needs exec bit
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+
+	start := time.Now()
+	err := d.waitForLocalImage(context.Background(), testImageRef)
+
+	require.Error(t, err)
+	assert.Less(t, time.Since(start), 2*time.Second)
+}
+
 func TestEnsureImage_ExternalImageSkipsRetryAndPullsImmediately(t *testing.T) {
 	withShortImageInspectPoll(t)
-	imageInspectPollTimeout = time.Second // would need to elapse if (wrongly) retried
 
 	tmp := t.TempDir()
 	marker := filepath.Join(tmp, "pulled")
@@ -176,17 +207,13 @@ esac
 	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
 
-	start := time.Now()
 	err := d.EnsureImage(context.Background(), &driver.RunOptions{Image: testImageRef})
-	elapsed := time.Since(start)
 
 	require.NoError(t, err)
 	assert.FileExists(t, marker, "a not-found external image should trigger a pull")
 	attemptsRaw, readErr := os.ReadFile(attempts) //nolint:gosec // test-controlled path
 	require.NoError(t, readErr)
 	assert.Equal(t, "1\n", string(attemptsRaw), "must inspect exactly once, no retries")
-	assert.Less(t, elapsed, imageInspectPollTimeout,
-		"must not wait out the retry window for an image it never built")
 }
 
 func TestEnsureImage_RealErrorDoesNotPull(t *testing.T) {
@@ -536,4 +563,86 @@ func TestIsTerminalOrContextError(t *testing.T) {
 	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", docker.ErrContainerTerminal)))
 	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", context.Canceled)))
 	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", context.DeadlineExceeded)))
+}
+
+func TestStartContainerPreservesEngineError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell")
+	}
+	source := filepath.Join(t.TempDir(), "missing.sock")
+	bin := filepath.Join(t.TempDir(), "engine")
+	require.NoError(t, os.WriteFile(bin, []byte(`#!/bin/sh
+if [ "$1" = run ]; then
+ printf '%s\n' "bind source path does not exist: $2" "$ENGINE_TOKEN" >&2
+ exit 17
+fi
+`), 0o600))
+	// #nosec G302 -- only the test owner can execute this temporary fake engine.
+	require.NoError(t, os.Chmod(bin, 0o700))
+	d := &dockerDriver{
+		Docker: &docker.DockerHelper{
+			DockerCommand: bin,
+			Environment:   []string{"ENGINE_TOKEN=private-engine-token"},
+		},
+	}
+	var streamed engineOutputBuffer
+	err := d.startContainer(
+		context.Background(),
+		t.TempDir(),
+		[]string{testRunArg, source},
+		&streamed,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to start dev container")
+	assert.Contains(t, err.Error(), "bind source path does not exist: "+source)
+	assert.NotContains(t, err.Error(), "private-engine-token")
+	assert.Contains(t, streamed.String(), "bind source path does not exist: "+source)
+	var exitErr *exec.ExitError
+	require.True(t, errors.As(err, &exitErr))
+	assert.Equal(t, 17, exitErr.ExitCode())
+}
+
+func TestStartContainerBoundsEngineError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell")
+	}
+	bin := filepath.Join(t.TempDir(), "engine")
+	require.NoError(t, os.WriteFile(bin, []byte(`#!/bin/sh
+if [ "$1" = run ]; then
+ i=0
+ while [ "$i" -lt 2048 ]; do
+ printf '%s' "`+strings.Repeat("x", 1024)+`" >&2
+ i=$((i + 1))
+ done
+ printf '%s' tail-marker >&2
+ exit 1
+fi
+`), 0o600))
+	// #nosec G302 -- only the test owner can execute this temporary fake engine.
+	require.NoError(t, os.Chmod(bin, 0o700))
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	var streamed engineOutputBuffer
+	err := d.startContainer(context.Background(), t.TempDir(), []string{testRunArg}, &streamed)
+	require.Error(t, err)
+	assert.Len(t, streamed.String(), 2048*1024+len("tail-marker"))
+	assert.True(t, strings.HasSuffix(err.Error(), "tail-marker"))
+	assert.LessOrEqual(t, len(err.Error()), subprocess.MaxCapturedBytes+100)
+	assert.Contains(t, err.Error(), strings.Repeat("x", 100))
+}
+
+type engineOutputBuffer struct {
+	mu   sync.Mutex
+	data bytes.Buffer
+}
+
+func (b *engineOutputBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.Write(p)
+}
+
+func (b *engineOutputBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.String()
 }

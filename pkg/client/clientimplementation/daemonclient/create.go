@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/devsy-org/devsy/pkg/platform/form"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/terminal"
@@ -33,14 +34,12 @@ func (c *client) Create(
 		return fmt.Errorf("unable to create new instance through CLI if stdin is not a terminal")
 	}
 
-	instance, err = createInstanceInteractive(
-		ctx,
-		baseClient,
-		c.workspace.ID,
-		c.workspace.UID,
-		c.workspace.Source.String(),
-		c.workspace.Picture,
-	)
+	instance, err = form.CreateInstanceOnCluster(ctx, baseClient, form.InstanceIdentity{
+		ID:      c.workspace.ID,
+		UID:     c.workspace.UID,
+		Source:  c.workspace.Source.String(),
+		Picture: c.workspace.Picture,
+	})
 	if err != nil {
 		return err
 	}
@@ -50,7 +49,7 @@ func (c *client) Create(
 		return err
 	}
 
-	c.workspace.Pro = &provider.ProMetadata{
+	c.workspace.Platform = &provider.PlatformMetadata{
 		InstanceName: instance.Name,
 		Project:      project.ProjectFromNamespace(instance.Namespace),
 		DisplayName:  instance.Spec.DisplayName,

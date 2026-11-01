@@ -177,7 +177,7 @@ func TestContextDataSubPaths(t *testing.T) {
 	}
 }
 
-func TestProviderAndProInstanceSubPaths(t *testing.T) {
+func TestProviderAndPlatformInstanceSubPaths(t *testing.T) {
 	skipIfNotLinux(t)
 
 	home := t.TempDir()
@@ -208,13 +208,13 @@ func TestProviderAndProInstanceSubPaths(t *testing.T) {
 			filepath.Join(base, "providers", "docker", "daemon"),
 		},
 		{
-			"ProInstancesDir",
-			func() (string, error) { return pm.ProInstancesDir(ctx) },
+			"PlatformInstancesDir",
+			func() (string, error) { return pm.PlatformInstancesDir(ctx) },
 			filepath.Join(base, "pro_instances"),
 		},
 		{
-			"ProInstanceDir",
-			func() (string, error) { return pm.ProInstanceDir(ctx, "pro.example.com") },
+			"PlatformInstanceDir",
+			func() (string, error) { return pm.PlatformInstanceDir(ctx, "pro.example.com") },
 			filepath.Join(base, "pro_instances", "pro.example.com"),
 		},
 		{

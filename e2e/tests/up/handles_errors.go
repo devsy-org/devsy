@@ -32,11 +32,9 @@ var _ = ginkgo.Describe(
 			"make sure devsy output is correct and log-output works correctly",
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/docker")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/docker", initialDir)
 
-				err = f.DevsyProviderAdd(ctx, "docker", "--name", "test-docker")
+				err := f.DevsyProviderAdd(ctx, "docker", "--name", "test-docker")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					err := f.DevsyProviderDelete(cleanupCtx, "test-docker")
@@ -100,11 +98,10 @@ var _ = ginkgo.Describe(
 					_ = f.DevsyProviderDelete(cleanupCtx, "docker")
 				})
 
-				tempDir, err := framework.CopyToTempDir(
+				tempDir := framework.CopyTestdata(
 					"tests/up/testdata/docker-invalid-bind-mount",
+					initialDir,
 				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				err = f.DevsyUp(ctx, tempDir, "--debug")
 
@@ -139,11 +136,7 @@ var _ = ginkgo.Describe(
 					_ = f.DevsyProviderDelete(cleanupCtx, "docker")
 				})
 
-				tempDir, err := framework.CopyToTempDir(
-					"tests/up/testdata/docker-recovery",
-				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/docker-recovery", initialDir)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir, "--force")
 				})

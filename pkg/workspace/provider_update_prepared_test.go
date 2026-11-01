@@ -776,7 +776,7 @@ func TestProviderUpdateCachedReplacement(t *testing.T) {
 	binaries := map[string][]*provider.ProviderBinary{
 		updateRuntimeKey: {updateTestBinary(server.URL+"/runtime", content)},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), updateTestHangGuard)
 	defer cancel()
 	_, err := provider.DownloadBinaries(ctx, binaries, t.TempDir())
 	require.NoError(t, err)
@@ -812,7 +812,7 @@ func TestProviderUpdateCachedArchiveReplacement(t *testing.T) {
 	binary := updateTestBinary(server.URL+"/provider.tgz", content)
 	binary.ArchivePath = updateRuntimeName
 	binaries := map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), updateTestHangGuard)
 	defer cancel()
 	_, err := provider.DownloadBinaries(ctx, binaries, t.TempDir())
 	require.NoError(t, err)
@@ -1186,7 +1186,7 @@ func warmProviderUpdateCache(
 	server *httptest.Server,
 ) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), updateTestHangGuard)
 	defer cancel()
 	_, err := provider.DownloadBinaries(ctx, binaries, t.TempDir())
 	require.NoError(t, err)
@@ -1295,7 +1295,7 @@ func TestProviderUpdateNestedAndLeafAliasOfflineCache(t *testing.T) {
 			binary := updateTestBinary(server.URL+"/nested-alias.tar", content)
 			binary.ArchivePath = a.selected
 			binaries := map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), updateTestHangGuard)
 			defer cancel()
 			_, err := provider.DownloadBinaries(ctx, binaries, t.TempDir())
 			require.NoError(t, err)
@@ -1384,7 +1384,7 @@ func TestProviderUpdateAncestorRootAliasOfflineCache(t *testing.T) {
 	binary := updateTestBinary(server.URL+"/ancestor-root.tar", content)
 	binary.ArchivePath = selected
 	binaries := map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), updateTestHangGuard)
 	defer cancel()
 	_, err := provider.DownloadBinaries(ctx, binaries, t.TempDir())
 	require.NoError(t, err)

@@ -87,7 +87,12 @@ func updateFromInstanceEnv(
 		)
 	}
 
-	updatedInstance, err := updateInstance(ctx, baseClient, oldInstance, newInstance)
+	updatedInstance, err := platform.UpdateInstanceSyncTemplate(
+		ctx,
+		baseClient,
+		oldInstance,
+		newInstance,
+	)
 	if err != nil {
 		return err
 	}
@@ -153,24 +158,10 @@ func updateFromEnv(ctx context.Context, baseClient client.Client) error {
 		return err
 	}
 
-	_, err = updateInstance(ctx, baseClient, oldInstance, newInstance)
+	_, err = platform.UpdateInstanceSyncTemplate(ctx, baseClient, oldInstance, newInstance)
 	if err != nil {
 		return err
 	}
 
 	return nil
-}
-
-func updateInstance(
-	ctx context.Context,
-	client client.Client,
-	oldInstance *managementv1.DevsyWorkspaceInstance,
-	newInstance *managementv1.DevsyWorkspaceInstance,
-) (*managementv1.DevsyWorkspaceInstance, error) {
-	// This ensures the template is kept up to date with configuration changes
-	if newInstance.Spec.TemplateRef != nil {
-		newInstance.Spec.TemplateRef.SyncOnce = true
-	}
-
-	return platform.UpdateInstance(ctx, client, oldInstance, newInstance)
 }

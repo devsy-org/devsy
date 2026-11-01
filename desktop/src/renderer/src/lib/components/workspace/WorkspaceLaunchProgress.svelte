@@ -17,6 +17,7 @@ interface Props {
   running: boolean
   error?: string
   confirmationState: LaunchConfirmationState
+  logError?: string
   refreshError?: string
   refreshRetrying?: boolean
   onRetryStatus?: () => void
@@ -34,6 +35,7 @@ let {
   running,
   error,
   confirmationState,
+  logError,
   refreshError,
   refreshRetrying = false,
   onRetryStatus,
@@ -117,10 +119,12 @@ function elapsed(value: number): string {
     </div>
   </header>
 
-  {#if confirmationState === "stale"}
+  {#if logError}
+    <p role="status" class="text-sm font-medium text-amber-700 dark:text-amber-400">{logError}</p>
+  {/if}
+  {#if confirmationState === "stale" && refreshError}
     <div class="space-y-2" role="status" aria-live="polite">
       <p class="text-sm font-medium text-amber-700 dark:text-amber-400">Status may be out of date</p>
-      {#if refreshError}
         <Button
           variant="outline"
           size="sm"
@@ -129,7 +133,6 @@ function elapsed(value: number): string {
         >
           {refreshRetrying ? "Retrying status…" : "Retry status"}
         </Button>
-      {/if}
     </div>
   {/if}
 

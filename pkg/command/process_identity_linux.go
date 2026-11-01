@@ -263,3 +263,64 @@ func linuxProcessStatFields(stat []byte) ([]string, bool) {
 	}
 	return strings.Fields(statText[closingParen+2:]), true
 }
+
+func processIsLive(pid int) (bool, error) {
+	fields, ok, err := linuxProcessStat(pid)
+	if err != nil || !ok {
+		return false, err
+	}
+	if len(fields) == 0 {
+		return false, fmt.Errorf("read process state for process %d", pid)
+	}
+	return !linuxProcessStateIsExited(fields[0]), nil
+}
+
+type linuxStatReader func(pid int) ([]string, bool, error)
+
+func processGroupHasLivingMembers(pgid int) (bool, error) {
+	if pgid <= 0 {
+		return false, fmt.Errorf("invalid process group %d", pgid)
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return false, err
+	}
+	pids := make([]int, 0, len(entries))
+	for _, entry := range entries {
+		if pid, err := strconv.Atoi(entry.Name()); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return linuxLivingGroupMembers(pids, pgid, linuxProcessStat)
+}
+
+func linuxLivingGroupMembers(pids []int, pgid int, readStat linuxStatReader) (bool, error) {
+	var skipped error
+	for _, pid := range pids {
+		member, err := linuxProcessIsLiveGroupMember(pid, pgid, readStat)
+		if err != nil {
+			if !linuxCanSkipProcessStatError(pid, pgid, err) {
+				return false, err
+			}
+			skipped = errors.Join(skipped, fmt.Errorf("inspect process %d: %w", pid, err))
+			continue
+		}
+		if member {
+			return true, nil
+		}
+	}
+	return linuxProcessGroupMatchResult(pgid, false, skipped)
+}
+
+func linuxProcessIsLiveGroupMember(pid, pgid int, readStat linuxStatReader) (bool, error) {
+	fields, ok, err := readStat(pid)
+	if err != nil || !ok || len(fields) == 0 {
+		return false, err
+	}
+	processGroup, _, ok := linuxProcessGroupIDs(fields)
+	return ok && processGroup == pgid && !linuxProcessStateIsExited(fields[0]), nil
+}
+
+func linuxProcessStateIsExited(state string) bool {
+	return state == "Z" || state == "X"
+}

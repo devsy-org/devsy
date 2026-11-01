@@ -3,6 +3,7 @@ package framework
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -94,4 +95,19 @@ func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (stri
 
 	err := cmd.Run()
 	return execOut.String(), execErr.String(), err
+}
+
+// ExecCommandJSON runs the devsy test binary and decodes its stdout as a JSON object.
+func (f *Framework) ExecCommandJSON(ctx context.Context, args []string) (map[string]any, error) {
+	stdout, stderr, err := f.ExecCommandCapture(ctx, args)
+	if err != nil {
+		return nil, fmt.Errorf("devsy %s: %w (stderr: %s)", strings.Join(args, " "), err, stderr)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		return nil, fmt.Errorf("output should be valid JSON: %w", err)
+	}
+
+	return result, nil
 }
