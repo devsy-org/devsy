@@ -145,6 +145,32 @@ describe("ProviderWizard", () => {
     page.unmount()
   })
 
+  it("selects Harvester once as a remote preset when the catalog also lists it", async () => {
+    providerAvailable.mockResolvedValue(["harvester"])
+    const page = renderWizard()
+    const preset = screen.getByRole("button", {
+      name: /harvester Harvester HCI clusters/,
+    })
+    expect(
+      screen.getByRole("region", { name: "Remote" }).contains(preset),
+    ).toBe(true)
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: /harvester/ })).toHaveLength(
+        1,
+      ),
+    )
+    await fireEvent.click(preset)
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "harvester",
+        undefined,
+        false,
+      )
+    })
+    page.unmount()
+  })
+
   it("keeps custom sources usable when provider discovery fails and can retry", async () => {
     providerAvailable
       .mockRejectedValueOnce(new Error("catalog unavailable"))
