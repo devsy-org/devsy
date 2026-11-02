@@ -151,3 +151,24 @@ func TestSSHPresentationUsesCommittedAlias(t *testing.T) {
 func TestSSHPresentationNilWorkspace(t *testing.T) {
 	assert.Empty(t, sshPresentation(&fakeWorkspaceClient{}))
 }
+
+func TestValidateResolvedIDRejectsDerivedIDMatchingAlias(t *testing.T) {
+	setupUpTestHome(t)
+	cfg := &config.Config{DefaultContext: defaultValue}
+	require.NoError(t, provider.SaveWorkspaceConfig(&provider.Workspace{
+		ID:           "web",
+		UID:          "uid-web",
+		Context:      defaultValue,
+		SSHHostAlias: "derived",
+	}))
+	cmd := &UpCmd{}
+	cmd.SSHConfigPath = filepath.Join(t.TempDir(), "config")
+
+	derived := &provider.Workspace{ID: "derived", UID: "uid-new", Context: defaultValue}
+	err := cmd.validateResolvedID(cfg, presentationClient{ws: derived})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "derived.devsy")
+
+	free := &provider.Workspace{ID: "free", UID: "uid-free", Context: defaultValue}
+	require.NoError(t, cmd.validateResolvedID(cfg, presentationClient{ws: free}))
+}

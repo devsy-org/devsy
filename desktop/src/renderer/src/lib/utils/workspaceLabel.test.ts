@@ -35,8 +35,10 @@ describe("workspaceLabel", () => {
     expect(workspaceLabel(platform)).toBe("Team Workspace")
   })
 
-  it("prefers the local label over the platform name", () => {
-    expect(workspaceLabel({ ...platform, displayName: "Local" })).toBe("Local")
+  it("prefers the platform name over a local label", () => {
+    expect(workspaceLabel({ ...platform, displayName: "Local" })).toBe(
+      "Team Workspace",
+    )
   })
 
   it("ignores blank labels", () => {

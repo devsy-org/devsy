@@ -243,11 +243,25 @@ func (cmd *UpCmd) postResolveWorkspace(
 		return cleanupOnFailure(err)
 	}
 	if !existed {
+		if err := cmd.validateResolvedID(devsyConfig, client); err != nil {
+			return cleanupOnFailure(err)
+		}
 		if err := cmd.persistPresentation(devsyConfig, client); err != nil {
 			return cleanupOnFailure(err)
 		}
 	}
 	return nil
+}
+
+func (cmd *UpCmd) validateResolvedID(
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	ws := client.WorkspaceConfig()
+	if ws == nil || ws.IsPlatform() {
+		return nil
+	}
+	return cmd.checkNewWorkspaceID(devsyConfig, ws.ID, false)
 }
 
 func (cmd *UpCmd) prepareClientEnvironment(

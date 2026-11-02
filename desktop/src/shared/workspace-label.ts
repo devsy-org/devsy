@@ -15,8 +15,8 @@ function platformDisplayName(pro: unknown): string {
 
 export function workspaceLabel(workspace: WorkspaceLabelSource): string {
   return (
-    nonEmptyString(workspace.displayName) ||
     platformDisplayName(workspace.pro) ||
+    nonEmptyString(workspace.displayName) ||
     workspace.id
   )
 }
