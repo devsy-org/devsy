@@ -105,6 +105,9 @@ func (r *runner) startComposeInstance(
 	params *composeContainerParams,
 	details *config.ContainerDetails,
 ) (*config.ContainerDetails, error) {
+	if err := checkWSLgResume(details); err != nil {
+		return nil, err
+	}
 	args, err := composeResumeArgs(details, params.project.Name)
 	if err != nil {
 		return nil, err
@@ -147,7 +150,7 @@ func composeResumeArgs(details *config.ContainerDetails, projectName string) ([]
 		return nil, err
 	}
 	if found {
-		return append(args, persisted...), nil
+		return append(args, persisted.Args...), nil
 	}
 	for _, file := range files {
 		args = append(args, "-f", file)

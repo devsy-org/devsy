@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
+	"github.com/devsy-org/devsy/pkg/wslg"
 )
 
 // Runner drives the lifecycle of a single workspace's dev container.
@@ -107,7 +108,8 @@ type runner struct {
 	imageDetails      *config.ImageDetails
 	imageDetailsImage string
 
-	reporter status.Reporter
+	reporter     status.Reporter
+	wslgSnapshot *wslg.Snapshot
 }
 
 func NewRunner(
@@ -159,6 +161,10 @@ func (r *runner) Up(
 		reporter = status.Nop()
 	}
 	r.reporter = reporter
+	if err := r.prepareWSLg(ctx, options.CLIOptions); err != nil {
+		return nil, err
+	}
+	defer func() { r.wslgSnapshot = nil }()
 	selectionWarning := r.compatibilitySelectionWarning(
 		r.effectiveDevContainerSelection(options.CLIOptions),
 	)

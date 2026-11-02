@@ -25,6 +25,8 @@ const (
 	executableMode       = fs.FileMode(0o755)
 	windowsDockerHost    = "npipe:////./pipe/podman-machine-default"
 	windowsDockerWSLHost = "npipe:////./pipe/devsy-ci-no-daemon"
+	wslgTestDistro       = "Ubuntu-24.04"
+	wslgTestUser         = "devsyci"
 	reportNameSuffix     = "-report.json"
 
 	postCheckDockerInstalled = "docker-installed"
@@ -362,10 +364,16 @@ func (r e2eRunner) e2eEnv(suite Suite) []string {
 }
 
 // dockerEnv returns the Docker client variables of the suite. A docker-wsl suite talks to the
-// WSL2 fixture and clears DOCKER_CONTEXT so that the explicit host is used.
+// WSL2 fixture and clears DOCKER_CONTEXT so that the explicit host is used. It also names the
+// fixture distro and user for the WSLg specs.
 func (r e2eRunner) dockerEnv(suite Suite) []string {
 	if suite.Runtime == runtimeDockerWSL {
-		return []string{"DOCKER_HOST=" + windowsDockerWSLHost, "DOCKER_CONTEXT="}
+		return []string{
+			"DOCKER_HOST=" + windowsDockerWSLHost,
+			"DOCKER_CONTEXT=",
+			"DEVSY_WSLG_TEST_DISTRO=" + wslgTestDistro,
+			"DEVSY_WSLG_TEST_USER=" + wslgTestUser,
+		}
 	}
 	if dockerHost := r.dockerHost(); dockerHost != "" {
 		return []string{"DOCKER_HOST=" + dockerHost}

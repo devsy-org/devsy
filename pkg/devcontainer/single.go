@@ -164,6 +164,12 @@ func (r *runner) prepareContainerRecreation(
 	details *config.ContainerDetails,
 	params *resolveParams,
 ) error {
+	// Devsy cannot recreate an externally managed container, so it carries no WSLg state.
+	if params.parsedConfig.Config.ContainerID == "" {
+		if err := r.checkWSLgReuse(details, params.options.Recreate); err != nil {
+			return err
+		}
+	}
 	if err := r.applyDriverRecreateRequirement(ctx, details, params); err != nil {
 		return err
 	}
@@ -979,6 +985,13 @@ func (r *runner) runContainer(
 		runOptions.Labels,
 		overlayStructureLabel+"="+structuralSignature(p.parsedConfig.Config),
 	)
+	wslgLabels, err := r.wslgLabels()
+	if err != nil {
+		return err
+	}
+	for key, value := range wslgLabels {
+		runOptions.Labels = append(runOptions.Labels, key+"="+value)
+	}
 	runOptions.AllowRecreate = p.options.Recreate
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
 	if r.needsCurrentContainerIdentity() {
