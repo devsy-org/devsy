@@ -164,6 +164,11 @@ func (r *runner) prepareContainerRecreation(
 	details *config.ContainerDetails,
 	params *resolveParams,
 ) error {
+	if err := r.checkWSLgReuseFor(
+		params.parsedConfig.Config, details, params.options.Recreate,
+	); err != nil {
+		return err
+	}
 	if err := r.applyDriverRecreateRequirement(ctx, details, params); err != nil {
 		return err
 	}
@@ -979,6 +984,13 @@ func (r *runner) runContainer(
 		runOptions.Labels,
 		overlayStructureLabel+"="+structuralSignature(p.parsedConfig.Config),
 	)
+	wslgLabels, err := r.wslgLabels()
+	if err != nil {
+		return err
+	}
+	for key, value := range wslgLabels {
+		runOptions.Labels = append(runOptions.Labels, key+"="+value)
+	}
 	runOptions.AllowRecreate = p.options.Recreate
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
 	if r.needsCurrentContainerIdentity() {

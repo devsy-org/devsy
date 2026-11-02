@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
+	"github.com/devsy-org/devsy/pkg/wslg"
 )
 
 // Runner drives the lifecycle of a single workspace's dev container.
@@ -107,7 +108,8 @@ type runner struct {
 	imageDetails      *config.ImageDetails
 	imageDetailsImage string
 
-	reporter status.Reporter
+	reporter     status.Reporter
+	wslgSnapshot *wslg.Snapshot
 }
 
 func NewRunner(
@@ -159,6 +161,10 @@ func (r *runner) Up(
 		reporter = status.Nop()
 	}
 	r.reporter = reporter
+	if err := r.prepareWSLg(ctx, options.CLIOptions); err != nil {
+		return nil, err
+	}
+	defer func() { r.wslgSnapshot = nil }()
 	selectionWarning := r.compatibilitySelectionWarning(
 		r.effectiveDevContainerSelection(options.CLIOptions),
 	)
@@ -181,6 +187,14 @@ func (r *runner) Up(
 		}
 	}
 
+	if defaultSelection {
+		// The full overlay check runs after initializeCommand; fail a stale
+		// WSLg container first so the host hook does not run twice.
+		err = r.checkWSLgReuseBeforeInitialize(ctx, substitutedConfig.Config, options)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := r.runInitializePhase(ctx, reporter, substitutedConfig, options); err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,6 +29,7 @@ const (
 	FeaturesStartOverrideFilePrefix = "docker-compose.devcontainer.containerFeatures"
 
 	composeProjectNameFlag = "--project-name"
+	composeProjectDirFlag  = "--project-directory"
 )
 
 type composeProjectFiles struct {
@@ -107,7 +109,26 @@ func (r *runner) composeHelper() (*compose.ComposeHelper, error) {
 		)
 	}
 
-	return composeDriver.ComposeHelper()
+	helper, err := composeDriver.ComposeHelper()
+	if err != nil {
+		return nil, err
+	}
+	if r.wslgSnapshot != nil {
+		return helper.WithInvocationEnvironment(r.wslgSnapshot.Environment()), nil
+	}
+	return helper, nil
+}
+
+// Only a v2 label carries a recorded environment; without one, keep whatever
+// the helper already has so legacy teardown can still resolve its variables.
+func replayComposeEnvironment(
+	helper *compose.ComposeHelper,
+	env map[string]string,
+) *compose.ComposeHelper {
+	if env == nil {
+		return helper
+	}
+	return helper.WithInvocationEnvironment(env)
 }
 
 func (r *runner) stopDockerCompose(ctx context.Context, projectName string) error {
@@ -121,7 +142,7 @@ func (r *runner) stopDockerCompose(ctx context.Context, projectName string) erro
 		return fmt.Errorf("get original Compose invocation: %w", err)
 	}
 
-	err = composeHelper.Stop(ctx, projectName, args)
+	err = replayComposeEnvironment(composeHelper, args.WSLgEnv).Stop(ctx, projectName, args.Args)
 	if err != nil {
 		return err
 	}
@@ -144,7 +165,8 @@ func (r *runner) deleteDockerCompose(
 		return fmt.Errorf("get original Compose invocation: %w", err)
 	}
 
-	err = composeHelper.Remove(ctx, projectName, args, removeVolumes)
+	err = replayComposeEnvironment(composeHelper, args.WSLgEnv).
+		Remove(ctx, projectName, args.Args, removeVolumes)
 	if err != nil {
 		return err
 	}
@@ -240,10 +262,11 @@ func (r *runner) loadComposeProject(
 	projFiles composeProjectFiles,
 ) (*composetypes.Project, error) {
 	log.Debugf("Loading docker compose project %+v", projFiles.composeFiles)
-	project, err := compose.LoadDockerComposeProject(
+	project, err := compose.LoadDockerComposeProjectWithEnv(
 		ctx,
 		projFiles.composeFiles,
 		projFiles.envFiles,
+		r.wslgSnapshot.Environment(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load docker compose project: %w", err)
@@ -336,6 +359,9 @@ func (r *runner) ensureComposeContainer(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find dev container: %w", err)
+	}
+	if err := r.checkWSLgReuse(containerDetails, options.Recreate); err != nil {
+		return nil, err
 	}
 	effectiveOptions, forceSecretRuntimeRefresh, err := r.composeSecretRuntimeOptions(
 		containerDetails,
@@ -1086,12 +1112,20 @@ func (r *runner) buildComposeOverrideArgs(
 
 	if override.path != "" {
 		composeGlobalArgs = append(composeGlobalArgs, "-f", override.path)
-		if err := recordComposeInvocation(
-			override.path,
-			start.parsedConfig.Config.Service,
-			start.project.WorkingDir,
-			composeGlobalArgs,
-		); err != nil {
+		invocation := composeInvocation{
+			Version:   1,
+			Directory: start.project.WorkingDir,
+			Args:      composeGlobalArgs,
+		}
+		if replay := r.wslgReplay(); replay != nil {
+			invocation.Version = 2
+			invocation.WSLg = replay
+		}
+		if err := recordComposeInvocation(composeInvocationRecord{
+			Path:       override.path,
+			Service:    start.parsedConfig.Config.Service,
+			Invocation: invocation,
+		}); err != nil {
 			return composeOverrideArgs{}, err
 		}
 	}
@@ -1195,9 +1229,16 @@ func (r *runner) generateComposeUpOverride(
 	if err != nil {
 		return composeOverrideFile{}, err
 	}
-	additionalLabels := composeOverrideLabels(
+	additionalLabels, err := r.wslgLabels()
+	if err != nil {
+		return composeOverrideFile{}, err
+	}
+	if additionalLabels == nil {
+		additionalLabels = map[string]string{}
+	}
+	maps.Copy(additionalLabels, composeOverrideLabels(
 		imageDetails, metadataValue, contract, structuralSignature(start.parsedConfig.Config),
-	)
+	))
 	overrideComposeUpFilePath, err := r.extendedDockerComposeUp(&composeUpParams{
 		parsedConfig:         start.parsedConfig,
 		mergedConfig:         mergedConfig,

@@ -279,6 +279,10 @@ func (s *E2ECommandSuite) TestRunDockerWSLUsesWSLDaemonAndClearsContext() {
 	dockerContext, ok := e2eEnvValue(spec.Env, "DOCKER_CONTEXT")
 	s.True(ok, "DOCKER_CONTEXT must be present so an inherited context is cleared")
 	s.Empty(dockerContext)
+	distro, _ := e2eEnvValue(spec.Env, "DEVSY_WSLG_TEST_DISTRO")
+	s.Equal("Ubuntu-24.04", distro)
+	user, _ := e2eEnvValue(spec.Env, "DEVSY_WSLG_TEST_USER")
+	s.Equal("devsyci", user)
 }
 
 func (s *E2ECommandSuite) TestRunWithoutDockerWSLLeavesDockerContextUnset() {

@@ -768,6 +768,42 @@ jobs:
           --distribution Ubuntu-24.04 --timeout 4m
           --state-file "$env:RUNNER_TEMP\devsy-ci\docker-wsl-state.json"
 
+      # The WSLg specs and the parity probe need Compose on the Windows side.
+      # The fixture exports DOCKER_CONFIG, which holds the plugin.
+      - name: install pinned Windows Compose plugin
+        if: matrix.setup_docker_wsl
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrEmpty($env:DOCKER_CONFIG)) { throw 'WSL fixture Docker config is missing' }
+          $pluginDir = Join-Path $env:DOCKER_CONFIG 'cli-plugins'
+          New-Item -ItemType Directory -Force $pluginDir | Out-Null
+          $plugin = Join-Path $pluginDir 'docker-compose.exe'
+          Invoke-WebRequest `
+            -Uri 'https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-windows-x86_64.exe' `
+            -OutFile $plugin
+          $expectedHash = '8aeaa0055e660e12cf07cd70680dc8333957fe6718528b91ec3da084eab62483'
+          $actualHash = (Get-FileHash -Path $plugin -Algorithm SHA256).Hash.ToLower()
+          if ($actualHash -ne $expectedHash) { throw 'Compose SHA256 mismatch' }
+
+      - name: setup Go
+        if: matrix.setup_docker_wsl
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: test real noninteractive WSLg discovery and Compose parity
+        if: matrix.setup_docker_wsl
+        shell: pwsh
+        timeout-minutes: 8
+        env:
+          DEVSY_WSLG_TEST_DISTRO: Ubuntu-24.04
+          DEVSY_WSLG_TEST_USER: devsyci
+        run: |
+          docker compose version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -count=1 -v -timeout 3m ./pkg/wslg ./pkg/compose -run '^TestWSLg'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       # Runs the suite's `host_setup` actions from hack/ci/suites.yaml
       # (for example removing Docker or trusting a local registry).
       - name: host setup
