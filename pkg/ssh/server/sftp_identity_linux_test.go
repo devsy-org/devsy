@@ -71,11 +71,11 @@ func configureSFTPTestChild(t *testing.T, accessibleToOtherUsers bool) {
 		require.NoError(t, err)
 		defer original.Close()
 		executable = filepath.Join(dir, "sftp-test-child")
-		copy, err := os.OpenFile(executable, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+		childFile, err := os.OpenFile(executable, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
 		require.NoError(t, err)
-		_, err = io.Copy(copy, original)
+		_, err = io.Copy(childFile, original)
 		require.NoError(t, err)
-		require.NoError(t, copy.Close())
+		require.NoError(t, childFile.Close())
 		require.NoError(t, os.Chmod(executable, 0o755))
 	}
 	previous := newSFTPCommand
