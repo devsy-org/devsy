@@ -24,70 +24,138 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
+const (
+	testTransportRead  = "transport-read"
+	testWindowsOS      = "windows"
+	testCancelProvider = "cancel-provider"
+	testOpaqueCommand  = "opaque"
+)
+
 func TestProviderCancellationHelper(t *testing.T) {
 	if os.Getenv("DEVSY_CANCEL_HELPER") != "1" {
 		return
 	}
 	marker := os.Getenv(config.EnvProviderCancelFile)
-	switch os.Getenv("DEVSY_CANCEL_BEHAVIOR") {
+	switch behavior := os.Getenv("DEVSY_CANCEL_BEHAVIOR"); behavior {
 	case "acknowledge":
-		fmt.Fprint(os.Stdout, "ready")
-		for {
-			if _, err := os.Stat(marker); err == nil {
-				if path := os.Getenv("DEVSY_CANCEL_ACK_PATH"); path != "" {
-					_ = os.WriteFile(path, []byte("finished"), 0o600)
-				}
-				return
-			}
-			time.Sleep(20 * time.Millisecond)
+		if _, err := fmt.Fprint(os.Stdout, "ready"); err != nil {
+			os.Exit(126)
 		}
+		awaitTestCancellationMarker(marker, os.Getenv("DEVSY_CANCEL_ACK_PATH"))
 	case "ignore":
-		fmt.Fprint(os.Stdout, "ready")
-		time.Sleep(time.Minute)
-	case "transport-read", "transport-write":
-		ready := os.Getenv("DEVSY_CANCEL_READY_PATH")
-		_ = os.WriteFile(ready, []byte("ready"), 0o600)
-		go func() {
-			for {
-				if _, err := os.Stat(marker); err == nil {
-					_ = os.WriteFile(os.Getenv("DEVSY_CANCEL_ACK_PATH"), []byte("finished"), 0o600)
-					os.Exit(0)
-				}
-				time.Sleep(20 * time.Millisecond)
-			}
-		}()
-		if os.Getenv("DEVSY_CANCEL_BEHAVIOR") == "transport-read" {
-			var b [1]byte
-			_, _ = os.Stdin.Read(b[:])
-			for {
-				time.Sleep(time.Second)
-			}
-		} else {
-			if runtime.GOOS != "windows" {
-				signal.Ignore(syscall.Signal(13))
-			}
-			chunk := bytes.Repeat([]byte("x"), 1024)
-			for {
-				if _, err := os.Stdout.Write(chunk); err != nil {
-					for {
-						time.Sleep(time.Second)
-					}
-				}
-			}
+		if _, err := fmt.Fprint(os.Stdout, "ready"); err != nil {
+			os.Exit(126)
 		}
+		time.Sleep(time.Minute)
+	case testTransportRead, "transport-write":
+		testTransportCancellationHelper(behavior, marker)
+	default:
+		runTestCancellationExit(behavior, marker)
+	}
+	os.Exit(0)
+}
+
+func runTestCancellationExit(behavior, marker string) {
+	switch behavior {
 	case "status":
 		os.Exit(7)
 	case "status-127":
 		os.Exit(127)
 	case "bytes":
-		os.Stdout.Write([]byte{0, 0xff, 0x80, '\r', '\n'})
-		os.Stderr.Write([]byte(os.Getenv("DEVSY_CANCEL_SECRET")))
+		writeTestCancellationBytes()
 	case "environment":
-		fmt.Fprint(os.Stdout, marker)
+		_, err := fmt.Fprint(os.Stdout, marker)
+		exitTestHelperOnError(err)
 	default:
 		os.Exit(125)
 	}
+}
+
+func writeTestCancellationBytes() {
+	_, err := os.Stdout.Write([]byte{0, 0xff, 0x80, '\r', '\n'})
+	exitTestHelperOnError(err)
+	_, err = os.Stderr.Write([]byte(os.Getenv("DEVSY_CANCEL_SECRET")))
+	exitTestHelperOnError(err)
+}
+
+func exitTestHelperOnError(err error) {
+	if err != nil {
+		os.Exit(126)
+	}
+}
+
+func testHelperRelativePath(path string) (string, error) {
+	relative, err := filepath.Rel(os.TempDir(), path)
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsLocal(relative) {
+		return "", os.ErrPermission
+	}
+	return relative, nil
+}
+
+func testHelperWriteFile(path, data string) error {
+	relative, err := testHelperRelativePath(path)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(os.TempDir())
+	if err != nil {
+		return err
+	}
+	writeErr := root.WriteFile(relative, []byte(data), 0o600)
+	return errors.Join(writeErr, root.Close())
+}
+
+func awaitTestCancellationMarker(marker, acknowledgement string) {
+	relative, err := testHelperRelativePath(marker)
+	if err != nil {
+		os.Exit(126)
+	}
+	root, err := os.OpenRoot(os.TempDir())
+	if err != nil {
+		os.Exit(126)
+	}
+	for {
+		if info, err := root.Lstat(relative); err == nil && info.Mode().IsRegular() {
+			acknowledgeTestCancellationMarker(root, acknowledgement)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func acknowledgeTestCancellationMarker(root *os.Root, acknowledgement string) {
+	if acknowledgement != "" {
+		exitTestHelperOnError(testHelperWriteFile(acknowledgement, "finished"))
+	}
+	exitTestHelperOnError(root.Close())
 	os.Exit(0)
+}
+
+func testTransportCancellationHelper(behavior, marker string) {
+	if err := testHelperWriteFile(os.Getenv("DEVSY_CANCEL_READY_PATH"), "ready"); err != nil {
+		os.Exit(126)
+	}
+	go awaitTestCancellationMarker(marker, os.Getenv("DEVSY_CANCEL_ACK_PATH"))
+	if behavior == testTransportRead {
+		var b [1]byte
+		_, _ = os.Stdin.Read(b[:])
+		for {
+			time.Sleep(time.Second)
+		}
+	}
+	if runtime.GOOS != testWindowsOS {
+		signal.Ignore(syscall.Signal(13))
+	}
+	chunk := bytes.Repeat([]byte("x"), 1024)
+	for {
+		if _, err := os.Stdout.Write(chunk); err != nil {
+			for {
+				time.Sleep(time.Second)
+			}
+		}
+	}
 }
 
 func cancelHelperOptions(behavior string) RunCommandOptions {
@@ -128,8 +196,15 @@ func TestProviderCancellationCooperatesAndCleansUp(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("provider did not acknowledge cancellation")
 	}
-	contents, err := os.ReadFile(ack)
+	requireTestAcknowledgement(t, ack)
+}
+
+func requireTestAcknowledgement(t *testing.T, path string) {
+	t.Helper()
+	root, err := os.OpenRoot(filepath.Dir(path))
 	require.NoError(t, err)
+	contents, readErr := root.ReadFile(filepath.Base(path))
+	require.NoError(t, errors.Join(readErr, root.Close()))
 	require.Equal(t, "finished", string(contents))
 }
 
@@ -226,12 +301,12 @@ func TestProviderCancellationPublicationFailureReapsProvider(t *testing.T) {
 	}
 }
 
-func TestProviderCancellationPrivateEnvironmentAndTypedExits(t *testing.T) {
+func TestProviderCancellationPrivateEnvironment(t *testing.T) {
 	dir, err := createProviderInvocationDir()
 	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
 	require.True(t, filepath.IsAbs(dir))
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != testWindowsOS {
 		info, err := os.Stat(dir)
 		require.NoError(t, err)
 		require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
@@ -243,7 +318,7 @@ func TestProviderCancellationPrivateEnvironmentAndTypedExits(t *testing.T) {
 		config.EnvProviderCancelFile+"=forged",
 		config.EnvProviderCancelFile+"=again",
 	)
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == testWindowsOS {
 		opts.Environ = append(
 			opts.Environ,
 			strings.ToLower(config.EnvProviderCancelFile)+"=windows-forged",
@@ -257,43 +332,48 @@ func TestProviderCancellationPrivateEnvironmentAndTypedExits(t *testing.T) {
 	require.True(t, filepath.IsAbs(marker))
 	_, err = os.Stat(filepath.Dir(marker))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
 
+func TestProviderCancellationTypedExits(t *testing.T) {
 	for _, status := range []int{7, 125, 127} {
-		opts = cancelHelperOptions("status")
+		opts := cancelHelperOptions("status")
 		if status == 125 {
 			opts.Environ = append(opts.Environ, "DEVSY_CANCEL_BEHAVIOR=other")
 		}
 		if status == 127 {
 			opts.Environ = append(opts.Environ, "DEVSY_CANCEL_BEHAVIOR=status-127")
 		}
-		err = RunCommand(context.Background(), opts)
+		err := RunCommand(context.Background(), opts)
 		var exitErr *exec.ExitError
 		require.ErrorAs(t, err, &exitErr)
 		require.Equal(t, status, exitErr.ExitCode())
 	}
+}
 
-	if runtime.GOOS != "windows" {
-		binary, err := os.Executable()
-		require.NoError(t, err)
-		for _, status := range []int{7, 127} {
-			command := "command-that-does-not-exist-846307"
-			if status == 7 {
-				command = fmt.Sprintf(
-					"DEVSY_CANCEL_HELPER=1 DEVSY_CANCEL_BEHAVIOR=status '%s' -test.run=^TestProviderCancellationHelper$",
-					binary,
-				)
-			}
-			err := RunCommand(context.Background(), RunCommandOptions{
-				Command: types.StrArray{
-					command,
-				},
-				Environ:      os.Environ(),
-				Cancellation: provider.ProviderCancellationFile,
-			})
-			var shellExit interp.ExitStatus
-			require.ErrorAs(t, err, &shellExit)
-			require.Equal(t, status, int(shellExit))
+func TestProviderCancellationShellExits(t *testing.T) {
+	if runtime.GOOS == testWindowsOS {
+		t.Skip("requires POSIX shell")
+	}
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	for _, status := range []int{7, 127} {
+		command := "command-that-does-not-exist-846307"
+		if status == 7 {
+			command = fmt.Sprintf(
+				"DEVSY_CANCEL_HELPER=1 DEVSY_CANCEL_BEHAVIOR=status '%s' -test.run=^TestProviderCancellationHelper$",
+				binary,
+			)
 		}
+		err := RunCommand(context.Background(), RunCommandOptions{
+			Command: types.StrArray{
+				command,
+			},
+			Environ:      os.Environ(),
+			Cancellation: provider.ProviderCancellationFile,
+		})
+		var shellExit interp.ExitStatus
+		require.ErrorAs(t, err, &shellExit)
+		require.Equal(t, status, int(shellExit))
 	}
 }
 
@@ -311,7 +391,7 @@ func TestProviderCancellationRawBytesAndStderrRedaction(t *testing.T) {
 }
 
 func TestMachineCommandTransportCancellationJoinsCallback(t *testing.T) {
-	for _, behavior := range []string{"transport-read", "transport-write"} {
+	for _, behavior := range []string{testTransportRead, "transport-write"} {
 		t.Run(behavior, func(t *testing.T) {
 			dir := t.TempDir()
 			ready, ack := filepath.Join(dir, "ready"), filepath.Join(dir, "ack")
@@ -321,7 +401,7 @@ func TestMachineCommandTransportCancellationJoinsCallback(t *testing.T) {
 			t.Setenv("DEVSY_CANCEL_ACK_PATH", ack)
 			machine := &provider.Machine{ID: "cancel-machine", Context: testLocksContext}
 			cfg := &provider.ProviderConfig{
-				Name: "cancel-provider",
+				Name: testCancelProvider,
 				Exec: provider.ProviderCommands{
 					Create: types.StrArray{
 						"create",
@@ -340,10 +420,10 @@ func TestMachineCommandTransportCancellationJoinsCallback(t *testing.T) {
 			defer cancel()
 			conn, err := mc.OpenCommandTransport(
 				ctx,
-				client.CommandTransportOptions{Command: "opaque"},
+				client.CommandTransportOptions{Command: testOpaqueCommand},
 			)
 			require.NoError(t, err)
-			defer conn.Close()
+			t.Cleanup(func() { require.NoError(t, conn.Close()) })
 			deadline := time.Now().Add(5 * time.Second)
 			for {
 				if _, err := os.Stat(ready); err == nil {
@@ -363,9 +443,7 @@ func TestMachineCommandTransportCancellationJoinsCallback(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("transport callback did not finish")
 			}
-			contents, err := os.ReadFile(ack)
-			require.NoError(t, err)
-			require.Equal(t, "finished", string(contents))
+			requireTestAcknowledgement(t, ack)
 		})
 	}
 }
@@ -377,67 +455,87 @@ func TestWorkspaceCommandCancellationJoinsProviderCleanup(t *testing.T) {
 			t.Setenv("DEVSY_CANCEL_HELPER", "1")
 			t.Setenv("DEVSY_CANCEL_BEHAVIOR", "acknowledge")
 			t.Setenv("DEVSY_CANCEL_ACK_PATH", ack)
-			workspace := &provider.Workspace{
-				ID:      "cancel-workspace",
-				Context: testLocksContext,
-				Provider: provider.WorkspaceProviderConfig{
-					Name: "cancel-provider",
-				},
-			}
-			cfg := &provider.ProviderConfig{
-				Name: "cancel-provider",
-				Exec: provider.ProviderCommands{
-					Command:      cancelHelperOptions("acknowledge").Command,
-					Cancellation: provider.ProviderCancellationFile,
-				},
-			}
-			devsy := &config.Config{
-				DefaultContext: testLocksContext,
-				Contexts:       map[string]*config.ContextConfig{testLocksContext: {}},
-			}
-			wc := &workspaceClient{
-				providerWorkspace: workspace,
-				providerConfig:    cfg,
-				devsyConfig:       devsy,
-			}
+			wc := workspaceCancellationTestClient()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			if transportMode {
-				conn, err := wc.OpenCommandTransport(ctx, client.CommandTransportOptions{Command: "opaque"})
-				require.NoError(t, err)
-				defer conn.Close()
-				ready := make([]byte, 5)
-				require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
-				_, err = io.ReadFull(conn, ready)
-				require.NoError(t, err)
-				require.Equal(t, "ready", string(ready))
-				cancel()
-				require.ErrorIs(t, conn.Wait(), context.Canceled)
+				requireWorkspaceTransportCancellation(t, wc, ctx, cancel)
 			} else {
-				ready := make(chan struct{})
-				finished := make(chan error, 1)
-				go func() {
-					finished <- wc.Command(ctx, client.CommandOptions{
-						Command: "opaque",
-						Stdout:  &readyWriter{ready: ready},
-					})
-				}()
-				select {
-				case <-ready:
-				case <-time.After(5 * time.Second):
-					t.Fatal("workspace provider did not start")
-				}
-				cancel()
-				select {
-				case err := <-finished:
-					require.ErrorIs(t, err, context.Canceled)
-				case <-time.After(5 * time.Second):
-					t.Fatal("workspace provider did not finish")
-				}
+				requireWorkspaceDirectCancellation(t, wc, ctx, cancel)
 			}
-			contents, err := os.ReadFile(ack)
-			require.NoError(t, err)
-			require.Equal(t, "finished", string(contents))
+			requireTestAcknowledgement(t, ack)
 		})
+	}
+}
+
+func workspaceCancellationTestClient() *workspaceClient {
+	return &workspaceClient{
+		providerWorkspace: &provider.Workspace{
+			ID:       "cancel-workspace",
+			Context:  testLocksContext,
+			Provider: provider.WorkspaceProviderConfig{Name: testCancelProvider},
+		},
+		providerConfig: &provider.ProviderConfig{
+			Name: testCancelProvider,
+			Exec: provider.ProviderCommands{
+				Command:      cancelHelperOptions("acknowledge").Command,
+				Cancellation: provider.ProviderCancellationFile,
+			},
+		},
+		devsyConfig: &config.Config{
+			DefaultContext: testLocksContext,
+			Contexts:       map[string]*config.ContextConfig{testLocksContext: {}},
+		},
+	}
+}
+
+func requireWorkspaceTransportCancellation(
+	t *testing.T,
+	wc *workspaceClient,
+	ctx context.Context,
+	cancel context.CancelFunc,
+) {
+	t.Helper()
+	conn, err := wc.OpenCommandTransport(ctx, client.CommandTransportOptions{
+		Command: testOpaqueCommand,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	ready := make([]byte, 5)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	_, err = io.ReadFull(conn, ready)
+	require.NoError(t, err)
+	require.Equal(t, "ready", string(ready))
+	cancel()
+	require.ErrorIs(t, conn.Wait(), context.Canceled)
+}
+
+func requireWorkspaceDirectCancellation(
+	t *testing.T,
+	wc *workspaceClient,
+	ctx context.Context,
+	cancel context.CancelFunc,
+) {
+	t.Helper()
+	ready := make(chan struct{})
+	finished := make(chan error, 1)
+	go func() {
+		finished <- wc.Command(ctx, client.CommandOptions{
+			Command:   testOpaqueCommand,
+			Stdout:    &readyWriter{ready: ready},
+			RawStdout: true,
+		})
+	}()
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("workspace provider did not start")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("workspace provider did not finish")
 	}
 }

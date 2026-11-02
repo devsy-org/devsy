@@ -13,7 +13,11 @@ func TestProviderCancellationDirectoryWindowsDACL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Errorf("remove invocation directory: %v", err)
+		}
+	})
 	sd, err := windows.GetNamedSecurityInfo(
 		dir,
 		windows.SE_FILE_OBJECT,

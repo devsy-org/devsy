@@ -17,10 +17,14 @@ import (
 
 func writeExecutable(t *testing.T, path string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(executable, path); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -93,7 +97,7 @@ func TestFindDarwinDockerCLIHomeFailureDoesNotBreakStaticDiscovery(t *testing.T)
 
 func TestFindDarwinDockerCLIRejectsNonExecutable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "docker")
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := findDarwinDockerCLIInPaths([]string{path}); err == nil {
@@ -101,18 +105,20 @@ func TestFindDarwinDockerCLIRejectsNonExecutable(t *testing.T) {
 	}
 }
 
-func TestFindDarwinDockerCLIRejectsInaccessibleCandidate(t *testing.T) {
+func TestFindDarwinDockerCLISkipsBrokenCandidate(t *testing.T) {
 	tmp := t.TempDir()
-	inaccessible := filepath.Join(tmp, "inaccessible", "docker")
-	writeExecutable(t, inaccessible)
-	if err := os.Chmod(inaccessible, 0o001); err != nil {
+	broken := filepath.Join(tmp, "broken", "docker")
+	if err := os.MkdirAll(filepath.Dir(broken), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(tmp, "missing", "docker"), broken); err != nil {
 		t.Fatal(err)
 	}
 
 	valid := filepath.Join(tmp, "valid", "docker")
 	writeExecutable(t, valid)
 
-	path, err := findDarwinDockerCLIInPaths([]string{inaccessible, valid})
+	path, err := findDarwinDockerCLIInPaths([]string{broken, valid})
 	if err != nil || path != valid {
 		t.Fatalf("expected fallback to valid candidate %q, got %q (err: %v)", valid, path, err)
 	}

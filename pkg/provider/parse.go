@@ -348,15 +348,9 @@ func validateCustomDriver(config *ProviderConfig) error {
 }
 
 func validateExecCommands(config *ProviderConfig) error {
-	if config.Exec.Cancellation != ProviderCancellationDefault &&
-		config.Exec.Cancellation != ProviderCancellationFile {
-		return fmt.Errorf("exec.cancellation must be empty or file")
+	if err := validateExecCommandPolicy(config.Exec); err != nil {
+		return err
 	}
-
-	if len(config.Exec.Command) == 0 {
-		return fmt.Errorf("exec.command is required")
-	}
-
 	if err := validateExecPair(
 		"exec.create",
 		"exec.delete",
@@ -383,6 +377,17 @@ func validateExecCommands(config *ProviderConfig) error {
 		return fmt.Errorf("exec.create is required")
 	}
 
+	return nil
+}
+
+func validateExecCommandPolicy(exec ProviderCommands) error {
+	if exec.Cancellation != ProviderCancellationDefault &&
+		exec.Cancellation != ProviderCancellationFile {
+		return fmt.Errorf("exec.cancellation must be empty or file")
+	}
+	if len(exec.Command) == 0 {
+		return fmt.Errorf("exec.command is required")
+	}
 	return nil
 }
 

@@ -525,24 +525,13 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 	}
 
 	if dockerCmd != docker {
-		path, err := exec.LookPath(dockerCmd)
-		if err != nil {
-			return "", fmt.Errorf("custom docker path %q not found: %w", dockerCmd, err)
-		}
-		return path, nil
+		return findCustomDockerCLI(dockerCmd)
 	}
 
-	if dockerCmd == docker && runtime.GOOS == "darwin" {
-		find := w.findDarwinDocker
-		if find == nil {
-			find = findDarwinDockerCLI
-		}
-		path, err := find()
-		if err == nil {
-			return path, nil
-		}
-		if !w.isDockerInstallDisabled() {
-			return "", err
+	if runtime.GOOS == "darwin" {
+		path, err := w.discoverDarwinDockerCLI()
+		if err == nil || !w.isDockerInstallDisabled() {
+			return path, err
 		}
 	}
 
@@ -553,6 +542,26 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 		)
 	}
 
+	return w.installMissingDocker(ctx)
+}
+
+func findCustomDockerCLI(dockerCmd string) (string, error) {
+	path, err := exec.LookPath(dockerCmd)
+	if err != nil {
+		return "", fmt.Errorf("custom docker path %q not found: %w", dockerCmd, err)
+	}
+	return path, nil
+}
+
+func (w *workspaceInitializer) discoverDarwinDockerCLI() (string, error) {
+	find := w.findDarwinDocker
+	if find == nil {
+		find = findDarwinDockerCLI
+	}
+	return find()
+}
+
+func (w *workspaceInitializer) installMissingDocker(ctx context.Context) (string, error) {
 	log.Debug("attempting to install docker")
 	install := w.installDocker
 	if install == nil {

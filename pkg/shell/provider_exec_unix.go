@@ -11,7 +11,11 @@ import (
 
 func providerExecSignalStatus(err *exec.ExitError) (interp.ExitStatus, bool) {
 	if status, ok := err.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-		return interp.ExitStatus(128 + status.Signal()), true
+		code := 128 + int(status.Signal())
+		if code < 0 || code > 255 {
+			return 0, false
+		}
+		return interp.ExitStatus(uint8(code)), true
 	}
 	return 0, false
 }

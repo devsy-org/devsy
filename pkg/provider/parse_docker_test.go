@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+const (
+	enabledDockerDaemonPolicy  = "true"
+	disabledDockerDaemonPolicy = "false"
+)
+
 func TestParseDockerConfigureDaemon(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -12,8 +17,8 @@ func TestParseDockerConfigureDaemon(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "unset"},
-		{name: "true", value: "true"},
-		{name: "false", value: "false"},
+		{name: "enabled", value: enabledDockerDaemonPolicy},
+		{name: "disabled", value: disabledDockerDaemonPolicy},
 		{name: "template", value: "${CONFIGURE_DAEMON}"},
 		{name: "bare template", value: "$CONFIGURE_DAEMON"},
 		{name: "invalid", value: "sometimes", wantErr: true},

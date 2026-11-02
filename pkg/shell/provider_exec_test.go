@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -22,8 +24,13 @@ func TestProviderExecHelper(t *testing.T) {
 		return
 	}
 	if os.Getenv("DEVSY_PROVIDER_EXEC_EXIT") == "wait" {
-		fmt.Fprint(os.Stdout, "ready")
+		if _, err := fmt.Fprint(os.Stdout, "ready"); err != nil {
+			os.Exit(126)
+		}
 		time.Sleep(time.Minute)
+	}
+	if os.Getenv("DEVSY_PROVIDER_EXEC_EXIT") == "read-eof" {
+		providerExecReadToEOF()
 	}
 	if os.Getenv("DEVSY_PROVIDER_EXEC_EXIT") != "" {
 		os.Exit(125)
@@ -40,11 +47,23 @@ func TestProviderExecHelper(t *testing.T) {
 	os.Exit(0)
 }
 
+func providerExecReadToEOF() {
+	if _, err := fmt.Fprint(os.Stdout, "before"); err != nil {
+		os.Exit(126)
+	}
+	input, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		os.Exit(126)
+	}
+	if _, err := fmt.Fprintf(os.Stdout, "after%s", input); err != nil {
+		os.Exit(126)
+	}
+	os.Exit(0)
+}
+
 func TestProviderExecHandlerExportsUnsetAndWorkingDirectory(t *testing.T) {
 	binary, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	workdir := t.TempDir()
 	command := fmt.Sprintf(
 		"export PRESENT='quoted value'; unset MISSING; cd %s; %s -test.run=^TestProviderExecHelper$ 'quoted argument'",
@@ -60,27 +79,37 @@ func TestProviderExecHandlerExportsUnsetAndWorkingDirectory(t *testing.T) {
 		Environ: append(os.Environ(), "DEVSY_PROVIDER_EXEC_HELPER=1", "MISSING=should-be-unset"),
 		Stdout:  &stdout, Stderr: &stderr,
 	})
-	if err != nil {
-		t.Fatalf("run provider shell: %v; stderr: %s", err, stderr.String())
-	}
+	require.NoErrorf(t, err, "stderr: %s", stderr.String())
 	var got struct{ Directory, Present, Missing, Argument string }
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &got))
 	expectedDir, err := filepath.EvalSymlinks(workdir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	actualDir, err := filepath.EvalSymlinks(got.Directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.EqualFold(filepath.Clean(actualDir), filepath.Clean(expectedDir)) {
-		t.Fatalf("working directory: got %q, want %q", got.Directory, workdir)
-	}
-	if got.Present != "quoted value" || got.Missing != "" || got.Argument != "quoted argument" {
-		t.Fatalf("shell exported variables or arguments changed: %+v", got)
-	}
+	require.NoError(t, err)
+	require.Truef(t, strings.EqualFold(filepath.Clean(actualDir), filepath.Clean(expectedDir)),
+		"working directory: got %q, want %q", got.Directory, workdir)
+	require.Equal(t, "quoted value", got.Present)
+	require.Empty(t, got.Missing)
+	require.Equal(t, "quoted argument", got.Argument)
+}
+
+func TestProviderExecHandlerKeepsOutputAfterInputEOF(t *testing.T) {
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	var stdout bytes.Buffer
+	err = RunEmulatedShell(context.Background(), &CommandRunner{
+		Command: strconv.Quote(binary) + " -test.run=^TestProviderExecHelper$",
+		Environ: append(
+			os.Environ(),
+			"DEVSY_PROVIDER_EXEC_HELPER=1",
+			"DEVSY_PROVIDER_EXEC_EXIT=read-eof",
+		),
+		ExecHandler: ProviderExecHandler(),
+		Stdin:       strings.NewReader("payload"),
+		Stdout:      &stdout,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "beforeafterpayload", stdout.String())
 }
 
 func TestProviderExecHandlerExitStatuses(t *testing.T) {
