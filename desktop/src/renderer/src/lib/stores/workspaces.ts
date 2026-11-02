@@ -1,4 +1,4 @@
-import { derived, writable } from "svelte/store"
+import { derived, get, writable } from "svelte/store"
 import { workspaceSnapshot } from "$lib/ipc/commands.js"
 import { onWorkspacesChanged } from "$lib/ipc/events.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
@@ -8,11 +8,13 @@ import type {
   WorkspaceJob,
   WorkspaceStatus,
 } from "$lib/types/index.js"
+import { workspaceLogsRoute } from "$shared/app-route.js"
 import {
   workspaceConfirmedToast,
   workspaceFailedHeadline,
 } from "$shared/workspace-operation.js"
 import type { WorkspacePresentationResult } from "$shared/workspace-presentation.js"
+import { activeContext } from "./contexts.js"
 import { toasts } from "./toasts.js"
 
 export const workspaces = writable<Workspace[]>([])
@@ -30,6 +32,23 @@ export const workspaceStatuses = derived(workspaceJobs, ($jobs) => {
   }
   return statuses
 })
+
+/** Pins View logs to the failed run (and step) when the CLI recorded one. */
+function failureLogsRoute(
+  id: string,
+  list: Workspace[],
+  job: WorkspaceJob,
+): string {
+  if (!job.runId) return `/workspaces/${id}?tab=logs`
+  return workspaceLogsRoute(id, {
+    context:
+      list.find((workspace) => workspace.id === id)?.context ||
+      get(activeContext) ||
+      "default",
+    runId: job.runId,
+    invocationId: job.failedInvocationId,
+  })
+}
 
 let unlisten: UnlistenFn | null = null
 let lifecycle = 0
@@ -70,7 +89,7 @@ function apply(
           sticky: true,
           action: {
             label: "View logs",
-            onClick: () => goto(`/workspaces/${id}?tab=logs`),
+            onClick: () => goto(failureLogsRoute(id, updated, job)),
           },
         },
       )

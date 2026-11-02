@@ -365,6 +365,7 @@ func installAgent(
 	errChan := make(chan error)
 
 	go func() {
+		//nolint:gosec // command is a fixed CLI with arguments built internally
 		helmCmd := exec.CommandContext(ctx, "helm", helmArgs...)
 
 		helmCmd.Stdout = log.Writer(log.LevelDebug)

@@ -148,7 +148,7 @@ func doRequest(
 	credentials *gitcredentials.GitCredentials,
 	url string,
 ) (*gitcredentials.GitCredentials, error) {
-	rawJSON, err := json.Marshal(credentials)
+	rawJSON, err := json.Marshal(credentials) //nolint:gosec // credential protocol payload
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling credentials: %w", err)
 	}

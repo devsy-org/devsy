@@ -27,23 +27,34 @@ type forwardTarget struct {
 
 type ForwardingFunction func(context.Context, net.Conn, *ssh.Client, forwardTarget)
 
+// PortForwardOpts names both ends of a forwarded connection. For a reverse
+// forward the local end is the one dialed and the remote end is the one listened on.
+type PortForwardOpts struct {
+	LocalNetwork     string
+	LocalAddr        string
+	RemoteNetwork    string
+	RemoteAddr       string
+	ExitAfterTimeout time.Duration
+}
+
 func PortForward(
 	ctx context.Context,
 	client *ssh.Client,
-	localNetwork, localAddr, remoteNetwork, remoteAddr string,
-	exitAfterTimeout time.Duration,
+	opts PortForwardOpts,
 ) error {
-	listener, err := net.Listen(localNetwork, localAddr)
+	listener, err := net.Listen(opts.LocalNetwork, opts.LocalAddr)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = listener.Close() }()
 
-	return portForwarding(
-		ctx, client, listener,
-		localAddr, remoteNetwork, remoteAddr,
-		exitAfterTimeout, forward,
-	)
+	return portForwarding(ctx, client, listener, forwardRoute{
+		srcAddr:          opts.LocalAddr,
+		dstNetwork:       opts.RemoteNetwork,
+		dstAddr:          opts.RemoteAddr,
+		exitAfterTimeout: opts.ExitAfterTimeout,
+		forwardFn:        forward,
+	})
 }
 
 // ForwardOpts groups the parameters for PortForwardWithListener so callers
@@ -66,29 +77,30 @@ func PortForwardWithListener(
 ) error {
 	defer func() { _ = opts.Listener.Close() }()
 
-	return portForwarding(
-		ctx, client, opts.Listener,
-		opts.Listener.Addr().String(), "tcp", opts.RemoteAddr,
-		opts.ExitAfterTimeout, forward,
-	)
+	return portForwarding(ctx, client, opts.Listener, forwardRoute{
+		srcAddr:          opts.Listener.Addr().String(),
+		dstNetwork:       "tcp",
+		dstAddr:          opts.RemoteAddr,
+		exitAfterTimeout: opts.ExitAfterTimeout,
+		forwardFn:        forward,
+	})
 }
 
 func ReversePortForward(
 	ctx context.Context,
 	client *ssh.Client,
-	remoteNetwork, remoteAddr, localNetwork, localAddr string,
-	exitAfterTimeout time.Duration,
+	opts PortForwardOpts,
 ) error {
-	listener, err := ReverseListen(client, remoteNetwork, remoteAddr)
+	listener, err := ReverseListen(client, opts.RemoteNetwork, opts.RemoteAddr)
 	if err != nil {
 		return err
 	}
 	return RunReverseForward(ctx, client, ReverseForwardOpts{
 		Listener:         listener,
-		RemoteAddr:       remoteAddr,
-		LocalNetwork:     localNetwork,
-		LocalAddr:        localAddr,
-		ExitAfterTimeout: exitAfterTimeout,
+		RemoteAddr:       opts.RemoteAddr,
+		LocalNetwork:     opts.LocalNetwork,
+		LocalAddr:        opts.LocalAddr,
+		ExitAfterTimeout: opts.ExitAfterTimeout,
 	})
 }
 
@@ -110,21 +122,34 @@ type ReverseForwardOpts struct {
 // ReverseListen, closing it on return.
 func RunReverseForward(ctx context.Context, client *ssh.Client, opts ReverseForwardOpts) error {
 	defer func() { _ = opts.Listener.Close() }()
-	return portForwarding(
-		ctx, client, opts.Listener,
-		opts.RemoteAddr, opts.LocalNetwork, opts.LocalAddr,
-		opts.ExitAfterTimeout, reverseForward,
-	)
+	return portForwarding(ctx, client, opts.Listener, forwardRoute{
+		srcAddr:          opts.RemoteAddr,
+		dstNetwork:       opts.LocalNetwork,
+		dstAddr:          opts.LocalAddr,
+		exitAfterTimeout: opts.ExitAfterTimeout,
+		forwardFn:        reverseForward,
+	})
+}
+
+// forwardRoute describes where a forwarded connection comes from and goes to.
+type forwardRoute struct {
+	srcAddr          string
+	dstNetwork       string
+	dstAddr          string
+	exitAfterTimeout time.Duration
+	forwardFn        ForwardingFunction
 }
 
 func portForwarding(
 	ctx context.Context,
 	client *ssh.Client,
 	listener net.Listener,
-	srcAddr, dstNetwork, dstAddr string,
-	exitAfterTimeout time.Duration,
-	forwardFn ForwardingFunction,
+	route forwardRoute,
 ) error {
+	srcAddr, dstAddr := route.srcAddr, route.dstAddr
+	dstNetwork, forwardFn := route.dstNetwork, route.forwardFn
+	exitAfterTimeout := route.exitAfterTimeout
+
 	// Derive a child context so the idle-timeout handler can signal shutdown
 	// with a typed cause (ErrIdleTimeout) without killing the whole process.
 	fwdCtx, cancel := context.WithCancelCause(ctx)

@@ -12,6 +12,11 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	newhost        = "newhost"
+	workspaceValue = "workspace"
+)
+
 type SSHConfigTestSuite struct {
 	suite.Suite
 }
@@ -650,10 +655,10 @@ func TestAddHostSectionSectionSyntaxVariants(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := addHostSection(tt.config, testExecPath, addHostParams{
-				host:      "newhost",
+				host:      newhost,
 				user:      testSSHUser,
 				context:   testSSHContext,
-				workspace: "workspace",
+				workspace: workspaceValue,
 			})
 			assert.NoError(t, err)
 			assert.True(t, strings.HasPrefix(result, "# Devsy Start newhost\nHost newhost"))
@@ -672,16 +677,16 @@ Host existing.devsy
 		"host *\n  User alice\n\n"+existingBlock,
 		testExecPath,
 		addHostParams{
-			host:      "newhost",
+			host:      newhost,
 			user:      testSSHUser,
 			context:   testSSHContext,
-			workspace: "workspace",
+			workspace: workspaceValue,
 		},
 	)
 
 	assert.NoError(t, err)
 	assert.Contains(t, result, existingBlock)
-	newStart := strings.Index(result, MarkerStartPrefix+"newhost")
+	newStart := strings.Index(result, MarkerStartPrefix+newhost)
 	existingStart := strings.Index(result, MarkerStartPrefix+"existing.devsy")
 	assert.NotEqual(t, -1, newStart)
 	assert.NotEqual(t, -1, existingStart)
@@ -696,10 +701,10 @@ func TestAddHostSectionInsertionBoundaries(t *testing.T) {
 			assert.Equal(t, tt.insertionIndex, position)
 
 			result, err := addHostSection(tt.config, testExecPath, addHostParams{
-				host:      "newhost",
+				host:      newhost,
 				user:      testSSHUser,
 				context:   testSSHContext,
-				workspace: "workspace",
+				workspace: workspaceValue,
 			})
 			assert.NoError(t, err)
 

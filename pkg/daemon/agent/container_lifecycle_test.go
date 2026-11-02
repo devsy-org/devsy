@@ -100,11 +100,13 @@ func TestBuildWorkspaceDaemonConfig_ManagedWithoutPlatform(t *testing.T) {
 	merged.RemoteUser = "vscode"
 
 	cfg, err := BuildWorkspaceDaemonConfig(
-		devsy.PlatformOptions{},
-		&provider2.Workspace{},
-		&config.SubstitutionContext{ContainerWorkspaceFolder: testWorkdir},
-		merged,
-		LifecycleOptions{Managed: true, Timeout: time.Minute},
+		WorkspaceDaemonInput{
+			PlatformOptions:     devsy.PlatformOptions{},
+			Workspace:           &provider2.Workspace{},
+			SubstitutionContext: &config.SubstitutionContext{ContainerWorkspaceFolder: testWorkdir},
+			MergedConfig:        merged,
+			Lifecycle:           LifecycleOptions{Managed: true, Timeout: time.Minute},
+		},
 	)
 	require.NoError(t, err)
 
@@ -121,11 +123,17 @@ func TestBuildWorkspaceDaemonConfig_PlatformKeepsNetworking(t *testing.T) {
 	merged.ShutdownAction = config.ShutdownActionNone
 
 	cfg, err := BuildWorkspaceDaemonConfig(
-		devsy.PlatformOptions{AccessKey: "key", PlatformHost: "p", WorkspaceHost: "w"},
-		&provider2.Workspace{},
-		&config.SubstitutionContext{ContainerWorkspaceFolder: testWorkdir},
-		merged,
-		LifecycleOptions{},
+		WorkspaceDaemonInput{
+			PlatformOptions: devsy.PlatformOptions{
+				AccessKey:     "key",
+				PlatformHost:  "p",
+				WorkspaceHost: "w",
+			},
+			Workspace:           &provider2.Workspace{},
+			SubstitutionContext: &config.SubstitutionContext{ContainerWorkspaceFolder: testWorkdir},
+			MergedConfig:        merged,
+			Lifecycle:           LifecycleOptions{},
+		},
 	)
 	require.NoError(t, err)
 

@@ -5,6 +5,13 @@ import (
 	"testing"
 )
 
+const (
+	probeTestUsrBin = "/usr/bin"
+	probeTestVar    = "VAR"
+	probeTestName   = "test"
+	probeTestValue  = "value"
+)
+
 //nolint:funlen,lll // It's just test input vectors.
 func TestParseProbeOutput(t *testing.T) {
 	tests := []struct {
@@ -18,9 +25,9 @@ func TestParseProbeOutput(t *testing.T) {
 			output: []byte("PATH=/usr/bin\x00HOME=/home/user\x00USER=testuser\x00"),
 			sep:    '\x00',
 			expected: map[string]string{
-				"PATH": "/usr/bin",
-				"HOME": "/home/user",
-				"USER": "testuser",
+				pathValue: probeTestUsrBin,
+				home:      "/home/user",
+				"USER":    "testuser",
 			},
 		},
 		{
@@ -28,7 +35,7 @@ func TestParseProbeOutput(t *testing.T) {
 			output: []byte("SIMPLE=value\x00COMPLEX=key=value=more\x00"),
 			sep:    '\x00',
 			expected: map[string]string{
-				"SIMPLE":  "value",
+				"SIMPLE":  probeTestValue,
 				"COMPLEX": "key=value=more",
 			},
 		},
@@ -40,7 +47,7 @@ func TestParseProbeOutput(t *testing.T) {
 			sep: '\x00',
 			expected: map[string]string{
 				"BASH_FUNC_scl%%": "() {  if [ \"$1\" = \"load\" -o \"$1\" = \"unload\" ]; then\n eval \"module $@\";\n else\n /usr/bin/scl \"$@\";\n fi\n}",
-				"PATH":            "/usr/bin",
+				pathValue:         probeTestUsrBin,
 			},
 		},
 		{
@@ -58,7 +65,7 @@ func TestParseProbeOutput(t *testing.T) {
 			sep:    '\x00',
 			expected: map[string]string{
 				"MULTILINE": "line1\nline2\nline3",
-				"SIMPLE":    "test",
+				"SIMPLE":    probeTestName,
 			},
 		},
 		{
@@ -73,7 +80,7 @@ func TestParseProbeOutput(t *testing.T) {
 			sep:    '\x00',
 			expected: map[string]string{
 				"EMPTY":    "",
-				"NONEMPTY": "value",
+				"NONEMPTY": probeTestValue,
 			},
 		},
 		{
@@ -81,7 +88,7 @@ func TestParseProbeOutput(t *testing.T) {
 			output: []byte("INVALID\x00VALID=value\x00"),
 			sep:    '\x00',
 			expected: map[string]string{
-				"VALID": "value",
+				"VALID": probeTestValue,
 			},
 		},
 		{
@@ -89,9 +96,9 @@ func TestParseProbeOutput(t *testing.T) {
 			output: []byte("PATH=/usr/bin\nHOME=/home/user\nUSER=testuser\n"),
 			sep:    '\n',
 			expected: map[string]string{
-				"PATH": "/usr/bin",
-				"HOME": "/home/user",
-				"USER": "testuser",
+				pathValue: probeTestUsrBin,
+				home:      "/home/user",
+				"USER":    "testuser",
 			},
 		},
 		{
@@ -110,7 +117,7 @@ func TestParseProbeOutput(t *testing.T) {
 			output: []byte("VAR==value\x00"),
 			sep:    '\x00',
 			expected: map[string]string{
-				"VAR": "=value",
+				probeTestVar: "=value",
 			},
 		},
 		{
@@ -143,7 +150,7 @@ func TestParseProbeOutput(t *testing.T) {
 			output: []byte("VAR=value\x00\x00\x00"),
 			sep:    '\x00',
 			expected: map[string]string{
-				"VAR": "value",
+				probeTestVar: probeTestValue,
 			},
 		},
 	}

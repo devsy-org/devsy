@@ -12,6 +12,10 @@ import (
 )
 
 const (
+	defaultValue = "default"
+)
+
+const (
 	secretAPIKey = "API_KEY"
 	secretToken  = "TOKEN"
 	secretTLSKey = "TLS_KEY"
@@ -21,17 +25,17 @@ const (
 
 func testConfig(bound ...string) *config.Config {
 	return &config.Config{
-		DefaultContext: "default",
+		DefaultContext: defaultValue,
 		Contexts: map[string]*config.ContextConfig{
-			"default": {Secrets: bound},
+			defaultValue: {Secrets: bound},
 		},
 	}
 }
 
 func testEnvConfig(bound ...string) *config.Config {
 	return &config.Config{
-		DefaultContext: "default",
-		Contexts:       map[string]*config.ContextConfig{"default": {EnvVars: bound}},
+		DefaultContext: defaultValue,
+		Contexts:       map[string]*config.ContextConfig{defaultValue: {EnvVars: bound}},
 	}
 }
 

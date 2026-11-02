@@ -21,6 +21,7 @@ const (
 	indent       = "  "
 	descIndent   = "      "
 	nameColumn   = 12
+	maxNameCol   = 28
 	defaultWidth = 80
 	maxWidth     = 100
 	minWidth     = 40
@@ -48,6 +49,7 @@ func render(cmd *cobra.Command, out io.Writer) {
 	var b strings.Builder
 	writeIntro(&b, cmd, width)
 	writeUsage(&b, cmd)
+	writeAliases(&b, cmd)
 	writeCommands(&b, cmd, width)
 	writeFlags(&b, cmd, width)
 	writeFooter(&b, cmd)
@@ -110,31 +112,100 @@ func writeUsage(b *strings.Builder, cmd *cobra.Command) {
 }
 
 func writeCommands(b *strings.Builder, cmd *cobra.Command, width int) {
-	var subs []*cobra.Command
-	for _, sub := range cmd.Commands() {
-		if sub.IsAvailableCommand() || sub.IsAdditionalHelpTopicCommand() {
-			subs = append(subs, sub)
-		}
-	}
+	subs := listedSubcommands(cmd)
 	if len(subs) == 0 {
 		return
 	}
 
 	section(b, "SUBCOMMANDS")
 	sort.Slice(subs, func(i, j int) bool { return subs[i].Name() < subs[j].Name() })
-	for _, sub := range subs {
-		name := sub.Name()
-		b.WriteString(indent)
-		b.WriteString(theme.Command.Render(name))
-		if sub.Short == "" {
-			b.WriteString("\n")
-			continue
+	labels, col := commandColumn(subs, width)
+	for i, sub := range subs {
+		writeCommandRow(b, commandRow{sub: sub, label: labels[i], col: col, width: width})
+	}
+	b.WriteString("\n")
+}
+
+func listedSubcommands(cmd *cobra.Command) []*cobra.Command {
+	var subs []*cobra.Command
+	for _, sub := range cmd.Commands() {
+		if sub.IsAvailableCommand() || sub.IsAdditionalHelpTopicCommand() {
+			subs = append(subs, sub)
 		}
-		// Pad from the plain name - the styled string carries escape bytes
-		// that would otherwise be counted as visible columns.
-		b.WriteString(strings.Repeat(" ", max(1, nameColumn-len(name))))
-		descCol := len(indent) + nameColumn
-		b.WriteString(wrapHanging(sub.Short, width, descCol))
+	}
+	return subs
+}
+
+// Keep the description column inside the terminal so wrapped text never
+// runs past the right edge.
+func commandColumn(subs []*cobra.Command, width int) ([]string, int) {
+	limit := clamp(width/3, nameColumn, maxNameCol)
+	labels := make([]string, len(subs))
+	col := nameColumn
+	for i, sub := range subs {
+		labels[i] = commandLabel(sub)
+		col = clamp(len(labels[i])+2, col, limit)
+	}
+	return labels, col
+}
+
+type commandRow struct {
+	sub   *cobra.Command
+	label string
+	col   int
+	width int
+}
+
+func writeCommandRow(b *strings.Builder, row commandRow) {
+	b.WriteString(indent)
+	b.WriteString(theme.Command.Render(row.sub.Name()))
+	if names := aliasNames(row.sub); len(names) > 0 {
+		b.WriteString(theme.Muted.Render(" (" + strings.Join(names, ", ") + ")"))
+	}
+	if row.sub.Short == "" {
+		b.WriteString("\n")
+		return
+	}
+	// Pad from the plain label - the styled string carries escape bytes
+	// that would otherwise be counted as visible columns.
+	if len(row.label) >= row.col {
+		// Label overflows the column: start the description on its own line.
+		b.WriteString("\n" + strings.Repeat(" ", len(indent)+row.col))
+	} else {
+		b.WriteString(strings.Repeat(" ", row.col-len(row.label)))
+	}
+	b.WriteString(wrapHanging(row.sub.Short, row.width, len(indent)+row.col))
+	b.WriteString("\n")
+}
+
+func aliasNames(cmd *cobra.Command) []string {
+	var names []string
+	for _, alias := range cmd.Aliases {
+		if alias != cmd.Name() {
+			names = append(names, alias)
+		}
+	}
+	return names
+}
+
+func commandLabel(cmd *cobra.Command) string {
+	label := cmd.Name()
+	if names := aliasNames(cmd); len(names) > 0 {
+		label += " (" + strings.Join(names, ", ") + ")"
+	}
+	return label
+}
+
+func writeAliases(b *strings.Builder, cmd *cobra.Command) {
+	names := aliasNames(cmd)
+	if len(names) == 0 || !cmd.HasParent() {
+		return
+	}
+	section(b, "ALIASES")
+	parent := cmd.Parent().CommandPath()
+	for _, name := range names {
+		b.WriteString(indent)
+		b.WriteString(parent + " " + theme.Command.Render(name))
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")

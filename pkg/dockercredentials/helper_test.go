@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const testRegistry = "docker.io"
+
 type HelperTestSuite struct {
 	suite.Suite
 }
@@ -28,18 +30,20 @@ func (s *HelperTestSuite) TestGet_Success() {
 		request := &Request{}
 		err := json.NewDecoder(r.Body).Decode(request)
 		s.NoError(err)
-		s.Equal("docker.io", request.ServerURL)
+		s.Equal(testRegistry, request.ServerURL)
 
-		_ = json.NewEncoder(w).Encode(&Credentials{
-			ServerURL: "docker.io",
-			Username:  "testuser",
-			Secret:    "testpass",
-		})
+		//nolint:gosec // test fixture credential, not a real secret
+		_ = json.NewEncoder(w).
+			Encode(&Credentials{ //nolint:gosec // test fixture credential, not a real secret
+				ServerURL: testRegistry,
+				Username:  "testuser",
+				Secret:    "testpass", //nolint:gosec // test fixture
+			})
 	}))
 	defer server.Close()
 
 	helper := NewHelper(parsePort(server.URL))
-	username, secret, err := helper.Get("docker.io")
+	username, secret, err := helper.Get(testRegistry)
 
 	s.NoError(err)
 	s.Equal("testuser", username)
@@ -53,7 +57,7 @@ func (s *HelperTestSuite) TestGet_EmptyCredentials() {
 	defer server.Close()
 
 	helper := NewHelper(parsePort(server.URL))
-	username, secret, err := helper.Get("docker.io")
+	username, secret, err := helper.Get(testRegistry)
 
 	s.NoError(err)
 	s.Empty(username)
@@ -67,7 +71,7 @@ func (s *HelperTestSuite) TestGet_ServerError() {
 	defer server.Close()
 
 	helper := NewHelper(parsePort(server.URL))
-	username, secret, err := helper.Get("docker.io")
+	username, secret, err := helper.Get(testRegistry)
 
 	s.NoError(err)
 	s.Empty(username)
@@ -90,13 +94,15 @@ func (s *HelperTestSuite) TestGet_WorkspaceServerFallback() {
 			request := &Request{}
 			err := json.NewDecoder(r.Body).Decode(request)
 			s.NoError(err)
-			s.Equal("docker.io", request.ServerURL)
+			s.Equal(testRegistry, request.ServerURL)
 
-			_ = json.NewEncoder(w).Encode(&Credentials{
-				ServerURL: "docker.io",
-				Username:  "workspaceuser",
-				Secret:    "workspacepass",
-			})
+			//nolint:gosec // test fixture credential, not a real secret
+			_ = json.NewEncoder(w).
+				Encode(&Credentials{ //nolint:gosec // test fixture credential, not a real secret
+					ServerURL: testRegistry,
+					Username:  "workspaceuser",
+					Secret:    "workspacepass", //nolint:gosec // test fixture
+				})
 		}),
 	)
 	defer workspaceServer.Close()
@@ -105,7 +111,7 @@ func (s *HelperTestSuite) TestGet_WorkspaceServerFallback() {
 	defer func() { _ = os.Unsetenv("DEVSY_WORKSPACE_CREDENTIALS_PORT") }()
 
 	helper := NewHelper(parsePort(primaryServer.URL))
-	username, secret, err := helper.Get("docker.io")
+	username, secret, err := helper.Get(testRegistry)
 
 	s.NoError(err)
 	s.Equal("workspaceuser", username)
@@ -123,8 +129,8 @@ func (s *HelperTestSuite) TestList_Success() {
 		s.Equal("", request.ServerURL)
 
 		_ = json.NewEncoder(w).Encode(&ListResponse{Registries: map[string]string{
-			"docker.io": "testuser",
-			"gcr.io":    "gcpuser",
+			testRegistry: "testuser",
+			"gcr.io":     "gcpuser",
 		}})
 	}))
 	defer server.Close()
@@ -134,7 +140,7 @@ func (s *HelperTestSuite) TestList_Success() {
 
 	s.NoError(err)
 	s.Len(list, 2)
-	s.Equal("testuser", list["docker.io"])
+	s.Equal("testuser", list[testRegistry])
 }
 
 func (s *HelperTestSuite) TestList_Empty() {
@@ -158,7 +164,7 @@ func (s *HelperTestSuite) TestAdd_NotSupported() {
 
 func (s *HelperTestSuite) TestDelete_NotSupported() {
 	helper := NewHelper(0)
-	err := helper.Delete("docker.io")
+	err := helper.Delete(testRegistry)
 	s.Error(err)
 }
 
@@ -167,11 +173,11 @@ func (s *HelperTestSuite) TestSanitizeServerURL() {
 		input    string
 		expected string
 	}{
-		{"https://docker.io", "docker.io"},
-		{"http://docker.io", "docker.io"},
-		{"docker.io/", "docker.io"},
-		{"https://docker.io/", "docker.io"},
-		{"docker.io", "docker.io"},
+		{"https://docker.io", testRegistry},
+		{"http://docker.io", testRegistry},
+		{"docker.io/", testRegistry},
+		{"https://docker.io/", testRegistry},
+		{testRegistry, testRegistry},
 	}
 
 	for _, tt := range tests {

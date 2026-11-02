@@ -282,21 +282,26 @@ func GetProviderSource(src ProviderSource, configName string) string {
 	case src.File != "":
 		return src.File
 	case src.Github != "":
-		// Canonicalize to github.com/<org>/<repo> so version helpers
-		// (classifyVersionSource, parseGitHubSourcePath) recognize it.
-		githubSource, githubTag := SplitSourceAndTag(src.Github)
-		if !strings.HasPrefix(githubSource, "github.com/") {
-			githubSource = "github.com/" + githubSource
-		}
-		_, rawTag := SplitSourceAndTag(src.Raw)
-		if rawTag != "" {
-			githubTag = rawTag
-		}
-		if githubTag != "" {
-			return githubSource + "@" + githubTag
-		}
-		return githubSource
+		return githubSourceString(src)
 	default:
 		return ""
 	}
+}
+
+// githubSourceString canonicalizes a GitHub source to github.com/<org>/<repo>
+// so version helpers (classifyVersionSource, parseGitHubSourcePath) recognize
+// it, and applies the tag from Raw when there is one.
+func githubSourceString(src ProviderSource) string {
+	githubSource, githubTag := SplitSourceAndTag(src.Github)
+	if !strings.HasPrefix(githubSource, "github.com/") {
+		githubSource = "github.com/" + githubSource
+	}
+	_, rawTag := SplitSourceAndTag(src.Raw)
+	if rawTag != "" {
+		githubTag = rawTag
+	}
+	if githubTag != "" {
+		return githubSource + "@" + githubTag
+	}
+	return githubSource
 }

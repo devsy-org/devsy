@@ -73,6 +73,7 @@ func getPodTemplate(manifest string) (*corev1.Pod, error) {
 			err,
 		)
 	}
+	//nolint:gosec // path is inside the kubeconfig directory
 	body, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf(

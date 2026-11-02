@@ -72,6 +72,7 @@ func readAgentWorkspaceInfo(
 
 func ParseAgentWorkspaceInfo(workspaceConfigFile string) (*provider2.AgentWorkspaceInfo, error) {
 	// read workspace config
+	//nolint:gosec // path is inside the agent layout
 	out, err := os.ReadFile(workspaceConfigFile)
 	if err != nil {
 		return nil, err
@@ -132,6 +133,17 @@ func ReadAgentWorkspaceInfo(
 		workspaceInfo.Agent.Driver,
 	)
 	return false, workspaceInfo, nil
+}
+
+// ReadExistingAgentWorkspaceInfo reads already persisted workspace info and
+// nothing else. Unlike ReadAgentWorkspaceInfo it never re-runs as root, probes
+// Docker or invokes sudo, so a read-only history view cannot prompt for
+// elevation or provision state. A missing or unreadable file is an error the
+// caller reports as unavailable.
+func ReadExistingAgentWorkspaceInfo(
+	agentFolder, context, id string,
+) (*provider2.AgentWorkspaceInfo, error) {
+	return readAgentWorkspaceInfo(agentFolder, context, id)
 }
 
 func logWorkspaceInfoReadError(err error, agentFolder, context, id string) {
@@ -317,6 +329,7 @@ func CreateWorkspaceBusyFile(folder string) {
 
 func HasWorkspaceBusyFile(folder string) bool {
 	filePath := filepath.Join(folder, config.WorkspaceBusyFile)
+	//nolint:gosec // paths come from the internal agent layout
 	_, err := os.Stat(filePath)
 	return err == nil
 }
@@ -391,7 +404,10 @@ func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 	args := []string{"--preserve-env", binary}
 	args = append(args, os.Args[1:]...)
 	log.Debugf("re-run as root: command=%s", strings.Join(args, " "))
-	cmd := exec.Command("sudo", args...)
+	//nolint:gosec // sudo args are built internally from fixed flags
+	cmd := exec.Command(
+		"sudo",
+		args...) //nolint:gosec // sudo args are built internally from fixed flags
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -497,17 +513,6 @@ func sshServerCommand(agentPath string, debug bool) string {
 	return shellescape.QuoteCommand(args)
 }
 
-func applyDockerEnv(cmd *exec.Cmd, envs map[string]string) {
-	if len(envs) == 0 {
-		return
-	}
-	newEnvs := os.Environ()
-	for k, v := range envs {
-		newEnvs = append(newEnvs, k+"="+v)
-	}
-	cmd.Env = newEnvs
-}
-
 func dockerReachable(dockerOverride string, envs map[string]string) (bool, error) {
 	docker := "docker"
 	if dockerOverride != "" {
@@ -534,18 +539,21 @@ func dockerReachable(dockerOverride string, envs map[string]string) (bool, error
 		Redactor: secrets.NewEnvironmentRedactor(redactionEnv),
 	})
 	if err != nil {
-		details := result.DiagnosticOutput()
-		if strings.Contains(strings.ToLower(details+" "+err.Error()), "permission denied") {
-			if dockerOverride == "" {
-				return true, nil
-			}
-		}
-
-		if details != "" {
-			return false, fmt.Errorf("%s ps: %s: %w", docker, details, err)
-		}
-		return false, fmt.Errorf("%s ps: %w", docker, err)
+		return dockerPSError(docker, dockerOverride, result.DiagnosticOutput(), err)
 	}
 
 	return false, nil
+}
+
+// dockerPSError classifies a failed `docker ps`: a permission error on the
+// default docker needs root to fix; anything else is returned to the caller.
+func dockerPSError(docker, dockerOverride, details string, err error) (bool, error) {
+	if strings.Contains(strings.ToLower(details+" "+err.Error()), "permission denied") &&
+		dockerOverride == "" {
+		return true, nil
+	}
+	if details != "" {
+		return false, fmt.Errorf("%s ps: %s: %w", docker, details, err)
+	}
+	return false, fmt.Errorf("%s ps: %w", docker, err)
 }

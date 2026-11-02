@@ -23,6 +23,8 @@ import (
 
 const listExtensionsArg = "--list-extensions"
 
+const remoteSSHExtension = "ms-vscode-remote.remote-ssh"
+
 const containersExtension = "ms-vscode-remote.remote-containers"
 
 const remoteFolderScheme = "vscode-remote"
@@ -48,25 +50,25 @@ var openConfigs = map[Flavor]openConfig{
 		scheme:       "vscode",
 		cliName:      "code",
 		macAppPath:   "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-		sshExtension: "ms-vscode-remote.remote-ssh",
+		sshExtension: remoteSSHExtension,
 	},
 	FlavorInsiders: {
 		scheme:       "vscode-insiders",
 		cliName:      "code-insiders",
 		macAppPath:   "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin/code",
-		sshExtension: "ms-vscode-remote.remote-ssh",
+		sshExtension: remoteSSHExtension,
 	},
 	FlavorCursor: {
 		scheme:       "cursor",
 		cliName:      "cursor",
 		macAppPath:   "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
-		sshExtension: "ms-vscode-remote.remote-ssh",
+		sshExtension: remoteSSHExtension,
 	},
 	FlavorPositron: {
-		scheme:       "positron",
-		cliName:      "positron",
+		scheme:       string(FlavorPositron),
+		cliName:      string(FlavorPositron),
 		macAppPath:   "/Applications/Positron.app/Contents/Resources/app/bin/positron",
-		sshExtension: "ms-vscode-remote.remote-ssh",
+		sshExtension: remoteSSHExtension,
 	},
 	FlavorCodium: {
 		scheme:       "codium",
@@ -78,13 +80,13 @@ var openConfigs = map[Flavor]openConfig{
 		scheme:       "windsurf",
 		cliName:      "windsurf",
 		macAppPath:   "/Applications/Windsurf.app/Contents/Resources/app/bin/windsurf",
-		sshExtension: "ms-vscode-remote.remote-ssh",
+		sshExtension: remoteSSHExtension,
 	},
 	FlavorAntigravity: {
 		scheme:       "antigravity",
 		cliName:      "agy",
 		macAppPath:   "/Applications/Antigravity.app/Contents/Resources/app/bin/agy",
-		sshExtension: "ms-vscode-remote.remote-ssh",
+		sshExtension: remoteSSHExtension,
 	},
 	FlavorBob: {
 		scheme:       "bob",

@@ -237,12 +237,7 @@ func listPlatformWorkspacesForProvider(
 	ctx context.Context,
 	params listPlatformWorkspacesForProviderParams,
 ) ([]*providerpkg.Workspace, error) {
-	instances, err := listPlatformInstances(ctx, listPlatformInstancesParams{
-		devsyConfig:    params.devsyConfig,
-		provider:       params.provider,
-		providerConfig: params.providerConfig,
-		owner:          params.owner,
-	})
+	instances, err := listPlatformInstances(ctx, listPlatformInstancesParams(params))
 	if err != nil {
 		if log.DebugEnabled() {
 			log.Warnf(

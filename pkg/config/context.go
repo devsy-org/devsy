@@ -7,27 +7,29 @@ import (
 )
 
 const (
-	ContextOptionSSHAddPrivateKeys          = "SSH_ADD_PRIVATE_KEYS"
-	ContextOptionGPGAgentForwarding         = "GPG_AGENT_FORWARDING"
-	ContextOptionGitSSHSignatureForwarding  = "GIT_SSH_SIGNATURE_FORWARDING"
+	ContextOptionSSHAddPrivateKeys         = "SSH_ADD_PRIVATE_KEYS"
+	ContextOptionGPGAgentForwarding        = "GPG_AGENT_FORWARDING"
+	ContextOptionGitSSHSignatureForwarding = "GIT_SSH_SIGNATURE_FORWARDING"
+	//nolint:gosec // option name, not a credential
 	ContextOptionSSHInjectDockerCredentials = "SSH_INJECT_DOCKER_CREDENTIALS"
-	ContextOptionSSHInjectGitCredentials    = "SSH_INJECT_GIT_CREDENTIALS"
-	ContextOptionGitHubCLIForwarding        = "SSH_INJECT_GITHUB_CREDENTIALS"
-	ContextOptionExitAfterTimeout           = "EXIT_AFTER_TIMEOUT"
-	ContextOptionTelemetry                  = "TELEMETRY"
-	ContextOptionAgentURL                   = "AGENT_URL"
-	ContextOptionDotfilesURL                = "DOTFILES_URL"
-	ContextOptionDotfilesScript             = "DOTFILES_SCRIPT"
-	ContextOptionSSHAgentForwarding         = "SSH_AGENT_FORWARDING"
-	ContextOptionSSHConfigPath              = "SSH_CONFIG_PATH"
-	ContextOptionSSHConfigIncludePath       = "SSH_CONFIG_INCLUDE_PATH"
-	ContextOptionAgentInjectTimeout         = "AGENT_INJECT_TIMEOUT"
-	ContextOptionRegistryCache              = "REGISTRY_CACHE"
-	ContextOptionSSHStrictHostKeyChecking   = "SSH_STRICT_HOST_KEY_CHECKING"
-	ContextOptionSSHTunnelMode              = "SSH_TUNNEL_MODE"
-	ContextOptionSecretsBackend             = "SECRETS_BACKEND"
-	ContextOptionSnapshotRegistry           = "SNAPSHOT_REGISTRY"
-	ContextOptionLogLevel                   = "LOG_LEVEL"
+	//nolint:gosec // option name, not a credential
+	ContextOptionSSHInjectGitCredentials  = "SSH_INJECT_GIT_CREDENTIALS"
+	ContextOptionGitHubCLIForwarding      = "SSH_INJECT_GITHUB_CREDENTIALS"
+	ContextOptionExitAfterTimeout         = "EXIT_AFTER_TIMEOUT"
+	ContextOptionTelemetry                = "TELEMETRY"
+	ContextOptionAgentURL                 = "AGENT_URL"
+	ContextOptionDotfilesURL              = "DOTFILES_URL"
+	ContextOptionDotfilesScript           = "DOTFILES_SCRIPT"
+	ContextOptionSSHAgentForwarding       = "SSH_AGENT_FORWARDING"
+	ContextOptionSSHConfigPath            = "SSH_CONFIG_PATH"
+	ContextOptionSSHConfigIncludePath     = "SSH_CONFIG_INCLUDE_PATH"
+	ContextOptionAgentInjectTimeout       = "AGENT_INJECT_TIMEOUT"
+	ContextOptionRegistryCache            = "REGISTRY_CACHE"
+	ContextOptionSSHStrictHostKeyChecking = "SSH_STRICT_HOST_KEY_CHECKING"
+	ContextOptionSSHTunnelMode            = "SSH_TUNNEL_MODE"
+	ContextOptionSecretsBackend           = "SECRETS_BACKEND"
+	ContextOptionSnapshotRegistry         = "SNAPSHOT_REGISTRY"
+	ContextOptionLogLevel                 = "LOG_LEVEL"
 )
 
 var ContextOptions = []ContextOption{
@@ -40,50 +42,51 @@ var ContextOptions = []ContextOption{
 	{
 		Name:        ContextOptionSSHAddPrivateKeys,
 		Description: "Specifies if Devsy should automatically add ssh-keys to the ssh-agent",
-		Default:     "true",
-		Enum:        []string{"true", "false"},
+		Default:     BoolTrue,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name:        ContextOptionExitAfterTimeout,
 		Description: "Specifies if Devsy should exit the process after the browser has been idle for a minute",
-		Default:     "true",
-		Enum:        []string{"true", "false"},
+		Default:     BoolTrue,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name:        ContextOptionGPGAgentForwarding,
 		Description: "Specifies if Devsy should do gpg-agent forwarding by default for ssh",
-		Default:     "false",
-		Enum:        []string{"true", "false"},
+		Default:     BoolFalse,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
-		Name:        ContextOptionGitSSHSignatureForwarding,
-		Description: "Specifies if Devsy should automatically detect ssh signature git setting and inject ssh signature helper",
-		Default:     "true",
-		Enum:        []string{"true", "false"},
+		Name: ContextOptionGitSSHSignatureForwarding,
+		Description: "Specifies if Devsy should automatically detect ssh signature git setting " +
+			"and inject ssh signature helper",
+		Default: BoolTrue,
+		Enum:    []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name:        ContextOptionSSHInjectDockerCredentials,
 		Description: "Specifies if Devsy should inject docker credentials into the workspace",
-		Default:     "true",
-		Enum:        []string{"true", "false"},
+		Default:     BoolTrue,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name:        ContextOptionSSHInjectGitCredentials,
 		Description: "Specifies if Devsy should inject git credentials into the workspace",
-		Default:     "true",
-		Enum:        []string{"true", "false"},
+		Default:     BoolTrue,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name:        ContextOptionSSHAgentForwarding,
 		Description: "Specifies if Devsy should do agent forwarding by default into the workspace",
-		Default:     "true",
-		Enum:        []string{"true", "false"},
+		Default:     BoolTrue,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name:        ContextOptionTelemetry,
 		Description: "Specifies if Devsy should send telemetry information",
-		Default:     "true",
-		Enum:        []string{"true", "false"},
+		Default:     BoolTrue,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name:        ContextOptionAgentURL,
@@ -102,8 +105,10 @@ var ContextOptions = []ContextOption{
 		Description: "Specifies the path where the ssh config should be written to",
 	},
 	{
-		Name:        ContextOptionSSHConfigIncludePath,
-		Description: "Specifies an alternate path where Devsy host entries should be written. Use this when your main SSH config is read-only (e.g., managed by Nix). Your main SSH config should have an Include directive pointing to this file.",
+		Name: ContextOptionSSHConfigIncludePath,
+		Description: "Specifies an alternate path where Devsy host entries should be written. " +
+			"Use this when your main SSH config is read-only (e.g., managed by Nix). " +
+			"Your main SSH config should have an Include directive pointing to this file.",
 	},
 	{
 		Name:        ContextOptionAgentInjectTimeout,
@@ -118,14 +123,14 @@ var ContextOptions = []ContextOption{
 	{
 		Name:        ContextOptionSSHStrictHostKeyChecking,
 		Description: "Enables strict ssh host key checking for all operations",
-		Default:     "false",
-		Enum:        []string{"true", "false"},
+		Default:     BoolFalse,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name:        ContextOptionSSHTunnelMode,
 		Description: "Use a local TCP tunnel instead of ProxyCommand for SSH connections",
-		Default:     "false",
-		Enum:        []string{"true", "false"},
+		Default:     BoolFalse,
+		Enum:        []string{BoolTrue, BoolFalse},
 	},
 	{
 		Name: ContextOptionSecretsBackend,

@@ -31,7 +31,8 @@ func NewKubernetesDriver(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
-	// Namespace can be defined in many ways, we first check the kube config, then the provider options KUBERNETES_NAMESPACE, then failing that the default "devsy"
+	// Namespace can be defined in many ways, we first check the kube config, then the provider options
+	// KUBERNETES_NAMESPACE, then failing that the default "devsy"
 	if namespace == "" || namespace == "default" || options.KubernetesNamespace != "" {
 		log.Debugf("Using Explicit Kubernetes Namespace")
 		namespace = options.KubernetesNamespace
@@ -164,6 +165,10 @@ func (k *KubernetesDriver) CommandDevContainer(
 	})
 }
 
+// SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
+// It only execs into the existing pod, so it never starts anything.
+func (k *KubernetesDriver) SupportsRequireRunning() bool { return true }
+
 // CommandContainerArgv execs argv in the workspace pod's dev container, streaming
 // the given stdin/stdout/stderr. Unlike CommandDevContainer it takes explicit
 // argv rather than wrapping the command in sh -c.
@@ -192,7 +197,11 @@ func (k *KubernetesDriver) GetDevContainerLogs(
 ) error {
 	workspaceID = getID(workspaceID)
 
-	logs, err := k.client.Logs(ctx, k.namespace, workspaceID, DevContainerName, true)
+	logs, err := k.client.Logs(ctx, logsTarget{
+		namespace: k.namespace,
+		pod:       workspaceID,
+		container: DevContainerName,
+	}, true)
 	if err != nil {
 		return fmt.Errorf("get logs: %w", err)
 	}
@@ -204,6 +213,12 @@ func (k *KubernetesDriver) GetDevContainerLogs(
 
 	return nil
 }
+
+func (d *KubernetesDriver) RequiresMountStreaming() bool { return true }
+
+func (d *KubernetesDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
+
+func (d *KubernetesDriver) RequiresWorkspaceChown() bool { return true }
 
 func (k *KubernetesDriver) getDevContainerPvc(
 	ctx context.Context,
@@ -288,9 +303,3 @@ func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspace
 
 	return nil
 }
-
-func (d *KubernetesDriver) RequiresMountStreaming() bool { return true }
-
-func (d *KubernetesDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
-
-func (d *KubernetesDriver) RequiresWorkspaceChown() bool { return true }

@@ -41,7 +41,7 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 	}
 	addCmd := &cobra.Command{
 		Use:   "add [name, GitHub link, URL or path]",
-		Short: "Adds a new provider to Devsy",
+		Short: "Add a provider",
 		Args:  cobra.MaximumNArgs(1),
 		PreRunE: func(cobraCommand *cobra.Command, args []string) error {
 			if cmd.FromExisting != "" {
@@ -95,7 +95,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 	reporter, err := newStatusReporter(
 		cmd.ResultFormat,
 		os.Stdout,
-		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.verbose(),
 		cmd.NoStatus,
 	)
 	if err != nil {
@@ -107,41 +107,17 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 	}
 	providerName = resolved.name
 
-	names := []string{providerName}
-	if cmd.FromExisting != "" && cmd.FromExisting != providerName {
-		names = append(names, cmd.FromExisting)
-		sort.Strings(names)
+	unlockProviders, err := cmd.lockProviders(devsyConfig, providerName)
+	if err != nil {
+		return err
 	}
-	for _, name := range names {
-		unlock, lockErr := provider.LockProviderNamed(devsyConfig.DefaultContext, name)
-		if lockErr != nil {
-			return lockErr
-		}
-		defer unlock()
-	}
+	defer unlockProviders()
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	var providerConfig *provider.ProviderConfig
-	var options []string
-	err = status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseInstallingProvider, Step: providerName},
-		func(ctx context.Context) error {
-			var resolveErr error
-			providerConfig, options, resolveErr = cmd.resolveProviderConfig(
-				ctx,
-				devsyConfig,
-				providerName,
-				resolved.raw,
-				resolved.source,
-			)
-			return resolveErr
-		},
-	)
+	providerConfig, options, err := cmd.install(ctx, reporter, devsyConfig, resolved)
 	if err != nil {
 		return err
 	}
@@ -158,9 +134,44 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		reporter,
 		status.Operation{Phase: status.PhaseReady, Step: providerConfig.Name},
 		func(ctx context.Context) error {
-			return cmd.useProvider(ctx, devsyConfig, providerConfig, options, reporter)
+			return cmd.useProvider(
+				ctx,
+				devsyConfig,
+				installedProvider{config: providerConfig, options: options},
+				reporter,
+			)
 		},
 	)
+}
+
+func (cmd *AddCmd) install(
+	ctx context.Context,
+	reporter status.Reporter,
+	devsyConfig *config.Config,
+	resolved resolvedAddSource,
+) (*provider.ProviderConfig, []string, error) {
+	var providerConfig *provider.ProviderConfig
+	var options []string
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseInstallingProvider, Step: resolved.name},
+		func(ctx context.Context) error {
+			var resolveErr error
+			providerConfig, options, resolveErr = cmd.resolveProviderConfig(
+				ctx,
+				devsyConfig,
+				resolved,
+			)
+			return resolveErr
+		},
+	)
+
+	return providerConfig, options, err
+}
+
+func (cmd *AddCmd) verbose() bool {
+	return cmd.Verbosity > 0 || cmd.Debug
 }
 
 type resolvedAddSource struct {
@@ -217,10 +228,9 @@ func validateOptionalProviderName(providerName string) error {
 func (cmd *AddCmd) resolveProviderConfig(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	providerName string,
-	raw []byte,
-	source *provider.ProviderSource,
+	resolved resolvedAddSource,
 ) (*provider.ProviderConfig, []string, error) {
+	providerName, raw, source := resolved.name, resolved.raw, resolved.source
 	if cmd.FromExisting != "" {
 		if devsyConfig.Current() == nil ||
 			devsyConfig.Current().Providers[cmd.FromExisting] == nil {
@@ -255,13 +265,19 @@ func (cmd *AddCmd) resolveProviderConfig(
 	return c, cmd.Options, nil
 }
 
+// installedProvider is a provider that was installed, with the options it used.
+type installedProvider struct {
+	config  *provider.ProviderConfig
+	options []string
+}
+
 func (cmd *AddCmd) useProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	providerConfig *provider.ProviderConfig,
-	options []string,
+	installed installedProvider,
 	reporter status.Reporter,
 ) error {
+	providerConfig, options := installed.config, installed.options
 	configureErr := ConfigureProvider(ctx, ProviderOptionsConfig{
 		Provider:           providerConfig,
 		ContextName:        devsyConfig.DefaultContext,
@@ -276,7 +292,12 @@ func (cmd *AddCmd) useProvider(
 			return err
 		}
 
-		err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true)
+		err = DeleteProvider(
+			ctx,
+			devsyConfig,
+			providerConfig.Name,
+			DeleteOptions{IgnoreNotFound: true, Force: true},
+		)
 		if err != nil {
 			return fmt.Errorf("delete provider: %w", err)
 		}
@@ -327,4 +348,29 @@ func getUserOption(allOptions []string, optionKey string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// lockProviders locks the new provider and the one it copies from, in name
+// order. The returned function releases every lock acquired so far.
+func (cmd *AddCmd) lockProviders(devsyConfig *config.Config, providerName string) (func(), error) {
+	names := []string{providerName}
+	if cmd.FromExisting != "" && cmd.FromExisting != providerName {
+		names = append(names, cmd.FromExisting)
+		sort.Strings(names)
+	}
+	var unlocks []func()
+	release := func() {
+		for _, unlock := range unlocks {
+			unlock()
+		}
+	}
+	for _, name := range names {
+		unlock, err := provider.LockProviderNamed(devsyConfig.DefaultContext, name)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	return release, nil
 }

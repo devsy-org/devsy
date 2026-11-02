@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/netstat"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 type Option func(*tunnelServer) *tunnelServer
@@ -111,6 +112,15 @@ func WithStatusReporter(reporter status.Reporter) Option {
 		if reporter != nil {
 			s.statusReporter = reporter
 		}
+		return s
+	}
+}
+
+// WithSetupLogSink accepts AppendSetupLogs batches for the sink's expected run.
+// A nil sink leaves the RPC unimplemented, which senders treat as an old peer.
+func WithSetupLogSink(sink *workspacelogs.Sink) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.setupLogSink = sink
 		return s
 	}
 }

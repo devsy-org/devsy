@@ -15,6 +15,10 @@ import (
 )
 
 const (
+	hello = "hello"
+)
+
+const (
 	cmdWorkspace        = "workspace"
 	execCommand         = "exec"
 	workspaceFolderFlag = "--workspace-folder"
@@ -42,10 +46,10 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				cmdWorkspace, execCommand,
 				workspaceFolderFlag, tempDir,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal("hello"))
+			gomega.Expect(stdout).To(gomega.Equal(hello))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should pass remote-env to the container",
@@ -180,10 +184,10 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				cmdWorkspace, execCommand,
 				wsName,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal("hello"))
+			gomega.Expect(stdout).To(gomega.Equal(hello))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should error when both name and --workspace-folder are given",
@@ -201,7 +205,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 				cmdWorkspace, execCommand,
 				wsName,
 				workspaceFolderFlag, tempDir,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectError(err)
 			gomega.Expect(stderr).To(gomega.ContainSubstring(
@@ -244,10 +248,10 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 				cmdWorkspace, execCommand,
 				"--result-format", "json",
 				workspaceFolderFlag, tempDir,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal("hello"))
+			gomega.Expect(stdout).To(gomega.Equal(hello))
 
 			lines := strings.Split(strings.TrimSpace(stderr), "\n")
 			gomega.Expect(lines).NotTo(gomega.BeEmpty())
@@ -271,10 +275,10 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 				cmdWorkspace, execCommand,
 				"--result-format", "plain",
 				workspaceFolderFlag, tempDir,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal("hello"))
+			gomega.Expect(stdout).To(gomega.Equal(hello))
 
 			for line := range strings.SplitSeq(stderr, "\n") {
 				var envelope config.ResultEnvelope

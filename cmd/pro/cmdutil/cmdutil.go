@@ -110,7 +110,14 @@ func AddHostFlag(c *cobra.Command, dest *string, opts ...HostFlagOption) {
 		toComplete string,
 	) ([]string, cobra.ShellCompDirective) {
 		return completion.GetPlatformHostSuggestions(
-			rootCmd, gf.Context, gf.Provider, args, toComplete, gf.Owner,
+			rootCmd,
+			completion.SuggestionRequest{
+				Context:    gf.Context,
+				Provider:   gf.Provider,
+				Args:       args,
+				ToComplete: toComplete,
+				Owner:      gf.Owner,
+			},
 		)
 	})
 }

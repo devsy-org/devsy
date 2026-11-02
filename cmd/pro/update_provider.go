@@ -42,10 +42,10 @@ func NewUpdateProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("new version is missing")
+	newVersion, err := newVersionArg(args)
+	if err != nil {
+		return err
 	}
-	newVersion := args[0]
 
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
@@ -64,18 +64,28 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 	defer unlock()
-	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
-	if err != nil {
+	devsyConfig, provider, err = cmd.reloadProvider(ctx, devsyConfig.DefaultContext)
+	if err != nil || provider == nil {
 		return err
 	}
-	provider, err = workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host)
-	if err != nil {
-		return fmt.Errorf("reload provider: %w", err)
-	}
-	if provider.Source.Internal {
-		return nil
+
+	return cmd.applyVersion(ctx, devsyConfig, provider, newVersion)
+}
+
+func newVersionArg(args []string) (string, error) {
+	if len(args) != 1 {
+		return "", fmt.Errorf("new version is missing")
 	}
 
+	return args[0], nil
+}
+
+func (cmd *UpdateProviderCmd) applyVersion(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	provider *provider2.ProviderConfig,
+	newVersion string,
+) error {
 	providerSource, err := resolveNewProviderSource(devsyConfig, provider.Name, newVersion)
 	if err != nil {
 		return err
@@ -104,6 +114,27 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	return nil
+}
+
+// reloadProvider reads the config and provider again under the provider lock.
+// A nil provider with a nil error means the provider is internal and needs no
+// update.
+func (cmd *UpdateProviderCmd) reloadProvider(
+	ctx context.Context,
+	contextName string,
+) (*config.Config, *provider2.ProviderConfig, error) {
+	devsyConfig, err := config.LoadConfig(contextName, cmd.Provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reload provider: %w", err)
+	}
+	if provider.Source.Internal {
+		return nil, nil, nil
+	}
+	return devsyConfig, provider, nil
 }
 
 func resolveNewProviderSource(

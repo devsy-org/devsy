@@ -44,12 +44,6 @@ func (t *Time) DeepCopyInto(out *Time) {
 	*out = *t
 }
 
-// Date returns the Time corresponding to the supplied parameters
-// by wrapping time.Date.
-func Date(year int, month time.Month, day, hour, min, sec, nsec int, loc *time.Location) Time {
-	return Time{time.Date(year, month, day, hour, min, sec, nsec, loc)}
-}
-
 // Now returns the current local time.
 func Now() Time {
 	return Time{time.Now()}

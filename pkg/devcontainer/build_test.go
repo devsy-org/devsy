@@ -6,6 +6,10 @@ import (
 	"gotest.tools/assert"
 )
 
+const (
+	workspacesTest = "/workspaces/test"
+)
+
 func TestFallbackContainerContextAndDockerfile(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -22,7 +26,7 @@ func TestFallbackContainerContextAndDockerfile(t *testing.T) {
 			name: "simple",
 
 			localFolder:  "/my/local/folder",
-			remoteFolder: "/workspaces/test",
+			remoteFolder: workspacesTest,
 			context:      "/my/local/folder/context",
 			dockerfile:   "/my/local/folder/Dockerfile",
 
@@ -33,11 +37,11 @@ func TestFallbackContainerContextAndDockerfile(t *testing.T) {
 			name: "windows",
 
 			localFolder:  "C:/my/local/folder",
-			remoteFolder: "/workspaces/test",
+			remoteFolder: workspacesTest,
 			context:      "C:/my/local/folder",
 			dockerfile:   "C:/my/local/folder/Dockerfile",
 
-			expectedContext:    "/workspaces/test",
+			expectedContext:    workspacesTest,
 			expectedDockerfile: "/workspaces/test/Dockerfile",
 		},
 	}

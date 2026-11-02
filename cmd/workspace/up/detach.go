@@ -40,18 +40,23 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 	if err := cmd.checkDetachedPresentation(cfg, workspaceID); err != nil {
 		return err
 	}
+	runID := provisionalRun(cfg, workspaceID)
 	t, err := store.CreateLaunch(task.CreateOptions{
 		Command:     "up",
 		WorkspaceID: workspaceID,
+		RunID:       runID,
 	})
 	if err != nil {
+		linkRunToTask(runID, "", err)
 		return err
 	}
+	linkRunToTask(runID, t.ID(), nil)
 
 	if err := launchDetached(t, cmd.detachedInvocationEnvironment()); err != nil {
+		linkRunToTask(runID, t.ID(), err)
 		return errors.Join(fmt.Errorf("launch detached up: %w", err), t.FailLaunch(err))
 	}
-	return cmd.renderDetachedTask(t)
+	return cmd.renderDetachedTask(t, runID)
 }
 
 func (cmd *UpCmd) checkDetachedPresentation(cfg *config.Config, workspaceID string) error {
@@ -60,21 +65,29 @@ func (cmd *UpCmd) checkDetachedPresentation(cfg *config.Config, workspaceID stri
 	}
 	ctx := context.Background()
 	existed := workspaceID == "" ||
-		workspace2.Exists(ctx, cfg, nil, workspaceID, cmd.Owner) != ""
+		workspace2.Exists(
+			ctx,
+			cfg,
+			workspace2.LookupOptions{ID: workspaceID, Owner: cmd.Owner},
+		) != ""
 	return cmd.checkPresentation(cfg, workspaceID, existed)
 }
 
-func (cmd *UpCmd) renderDetachedTask(t *task.Task) error {
+func (cmd *UpCmd) renderDetachedTask(t *task.Task, runID string) error {
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
 		return err
 	}
 	if mode == output.ModeJSON {
-		return config2.WriteTaskJSON(cmd.stdout(), t.ID())
+		return config2.WriteTaskRunJSON(cmd.stdout(), t.ID(), runID)
 	}
 	_, err = fmt.Fprintf(cmd.stdout(),
 		"Submitted task %s. Poll with 'workspace task get %s' or 'workspace task logs %s -f'.\n",
 		t.ID(), t.ID(), t.ID())
+	if err == nil && runID != "" {
+		_, err = fmt.Fprintf(cmd.stdout(),
+			"Build and lifecycle output: 'workspace logs --source setup --run %s'.\n", runID)
+	}
 	return err
 }
 
@@ -257,14 +270,19 @@ func advanceTaskLaunch(
 		traceDetachedAdmission("checking launcher")
 		return false, err
 	}
-	if state.PID != 0 && !state.WorkerReady {
-		if err := t.WorkerLaunchReady(os.Getpid()); err != nil {
-			traceDetachedAdmission("acknowledging worker")
-			return false, err
-		}
-		return false, nil
+	return false, acknowledgeWorkerLaunch(t, state)
+}
+
+func acknowledgeWorkerLaunch(t *task.Task, state *task.State) error {
+	if state.PID == 0 || state.WorkerReady {
+		return nil
 	}
-	return false, nil
+	if err := t.WorkerLaunchReady(os.Getpid()); err != nil {
+		traceDetachedAdmission("acknowledging worker")
+		return err
+	}
+
+	return nil
 }
 
 func traceDetachedAdmission(stage string) {

@@ -17,6 +17,12 @@ import type {
 } from "$lib/types/index.js"
 import type { LinuxDesktopIntegrationStatus } from "$shared/linux-desktop-integration.js"
 import { workspaceLabel } from "$shared/workspace-label.js"
+import type {
+  LogIndexResponse,
+  LogReadResponse,
+  LogRecord,
+  LogRunSummary,
+} from "$shared/workspace-logs.js"
 import {
   normalizeDisplayLabel,
   SSH_HOST_SUFFIX,
@@ -31,6 +37,265 @@ import {
 const now = new Date().toISOString()
 const hourAgo = new Date(Date.now() - 3600_000).toISOString()
 const dayAgo = new Date(Date.now() - 86400_000).toISOString()
+
+// ── Retained build and lifecycle history ─────────────────────────────
+
+export const MOCK_RUN_FAILED = "11111111-1111-4111-8111-111111111111"
+export const MOCK_RUN_OK = "22222222-2222-4222-8222-222222222222"
+export const MOCK_RUN_PARTIAL = "33333333-3333-4333-8333-333333333333"
+export const MOCK_RUN_REMOVED = "44444444-4444-4444-8444-444444444444"
+export const MOCK_INV_POST_CREATE_FAILED =
+  "a1111111-0000-4000-8000-000000000001"
+export const MOCK_INV_POST_START_SKIPPED =
+  "a1111111-0000-4000-8000-000000000002"
+export const MOCK_INV_SILENT_OK = "a2222222-0000-4000-8000-000000000001"
+export const MOCK_INV_POST_CREATE_OK = "a2222222-0000-4000-8000-000000000002"
+export const MOCK_INV_DEFERRED = "a2222222-0000-4000-8000-000000000003"
+export const MOCK_INV_UNCAPTURED = "a3333333-0000-4000-8000-000000000001"
+export const MOCK_INV_REMOVED = "a4444444-0000-4000-8000-000000000001"
+
+const MOCK_PRODUCER = "b0000000-0000-4000-8000-000000000001"
+const MOCK_PRODUCER_LATE = "b0000000-0000-4000-8000-000000000002"
+
+function runSummary(
+  runId: string,
+  patch: Partial<LogRunSummary>,
+  minutesAgo: number,
+): LogRunSummary {
+  return {
+    runId,
+    context: "default",
+    workspaceUid: "ws-001",
+    workspaceIdAtStart: "my-project",
+    command: "up",
+    createdAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    commandState: "succeeded",
+    captureState: "complete",
+    ...patch,
+  }
+}
+
+const MOCK_RUNS: LogRunSummary[] = [
+  runSummary(MOCK_RUN_FAILED, { commandState: "failed" }, 5),
+  runSummary(MOCK_RUN_OK, {}, 90),
+  runSummary(
+    MOCK_RUN_PARTIAL,
+    { captureState: "partial", conditions: ["source_unavailable"] },
+    600,
+  ),
+  runSummary(
+    MOCK_RUN_REMOVED,
+    {
+      workspaceUid: "ws-gone",
+      workspaceIdAtStart: "deleted-project",
+      commandState: "failed",
+    },
+    2000,
+  ),
+]
+
+type RecordPatch = Partial<LogRecord> & Pick<LogRecord, "kind">
+
+function builder(runId: string, producerId = MOCK_PRODUCER) {
+  let sequence = 0
+  return (patch: RecordPatch): LogRecord => ({
+    schemaVersion: 1,
+    runId,
+    producerId,
+    sequence: ++sequence,
+    time: new Date().toISOString(),
+    ...patch,
+  })
+}
+
+function failedRunRecords(): LogRecord[] {
+  const r = builder(MOCK_RUN_FAILED)
+  const inv = MOCK_INV_POST_CREATE_FAILED
+  const base = {
+    invocationId: inv,
+    hook: "postCreateCommand",
+    location: "container" as const,
+  }
+  return [
+    r({ kind: "invocation", ...base, phase: "lifecycle", state: "running" }),
+    r({
+      kind: "output",
+      invocationId: inv,
+      stream: "stdout",
+      text: "npm install\n",
+      bytes: 12,
+    }),
+    r({
+      kind: "output",
+      invocationId: inv,
+      stream: "stderr",
+      text: '{"level":"error","msg":"not a log line"}\n<b>literal</b>\n',
+      bytes: 52,
+    }),
+    r({
+      kind: "invocation",
+      ...base,
+      phase: "lifecycle",
+      state: "failed",
+      exitCode: 1,
+      durationMillis: 2300,
+    }),
+    r({
+      kind: "invocation",
+      invocationId: MOCK_INV_POST_START_SKIPPED,
+      hook: "postStartCommand",
+      phase: "lifecycle",
+      state: "skipped",
+      reason: "already_attempted",
+    }),
+  ]
+}
+
+function okRunRecords(): LogRecord[] {
+  const r = builder(MOCK_RUN_OK)
+  const late = builder(MOCK_RUN_OK, MOCK_PRODUCER_LATE)
+  return [
+    r({
+      kind: "invocation",
+      invocationId: MOCK_INV_SILENT_OK,
+      hook: "onCreateCommand",
+      phase: "lifecycle",
+      state: "succeeded",
+      exitCode: 0,
+      durationMillis: 40,
+    }),
+    r({
+      kind: "invocation",
+      invocationId: MOCK_INV_POST_CREATE_OK,
+      hook: "postCreateCommand",
+      phase: "lifecycle",
+      state: "running",
+    }),
+    r({
+      kind: "output",
+      invocationId: MOCK_INV_POST_CREATE_OK,
+      stream: "stdout",
+      text: "installed 12 packages\n\n  indented line\nno trailing newline",
+      bytes: 54,
+    }),
+    r({
+      kind: "invocation",
+      invocationId: MOCK_INV_POST_CREATE_OK,
+      hook: "postCreateCommand",
+      phase: "lifecycle",
+      state: "succeeded",
+      exitCode: 0,
+      durationMillis: 1800,
+    }),
+    late({
+      kind: "invocation",
+      invocationId: MOCK_INV_DEFERRED,
+      hook: "postAttachCommand",
+      phase: "lifecycle",
+      state: "deferred",
+    }),
+  ]
+}
+
+function partialRunRecords(): LogRecord[] {
+  const r = builder(MOCK_RUN_PARTIAL)
+  return [
+    r({
+      kind: "invocation",
+      invocationId: MOCK_INV_UNCAPTURED,
+      hook: "postCreateCommand",
+      phase: "lifecycle",
+      state: "succeeded",
+      exitCode: 0,
+    }),
+    r({
+      kind: "capture",
+      condition: "source_unavailable",
+      detail: "container removed",
+    }),
+  ]
+}
+
+function removedRunRecords(): LogRecord[] {
+  const r = builder(MOCK_RUN_REMOVED)
+  return [
+    r({
+      kind: "invocation",
+      invocationId: MOCK_INV_REMOVED,
+      hook: "postCreateCommand",
+      phase: "lifecycle",
+      state: "failed",
+      exitCode: 2,
+    }),
+    r({
+      kind: "output",
+      invocationId: MOCK_INV_REMOVED,
+      stream: "stderr",
+      text: "build failed\n",
+      bytes: 13,
+    }),
+  ]
+}
+
+const MOCK_RUN_RECORDS: Record<string, () => LogRecord[]> = {
+  [MOCK_RUN_FAILED]: failedRunRecords,
+  [MOCK_RUN_OK]: okRunRecords,
+  [MOCK_RUN_PARTIAL]: partialRunRecords,
+  [MOCK_RUN_REMOVED]: removedRunRecords,
+}
+
+export function mockLogRuns(args: Record<string, unknown>): LogIndexResponse {
+  const uid = args.workspaceUid as string | undefined
+  const runs = MOCK_RUNS.filter(
+    (run) =>
+      run.context === args.context &&
+      (!uid || run.workspaceUid === uid) &&
+      (args.workspaceId ? run.workspaceUid !== "ws-gone" : true),
+  )
+  return { schemaVersion: 1, runs, hasMore: false }
+}
+
+export function mockLogRunRead(args: Record<string, unknown>): LogReadResponse {
+  const run = MOCK_RUNS.find((candidate) => candidate.runId === args.runId)
+  const records = MOCK_RUN_RECORDS[args.runId as string]
+  if (!run || !records) throw new Error("run not found")
+  const hook = args.hook as string | undefined
+  const invocationId = args.invocationId as string | undefined
+  const all = records()
+  const wanted = new Set(
+    all
+      .filter(
+        (r) =>
+          r.kind === "invocation" &&
+          (!hook || r.hook === hook) &&
+          (!invocationId || r.invocationId === invocationId),
+      )
+      .map((r) => r.invocationId),
+  )
+  if (invocationId && wanted.size === 0) throw new Error("invocation not found")
+  const filtered =
+    hook || invocationId
+      ? all.filter((r) => r.kind === "capture" || wanted.has(r.invocationId))
+      : all
+  const complete = run.captureState === "complete" && run.runId !== MOCK_RUN_OK
+  return {
+    schemaVersion: 1,
+    run,
+    records: filtered,
+    hasMore: false,
+    complete,
+    availability:
+      run.captureState === "partial"
+        ? [
+            {
+              producerId: MOCK_PRODUCER,
+              available: false,
+              reason: "source_unavailable",
+            },
+          ]
+        : undefined,
+  }
+}
 
 const WORKSPACES: Workspace[] = [
   {
@@ -452,6 +717,11 @@ const COMMANDS: Record<string, Handler> = {
   workspace_logs_list: () => LOG_ENTRIES,
   workspace_log_read: () =>
     "2026-04-16 10:00:01 Starting workspace...\n2026-04-16 10:00:03 Pulling image...\n2026-04-16 10:00:15 Container created\n2026-04-16 10:00:16 Workspace ready\n",
+
+  workspace_log_runs: (args) => mockLogRuns(args),
+  workspace_log_run_read: (args) => mockLogRunRead(args),
+  workspace_log_run_cancel: () => undefined,
+  workspace_log_run_export: () => ({ status: "canceled" }),
 
   // SSH Keys
   ssh_key_list: () => SSH_KEYS,

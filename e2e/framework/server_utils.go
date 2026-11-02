@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 )
 
+const (
+	value0000 = "0.0.0.0"
+)
+
 // ServeAgent will be a simple http file server that will expose our
 // freshly compiled devsy binaries to be downloaded as agents.
 // useful for non-linux runners.
@@ -54,14 +58,14 @@ func getIP() string {
 	// Get a list of network interfaces
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return "0.0.0.0"
+		return value0000
 	}
 
 	// Iterate over each network interface
 	for _, iface := range ifaces {
 		addrs, err := iface.Addrs()
 		if err != nil {
-			return "0.0.0.0"
+			return value0000
 		}
 
 		for _, addr := range addrs {
@@ -71,7 +75,7 @@ func getIP() string {
 		}
 	}
 
-	return "0.0.0.0"
+	return value0000
 }
 
 func matchIPv4(addr net.Addr) string {

@@ -101,7 +101,7 @@ func NewDeferredHooksCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run executes the deferred lifecycle hooks.
-func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
+func (cmd *DeferredHooksCmd) Run(ctx context.Context) (retErr error) {
 	decompressed, err := compress.Decompress(cmd.SetupInfo)
 	if err != nil {
 		return err
@@ -118,6 +118,11 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 	}
 	defer stopActivity()
 
+	secretsEnv := secretsEnvFromEnvironment()
+	session := startWorkerRun(secretsEnv)
+	ctx = session.Context(ctx)
+	defer func() { session.Finish(retErr, false) }()
+
 	log.Debugf("running deferred lifecycle hooks")
 	deferred, err := setup.RunPreAttachHooks(ctx, setupInfo, setup.PreAttachOptions{
 		Prebuild: cmd.Prebuild,
@@ -126,7 +131,7 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 			InstallScript: cmd.DotfilesScript,
 			RemoteUser:    config.GetRemoteUser(setupInfo),
 		},
-		SecretsEnv:   secretsEnvFromEnvironment(),
+		SecretsEnv:   secretsEnv,
 		SecretsMount: setup.MountSecretsForRedaction(),
 	})
 	if err != nil {

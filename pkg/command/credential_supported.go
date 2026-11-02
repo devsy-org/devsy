@@ -17,12 +17,12 @@ func ForUser(cmd *exec.Cmd, userName string) error {
 		return fmt.Errorf("failed to look up user %s: %w", userName, err)
 	}
 
-	uid, err := strconv.Atoi(u.Uid)
+	uid, err := strconv.ParseUint(u.Uid, 10, 32)
 	if err != nil {
 		return fmt.Errorf("invalid UID %s: %w", u.Uid, err)
 	}
 
-	gid, err := strconv.Atoi(u.Gid)
+	gid, err := strconv.ParseUint(u.Gid, 10, 32)
 	if err != nil {
 		return fmt.Errorf("invalid GID %s: %w", u.Gid, err)
 	}

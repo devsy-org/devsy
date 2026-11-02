@@ -94,7 +94,7 @@ func TestImageDetailsScope(t *testing.T) {
 		defaultSelection bool
 	}{
 		{
-			"build",
+			overlayBuildField,
 			func(c *config.DevContainerConfig, _ *UpOptions) { c.Build = &config.ConfigBuildOptions{} },
 			false,
 		},

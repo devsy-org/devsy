@@ -165,6 +165,7 @@ func getUserShell(userName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	//nolint:gosec // fixed binary; username resolved from the local user database
 	output, err := exec.Command("getent", "passwd", currentUser.Username).Output()
 	if err != nil {
 		return "", err

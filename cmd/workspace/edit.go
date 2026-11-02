@@ -70,11 +70,13 @@ clear either override. Label edits never touch the SSH config.`,
 			if len(args) == 0 {
 				return completion.GetWorkspaceSuggestions(
 					rootCmd,
-					cmd.Context,
-					cmd.Provider,
-					args,
-					toComplete,
-					cmd.Owner,
+					completion.SuggestionRequest{
+						Context:    cmd.Context,
+						Provider:   cmd.Provider,
+						Args:       args,
+						ToComplete: toComplete,
+						Owner:      cmd.Owner,
+					},
 				)
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp

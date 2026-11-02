@@ -3,16 +3,20 @@ package apple
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/apple"
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 func (d *appleDriver) BuildDevContainer(
@@ -84,6 +88,7 @@ func (d *appleDriver) resolveExistingImage(
 	}
 
 	log.Debugf("found existing local image %s", imageName)
+	recordImageReused(ctx)
 	return &config.BuildInfo{
 		ImageDetails:  imageDetails,
 		ImageMetadata: req.ExtendedBuildInfo.MetadataConfig,
@@ -107,8 +112,14 @@ func (d *appleDriver) executeBuild(
 	defer func() { _ = writer.Close() }()
 	stderrBuf := &bytes.Buffer{}
 
-	streams := apple.Streams{Stdout: writer, Stderr: io.MultiWriter(writer, stderrBuf)}
-	if err := d.Apple.Run(ctx, args, streams); err != nil {
+	run := startBuildRun(ctx, platform)
+	streams := apple.Streams{
+		Stdout: run.tee(writer, workspacelogs.StreamStdout),
+		Stderr: io.MultiWriter(run.tee(writer, workspacelogs.StreamStderr), stderrBuf),
+	}
+	err := d.Apple.Run(ctx, args, streams)
+	run.finish(ctx, err)
+	if err != nil {
 		if stderrBuf.Len() > 0 {
 			return fmt.Errorf(
 				"failed to build image: %w: %s",
@@ -161,4 +172,85 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+const buildPhase = "build"
+
+// buildRun records one image build as an invocation in the run found in the
+// context. A nil buildRun does nothing.
+type buildRun struct {
+	rec     *workspacelogs.Recorder
+	id      string
+	started time.Time
+	writers []io.Closer
+}
+
+func buildKey(platform string) string {
+	if platform == "" {
+		return "apple"
+	}
+
+	return "apple " + platform
+}
+
+func startBuildRun(ctx context.Context, platform string) *buildRun {
+	rec := workspacelogs.RecorderFrom(ctx)
+	if rec == nil {
+		return nil
+	}
+	b := &buildRun{rec: rec, id: workspacelogs.NewID(), started: time.Now()}
+	rec.Invocation(workspacelogs.Invocation{
+		ID: b.id, Phase: buildPhase, Key: buildKey(platform),
+		State: workspacelogs.InvocationRunning,
+	})
+
+	return b
+}
+
+func recordImageReused(ctx context.Context) {
+	rec := workspacelogs.RecorderFrom(ctx)
+	if rec == nil {
+		return
+	}
+	rec.Invocation(workspacelogs.Invocation{
+		ID: workspacelogs.NewID(), Phase: buildPhase, Key: "apple",
+		State: workspacelogs.InvocationSkipped, Reason: "image_reused",
+	})
+}
+
+// tee records redacted output before forwarding to dst, so the text is kept
+// regardless of the logger level.
+func (b *buildRun) tee(dst io.Writer, stream workspacelogs.Stream) io.Writer {
+	if b == nil {
+		return dst
+	}
+	w := b.rec.Writer(b.id, stream)
+	b.writers = append(b.writers, w)
+
+	return io.MultiWriter(w, dst)
+}
+
+// finish flushes every writer, then records the terminal state for err.
+func (b *buildRun) finish(ctx context.Context, err error) {
+	if b == nil {
+		return
+	}
+	for _, w := range b.writers {
+		_ = w.Close()
+	}
+	inv := workspacelogs.Invocation{
+		ID: b.id, Phase: buildPhase, State: workspacelogs.InvocationSucceeded,
+		Duration: time.Since(b.started),
+	}
+	if err != nil {
+		inv.State = workspacelogs.InvocationFailed
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			inv.State = workspacelogs.InvocationCanceled
+		}
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			code := exitErr.ExitCode()
+			inv.ExitCode = &code
+		}
+	}
+	b.rec.Invocation(inv)
 }

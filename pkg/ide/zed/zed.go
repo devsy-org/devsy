@@ -14,11 +14,11 @@ import (
 func Open(
 	ctx context.Context,
 	values map[string]config.OptionValue,
-	userName, workspaceFolder, sshHost string,
+	target Target,
 ) error {
 	log.Info("Opening Zed editor")
 
-	openURL := buildOpenURL(sshHost, workspaceFolder)
+	openURL := buildOpenURL(target.SSHHost, target.WorkspaceFolder)
 	err := devsyopen.Run(openURL)
 	if err != nil {
 		log.Debugf("Starting Zed caused error: %v", err)

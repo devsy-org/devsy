@@ -23,6 +23,11 @@ import (
 	execerr "k8s.io/client-go/util/exec"
 )
 
+const (
+	testBinaryContent       = "test-binary-content"
+	httpsExampleComReleases = "https://example.com/releases"
+)
+
 const testVersion = "v1.2.3"
 
 // recordingExec records each call, replays stdouts[N] as stdout, and returns
@@ -92,7 +97,7 @@ func TestKubernetesDelivery_DeliverPostStart_RequiresExec(t *testing.T) {
 }
 
 func TestKubernetesDelivery_DeliverPostStart_WritesBinary(t *testing.T) {
-	binaryData := "test-binary-content"
+	binaryData := testBinaryContent
 	exec := &recordingExec{stdouts: []string{""}}
 
 	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
@@ -176,7 +181,7 @@ func TestKubernetesDelivery_DeliverPostStart_PrefersDownloadOverExecStream(t *te
 	err := d.DeliverPostStart(context.Background(), PostStartOptions{
 		BinarySource:              binarySourceFrom("should-not-be-streamed"),
 		Arch:                      testArch,
-		DownloadURL:               "https://example.com/releases",
+		DownloadURL:               httpsExampleComReleases,
 		PreferInContainerDownload: true,
 	})
 	require.NoError(t, err)
@@ -189,7 +194,7 @@ func TestKubernetesDelivery_DeliverPostStart_PrefersDownloadOverExecStream(t *te
 }
 
 func TestKubernetesDelivery_DeliverPostStart_FallsBackToExecStreamWhenNoDownloadTool(t *testing.T) {
-	binaryData := "test-binary-content"
+	binaryData := testBinaryContent
 	exec := &recordingExec{
 		stdouts: []string{""},
 		errs: []error{
@@ -205,7 +210,7 @@ func TestKubernetesDelivery_DeliverPostStart_FallsBackToExecStreamWhenNoDownload
 	err := d.DeliverPostStart(context.Background(), PostStartOptions{
 		BinarySource:              binarySourceFrom(binaryData),
 		Arch:                      testArch,
-		DownloadURL:               "https://example.com/releases",
+		DownloadURL:               httpsExampleComReleases,
 		PreferInContainerDownload: true,
 	})
 	require.NoError(t, err)
@@ -215,7 +220,7 @@ func TestKubernetesDelivery_DeliverPostStart_FallsBackToExecStreamWhenNoDownload
 }
 
 func TestKubernetesDelivery_DeliverPostStart_SkipsDownloadWhenNoURLConfigured(t *testing.T) {
-	binaryData := "test-binary-content"
+	binaryData := testBinaryContent
 	exec := &recordingExec{stdouts: []string{""}}
 	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
 
@@ -391,7 +396,7 @@ func TestKubernetesDelivery_PreservesDownloadAndStreamErrors(t *testing.T) {
 	err := d.DeliverPostStart(context.Background(), PostStartOptions{
 		BinarySource:              binarySourceFrom("binary"),
 		Arch:                      testArch,
-		DownloadURL:               "https://example.com/releases",
+		DownloadURL:               httpsExampleComReleases,
 		PreferInContainerDownload: true,
 	})
 	require.Error(t, err)
@@ -438,7 +443,7 @@ func TestIsTransientDeliveryError(t *testing.T) {
 }
 
 func TestKubernetesDelivery_DeliverPostStart_UsesInstallPathOverride(t *testing.T) {
-	binaryData := "test-binary-content"
+	binaryData := testBinaryContent
 	exec := &recordingExec{stdouts: []string{""}}
 	installPath := testKubernetesInstallPath
 	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion, InstallPath: installPath}

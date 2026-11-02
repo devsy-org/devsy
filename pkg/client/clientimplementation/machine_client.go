@@ -102,12 +102,17 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 }
 
 // lifecycleCommand executes a standard lifecycle operation (create/start/stop).
-func (e *machineExecutor) lifecycleCommand(
-	ctx context.Context,
-	name string,
-	command types.StrArray,
-	verb, pastVerb string,
-) error {
+// lifecycleStep is one lifecycle command of a machine and its progress wording.
+type lifecycleStep struct {
+	name     string
+	command  types.StrArray
+	verb     string
+	pastVerb string
+}
+
+func (e *machineExecutor) lifecycleCommand(ctx context.Context, step lifecycleStep) error {
+	name, command := step.name, step.command
+	verb, pastVerb := step.verb, step.pastVerb
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
@@ -144,13 +149,12 @@ func (s *machineClient) RefreshOptions(
 		return fmt.Errorf("parse options: %w", err)
 	}
 
-	machine, err := options.ResolveAndSaveOptionsMachine(
-		ctx,
-		s.devsyConfig,
-		s.config,
-		s.machine,
-		userOptions,
-	)
+	machine, err := options.ResolveAndSaveOptionsMachine(ctx, options.ResolveMachineRequest{
+		DevConfig:       s.devsyConfig,
+		ProviderConfig:  s.config,
+		OriginalMachine: s.machine,
+		UserOptions:     userOptions,
+	})
 	if err != nil {
 		return err
 	}
@@ -181,15 +185,39 @@ func (s *machineClient) Context() string {
 }
 
 func (s *machineClient) Create(ctx context.Context) error {
-	return s.executor.lifecycleCommand(ctx, "create", s.config.Exec.Create, "creating", "created")
+	return s.executor.lifecycleCommand(
+		ctx,
+		lifecycleStep{
+			name:     "create",
+			command:  s.config.Exec.Create,
+			verb:     "creating",
+			pastVerb: "created",
+		},
+	)
 }
 
 func (s *machineClient) Start(ctx context.Context) error {
-	return s.executor.lifecycleCommand(ctx, "start", s.config.Exec.Start, "starting", "started")
+	return s.executor.lifecycleCommand(
+		ctx,
+		lifecycleStep{
+			name:     "start",
+			command:  s.config.Exec.Start,
+			verb:     "starting",
+			pastVerb: "started",
+		},
+	)
 }
 
 func (s *machineClient) Stop(ctx context.Context, options client.StopOptions) error {
-	return s.executor.lifecycleCommand(ctx, "stop", s.config.Exec.Stop, "stopping", "stopped")
+	return s.executor.lifecycleCommand(
+		ctx,
+		lifecycleStep{
+			name:     "stop",
+			command:  s.config.Exec.Stop,
+			verb:     "stopping",
+			pastVerb: "stopped",
+		},
+	)
 }
 
 func (s *machineClient) Command(ctx context.Context, commandOptions client.CommandOptions) error {

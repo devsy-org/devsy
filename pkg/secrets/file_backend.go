@@ -23,6 +23,7 @@ func newFileBackend(path string, key *fileKey) *fileBackend {
 }
 
 func (f *fileBackend) load() (map[string]string, error) {
+	//nolint:gosec // path is inside the internal secrets store
 	raw, err := os.ReadFile(f.path) // #nosec G304 -- path derived from config dir.
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -71,7 +72,7 @@ func (f *fileBackend) store(values map[string]string) error {
 		return fmt.Errorf("finalize encrypted secrets: %w", err)
 	}
 
-	return atomicWriteFile(f.path, buf.Bytes(), 0o600)
+	return atomicWriteFile(f.path, buf.Bytes())
 }
 
 func (f *fileBackend) set(key, value string) error {

@@ -20,8 +20,10 @@ func NewRustRoverServer(
 		RustRoverOptions,
 		values,
 		RustRoverProductCode,
-		RustRoverDownloadAmd64Template,
-		RustRoverDownloadArm64Template,
+		downloadTemplates{
+			amd64: RustRoverDownloadAmd64Template,
+			arm64: RustRoverDownloadArm64Template,
+		},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "rustrover",

@@ -253,36 +253,6 @@ type runCommandOptions struct {
 	extraEnv    []string
 }
 
-func (c *customDriver) runCommand(
-	ctx context.Context,
-	runOpts runCommandOptions,
-) error {
-	if len(runOpts.command) == 0 {
-		return nil
-	}
-
-	log.Debugf("run %s driver command: %s", runOpts.name, strings.Join(runOpts.command, " "))
-	environ, err := ToEnvironWithBinaries(ctx, c.workspaceInfo)
-	if err != nil {
-		return err
-	}
-	environ = append(environ, pkgconfig.EnvDevcontainerID+"="+runOpts.workspaceId)
-	environ = append(environ, runOpts.extraEnv...)
-
-	if log.Underlying().Core().Enabled(zapcore.DebugLevel) {
-		environ = append(environ, pkgconfig.EnvDebug+"="+pkgconfig.BoolTrue)
-	}
-
-	return clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
-		Command:   runOpts.command,
-		Environ:   environ,
-		Stdin:     runOpts.stdin,
-		Stdout:    runOpts.stdout,
-		Stderr:    runOpts.stderr,
-		RawStdout: runOpts.rawStdout,
-	})
-}
-
 func ToEnvironWithBinaries(
 	ctx context.Context,
 	workspace *provider.AgentWorkspaceInfo,
@@ -323,3 +293,33 @@ func (d *customDriver) RequiresMountStreaming() bool { return true }
 func (d *customDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
 
 func (d *customDriver) RequiresWorkspaceChown() bool { return true }
+
+func (c *customDriver) runCommand(
+	ctx context.Context,
+	runOpts runCommandOptions,
+) error {
+	if len(runOpts.command) == 0 {
+		return nil
+	}
+
+	log.Debugf("run %s driver command: %s", runOpts.name, strings.Join(runOpts.command, " "))
+	environ, err := ToEnvironWithBinaries(ctx, c.workspaceInfo)
+	if err != nil {
+		return err
+	}
+	environ = append(environ, pkgconfig.EnvDevcontainerID+"="+runOpts.workspaceId)
+	environ = append(environ, runOpts.extraEnv...)
+
+	if log.Underlying().Core().Enabled(zapcore.DebugLevel) {
+		environ = append(environ, pkgconfig.EnvDebug+"="+pkgconfig.BoolTrue)
+	}
+
+	return clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
+		Command:   runOpts.command,
+		Environ:   environ,
+		Stdin:     runOpts.stdin,
+		Stdout:    runOpts.stdout,
+		Stderr:    runOpts.stderr,
+		RawStdout: runOpts.rawStdout,
+	})
+}

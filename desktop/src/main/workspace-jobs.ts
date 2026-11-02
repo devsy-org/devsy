@@ -75,6 +75,24 @@ export class WorkspaceJobs {
     this.jobs.set(id, { ...job, status, phase })
     this.emit()
   }
+  /** Associates durable history with the job that still owns the command. */
+  setRun(
+    id: string,
+    commandId: string,
+    run: { runId?: string; failedInvocationId?: string },
+  ): void {
+    const job = this.jobs.get(id)
+    if (!job || job.commandId !== commandId || !run.runId) return
+    if (job.runId && job.runId !== run.runId) return
+    const failedInvocationId = run.failedInvocationId ?? job.failedInvocationId
+    if (
+      job.runId === run.runId &&
+      job.failedInvocationId === failedInvocationId
+    )
+      return
+    this.jobs.set(id, { ...job, runId: run.runId, failedInvocationId })
+    this.emit()
+  }
   clear(id: string): void {
     this.generations.set(id, ++this.lastGeneration)
     if (this.jobs.delete(id)) this.emit()

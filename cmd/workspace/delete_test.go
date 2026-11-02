@@ -178,8 +178,7 @@ func TestDeleteCmd_DeleteMultipleReusesResolvedClients(t *testing.T) {
 			t.Context(),
 			devsyConfig,
 			reporter,
-			targets,
-			[]string{argA, argB},
+			deleteBatch{targets: targets, args: []string{argA, argB}},
 		))
 	})
 	require.True(t, fakeA.deleted)

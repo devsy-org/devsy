@@ -17,6 +17,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	imageValue   = "image"
+	arm64        = "arm64"
+	workspaceUid = "workspace-uid"
+	alpine       = "alpine"
+)
+
 type separateImages struct {
 	driver.ImageBackend
 	details      *config.ImageDetails
@@ -60,10 +67,10 @@ func TestSeparateImageBackend(t *testing.T) {
 	}
 	r := newTestRunner(&mockDriver{})
 	r.imageBackend = backend
-	details, err := r.inspectImage(ctx, "image")
+	details, err := r.inspectImage(ctx, imageValue)
 	require.NoError(t, err)
 	assert.Same(t, backend.details, details)
-	tag, err := r.getImageTag(ctx, "image")
+	tag, err := r.getImageTag(ctx, imageValue)
 	require.NoError(t, err)
 	assert.Equal(t, "backend:tag", tag)
 	result, err := r.executeBuild(
@@ -73,7 +80,7 @@ func TestSeparateImageBackend(t *testing.T) {
 			options:      provider.BuildOptions{},
 		},
 		"hash",
-		"arm64",
+		arm64,
 	)
 	require.NoError(t, err)
 	assert.Same(t, backend.buildInfo, result)
@@ -82,15 +89,15 @@ func TestSeparateImageBackend(t *testing.T) {
 	assert.Equal(t, []string{"registry/repo:prebuild", "registry/repo:extra"}, backend.tags)
 	assert.Equal(t, backend.tags, backend.pushes)
 	backend.err = errors.New("backend unavailable")
-	_, err = r.inspectImage(ctx, "image")
+	_, err = r.inspectImage(ctx, imageValue)
 	assert.ErrorIs(t, err, backend.err)
-	_, err = r.getImageTag(ctx, "image")
+	_, err = r.getImageTag(ctx, imageValue)
 	assert.ErrorIs(t, err, backend.err)
 	_, err = r.executeBuild(
 		ctx,
 		&buildImageParams{parsedConfig: &config.SubstitutedConfig{}},
 		"hash",
-		"arm64",
+		arm64,
 	)
 	assert.ErrorIs(t, err, backend.err)
 }
@@ -115,12 +122,12 @@ func TestDeliveryArchitectureUsesRuntime(t *testing.T) {
 		provider.KubernetesDriver, provider.MicrosandboxDriver, "external",
 	} {
 		t.Run(name, func(t *testing.T) {
-			d := &architectureDriver{arch: "arm64"}
+			d := &architectureDriver{arch: arm64}
 			r := newTestRunner(d)
 			r.workspaceConfig.Agent.Driver = name
 			arch, err := r.deliveryArch(context.Background())
 			require.NoError(t, err)
-			assert.Equal(t, "arm64", arch)
+			assert.Equal(t, arm64, arch)
 			assert.Equal(t, r.id, d.workspaceID)
 			d.arch = ""
 			_, err = r.deliveryArch(context.Background())
@@ -176,7 +183,7 @@ func TestBuildBackendSelection(t *testing.T) {
 	_, err = r.executeBuild(context.Background(), params, "hash", "amd64")
 	require.ErrorContains(t, err, "dockerless fallback is disabled")
 	r.imageBackend = nil
-	tag, err := r.getImageTag(context.Background(), "image")
+	tag, err := r.getImageTag(context.Background(), imageValue)
 	require.NoError(t, err)
 	assert.Empty(t, tag)
 	_, err = r.Build(context.Background(), provider.BuildOptions{})
@@ -216,7 +223,7 @@ func (d *imageOnlyRuntime) RunImageDevContainer(
 func TestImageRuntimeDoesNotNeedImageBackend(t *testing.T) {
 	d := &imageOnlyRuntime{}
 	r := newTestRunner(d)
-	r.workspaceConfig.Workspace = &provider.Workspace{UID: "workspace-uid"}
+	r.workspaceConfig.Workspace = &provider.Workspace{UID: workspaceUid}
 	params := &resolveParams{
 		parsedConfig:        &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
 		substitutionContext: &config.SubstitutionContext{},
@@ -227,7 +234,11 @@ func TestImageRuntimeDoesNotNeedImageBackend(t *testing.T) {
 	}
 	require.NoError(
 		t,
-		r.runContainer(context.Background(), params, &config.MergedDevContainerConfig{}, info, nil),
+		r.runContainer(
+			context.Background(),
+			params,
+			containerLaunch{&config.MergedDevContainerConfig{}, info, nil},
+		),
 	)
 	require.NotNil(t, d.params)
 	assert.Equal(t, r.id, d.params.WorkspaceID)
@@ -257,11 +268,11 @@ func TestImageRunValidationPreservesContainerBeforeRecreate(t *testing.T) {
 				d.validationErr = sentinel
 			}
 			r := newTestRunner(d)
-			r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: "workspace-uid"}
-			r.imageBackend = &separateImages{details: &config.ImageDetails{ID: "image"}}
+			r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: workspaceUid}
+			r.imageBackend = &separateImages{details: &config.ImageDetails{ID: imageValue}}
 			r.reporter = status.Nop()
 			p := recreateResolveParams()
-			p.parsedConfig.Config.Image = "alpine"
+			p.parsedConfig.Config.Image = alpine
 			p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
 			p.substitutionContext = &config.SubstitutionContext{}
 			_, _, err := r.buildNewContainerConfig(context.Background(), p)
@@ -322,14 +333,14 @@ func TestBuildNewContainerConfigRecoveryDisabledWrapsRecoverable(t *testing.T) {
 	d := &mockDriver{}
 	r := newTestRunner(d)
 	r.imageBackend = &separateImages{
-		details: &config.ImageDetails{ID: "image"},
+		details: &config.ImageDetails{ID: imageValue},
 		err:     buildErr,
 	}
 	r.reporter = status.Nop()
 
 	p := recreateResolveParams()
 	p.options.Recovery = false
-	p.parsedConfig.Config.Image = "alpine"
+	p.parsedConfig.Config.Image = alpine
 	p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
 	p.substitutionContext = &config.SubstitutionContext{}
 
@@ -426,16 +437,16 @@ func TestBuildNewContainerConfigRecoveryEnabledFailureDoesNotSetRecovering(t *te
 func TestBuildNewContainerConfigRecreateNonValidatorDeletesExisting(t *testing.T) {
 	d := &mockDriver{}
 	r := newTestRunner(d)
-	r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: "workspace-uid"}
+	r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: workspaceUid}
 	r.imageBackend = &separateImages{
-		details:   &config.ImageDetails{ID: "image"},
+		details:   &config.ImageDetails{ID: imageValue},
 		buildInfo: &config.BuildInfo{ImageName: "built-image"},
 	}
 	r.reporter = status.Nop()
 
 	p := recreateResolveParams()
 	p.options.Recreate = true
-	p.parsedConfig.Config.Image = "alpine"
+	p.parsedConfig.Config.Image = alpine
 	p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
 	p.substitutionContext = &config.SubstitutionContext{}
 

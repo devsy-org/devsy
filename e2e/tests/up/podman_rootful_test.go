@@ -14,6 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	podmanValue = "podman"
+)
+
 func expiredContext(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
@@ -104,7 +108,7 @@ func TestRunPodmanDiagnosticsStopsAtBudget(t *testing.T) {
 	var commands []string
 	runPodmanDiagnostics(ctx, []podmanDiagSection{
 		{"processes", "ps", nil},
-		{"podman", "podman", nil},
+		{podmanValue, podmanValue, nil},
 	}, func(_ context.Context, name string, _ ...string) string {
 		commands = append(commands, name)
 		cancel()
@@ -131,30 +135,30 @@ func TestRootfulPodmanWrapper(t *testing.T) {
 		{
 			name:       "configured endpoint",
 			endpoint:   &endpoint,
-			wantPrefix: []string{"podman", remoteFlag, urlFlag, endpoint},
+			wantPrefix: []string{podmanValue, remoteFlag, urlFlag, endpoint},
 			args:       []string{"ps", "-a"},
 		},
 		{
 			name:       "credential endpoint remains unchanged",
 			endpoint:   &credentialEndpoint,
-			wantPrefix: []string{"podman", remoteFlag, urlFlag, credentialEndpoint},
+			wantPrefix: []string{podmanValue, remoteFlag, urlFlag, credentialEndpoint},
 			args:       []string{"ps"},
 		},
 		{
 			name:       "preserves arguments",
 			endpoint:   &endpoint,
-			wantPrefix: []string{"podman", remoteFlag, urlFlag, endpoint},
+			wantPrefix: []string{podmanValue, remoteFlag, urlFlag, endpoint},
 			args:       []string{"run", "value with spaces", "$(printf unsafe)"},
 		},
 		{
 			name:       "unset endpoint uses local mode",
-			wantPrefix: []string{"podman"},
+			wantPrefix: []string{podmanValue},
 			args:       []string{"ps", "-a"},
 		},
 		{
 			name:       "empty endpoint uses local mode",
 			endpoint:   &emptyEndpoint,
-			wantPrefix: []string{"podman"},
+			wantPrefix: []string{podmanValue},
 			args:       []string{"ps", "-a"},
 		},
 	}

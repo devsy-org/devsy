@@ -98,9 +98,7 @@ func execRebuild(
 	_, err = remotecommand.ExecuteConn(
 		ctx,
 		conn,
-		os.Stdin,
-		os.Stdout,
-		os.Stderr,
+		remotecommand.Streams{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)

@@ -28,6 +28,14 @@ import type {
   ProviderIconRequest,
 } from "$shared/provider-icon.js"
 import type {
+  LogIndexResponse,
+  LogReadResponse,
+  LogRunExportRequest,
+  LogRunExportResult,
+  LogRunReadRequest,
+  LogRunsRequest,
+} from "$shared/workspace-logs.js"
+import type {
   WorkspacePresentationErrorCode,
   WorkspacePresentationFailure,
   WorkspacePresentationField,
@@ -564,6 +572,35 @@ export async function workspaceLogDelete(
   filename: string,
 ): Promise<void> {
   return invoke<void>("workspace_log_delete", { workspaceId, filename })
+}
+
+// Retained build and lifecycle history. A null result means the request was
+// superseded or cancelled and must be ignored.
+export async function workspaceLogRuns(
+  request: LogRunsRequest,
+): Promise<LogIndexResponse | null> {
+  return invoke<LogIndexResponse | null>("workspace_log_runs", { ...request })
+}
+
+export async function workspaceLogRunRead(
+  request: LogRunReadRequest,
+): Promise<LogReadResponse | null> {
+  return invoke<LogReadResponse | null>("workspace_log_run_read", {
+    ...request,
+  })
+}
+
+/** Cancels only history readers, never the workspace task follower. */
+export async function workspaceLogRunCancel(): Promise<void> {
+  return invoke<void>("workspace_log_run_cancel")
+}
+
+export async function workspaceLogRunExport(
+  request: LogRunExportRequest,
+): Promise<LogRunExportResult> {
+  return invoke<LogRunExportResult>("workspace_log_run_export", {
+    ...request,
+  })
 }
 
 // SSH key commands

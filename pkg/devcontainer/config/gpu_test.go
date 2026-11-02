@@ -5,14 +5,21 @@ import (
 	"testing"
 )
 
+const (
+	trueValue  = "true"
+	falseValue = "false"
+	value8gb   = "8gb"
+	value16gb  = "16gb"
+)
+
 func TestGPURequirement_BoolAndString(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
 		wantVal string
 	}{
-		{"true", `{"gpu": true}`, "true"},
-		{"false", `{"gpu": false}`, "false"},
+		{trueValue, `{"gpu": true}`, trueValue},
+		{falseValue, `{"gpu": false}`, falseValue},
 		{"optional", `{"gpu": "optional"}`, "optional"},
 	}
 	for _, tt := range tests {
@@ -42,22 +49,22 @@ func TestGPURequirement_ObjectFormat(t *testing.T) {
 		{
 			"cores and memory",
 			`{"gpu": {"cores": 4, "memory": "8gb"}}`,
-			"true", 4, "8gb",
+			trueValue, 4, value8gb,
 		},
 		{
 			"cores only",
 			`{"gpu": {"cores": 2}}`,
-			"true", 2, "",
+			trueValue, 2, "",
 		},
 		{
 			"memory only",
 			`{"gpu": {"memory": "16gb"}}`,
-			"true", 0, "16gb",
+			trueValue, 0, value16gb,
 		},
 		{
 			"empty object",
 			`{"gpu": {}}`,
-			"true", 0, "",
+			trueValue, 0, "",
 		},
 	}
 	for _, tt := range tests {
@@ -111,20 +118,28 @@ func TestShouldEnableGPU(t *testing.T) {
 		wantWarning bool
 	}{
 		{"nil GPU", &HostRequirements{}, false, false, false},
-		{"true available", &HostRequirements{GPU: gpu("true")}, true, true, false},
-		{"true unavailable", &HostRequirements{GPU: gpu("true")}, false, false, true},
-		{"false", &HostRequirements{GPU: gpu("false")}, true, false, false},
+		{"true available", &HostRequirements{GPU: gpu(trueValue)}, true, true, false},
+		{"true unavailable", &HostRequirements{GPU: gpu(trueValue)}, false, false, true},
+		{falseValue, &HostRequirements{GPU: gpu(falseValue)}, true, false, false},
 		{"optional available", &HostRequirements{GPU: gpu("optional")}, true, true, false},
 		{"optional unavailable", &HostRequirements{GPU: gpu("optional")}, false, false, false},
 		{
 			"object available",
-			&HostRequirements{GPU: &GPURequirement{Value: "true", Cores: 4, GPUMemory: "8gb"}},
-			true, true, false,
+			&HostRequirements{
+				GPU: &GPURequirement{Value: trueValue, Cores: 4, GPUMemory: value8gb},
+			},
+			true,
+			true,
+			false,
 		},
 		{
 			"object unavailable",
-			&HostRequirements{GPU: &GPURequirement{Value: "true", Cores: 4, GPUMemory: "8gb"}},
-			false, false, true,
+			&HostRequirements{
+				GPU: &GPURequirement{Value: trueValue, Cores: 4, GPUMemory: value8gb},
+			},
+			false,
+			false,
+			true,
 		},
 	}
 	for _, tt := range tests {

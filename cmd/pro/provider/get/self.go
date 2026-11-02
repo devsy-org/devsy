@@ -49,7 +49,7 @@ func (cmd *SelfCmd) Run(
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 
 	return nil
 }

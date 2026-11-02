@@ -107,18 +107,19 @@ func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelSer
 	defer cancel()
 	defer func() { _ = p.stdoutReader.Close() }()
 	defer func() { _ = p.stdinWriter.Close() }()
-	err := tunnelserver.RunServicesServer(
-		ctx,
-		p.stdoutReader,
-		p.stdinWriter,
-		p.opts.ConfigureGitCredentials,
-		p.opts.ConfigureDockerCredentials,
-		p.forwarder,
-		p.opts.Workspace,
-		tunnelserver.WithPlatformOptions(p.opts.PlatformOptions),
-		tunnelserver.WithAllowGitHubCredentials(p.opts.ConfigureGitHubCredentials),
-		tunnelserver.WithGitSSHSigningKey(p.gitSSHSigningKey),
-	)
+	err := tunnelserver.RunServicesServer(ctx, tunnelserver.ServicesSpec{
+		Reader:                 p.stdoutReader,
+		Writer:                 p.stdinWriter,
+		AllowGitCredentials:    p.opts.ConfigureGitCredentials,
+		AllowDockerCredentials: p.opts.ConfigureDockerCredentials,
+		Forwarder:              p.forwarder,
+		Workspace:              p.opts.Workspace,
+		Options: []tunnelserver.Option{
+			tunnelserver.WithPlatformOptions(p.opts.PlatformOptions),
+			tunnelserver.WithAllowGitHubCredentials(p.opts.ConfigureGitHubCredentials),
+			tunnelserver.WithGitSSHSigningKey(p.gitSSHSigningKey),
+		},
+	})
 	if err != nil {
 		p.errChan <- fmt.Errorf("run tunnel server: %w", err)
 	}
@@ -460,11 +461,12 @@ func forwardConfigPorts(ctx context.Context, p portForwardParams, result *config
 			if err := devssh.PortForward(
 				ctx,
 				p.containerClient,
-				"tcp",
-				fmt.Sprintf("localhost:%d", portNumber),
-				"tcp",
-				fmt.Sprintf("%s:%d", host, portNumber),
-				0,
+				devssh.PortForwardOpts{
+					LocalNetwork:  tcp,
+					LocalAddr:     fmt.Sprintf("localhost:%d", portNumber),
+					RemoteNetwork: tcp,
+					RemoteAddr:    fmt.Sprintf("%s:%d", host, portNumber),
+				},
 			); err != nil {
 				log.Errorf("error port forwarding %s: %v", port, err)
 			}
@@ -520,11 +522,13 @@ func forwardPort(ctx context.Context, p singlePortForwardParams) []string {
 				err = devssh.PortForward(
 					ctx,
 					p.containerClient,
-					"tcp",
-					hostAddr,
-					"tcp",
-					containerAddr,
-					p.exitAfterTimeout,
+					devssh.PortForwardOpts{
+						LocalNetwork:     tcp,
+						LocalAddr:        hostAddr,
+						RemoteNetwork:    tcp,
+						RemoteAddr:       containerAddr,
+						ExitAfterTimeout: p.exitAfterTimeout,
+					},
 				)
 			}
 			if err != nil {

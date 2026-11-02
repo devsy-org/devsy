@@ -14,6 +14,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func recreateTestProject(buildContext string) *composetypes.Project {
+	return &composetypes.Project{
+		Name: "recreate-test",
+		Services: composetypes.Services{
+			composeSecretTestServiceName: {
+				Name:  composeSecretTestServiceName,
+				Image: "test:latest",
+				Build: &composetypes.BuildConfig{
+					Context:    buildContext,
+					Dockerfile: structuralDockerfile,
+				},
+			},
+		},
+	}
+}
+
 func TestStartComposeContainerRecreateRefreshesOverrides(t *testing.T) {
 	for _, reset := range []bool{false, true} {
 		name := "recreate"
@@ -55,21 +71,9 @@ func TestStartComposeContainerRecreateRefreshesOverrides(t *testing.T) {
 					},
 				},
 				substitutionContext: &config.SubstitutionContext{},
-				project: &composetypes.Project{
-					Name: "recreate-test",
-					Services: composetypes.Services{
-						composeSecretTestServiceName: {
-							Name:  composeSecretTestServiceName,
-							Image: "test:latest",
-							Build: &composetypes.BuildConfig{
-								Context:    buildContext,
-								Dockerfile: structuralDockerfile,
-							},
-						},
-					},
-				},
-				composeHelper: &compose.ComposeHelper{},
-				container:     container,
+				project:             recreateTestProject(buildContext),
+				composeHelper:       &compose.ComposeHelper{},
+				container:           container,
 				options: UpOptions{
 					CLIOptions: provider.CLIOptions{Recreate: true, Reset: reset},
 				},

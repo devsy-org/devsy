@@ -33,8 +33,8 @@ func NewSetCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Long: `Set global options for the named IDE.
 
 To assign an IDE to a specific workspace, use
-'devsy workspace set-ide <workspace> <ide>'. Available IDEs can be listed
-with 'devsy ide list'.`,
+'devsy workspace set-ide <workspace> <ide>'. List available IDEs with
+'devsy ide list'.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: ideNameCompletion,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {

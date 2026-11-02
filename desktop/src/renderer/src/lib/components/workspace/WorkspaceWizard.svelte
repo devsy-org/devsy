@@ -57,6 +57,9 @@ import type {
 } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { activeContext } from "$lib/stores/contexts.js"
+import { workspaceLogsRoute } from "$shared/app-route.js"
+import { runIdentityFromContext } from "$shared/cli-error.js"
 import { isImageCompatible } from "$lib/stores/imageCatalog.js"
 import { loadLocalOptions } from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -541,6 +544,7 @@ function reset() {
   }
   launchRunning = false
   launchError = ""
+  launchFailureContext = undefined
   launchBuildFailed = false
   launchIsRecovery = false
   launchCommandSucceeded = false
@@ -700,6 +704,35 @@ function finishConfirmedLaunch() {
   if (launchedWorkspaceId) oncomplete?.(launchedWorkspaceId)
 }
 
+let launchFailureContext = $state<Record<string, string> | undefined>()
+let launchRunIdentity = $derived.by(() => {
+  const fromJob = jobMatchesAttempt
+    ? {
+        runId: launchJob?.runId,
+        failedInvocationId: launchJob?.failedInvocationId,
+      }
+    : {}
+  return fromJob.runId ? fromJob : runIdentityFromContext(launchFailureContext)
+})
+
+function viewLaunchOutput() {
+  const id = launchedWorkspaceId ?? lastAttemptedId ?? resolvedId
+  const run = launchRunIdentity
+  if (!id || !run.runId) return
+  const context =
+    $workspaces.find((ws) => ws.id === id)?.context ||
+    $activeContext ||
+    "default"
+  open = false
+  goto(
+    workspaceLogsRoute(id, {
+      context,
+      runId: run.runId,
+      invocationId: run.failedInvocationId,
+    }),
+  )
+}
+
 function finishJobFailure(job: WorkspaceJob) {
   launchStatusRefreshError = null
   finishFailedLaunch({
@@ -727,6 +760,7 @@ function finishFailedLaunch(progress: CommandProgress) {
   clearWatchdog()
   stopLaunchTimer()
   const cliError = progress.cliError
+  launchFailureContext = cliError?.context
   launchError = cliError?.message
     ? `${cliError.message}${cliError.hint ? ` Try: ${cliError.hint}` : ""}`
     : "Workspace creation failed. Check output for details."
@@ -773,6 +807,7 @@ async function handleLaunch(recovery = false) {
     }
   }, 1000)
   launchError = ""
+  launchFailureContext = undefined
   launchBuildFailed = false
   launchSuccess = false
   showLogs = false
@@ -1576,6 +1611,7 @@ function selectTemplate(t: { name: string; source: string }) {
             logsAvailable={outputLines.length > 0}
             logsOpen={showLogs}
             onToggleLogs={() => (showLogs = !showLogs)}
+            onViewOutput={launchRunIdentity.runId ? viewLaunchOutput : undefined}
           />
 
           {#if outputLines.length > 0}

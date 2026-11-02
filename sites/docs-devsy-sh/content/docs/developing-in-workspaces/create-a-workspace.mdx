@@ -93,6 +93,23 @@ Only the `docker` provider supports this, and `--recreate` is rejected for these
 To change where Devsy keeps its data, pass `--home=PATH` or set `DEVSY_HOME`. This helps on WSL when a workspace tries to mount a Windows path instead of a path inside WSL.
 </Callout>
 
+## Read setup output
+
+Devsy keeps the output of the build and of each lifecycle hook, such as `postCreateCommand`, after `devsy workspace up` finishes. Find the run and read it:
+
+```sh
+devsy workspace logs WORKSPACE_NAME --source setup --list
+devsy workspace logs WORKSPACE_NAME --source setup --run RUN_ID --result-format=plain
+```
+
+The run ID is in the result of `devsy workspace up` and in the output of a detached creation task. `--list` shows it for earlier runs.
+
+- Hooks after `waitFor` (the default is `updateContentCommand`) can run after `up` returns. Their output is added to the same run. Add `--follow` to watch it.
+- A hook skipped because its marker shows an earlier attempt is listed as skipped with the reason `already_attempted`. That does not mean the earlier attempt succeeded. Check the earlier run.
+- `postAttachCommand` runs on each attach and is recorded as its own invocation each time.
+
+See [Troubleshooting](../troubleshooting/troubleshooting.mdx#find-the-right-log) for all options and [Setup history](../troubleshooting/setup-history.mdx) for limits and redaction.
+
 ## .devsyignore
 
 Put a `.devsyignore` file in the root of a local workspace folder to leave files out of the upload when the provider streams the folder, as Kubernetes does. It uses [Docker ignore syntax](https://docs.docker.com/build/concepts/context/#dockerignore-files). Paths are relative to the folder, and the last matching rule wins.

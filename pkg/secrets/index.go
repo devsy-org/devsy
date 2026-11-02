@@ -30,6 +30,7 @@ type index struct {
 func loadIndex(path string) (*index, error) {
 	idx := &index{path: path, data: indexData{Contexts: map[string]map[string]SecretMeta{}}}
 
+	//nolint:gosec // path is inside the internal secrets store
 	raw, err := os.ReadFile(path) // #nosec G304 -- path derived from config dir.
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -120,7 +121,7 @@ func (i *index) save() error {
 		return fmt.Errorf("marshal secrets index: %w", err)
 	}
 
-	return atomicWriteFile(i.path, out, 0o600)
+	return atomicWriteFile(i.path, out)
 }
 
 func (i *index) put(meta SecretMeta) {

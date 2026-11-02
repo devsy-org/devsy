@@ -118,9 +118,11 @@ func (cmd *UpCmd) up(
 	_, err = remotecommand.ExecuteConn(
 		ctx,
 		conn,
-		cmd.streams.Stdin,
-		cmd.streams.Stdout,
-		cmd.streams.Stderr,
+		remotecommand.Streams{
+			Stdin:  cmd.streams.Stdin,
+			Stdout: cmd.streams.Stdout,
+			Stderr: cmd.streams.Stderr,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)

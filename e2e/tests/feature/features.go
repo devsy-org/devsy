@@ -22,6 +22,15 @@ import (
 )
 
 const (
+	orgOpencontainersImageVersion = "org.opencontainers.image.version"
+)
+
+const (
+	orgOpencontainersImageTitle = "org.opencontainers.image.title"
+	value100                    = "1.0.0"
+)
+
+const (
 	subCmdManifest = "manifest"
 	subCmdTags     = "tags"
 )
@@ -229,9 +238,9 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			featureRef := regHost + "/test/features/go:1.0.0"
 
 			pushFeatureWithAnnotations(featureRef, map[string]string{
-				"org.opencontainers.image.title":       "Go",
+				orgOpencontainersImageTitle:            "Go",
 				"org.opencontainers.image.description": "Install Go toolchain",
-				"org.opencontainers.image.version":     "1.0.0",
+				orgOpencontainersImageVersion:          value100,
 				"org.opencontainers.image.source":      "https://github.com/test/features",
 			})
 
@@ -242,7 +251,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			framework.ExpectNoError(err)
 
 			gomega.Expect(stdout).To(gomega.ContainSubstring("Go"))
-			gomega.Expect(stdout).To(gomega.ContainSubstring("1.0.0"))
+			gomega.Expect(stdout).To(gomega.ContainSubstring(value100))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("outputs JSON when --output=json is specified", func(ctx context.Context) {
@@ -255,8 +264,8 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			featureRef := regHost + "/test/features/node:1.0.0"
 
 			pushFeatureWithAnnotations(featureRef, map[string]string{
-				"org.opencontainers.image.title":   "Node.js",
-				"org.opencontainers.image.version": "1.0.0",
+				orgOpencontainersImageTitle:   "Node.js",
+				orgOpencontainersImageVersion: value100,
 			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -267,7 +276,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			var result map[string]any
 			gomega.Expect(json.Unmarshal([]byte(stdout), &result)).To(gomega.Succeed())
 			gomega.Expect(result["id"]).To(gomega.Equal("node"))
-			gomega.Expect(result["version"]).To(gomega.Equal("1.0.0"))
+			gomega.Expect(result["version"]).To(gomega.Equal(value100))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("lists tags with --show-tags", func(ctx context.Context) {
@@ -287,7 +296,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 			})
 			framework.ExpectNoError(err)
 
-			gomega.Expect(stdout).To(gomega.ContainSubstring("1.0.0"))
+			gomega.Expect(stdout).To(gomega.ContainSubstring(value100))
 			gomega.Expect(stdout).To(gomega.ContainSubstring("2.0.0"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
@@ -302,7 +311,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				featureRef := regHost + "/test/features/go:1.0.0"
 
 				pushFeatureWithAnnotations(featureRef, map[string]string{
-					"org.opencontainers.image.title": "Go",
+					orgOpencontainersImageTitle: "Go",
 				})
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -350,8 +359,8 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				featureRef := regHost + "/test/features/go:1.0.0"
 
 				pushFeatureWithAnnotations(featureRef, map[string]string{
-					"org.opencontainers.image.title":   "Go",
-					"org.opencontainers.image.version": "1.0.0",
+					orgOpencontainersImageTitle:   "Go",
+					orgOpencontainersImageVersion: value100,
 				})
 
 				stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -365,7 +374,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				annotations, ok := manifest["annotations"].(map[string]any)
 				gomega.Expect(ok).To(gomega.BeTrue())
 				gomega.Expect(annotations).To(gomega.HaveKeyWithValue(
-					"org.opencontainers.image.title", "Go",
+					orgOpencontainersImageTitle, "Go",
 				))
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
@@ -417,7 +426,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				framework.ExpectNoError(err)
 
 				gomega.Expect(stdout).To(gomega.ContainSubstring("Available Tags:"))
-				gomega.Expect(stdout).To(gomega.ContainSubstring("1.0.0"))
+				gomega.Expect(stdout).To(gomega.ContainSubstring(value100))
 				gomega.Expect(stdout).To(gomega.ContainSubstring("2.0.0"))
 				gomega.Expect(stdout).To(gomega.ContainSubstring("latest"))
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -445,7 +454,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 				gomega.Expect(result).To(gomega.HaveKey("tags"))
 				tags, ok := result["tags"].([]any)
 				gomega.Expect(ok).To(gomega.BeTrue())
-				gomega.Expect(tags).To(gomega.ContainElement("1.0.0"))
+				gomega.Expect(tags).To(gomega.ContainElement(value100))
 				gomega.Expect(tags).To(gomega.ContainElement("2.0.0"))
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
@@ -480,7 +489,7 @@ var _ = ginkgo.Describe("feature commands", ginkgo.Label("feature"), func() {
 
 func pushFeatureWithAnnotations(refStr string, annotations map[string]string) {
 	featureJSON := `{"id":"` + featureIDFromRef(refStr) + `","name":"` +
-		annotationOrDefault(annotations, "org.opencontainers.image.title", "Test Feature") +
+		annotationOrDefault(annotations, orgOpencontainersImageTitle, "Test Feature") +
 		`","version":"1.0.0","description":"` +
 		annotationOrDefault(
 			annotations,

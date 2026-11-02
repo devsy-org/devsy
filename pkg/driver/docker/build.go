@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 func (d *dockerDriver) BuildDevContainer(
@@ -64,6 +65,23 @@ type buildStrategy interface {
 	name() string
 }
 
+// buildStreams are the sinks a build writes to. Combined is for producers that
+// already merge stdout and stderr.
+type buildStreams struct {
+	stdout, stderr, combined io.Writer
+}
+
+// streamedStrategy is implemented by strategies that keep their streams apart.
+type streamedStrategy interface {
+	buildStreamed(
+		ctx context.Context,
+		streams buildStreams,
+		platform string,
+		options *build.BuildOptions,
+	) error
+	stepKey() string
+}
+
 // dockerBuildxStrategy uses docker buildx build.
 type dockerBuildxStrategy struct {
 	driver *dockerDriver
@@ -72,6 +90,22 @@ type dockerBuildxStrategy struct {
 func (s *dockerBuildxStrategy) build(
 	ctx context.Context,
 	writer io.Writer,
+	platform string,
+	options *build.BuildOptions,
+) error {
+	return s.buildStreamed(
+		ctx,
+		buildStreams{stdout: writer, stderr: writer, combined: writer},
+		platform,
+		options,
+	)
+}
+
+func (s *dockerBuildxStrategy) stepKey() string { return "docker-buildx" }
+
+func (s *dockerBuildxStrategy) buildStreamed(
+	ctx context.Context,
+	streams buildStreams,
 	platform string,
 	options *build.BuildOptions,
 ) error {
@@ -84,12 +118,12 @@ func (s *dockerBuildxStrategy) build(
 	args = append(args, secretArgs...)
 	log.Debugf("running docker buildx build with args: %s", strings.Join(args, " "))
 	stderrBuf := &tailBuffer{limit: maxStderrDiagnostics}
-	multiWriter := io.MultiWriter(writer, stderrBuf)
+	multiWriter := io.MultiWriter(streams.stderr, stderrBuf)
 	if err := s.driver.Docker.RunWithEnv(
 		ctx,
 		secretEnv,
 		args,
-		docker.Streams{Stdout: writer, Stderr: multiWriter},
+		docker.Streams{Stdout: streams.stdout, Stderr: multiWriter},
 	); err != nil {
 		if stderrBuf.Len() > 0 {
 			return fmt.Errorf(
@@ -260,6 +294,22 @@ func (s *buildkitStrategy) build(
 	platform string,
 	options *build.BuildOptions,
 ) error {
+	return s.buildStreamed(
+		ctx,
+		buildStreams{stdout: writer, stderr: writer, combined: writer},
+		platform,
+		options,
+	)
+}
+
+func (s *buildkitStrategy) stepKey() string { return "buildkit" }
+
+func (s *buildkitStrategy) buildStreamed(
+	ctx context.Context,
+	streams buildStreams,
+	platform string,
+	options *build.BuildOptions,
+) error {
 	dockerClient, err := s.newDockerClient(ctx)
 	if err != nil {
 		return err
@@ -272,13 +322,11 @@ func (s *buildkitStrategy) build(
 	}
 	defer func() { _ = buildKitClient.Close() }()
 
-	if err := buildkit.Build(
-		ctx,
-		buildKitClient,
-		writer,
-		platform,
-		options,
-	); err != nil {
+	if err := buildkit.Build(ctx, buildKitClient, buildkit.BuildRequest{
+		Writer:   streams.combined,
+		Platform: platform,
+		Options:  options,
+	}); err != nil {
 		return fmt.Errorf("build: %w", err)
 	}
 	return nil
@@ -370,6 +418,7 @@ func (r *imageResolver) tryResolve(
 	}
 
 	log.Debugf("found existing local image %s", req.imageName)
+	buildkit.RecordSkipped(ctx, "image", "image_reused")
 	return &config.BuildInfo{
 		ImageDetails:  imageDetails,
 		ImageMetadata: req.extendedBuildInfo.MetadataConfig,
@@ -465,10 +514,42 @@ func (d *dockerDriver) executeBuild(
 	})
 	defer func() { _ = writer.Close() }()
 
-	if err := strategy.build(ctx, writer, req.Options.Platform, buildOptions); err != nil {
+	err := runStrategy(ctx, strategyRun{
+		strategy: strategy, writer: writer, platform: req.Options.Platform, options: buildOptions,
+	})
+	if err != nil {
 		return fmt.Errorf("%s build: %w", strategy.name(), err)
 	}
 	return nil
+}
+
+type strategyRun struct {
+	strategy buildStrategy
+	writer   io.Writer
+	platform string
+	options  *build.BuildOptions
+}
+
+// runStrategy tees build output to the recorded run before the logger filters
+// it. Without a recorder the strategy writes to the logger only.
+func runStrategy(ctx context.Context, run strategyRun) error {
+	streamed, ok := run.strategy.(streamedStrategy)
+	if !ok {
+		return run.strategy.build(ctx, run.writer, run.platform, run.options)
+	}
+	key := streamed.stepKey()
+	if run.platform != "" {
+		key += " " + run.platform
+	}
+	step := buildkit.StartStep(ctx, key, run.options.BuildSecrets...)
+	err := streamed.buildStreamed(ctx, buildStreams{
+		stdout:   step.Tee(run.writer, workspacelogs.StreamStdout),
+		stderr:   step.Tee(run.writer, workspacelogs.StreamStderr),
+		combined: step.Tee(run.writer, workspacelogs.StreamCombined),
+	}, run.platform, run.options)
+	step.Finish(ctx, err)
+
+	return err
 }
 
 // createBuildInfo constructs the BuildInfo after a successful build. When pushing,

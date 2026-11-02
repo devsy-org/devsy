@@ -128,7 +128,11 @@ func (cmd *UpCmd) checkWorkspaceExisted(
 	if id == "" {
 		return true
 	}
-	return workspace2.Exists(ctx, devsyConfig, nil, id, cmd.Owner) != ""
+	return workspace2.Exists(
+		ctx,
+		devsyConfig,
+		workspace2.LookupOptions{ID: id, Owner: cmd.Owner},
+	) != ""
 }
 
 func (cmd *UpCmd) hasPresentation() bool {
@@ -330,26 +334,15 @@ func (cmd *UpCmd) prepareSecretsWithProject(
 		return err
 	}
 
-	if cmd.SecretsFile != "" {
-		parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
-		if err != nil {
-			return err
-		}
-		for k, v := range parsed {
-			cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
-		}
+	if err := cmd.appendSecretsFile(); err != nil {
+		return err
 	}
 
 	if err := cmd.resolveStoredSecrets(ctx, devsyConfig, project); err != nil {
 		return err
 	}
 
-	if cmd.FeatureSecretsFile == "" {
-		cmd.FeatureSecretsFile = os.Getenv("DEVCONTAINER_SECRETS_FILE")
-	}
-	if cmd.FeatureSecretsFile != "" {
-		cmd.CLIOptions.FeatureSecretsFile = cmd.FeatureSecretsFile
-	}
+	cmd.resolveFeatureSecretsFile()
 
 	cmd.WorkspaceEnv = options2.InheritFromEnvironment(
 		cmd.WorkspaceEnv,
@@ -358,6 +351,29 @@ func (cmd *UpCmd) prepareSecretsWithProject(
 	)
 
 	return nil
+}
+
+func (cmd *UpCmd) appendSecretsFile() error {
+	if cmd.SecretsFile == "" {
+		return nil
+	}
+	parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
+	if err != nil {
+		return err
+	}
+	for k, v := range parsed {
+		cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
+	}
+	return nil
+}
+
+func (cmd *UpCmd) resolveFeatureSecretsFile() {
+	if cmd.FeatureSecretsFile == "" {
+		cmd.FeatureSecretsFile = os.Getenv("DEVCONTAINER_SECRETS_FILE")
+	}
+	if cmd.FeatureSecretsFile != "" {
+		cmd.CLIOptions.FeatureSecretsFile = cmd.FeatureSecretsFile
+	}
 }
 
 func (cmd *UpCmd) prepareBootstrapGitToken(
@@ -404,6 +420,15 @@ func (cmd *UpCmd) resolveStoredSecrets(
 		}
 		return cmd.applyEnvVars(ctx, devsyConfig, resolver)
 	}
+	return cmd.resolveWithStore(ctx, devsyConfig, project, requests)
+}
+
+func (cmd *UpCmd) resolveWithStore(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	project *projectSecretContext,
+	requests []secretRequest,
+) error {
 	resolver, err := secrets.NewResolverForConfig(devsyConfig, cmd.unlockOptions())
 	if err != nil {
 		return err
@@ -477,27 +502,9 @@ func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVar
 		explicit = append(explicit, req)
 		explicitRefs[req.ref.String()] = struct{}{}
 	}
-	implicit := make([]envVarRequest, 0)
-	if current := devsyConfig.Current(); current != nil {
-		for _, name := range current.EnvVars {
-			ref, err := secrets.ParseRef(name)
-			if err != nil {
-				return nil, fmt.Errorf("invalid attached environment variable %q: %w", name, err)
-			}
-			if ref.Source != secrets.LocalSourceName ||
-				(ref.Type != "" && ref.Type != secrets.LocalSourceName) {
-				return nil, fmt.Errorf(
-					"attached environment variable %q must use the local Devsy store",
-					name,
-				)
-			}
-			if _, overridden := explicitRefs[ref.String()]; overridden {
-				continue
-			}
-			implicit = append(implicit, envVarRequest{
-				ref: ref, target: ref.Name, origin: envVarAttached,
-			})
-		}
+	implicit, err := attachedEnvVarRequests(devsyConfig, explicitRefs)
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(
 		implicit,
@@ -506,28 +513,69 @@ func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVar
 	return append(implicit, explicit...), nil
 }
 
-func parseEnvVarRequest(entry string) (envVarRequest, error) {
-	name, target, hasTarget := strings.Cut(entry, "=")
+func attachedEnvVarRequests(
+	devsyConfig *config.Config,
+	explicitRefs map[string]struct{},
+) ([]envVarRequest, error) {
+	implicit := make([]envVarRequest, 0)
+	current := devsyConfig.Current()
+	if current == nil {
+		return implicit, nil
+	}
+	for _, name := range current.EnvVars {
+		ref, err := secrets.ParseRef(name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid attached environment variable %q: %w", name, err)
+		}
+		if !isLocalStoreRef(ref) {
+			return nil, fmt.Errorf(
+				"attached environment variable %q must use the local Devsy store",
+				name,
+			)
+		}
+		if _, overridden := explicitRefs[ref.String()]; overridden {
+			continue
+		}
+		implicit = append(implicit, envVarRequest{
+			ref: ref, target: ref.Name, origin: envVarAttached,
+		})
+	}
+	return implicit, nil
+}
+
+func isLocalStoreRef(ref secrets.SecretRef) bool {
+	return ref.Source == secrets.LocalSourceName &&
+		(ref.Type == "" || ref.Type == secrets.LocalSourceName)
+}
+
+func validateEnvTarget(entry, name, target string, hasTarget bool) error {
 	if hasTarget && target == "" {
-		return envVarRequest{}, fmt.Errorf(
+		return fmt.Errorf(
 			"invalid --env %q: target after %q= must not be empty",
 			entry,
 			name,
 		)
 	}
 	if hasTarget && strings.Contains(target, "=") {
-		return envVarRequest{}, fmt.Errorf(
+		return fmt.Errorf(
 			"invalid --env %q: target %q must not contain =",
 			entry,
 			target,
 		)
 	}
+	return nil
+}
+
+func parseEnvVarRequest(entry string) (envVarRequest, error) {
+	name, target, hasTarget := strings.Cut(entry, "=")
+	if err := validateEnvTarget(entry, name, target, hasTarget); err != nil {
+		return envVarRequest{}, err
+	}
 	ref, err := secrets.ParseRef(name)
 	if err != nil {
 		return envVarRequest{}, err
 	}
-	if ref.Source != secrets.LocalSourceName ||
-		(ref.Type != "" && ref.Type != secrets.LocalSourceName) {
+	if !isLocalStoreRef(ref) {
 		return envVarRequest{}, fmt.Errorf(
 			"--env only accepts Devsy-managed values; use --secret %s instead",
 			name,

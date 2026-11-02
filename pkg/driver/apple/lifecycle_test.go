@@ -12,6 +12,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 )
 
+const (
+	stopC1 = "stop:c1"
+)
+
 // Test image references shared across driver tests.
 const (
 	testImage    = "img"
@@ -138,7 +142,7 @@ func TestDeleteDevContainer_StopsThenRemovesInOrder(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 	// Order matters: Apple's delete requires the container be stopped first.
-	if want := []string{"stop:c1", "remove:c1"}; !slices.Equal(m.calls, want) {
+	if want := []string{stopC1, "remove:c1"}; !slices.Equal(m.calls, want) {
 		t.Errorf("call order = %v, want %v", m.calls, want)
 	}
 }
@@ -150,7 +154,7 @@ func TestDeleteDevContainer_StopFailureStillRemoves(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 	// A stop failure is logged but delete is still attempted.
-	if want := []string{"stop:c1", "remove:c1"}; !slices.Equal(m.calls, want) {
+	if want := []string{stopC1, "remove:c1"}; !slices.Equal(m.calls, want) {
 		t.Errorf("call order = %v, want %v", m.calls, want)
 	}
 }
@@ -280,7 +284,7 @@ func TestRequireDevContainer_LifecycleOperations(t *testing.T) {
 			call: func(d *appleDriver) error {
 				return d.StopDevContainer(context.Background(), "ws")
 			},
-			wantCall: "stop:c1",
+			wantCall: stopC1,
 		},
 		{
 			name: "GetDevContainerLogs",

@@ -473,6 +473,7 @@ func removeFromConfig(path, host string) (string, error) {
 
 func transformHostSection(path, host string, transform func(line string) string) (string, error) {
 	var reader io.Reader
+	//nolint:gosec // path is the user ssh config
 	f, err := os.Open(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
