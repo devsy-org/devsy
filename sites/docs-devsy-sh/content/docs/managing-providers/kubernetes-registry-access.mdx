@@ -3,20 +3,20 @@ title: Kubernetes registry access without client credentials
 sidebar_label: Kubernetes registry access
 ---
 
-When a Kubernetes workspace uses a prebuilt `image` from a private registry, the cluster may already have permission to pull it through a node identity or a service account `imagePullSecret`. Devsy normally also reads the image configuration on the client to determine the container user, environment, entrypoint, command and `devcontainer.metadata`. The Kubernetes `IMAGE_CONFIG_FILE` option supplies those details locally, so the client does not need registry read credentials for this inspection.
+A Kubernetes workspace can use a prebuilt `image` from a private registry without client registry credentials. The cluster pulls the image through a node identity or a service account `imagePullSecret`. Devsy normally reads the image configuration on the client to get the container user, environment, entrypoint, command and `devcontainer.metadata`. The `IMAGE_CONFIG_FILE` option supplies those details from a local file, so the client needs no registry read credentials.
 
-This option applies to a digest-pinned `image` with no Features. It does not support Dockerfile builds, Compose, recovery, prebuilds or workspace image builds. The file is trusted input. Its digest association prevents accidental mismatch when used correctly, but does not prove that the file contents came from the image.
+Use this option only with a digest-pinned `image` that has no Features. It does not support Dockerfile builds, Compose, recovery, prebuilds or workspace image builds. Devsy trusts the file. The digest in the file catches accidental mismatches but cannot confirm that the contents came from the image.
 
 ## Create the image details file
 
-Use a fully qualified digest reference and export the config for the selected Linux platform. Convert the OCI config to Devsy's versioned wrapper:
+Use a fully qualified digest reference. Export the config for the Linux platform you need, then convert the OCI config to Devsy's versioned wrapper:
 
 ```sh
 IMAGE='registry.example.com/team/dev-image@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 crane config --platform linux/amd64 "$IMAGE" | jq --arg image "$IMAGE" '{schemaVersion: 1, image: $image, os: "linux", architecture: "amd64", config: (.config | {User: (.User // ""), Env: (.Env // []), Labels: (.Labels // {}), Entrypoint: (.Entrypoint // []), Cmd: (.Cmd // [])})}' > image-details.json
 ```
 
-The complete wrapper has this shape:
+The wrapper has this shape:
 
 ```json
 {
@@ -35,26 +35,26 @@ The complete wrapper has this shape:
 }
 ```
 
-`variant` is optional. The file must be a regular UTF-8 file no larger than 1 MiB. It must contain one version 1 wrapper, a fully qualified digest reference matching the requested image, a Linux platform matching `ARCHITECTURE`, and a config object with valid fields. Missing or invalid input is a hard error, with no registry inspection fallback.
+`variant` is optional. The file must be a regular UTF-8 file of at most 1 MiB with one version 1 wrapper. The wrapper needs a fully qualified digest reference that matches the requested image, a Linux platform that matches `ARCHITECTURE`, and a valid config object. If the file is missing or invalid, Devsy fails and does not fall back to registry inspection.
 
-Keep the image reference in `devcontainer.json` pinned to the same digest. Generate a separate file for each platform when publishing a multi-platform image.
+Pin the image reference in `devcontainer.json` to the same digest. For a multi-platform image, generate one file per platform.
 
-`ARCHITECTURE` selects the config platform and avoids listing cluster nodes. It does not schedule a pod onto a matching node. Use `NODE_SELECTOR` as well when the cluster has mixed architectures.
+`ARCHITECTURE` selects the config platform, so Devsy does not list cluster nodes. It does not place the pod on a matching node. On a cluster with mixed architectures, also set `NODE_SELECTOR`.
 
-Publish or distribute the image and its details file as separate artifacts. Importing the details file into Devsy does not upload it alongside the image or send it to the cluster.
+Publish the image and its details file as separate artifacts. Devsy does not upload the details file with the image or send it to the cluster.
 
 ## Configure the Kubernetes provider
 
-The registry pull authorization must already be available to Kubernetes. Configure the workspace service account or pod template with the admin-managed `imagePullSecrets`, or use the node's registry identity. The Devsy client still needs its normal namespace permissions and access to the daemon-configuration Secrets it uses. It does not need permission to read the registry pull Secret.
+Kubernetes must already have registry pull access. Add the admin-managed `imagePullSecrets` to the workspace service account or pod template, or use the node's registry identity. The Devsy client still needs its usual namespace permissions and access to the daemon-configuration Secrets. It does not need to read the registry pull Secret.
 
-For cluster-managed pull credentials without client Docker credential reads, disable both client credential forwarding and Devsy pull-secret creation:
+To use cluster-managed pull credentials without reading Docker credentials on the client, turn off credential forwarding and Devsy pull-secret creation:
 
 ```sh
 devsy context set [context-name] --option SSH_INJECT_DOCKER_CREDENTIALS=false
 devsy provider set kubernetes --option KUBERNETES_PULL_SECRETS_ENABLED=false
 ```
 
-Set the file and architecture per workspace, using a stable absolute path:
+Set the file and architecture for each workspace. Use a stable absolute path:
 
 ```sh
 devsy workspace up ./project --provider kubernetes --ide none \
@@ -62,6 +62,6 @@ devsy workspace up ./project --provider kubernetes --ide none \
   --provider-option ARCHITECTURE=amd64
 ```
 
-In Devsy Desktop, set `IMAGE_CONFIG_FILE` to an absolute path on the machine running Desktop. Keep that file at the same path while using the provider. Moving it does not update an existing workspace's saved image configuration. A normal `up` validates the configured file but keeps the workspace's saved launch recipe. Changing image metadata takes effect when you explicitly recreate the workspace with the updated file. A local path change alone does not replace a running pod. If you move to another machine or workspace host, copy the file there and configure its new absolute local path. Once a workspace exists, the file is not needed for status, logs, stop or delete operations.
+In Devsy Desktop, set `IMAGE_CONFIG_FILE` to an absolute path on the machine that runs Desktop. Keep the file at that path while you use the provider. Moving it does not change an existing workspace's saved image configuration. A normal `up` validates the configured file but keeps the workspace's saved launch recipe. To apply changed image metadata, recreate the workspace with the updated file. On another machine or workspace host, copy the file there and set its new absolute path. After the workspace exists, status, logs, stop and delete do not need the file.
 
-If cluster pull authorization is missing, Kubernetes reports an image pull failure such as `ImagePullBackOff`. Configure the service account, pod template or node identity that performs the pull. Adding credentials to the client's Docker config does not grant the cluster permission to pull the image.
+If the cluster cannot pull the image, Kubernetes reports a failure such as `ImagePullBackOff`. Configure the service account, pod template or node identity that pulls the image. Client Docker credentials do not give the cluster pull access.

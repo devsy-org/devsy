@@ -3,7 +3,7 @@ title: Manage Machines
 sidebar_label: Manage Machines
 ---
 
-A machine is a server created by a provider. See [What are machines](./what-are-machines.mdx). Run `devsy machine --help` for every command.
+A machine is a server that a provider creates. See [What are machines](./what-are-machines.mdx). Run `devsy machine --help` to list all commands.
 
 ## Create and list
 
@@ -20,7 +20,7 @@ devsy machine describe <name>
 devsy machine inspect <name>
 ```
 
-`describe` prints the provider's own summary. `inspect` prints the machine configuration as JSON, with sensitive options redacted and hidden options left out.
+`describe` prints the provider's summary. `inspect` prints the machine configuration as JSON. Sensitive options are redacted, and hidden options are left out.
 
 ## Connect
 
@@ -37,5 +37,5 @@ devsy machine delete <name>
 ```
 
 <Callout type="warn">
-Deleting a machine cannot be undone. All workspace containers and data on it are lost.
+Deleting a machine cannot be undone. You lose all workspace containers and data on it.
 </Callout>

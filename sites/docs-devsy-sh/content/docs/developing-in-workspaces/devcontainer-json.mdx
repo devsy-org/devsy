@@ -3,7 +3,7 @@ title: devcontainer.json
 sidebar_label: devcontainer.json
 ---
 
-Devsy uses the [open `devcontainer.json` standard](https://containers.dev/) to define the development container for a project. Because VS Code and GitHub Codespaces use the same format, existing configurations work in Devsy, and the container behaves the same on every provider.
+Devsy uses the [open `devcontainer.json` standard](https://containers.dev/) to define a project's development container. VS Code and GitHub Codespaces use the same format, so existing configurations work in Devsy.
 
 If a project has no configuration, Devsy detects the language and uses a default.
 
@@ -23,18 +23,18 @@ To use a specific file, pass its path:
 devsy workspace up github.com/my-org/my-repo --devcontainer ./path/to/devcontainer.json
 ```
 
-A configuration can inherit from other files with `extends`, which takes a path or a list of paths. Keep files the configuration depends on inside its folder.
+Use `extends` to inherit from other files. It takes a path or a list of paths. Keep the files a configuration depends on inside its folder.
 
 ### Existing workspaces
 
-Devsy remembers which configuration a workspace uses. If a later search would pick a different file, Devsy warns and keeps the old one. To switch on purpose, recreate the workspace:
+Devsy remembers which configuration each workspace uses. If a later search finds a different file, Devsy warns and keeps the saved one. To switch files, recreate the workspace:
 
 ```sh
 devsy workspace up <workspace> --recreate --devcontainer "<relative-path>"
 devsy workspace up <workspace> --recreate --devcontainer "id:<name>"
 ```
 
-The choice is saved for later runs.
+Devsy saves the choice for later runs.
 
 ## Dockerfile
 
@@ -48,7 +48,7 @@ The choice is saved for later runs.
 
 ## Docker Compose
 
-Point `dockerComposeFile` at one or more compose files and choose the service to use as the dev container:
+Set `dockerComposeFile` to one or more Compose files. Set `service` to the service that runs as the dev container:
 
 ```json
 {
@@ -57,7 +57,7 @@ Point `dockerComposeFile` at one or more compose files and choose the service to
 }
 ```
 
-Devsy names the compose project the same way Docker Compose does, so it reuses a project that is already running. In order:
+Devsy names the Compose project the same way Docker Compose does, so it reuses a project that is already running. It checks these sources in order:
 
 1. `COMPOSE_PROJECT_NAME` in your shell.
 2. `COMPOSE_PROJECT_NAME` in an `.env` file, in the devcontainer folder, the workspace root, or a compose file's folder.
@@ -72,7 +72,7 @@ A custom `DOCKER_HOST` set for the Docker provider is passed to the `docker comp
 
 [Features](https://containers.dev/features) are reusable pieces that Devsy merges into your Dockerfile, such as `docker-in-docker` or `kubectl`.
 
-To send HTTP headers when downloading a feature archive, set them under `customizations`:
+To send HTTP headers when Devsy downloads a feature archive, set them under `customizations`:
 
 ```json
 {
@@ -98,15 +98,15 @@ After you edit the configuration, apply it without deleting the workspace:
 devsy workspace up my-workspace --recreate
 ```
 
-This applies all changes, including the Dockerfile, mounts, and features. Devsy replaces the running container only if the rebuild succeeds, so a mistake does not break the existing workspace.
+Devsy applies every change, including the Dockerfile, mounts, and features. It replaces the running container only if the rebuild succeeds. A failed build leaves the existing workspace running.
 
 <Callout type="warn" title="Recreating">
-Changes outside volumes are lost. The project folder and other mounted paths are kept.
+Anything outside volumes is lost. The project folder and other mounted paths stay.
 </Callout>
 
 ## Environment variables in devcontainer.json
 
-When you use `${localEnv:NAME}` in `devcontainer.json` with the SSH provider, the variable has to reach the remote machine.
+With the SSH provider, the variable in `${localEnv:NAME}` must reach the remote machine.
 
 1. Reference the variable in `devcontainer.json`:
 

@@ -1,46 +1,45 @@
 # Provider workflows
 
-A configured provider determines where a workspace runs. Registry source names
-such as `docker` or `kubernetes` are not necessarily the installed configuration
-names. List providers and use the exact returned name when selecting one.
+A configured provider decides where a workspace runs. Registry names such as
+`docker` or `kubernetes` can differ from installed configuration names. List
+providers and use the exact returned name.
 
 ## Select for one workspace
 
-Call `provider_list` if selection matters. Inspect `name`, `default`, `status`,
-and optional `version`; choose a suitable existing provider. Pass its name to
-`workspace_create.provider`. Omit provider when the current default satisfies
-the request. A provider's status is not the workspace container's running state.
+Call `provider_list` when the choice matters. Check `name`, `default`, `status`,
+and `version`. Pass the chosen name to `workspace_create.provider`. Omit
+`provider` when the default fits. Provider status does not show whether the
+workspace container is running.
 
 ## Configure
 
-Add a provider only when setup is within the request. Sources can be a registry
-name, GitHub release URL, or local provider config path. Provider-specific
-options come from documentation/metadata, not guessed flag names. Sensitive
-options and provider config should not be echoed into the conversation.
+Add a provider only when setup is part of the request. The source can be a
+registry name, a GitHub release URL, or a local provider config path. Take
+options from provider docs or metadata. Do not guess flag names or repeat
+sensitive options in the conversation.
 
-Before adding, inspect the current default. The current MCP adapter forwards
-`--use` only for `use=true`, while CLI add itself defaults to true; false/omitted
-MCP `use` therefore does not ensure the old default remains. To add without
-changing it, use `devsy provider add <source> --use=false` through CLI. This
-installs but does not initialize the provider; options supplied to this add path
-are not applied through initialization. If setup for use is intended, discover
-the installed name and run `devsy provider init <configured-name>`, supplying
-required repeatable `--option KEY=VALUE` values to **init**. Init resolves options
-and runs provider setup without selecting it as the default. List afterward to
-verify status and that the prior default remains before creating a workspace.
-If only installation was requested, report that initialization is still needed.
-Otherwise verify the actual default after MCP add and report any change. Do
-not silently broaden a request for one workspace into a default configuration
-change.
+Check the current default before you add. The MCP adapter forwards `--use` only
+for `use=true`, and CLI add defaults to true, so a false or omitted MCP `use`
+can change the default. To keep the default, run
+`devsy provider add <source> --use=false` in the CLI. That installs the provider
+without initializing it. Options given to add do not carry over to init.
 
-Use `provider_use` only when changing the default is requested or clearly needed.
-This affects later workspace creates that omit a provider; it does not migrate
-existing workspaces.
+To use the provider, find the installed name and run
+`devsy provider init <configured-name>` with the required repeatable
+`--option KEY=VALUE` values. Init does not change the default. Then check the
+status and the default with `provider_list` before you create a workspace. If
+the user asked only for installation, report that init is still needed.
+
+After an MCP add, check the default and report any change. Do not turn a request
+for one workspace into a default change.
+
+Use `provider_use` only when the user asks to change the default. It affects
+later creates that omit a provider and does not move existing workspaces.
 
 ## Remove or recover
 
-Provider deletion is shared configuration mutation, not workspace repair.
-Verify target and intent, inspect dependent workspaces, and expect deletion to
-be refused if workspaces use the provider. Do not force-remove it or delete its
-workspaces to bypass that refusal. A failing provider calls for diagnosis of
-configuration/connectivity/runtime, not automatic deletion or replacement.
+Deleting a provider changes shared configuration and does not repair a
+workspace. Confirm the target and intent, and check dependent workspaces. The
+delete fails if workspaces use the provider. Do not force-remove the provider or
+delete its workspaces to get past that. When a provider fails, diagnose its
+configuration, connectivity, or runtime. Do not delete or replace it.

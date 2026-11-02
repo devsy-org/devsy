@@ -8,7 +8,7 @@
   </a>
 </p>
 
-Devsy enables teams and their AI coding agents to scale development using standardized, isolated workspaces. It cuts hardware cost, shortens onboarding, contains agent risk, and improves developer productivity. Workspaces deploy across Docker, Kubernetes, cloud providers, and SSH remote hosts.
+Devsy gives teams and their AI coding agents separate workspaces built from one standard definition. Workspaces run on Docker, Kubernetes, cloud providers, and SSH remote hosts.
 
 <table align="center">
 <tr>
@@ -34,15 +34,15 @@ Devsy enables teams and their AI coding agents to scale development using standa
 <h2 align="center">Downloads</h2>
 
 <p>
-Devsy ships as a desktop application and a command-line tool.
-See the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> for installation instructions.
+Devsy has a desktop app and a command-line tool.
+See the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> for install steps.
 </p>
 
 <table align="center" width="80%">
 <tr>
 <td width="50%" valign="top">
 
-<h3>Desktop Application</h3>
+<h3>Desktop application</h3>
 
 <table>
 <tr>
@@ -134,78 +134,78 @@ See the <a href="https://devsy.sh/docs/getting-started/install">Devsy Docs</a> f
 </tr>
 </table>
 
-<h2 align="center">Engineering at Scale</h2>
+<h2 align="center">Features</h2>
 <p>
-Devsy implements the open <a href="https://containers.dev/">DevContainer standard</a>. Workspaces stay portable and repeatable across provider backends.
+Devsy uses the open <a href="https://containers.dev/">DevContainer standard</a>. Workspaces are portable across provider backends.
 </p>
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <b>Cost savings</b><br>
-Lower infrastructure usage with local and remote options plus auto-shutdown controls.
+Run workspaces locally or remotely. Auto-shutdown stops idle ones.
 </td>
 <td width="50%" valign="top">
 <b>No vendor lock-in</b><br>
-Choose the infrastructure that fits your team. Devsy supports cloud providers and self-managed platforms.
+Use cloud providers or self-managed platforms.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 <b>Flexible development</b><br>
-Run one environment in local and remote setups from prototype to production workflows.
+Run the same environment locally and remotely.
 </td>
 <td width="50%" valign="top">
 <b>Cross-IDE support</b><br>
-Support teams across popular editors including VS Code and JetBrains.
+Works with VS Code and JetBrains.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 <b>Feature set</b><br>
-Features include prebuilds, inactivity-based shutdown, and Git and Docker credential sync.
+Prebuilds, inactivity shutdown, and Git and Docker credential sync.
 </td>
 <td width="50%" valign="top">
 <b>Desktop App</b><br>
-The desktop app manages workspaces; the CLI drives automation and platform integration.
+The desktop app manages workspaces. The CLI runs automation and platform integration.
 </td>
 </tr>
 </table>
 
-<h2 align="center">Secure Containers for Agents</h2>
+<h2 align="center">Containers for agents</h2>
 <p align="center">
-AI coding agents execute real commands with real access. Devsy gives each agent its own isolated, disposable container built from the same <code>devcontainer.json</code> your team uses, so agents run without putting your host, secrets, or other projects at risk.
+Devsy runs each AI coding agent in its own container, built from the same <code>devcontainer.json</code> your team uses. What a container can reach depends on the provider, mounts, network, and configuration.
 </p>
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<b>Sandboxed by default</b><br>
-Filesystem, network, and process isolation per agent. A bad command or a prompt-injected instruction can't reach your host, other projects, or secrets.
+<b>Separate containers</b><br>
+Each agent workspace runs in its own container, apart from your other workspaces.
 </td>
 <td width="50%" valign="top">
-<b>Scoped credentials</b><br>
-Git and Docker credentials sync into the workspace, not the agent's host. Revoke or rotate a workspace's access without touching your machine.
+<b>Credential sync</b><br>
+Git and Docker credentials sync into the workspace, and code in the container can use them. Review <code>devcontainer.json</code> before you start a workspace. See <a href="https://devsy.sh/docs/developing-in-workspaces/credentials">Reuse local credentials</a>.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<b>Destroy and rebuild in seconds</b><br>
-Tear a container down and rebuild it clean from <code>devcontainer.json</code>. No manual cleanup, no lingering state.
+<b>Destroy and rebuild</b><br>
+Delete a container and rebuild it from <code>devcontainer.json</code>.
 </td>
 <td width="50%" valign="top">
 <b>One environment, many agents</b><br>
-Spin up as many isolated agent workspaces as you need from the same definition your team uses for development.
+Start as many agent workspaces as you need from the definition your team uses for development.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<b>Run where it's cheapest</b><br>
-Local Docker for quick tasks, Kubernetes or cloud providers to fan out dozens of agents at once. Auto-shutdown stops idle agent workspaces from burning budget.
+<b>Choose where agents run</b><br>
+Use local Docker for small tasks. Use Kubernetes or cloud providers for many agents at once. Auto-shutdown stops idle agent workspaces.
 </td>
 <td width="50%" valign="top">
-<b>Same setup, every time</b><br>
-No environment drift between agent runs. Every workspace starts from the same reproducible definition.
+<b>Same setup every time</b><br>
+Every workspace starts from the same definition.
 </td>
 </tr>
 </table>

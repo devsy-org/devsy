@@ -4,19 +4,19 @@ sidebar_label: What is Devsy?
 description: Devsy runs devcontainer-based developer workspaces on your machine, a remote host, Kubernetes, or a cloud.
 ---
 
-Devsy creates development workspaces from a [devcontainer.json](https://containers.dev/) that lives in your repository. A workspace runs as a container, a Kubernetes pod, or a microVM, and your IDE connects to it.
+Devsy creates development workspaces from a [devcontainer.json](https://containers.dev/) in your repository. A workspace runs as a container, a Kubernetes pod, or a microVM. Your IDE connects to it.
 
 <figure>
   <img src="/docs/media/devsy-flow.gif" alt="Animated demo of launching Devsy, connecting to a workspace, and opening it in an IDE" />
   <figcaption>Devsy</figcaption>
 </figure>
 
-Where a workspace runs is decided by a [provider](./managing-providers/what-are-providers). Use a provider for your own machine, an SSH host, Kubernetes, or a cloud. You can also [write your own](./developing-providers/quickstart). Every workspace is created and managed the same way regardless of provider.
+A [provider](./managing-providers/what-are-providers) decides where a workspace runs: your machine, an SSH host, Kubernetes, or a cloud. You can also [write your own](./developing-providers/quickstart). Devsy creates and manages every workspace the same way, whatever the provider.
 
-## Why Devsy?
+## Benefits
 
-- **One environment definition.** `devcontainer.json` is the open standard, so the same file works on every provider.
-- **Your infrastructure.** Run workspaces on machines you already pay for. Machine providers can stop idle machines with an [inactivity timeout](./developing-in-workspaces/inactivity-timeout).
-- **No lock-in.** Recreate a workspace on another provider with the same definition. To also move container and volume state, [snapshot](./developing-in-workspaces/workspace-snapshots) a local-provider workspace that has a single bind mount.
+- **One environment definition.** `devcontainer.json` is an open standard. The same file works on every provider.
+- **Your infrastructure.** Run workspaces on machines you already have. Machine providers can stop idle machines with an [inactivity timeout](./developing-in-workspaces/inactivity-timeout).
+- **Portable workspaces.** Recreate a workspace on another provider with the same definition. To also move container and volume state, [snapshot](./developing-in-workspaces/workspace-snapshots) a local-provider workspace that has a single bind mount.
 - **Your editor.** VS Code, the JetBrains IDEs, and any editor that can connect over SSH.
-- **Desktop app and CLI.** The desktop app is for everyday use. The CLI is for automation.
+- **Desktop app and CLI.** Use the desktop app day to day. Use the CLI for automation.

@@ -5,15 +5,15 @@ sidebar_label: Stop or Delete a Workspace
 
 ## Stop a workspace
 
-Stopping pauses a workspace so it stops using CPU and memory. Depending on the provider, Devsy stops the container or shuts down the VM it runs on. Its data is kept.
+Stopping pauses a workspace so it stops using CPU and memory. Depending on the provider, Devsy stops the container or shuts down the VM it runs on. The data is kept.
 
-In Devsy Desktop, open the workspace's actions menu and choose **Stop**. With the CLI:
+In Devsy Desktop, open the workspace actions menu and choose **Stop**. From the CLI, run:
 
 ```sh
 devsy workspace stop my-workspace
 ```
 
-Start it again with:
+To start it again, run:
 
 ```sh
 devsy workspace up my-workspace
@@ -21,15 +21,15 @@ devsy workspace up my-workspace
 
 Some providers stop idle workspaces on their own. See [Auto-inactivity timeout](./inactivity-timeout.mdx).
 
-Stopping or deleting a workspace first cancels any running `devsy workspace up --detach` task for it. To cancel a task yourself, use `devsy workspace task cancel <task-id>`.
+Stopping or deleting a workspace first cancels its running `devsy workspace up --detach` task. To cancel a task yourself, run `devsy workspace task cancel <task-id>`.
 
 ## Delete a workspace
 
-Deleting removes the workspace and everything Devsy stores about it. Depending on the provider, that means removing a container or deleting a VM.
+Deleting removes the workspace and all data Devsy stores about it. Depending on the provider, Devsy removes the container or deletes the VM.
 
-In Devsy Desktop, open the workspace's actions menu, choose **Delete**, and confirm. If the action fails, the error appears on the workspace detail page, where you can also open the logs.
+In Devsy Desktop, open the workspace actions menu, choose **Delete**, and confirm. If the delete fails, the workspace detail page shows the error and links to the logs.
 
-With the CLI:
+From the CLI, run:
 
 ```sh
 devsy workspace delete my-workspace
@@ -37,10 +37,16 @@ devsy workspace delete my-workspace
 
 `devsy workspace down` and `devsy workspace rm` are aliases for the same command.
 
-If the provider is unreachable, you can force the delete:
+If the provider is unreachable, force the delete:
 
 ```sh
 devsy workspace delete my-workspace --force
 ```
 
-`--force` makes several provider teardown errors non-fatal. For container deletion (including machine providers without `autoDelete`), a failed container teardown is ignored, with errors other than a deadline timeout logged, and if Devsy cannot check the machine status it skips the container teardown. For auto-delete machines, a failed machine delete command is logged and the delete continues. Daemon-backed workspaces still attempt their instance delete under `--force`; delete request errors other than NotFound are logged and do not stop deletion, but waiting for deletion can still return an error. Provider resources may remain in these cases.
+With `--force`, Devsy continues past several teardown errors:
+
+- Container deletion, including machine providers without `autoDelete`: Devsy ignores a failed container teardown and logs errors other than a deadline timeout. If Devsy cannot check the machine status, it skips the container teardown.
+- Auto-delete machines: Devsy logs a failed machine delete command and continues.
+- Daemon-backed workspaces: Devsy still tries to delete the instance. It logs delete request errors other than NotFound and continues. Waiting for deletion can still return an error.
+
+Provider resources can remain after a forced delete.

@@ -5,7 +5,7 @@ sidebar_label: Provider Binaries
 
 The `binaries` section lists helper binaries Devsy downloads for a provider, such as a cloud CLI.
 
-Each entry is a name with one item per platform:
+Each entry has a name and one item per platform:
 
 ```yaml
 binaries:
@@ -21,7 +21,7 @@ binaries:
       checksum: <sha256 of the file>
 ```
 
-Supported archives are `.tgz`, `.tar`, `.tar.gz` and `.zip`. When a user adds the provider, Devsy picks the item that matches their OS and architecture, downloads it and, if `checksum` is set, verifies it.
+Supported archives are `.tgz`, `.tar`, `.tar.gz` and `.zip`. When a user adds the provider, Devsy downloads the item that matches their OS and architecture and verifies `checksum` if set.
 
 See the official providers, such as [devsy-provider-aws](https://github.com/devsy-org/devsy-provider-aws), for complete examples.
 
@@ -31,7 +31,7 @@ Not every provider needs `binaries`. Built-in providers that wrap a CLI the user
 
 ## Archives
 
-Archive extraction applies only when `path` is an `http://` or `https://` URL. Devsy picks the extraction format from the `path` extension, not from `archivePath`. Devsy requires `archivePath` when `path` is an archive. Setting `archivePath` on a direct binary URL makes Devsy try to extract the binary and fails with `unrecognized archive format`.
+Devsy extracts archives only when `path` is an `http://` or `https://` URL, and picks the format from the `path` extension, not from `archivePath`. `archivePath` is required when `path` is an archive. On a direct binary URL, `archivePath` makes Devsy try to extract the binary and fail with `unrecognized archive format`.
 
 ```yaml
 binaries:
@@ -43,13 +43,13 @@ binaries:
       checksum: <sha256 of bin/my-binary after extraction>
 ```
 
-Devsy extracts the whole archive into a folder for the binary and keeps its layout, then uses the file at `archivePath`. For HTTP(S) archives, `name` is ignored.
+Devsy extracts the whole archive into a folder for the binary and keeps its layout, then runs the file at `archivePath`. Devsy ignores `name` for HTTP(S) archives.
 
 ## Checksum
 
 `checksum` is optional, except for the `agent.binaries` entry selected by `agent.external.binary`, which needs one for every platform. See [External Driver](./driver.mdx#external-driver).
 
-When set, Devsy computes the SHA256 of the file it will run and compares it case-insensitively. For an HTTP(S) archive that file is the extracted file at `archivePath`; the archive itself is never hashed. A mismatch deletes the file and fails the download without retrying.
+When set, Devsy computes the SHA256 of the file it runs and compares it case-insensitively. For an HTTP(S) archive, that file is the one extracted at `archivePath`, never the archive. A mismatch deletes the file and fails the download without retrying.
 
 ## Use a binary
 

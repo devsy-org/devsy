@@ -1,15 +1,14 @@
 <!--
-Thanks for contributing. Keep the PR title in Conventional Commits form,
-e.g. `fix(ssh): handle closed tunnel` (types: see commitlint.config.mjs).
-Delete any section that does not apply, but do not leave placeholders.
+Use a Conventional Commits title, for example `fix(ssh): handle closed tunnel`
+(types in commitlint.config.mjs). Delete sections that do not apply, and leave no placeholders.
 -->
 
 ## What and why
 
-<!-- What does this change, and why? Lead with the problem, not the diff. -->
+<!-- What changes, and why? Start with the problem, not the diff. -->
 
 Fixes #
-<!-- Use "Fixes #N" to auto-close, or "Refs #N". Write "none" if there is no issue. -->
+<!-- Use "Fixes #N" to close the issue on merge, or "Refs #N". Write "none" if there is no issue. -->
 
 ## Type of change
 
@@ -22,7 +21,7 @@ Fixes #
 
 ## AI assistance
 
-<!-- Using AI to write code is fine. Say how, so reviewers know where to look. -->
+<!-- AI-assisted code is fine. Say how, so reviewers know where to look. -->
 
 - [ ] No AI tools were used
 - [ ] AI tools were used (fill in below)
@@ -38,8 +37,8 @@ Fixes #
 
 ## Testing
 
-Behavior changes need integration (e2e) test coverage. Unit tests alone are not enough
-for anything that touches the CLI, providers, workspaces, the agent, or the desktop app.
+Behavior changes need integration (e2e) tests. Unit tests alone do not cover changes
+to the CLI, providers, workspaces, the agent, or the desktop app.
 
 - [ ] CLI / provider / agent change: added or updated Ginkgo integration tests under `e2e/tests/`
   - Suite / spec: <!-- e.g. e2e/tests/up, "should reuse an existing container" -->
@@ -49,9 +48,9 @@ for anything that touches the CLI, providers, workspaces, the agent, or the desk
 - [ ] Added or updated unit tests (`mise run cli:test` / `mise run desktop:test`)
 - [ ] No integration test needed, because: <!-- refactor with existing coverage, docs only, CI only. Name the existing spec that covers it. -->
 
-How I verified it manually:
+How I verified it:
 
-<!-- Commands run and what you observed. Paste output for bug fixes. -->
+<!-- Commands run and what you saw. Paste output for bug fixes. -->
 
 ## Checklist
 

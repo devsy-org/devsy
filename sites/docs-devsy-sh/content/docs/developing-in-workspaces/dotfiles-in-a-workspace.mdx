@@ -3,7 +3,7 @@ title: Dotfiles in a Workspace
 sidebar_label: Dotfiles in a Workspace
 ---
 
-Devsy can clone your dotfiles repository into a workspace and install it, so your shell and tool settings are there every time.
+Devsy clones your dotfiles repository into a workspace and installs it, so your shell and tool settings are there every time.
 
 Pass the repository with `--dotfiles`:
 
@@ -11,21 +11,21 @@ Pass the repository with `--dotfiles`:
 devsy workspace up https://github.com/example/repo --dotfiles https://github.com/my-user/my-dotfiles-repo
 ```
 
-Devsy then looks in the repository for one of these install scripts and uses the first that completes successfully, trying the next script if one fails:
+Devsy looks in the repository for these install scripts and runs the first one that succeeds. If a script fails, Devsy tries the next one:
 
 - `install.sh`, `install`
 - `bootstrap.sh`, `bootstrap`, `script/bootstrap`
 - `setup.sh`, `setup`, `setup/setup`
 
-If no script succeeds, Devsy links hidden files (names starting with `.`) into the container's `$HOME`. It skips directories, so `.config/` needs an install script.
+If no script succeeds, Devsy links files whose names start with `.` into the container's `$HOME`. It skips directories, so a `.config/` directory needs an install script.
 
-To run a different script, name it:
+To run a different script, pass its path:
 
 ```sh
 devsy workspace up https://github.com/example/repo --dotfiles https://github.com/my-user/my-dotfiles-repo --dotfiles-script custom/location/install.sh
 ```
 
-## For all workspaces
+## Set defaults for all workspaces
 
 Set the options on the context so every new workspace uses them:
 
