@@ -146,7 +146,7 @@ describe("ProviderWizard", () => {
   })
 
   it("selects Harvester once as a remote preset when the catalog also lists it", async () => {
-    providerAvailable.mockResolvedValue(["harvester"])
+    providerAvailable.mockResolvedValue(["harvester", "terraform"])
     const page = renderWizard()
     const preset = screen.getByRole("button", {
       name: /harvester Harvester HCI clusters/,
@@ -154,11 +154,8 @@ describe("ProviderWizard", () => {
     expect(
       screen.getByRole("region", { name: "Remote" }).contains(preset),
     ).toBe(true)
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: /harvester/ })).toHaveLength(
-        1,
-      ),
-    )
+    await screen.findByRole("button", { name: /terraform/ })
+    expect(screen.getAllByRole("button", { name: /harvester/ })).toHaveLength(1)
     await fireEvent.click(preset)
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     await waitFor(() => {
