@@ -12,11 +12,28 @@ type SSHConfigLocation struct {
 	IncludePath string
 }
 
+func (l SSHConfigLocation) withContextDefaults(devsyConfig *config.Config) SSHConfigLocation {
+	if l.ConfigPath == "" {
+		l.ConfigPath = devsyConfig.ContextOption(config.ContextOptionSSHConfigPath)
+	}
+	if l.IncludePath == "" {
+		l.IncludePath = devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath)
+	}
+
+	return l
+}
+
 func ValidateNewWorkspaceID(
 	devsyConfig *config.Config,
 	id string,
 	location SSHConfigLocation,
 ) error {
+	unlock, err := lockPresentation()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	return checkWorkspaceIDHost(devsyConfig, id, id, location)
 }
 

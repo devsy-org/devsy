@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/gofrs/flock"
@@ -802,4 +803,70 @@ func TestConfigureSSHConfigResolvesPreferredHostUnderLock(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), "Host fresh.devsy new-workspace"+config.SSHHostSuffix)
 	assert.NotContains(t, string(data), "stale.devsy")
+}
+
+func TestConfigureSSHConfigEmptyPathSharesResolvedLock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	resolved := filepath.Join(home, ".ssh", "config")
+	held := false
+
+	err := ConfigureSSHConfig(SSHConfigParams{
+		Context:   testSSHContext,
+		Workspace: "new-workspace",
+		User:      testSSHUser,
+		ResolvePreferredHost: func() string {
+			probe := flock.New(resolved + configLockSuffix)
+			locked, lockErr := probe.TryLock()
+			if locked {
+				_ = probe.Unlock()
+			}
+			held = lockErr == nil && !locked
+
+			return "fresh.devsy"
+		},
+	})
+	assert.NoError(t, err)
+	assert.True(t, held)
+
+	// #nosec G304 -- resolved is created within the test temporary directory.
+	data, err := os.ReadFile(resolved)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "Host fresh.devsy new-workspace"+config.SSHHostSuffix)
+}
+
+func TestWritersWaitOnResolvedPathLock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	resolved := filepath.Join(home, ".ssh", "config")
+
+	writers := map[string]func() error{
+		"remove-empty": func() error { return RemoveFromConfig("ws", "", "") },
+		"remove-tilde": func() error { return RemoveFromConfig("ws", "~/.ssh/config", "") },
+		"configure-empty": func() error {
+			return ConfigureSSHConfig(SSHConfigParams{
+				Context: testSSHContext, Workspace: "ws", User: testSSHUser,
+			})
+		},
+	}
+
+	for name, write := range writers {
+		t.Run(name, func(t *testing.T) {
+			unlock, err := lockConfigFile(resolved)
+			assert.NoError(t, err)
+
+			done := make(chan error, 1)
+			go func() { done <- write() }()
+
+			select {
+			case <-done:
+				unlock()
+				t.Fatal("writer did not wait for the resolved path lock")
+			case <-time.After(150 * time.Millisecond):
+			}
+
+			unlock()
+			assert.NoError(t, <-done)
+		})
+	}
 }

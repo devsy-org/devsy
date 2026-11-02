@@ -192,10 +192,7 @@ func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
 
 	// Unlike saveJSON, this never creates the workspace dir: a result is only
 	// valid while the workspace config exists.
-	if _, err := os.Stat(filepath.Join(workspaceDir, WorkspaceConfigFile)); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("workspace %s no longer exists", workspace.ID)
-		}
+	if _, err := requireWorkspaceConfigFile(workspaceDir, workspace.ID); err != nil {
 		return err
 	}
 
@@ -231,6 +228,15 @@ func SaveWorkspacePresentation(workspace *Workspace) error {
 	}
 	defer unlock()
 
+	workspaceDir, err := GetWorkspaceDir(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	configPath, err := requireWorkspaceConfigFile(workspaceDir, workspace.ID)
+	if err != nil {
+		return err
+	}
+
 	committed, err := LoadWorkspaceConfig(workspace.Context, workspace.ID)
 	if err != nil {
 		return fmt.Errorf("load workspace %s: %w", workspace.ID, err)
@@ -241,12 +247,21 @@ func SaveWorkspacePresentation(workspace *Workspace) error {
 
 	committed.DisplayName = workspace.DisplayName
 	committed.SSHHostAlias = workspace.SSHHostAlias
-	workspaceDir, err := GetWorkspaceDir(workspace.Context, workspace.ID)
-	if err != nil {
-		return err
+
+	return writeJSONFile(configPath, committed, 0o644)
+}
+
+func requireWorkspaceConfigFile(workspaceDir, workspaceID string) (string, error) {
+	configPath := filepath.Join(workspaceDir, WorkspaceConfigFile)
+	if _, err := os.Stat(configPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("workspace %s no longer exists", workspaceID)
+		}
+
+		return "", err
 	}
 
-	return saveJSON(workspaceDir, WorkspaceConfigFile, committed, 0o644)
+	return configPath, nil
 }
 
 func lockWorkspacePersistence(contextName, workspaceID string) (func(), error) {

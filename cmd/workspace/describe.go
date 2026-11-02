@@ -29,12 +29,8 @@ type DescribeCmd struct {
 
 // describeOutput is the JSON shape: the full workspace config plus live state.
 type describeOutput struct {
-	*provider.Workspace
-	State            string `json:"state"`
-	DisplayName      string `json:"displayName"`
-	SSHHostAlias     string `json:"sshHostAlias"`
-	PreferredSSHHost string `json:"preferredSSHHost"`
-	CanonicalSSHHost string `json:"canonicalSSHHost"`
+	*provider.WorkspaceListEntry
+	State string `json:"state"`
 }
 
 // NewDescribeCmd creates a new command.
@@ -96,12 +92,8 @@ func render(mode string, cfg *provider.Workspace, state string) error {
 		table.Print([]string{"Field", "Value"}, describeRows(cfg, state))
 	case output.ModeJSON:
 		out, err := json.Marshal(&describeOutput{
-			Workspace:        cfg,
-			State:            state,
-			DisplayName:      cfg.EffectiveDisplayName(),
-			SSHHostAlias:     cfg.SSHHostAlias,
-			PreferredSSHHost: cfg.PreferredSSHHost(),
-			CanonicalSSHHost: cfg.CanonicalSSHHost(),
+			WorkspaceListEntry: provider.NewWorkspaceListEntry(cfg),
+			State:              state,
 		})
 		if err != nil {
 			return err

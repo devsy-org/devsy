@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	presentationContext      = "default"
-	presentationWorkspaceAPI = "api"
-	presentationAliasBackend = "backend"
-	presentationUser         = "vscode"
+	presentationContext        = "default"
+	presentationWorkspaceAPI   = "api"
+	presentationAliasBackend   = "backend"
+	presentationUser           = "vscode"
+	presentationWorkspaceOther = "other"
+	presentationLabelPayments  = "Payments"
 )
 
 type PresentationTestSuite struct {
@@ -287,7 +289,7 @@ func (s *PresentationTestSuite) TestLabelConflictIsScopedToContext() {
 	other := &provider.Workspace{
 		ID:          "web",
 		UID:         "uid-web",
-		Context:     "other",
+		Context:     presentationWorkspaceOther,
 		DisplayName: "Shared",
 	}
 	s.Require().NoError(provider.SaveWorkspaceConfig(other))
@@ -556,26 +558,106 @@ func (s *PresentationTestSuite) TestValidatePresentation() {
 		ws.SSHHostAlias = "front"
 	})
 
-	s.Require().NoError(ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "", ""))
-	s.Require().
-		NoError(ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "Backend", "back"))
-	s.Require().
-		NoError(ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "", presentationWorkspaceAPI))
+	s.Require().NoError(s.validate("", ""))
+	s.Require().NoError(s.validate("Backend", "back"))
+	s.Require().NoError(s.validate("", presentationWorkspaceAPI))
 
-	err := ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "frontend", "")
+	err := s.validate("frontend", "")
 	s.requireErr(err, PresentationFieldDisplayName, PresentationCodeConflict)
 
-	err = ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "", "front")
+	err = s.validate("", "front")
 	s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
 
-	err = ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "", "web")
+	err = s.validate("", "web")
 	s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
 
-	err = ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "", "bad.devsy")
+	err = s.validate("", "bad.devsy")
 	s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeInvalid)
 
-	err = ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "bad\x00", "")
+	err = s.validate("bad\x00", "")
 	s.requireErr(err, PresentationFieldDisplayName, PresentationCodeInvalid)
+}
+
+func (s *PresentationTestSuite) TestValidatePresentationUsesLocationForSSHConflicts() {
+	s.writeTakenSSHHost()
+	candidate := PresentationCandidate{ID: presentationWorkspaceAPI, SSHHostAlias: "taken"}
+
+	err := ValidatePresentation(s.devsyConfig, candidate, s.location())
+	s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
+
+	elsewhere := SSHConfigLocation{ConfigPath: filepath.Join(s.sshDir, "elsewhere")}
+	s.Require().NoError(ValidatePresentation(s.devsyConfig, candidate, elsewhere))
+}
+
+func (s *PresentationTestSuite) TestValidatePresentationEmptyLocationUsesContextOptions() {
+	s.writeTakenSSHHost()
+	candidate := PresentationCandidate{ID: presentationWorkspaceAPI, SSHHostAlias: "taken"}
+	cfg := &config.Config{
+		DefaultContext: presentationContext,
+		Contexts: map[string]*config.ContextConfig{
+			presentationContext: {
+				Options: map[string]config.OptionValue{
+					config.ContextOptionSSHConfigPath: {Value: s.sshConfigPath()},
+				},
+			},
+		},
+	}
+
+	err := ValidatePresentation(cfg, candidate, SSHConfigLocation{})
+	s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
+}
+
+func (s *PresentationTestSuite) TestClearingLabelConflictsWithEffectiveFallback() {
+	s.saveWorkspace(presentationWorkspaceAPI, func(ws *provider.Workspace) {
+		ws.DisplayName = presentationLabelPayments
+	})
+	s.saveWorkspace(presentationWorkspaceOther, func(ws *provider.Workspace) {
+		ws.DisplayName = presentationWorkspaceAPI
+	})
+
+	req := s.request(presentationWorkspaceAPI)
+	req.DisplayName = new("")
+	_, err := EditPresentation(req)
+	conflict := s.requirePresentationErr(
+		err,
+		PresentationFieldDisplayName,
+		PresentationCodeConflict,
+	)
+	s.Equal(presentationWorkspaceOther, conflict.Conflict)
+	s.Equal(presentationLabelPayments, s.load(presentationWorkspaceAPI).DisplayName)
+}
+
+func (s *PresentationTestSuite) TestClearingLabelAllowedWithoutFallbackCollision() {
+	s.saveWorkspace(presentationWorkspaceAPI, func(ws *provider.Workspace) {
+		ws.DisplayName = presentationLabelPayments
+	})
+	s.saveWorkspace(presentationWorkspaceOther, func(ws *provider.Workspace) {
+		ws.DisplayName = "Elsewhere"
+	})
+
+	req := s.request(presentationWorkspaceAPI)
+	req.DisplayName = new("")
+	result, err := EditPresentation(req)
+	s.Require().NoError(err)
+	s.Empty(result.DisplayName)
+	s.Equal(presentationWorkspaceAPI, result.EffectiveDisplayName)
+}
+
+func (s *PresentationTestSuite) TestClearingLabelFallbackIgnoresOtherContexts() {
+	s.saveWorkspace(presentationWorkspaceAPI, func(ws *provider.Workspace) {
+		ws.DisplayName = presentationLabelPayments
+	})
+	s.Require().NoError(provider.SaveWorkspaceConfig(&provider.Workspace{
+		ID:          presentationWorkspaceOther,
+		UID:         "uid-" + presentationWorkspaceOther,
+		Context:     "elsewhere",
+		DisplayName: presentationWorkspaceAPI,
+	}))
+
+	req := s.request(presentationWorkspaceAPI)
+	req.DisplayName = new("")
+	_, err := EditPresentation(req)
+	s.Require().NoError(err)
 }
 
 func (s *PresentationTestSuite) TestPresentationErrorMessage() {
@@ -747,4 +829,24 @@ func (s *PresentationTestSuite) requirePresentationErr(
 	s.Equal(code, presentationErr.Code)
 
 	return presentationErr
+}
+
+func (s *PresentationTestSuite) validate(label, alias string) error {
+	return ValidatePresentation(
+		s.devsyConfig,
+		PresentationCandidate{
+			ID:           presentationWorkspaceAPI,
+			DisplayName:  label,
+			SSHHostAlias: alias,
+		},
+		s.location(),
+	)
+}
+
+func (s *PresentationTestSuite) writeTakenSSHHost() {
+	s.Require().NoError(os.WriteFile(
+		s.sshConfigPath(),
+		[]byte("Host taken.devsy\n  HostName example.com\n"),
+		0o600,
+	))
 }

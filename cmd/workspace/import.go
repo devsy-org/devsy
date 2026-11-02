@@ -237,7 +237,11 @@ func importedPresentation(
 
 	displayName := imported.DisplayName
 	if normalized, err := workspace.NormalizeDisplayName(displayName); err != nil ||
-		workspace.ValidatePresentation(devsyConfig, imported.ID, normalized, "") != nil {
+		workspace.ValidatePresentation(
+			devsyConfig,
+			workspace.PresentationCandidate{ID: imported.ID, DisplayName: normalized},
+			workspace.SSHConfigLocation{},
+		) != nil {
 		log.Warnf("dropping imported display name %q", displayName)
 		displayName = ""
 	} else {
@@ -246,7 +250,11 @@ func importedPresentation(
 
 	sshHostAlias := imported.SSHHostAlias
 	if normalized, err := workspace.NormalizeSSHHostAlias(sshHostAlias); err != nil ||
-		workspace.ValidatePresentation(devsyConfig, imported.ID, "", normalized) != nil {
+		workspace.ValidatePresentation(
+			devsyConfig,
+			workspace.PresentationCandidate{ID: imported.ID, SSHHostAlias: normalized},
+			workspace.SSHConfigLocation{},
+		) != nil {
 		log.Warnf("dropping imported ssh host alias %q", sshHostAlias)
 		sshHostAlias = ""
 	} else {

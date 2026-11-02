@@ -11,6 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testAliasShort = "short"
+	testUIDOne     = "uid-1"
+)
+
 func setupTestHome(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()
@@ -48,17 +53,48 @@ func TestSaveWorkspaceResult_WritesWhenConfigExists(t *testing.T) {
 
 func TestPreferredSSHHostCommittedUsesStoredAlias(t *testing.T) {
 	setupTestHome(t)
-	stored := &Workspace{ID: "api", UID: "uid-1", Context: config.DefaultContext}
+	stored := &Workspace{ID: "api", UID: testUIDOne, Context: config.DefaultContext}
 	require.NoError(t, SaveWorkspaceConfig(stored))
 	stale := *stored
 	assert.Equal(t, "api.devsy", stale.PreferredSSHHostCommitted())
 
-	stored.SSHHostAlias = "short"
+	stored.SSHHostAlias = testAliasShort
 	require.NoError(t, SaveWorkspacePresentation(stored))
 	assert.Equal(t, "short.devsy", stale.PreferredSSHHostCommitted())
 
 	other := Workspace{ID: "api", UID: "uid-2", Context: config.DefaultContext}
 	assert.Equal(t, "api.devsy", other.PreferredSSHHostCommitted())
+}
+
+func TestSaveWorkspacePresentationDoesNotRecreateDeletedWorkspace(t *testing.T) {
+	setupTestHome(t)
+	stored := &Workspace{ID: "gone", UID: testUIDOne, Context: config.DefaultContext}
+	require.NoError(t, SaveWorkspaceConfig(stored))
+
+	dir, err := GetWorkspaceDir(stored.Context, stored.ID)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dir))
+
+	stored.SSHHostAlias = testAliasShort
+	err = SaveWorkspacePresentation(stored)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "workspace gone no longer exists")
+	require.NoDirExists(t, dir)
+}
+
+func TestSaveWorkspacePresentationRefusesMissingConfigFile(t *testing.T) {
+	setupTestHome(t)
+	stored := &Workspace{ID: "halfgone", UID: testUIDOne, Context: config.DefaultContext}
+	require.NoError(t, SaveWorkspaceConfig(stored))
+
+	dir, err := GetWorkspaceDir(stored.Context, stored.ID)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(filepath.Join(dir, WorkspaceConfigFile)))
+
+	err = SaveWorkspacePresentation(stored)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no longer exists")
+	require.NoFileExists(t, filepath.Join(dir, WorkspaceConfigFile))
 }
 
 const effectiveNameTestID = "api"

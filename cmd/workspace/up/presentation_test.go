@@ -127,6 +127,24 @@ func TestValidateTargetChecksNewIDWithoutPresentationFlags(t *testing.T) {
 	require.NoError(t, cmd.validateTarget(cfg, "taken", true))
 }
 
+func TestCheckPresentationUsesSSHConfigPath(t *testing.T) {
+	setupUpTestHome(t)
+	cfg := &config.Config{DefaultContext: defaultValue}
+	sshConfig := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(
+		sshConfig, []byte("Host taken.devsy\n  HostName example.com\n"), 0o600,
+	))
+
+	cmd := &UpCmd{SSHHostAlias: "taken"}
+	cmd.SSHConfigPath = sshConfig
+	err := cmd.checkPresentation(cfg, testFreshID, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "taken.devsy")
+
+	cmd.SSHConfigPath = filepath.Join(t.TempDir(), "other-config")
+	require.NoError(t, cmd.checkPresentation(cfg, testFreshID, false))
+}
+
 type presentationClient struct {
 	client2.BaseWorkspaceClient
 	ws *provider.Workspace

@@ -123,7 +123,7 @@ func (s *PresentationTestSuite) saveOtherContextWorkspace(id, alias string) {
 	s.Require().NoError(provider.SaveWorkspaceConfig(&provider.Workspace{
 		ID:           id,
 		UID:          "uid-" + id,
-		Context:      "other",
+		Context:      presentationWorkspaceOther,
 		SSHHostAlias: alias,
 	}))
 }
@@ -160,7 +160,7 @@ func (s *PresentationTestSuite) TestAliasInOtherContextBlocksValidation() {
 	s.saveOtherContextWorkspace(presentationWorkspaceWeb, presentationAliasBackend)
 
 	s.requireErr(
-		ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "", presentationAliasBackend),
+		s.validate("", presentationAliasBackend),
 		PresentationFieldSSHHostAlias,
 		PresentationCodeConflict,
 	)
@@ -184,6 +184,82 @@ func (s *PresentationTestSuite) TestSameIDInOwnContextIsNotOther() {
 	s.Require().NoError(ValidateRenameTarget(
 		s.devsyConfig, presentationWorkspaceAPI, "api-renamed", s.location(),
 	))
+}
+
+func (s *PresentationTestSuite) TestValidateNewWorkspaceIDWaitsForPresentationLock() {
+	unlock, err := lockPresentation()
+	s.Require().NoError(err)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ValidateNewWorkspaceID(s.devsyConfig, presentationAliasBackend, s.location())
+	}()
+
+	select {
+	case err := <-done:
+		unlock()
+		s.FailNow("validation finished while the presentation lock was held", "err: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	unlock()
+	select {
+	case err := <-done:
+		s.Require().NoError(err)
+	case <-time.After(5 * time.Second):
+		s.FailNow("validation did not resume after the presentation lock was released")
+	}
+	s.requireLockAvailable()
+}
+
+func (s *PresentationTestSuite) TestValidateNewWorkspaceIDSeesRecordSavedWhileWaiting() {
+	unlock, err := lockPresentation()
+	s.Require().NoError(err)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ValidateNewWorkspaceID(s.devsyConfig, presentationAliasBackend, s.location())
+	}()
+
+	s.saveAliasedWeb()
+	unlock()
+
+	select {
+	case err := <-done:
+		s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
+	case <-time.After(5 * time.Second):
+		s.FailNow("validation did not resume after the presentation lock was released")
+	}
+}
+
+func (s *PresentationTestSuite) TestValidateNewWorkspaceIDReleasesPresentationLockOnError() {
+	s.saveAliasedWeb()
+
+	err := ValidateNewWorkspaceID(s.devsyConfig, presentationAliasBackend, s.location())
+	s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
+	s.requireLockAvailable()
+}
+
+func (s *PresentationTestSuite) TestValidateRenameTargetDoesNotAcquirePresentationLock() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+
+	unlock, err := lockPresentation()
+	s.Require().NoError(err)
+	defer unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ValidateRenameTarget(
+			s.devsyConfig, presentationWorkspaceAPI, "api-renamed", s.location(),
+		)
+	}()
+
+	select {
+	case err := <-done:
+		s.Require().NoError(err)
+	case <-time.After(5 * time.Second):
+		s.FailNow("rename target validation blocked on the presentation lock")
+	}
 }
 
 func (s *PresentationTestSuite) requireLockAvailable() {

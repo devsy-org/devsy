@@ -18,7 +18,7 @@ type AliasReplacement struct {
 }
 
 func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool, error) {
-	target, err := resolveAliasTarget(r.ConfigPath, r.IncludePath)
+	target, err := resolveWriteTarget(r.ConfigPath, r.IncludePath)
 	if err != nil {
 		return false, err
 	}
@@ -92,7 +92,7 @@ func rollbackAliasTarget(target string, original []byte, commitErr error) error 
 	return commitErr
 }
 
-func resolveAliasTarget(sshConfigPath, sshConfigIncludePath string) (string, error) {
+func resolveWriteTarget(sshConfigPath, sshConfigIncludePath string) (string, error) {
 	target, err := ResolveSSHConfigPath(sshConfigPath)
 	if err != nil {
 		return "", fmt.Errorf("invalid ssh config path: %w", err)

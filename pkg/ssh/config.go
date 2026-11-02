@@ -43,12 +43,7 @@ type SSHConfigParams struct {
 }
 
 func ConfigureSSHConfig(params SSHConfigParams) error {
-	targetPath := params.SSHConfigPath
-	if params.SSHConfigIncludePath != "" {
-		targetPath = params.SSHConfigIncludePath
-	}
-
-	targetPath, err := resolveSymlinkTarget(targetPath)
+	targetPath, err := resolveWriteTarget(params.SSHConfigPath, params.SSHConfigIncludePath)
 	if err != nil {
 		return err
 	}
@@ -426,12 +421,7 @@ func RemoveFromConfig(
 	sshConfigPath string,
 	sshConfigIncludePath string,
 ) error {
-	targetPath := sshConfigPath
-	if sshConfigIncludePath != "" {
-		targetPath = sshConfigIncludePath
-	}
-
-	targetPath, err := resolveSymlinkTarget(targetPath)
+	targetPath, err := resolveWriteTarget(sshConfigPath, sshConfigIncludePath)
 	if err != nil {
 		return err
 	}

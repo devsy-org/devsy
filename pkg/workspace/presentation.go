@@ -144,16 +144,22 @@ func foldLabel(s string) string {
 	return cases.Fold().String(norm.NFC.String(s))
 }
 
+type PresentationCandidate struct {
+	ID           string
+	DisplayName  string
+	SSHHostAlias string
+}
+
 func ValidatePresentation(
 	devsyConfig *config.Config,
-	id string,
-	displayName, sshHostAlias string,
+	candidate PresentationCandidate,
+	location SSHConfigLocation,
 ) error {
-	label, err := NormalizeDisplayName(displayName)
+	label, err := NormalizeDisplayName(candidate.DisplayName)
 	if err != nil {
 		return err
 	}
-	alias, err := normalizeAliasForID(id, sshHostAlias)
+	alias, err := normalizeAliasForID(candidate.ID, candidate.SSHHostAlias)
 	if err != nil {
 		return err
 	}
@@ -161,36 +167,43 @@ func ValidatePresentation(
 		return nil
 	}
 
-	return validatePresentationConflicts(devsyConfig, id, label, alias)
+	return validatePresentationConflicts(
+		devsyConfig,
+		PresentationCandidate{ID: candidate.ID, DisplayName: label, SSHHostAlias: alias},
+		location.withContextDefaults(devsyConfig),
+	)
 }
 
 func validatePresentationConflicts(
 	devsyConfig *config.Config,
-	id, label, alias string,
+	candidate PresentationCandidate,
+	location SSHConfigLocation,
 ) error {
-	others, err := listOtherWorkspaces(devsyConfig.DefaultContext, id)
+	others, err := listOtherWorkspaces(devsyConfig.DefaultContext, candidate.ID)
 	if err != nil {
 		return err
 	}
-	if err := checkLabelConflict(others, devsyConfig.DefaultContext, label); err != nil {
+	err = checkLabelConflict(others, devsyConfig.DefaultContext, candidate.DisplayName)
+	if err != nil {
 		return err
 	}
-	if alias == "" {
+	if candidate.SSHHostAlias == "" {
 		return nil
 	}
-	if err := checkAliasWorkspaceConflict(others, alias); err != nil {
+	if err := checkAliasWorkspaceConflict(others, candidate.SSHHostAlias); err != nil {
 		return err
 	}
 
-	paths, err := resolveSSHPaths(
-		devsyConfig.ContextOption(config.ContextOptionSSHConfigPath),
-		devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath),
-	)
+	paths, err := resolveSSHPaths(location.ConfigPath, location.IncludePath)
 	if err != nil {
 		return err
 	}
 
-	return checkAliasSSHConflict(paths, id+config.SSHHostSuffix, alias)
+	return checkAliasSSHConflict(
+		paths,
+		candidate.ID+config.SSHHostSuffix,
+		candidate.SSHHostAlias,
+	)
 }
 
 func EditPresentation(req PresentationRequest) (*PresentationResult, error) {
@@ -375,7 +388,7 @@ func checkPresentationConflicts(
 	next *provider.Workspace,
 	labelChanged, aliasChanged bool,
 ) error {
-	needsLabel := labelChanged && next.DisplayName != ""
+	needsLabel := labelChanged
 	needsAlias := aliasChanged && next.SSHHostAlias != ""
 	if !needsLabel && !needsAlias {
 		return nil
@@ -395,7 +408,9 @@ func checkNextConflicts(
 	needsLabel, needsAlias bool,
 ) error {
 	if needsLabel {
-		if err := checkLabelConflict(others, next.Context, next.DisplayName); err != nil {
+		if err := checkLabelConflict(
+			others, next.Context, next.EffectiveDisplayName(),
+		); err != nil {
 			return err
 		}
 	}

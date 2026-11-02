@@ -158,10 +158,7 @@ func (cmd *UpCmd) checkNewWorkspaceID(
 	if existed || id == "" {
 		return nil
 	}
-	return workspace2.ValidateNewWorkspaceID(devsyConfig, id, workspace2.SSHConfigLocation{
-		ConfigPath:  cmd.SSHConfigPath,
-		IncludePath: devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath),
-	})
+	return workspace2.ValidateNewWorkspaceID(devsyConfig, id, cmd.sshConfigLocation(devsyConfig))
 }
 
 func (cmd *UpCmd) checkPresentation(
@@ -180,7 +177,22 @@ func (cmd *UpCmd) checkPresentation(
 		)
 		return nil
 	}
-	return workspace2.ValidatePresentation(devsyConfig, id, cmd.DisplayName, cmd.SSHHostAlias)
+	return workspace2.ValidatePresentation(
+		devsyConfig,
+		workspace2.PresentationCandidate{
+			ID:           id,
+			DisplayName:  cmd.DisplayName,
+			SSHHostAlias: cmd.SSHHostAlias,
+		},
+		cmd.sshConfigLocation(devsyConfig),
+	)
+}
+
+func (cmd *UpCmd) sshConfigLocation(devsyConfig *config.Config) workspace2.SSHConfigLocation {
+	return workspace2.SSHConfigLocation{
+		ConfigPath:  cmd.SSHConfigPath,
+		IncludePath: devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath),
+	}
 }
 
 func (cmd *UpCmd) persistPresentation(
