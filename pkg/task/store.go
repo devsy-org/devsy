@@ -40,6 +40,7 @@ func NewStore() (*Store, error) {
 }
 
 func NewStoreAt(dir string) (*Store, error) {
+	//nolint:gosec // path is inside the internal task store
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create task dir: %w", err)
 	}
@@ -689,6 +690,7 @@ func (s *Store) write(state *State) error {
 		return fmt.Errorf("create temp task file: %w", err)
 	}
 	tmpPath := tmp.Name()
+	//nolint:gosec // path is inside the internal task store
 	defer func() { _ = os.Remove(tmpPath) }()
 
 	if _, err := tmp.Write(data); err != nil {
@@ -711,6 +713,7 @@ func (s *Store) write(state *State) error {
 
 // syncDir fsyncs a directory so a rename survives a crash.
 func syncDir(dir string) {
+	//nolint:gosec // path is inside the internal task store
 	d, err := os.Open(dir) // #nosec G304 -- store's own task dir.
 	if err != nil {
 		return
@@ -732,6 +735,7 @@ func (s *Store) create(opts CreateOptions, launch bool) (*Task, error) {
 		ID:          id,
 		Command:     opts.Command,
 		WorkspaceID: opts.WorkspaceID,
+		RunID:       opts.RunID,
 		Status:      StatusPending,
 		StartedAt:   now,
 		UpdatedAt:   now,

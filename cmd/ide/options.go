@@ -28,7 +28,7 @@ func NewOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	optionsCmd := &cobra.Command{
 		Use:               "get <ide>",
-		Short:             "Get IDE options (list available IDEs with 'devsy ide list')",
+		Short:             "Show IDE options",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: ideNameCompletion,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {

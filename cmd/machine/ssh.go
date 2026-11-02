@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -86,7 +87,7 @@ func NewSSHCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	sshCmd := &cobra.Command{
 		Use:   "ssh [name]",
-		Short: "SSH into the machine",
+		Short: "Open an SSH session to a machine",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -149,39 +150,46 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 			TermMode:        cmd.TermMode,
 			InstallTerminfo: cmd.InstallTerminfo,
 		},
-		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			c := strings.Builder{}
-			_, _ = fmt.Fprintf(
-				&c,
-				"%s internal ssh-server --stdio",
-				shellescape.Quote(machineClient.AgentPath()),
-			)
-			if cmd.Debug {
-				_, _ = c.WriteString(" --debug")
-			}
-			command := c.String()
-			return devagent.InjectAgent(ctx, &devagent.InjectOptions{
-				Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-					return machineClient.Command(ctx, client.CommandOptions{
-						Command:   command,
-						Stdin:     stdin,
-						Stdout:    stdout,
-						Stderr:    stderr,
-						RawStdout: true,
-					})
-				},
-				IsLocal:         machineClient.AgentLocal(),
-				RemoteAgentPath: machineClient.AgentPath(),
-				DownloadURL:     machineClient.AgentURL(),
-				Command:         command,
-				Stdin:           stdin,
-				Stdout:          stdout,
-				Stderr:          stderr,
-				Timeout:         timeout,
-			})
-		},
+		Exec:   cmd.injectExec(machineClient, timeout),
 		Stderr: streamer,
 	})
+}
+
+func (cmd *SSHCmd) injectExec(
+	machineClient client.MachineClient,
+	timeout time.Duration,
+) ExecFunc {
+	return func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+		c := strings.Builder{}
+		_, _ = fmt.Fprintf(
+			&c,
+			"%s internal ssh-server --stdio",
+			shellescape.Quote(machineClient.AgentPath()),
+		)
+		if cmd.Debug {
+			_, _ = c.WriteString(" --debug")
+		}
+		command := c.String()
+		return devagent.InjectAgent(ctx, &devagent.InjectOptions{
+			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+				return machineClient.Command(ctx, client.CommandOptions{
+					Command:   command,
+					Stdin:     stdin,
+					Stdout:    stdout,
+					Stderr:    stderr,
+					RawStdout: true,
+				})
+			},
+			IsLocal:         machineClient.AgentLocal(),
+			RemoteAgentPath: machineClient.AgentPath(),
+			DownloadURL:     machineClient.AgentURL(),
+			Command:         command,
+			Stdin:           stdin,
+			Stdout:          stdout,
+			Stderr:          stderr,
+			Timeout:         timeout,
+		})
+	}
 }
 
 type ExecFunc func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
@@ -247,10 +255,8 @@ func RunSSHSession(ctx context.Context, sshClient *ssh.Client, options RunSSHSes
 		return err
 	}
 	defer func() { _ = session.Close() }()
-	for key, value := range options.SessionOptions.EnvVars {
-		if err := session.Setenv(key, value); err != nil {
-			return fmt.Errorf("set SSH session environment: %w", err)
-		}
+	if err := setSessionEnv(session, options.SessionOptions.EnvVars); err != nil {
+		return err
 	}
 
 	if err := configureAgentForwarding(sshClient, session, options.AgentForwarding); err != nil {
@@ -272,6 +278,15 @@ func RunSSHSession(ctx context.Context, sshClient *ssh.Client, options RunSSHSes
 		return fmt.Errorf("ssh session: %w", err)
 	}
 
+	return nil
+}
+
+func setSessionEnv(session *ssh.Session, envVars map[string]string) error {
+	for key, value := range envVars {
+		if err := session.Setenv(key, value); err != nil {
+			return fmt.Errorf("set SSH session environment: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -632,8 +647,7 @@ func waitRemoteCommand(ctx context.Context, session *ssh.Session) (int, error) {
 			return 0, nil
 		}
 
-		var exitErr *ssh.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
 			return exitErr.ExitStatus(), nil
 		}
 

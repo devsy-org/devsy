@@ -24,7 +24,7 @@ import (
 func NewTaskCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	taskCmd := &cobra.Command{
 		Use:   "task",
-		Short: "Manage background tasks (e.g. from 'up --detach')",
+		Short: "Manage background tasks",
 	}
 	taskCmd.AddCommand(newTaskListCmd(globalFlags))
 	taskCmd.AddCommand(newTaskGetCmd(globalFlags))
@@ -43,7 +43,7 @@ func newTaskListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List background tasks, most recently started first",
+		Short:   "List background tasks",
 		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return cmd.run()
@@ -247,12 +247,7 @@ func readTaskForFollower(
 }
 
 func emitTaskTransition(last, current *task.State, emitJSON bool) {
-	if last != nil && last.Phase == current.Phase && last.Step == current.Step &&
-		last.Status == current.Status && last.OperationID == current.OperationID &&
-		(!emitJSON || last.DurationMs == current.DurationMs) {
-		return
-	}
-	if current.Phase == "" {
+	if taskTransitionUnchanged(last, current, emitJSON) || current.Phase == "" {
 		return
 	}
 	event := taskStatusEvent(current)
@@ -261,6 +256,15 @@ func emitTaskTransition(last, current *task.State, emitJSON bool) {
 		return
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", current.ID, current.Phase)
+}
+
+func taskTransitionUnchanged(last, current *task.State, emitJSON bool) bool {
+	if last == nil {
+		return false
+	}
+	same := last.Phase == current.Phase && last.Step == current.Step &&
+		last.Status == current.Status && last.OperationID == current.OperationID
+	return same && (!emitJSON || last.DurationMs == current.DurationMs)
 }
 
 func taskStatusEvent(current *task.State) status.Event {
@@ -439,7 +443,7 @@ func taskStateError(state *task.State) error {
 
 func resultEnvelopeFrom(state *task.State) config2.ResultEnvelope {
 	if state.Result == nil {
-		return config2.ResultEnvelope{}
+		return config2.ResultEnvelope{RunID: state.RunID}
 	}
 	var workspaceFolder string
 	if state.Result.SubstitutionContext != nil {
@@ -451,5 +455,6 @@ func resultEnvelopeFrom(state *task.State) config2.ResultEnvelope {
 		RemoteWorkspaceFolder: workspaceFolder,
 		Warnings:              state.Result.HostWarnings,
 		Recovery:              state.Result.RecoveryContainer,
+		RunID:                 state.RunID,
 	}
 }

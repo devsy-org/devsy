@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+const (
+	httpLocalhost10800 = "http://localhost:10800"
+)
+
 // spawnSleepHelper starts a long-running child process and registers cleanup
 // that kills + reaps it. Returns the spawned cmd.
 func spawnSleepHelper(t *testing.T) *exec.Cmd {
@@ -188,7 +192,7 @@ func TestLoadLiveTunnelState_LiveMatch(t *testing.T) {
 	want := TunnelState{
 		PID:        pid,
 		CreateTime: ct,
-		TargetURL:  "http://localhost:10800",
+		TargetURL:  httpLocalhost10800,
 		Label:      LabelVSCodeBrowser,
 	}
 	if err := WriteTunnelState("ctx", "ws", want); err != nil {
@@ -248,7 +252,7 @@ func TestTryReuseExistingTunnel_DeadHelperReturnsFalse(t *testing.T) {
 	state := TunnelState{
 		PID:        1,
 		CreateTime: 1,
-		TargetURL:  "http://localhost:10800",
+		TargetURL:  httpLocalhost10800,
 		Label:      LabelVSCodeBrowser,
 	}
 	if err := WriteTunnelState("ctx", "ws", state); err != nil {

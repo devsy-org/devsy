@@ -150,9 +150,7 @@ services:
 	err = helper.Run(
 		context.Background(),
 		[]string{"-f", file, "config", "--format", "json"},
-		nil,
-		&stdout,
-		&stderr,
+		docker.Streams{Stdout: &stdout, Stderr: &stderr},
 	)
 	s.Require().NoError(err, stderr.String())
 	// `compose config` escapes dollars for a reusable Compose document. Load

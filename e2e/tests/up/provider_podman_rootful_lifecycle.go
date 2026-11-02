@@ -95,7 +95,7 @@ var _ = ginkgo.Describe(
 						"postStartCommand should have run again after restart")
 				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
-				ginkgo.It(
+				ginkgo.It( //nolint:dupl // rootful and rootless lifecycle suites mirror each other
 					"should defer postCreateCommand to background with waitFor",
 					func(ctx context.Context) {
 						tempDir, err := setupWorkspace(

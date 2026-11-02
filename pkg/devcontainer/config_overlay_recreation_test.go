@@ -69,7 +69,7 @@ func structuralSignatureMutations() []struct {
 			mutate: func(c *config.DevContainerConfig) { c.Dockerfile = "" },
 		},
 		{
-			name:   "image",
+			name:   imageValue,
 			mutate: func(c *config.DevContainerConfig) { c.Image = exampleUpdatedImage },
 		},
 		{

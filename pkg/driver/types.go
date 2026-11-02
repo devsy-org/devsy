@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -168,6 +169,32 @@ type CommandParams struct {
 	// RawStdout preserves protocol bytes; text commands keep stdout redacted.
 	// Protocol consumers must not log the unredacted stream.
 	RawStdout bool
+	// RequireRunning makes the call exec-only: it must not start, unpause or
+	// restart anything, and returns ErrNotRunning when the workload is down.
+	// Only drivers that implement RequireRunningDriver honor it.
+	RequireRunning bool
+}
+
+// ErrNotRunning is returned by an exec-only call when the workload is not
+// running.
+var ErrNotRunning = errors.New("workspace is not running")
+
+// RequireRunningDriver is implemented by drivers that enforce
+// CommandParams.RequireRunning. Absence means the flag would be ignored, so
+// callers must not use it.
+type RequireRunningDriver interface {
+	Driver
+
+	SupportsRequireRunning() bool
+}
+
+// DriverSupportsRequireRunning reports whether d enforces exec-only calls.
+func DriverSupportsRequireRunning(d Driver) bool {
+	if rr, ok := d.(RequireRunningDriver); ok {
+		return rr.SupportsRequireRunning()
+	}
+
+	return false
 }
 
 // Streams bundles the standard IO streams for an exec.

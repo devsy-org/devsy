@@ -91,21 +91,25 @@ func (c *FleetServerCmd) Run(cmd *cobra.Command, _ []string) error {
 	for {
 		select {
 		case <-time.After(time.Second * 10):
-			if activity.lost() {
-				activity.release()
-			}
-			switch active := fleetSessionActive(logFile); {
-			case active && !activity.held():
-				if err := activity.acquire(cmd.Context()); err != nil {
-					log.Errorf("register fleet session activity: %v", err)
-				}
-			case !active:
-				activity.release()
-			}
+			syncFleetActivity(cmd.Context(), &activity, logFile)
 		case <-cmd.Context().Done():
 			// context is done - either canceled or time is up for timeout
 			return nil
 		}
+	}
+}
+
+func syncFleetActivity(ctx context.Context, activity *fleetActivity, logFile string) {
+	if activity.lost() {
+		activity.release()
+	}
+	switch active := fleetSessionActive(logFile); {
+	case active && !activity.held():
+		if err := activity.acquire(ctx); err != nil {
+			log.Errorf("register fleet session activity: %v", err)
+		}
+	case !active:
+		activity.release()
 	}
 }
 

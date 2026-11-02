@@ -12,6 +12,19 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	userValue = "[user]"
+	gpg       = "[gpg]"
+	commit    = "[commit]"
+)
+
+const (
+	cfgUserName    = "\tname = Test User"
+	cfgSignProgram = "\tprogram = devsy-ssh-signature"
+	cfgFormatSSH   = "\tformat = ssh"
+	cfgGPGSign     = "\tgpgsign = true"
+)
+
 type HelperTestSuite struct {
 	suite.Suite
 }
@@ -22,28 +35,28 @@ func TestHelperSuite(t *testing.T) {
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUnrelatedGpgConfig() {
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User", "\temail = test@example.com",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
-		"[gpg]", "\tformat = ssh", "\tprogram = /usr/bin/gpg2",
-		"[commit]", "\tgpgsign = true",
-		"[user]", "\tsigningkey = /path/to/key",
+		userValue, cfgUserName, "\temail = test@example.com",
+		sectionHeaderGpgSSH, cfgSignProgram,
+		gpg, cfgFormatSSH, "\tprogram = /usr/bin/gpg2",
+		commit, cfgGPGSign,
+		userValue, "\tsigningkey = /path/to/key",
 	}, "\n")
 
 	result := removeSignatureHelper(input)
 
 	assert.NotContains(s.T(), result, "devsy-ssh-signature")
-	assert.Contains(s.T(), result, "[user]")
-	assert.Contains(s.T(), result, "[commit]")
+	assert.Contains(s.T(), result, userValue)
+	assert.Contains(s.T(), result, commit)
 	assert.Contains(s.T(), result, "program = /usr/bin/gpg2")
 	assert.NotContains(s.T(), result, "format = ssh")
 }
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_RemovesDevsySections() {
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
-		"[gpg]", "\tformat = ssh",
-		"[user]", "\tsigningkey = /path/to/key",
+		userValue, cfgUserName,
+		sectionHeaderGpgSSH, cfgSignProgram,
+		gpg, cfgFormatSSH,
+		userValue, "\tsigningkey = /path/to/key",
 	}, "\n")
 
 	result := removeSignatureHelper(input)
@@ -63,30 +76,30 @@ func (s *HelperTestSuite) TestRemoveSignatureHelper_NoGpgSections() {
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUserOwnedGpgSSHKeys() {
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
+		userValue, cfgUserName,
+		sectionHeaderGpgSSH, cfgSignProgram,
 		"\tallowedSignersFile = ~/.ssh/allowed_signers",
-		"[commit]", "\tgpgsign = true",
+		commit, cfgGPGSign,
 	}, "\n")
 
 	result := removeSignatureHelper(input)
 
 	assert.NotContains(s.T(), result, "devsy-ssh-signature")
-	assert.Contains(s.T(), result, `[gpg "ssh"]`,
+	assert.Contains(s.T(), result, sectionHeaderGpgSSH,
 		"section header should be preserved when user keys remain")
 	assert.Contains(s.T(), result, "allowedSignersFile",
 		"user-owned key should be preserved")
-	assert.Contains(s.T(), result, "[commit]")
+	assert.Contains(s.T(), result, commit)
 }
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUserOwnedSigningKey() {
 	// A [user] section with name + signingkey is user-owned; only the
 	// devsy-appended [user] section (signingkey-only) should be dropped.
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User", "\tsigningkey = /my/gpg-key",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
-		"[gpg]", "\tformat = ssh",
-		"[user]", "\tsigningkey = /devsy/injected-key",
+		userValue, cfgUserName, "\tsigningkey = /my/gpg-key",
+		sectionHeaderGpgSSH, cfgSignProgram,
+		gpg, cfgFormatSSH,
+		userValue, "\tsigningkey = /devsy/injected-key",
 	}, "\n")
 
 	result := removeSignatureHelper(input)
@@ -143,17 +156,17 @@ func TestUpdateGitConfig_DifferentKey(t *testing.T) {
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_DropsEmptyGpgSSHSection() {
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
-		"[commit]", "\tgpgsign = true",
+		userValue, cfgUserName,
+		sectionHeaderGpgSSH, cfgSignProgram,
+		commit, cfgGPGSign,
 	}, "\n")
 
 	result := removeSignatureHelper(input)
 
 	assert.NotContains(s.T(), result, "devsy-ssh-signature")
-	assert.NotContains(s.T(), result, `[gpg "ssh"]`,
+	assert.NotContains(s.T(), result, sectionHeaderGpgSSH,
 		"empty section should be dropped entirely")
-	assert.Contains(s.T(), result, "[commit]")
+	assert.Contains(s.T(), result, commit)
 }
 
 func TestUpdateGitConfig_WindowsBackslashPathQuotingAndCleanRemoval(t *testing.T) {

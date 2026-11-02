@@ -45,7 +45,11 @@ func dialAndExecute(ctx context.Context, params dialAndExecuteParams) error {
 		return err
 	}
 
-	_, err = remotecommand.ExecuteConn(ctx, conn, params.stdin, params.stdout, params.stderr)
+	_, err = remotecommand.ExecuteConn(
+		ctx,
+		conn,
+		remotecommand.Streams{Stdin: params.stdin, Stdout: params.stdout, Stderr: params.stderr},
+	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)
 	}

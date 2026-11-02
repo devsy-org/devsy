@@ -46,9 +46,11 @@ func (s Status) Terminal() bool {
 // doing the work, distinct from whatever process is merely polling this
 // state.
 type State struct {
-	ID                     string              `json:"id"`
-	Command                string              `json:"command,omitempty"`
-	WorkspaceID            string              `json:"workspaceId,omitempty"`
+	ID          string `json:"id"`
+	Command     string `json:"command,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	// RunID links the task to its retained setup history.
+	RunID                  string              `json:"runId,omitempty"`
 	Status                 Status              `json:"status"`
 	Phase                  string              `json:"phase,omitempty"`
 	Step                   string              `json:"step,omitempty"`
@@ -78,6 +80,8 @@ type State struct {
 type CreateOptions struct {
 	Command     string
 	WorkspaceID string
+	// RunID is the retained-history run allocated before the task exists.
+	RunID string
 }
 
 // Task is a handle to a single background task, bound to the Store it was
@@ -93,6 +97,17 @@ type Task struct {
 }
 
 func (t *Task) ID() string { return t.id }
+
+// RunID returns the retained-history run bound to the task, or empty when the
+// task has none or its state cannot be read.
+func (t *Task) RunID() string {
+	state, err := t.store.readState(t.id)
+	if err != nil {
+		return ""
+	}
+
+	return state.RunID
+}
 
 func (s *State) Canceled() bool {
 	return s != nil && s.Status == StatusFailed && s.ErrorCode == string(clierr.CodeCanceled)
@@ -527,6 +542,10 @@ func (t *Task) recordFailure(err error, failedLaunch bool) error {
 		message = classified.Message
 	}
 	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	var runContext map[string]string
+	if current, readErr := t.store.readState(t.id); readErr == nil {
+		runContext = runFailureContext(current.RunID)
+	}
 	return t.store.update(t.id, func(s *State) {
 		if failedLaunch {
 			s.markLaunchCleanupPending()
@@ -542,6 +561,7 @@ func (t *Task) recordFailure(err error, failedLaunch bool) error {
 			s.ErrorHint = redactor.Redact(classified.Hint)
 			s.ErrorContext = redactContext(classified.Context, redactor)
 		}
+		s.ErrorContext = withRunContext(s.ErrorContext, runContext)
 	})
 }
 

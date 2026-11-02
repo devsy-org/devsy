@@ -23,7 +23,7 @@ func NewDescribeCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	describeCmd := &cobra.Command{
 		Use:   "describe [name]",
-		Short: "Retrieves the description of an existing machine",
+		Short: "Show a machine's description",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

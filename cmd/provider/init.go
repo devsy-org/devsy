@@ -27,57 +27,10 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &InitCmd{GlobalFlags: f}
 	initCmd := &cobra.Command{
 		Use:   "init [name]",
-		Short: "Run or re-run init and option resolution for an existing provider",
+		Short: "Initialize a provider and resolve its options",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-			if err != nil {
-				return err
-			}
-			name, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
-			if err != nil {
-				return err
-			}
-
-			unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, name)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-
-			devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
-			if err != nil {
-				return err
-			}
-			p, err := workspace.FindProvider(devsyConfig, name)
-			if err != nil {
-				return err
-			}
-
-			reporter, err := newStatusReporter(
-				cmd.ResultFormat,
-				os.Stdout,
-				cmd.Verbosity > 0 || cmd.Debug,
-				cmd.NoStatus,
-			)
-			if err != nil {
-				return err
-			}
-			return status.Run(
-				cobraCmd.Context(), reporter,
-				status.Operation{Phase: status.PhaseReady, Step: name},
-				func(ctx context.Context) error {
-					return ConfigureProvider(ctx, ProviderOptionsConfig{
-						Provider:           p.Config,
-						ContextName:        devsyConfig.DefaultContext,
-						UserOptions:        cmd.Options,
-						DiscardPriorValues: cmd.Reset,
-						SkipInit:           cmd.SkipInit,
-						SingleMachine:      &cmd.SingleMachine,
-						Reporter:           reporter,
-					})
-				},
-			)
+			return cmd.run(cobraCmd.Context(), args)
 		},
 		ValidArgsFunction: func(
 			rootCmd *cobra.Command,
@@ -86,14 +39,67 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetProviderSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
 	cmd.registerFlags(initCmd)
 	return initCmd
+}
+
+func (cmd *InitCmd) run(ctx context.Context, args []string) error {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	name, err := resolveProviderName(args, devsyConfig.Current().DefaultProvider)
+	if err != nil {
+		return err
+	}
+
+	unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, name)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	p, err := workspace.FindProvider(devsyConfig, name)
+	if err != nil {
+		return err
+	}
+
+	reporter, err := newStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
+	)
+	if err != nil {
+		return err
+	}
+	return status.Run(
+		ctx, reporter,
+		status.Operation{Phase: status.PhaseReady, Step: name},
+		func(ctx context.Context) error {
+			return ConfigureProvider(ctx, ProviderOptionsConfig{
+				Provider:           p.Config,
+				ContextName:        devsyConfig.DefaultContext,
+				UserOptions:        cmd.Options,
+				DiscardPriorValues: cmd.Reset,
+				SkipInit:           cmd.SkipInit,
+				SingleMachine:      &cmd.SingleMachine,
+				Reporter:           reporter,
+			})
+		},
+	)
 }

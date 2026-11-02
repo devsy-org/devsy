@@ -29,6 +29,8 @@ type ResultEnvelope struct {
 	URL                   string   `json:"url,omitempty"`
 	Warnings              []string `json:"warnings,omitempty"`
 	Recovery              bool     `json:"recovery,omitempty"`
+	// RunID names the retained setup history of this run.
+	RunID string `json:"runId,omitempty"`
 }
 
 type ErrorEnvelope struct {
@@ -59,11 +61,19 @@ type StatusEnvelope struct {
 type TaskEnvelope struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
+	// RunID names the retained setup history of the submitted run.
+	RunID string `json:"runId,omitempty"`
 }
 
 // WriteTaskJSON serializes a submitted task's ID as an NDJSON line to w.
 func WriteTaskJSON(w io.Writer, id string) error {
-	data, err := json.Marshal(TaskEnvelope{Kind: KindTask, ID: id})
+	return WriteTaskRunJSON(w, id, "")
+}
+
+// WriteTaskRunJSON is WriteTaskJSON with the run that records the task's
+// setup history.
+func WriteTaskRunJSON(w io.Writer, id, runID string) error {
+	data, err := json.Marshal(TaskEnvelope{Kind: KindTask, ID: id, RunID: runID})
 	if err != nil {
 		return err
 	}
@@ -111,23 +121,11 @@ func ParseStatusLine(line string) (status.Event, bool) {
 	if !strings.HasPrefix(trimmed, "{") {
 		return status.Event{}, false
 	}
+	if !hasCurrentStatusShape(trimmed) {
+		return status.Event{}, false
+	}
 	var env StatusEnvelope
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(trimmed), &fields); err != nil || !currentStatusFields(fields) {
-		return status.Event{}, false
-	}
-	var errorMessage string
-	if raw, ok := fields["error"]; ok && json.Unmarshal(raw, &errorMessage) == nil {
-		return status.Event{}, false
-	}
-	if raw, ok := fields["error"]; ok && !currentStatusError(raw) {
-		return status.Event{}, false
-	}
-	if err := json.Unmarshal([]byte(trimmed), &env); err != nil ||
-		env.Kind != KindStatus || env.SchemaVersion != 1 || env.Phase == "" ||
-		!validState(env.State) || env.DurationMs < 0 ||
-		env.DurationMs > int64(time.Duration(1<<63-1)/time.Millisecond) ||
-		(env.State == status.StateFailed && env.Error == nil) {
+	if err := json.Unmarshal([]byte(trimmed), &env); err != nil || !validStatusEnvelope(env) {
 		return status.Event{}, false
 	}
 	return status.Event{
@@ -225,4 +223,29 @@ func redactContext(values map[string]string, redactor *secrets.Redactor) map[str
 		redacted[redactor.Redact(key)] = redactor.Redact(value)
 	}
 	return redacted
+}
+
+// hasCurrentStatusShape reports whether the line has only current status
+// fields, with a well-formed error object when one is present.
+func hasCurrentStatusShape(trimmed string) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &fields); err != nil || !currentStatusFields(fields) {
+		return false
+	}
+	var errorMessage string
+	if raw, ok := fields["error"]; ok && json.Unmarshal(raw, &errorMessage) == nil {
+		return false
+	}
+	if raw, ok := fields["error"]; ok && !currentStatusError(raw) {
+		return false
+	}
+	return true
+}
+
+// validStatusEnvelope checks the values of a decoded status envelope.
+func validStatusEnvelope(env StatusEnvelope) bool {
+	return env.Kind == KindStatus && env.SchemaVersion == 1 && env.Phase != "" &&
+		validState(env.State) && env.DurationMs >= 0 &&
+		env.DurationMs <= int64(time.Duration(1<<63-1)/time.Millisecond) &&
+		(env.State != status.StateFailed || env.Error != nil)
 }

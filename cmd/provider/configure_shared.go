@@ -96,8 +96,8 @@ func configureProviderOptions(
 		func(ctx context.Context) error {
 			var resolveErr error
 			resolvedConfig, resolveErr = options2.ResolveOptions(
-				ctx, devsyConfig, cfg.Provider, options,
-				cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
+				ctx,
+				cfg.resolveRequest(devsyConfig, options),
 			)
 			return resolveErr
 		},
@@ -153,9 +153,8 @@ func runProviderInit(
 		func(ctx context.Context) error {
 			return initProvider(
 				ctx,
-				devsyConfig.DefaultContext,
+				devsyConfig,
 				cfg.Provider,
-				devsyConfig.ProviderOptions(cfg.Provider.Name),
 				initIO{stdout: stdout, stderr: stderr},
 			)
 		},
@@ -176,6 +175,21 @@ func applyResolvedOptions(contextName, providerName string, resolvedConfig *conf
 		providerCfg.SingleMachine = resolvedProviderCfg.SingleMachine
 		return nil
 	})
+}
+
+// resolveRequest builds the option resolution request for this provider.
+func (cfg ProviderOptionsConfig) resolveRequest(
+	devsyConfig *config.Config,
+	options map[string]string,
+) options2.ResolveOptionsRequest {
+	return options2.ResolveOptionsRequest{
+		DevConfig:      devsyConfig,
+		ProviderConfig: cfg.Provider,
+		UserOptions:    options,
+		SkipRequired:   cfg.SkipRequired,
+		SkipSubOptions: cfg.SkipSubOptions,
+		SingleMachine:  cfg.SingleMachine,
+	}
 }
 
 func parseAndMergeOptions(
@@ -236,11 +250,13 @@ type initIO struct {
 
 func initProvider(
 	ctx context.Context,
-	contextName string,
+	devsyConfig *config.Config,
 	provider *provider2.ProviderConfig,
-	providerOptions map[string]config.OptionValue,
 	io2 initIO,
 ) error {
+	contextName, providerOptions := devsyConfig.DefaultContext, devsyConfig.ProviderOptions(
+		provider.Name,
+	)
 	lock, err := provider2.GetProviderInitLock(contextName, provider.Name)
 	if err != nil {
 		return fmt.Errorf("get init lock: %w", err)

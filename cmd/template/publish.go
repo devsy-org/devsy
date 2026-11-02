@@ -23,7 +23,7 @@ func NewPublishCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	publishFlags := &PublishFlags{}
 	publishCmd := &cobra.Command{
 		Use:   "publish",
-		Short: "Package and push templates to OCI registry",
+		Short: "Package and push templates to an OCI registry",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPublish(publishFlags)
 		},

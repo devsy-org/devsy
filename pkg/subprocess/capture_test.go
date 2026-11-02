@@ -266,8 +266,8 @@ func TestDiagnosticOutputAnnotatesTruncatedTail(t *testing.T) {
 	if !strings.Contains(got, "warning\nlast useful line") {
 		t.Fatalf("diagnostic output = %q, want stderr before stdout", got)
 	}
-	if !strings.Contains(got, "additional output omitted") || !strings.Contains(got, "--verbose") {
-		t.Fatalf("diagnostic output = %q, want truncation guidance", got)
+	if !strings.Contains(got, "additional output omitted") || strings.Contains(got, "--verbose") {
+		t.Fatalf("diagnostic output = %q, want neutral truncation text", got)
 	}
 }
 

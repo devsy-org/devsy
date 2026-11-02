@@ -22,11 +22,11 @@ func NewInfoManifestCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &InfoManifestCmd{GlobalFlags: globalFlags}
 	manifestCmd := &cobra.Command{
 		Use:   "manifest <feature-id>",
-		Short: "Display the OCI manifest for a published feature",
-		Long: `Fetch and display the raw OCI manifest for a published dev container feature.
+		Short: "Show the OCI manifest for a published feature",
+		Long: `Show the OCI manifest for a published feature.
 
-Accepts a feature ID like ghcr.io/devcontainers/features/go or
-ghcr.io/devcontainers/features/go:1 and outputs the OCI image manifest.`,
+Accept a feature ID such as ghcr.io/devcontainers/features/go or
+ghcr.io/devcontainers/features/go:1 and print its OCI image manifest.`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,

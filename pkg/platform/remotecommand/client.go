@@ -9,13 +9,19 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Streams are the local ends of an exec session.
+type Streams struct {
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
 func ExecuteConn(
 	ctx context.Context,
 	rawConn *websocket.Conn,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
+	streams Streams,
 ) (int, error) {
+	stdin, stdout, stderr := streams.Stdin, streams.Stdout, streams.Stderr
 	conn := NewWebsocketConn(rawConn)
 
 	ctx, cancel := context.WithCancel(ctx)

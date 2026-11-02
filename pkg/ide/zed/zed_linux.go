@@ -15,8 +15,9 @@ import (
 func Open(
 	ctx context.Context,
 	values map[string]config.OptionValue,
-	userName, workspaceFolder, workspaceID string,
+	target Target,
 ) error {
+	workspaceFolder, workspaceID := target.WorkspaceFolder, target.WorkspaceID
 	log.Info("Opening Zed editor")
 
 	if len(workspaceFolder) == 0 || workspaceFolder[0] != '/' {

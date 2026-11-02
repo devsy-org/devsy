@@ -182,6 +182,8 @@ e2e:
       reason: sub-label that always accompanies the up-provider-kubernetes suite label
     - label: up-provider-kubernetes-image-config-file
       reason: sub-label that always accompanies the up-provider-kubernetes suite label
+    - label: setup-logs
+      reason: sub-label that always accompanies the logs suite label
 
   suites:
     # --- unprivileged ---

@@ -97,13 +97,10 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 		if err != nil {
 			log.Warnf("failed to list workspaces: %v", err)
 		} else {
-			cleanupLocalWorkspaces(
-				ctx,
-				devsyConfig,
-				workspaces,
-				providerConfig.Name,
-				cmd.Owner,
-			)
+			cleanupLocalWorkspaces(ctx, devsyConfig, workspaces, workspaceCleanup{
+				providerName: providerConfig.Name,
+				owner:        cmd.Owner,
+			})
 		}
 
 		daemonClient := daemon.NewLocalClient(platformInstanceConfig.Provider)
@@ -160,13 +157,19 @@ func deletePlatformInstanceFiles(contextName string, instance *provider.Platform
 	return nil
 }
 
+// workspaceCleanup selects the provider and owner whose workspaces are removed.
+type workspaceCleanup struct {
+	providerName string
+	owner        platform.OwnerFilter
+}
+
 func cleanupLocalWorkspaces(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	workspaces []*provider.Workspace,
-	providerName string,
-	owner platform.OwnerFilter,
+	scope workspaceCleanup,
 ) {
+	providerName, owner := scope.providerName, scope.owner
 	usedWorkspaces := []*provider.Workspace{}
 
 	for _, workspace := range workspaces {

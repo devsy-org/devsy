@@ -35,7 +35,7 @@ func NewReadCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &ReadCmd{GlobalFlags: f}
 	readConfigCmd := &cobra.Command{
 		Use:   "read",
-		Short: "Reads and outputs the merged devcontainer configuration as JSON",
+		Short: "Read the merged devcontainer configuration as JSON",
 		RunE:  cmd.Run,
 	}
 

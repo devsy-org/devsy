@@ -20,8 +20,7 @@ func TestClassifyGitHubError_RateLimit(t *testing.T) {
 	if !stderrs.Is(err, clierr.ErrRateLimited) {
 		t.Fatalf("expected ErrRateLimited, got %v", err)
 	}
-	var rlErr *github.RateLimitError
-	if !stderrs.As(err, &rlErr) {
+	if _, ok := stderrs.AsType[*github.RateLimitError](err); !ok {
 		t.Fatal("original *github.RateLimitError should remain in the chain")
 	}
 }

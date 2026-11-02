@@ -327,8 +327,11 @@ func startFixtureRelay(
 	joined := make(chan struct{})
 	go func() {
 		defer close(joined)
-		done <- tunnelserver.RunServicesServer(tunnelCtx, reader, writer, false, false, nil, nil,
-			tunnelserver.WithAllowGitHubCredentials(true))
+		done <- tunnelserver.RunServicesServer(tunnelCtx, tunnelserver.ServicesSpec{
+			Reader:  reader,
+			Writer:  writer,
+			Options: []tunnelserver.Option{tunnelserver.WithAllowGitHubCredentials(true)},
+		})
 	}()
 
 	var once sync.Once

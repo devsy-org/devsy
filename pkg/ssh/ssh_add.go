@@ -30,7 +30,10 @@ func AddPrivateKeysToAgent(ctx context.Context) error {
 	for _, privateKey := range privateKeys {
 		timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*2)
 		log.Debugf("running ssh-add: privateKeyPath=%s", privateKey)
-		out, err := exec.CommandContext(timeoutCtx, "ssh-add", privateKey).CombinedOutput()
+		//nolint:gosec // key path comes from the ssh config
+		out, err := exec.CommandContext(timeoutCtx, "ssh-add", privateKey).
+			CombinedOutput()
+			//nolint:gosec // key path comes from the ssh config
 		cancel()
 		if err != nil {
 			log.Debugf(
@@ -63,6 +66,7 @@ func FindPrivateKeys() ([]string, error) {
 		}
 
 		keyPath := filepath.Join(sshDir, entry.Name())
+		//nolint:gosec // path is the user key file
 		out, err := os.ReadFile(keyPath)
 		if err == nil {
 			_, err = ssh.ParsePrivateKey(out)

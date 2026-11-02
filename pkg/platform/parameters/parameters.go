@@ -192,23 +192,29 @@ func checkNumberBounds(num int, parameter storagev1.AppParameter) error {
 func GetDeepValue(parameters any, path string) any {
 	current := parameters
 	for segment := range strings.SplitSeq(path, ".") {
-		switch t := current.(type) {
-		case map[string]any:
-			val, ok := t[segment]
-			if !ok {
-				return nil
-			}
-			current = val
-		case []any:
-			index, err := strconv.Atoi(segment)
-			if err != nil || index < 0 || index >= len(t) {
-				return nil
-			}
-			current = t[index]
-		default:
+		next, ok := childValue(current, segment)
+		if !ok {
 			return nil
 		}
+		current = next
 	}
 
 	return current
+}
+
+// childValue returns the map key or list index segment of v.
+func childValue(v any, segment string) (any, bool) {
+	switch t := v.(type) {
+	case map[string]any:
+		val, ok := t[segment]
+		return val, ok
+	case []any:
+		index, err := strconv.Atoi(segment)
+		if err != nil || index < 0 || index >= len(t) {
+			return nil, false
+		}
+		return t[index], true
+	default:
+		return nil, false
+	}
 }

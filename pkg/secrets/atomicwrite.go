@@ -8,20 +8,27 @@ import (
 
 // atomicWriteFile writes via a same-dir temp file then rename, so a crash
 // mid-write cannot leave a truncated store file.
-func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+// Files are created 0600: the store holds secrets.
+func atomicWriteFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll( //nolint:gosec // directory is the internal secrets store location
+		dir,
+		0o700,
+	); err != nil { //nolint:gosec // path is the internal secrets store location
 		return fmt.Errorf("create secrets dir: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	tmp, err := os.CreateTemp(
+		dir,
+		filepath.Base(path)+".tmp-*",
+	) //nolint:gosec // path is the internal secrets store location
 	if err != nil {
 		return fmt.Errorf("create temp secrets file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
+	defer func() { _ = os.Remove(tmpName) }() //nolint:gosec // temp file is created in the internal secrets store
 
-	if err := tmp.Chmod(perm); err != nil {
+	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("chmod temp secrets file: %w", err)
 	}
@@ -36,7 +43,10 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp secrets file: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := os.Rename( //nolint:gosec // rename within the internal secrets store
+		tmpName,
+		path,
+	); err != nil { //nolint:gosec // path is the internal secrets store location
 		return fmt.Errorf("replace secrets file: %w", err)
 	}
 	syncDir(dir)
@@ -47,6 +57,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 // syncDir fsyncs a directory so a rename is durable across a crash. Best-effort:
 // some filesystems reject directory sync, and durability is not correctness.
 func syncDir(dir string) {
+	//nolint:gosec // path is inside the internal secrets store
 	d, err := os.Open(dir) // #nosec G304 -- secrets config dir.
 	if err != nil {
 		return

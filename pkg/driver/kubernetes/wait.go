@@ -13,12 +13,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*corev1.Pod, error) {
+func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) error {
 	throttledLogger := throttledlogger.NewThrottledLogger(time.Second * 5)
 
 	timeoutDuration, err := time.ParseDuration(k.options.PodTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("parse pod timeout: %w", err)
+		return fmt.Errorf("parse pod timeout: %w", err)
 	}
 
 	started := time.Now()
@@ -37,7 +37,7 @@ func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*core
 				return false, fmt.Errorf("pod %q disappeared while waiting for it to start", id)
 			}
 
-			return k.evaluatePodStatus(ctx, pod, &podStatusParams{
+			return k.evaluatePodStatus(pod, &podStatusParams{
 				id:              id,
 				started:         started,
 				throttledLogger: throttledLogger,
@@ -45,7 +45,7 @@ func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*core
 		},
 	)
 
-	return pod, err
+	return err
 }
 
 type podStatusParams struct {
@@ -55,7 +55,6 @@ type podStatusParams struct {
 }
 
 func (k *KubernetesDriver) evaluatePodStatus(
-	ctx context.Context,
 	pod *corev1.Pod,
 	params *podStatusParams,
 ) (bool, error) {
@@ -83,7 +82,7 @@ func (k *KubernetesDriver) evaluatePodStatus(
 		return false, err
 	}
 
-	return k.checkContainerStatuses(ctx, pod, params.id, params.throttledLogger)
+	return k.checkContainerStatuses(pod, params.id, params.throttledLogger)
 }
 
 func podConditionMessage(pod *corev1.Pod, started time.Time) string {
@@ -202,13 +201,12 @@ func initContainerReady(
 }
 
 func (k *KubernetesDriver) checkContainerStatuses(
-	ctx context.Context,
 	pod *corev1.Pod,
 	id string,
 	throttledLogger *throttledlogger.ThrottledLogger,
 ) (bool, error) {
 	for _, c := range pod.Status.ContainerStatuses {
-		proceed, err := k.checkContainerStatus(ctx, id, &c, throttledLogger)
+		proceed, err := k.checkContainerStatus(id, &c, throttledLogger)
 		if err != nil || !proceed {
 			return false, err
 		}
@@ -218,7 +216,6 @@ func (k *KubernetesDriver) checkContainerStatuses(
 }
 
 func (k *KubernetesDriver) checkContainerStatus(
-	ctx context.Context,
 	id string,
 	c *corev1.ContainerStatus,
 	throttledLogger *throttledlogger.ThrottledLogger,

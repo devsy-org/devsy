@@ -257,19 +257,20 @@ func findWorkspaceByArgs(ctx context.Context, opts GetOptions) (*providerpkg.Wor
 	if opts.LocalOnly {
 		return findLocalWorkspace(opts.DevsyConfig, opts.Args, ""), nil
 	}
-	return findWorkspace(ctx, opts.DevsyConfig, opts.Args, "", opts.Owner)
+	return findWorkspace(ctx, opts.DevsyConfig, LookupOptions{Args: opts.Args, Owner: opts.Owner})
 }
 
 // Exists returns the ID of a matching workspace, or an empty string if none
 // exists.
-func Exists(
-	ctx context.Context,
-	devsyConfig *config.Config,
-	args []string,
-	workspaceID string,
-	owner platform.OwnerFilter,
-) string {
-	workspace, _ := findWorkspace(ctx, devsyConfig, args, workspaceID, owner)
+// LookupOptions selects a workspace by its arguments, an explicit ID or the owner filter.
+type LookupOptions struct {
+	Args  []string
+	ID    string
+	Owner platform.OwnerFilter
+}
+
+func Exists(ctx context.Context, devsyConfig *config.Config, opts LookupOptions) string {
+	workspace, _ := findWorkspace(ctx, devsyConfig, opts)
 	if workspace == nil {
 		return ""
 	}
@@ -292,12 +293,16 @@ func resolveWorkspace(
 	workspaceID := ToID(name)
 
 	if params.DesiredID != "" {
-		if Exists(ctx, devsyConfig, nil, params.DesiredID, params.Owner) != "" {
+		if Exists(
+			ctx,
+			devsyConfig,
+			LookupOptions{ID: params.DesiredID, Owner: params.Owner},
+		) != "" {
 			log.Debugf("workspace id already exists: desiredID=%s", params.DesiredID)
 			return loadExistingWorkspace(devsyConfig, params.DesiredID, params.ChangeLastUsed)
 		}
 		workspaceID = params.DesiredID
-	} else if Exists(ctx, devsyConfig, nil, workspaceID, params.Owner) != "" {
+	} else if Exists(ctx, devsyConfig, LookupOptions{ID: workspaceID, Owner: params.Owner}) != "" {
 		log.Debugf("workspace already exists: workspaceID=%s", workspaceID)
 		return loadExistingWorkspace(devsyConfig, workspaceID, params.ChangeLastUsed)
 	}
@@ -340,7 +345,11 @@ func resolveWorkspaceWithoutArgs(
 	params ResolveParams,
 ) (resolvedWorkspace, error) {
 	if params.DesiredID != "" {
-		workspace, err := findWorkspace(ctx, devsyConfig, nil, params.DesiredID, params.Owner)
+		workspace, err := findWorkspace(
+			ctx,
+			devsyConfig,
+			LookupOptions{ID: params.DesiredID, Owner: params.Owner},
+		)
 		if err != nil {
 			return resolvedWorkspace{}, fmt.Errorf("find workspace: %w", err)
 		}
@@ -720,16 +729,14 @@ func findLocalWorkspace(
 func findWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	args []string,
-	workspaceID string,
-	owner platform.OwnerFilter,
+	opts LookupOptions,
 ) (*providerpkg.Workspace, error) {
-	workspaceID = ensureWorkspaceID(args, workspaceID)
+	workspaceID := ensureWorkspaceID(opts.Args, opts.ID)
 	if workspaceID == "" {
 		return nil, nil
 	}
 
-	allWorkspaces, err := List(ctx, devsyConfig, false, owner)
+	allWorkspaces, err := List(ctx, devsyConfig, false, opts.Owner)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}

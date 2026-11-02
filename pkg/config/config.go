@@ -247,7 +247,10 @@ func LoadConfig(contextOverride string, providerOverride string) (*Config, error
 		return nil, err
 	}
 
-	configBytes, err := os.ReadFile(configOrigin)
+	//nolint:gosec // path is the user devsy config file
+	configBytes, err := os.ReadFile(
+		configOrigin,
+	) //nolint:gosec // path is the user devsy config file
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("read config: %w", err)

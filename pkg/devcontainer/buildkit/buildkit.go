@@ -14,16 +14,19 @@ import (
 	buildkit "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
+	"github.com/moby/buildkit/util/progress/progresswriter"
 	"github.com/tonistiigi/fsutil"
 )
 
-func Build(
-	ctx context.Context,
-	client *buildkit.Client,
-	writer io.Writer,
-	platform string,
-	options *build.BuildOptions,
-) error {
+// BuildRequest describes one image build through BuildKit.
+type BuildRequest struct {
+	Writer   io.Writer
+	Platform string
+	Options  *build.BuildOptions
+}
+
+func Build(ctx context.Context, client *buildkit.Client, req BuildRequest) error {
+	writer, platform, options := req.Writer, req.Platform, req.Options
 	solveOptions, err := buildkitSolveOpt(platform, options)
 	if err != nil {
 		return err
@@ -34,8 +37,21 @@ func Build(
 		return err
 	}
 
-	// build
-	_, err = client.Solve(ctx, nil, solveOptions, pw.Status())
+	return solve(ctx, client, solveOptions, pw)
+}
+
+// solve runs the build and waits for the printer to render the final status.
+// Solve always closes the status channel, so the printer finishes on every
+// path and no output is lost before the caller closes its writers.
+func solve(
+	ctx context.Context,
+	client *buildkit.Client,
+	opts buildkit.SolveOpt,
+	pw progresswriter.Writer,
+) error {
+	_, err := client.Solve(ctx, nil, opts, pw.Status())
+	<-pw.Done()
+
 	return err
 }
 

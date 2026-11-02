@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -33,7 +34,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
+)
+
+const (
+	docker = "docker"
 )
 
 // UpCmd holds the up cmd flags.
@@ -208,16 +214,31 @@ func (cmd *UpCmd) devsyUp(
 	workspaceInfo.CLIOptions.SecretsEnv = nil
 	workspaceInfo.CLIOptions.SecretsMount = nil
 
+	run := startProviderRun(workspaceInfo, append(slices.Clone(secretsEnv), secretsMount...))
+	cliOptions.SetupParentProducerID = run.ProducerID()
+	hop := tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{
+		Session: run, Upstream: tunnelClient, Receive: true,
+	})
+	defer hop.Close()
+	ctx = tunnelserver.WithSetupLogOptions(run.Context(ctx), hop.Options())
+
 	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
+		run.Finish(err, false)
 		return nil, err
 	}
 
 	reporter := tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient)
-	return runner.Up(ctx, devcontainer.UpOptions{
+	result, err := runner.Up(ctx, devcontainer.UpOptions{
 		CLIOptions:    cliOptions,
 		RegistryCache: workspaceInfo.RegistryCache,
 	}, workspaceInfo.InjectTimeout, reporter)
+	run.Finish(err, false)
+	if !hop.Flush(ctx) {
+		_ = run.Store.AddCondition(run.RunID, workspacelogs.ConditionInterrupted)
+	}
+
+	return result, err
 }
 
 func splitSecrets(secrets []*tunnel.Secret) (env, mount []string) {
@@ -492,7 +513,7 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 		return "", nil
 	}
 
-	if dockerCmd != "docker" {
+	if dockerCmd != docker {
 		path, err := exec.LookPath(dockerCmd)
 		if err != nil {
 			return "", fmt.Errorf("custom docker path %q not found: %w", dockerCmd, err)
@@ -500,7 +521,7 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 		return path, nil
 	}
 
-	if dockerCmd == "docker" && runtime.GOOS == "darwin" {
+	if dockerCmd == docker && runtime.GOOS == "darwin" {
 		return findDarwinDockerCLI()
 	}
 
@@ -531,7 +552,7 @@ func findDarwinDockerCLI() (string, error) {
 func darwinDockerCandidatePaths(homeDir string) []string {
 	paths := append([]string(nil), darwinDockerPaths...)
 	if homeDir != "" {
-		paths = append(paths, filepath.Join(homeDir, ".rd", "bin", "docker"))
+		paths = append(paths, filepath.Join(homeDir, ".rd", "bin", docker))
 	}
 	return paths
 }
@@ -554,7 +575,7 @@ func (w *workspaceInitializer) getDockerCommand() string {
 		log.Debugf("using custom docker path %s", w.workspaceInfo.Agent.Docker.Path)
 		return w.workspaceInfo.Agent.Docker.Path
 	}
-	return "docker"
+	return docker
 }
 
 func (w *workspaceInitializer) isDockerInstallDisabled() bool {
@@ -579,7 +600,7 @@ func (w *workspaceInitializer) waitForDocker(resultChan <-chan dockerInstallResu
 	result := <-resultChan
 
 	dockerPath := w.workspaceInfo.Agent.Docker.Path
-	if result.path != "" && (dockerPath == "" || dockerPath == "docker") {
+	if result.path != "" && (dockerPath == "" || dockerPath == docker) {
 		w.workspaceInfo.Agent.Docker.Path = result.path
 		log.Debugf("set docker path to %s", result.path)
 	}
@@ -615,12 +636,7 @@ type prepareWorkspaceParams struct {
 // prepareWorkspace initializes the workspace content folder and downloads/prepares the workspace source.
 // Note: This function modifies params.workspaceInfo.ContentFolder when platform is enabled with a local folder.
 func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error {
-	if params.workspaceInfo.CLIOptions.Platform.Enabled &&
-		params.workspaceInfo.Workspace.Source.LocalFolder != "" {
-		params.workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(
-			params.workspaceInfo.Origin,
-		)
-	}
+	useAgentContentDir(params.workspaceInfo)
 
 	folder, err := initContentFolder(ctx, params.workspaceInfo)
 	if err != nil {
@@ -631,13 +647,7 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 		return nil
 	}
 
-	phase := status.Phase("")
-	switch {
-	case params.workspaceInfo.CLIOptions.Reset:
-		phase = status.PhaseResettingWorkspace
-	case params.workspaceInfo.CLIOptions.Recreate:
-		phase = status.PhaseRebuildingWorkspace
-	}
+	phase := prepareWorkspacePhase(params.workspaceInfo)
 	err = prepareWorkspaceWithStatus(ctx, params.reporter, phase, func(ctx context.Context) error {
 		return prepareWorkspaceSource(ctx, params, folder.skipSource)
 	})
@@ -650,6 +660,23 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 		}
 	}
 	return err
+}
+
+func useAgentContentDir(workspaceInfo *provider.AgentWorkspaceInfo) {
+	if workspaceInfo.CLIOptions.Platform.Enabled &&
+		workspaceInfo.Workspace.Source.LocalFolder != "" {
+		workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(workspaceInfo.Origin)
+	}
+}
+
+func prepareWorkspacePhase(workspaceInfo *provider.AgentWorkspaceInfo) status.Phase {
+	switch {
+	case workspaceInfo.CLIOptions.Reset:
+		return status.PhaseResettingWorkspace
+	case workspaceInfo.CLIOptions.Recreate:
+		return status.PhaseRebuildingWorkspace
+	}
+	return ""
 }
 
 func prepareWorkspaceWithStatus(
@@ -950,7 +977,7 @@ func tryMergeRootlessDockerConfig() error {
 		return err
 	}
 
-	dockerConfigDir := filepath.Join(homeDir, ".config", "docker")
+	dockerConfigDir := filepath.Join(homeDir, ".config", docker)
 	if _, err := os.Stat(dockerConfigDir); errors.Is(err, os.ErrNotExist) {
 		return err
 	}

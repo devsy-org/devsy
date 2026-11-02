@@ -232,9 +232,10 @@ func (s *ImageRunSuite) TestNegotiatedCapabilities() {
 		s.True(driver.DriverRequiresMountStreaming(h))
 		s.True(driver.DriverRequiresWorkspaceChown(h))
 		want := driver.RecreateStop
-		if mode == runtimev1.RecreateMode_RECREATE_MODE_DELETE {
+		switch mode {
+		case runtimev1.RecreateMode_RECREATE_MODE_DELETE:
 			want = driver.RecreateDelete
-		} else if mode == runtimev1.RecreateMode_RECREATE_MODE_ON_RUN {
+		case runtimev1.RecreateMode_RECREATE_MODE_ON_RUN:
 			want = driver.RecreateOnRun
 		}
 		s.Equal(want, driver.DriverRecreateMode(h))

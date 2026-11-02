@@ -1,5 +1,6 @@
 package e2e
 
+// Blank imports register the e2e test suites.
 import (
 	"context"
 	"os"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/devsy-org/devsy/cmd"
 	"github.com/devsy-org/devsy/e2e/framework"
-	// Register tests.
 	_ "github.com/devsy-org/devsy/e2e/tests/build"
 	_ "github.com/devsy-org/devsy/e2e/tests/ci"
 	_ "github.com/devsy-org/devsy/e2e/tests/configapply"

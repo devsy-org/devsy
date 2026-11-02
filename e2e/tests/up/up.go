@@ -36,11 +36,11 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		initialDir, err = os.Getwd()
 		framework.ExpectNoError(err)
 
-		dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+		dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 	})
 
 	ginkgo.It("with env vars", func(ctx context.Context) {
-		f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), "docker")
+		f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), dockerValue)
 		framework.ExpectNoError(err)
 
 		name := "vscode-remote-try-python"
@@ -93,7 +93,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		workspaceEnvFileInvalid := filepath.Join(tmpDir, ".invalid")
 		err = os.WriteFile(
 			workspaceEnvFileInvalid,
-			invalidData, 0o644)
+			invalidData, 0o600)
 		framework.ExpectNoError(err)
 
 		// set env var
@@ -103,6 +103,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		// create valid env file
 		validData := []byte("TEST_VAR=" + value)
 		workspaceEnvFileValid := filepath.Join(tmpDir, ".valid")
+		//nolint:gosec // test fixture file, world-readable is fine for the test
 		err = os.WriteFile(
 			workspaceEnvFileValid,
 			validData, 0o644)
@@ -129,6 +130,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		// create a second valid env file with a different env var
 		validData = []byte("TEST_OTHER_VAR=" + value)
 		workspaceEnvFileValid2 := filepath.Join(tmpDir, ".valid2")
+		//nolint:gosec // test fixture file, world-readable is fine for the test
 		err = os.WriteFile(
 			workspaceEnvFileValid2,
 			validData, 0o644)
@@ -156,7 +158,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 
 	ginkgo.It("suppresses up progress while retaining workspace events",
 		func(ctx context.Context) {
-			f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), "docker")
+			f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), dockerValue)
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
@@ -204,7 +206,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 		// provider add, use and delete afterwards
-		err = f.DevsyProviderAdd(ctx, "docker", "--name", providerName)
+		err = f.DevsyProviderAdd(ctx, dockerValue, "--name", providerName)
 		framework.ExpectNoError(err)
 		err = f.DevsyProviderUse(ctx, providerName)
 		framework.ExpectNoError(err)
@@ -292,7 +294,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 		// provider add, use and delete afterwards
-		err = f.DevsyProviderAdd(ctx, "docker", "--name", providerName)
+		err = f.DevsyProviderAdd(ctx, dockerValue, "--name", providerName)
 		framework.ExpectNoError(err)
 		err = f.DevsyProviderUse(ctx, providerName)
 		framework.ExpectNoError(err)
@@ -318,7 +320,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 
 		// provider add, use and delete afterwards
-		err := f.DevsyProviderAdd(ctx, "docker", "--name", providerName)
+		err := f.DevsyProviderAdd(ctx, dockerValue, "--name", providerName)
 		framework.ExpectNoError(err)
 		err = f.DevsyProviderUse(ctx, providerName)
 		framework.ExpectNoError(err)
@@ -357,7 +359,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 
 		// provider add, use and delete afterwards
-		err := f.DevsyProviderAdd(ctx, "docker", "--name", providerName)
+		err := f.DevsyProviderAdd(ctx, dockerValue, "--name", providerName)
 		framework.ExpectNoError(err)
 		err = f.DevsyProviderUse(ctx, providerName)
 		framework.ExpectNoError(err)

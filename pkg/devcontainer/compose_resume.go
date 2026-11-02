@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/compose"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -114,7 +115,11 @@ func (r *runner) startComposeInstance(
 	args = r.onlyRunServices(append(args, "start"), params.runParams.parsedConfig)
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	if err := params.composeHelper.Run(ctx, args, nil, writer, writer); err != nil {
+	if err := params.composeHelper.Run(
+		ctx,
+		args,
+		docker.Streams{Stdout: writer, Stderr: writer},
+	); err != nil {
 		return nil, fmt.Errorf("start existing compose workspace: %w", err)
 	}
 	started, err := params.composeHelper.FindDevContainer(

@@ -25,7 +25,7 @@ func NewSetOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	setOptionsCmd := &cobra.Command{
 		Use:   "set",
-		Short: "Set options for a Devsy context",
+		Short: "Set a context's options",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return fmt.Errorf("specify the context")

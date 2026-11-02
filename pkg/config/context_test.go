@@ -71,13 +71,16 @@ func TestCaseMergeContextOption(t *testing.T) {
 			}, gocmp.Ignore())),
 		)
 		if !ok {
-			fmt.Println(tc.description)
+			t.Log(tc.description)
 		}
 	}
 }
 
 func TestSnapshotRegistryOption_DefaultsEmpty(t *testing.T) {
-	c := &Config{Contexts: map[string]*ContextConfig{"default": {}}, DefaultContext: "default"}
+	c := &Config{
+		Contexts:       map[string]*ContextConfig{DefaultContext: {}},
+		DefaultContext: DefaultContext,
+	}
 	require.Equal(t, "", c.ContextOption(ContextOptionSnapshotRegistry))
 }
 
@@ -92,7 +95,10 @@ func TestSnapshotRegistryOption_Registered(t *testing.T) {
 }
 
 func TestLogLevelOption_DefaultAndEnum(t *testing.T) {
-	c := &Config{Contexts: map[string]*ContextConfig{"default": {}}, DefaultContext: "default"}
+	c := &Config{
+		Contexts:       map[string]*ContextConfig{DefaultContext: {}},
+		DefaultContext: DefaultContext,
+	}
 	require.Equal(t, "warn", c.ContextOption(ContextOptionLogLevel))
 
 	for _, option := range ContextOptions {

@@ -23,6 +23,8 @@ import (
 // LogsCmd holds the configuration.
 type LogsCmd struct {
 	*flags.GlobalFlags
+
+	setupLogsFlags
 }
 
 // NewLogsCmd creates a new destroy command.
@@ -41,20 +43,32 @@ func NewLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
+
+	registerSetupLogsFlags(startCmd, &cmd.setupLogsFlags)
 
 	return startCmd
 }
 
 // Run runs the command logic.
 func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
+	// Selectors are checked before any config, provider or storage access.
+	if err := cmd.validateSource(args); err != nil {
+		return err
+	}
+	if cmd.Source == sourceSetup {
+		return cmd.runSetup(ctx, args)
+	}
+
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err

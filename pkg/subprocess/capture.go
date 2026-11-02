@@ -31,8 +31,12 @@ type Options struct {
 	// Stdout optionally receives complete, unredacted stdout for a protocol
 	// consumer. It must not be a diagnostic log sink. Result capture remains
 	// bounded and redacted independently.
-	Stdout   io.Writer
-	Redactor *secrets.Redactor
+	Stdout io.Writer
+	// Diagnostic optionally receives redacted copies of each stream for
+	// retained history. Its writers are best effort: errors are ignored and
+	// never change the command result. Unlike Stdout it may be a log sink.
+	Diagnostic DiagnosticSink
+	Redactor   *secrets.Redactor
 	// SensitiveValues contains secret values that may appear in argv or in
 	// subprocess output but are not represented by a sensitive environment
 	// variable. Values are masked before capture and command rendering.
@@ -40,6 +44,36 @@ type Options struct {
 	// OperationID links diagnostics to the semantic operation that spawned
 	// the command. When empty, Run derives it from ctx.
 	OperationID string
+}
+
+// DiagnosticSink holds optional per-stream destinations for redacted output.
+type DiagnosticSink struct {
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
+// streams carries the optional destinations of one command run.
+type streams struct {
+	stdout     io.Writer
+	diagnostic DiagnosticSink
+}
+
+// bestEffortWriter drops write errors so a failing sink cannot fail the
+// command that produced the output.
+type bestEffortWriter struct{ next io.Writer }
+
+func (w bestEffortWriter) Write(p []byte) (int, error) {
+	_, _ = w.next.Write(p)
+	return len(p), nil
+}
+
+// diagnosticWriter wraps sink so it receives redacted text and reports its
+// final suffix on flush. It returns nil when there is no sink.
+func diagnosticWriter(sink io.Writer, redactor *secrets.Redactor) *StreamingRedactingWriter {
+	if sink == nil {
+		return nil
+	}
+	return &StreamingRedactingWriter{Next: bestEffortWriter{next: sink}, Redactor: redactor}
 }
 
 // RedactingWriter forwards output after applying redaction. It is useful when
@@ -146,7 +180,7 @@ func (r Result) DiagnosticOutput() string {
 	if !r.Truncated || output == "" {
 		return output
 	}
-	return output + "\n(additional output omitted; use --verbose for full command output)"
+	return output + "\n(additional output omitted)"
 }
 
 // Run executes binary with args and captures bounded, redacted output from
@@ -167,7 +201,9 @@ func Run(ctx context.Context, binary string, args []string, options Options) (Re
 	}
 	cmd.Stdin = options.Stdin
 	redactor := commandRedactor(options)
-	result, err := runCommand(cmd, redactor, options.Stdout)
+	result, err := runCommand(cmd, redactor, streams{
+		stdout: options.Stdout, diagnostic: options.Diagnostic,
+	})
 	err = withContextError(ctx, err)
 	result.OperationID = options.OperationID
 	return result, err
@@ -206,20 +242,19 @@ func withContextError(ctx context.Context, err error) error {
 // stdout and stderr capture. Existing command setup such as an explicit
 // environment, working directory, or stdin is preserved.
 func RunCommand(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
-	return runCommand(cmd, redactor, nil)
+	return runCommand(cmd, redactor, streams{})
 }
 
-func runCommand(cmd *exec.Cmd, redactor *secrets.Redactor, stdout io.Writer) (Result, error) {
+func runCommand(cmd *exec.Cmd, redactor *secrets.Redactor, dest streams) (Result, error) {
 	if cmd == nil {
 		return Result{}, errors.New("subprocess command is nil")
 	}
 	out := NewBuffer(redactor)
 	errOut := NewBuffer(redactor)
-	cmd.Stdout = out
-	if stdout != nil {
-		cmd.Stdout = io.MultiWriter(out, stdout)
-	}
-	cmd.Stderr = errOut
+	outDiag := diagnosticWriter(dest.diagnostic.Stdout, redactor)
+	errDiag := diagnosticWriter(dest.diagnostic.Stderr, redactor)
+	cmd.Stdout = teeWriter(out, dest.stdout, outDiag)
+	cmd.Stderr = teeWriter(errOut, nil, errDiag)
 	binary := cmd.Path
 	args := []string(nil)
 	if len(cmd.Args) > 0 {
@@ -231,6 +266,10 @@ func runCommand(cmd *exec.Cmd, redactor *secrets.Redactor, stdout io.Writer) (Re
 
 	started := time.Now()
 	err := cmd.Run()
+	// Flush before publishing the outcome so trailing bytes are not lost on
+	// any exit path, including a failed start.
+	flushDiagnostic(outDiag)
+	flushDiagnostic(errDiag)
 	result := Result{
 		Command:        append([]string(nil), cmd.Args...),
 		DisplayCommand: displayCommand(binary, args, redactor),
@@ -249,6 +288,28 @@ func runCommand(cmd *exec.Cmd, redactor *secrets.Redactor, stdout io.Writer) (Re
 		return result, fmt.Errorf("run %s: %w", result.DisplayCommand, err)
 	}
 	return result, nil
+}
+
+// teeWriter returns a writer that feeds the bounded buffer first, then the
+// optional functional and diagnostic destinations.
+func teeWriter(buf *Buffer, functional io.Writer, diag *StreamingRedactingWriter) io.Writer {
+	writers := []io.Writer{buf}
+	if functional != nil {
+		writers = append(writers, functional)
+	}
+	if diag != nil {
+		writers = append(writers, diag)
+	}
+	if len(writers) == 1 {
+		return buf
+	}
+	return io.MultiWriter(writers...)
+}
+
+func flushDiagnostic(w *StreamingRedactingWriter) {
+	if w != nil {
+		_ = w.Flush()
+	}
 }
 
 func processSignal(state *os.ProcessState) string {

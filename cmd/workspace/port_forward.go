@@ -63,24 +63,26 @@ var (
 		logPrefix: "Forwarding",
 		logLabel:  "port-forward",
 		forward: func(ctx context.Context, client *ssh.Client, mapping port.Mapping, timeout time.Duration) error {
-			return devssh.PortForward(
-				ctx, client,
-				mapping.Host.Protocol, mapping.Host.Address,
-				mapping.Container.Protocol, mapping.Container.Address,
-				timeout,
-			)
+			return devssh.PortForward(ctx, client, devssh.PortForwardOpts{
+				LocalNetwork:     mapping.Host.Protocol,
+				LocalAddr:        mapping.Host.Address,
+				RemoteNetwork:    mapping.Container.Protocol,
+				RemoteAddr:       mapping.Container.Address,
+				ExitAfterTimeout: timeout,
+			})
 		},
 	}
 	directionReverse = forwardDirection{
 		logPrefix: "Reverse forwarding",
 		logLabel:  "reverse port-forward",
 		forward: func(ctx context.Context, client *ssh.Client, mapping port.Mapping, timeout time.Duration) error {
-			return devssh.ReversePortForward(
-				ctx, client,
-				mapping.Host.Protocol, mapping.Host.Address,
-				mapping.Container.Protocol, mapping.Container.Address,
-				timeout,
-			)
+			return devssh.ReversePortForward(ctx, client, devssh.PortForwardOpts{
+				LocalNetwork:     mapping.Container.Protocol,
+				LocalAddr:        mapping.Container.Address,
+				RemoteNetwork:    mapping.Host.Protocol,
+				RemoteAddr:       mapping.Host.Address,
+				ExitAfterTimeout: timeout,
+			})
 		},
 	}
 )

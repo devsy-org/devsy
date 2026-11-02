@@ -81,7 +81,7 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("marshal workspaces: %w", err)
 	}
-	fmt.Println(string(wBytes))
+	_, _ = fmt.Fprintln(os.Stdout, string(wBytes))
 
 	return nil
 }

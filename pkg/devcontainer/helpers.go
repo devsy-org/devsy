@@ -30,12 +30,18 @@ type gitRepoFindOptions struct {
 	maxDepth              int
 }
 
+// FindOptions tunes how FindDevcontainerFiles searches a source.
+type FindOptions struct {
+	MaxDepth              int
+	StrictHostKeyChecking bool
+}
+
 func FindDevcontainerFiles(
 	ctx context.Context,
 	rawSource, tmpDirPath string,
-	maxDepth int,
-	strictHostKeyChecking bool,
+	opts FindOptions,
 ) (*GetWorkspaceConfigResult, error) {
+	maxDepth, strictHostKeyChecking := opts.MaxDepth, opts.StrictHostKeyChecking
 	// local path
 	isLocalPath, _ := file.IsLocalDir(rawSource)
 	if isLocalPath {

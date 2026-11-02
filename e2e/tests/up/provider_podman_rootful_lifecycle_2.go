@@ -86,9 +86,11 @@ var _ = ginkgo.Describe(
 					func(ctx context.Context) {
 						tempDir, err := setupWorkspaceAndUp(
 							ctx,
-							"tests/up/testdata/docker-initcmd-parallel",
-							initialDir,
 							f,
+							workspaceSource{
+								"tests/up/testdata/docker-initcmd-parallel",
+								initialDir,
+							},
 						)
 						framework.ExpectNoError(err)
 
