@@ -168,6 +168,17 @@ func checkWSLgResume(details *config.ContainerDetails) error {
 	)
 }
 
+func (r *runner) checkWSLgReuseBeforeInitialize(ctx context.Context, options UpOptions) error {
+	if options.Recreate || r.wslgSnapshot == nil {
+		return nil
+	}
+	details, err := r.findOverlayExisting(ctx)
+	if err != nil {
+		return err
+	}
+	return r.checkWSLgReuse(details, options.Recreate)
+}
+
 func replayMatches(previous, current *wslgReplay) bool {
 	return previous != nil && current != nil && previous.Target == current.Target &&
 		maps.Equal(previous.Environment, current.Environment)

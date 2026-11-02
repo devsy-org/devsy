@@ -119,7 +119,8 @@ func (s *WSLgSuite) TestStrictProtocol() {
 		{Stdout: []byte("a\tb\n")},
 		{Stdout: []byte("a\x1bb\n")},
 		{Stdout: []byte("a\x7fb\n")},
-		{Stdout: []byte("a\n"), Stderr: []byte("private")},
+		{ExitCode: 1, Stderr: []byte("private")},
+		{ExitCode: 2, Stdout: []byte("a\n"), Stderr: []byte("private")},
 		{ExitCode: 1, Stdout: []byte("private\n")},
 		{ExitCode: 2},
 		{Stdout: []byte(strings.Repeat("a", outputLimit) + "\n")},
@@ -136,6 +137,12 @@ func (s *WSLgSuite) TestStrictProtocol() {
 	_, present, err := parseResult(ProbeResult{ExitCode: 1})
 	s.NoError(err)
 	s.False(present)
+	value, present, err := parseResult(
+		ProbeResult{Stdout: []byte(":0\n"), Stderr: []byte("wsl: proxy notice")},
+	)
+	s.NoError(err)
+	s.True(present)
+	s.Equal(":0", value)
 }
 
 func (s *WSLgSuite) TestCancellationAndUnavailable() {

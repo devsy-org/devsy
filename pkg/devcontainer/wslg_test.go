@@ -130,6 +130,22 @@ func (s *WSLgSuite) TestExternalContainerSkipsReuseCheck() {
 	)
 }
 
+func (s *WSLgSuite) TestEarlyReuseCheckRejectsStoppedContainerBeforeHook() {
+	r := newTestRunner(&mockDriver{})
+	r.wslgSnapshot = s.snapshot(":0")
+	labels, err := r.wslgLabels()
+	s.Require().NoError(err)
+	details := &config.ContainerDetails{}
+	details.Config.Labels = labels
+	details.State.Status = config.ContainerStatusExited
+	r.driver = &mockDriver{findResult: details}
+	err = r.checkWSLgReuseBeforeInitialize(context.Background(), UpOptions{})
+	s.ErrorContains(err, "--recreate")
+	recreate := UpOptions{}
+	recreate.Recreate = true
+	s.NoError(r.checkWSLgReuseBeforeInitialize(context.Background(), recreate))
+}
+
 func (s *WSLgSuite) TestScopeIgnoresProviderInstallationName() {
 	r := newTestRunner(&mockDriver{})
 	r.workspaceConfig.Agent = provider.ProviderAgentConfig{

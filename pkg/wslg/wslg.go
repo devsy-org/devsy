@@ -32,7 +32,8 @@ var (
 		"WSLg probe failed; verify the selected distro/user and /usr/bin/printenv",
 	)
 	ErrUnavailable = errors.New(
-		"WSLg has no usable DISPLAY or WAYLAND_DISPLAY for the selected user",
+		"WSLg has no usable DISPLAY or WAYLAND_DISPLAY for the selected user; " +
+			"check that the distribution is running and WSLg is enabled",
 	)
 	ErrCollision = errors.New("reserved WSLg environment assignment")
 )
@@ -270,11 +271,15 @@ func (p displayProbe) value(ctx context.Context, key string) (string, bool, erro
 	return value, present, nil
 }
 
+// wsl.exe warnings, such as a mirrored-proxy notice, go to stderr and do not
+// affect printenv. A value is read from stdout only, so stderr is tolerated when
+// the probe succeeded. Silence is required to read "absent" from exit code 1,
+// otherwise a wsl.exe failure would look like a missing variable.
 func parseResult(result ProbeResult) (string, bool, error) {
-	if len(result.Stderr) != 0 || len(result.Stdout) > outputLimit {
+	if len(result.Stdout) > outputLimit {
 		return "", false, ErrProtocol
 	}
-	if result.ExitCode == 1 && len(result.Stdout) == 0 {
+	if result.ExitCode == 1 && len(result.Stdout) == 0 && len(result.Stderr) == 0 {
 		return "", false, nil
 	}
 	if result.ExitCode != 0 {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -16,6 +17,8 @@ func (commandRunner) Run(ctx context.Context, path string, args []string) (Probe
 	cmd := exec.CommandContext(ctx, path, args...)
 	// WSLENV would translate Windows variables such as DISPLAY into the probe.
 	cmd.Env = withoutWSLENV(os.Environ())
+	// A fixed working directory avoids wsl.exe path translation warnings.
+	cmd.Dir = filepath.Dir(path)
 	cmd.WaitDelay = time.Second
 	stdout, stderr := &boundedOutput{}, &boundedOutput{}
 	cmd.Stdout, cmd.Stderr = stdout, stderr

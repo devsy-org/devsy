@@ -187,6 +187,13 @@ func (r *runner) Up(
 		}
 	}
 
+	if defaultSelection {
+		// The full overlay check runs after initializeCommand; fail a stale
+		// WSLg container first so the host hook does not run twice.
+		if err := r.checkWSLgReuseBeforeInitialize(ctx, options); err != nil {
+			return nil, err
+		}
+	}
 	if err := r.runInitializePhase(ctx, reporter, substitutedConfig, options); err != nil {
 		return nil, err
 	}
