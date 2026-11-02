@@ -267,7 +267,9 @@ export class Watcher {
     const daemon = this.deps.daemon
     try {
       const workspaces = await this.queryWithFallback(
-        daemon ? () => daemon.listWorkspaces<Workspace[]>() : undefined,
+        daemon
+          ? () => daemon.listWorkspaces<Workspace[]>({ fresh: strict })
+          : undefined,
         () =>
           this.deps.cli.run<Workspace[]>([
             "workspace",

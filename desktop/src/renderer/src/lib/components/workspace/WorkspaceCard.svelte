@@ -14,6 +14,7 @@ import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { Workspace } from "$lib/types/index.js"
 import { timeAgo } from "$lib/utils/time.js"
+import { workspaceLabel } from "$lib/utils/workspaceLabel.js"
 
 let { workspace }: { workspace: Workspace } = $props()
 let confirmDeleteOpen = $state(false)
@@ -82,7 +83,7 @@ async function handleDelete() {
   onclick={() => goto(`/workspaces/${workspace.id}`)}
 >
   <div class="flex items-start justify-between gap-3">
-    <h3 class="text-lg font-semibold truncate">{workspace.id}</h3>
+    <h3 class="text-lg font-semibold truncate">{workspaceLabel(workspace)}</h3>
     <span class="text-xs text-muted-foreground whitespace-nowrap pt-1">
       {timeAgo(workspace.lastUsed)}
     </span>
@@ -129,7 +130,7 @@ async function handleDelete() {
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
   title="Delete workspace"
-  description="This will permanently delete workspace '{workspace.id}' and all associated data. This action cannot be undone."
+  description="This will permanently delete workspace '{workspaceLabel(workspace)}' and all associated data. This action cannot be undone."
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={handleDelete}

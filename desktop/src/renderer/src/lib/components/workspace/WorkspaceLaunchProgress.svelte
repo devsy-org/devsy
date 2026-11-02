@@ -11,6 +11,7 @@ import {
 
 interface Props {
   workspaceId: string
+  label?: string
   provider?: string
   ideLabel?: string
   timeline: WorkspaceLaunchTimeline
@@ -31,6 +32,7 @@ interface Props {
 
 let {
   workspaceId,
+  label,
   provider,
   ideLabel,
   timeline,
@@ -111,7 +113,8 @@ function elapsed(value: number): string {
       {headline}
     </h2>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-      <span class="break-all font-medium">{workspaceId}</span>
+      <span class="break-all font-medium">{label ?? workspaceId}</span>
+      {#if label}<span class="break-all font-mono text-xs text-muted-foreground">{workspaceId}</span>{/if}
       {#if provider || ideLabel}
         <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
           {#if provider}<span class="break-all">{provider}</span>{/if}
@@ -217,7 +220,7 @@ function elapsed(value: number): string {
     {:else if error}
       <p class="break-words text-sm text-destructive" aria-live="assertive">{error}</p>
     {:else if running}
-      <p class="text-sm text-muted-foreground" aria-live="polite">Launching workspace {workspaceId}…</p>
+      <p class="text-sm text-muted-foreground" aria-live="polite">Launching workspace {label ?? workspaceId}…</p>
     {/if}
   </div>
 

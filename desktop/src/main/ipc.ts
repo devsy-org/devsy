@@ -18,6 +18,15 @@ import {
 import type { ProviderIconRequest } from "../shared/provider-icon.js"
 import type { LogRunExportResult } from "../shared/workspace-logs.js"
 import type { WorkspaceActivity } from "../shared/workspace-operation.js"
+import {
+  buildWorkspaceEditArgs,
+  buildWorkspaceUpPresentationArgs,
+  parseWorkspacePresentationResult,
+  presentationFailureFromCliError,
+  validateWorkspacePresentationRequest,
+  type WorkspacePresentationReply,
+  type WorkspacePresentationRequest,
+} from "../shared/workspace-presentation.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
@@ -66,6 +75,48 @@ type SecretUnlockResult = (SecretIpcFailure | { ok: true }) & {
 type SecretUnlockInput =
   | SecretIpcFailure
   | { ok: true; requestId?: string; passphrase?: string; remember: boolean }
+
+const protectionDescriptions: Record<string, string> = {
+  "set-passphrase": "Set a passphrase for all file-backed secrets?",
+  "change-passphrase": "Change the passphrase for all file-backed secrets?",
+  "remove-passphrase":
+    "Remove passphrase protection from all file-backed secrets?",
+  remember: "Remember the secrets passphrase in your OS keychain?",
+  forget: "Forget the secrets passphrase stored in your OS keychain?",
+}
+
+function protectionFailure(
+  err: unknown,
+  credentials: Array<string | undefined>,
+): { ok: false; message: string; cliError?: CLIError } {
+  const redact = (value: string) =>
+    credentials.reduce<string>(
+      (text, credential) =>
+        credential ? text.replaceAll(credential, "***") : text,
+      value,
+    )
+  const error = (err as { cliError?: CLIError } | null)?.cliError
+  const cliError = error
+    ? {
+        code: redact(error.code),
+        message: redact(error.message),
+        hint: error.hint ? redact(error.hint) : undefined,
+        context: error.context
+          ? Object.fromEntries(
+              Object.entries(error.context).map(([key, value]) => [
+                redact(key),
+                redact(value),
+              ]),
+            )
+          : undefined,
+      }
+    : undefined
+  return {
+    ok: false,
+    message: cliError?.message ?? "Secret protection operation failed.",
+    cliError,
+  }
+}
 
 /** Validate and snapshot renderer input before any asynchronous approval. */
 function validateSecretUnlockInput(args: unknown): SecretUnlockInput {
@@ -174,6 +225,7 @@ interface IpcDependencies {
   providerJobs: ProviderJobs
   workspaceJobs: WorkspaceJobs
   workspaceSnapshot?: () => unknown
+  refreshWorkspaces?: () => Promise<void>
   onRendererReady?: (sender: Electron.WebContents) => void
   appNavigation?: AppNavigationController
   settingsService?: SettingsService
@@ -741,19 +793,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           if (typeof newPassphrase !== "string" || !newPassphrase.trim())
             return { ok: false, message: "Enter a non-empty passphrase." }
         }
-        const descriptions: Record<string, string> = {
-          "set-passphrase": "Set a passphrase for all file-backed secrets?",
-          "change-passphrase":
-            "Change the passphrase for all file-backed secrets?",
-          "remove-passphrase":
-            "Remove passphrase protection from all file-backed secrets?",
-          remember: "Remember the secrets passphrase in your OS keychain?",
-          forget: "Forget the secrets passphrase stored in your OS keychain?",
-        }
         const confirmation = await dialog.showMessageBox(win, {
           type: "warning",
           title: "Secret protection",
-          message: descriptions[action],
+          message: protectionDescriptions[action],
           detail: "This changes the shared secret store across all contexts.",
           buttons: ["Cancel", "Continue"],
           defaultId: 0,
@@ -780,35 +823,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         }
         return { ok: true }
       } catch (err) {
-        // Preserve structured recovery information without sending credential
-        // material (or arbitrary error properties) back across the IPC boundary.
-        const redact = (value: string) =>
-          [currentPassphrase, newPassphrase].reduce<string>(
-            (text, credential) =>
-              credential ? text.replaceAll(credential, "***") : text,
-            value,
-          )
-        const error = (err as { cliError?: CLIError } | null)?.cliError
-        const cliError = error
-          ? {
-              code: redact(error.code),
-              message: redact(error.message),
-              hint: error.hint ? redact(error.hint) : undefined,
-              context: error.context
-                ? Object.fromEntries(
-                    Object.entries(error.context).map(([key, value]) => [
-                      redact(key),
-                      redact(value),
-                    ]),
-                  )
-                : undefined,
-            }
-          : undefined
-        return {
-          ok: false,
-          message: cliError?.message ?? "Secret protection operation failed.",
-          cliError,
-        }
+        return protectionFailure(err, [currentPassphrase, newPassphrase])
       }
     },
   )
@@ -1156,6 +1171,63 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         args.workspaceId,
         args.newWorkspaceId,
       ])
+    },
+  )
+
+  ipcMain.handle(
+    "workspace_edit",
+    async (
+      _event,
+      request: WorkspacePresentationRequest,
+    ): Promise<WorkspacePresentationReply> => {
+      const invalid = validateWorkspacePresentationRequest(request)
+      if (invalid) return { ok: false, ...invalid }
+      trackEvent("workspace_edit", {
+        workspace_ref: hashWorkspaceRef(request.workspaceId),
+      })
+      const context =
+        request.context || state.workspaceContext(request.workspaceId)
+      try {
+        const raw = await cli.run<unknown>(
+          buildWorkspaceEditArgs(request, context),
+        )
+        const result = parseWorkspacePresentationResult(raw)
+        if (!result) {
+          return {
+            ok: false,
+            field: "workspace",
+            code: "failed",
+            message: "Workspace edit returned an unexpected result.",
+          }
+        }
+        const stale =
+          result.id !== request.workspaceId ||
+          result.uid !== request.expectedUid ||
+          result.context !== context
+        await deps.refreshWorkspaces?.().catch((error) => {
+          mainLog.warn("[workspace-edit] workspace refresh failed", error)
+        })
+        if (stale) {
+          return {
+            ok: false,
+            field: "workspace",
+            code: "stale",
+            message: "The workspace changed while saving. Reload and retry.",
+          }
+        }
+        return { ok: true, result }
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const failure = presentationFailureFromCliError(
+          cliError ? redactCLIError(cliError) : undefined,
+          redactSensitiveText(errorMessage(err)),
+        )
+        return {
+          ok: false,
+          ...failure,
+          message: redactSensitiveText(failure.message),
+        }
+      }
     },
   )
 
@@ -2095,6 +2167,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   const runWorkspaceUp = (args: {
     source: string
     workspaceId?: string
+    displayName?: string
+    sshHostAlias?: string
     provider?: string
     ide?: string
     ideLaunch?: "auto" | "headless" | "skip"
@@ -2111,6 +2185,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     })
     const cliArgs = ["workspace", "up", args.source]
     if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
+    cliArgs.push(...buildWorkspaceUpPresentationArgs(args))
     if (args.provider) cliArgs.push("--provider", args.provider)
     if (args.ide) cliArgs.push("--ide", args.ide)
     if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)

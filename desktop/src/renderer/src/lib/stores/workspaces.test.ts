@@ -7,6 +7,7 @@ import {
 } from "$lib/__mocks__/tauri.js"
 import { toasts } from "./toasts.js"
 import {
+  applyWorkspacePresentation,
   destroyWorkspaces,
   initWorkspaces,
   workspaceJobs,
@@ -386,5 +387,56 @@ describe("workspace snapshot store", () => {
     await initWorkspaces()
     expect(get(workspaces)[0].status).toBe("Running")
     expect(get(workspacesLoading)).toBe(false)
+  })
+})
+
+describe("applyWorkspacePresentation", () => {
+  const result = {
+    id: "ws",
+    uid: "u1",
+    context: "default",
+    displayName: "Label",
+    sshHostAlias: "alias",
+    effectiveDisplayName: "Label",
+    preferredSSHHost: "alias.devsy",
+    canonicalSSHHost: "ws.devsy",
+    sshEntryUpdated: true,
+  }
+
+  it("updates only the workspace with the matching ID, UID and context", () => {
+    workspaces.set([
+      { id: "ws", uid: "u1", context: "default" },
+      { id: "ws", uid: "u2", context: "default" },
+      { id: "ws", uid: "u1", context: "other" },
+      { id: "x", uid: "u1", context: "default" },
+    ])
+    applyWorkspacePresentation(result)
+    const [match, otherUid, otherContext, otherId] = get(workspaces)
+    expect(match).toMatchObject({
+      displayName: "Label",
+      effectiveDisplayName: "Label",
+      sshHostAlias: "alias",
+      preferredSSHHost: "alias.devsy",
+      canonicalSSHHost: "ws.devsy",
+    })
+    expect(otherUid.displayName).toBeUndefined()
+    expect(otherContext.displayName).toBeUndefined()
+    expect(otherId.displayName).toBeUndefined()
+  })
+
+  it("clears overrides when the result carries empty values", () => {
+    workspaces.set([
+      { id: "ws", uid: "u1", displayName: "Old", sshHostAlias: "old" },
+    ])
+    applyWorkspacePresentation({
+      ...result,
+      displayName: "",
+      sshHostAlias: "",
+      preferredSSHHost: "ws.devsy",
+    })
+    const [updated] = get(workspaces)
+    expect(updated.displayName).toBeUndefined()
+    expect(updated.sshHostAlias).toBeUndefined()
+    expect(updated.preferredSSHHost).toBe("ws.devsy")
   })
 })

@@ -7,7 +7,42 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
+
+const canonicalHost = "ws.devsy"
+
+func TestSSHHostFor(t *testing.T) {
+	tests := []struct {
+		name string
+		ws   *provider.Workspace
+		want string
+	}{
+		{"nil config falls back to canonical", nil, canonicalHost},
+		{"no alias uses canonical", &provider.Workspace{ID: "ws"}, canonicalHost},
+		{
+			"alias is preferred",
+			&provider.Workspace{ID: "ws", SSHHostAlias: "friendly"},
+			"friendly.devsy",
+		},
+		{
+			"platform workspace stays canonical",
+			&provider.Workspace{
+				ID:           "ws",
+				SSHHostAlias: "friendly",
+				Platform:     &provider.PlatformMetadata{},
+			},
+			canonicalHost,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sshHostFor(tt.ws, "ws"); got != tt.want {
+				t.Errorf("sshHostFor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 // TestIDEParams_Launch_OpenBrowser asserts the mapping that browser IDE openers
 // use to decide whether to spawn the host browser: openBrowser is true iff

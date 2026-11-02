@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/id"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/providers"
+	"github.com/gofrs/flock"
 )
 
 const (
@@ -207,7 +208,58 @@ func SaveWorkspaceConfig(workspace *Workspace) error {
 		return err
 	}
 
-	return saveJSON(workspaceDir, WorkspaceConfigFile, workspace, 0o644)
+	unlock, err := lockWorkspacePersistence(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	toSave := *workspace
+	committed, err := LoadWorkspaceConfig(workspace.Context, workspace.ID)
+	if err == nil && committed.UID == workspace.UID {
+		toSave.DisplayName = committed.DisplayName
+		toSave.SSHHostAlias = committed.SSHHostAlias
+	}
+
+	return saveJSON(workspaceDir, WorkspaceConfigFile, &toSave, 0o644)
+}
+
+func SaveWorkspacePresentation(workspace *Workspace) error {
+	unlock, err := lockWorkspacePersistence(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	committed, err := LoadWorkspaceConfig(workspace.Context, workspace.ID)
+	if err != nil {
+		return fmt.Errorf("load workspace %s: %w", workspace.ID, err)
+	}
+	if committed.UID != workspace.UID {
+		return fmt.Errorf("workspace %s was recreated with a different uid", workspace.ID)
+	}
+
+	committed.DisplayName = workspace.DisplayName
+	committed.SSHHostAlias = workspace.SSHHostAlias
+	workspaceDir, err := GetWorkspaceDir(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+
+	return saveJSON(workspaceDir, WorkspaceConfigFile, committed, 0o644)
+}
+
+func lockWorkspacePersistence(contextName, workspaceID string) (func(), error) {
+	locksDir, err := ensureOperationLocksDir(contextName)
+	if err != nil {
+		return nil, err
+	}
+	lock := flock.New(filepath.Join(locksDir, workspaceID+".workspace-persist.lock"))
+	if err := lock.Lock(); err != nil {
+		return nil, fmt.Errorf("acquire workspace persistence lock: %w", err)
+	}
+
+	return func() { _ = lock.Unlock() }, nil
 }
 
 func SaveMachineConfig(machine *Machine) error {

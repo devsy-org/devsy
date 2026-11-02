@@ -35,7 +35,7 @@ for (const [kind, source] of [
       await dialog
         .getByRole("button", { name: "Continue", exact: true })
         .click()
-      const name = dialog.getByLabel("Workspace Name", { exact: true })
+      const name = dialog.getByLabel("Workspace ID", { exact: true })
       await expect(name).toHaveValue("backend")
       await expect(dialog.getByText(source, { exact: true })).toBeVisible()
       await name.fill("Backend")

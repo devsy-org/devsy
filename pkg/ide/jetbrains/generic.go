@@ -110,17 +110,9 @@ type GenericJetBrainsServer struct {
 	options  *GenericOptions
 }
 
-func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string) error {
+func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, sshHost string) error {
 	log.Infof("Starting %s through JetBrains Gateway", o.options.DisplayName)
-	err := devsyopen.Run(
-		`jetbrains-gateway://connect#idePath=` + url.QueryEscape(
-			o.getDirectory(path.Join("/", "home", o.userName)),
-		) + `&projectPath=` + url.QueryEscape(
-			workspaceFolder,
-		) + `&host=` + workspaceID + config2.SSHHostSuffix + `&port=22&user=` + url.QueryEscape(
-			o.userName,
-		) + `&type=ssh&deploy=false`,
-	)
+	err := devsyopen.Run(o.gatewayURL(workspaceFolder, sshHost))
 	if err != nil {
 		log.Debugf("Error opening jetbrains-gateway: %v", err)
 		log.Errorf(
@@ -173,6 +165,16 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 	log.Infof("installed backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
 
 	return o.installPlugins(setupInfo, targetLocation, baseFolder)
+}
+
+func (o *GenericJetBrainsServer) gatewayURL(workspaceFolder, sshHost string) string {
+	return `jetbrains-gateway://connect#idePath=` + url.QueryEscape(
+		o.getDirectory(path.Join("/", "home", o.userName)),
+	) + `&projectPath=` + url.QueryEscape(
+		workspaceFolder,
+	) + `&host=` + url.QueryEscape(sshHost) + `&port=22&user=` + url.QueryEscape(
+		o.userName,
+	) + `&type=ssh&deploy=false`
 }
 
 func (o *GenericJetBrainsServer) getDownloadFolder() string {

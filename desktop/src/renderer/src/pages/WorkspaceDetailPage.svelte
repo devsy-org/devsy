@@ -42,7 +42,11 @@ import {
   workspaceJobBusy,
   workspaceJobInterruptible,
 } from "$shared/workspace-operation.js"
-import { workspaces, workspaceJobs } from "$lib/stores/workspaces.js"
+import {
+  workspaces,
+  workspaceJobs,
+  applyWorkspacePresentation,
+} from "$lib/stores/workspaces.js"
 import { addTerminal, removeTerminal } from "$lib/stores/terminals.js"
 import { destroyTerminalInstance } from "$lib/stores/terminal-instances.js"
 import { terminalCreateSsh, terminalClose } from "$lib/ipc/terminal.js"
@@ -52,6 +56,8 @@ import {
   workspaceRebuild,
   workspaceReset,
   workspaceDelete,
+  workspaceEdit,
+  WorkspaceEditError,
   workspaceRename,
   workspaceSetIde,
   workspaceStatus,
@@ -75,6 +81,19 @@ import type { CommandProgress, LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { isRunId } from "$shared/workspace-logs.js"
 import { describeWorkspaceSource } from "$lib/utils/workspace-source.js"
+import {
+  canonicalSshHost,
+  preferredSshHost,
+  workspaceLabel,
+} from "$lib/utils/workspaceLabel.js"
+import {
+  buildWorkspacePresentationRequest,
+  SSH_HOST_SUFFIX,
+  validateDisplayLabel,
+  validateSshAlias,
+  type WorkspacePresentationBase,
+  type WorkspacePresentationField,
+} from "$shared/workspace-presentation.js"
 import { formatTimestamp } from "$lib/utils/time.js"
 import {
   isRecoverableBuildFailure,
@@ -124,8 +143,14 @@ const IDE_OPTIONS = [
 let id = $derived(params.id ?? "")
 let workspace = $derived($workspaces.find((ws) => ws.id === id))
 let sourceDescription = $derived(describeWorkspaceSource(workspace?.source))
-// ".devsy" matches config.SSHHostSuffix on the backend (".<binary-name>").
-let sshHost = $derived(`${id}.devsy`)
+let workspaceDisplayLabel = $derived(workspace ? workspaceLabel(workspace) : id)
+let canonicalHost = $derived(
+  workspace ? canonicalSshHost(workspace) : `${id}${SSH_HOST_SUFFIX}`,
+)
+let sshHost = $derived(
+  workspace ? preferredSshHost(workspace) : `${id}${SSH_HOST_SUFFIX}`,
+)
+let isPlatformWorkspace = $derived(Boolean(workspace?.pro))
 
 let isRunning = $derived(workspace?.status?.toLowerCase() === "running")
 let isStopped = $derived(
@@ -315,6 +340,14 @@ let ideSetSeq = 0
 let renaming = $state(false)
 let renameValue = $state("")
 let renameSaving = $state(false)
+let editingPresentation = $state(false)
+let labelDraft = $state("")
+let aliasDraft = $state("")
+let presentationSaving = $state(false)
+let presentationBase = $state<WorkspacePresentationBase | null>(null)
+let presentationErrors = $state<
+  Partial<Record<WorkspacePresentationField, string>>
+>({})
 let editingFolder = $state(false)
 let folderValue = $state("")
 let customFolder = $state("")
@@ -696,6 +729,86 @@ async function handleRenameConfirmed() {
   await performRename(pendingRenameTarget)
   confirmRenameOpen = false
 }
+
+function startPresentationEdit() {
+  if (!workspace) return
+  if (!workspace.uid) {
+    toasts.error("Workspace identity is not available yet. Try again shortly.")
+    return
+  }
+  const base: WorkspacePresentationBase = {
+    id: workspace.id,
+    uid: workspace.uid,
+    context: workspace.context ?? "",
+    displayName: workspace.displayName ?? "",
+    sshHostAlias: workspace.sshHostAlias ?? "",
+  }
+  presentationBase = base
+  labelDraft = base.displayName
+  aliasDraft = base.sshHostAlias
+  presentationErrors = {}
+  editingPresentation = true
+}
+
+function resetPresentationEdit() {
+  editingPresentation = false
+  presentationBase = null
+  presentationErrors = {}
+  presentationSaving = false
+}
+
+function cancelPresentationEdit() {
+  if (presentationSaving) return
+  resetPresentationEdit()
+}
+
+$effect(() => {
+  if (presentationBase && presentationBase.id !== id) resetPresentationEdit()
+})
+
+async function savePresentation() {
+  const base = presentationBase
+  if (!base || presentationSaving) return
+  const localErrors = {
+    displayName: validateDisplayLabel(labelDraft) ?? undefined,
+    sshHostAlias: validateSshAlias(aliasDraft) ?? undefined,
+  }
+  if (localErrors.displayName || localErrors.sshHostAlias) {
+    presentationErrors = localErrors
+    return
+  }
+  const request = buildWorkspacePresentationRequest(base, {
+    displayName: labelDraft,
+    sshHostAlias: aliasDraft,
+  })
+  if (!request) {
+    resetPresentationEdit()
+    return
+  }
+  presentationSaving = true
+  presentationErrors = {}
+  try {
+    const result = await workspaceEdit(request)
+    applyWorkspacePresentation(result)
+    if (presentationBase === base) resetPresentationEdit()
+    toasts.success("Workspace details saved")
+  } catch (err) {
+    if (presentationBase !== base) return
+    if (err instanceof WorkspaceEditError) {
+      const conflictNote =
+        err.code === "conflict" &&
+        err.conflict &&
+        !err.message.includes(err.conflict)
+          ? ` Conflicts with ${err.conflict}.`
+          : ""
+      presentationErrors = { [err.field]: `${err.message}${conflictNote}` }
+    } else {
+      presentationErrors = { workspace: extractErrorMessage(err) }
+    }
+  } finally {
+    if (presentationBase === base) presentationSaving = false
+  }
+}
 </script>
 
 <div class="mx-auto flex w-full min-h-0 max-w-6xl flex-1 flex-col gap-5">
@@ -727,28 +840,11 @@ async function handleRenameConfirmed() {
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="w-full min-w-0 space-y-3">
           <div class="flex flex-wrap items-center gap-3">
-            {#if renaming}
-              <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); handleRename() }}>
-                <Input
-                  aria-label="Workspace name"
-                  data-slot="workspace-rename-input"
-                  value={renameValue}
-                  oninput={(e) => (renameValue = e.currentTarget.value)}
-                  class="h-8 w-56 text-lg font-bold"
-                  disabled={renameSaving}
-                />
-                <Button data-slot="workspace-rename-save" variant="outline" size="sm" type="submit" disabled={renameSaving || !renameValue.trim()}>
-                  {renameSaving ? "Saving..." : "Save"}
-                </Button>
-                <Button data-slot="workspace-rename-cancel" variant="ghost" size="sm" type="button" onclick={() => (renaming = false)} disabled={renameSaving}>
-                  Cancel
-                </Button>
-              </form>
-            {:else}
-              <h1 class="min-w-0 text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">{id}</h1>
-              <Button data-slot="workspace-rename-btn" variant="ghost" size="icon-sm" onclick={startRename} disabled={operationRunning}>
+            <h1 class="min-w-0 text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">{workspaceDisplayLabel}</h1>
+            {#if !isPlatformWorkspace && !editingPresentation}
+              <Button data-slot="workspace-presentation-edit-btn" variant="ghost" size="icon-sm" onclick={startPresentationEdit}>
                 <Pencil class="h-4 w-4" />
-                <span class="sr-only">Rename</span>
+                <span class="sr-only">Edit display label and SSH alias</span>
               </Button>
             {/if}
             {#if inRecovery}
@@ -758,6 +854,76 @@ async function handleRenameConfirmed() {
               </span>
             {/if}
           </div>
+          {#if workspace.displayName || workspaceDisplayLabel !== id}
+            <p class="text-sm text-muted-foreground [overflow-wrap:anywhere]">ID <span class="select-text font-mono text-foreground" data-slot="workspace-id-caption">{id}</span></p>
+          {/if}
+
+          {#if editingPresentation}
+            <form
+              class="w-full max-w-xl space-y-4 rounded-lg border bg-muted/30 p-4"
+              aria-label="Edit display label and SSH alias"
+              data-slot="workspace-presentation-form"
+              onsubmit={(e) => { e.preventDefault(); savePresentation() }}
+            >
+              <div class="space-y-1.5">
+                <label for="workspace-display-label" class="text-sm font-medium">Display label</label>
+                <Input
+                  id="workspace-display-label"
+                  data-slot="workspace-display-label-input"
+                  value={labelDraft}
+                  oninput={(e) => { labelDraft = e.currentTarget.value; presentationErrors = { ...presentationErrors, displayName: undefined } }}
+                  placeholder={id}
+                  autocomplete="off"
+                  aria-invalid={presentationErrors.displayName ? true : undefined}
+                  aria-describedby={presentationErrors.displayName ? "workspace-display-label-hint workspace-display-label-error" : "workspace-display-label-hint"}
+                  disabled={presentationSaving}
+                />
+                <p id="workspace-display-label-hint" class="text-xs leading-5 text-muted-foreground">Only changes how this workspace is shown. Leave empty to show the ID.</p>
+                {#if presentationErrors.displayName}
+                  <p id="workspace-display-label-error" class="text-xs font-medium text-destructive" role="alert">{presentationErrors.displayName}</p>
+                {/if}
+              </div>
+
+              <div class="space-y-1.5">
+                <label for="workspace-ssh-alias" class="text-sm font-medium">SSH alias</label>
+                <div class="flex items-center gap-2">
+                  <Input
+                    id="workspace-ssh-alias"
+                    data-slot="workspace-ssh-alias-input"
+                    value={aliasDraft}
+                    oninput={(e) => { aliasDraft = e.currentTarget.value; presentationErrors = { ...presentationErrors, sshHostAlias: undefined } }}
+                    placeholder={id}
+                    autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck={false}
+                    class="font-mono"
+                    aria-invalid={presentationErrors.sshHostAlias ? true : undefined}
+                    aria-describedby={presentationErrors.sshHostAlias ? "workspace-ssh-alias-hint workspace-ssh-alias-error" : "workspace-ssh-alias-hint"}
+                    disabled={presentationSaving}
+                  />
+                  <span class="font-mono text-sm text-muted-foreground" data-slot="workspace-ssh-alias-suffix">{SSH_HOST_SUFFIX}</span>
+                </div>
+                <p id="workspace-ssh-alias-hint" class="text-xs leading-5 text-muted-foreground">Preferred SSH host. The canonical host {canonicalHost} keeps working. Leave empty to use it.</p>
+                {#if presentationErrors.sshHostAlias}
+                  <p id="workspace-ssh-alias-error" class="text-xs font-medium text-destructive" role="alert">{presentationErrors.sshHostAlias}</p>
+                {/if}
+              </div>
+
+              {#if presentationErrors.workspace}
+                <p id="workspace-presentation-error" class="text-sm font-medium text-destructive" role="alert">{presentationErrors.workspace}</p>
+              {/if}
+
+              <div class="flex items-center gap-2">
+                <Button data-slot="workspace-presentation-save" type="submit" size="sm" disabled={presentationSaving}>
+                  {#if presentationSaving}<Spinner />{/if}
+                  Save
+                </Button>
+                <Button data-slot="workspace-presentation-cancel" type="button" variant="ghost" size="sm" onclick={cancelPresentationEdit} disabled={presentationSaving}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          {/if}
 
           <WorkspaceOperation {id} status={workspace.status} density="expanded" onViewLogs={() => { viewLogsPinned = true; activeTab = "logs" }} />
 
@@ -927,6 +1093,9 @@ async function handleRenameConfirmed() {
                 </Tooltip.Root>
               </div>
               <p class="mt-2 text-xs leading-5 text-muted-foreground">Use this SSH command while the workspace is running.</p>
+              {#if sshHost !== canonicalHost}
+                <p class="mt-1 text-xs leading-5 text-muted-foreground">Also reachable as <code class="font-mono">ssh {canonicalHost}</code>.</p>
+              {/if}
             </div>
           </section>
 
@@ -1017,9 +1186,39 @@ async function handleRenameConfirmed() {
             <details class="mt-5 border-t pt-4 text-sm">
               <summary class="w-fit cursor-pointer rounded-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">Technical details</summary>
               <dl class="mt-4 grid gap-4 sm:grid-cols-2">
-                <div class="space-y-1.5"><dt class="text-muted-foreground">Workspace ID</dt><dd class="select-text font-mono [overflow-wrap:anywhere]">{workspace.id}</dd></div>
+                <div class="space-y-1.5"><dt class="text-muted-foreground">Workspace ID (permanent)</dt><dd class="select-text font-mono [overflow-wrap:anywhere]" data-slot="workspace-id-value">{workspace.id}</dd></div>
+                <div class="space-y-1.5"><dt class="text-muted-foreground">Canonical SSH host</dt><dd class="select-text font-mono [overflow-wrap:anywhere]" data-slot="workspace-canonical-host">{canonicalHost}</dd></div>
+                {#if sshHost !== canonicalHost}
+                  <div class="space-y-1.5"><dt class="text-muted-foreground">Preferred SSH host</dt><dd class="select-text font-mono [overflow-wrap:anywhere]">{sshHost}</dd></div>
+                {/if}
                 <div class="space-y-1.5"><dt class="text-muted-foreground">UID</dt><dd class="select-text font-mono [overflow-wrap:anywhere]">{workspace.uid ?? "Not available"}</dd></div>
               </dl>
+              <div class="mt-5 space-y-3 border-t pt-4">
+                <h3 class="font-medium">Change workspace ID</h3>
+                <p class="text-xs leading-5 text-muted-foreground">Advanced. The ID is the permanent internal identifier and canonical SSH host. Changing it renames the workspace and deletes the existing container; the source code and devcontainer config are preserved. To change only how the workspace is named or reached, use the display label and SSH alias instead.</p>
+                {#if renaming}
+                  <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); handleRename() }}>
+                    <Input
+                      aria-label="New workspace ID"
+                      data-slot="workspace-rename-input"
+                      value={renameValue}
+                      oninput={(e) => (renameValue = e.currentTarget.value)}
+                      class="h-8 w-56"
+                      disabled={renameSaving}
+                    />
+                    <Button data-slot="workspace-rename-save" variant="outline" size="sm" type="submit" disabled={renameSaving || !renameValue.trim()}>
+                      {renameSaving ? "Saving..." : "Change ID"}
+                    </Button>
+                    <Button data-slot="workspace-rename-cancel" variant="ghost" size="sm" type="button" onclick={() => (renaming = false)} disabled={renameSaving}>
+                      Cancel
+                    </Button>
+                  </form>
+                {:else}
+                  <Button data-slot="workspace-rename-btn" variant="outline" size="sm" onclick={startRename} disabled={operationRunning}>
+                    Change workspace ID
+                  </Button>
+                {/if}
+              </div>
             </details>
           </section>
         </div>

@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/dotfiles"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
 
@@ -128,6 +129,7 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		sshConfigIncludePath = includePath
 	}
 
+	preferredHost := sshPresentation(client)
 	return devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        path,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -138,6 +140,7 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		TunnelPort:           wctx.tunnelPort,
 		AgentForwarding:      devsyConfig.ContextOptionBool(config.ContextOptionSSHAgentForwarding),
 		Provider:             client.Provider(),
+		PreferredHost:        preferredHost,
 	})
 }
 
@@ -167,6 +170,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		sshConfigIncludePath = includePath
 	}
 
+	preferredHost := sshPresentation(client)
 	err = devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        sshConfigPath,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -178,10 +182,26 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		AgentForwarding:      params.agentForwarding,
 		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
+		PreferredHost:        preferredHost,
 	})
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func sshPresentation(client client2.BaseWorkspaceClient) string {
+	ws := client.WorkspaceConfig()
+	if ws == nil {
+		return ""
+	}
+
+	current := *ws
+	committed, err := provider.LoadWorkspaceConfig(client.Context(), client.Workspace())
+	if err == nil && committed.UID == ws.UID {
+		current.SSHHostAlias = committed.SSHHostAlias
+	}
+
+	return current.PreferredSSHHost()
 }

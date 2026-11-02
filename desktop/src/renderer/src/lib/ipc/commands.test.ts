@@ -29,7 +29,9 @@ import {
   secretUnlockRequest,
   sshKeyGenerate,
   sshKeyList,
+  WorkspaceEditError,
   workspaceDelete,
+  workspaceEdit,
   workspaceRebuild,
   workspaceStatus,
   workspaceStop,
@@ -77,6 +79,71 @@ describe("IPC commands", () => {
         ide: "vscode",
       })
       expect(result).toBe("cmd-123")
+    })
+
+    it("workspaceUp forwards display label and ssh alias only when given", async () => {
+      mockInvoke.mockResolvedValue("cmd-1")
+      await workspaceUp({
+        source: "repo",
+        workspaceId: "ws",
+        displayName: "My WS",
+        sshHostAlias: "mine",
+      })
+      expect(mockInvoke).toHaveBeenCalledWith("workspace_up", {
+        source: "repo",
+        workspaceId: "ws",
+        displayName: "My WS",
+        sshHostAlias: "mine",
+      })
+    })
+
+    it("workspaceEdit returns the result on success", async () => {
+      const result = {
+        id: "ws",
+        uid: "u",
+        context: "default",
+        displayName: "My WS",
+        sshHostAlias: "",
+        effectiveDisplayName: "My WS",
+        preferredSSHHost: "ws.devsy",
+        canonicalSSHHost: "ws.devsy",
+        sshEntryUpdated: false,
+      }
+      mockInvoke.mockResolvedValue({ ok: true, result })
+      await expect(
+        workspaceEdit({
+          workspaceId: "ws",
+          expectedUid: "u",
+          displayName: "My WS",
+        }),
+      ).resolves.toEqual(result)
+      expect(mockInvoke).toHaveBeenCalledWith("workspace_edit", {
+        workspaceId: "ws",
+        expectedUid: "u",
+        displayName: "My WS",
+      })
+    })
+
+    it("workspaceEdit throws a field-specific error on failure", async () => {
+      mockInvoke.mockResolvedValue({
+        ok: false,
+        field: "sshHostAlias",
+        code: "conflict",
+        message: "taken",
+        conflict: "other",
+      })
+      const error = await workspaceEdit({
+        workspaceId: "ws",
+        expectedUid: "u",
+        sshHostAlias: "x",
+      }).catch((err) => err)
+      expect(error).toBeInstanceOf(WorkspaceEditError)
+      expect(error).toMatchObject({
+        field: "sshHostAlias",
+        code: "conflict",
+        message: "taken",
+        conflict: "other",
+      })
     })
 
     it("workspaceUp forwards ideLaunch", async () => {

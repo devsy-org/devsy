@@ -30,7 +30,11 @@ type DescribeCmd struct {
 // describeOutput is the JSON shape: the full workspace config plus live state.
 type describeOutput struct {
 	*provider.Workspace
-	State string `json:"state"`
+	State            string `json:"state"`
+	DisplayName      string `json:"displayName"`
+	SSHHostAlias     string `json:"sshHostAlias"`
+	PreferredSSHHost string `json:"preferredSSHHost"`
+	CanonicalSSHHost string `json:"canonicalSSHHost"`
 }
 
 // NewDescribeCmd creates a new command.
@@ -91,7 +95,14 @@ func render(mode string, cfg *provider.Workspace, state string) error {
 	case output.ModePlain:
 		table.Print([]string{"Field", "Value"}, describeRows(cfg, state))
 	case output.ModeJSON:
-		out, err := json.Marshal(&describeOutput{Workspace: cfg, State: state})
+		out, err := json.Marshal(&describeOutput{
+			Workspace:        cfg,
+			State:            state,
+			DisplayName:      cfg.EffectiveDisplayName(),
+			SSHHostAlias:     cfg.SSHHostAlias,
+			PreferredSSHHost: cfg.PreferredSSHHost(),
+			CanonicalSSHHost: cfg.CanonicalSSHHost(),
+		})
 		if err != nil {
 			return err
 		}
@@ -130,6 +141,13 @@ func describeRows(cfg *provider.Workspace, state string) [][]string {
 	}
 
 	add("ID", cfg.ID)
+	if label := cfg.EffectiveDisplayName(); label != cfg.ID {
+		add("Label", label)
+	}
+	add("SSH Host", cfg.PreferredSSHHost())
+	if cfg.PreferredSSHHost() != cfg.CanonicalSSHHost() {
+		add("Canonical SSH Host", cfg.CanonicalSSHHost())
+	}
 	add("State", state)
 	add("Provider", cfg.Provider.Name)
 	add("IDE", cfg.IDE.Name)

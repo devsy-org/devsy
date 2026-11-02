@@ -4,5 +4,5 @@ package zed
 type Target struct {
 	UserName        string
 	WorkspaceFolder string
-	WorkspaceID     string
+	SSHHost         string
 }

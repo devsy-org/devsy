@@ -29,6 +29,9 @@ type Workspace struct {
 	// UID is used to identify this specific workspace
 	UID string `json:"uid,omitempty"`
 
+	DisplayName  string `json:"displayName,omitempty"`
+	SSHHostAlias string `json:"sshHostAlias,omitempty"`
+
 	// Picture is the project social media image
 	Picture string `json:"picture,omitempty"`
 
@@ -585,4 +588,27 @@ func isPlausibleGitSource(s string) bool {
 
 func (w *Workspace) IsPlatform() bool {
 	return w.Platform != nil
+}
+
+func (w *Workspace) EffectiveDisplayName() string {
+	if w.Platform != nil && w.Platform.DisplayName != "" {
+		return w.Platform.DisplayName
+	}
+	if w.DisplayName != "" {
+		return w.DisplayName
+	}
+
+	return w.ID
+}
+
+func (w *Workspace) CanonicalSSHHost() string {
+	return w.ID + config.SSHHostSuffix
+}
+
+func (w *Workspace) PreferredSSHHost() string {
+	if w.Platform == nil && w.SSHHostAlias != "" {
+		return w.SSHHostAlias + config.SSHHostSuffix
+	}
+
+	return w.CanonicalSSHHost()
 }

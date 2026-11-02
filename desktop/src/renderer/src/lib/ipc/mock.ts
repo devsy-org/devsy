@@ -16,12 +16,21 @@ import type {
   Workspace,
 } from "$lib/types/index.js"
 import type { LinuxDesktopIntegrationStatus } from "$shared/linux-desktop-integration.js"
+import { workspaceLabel } from "$shared/workspace-label.js"
 import type {
   LogIndexResponse,
   LogReadResponse,
   LogRecord,
   LogRunSummary,
 } from "$shared/workspace-logs.js"
+import {
+  normalizeDisplayLabel,
+  SSH_HOST_SUFFIX,
+  validateWorkspacePresentationRequest,
+  type WorkspacePresentationFailure,
+  type WorkspacePresentationReply,
+  type WorkspacePresentationRequest,
+} from "$shared/workspace-presentation.js"
 
 // ── Sample data ──────────────────────────────────────────────────────
 
@@ -474,6 +483,142 @@ function nextId(): string {
   return `mock-${++counter}-${Date.now().toString(36)}`
 }
 
+function mockFailure(
+  failure: WorkspacePresentationFailure,
+): WorkspacePresentationReply {
+  return { ok: false, ...failure }
+}
+
+type MockWorkspace = (typeof WORKSPACES)[number]
+
+function staleFailure(
+  request: WorkspacePresentationRequest,
+  target: MockWorkspace,
+): WorkspacePresentationFailure | null {
+  if (
+    request.expectedDisplayName !== undefined &&
+    request.expectedDisplayName !== (target.displayName ?? "")
+  ) {
+    return {
+      field: "displayName",
+      code: "stale",
+      message: "The display label changed since you opened this page.",
+    }
+  }
+  if (
+    request.expectedSshHostAlias !== undefined &&
+    request.expectedSshHostAlias !== (target.sshHostAlias ?? "")
+  ) {
+    return {
+      field: "sshHostAlias",
+      code: "stale",
+      message: "The SSH alias changed since you opened this page.",
+    }
+  }
+  return null
+}
+
+function labelConflictFailure(
+  label: string,
+  others: MockWorkspace[],
+): WorkspacePresentationFailure | null {
+  if (label === "") return null
+  const clash = others.find(
+    (w) => workspaceLabel(w).toLowerCase() === label.toLowerCase(),
+  )
+  if (!clash) return null
+  return {
+    field: "displayName",
+    code: "conflict",
+    message: `Display label is already used by workspace ${clash.id}.`,
+    conflict: clash.id,
+  }
+}
+
+function aliasConflictFailure(
+  alias: string,
+  others: MockWorkspace[],
+): WorkspacePresentationFailure | null {
+  if (alias === "") return null
+  const host = `${alias}${SSH_HOST_SUFFIX}`.toLowerCase()
+  const clash = others.find(
+    (w) =>
+      `${w.id}${SSH_HOST_SUFFIX}`.toLowerCase() === host ||
+      (w.sshHostAlias &&
+        `${w.sshHostAlias}${SSH_HOST_SUFFIX}`.toLowerCase() === host),
+  )
+  if (!clash) return null
+  return {
+    field: "sshHostAlias",
+    code: "conflict",
+    message: `SSH host ${host} is already used by workspace ${clash.id}.`,
+    conflict: clash.id,
+  }
+}
+
+function nextPresentation(
+  request: WorkspacePresentationRequest,
+  target: MockWorkspace,
+): { label: string; alias: string } {
+  const label =
+    request.displayName === undefined
+      ? (target.displayName ?? "")
+      : normalizeDisplayLabel(request.displayName)
+  const requestedAlias =
+    request.sshHostAlias === undefined
+      ? (target.sshHostAlias ?? "")
+      : request.sshHostAlias.trim()
+  return { label, alias: requestedAlias === target.id ? "" : requestedAlias }
+}
+
+function applyPresentation(
+  target: MockWorkspace,
+  label: string,
+  alias: string,
+): WorkspacePresentationReply {
+  target.displayName = label || undefined
+  target.sshHostAlias = alias || undefined
+  target.canonicalSSHHost = `${target.id}${SSH_HOST_SUFFIX}`
+  target.preferredSSHHost = `${alias || target.id}${SSH_HOST_SUFFIX}`
+  return {
+    ok: true,
+    result: {
+      id: target.id,
+      uid: target.uid ?? "",
+      context: target.context ?? "default",
+      displayName: label,
+      sshHostAlias: alias,
+      effectiveDisplayName: label || target.id,
+      preferredSSHHost: target.preferredSSHHost,
+      canonicalSSHHost: target.canonicalSSHHost,
+      sshEntryUpdated: alias !== "",
+    },
+  }
+}
+
+function mockWorkspaceEdit(
+  request: WorkspacePresentationRequest,
+): WorkspacePresentationReply {
+  const invalid = validateWorkspacePresentationRequest(request)
+  if (invalid) return mockFailure(invalid)
+  const target = WORKSPACES.find((w) => w.id === request.workspaceId)
+  if (!target || target.uid !== request.expectedUid) {
+    return mockFailure({
+      field: "workspace",
+      code: "not-found",
+      message: `Workspace ${request.workspaceId} was not found.`,
+    })
+  }
+  const others = WORKSPACES.filter((w) => w.id !== target.id)
+  const { label, alias } = nextPresentation(request, target)
+  const failure =
+    staleFailure(request, target) ??
+    labelConflictFailure(label, others) ??
+    aliasConflictFailure(alias, others)
+  if (failure) return mockFailure(failure)
+  return applyPresentation(target, label, alias)
+}
+
 // ── Mock command handlers ────────────────────────────────────────────
 
 type Handler = (args: Record<string, unknown>) => unknown
@@ -492,6 +637,8 @@ const COMMANDS: Record<string, Handler> = {
     const ws = WORKSPACES.find((w) => w.id === args.workspaceId)
     return ws?.status ?? "NotFound"
   },
+  workspace_edit: (args) =>
+    mockWorkspaceEdit(args as unknown as WorkspacePresentationRequest),
 
   // Providers
   provider_list: () => PROVIDERS,

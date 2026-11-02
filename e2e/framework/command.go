@@ -443,6 +443,21 @@ func (f *Framework) DevsyRename(
 	return nil
 }
 
+func (f *Framework) DevsyWorkspaceEdit(
+	ctx context.Context,
+	id string,
+	args ...string,
+) error {
+	baseArgs := []string{cmdWorkspace, "edit", id}
+	baseArgs = append(baseArgs, args...)
+	err := f.ExecCommandStdout(ctx, baseArgs)
+	if err != nil {
+		return fmt.Errorf("devsy workspace edit failed: %s", err.Error())
+	}
+
+	return nil
+}
+
 // DevsyProviderOptionsJSON executes `devsy provider get --result-format json` and returns the raw JSON.
 func (f *Framework) DevsyProviderOptionsJSON(
 	ctx context.Context,
