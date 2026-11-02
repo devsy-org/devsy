@@ -31,5 +31,6 @@ func NewContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	containerCmd.AddCommand(NewCredentialsStatusCmd())
 	containerCmd.AddCommand(NewSetupDevsyPlatformAccessCmd(flags))
 	containerCmd.AddCommand(NewSSHServerCmd(flags))
+	containerCmd.AddCommand(NewSFTPServerCmd())
 	return containerCmd
 }
