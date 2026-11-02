@@ -14,7 +14,36 @@ import (
 	"github.com/onsi/gomega"
 )
 
-const wslgTestWindows = "windows"
+const (
+	wslgTestWindows = "windows"
+	wslgNamespace   = "DEVSY_WSLG_"
+)
+
+// assertWSLgContainer checks the workspace's current container, which changes on recreate.
+func assertWSLgContainer(ctx context.Context, env []string, uid, display string) {
+	ginkgo.GinkgoHelper()
+	id := dockerOutput(
+		ctx,
+		env,
+		"ps",
+		"-q",
+		"--filter",
+		"label="+pkgconfig.DevcontainerIDLabel+"="+uid,
+	)
+	gomega.Expect(id).NotTo(gomega.BeEmpty())
+	actual := dockerOutput(ctx, env, "inspect", "--format", "{{json .Config.Env}}", id)
+	var containerEnv []string
+	framework.ExpectNoError(json.Unmarshal([]byte(actual), &containerEnv))
+	gomega.Expect(containerEnv).To(gomega.ContainElement("DISPLAY=" + display))
+	for _, entry := range containerEnv {
+		gomega.Expect(strings.HasPrefix(entry, wslgNamespace)).To(
+			gomega.BeFalse(),
+			"discovery must not inject ordinary container environment: %s", entry,
+		)
+	}
+	gomega.Expect(dockerOutput(ctx, env, "exec", id, "test", "-S", "/tmp/.X11-unix/X0")).
+		To(gomega.BeEmpty())
+}
 
 var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func() {
 	ginkgo.DescribeTable("creates and cleans up a workspace using the selected WSL user's display",
@@ -119,23 +148,7 @@ var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func
 			framework.ExpectNoError(f.DevsyUp(ctx, dir, "--ide", "none"))
 			workspace, err := f.FindWorkspace(ctx, dir)
 			framework.ExpectNoError(err)
-			id := dockerOutput(
-				ctx,
-				env,
-				"ps",
-				"-q",
-				"--filter",
-				"label="+pkgconfig.DevcontainerIDLabel+"="+workspace.UID,
-			)
-			gomega.Expect(id).NotTo(gomega.BeEmpty())
-			actual := dockerOutput(ctx, env, "inspect", "--format", "{{json .Config.Env}}", id)
-			var containerEnv []string
-			framework.ExpectNoError(json.Unmarshal([]byte(actual), &containerEnv))
-			gomega.Expect(containerEnv).To(gomega.ContainElement("DISPLAY=" + display))
-			gomega.Expect(containerEnv).
-				NotTo(gomega.ContainElement(wslg.Display+"="+display), "discovery must not inject ordinary container environment")
-			gomega.Expect(dockerOutput(ctx, env, "exec", id, "test", "-S", "/tmp/.X11-unix/X0")).
-				To(gomega.BeEmpty())
+			assertWSLgContainer(ctx, env, workspace.UID, display)
 
 			framework.ExpectNoError(f.DevsyStop(ctx, dir))
 			_, stderr, err := f.ExecCommandCapture(
@@ -145,6 +158,8 @@ var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func
 			gomega.Expect(err).To(gomega.HaveOccurred())
 			gomega.Expect(stderr).To(gomega.ContainSubstring("--recreate"))
 			framework.ExpectNoError(f.DevsyUp(ctx, dir, "--ide", "none", "--recreate"))
+			// The earlier container is gone, so look it up again.
+			assertWSLgContainer(ctx, env, workspace.UID, display)
 			// Invalidate discovery while the Docker daemon remains reachable. Stop and
 			// delete must replay metadata rather than execute this unavailable target.
 			_, _, err = f.ExecCommandCapture(

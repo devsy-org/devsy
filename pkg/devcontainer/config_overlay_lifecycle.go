@@ -142,7 +142,7 @@ func (r *runner) checkOverlayRecreation(
 	if err != nil {
 		return err
 	}
-	if err := r.checkWSLgReuse(details, options.Recreate); err != nil {
+	if err := r.checkWSLgReuseFor(parsed.Config, details, options.Recreate); err != nil {
 		return err
 	}
 	if details != nil {
@@ -349,8 +349,7 @@ func validateComposeInvocation(invocation composeInvocation) error {
 		if invocation.Args[i] != "-f" && invocation.Args[i] != "--env-file" {
 			return fmt.Errorf("invalid persisted Compose argument %q", invocation.Args[i])
 		}
-		if invocation.Args[i+1] == "" || strings.HasPrefix(invocation.Args[i+1], "-") ||
-			!utf8.ValidString(invocation.Args[i+1]) ||
+		if invocation.Args[i+1] == "" || !utf8.ValidString(invocation.Args[i+1]) ||
 			strings.ContainsAny(invocation.Args[i+1], "\x00\r\n") {
 			return fmt.Errorf("invalid persisted Compose path")
 		}

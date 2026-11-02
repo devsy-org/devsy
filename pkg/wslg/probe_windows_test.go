@@ -50,6 +50,24 @@ func TestWSLgNativeProbe(t *testing.T) {
 		"fixed noninteractive WSLg discovery must work; this runner cannot prove visible Windows windows",
 	)
 	require.NotEmpty(t, snapshot.Environment())
+	// Cross-check against an independent printenv through the same runner.
+	direct, err := (commandRunner{}).Run(
+		ctx,
+		path,
+		[]string{
+			"--distribution",
+			target.Distro,
+			"--user",
+			target.User,
+			"--exec",
+			"/usr/bin/printenv",
+			"DISPLAY",
+		},
+	)
+	require.NoError(t, err)
+	want, _, err := parseResult(direct)
+	require.NoError(t, err)
+	require.Equal(t, want, snapshot.Environment()[Display])
 	for key := range snapshot.Environment() {
 		t.Logf("discovered %s", key)
 	}

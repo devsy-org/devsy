@@ -139,11 +139,36 @@ func (s *WSLgSuite) TestEarlyReuseCheckRejectsStoppedContainerBeforeHook() {
 	details.Config.Labels = labels
 	details.State.Status = config.ContainerStatusExited
 	r.driver = &mockDriver{findResult: details}
-	err = r.checkWSLgReuseBeforeInitialize(context.Background(), UpOptions{})
+	devcontainer := &config.DevContainerConfig{}
+	err = r.checkWSLgReuseBeforeInitialize(context.Background(), devcontainer, UpOptions{})
 	s.ErrorContains(err, "--recreate")
 	recreate := UpOptions{}
 	recreate.Recreate = true
-	s.NoError(r.checkWSLgReuseBeforeInitialize(context.Background(), recreate))
+	s.NoError(r.checkWSLgReuseBeforeInitialize(context.Background(), devcontainer, recreate))
+	devcontainer.ContainerID = wslgTestExternalID
+	s.NoError(r.checkWSLgReuseBeforeInitialize(context.Background(), devcontainer, UpOptions{}))
+}
+
+func (s *WSLgSuite) TestOverlayCheckExemptsAttachedContainer() {
+	r := newTestRunner(&mockDriver{})
+	r.wslgSnapshot = s.snapshot(":0")
+	details := &config.ContainerDetails{}
+	details.State.Status = config.ContainerStatusRunning
+	r.driver = &mockDriver{findResult: details}
+	parsed := &config.SubstitutedConfig{Config: &config.DevContainerConfig{}}
+	err := r.checkOverlayRecreation(context.Background(), parsed, UpOptions{})
+	s.ErrorContains(err, "--recreate")
+	parsed.Config.ContainerID = wslgTestExternalID
+	s.NoError(r.checkOverlayRecreation(context.Background(), parsed, UpOptions{}))
+}
+
+func (s *WSLgSuite) TestInvocationAcceptsDashPrefixedPaths() {
+	invocation := composeInvocation{
+		Version:   1,
+		Directory: "project",
+		Args:      []string{"-f", "-dev.yaml", composeTestEnvFlag, "-local.env"},
+	}
+	s.NoError(validateComposeInvocation(invocation))
 }
 
 func (s *WSLgSuite) TestScopeIgnoresProviderInstallationName() {

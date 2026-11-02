@@ -168,7 +168,25 @@ func checkWSLgResume(details *config.ContainerDetails) error {
 	)
 }
 
-func (r *runner) checkWSLgReuseBeforeInitialize(ctx context.Context, options UpOptions) error {
+// Devsy cannot recreate an attached container, so it carries no WSLg state.
+func (r *runner) checkWSLgReuseFor(
+	devcontainer *config.DevContainerConfig,
+	details *config.ContainerDetails,
+	recreate bool,
+) error {
+	if devcontainer != nil && devcontainer.ContainerID != "" {
+		return nil
+	}
+	return r.checkWSLgReuse(details, recreate)
+}
+
+func (r *runner) checkWSLgReuseBeforeInitialize(
+	ctx context.Context,
+	devcontainer *config.DevContainerConfig,
+	options UpOptions,
+) error {
+	// With discovery off this lookup is skipped so ordinary workspaces pay no
+	// extra Docker call; a revoked label is still rejected by the later check.
 	if options.Recreate || r.wslgSnapshot == nil {
 		return nil
 	}
@@ -176,7 +194,7 @@ func (r *runner) checkWSLgReuseBeforeInitialize(ctx context.Context, options UpO
 	if err != nil {
 		return err
 	}
-	return r.checkWSLgReuse(details, options.Recreate)
+	return r.checkWSLgReuseFor(devcontainer, details, options.Recreate)
 }
 
 func replayMatches(previous, current *wslgReplay) bool {
