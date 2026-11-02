@@ -3,7 +3,9 @@ package ts
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -48,6 +50,8 @@ type fakeIPNWatcher struct {
 	idx        atomic.Int32
 	afterFirst chan struct{}
 	closed     chan struct{}
+	exhausted  chan struct{}
+	once       sync.Once
 }
 
 func (w *fakeIPNWatcher) Next() (ipn.Notify, error) {
@@ -59,6 +63,7 @@ func (w *fakeIPNWatcher) Next() (ipn.Notify, error) {
 		w.idx.Add(1)
 		return w.notifs[i], nil
 	}
+	w.once.Do(func() { close(w.exhausted) })
 	<-w.closed
 	return ipn.Notify{}, errors.New("watcher closed")
 }
@@ -72,6 +77,7 @@ func TestWatchNetmapDrainsBurstWhileStatusFetchBlocked(t *testing.T) {
 		notifs:     selfChangeNotifs(burst),
 		afterFirst: make(chan struct{}),
 		closed:     make(chan struct{}),
+		exhausted:  make(chan struct{}),
 	}
 
 	firstFetchStarted := make(chan struct{})
@@ -97,14 +103,15 @@ func TestWatchNetmapDrainsBurstWhileStatusFetchBlocked(t *testing.T) {
 	waitFor(t, 5*time.Second, "first status fetch never started", firstFetchStarted)
 	close(watcher.afterFirst)
 
-	waitUntil(t, 5*time.Second, "watcher stalled while status fetch was blocked", func() bool {
-		return watcher.idx.Load() == burst
-	})
+	waitFor(t, 5*time.Second, fmt.Sprintf(
+		"watcher stalled while status fetch was blocked: consumed %d of %d notifications",
+		watcher.idx.Load(), burst,
+	), watcher.exhausted)
 
 	close(unblockFirstFetch)
 
-	waitUntil(t, 5*time.Second, "expected a coalesced follow-up fetch", func() bool {
-		return fetchCount.Load() >= 2
+	waitUntil(t, 5*time.Second, "expected a coalesced follow-up fetch and callback", func() bool {
+		return fetchCount.Load() >= 2 && callbackCount.Load() >= 2
 	})
 
 	if got := fetchCount.Load(); got != 2 {
