@@ -71,7 +71,7 @@ func (r *runner) generateDockerComposeUpProject(params *composeUpParams) *compos
 	overrideService := &composetypes.ServiceConfig{
 		Name:        composeService.Name,
 		Entrypoint:  buildOverrideEntrypoint(mergedConfig, userEntrypoint),
-		Environment: mappingFromMap(containerEnv),
+		Environment: r.composeContainerEnvironment(containerEnv),
 		Init:        mergedConfig.Init,
 		CapAdd:      mergedConfig.CapAdd,
 		SecurityOpt: mergedConfig.SecurityOpt,
@@ -115,6 +115,19 @@ func (r *runner) generateDockerComposeUpProject(params *composeUpParams) *compos
 	}
 
 	return project
+}
+
+// ContainerEnv has already undergone devcontainer substitution. Discovered
+// values are data and must survive Compose's later interpolation unchanged.
+func (r *runner) composeContainerEnvironment(env map[string]string) composetypes.MappingWithEquals {
+	if r.wslgSnapshot == nil {
+		return mappingFromMap(env)
+	}
+	escaped := make(map[string]string, len(env))
+	for key, value := range env {
+		escaped[key] = composeLabelEscaper.Replace(value)
+	}
+	return mappingFromMap(escaped)
 }
 
 // resolveServiceEntrypoint determines the effective entrypoint and command for

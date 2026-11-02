@@ -111,3 +111,10 @@ func TestLogLevelOption_DefaultAndEnum(t *testing.T) {
 	}
 	t.Fatal("LOG_LEVEL must be a registered context option")
 }
+
+func TestWSLgOptionsDefaultOff(t *testing.T) {
+	c := &Config{Contexts: map[string]*ContextConfig{"default": {}}, DefaultContext: "default"}
+	require.False(t, c.ContextOptionBool(ContextOptionWSLgEnabled))
+	require.Empty(t, c.ContextOption(ContextOptionWSLgDistro))
+	require.Empty(t, c.ContextOption(ContextOptionWSLgUser))
+}

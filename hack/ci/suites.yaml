@@ -101,6 +101,14 @@ unit:
       run: '^(TestInvocationSuite|TestProviderDaemonOverrides.*|TestStdioTransportSuite|TestLaunch.*|TestEnvBlock.*)$'
       args: [-race, -count=1, -v, -timeout=5m]
 
+    - name: windows-wslg-boundaries
+      description: WSLg preflight, discovery and Compose environment boundaries on native Windows
+      os: [windows]
+      packages: [./cmd/workspace/up, ./pkg/wslg, ./pkg/compose, ./pkg/devcontainer]
+      run: '^TestWSLg'
+      require_tests: [TestWSLgSuite, TestWSLgPreflightBeforeWorkspaceProvisioning]
+      args: [-race, -count=1, -timeout=5m]
+
     - name: ci-tooling-windows
       description: Go CI helpers that also run on Windows
       os: [windows]
@@ -267,6 +275,15 @@ e2e:
       expected_spec_count: 6
       test_timeout: 900s
       job_timeout_minutes: 25
+    # Same fixture, own job: the specs create real workspaces through the
+    # selected WSL user's display, and the job also runs the Compose parity probe.
+    - group: integration
+      label: wslg
+      runner: windows-latest
+      runtime: docker-wsl
+      expected_spec_count: 2
+      test_timeout: 600s
+      job_timeout_minutes: 40
 
     # --- microsandbox ---
     - { group: microsandbox, label: up-provider-microsandbox, expected_spec_count: 2, performance_capture: true }
