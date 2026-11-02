@@ -304,6 +304,31 @@ func (s *SSHAliasTestSuite) TestReplaceHostAliasesSkipsBlockWithoutEndMarker() {
 	s.Equal(content, s.read(s.cfgPath))
 }
 
+func (s *SSHAliasTestSuite) TestReplaceHostAliasesSkipsBlockWithoutEndMarkerOrHostLine() {
+	content := "Host other\n  User x\n" + MarkerStartPrefix + aliasCanonicalHost +
+		"\n  User " + aliasTestUser + "\n"
+	s.write(s.cfgPath, content)
+
+	rewritten, found := rewriteHostLines(content, aliasCanonicalHost, aliasPreferredHost)
+	s.False(found)
+	s.Equal(content, rewritten)
+
+	updated, err := s.replace("", aliasPreferredHost, nil)
+	s.Require().NoError(err)
+	s.False(updated)
+	s.Equal(content, s.read(s.cfgPath))
+}
+
+func (s *SSHAliasTestSuite) TestRewriteHostLinesRewritesOnlyClosedBlockAfterUnclosedOne() {
+	unclosed := MarkerStartPrefix + aliasCanonicalHost + "\nHost " + aliasCanonicalHost + "\n"
+	closed := s.managedBlock(aliasCanonicalHost) + "\n"
+
+	rewritten, found := rewriteHostLines(unclosed+closed, aliasCanonicalHost, aliasPreferredHost)
+	s.True(found)
+	s.True(strings.HasPrefix(rewritten, unclosed))
+	s.Contains(rewritten[len(unclosed):], "Host "+aliasPreferredHost+" "+aliasCanonicalHost)
+}
+
 func (s *SSHAliasTestSuite) TestRewriteHostLinesSkipsUnterminatedBlockBeforeRestart() {
 	start := MarkerStartPrefix + aliasCanonicalHost + "\nHost " + aliasCanonicalHost + "\n"
 	content := start + start

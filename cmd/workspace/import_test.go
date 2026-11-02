@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -197,4 +200,92 @@ func TestImportWorkspace_DropsOnlyInvalidImportedFields(t *testing.T) {
 
 	assert.Equal(t, "Good Label", got.DisplayName)
 	assert.Empty(t, got.SSHHostAlias)
+}
+
+func TestImportWorkspace_LocalLoadErrorAbortsBeforeExtraction(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+	workspaceDir, err := provider.GetWorkspaceDir(importTestContext, importTestID)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(workspaceDir, 0o700))
+	configFile := filepath.Join(workspaceDir, provider.WorkspaceConfigFile)
+	require.NoError(t, os.WriteFile(configFile, []byte("{not json"), 0o600))
+
+	cmd := &ImportCmd{WorkspaceID: importTestID, MachineID: "m", ProviderID: "p"}
+	exportConfig := &provider.ExportConfig{
+		Workspace: &provider.ExportWorkspaceConfig{
+			Data: importArchive(t, &provider.Workspace{ID: importTestID, UID: importTestUID}),
+		},
+	}
+	err = cmd.importWorkspace(devsyConfig, exportConfig)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "load existing workspace config")
+
+	data, err := os.ReadFile(filepath.Clean(configFile))
+	require.NoError(t, err)
+	assert.Equal(t, "{not json", string(data))
+}
+
+func TestImportWorkspace_PresentationFailureResetsNewWorkspace(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+	var saved []provider.Workspace
+	saveErr := errors.New("save failed")
+	original := saveImportedPresentation
+	t.Cleanup(func() { saveImportedPresentation = original })
+	saveImportedPresentation = func(ws *provider.Workspace) error {
+		saved = append(saved, *ws)
+		if len(saved) == 1 {
+			return saveErr
+		}
+		return original(ws)
+	}
+
+	cmd := &ImportCmd{WorkspaceID: importTestID, MachineID: "m", ProviderID: "p"}
+	exportConfig := &provider.ExportConfig{
+		Workspace: &provider.ExportWorkspaceConfig{
+			Data: importArchive(t, &provider.Workspace{
+				ID:           importTestID,
+				UID:          importTestUID,
+				DisplayName:  importTestTheirsLabel + " ",
+				SSHHostAlias: importTestTheirsAlias,
+			}),
+		},
+	}
+	err := cmd.importWorkspace(devsyConfig, exportConfig)
+	require.ErrorIs(t, err, saveErr)
+
+	require.Len(t, saved, 2)
+	assert.Equal(t, importTestTheirsLabel, saved[0].DisplayName)
+	assert.Equal(t, importTestTheirsAlias, saved[0].SSHHostAlias)
+	assert.Empty(t, saved[1].DisplayName)
+	assert.Empty(t, saved[1].SSHHostAlias)
+
+	got, loadErr := provider.LoadWorkspaceConfig(importTestContext, importTestID)
+	require.NoError(t, loadErr)
+	assert.Empty(t, got.DisplayName)
+	assert.Empty(t, got.SSHHostAlias)
+}
+
+func TestImportWorkspace_PresentationFailureKeepsExistingSameUIDWorkspace(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+	saveImportTestWorkspace(t, &provider.Workspace{ID: importTestID, UID: importTestUID})
+	calls := 0
+	original := saveImportedPresentation
+	t.Cleanup(func() { saveImportedPresentation = original })
+	saveImportedPresentation = func(*provider.Workspace) error {
+		calls++
+		return errors.New("save failed")
+	}
+
+	cmd := &ImportCmd{WorkspaceID: importTestID, MachineID: "m", ProviderID: "p"}
+	exportConfig := &provider.ExportConfig{
+		Workspace: &provider.ExportWorkspaceConfig{
+			Data: importArchive(t, &provider.Workspace{
+				ID:           importTestID,
+				UID:          importTestUID,
+				SSHHostAlias: importTestTheirsAlias,
+			}),
+		},
+	}
+	require.Error(t, cmd.importWorkspace(devsyConfig, exportConfig))
+	assert.Equal(t, 1, calls)
 }

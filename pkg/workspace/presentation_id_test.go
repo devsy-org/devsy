@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ssh"
 )
@@ -285,4 +286,59 @@ func (s *PresentationTestSuite) TestEditPresentationWaitsForLockHeldByRename() {
 		s.FailNow("edit did not resume after the presentation lock was released")
 	}
 	s.Equal("Waiter", s.load(presentationWorkspaceAPI).DisplayName)
+}
+
+func (s *PresentationTestSuite) TestValidatePreferredSSHHostRejectsOtherContextAlias() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+	s.saveOtherContextWorkspace(presentationWorkspaceWeb, presentationAliasBackend)
+
+	err := ValidatePreferredSSHHost(
+		presentationContext, presentationWorkspaceAPI, presentationAliasBackend+".devsy",
+	)
+	conflict := s.requirePresentationErr(
+		err,
+		PresentationFieldSSHHostAlias,
+		PresentationCodeConflict,
+	)
+	s.Equal(presentationWorkspaceWeb, conflict.Conflict)
+}
+
+func (s *PresentationTestSuite) TestValidatePreferredSSHHostAllowsOwnAndCanonicalHosts() {
+	s.saveWorkspace(presentationWorkspaceAPI, func(ws *provider.Workspace) {
+		ws.SSHHostAlias = presentationAliasBackend
+	})
+	s.saveOtherContextWorkspace("docs", "")
+
+	s.Require().NoError(ValidatePreferredSSHHost(
+		presentationContext, presentationWorkspaceAPI, presentationAliasBackend+".devsy",
+	))
+	s.Require().NoError(ValidatePreferredSSHHost(
+		presentationContext, presentationWorkspaceAPI, presentationWorkspaceAPI+".devsy",
+	))
+	s.Require().NoError(ValidatePreferredSSHHost(presentationContext, presentationWorkspaceAPI, ""))
+}
+
+func (s *PresentationTestSuite) TestCheckExistsReportsMissingAndCanceled() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+	cfg := &config.Config{
+		DefaultContext: presentationContext,
+		Contexts:       map[string]*config.ContextConfig{presentationContext: {}},
+	}
+	opts := LookupOptions{ID: presentationWorkspaceAPI}
+
+	found, err := CheckExists(context.Background(), cfg, opts)
+	s.Require().NoError(err)
+	s.True(found)
+
+	found, err = CheckExists(
+		context.Background(), cfg, LookupOptions{ID: presentationWorkspaceWeb},
+	)
+	s.Require().NoError(err)
+	s.False(found)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	found, err = CheckExists(ctx, cfg, LookupOptions{ID: presentationWorkspaceWeb})
+	s.Require().ErrorIs(err, context.Canceled)
+	s.False(found)
 }

@@ -52,6 +52,15 @@ export function normalizeDisplayLabel(value: string): string {
   return value.trim().normalize("NFC")
 }
 
+const DOTLESS_I = "\u0131"
+
+export function foldLabel(value: string): string {
+  return normalizeDisplayLabel(value)
+    .split(DOTLESS_I)
+    .map((segment) => segment.toUpperCase().toLowerCase())
+    .join(DOTLESS_I)
+}
+
 export function validateDisplayLabel(value: string): string | null {
   const label = normalizeDisplayLabel(value)
   if (label === "") return null

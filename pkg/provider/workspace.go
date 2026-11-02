@@ -591,11 +591,13 @@ func (w *Workspace) IsPlatform() bool {
 }
 
 func (w *Workspace) EffectiveDisplayName() string {
-	if w.Platform != nil && w.Platform.DisplayName != "" {
-		return w.Platform.DisplayName
+	if w.Platform != nil {
+		if name := strings.TrimSpace(w.Platform.DisplayName); name != "" {
+			return name
+		}
 	}
-	if w.DisplayName != "" {
-		return w.DisplayName
+	if name := strings.TrimSpace(w.DisplayName); name != "" {
+		return name
 	}
 
 	return w.ID

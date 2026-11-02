@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 )
 
 // configureWorkspace sets up SSH, Git, and dotfiles.
@@ -114,6 +115,10 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		return nil
 	}
 
+	if err := checkPreferredSSHHost(client); err != nil {
+		return err
+	}
+
 	path, err := devssh.ResolveSSHConfigPath(cmd.SSHConfigPath)
 	if err != nil {
 		return err
@@ -153,6 +158,10 @@ type configureSSHParams struct {
 }
 
 func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams) error {
+	if err := checkPreferredSSHHost(client); err != nil {
+		return err
+	}
+
 	path, err := devssh.ResolveSSHConfigPath(params.sshConfigPath)
 	if err != nil {
 		return fmt.Errorf("invalid ssh config path: %w", err)
@@ -186,6 +195,15 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 	}
 
 	return nil
+}
+
+func checkPreferredSSHHost(client client2.BaseWorkspaceClient) error {
+	ws := client.WorkspaceConfig()
+	if ws == nil {
+		return nil
+	}
+
+	return workspace2.ValidatePreferredSSHHost(client.Context(), ws.ID, sshPresentation(client))
 }
 
 func sshPresentation(client client2.BaseWorkspaceClient) string {

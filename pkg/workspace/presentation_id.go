@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/devsy-org/devsy/pkg/config"
 )
@@ -25,6 +26,20 @@ func ValidateRenameTarget(
 	location SSHConfigLocation,
 ) error {
 	return checkWorkspaceIDHost(devsyConfig, oldID, newID, location)
+}
+
+func ValidatePreferredSSHHost(contextName, id, preferredHost string) error {
+	alias := strings.TrimSuffix(preferredHost, config.SSHHostSuffix)
+	if alias == "" || strings.EqualFold(alias, id) {
+		return nil
+	}
+
+	others, err := listOtherWorkspaces(contextName, id)
+	if err != nil {
+		return err
+	}
+
+	return checkAliasWorkspaceConflict(others, alias)
 }
 
 func checkWorkspaceIDHost(

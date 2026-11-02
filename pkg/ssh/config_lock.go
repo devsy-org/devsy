@@ -129,7 +129,11 @@ func writeFileAtomic(target string, data []byte) (retErr error) {
 		}
 	}()
 
-	preserveConfigOwner(target, temp)
+	err = preserveConfigOwner(target, temp)
+	if err != nil {
+		_ = temp.Close()
+		return err
+	}
 
 	err = fillTempConfig(temp, data, mode)
 	if err != nil {

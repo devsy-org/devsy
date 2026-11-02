@@ -60,3 +60,42 @@ func TestPreferredSSHHostCommittedUsesStoredAlias(t *testing.T) {
 	other := Workspace{ID: "api", UID: "uid-2", Context: config.DefaultContext}
 	assert.Equal(t, "api.devsy", other.PreferredSSHHostCommitted())
 }
+
+const effectiveNameTestID = "api"
+
+func TestEffectiveDisplayNameTrimsWhitespace(t *testing.T) {
+	tests := []struct {
+		name string
+		ws   Workspace
+		want string
+	}{
+		{
+			name: "platform name trimmed",
+			ws: Workspace{
+				ID:          effectiveNameTestID,
+				DisplayName: "local",
+				Platform:    &PlatformMetadata{DisplayName: "  Platform  "},
+			},
+			want: "Platform",
+		},
+		{
+			name: "blank platform name falls back to local",
+			ws: Workspace{
+				ID:          effectiveNameTestID,
+				DisplayName: " Local\t",
+				Platform:    &PlatformMetadata{DisplayName: "   "},
+			},
+			want: "Local",
+		},
+		{
+			name: "blank names fall back to id",
+			ws:   Workspace{ID: effectiveNameTestID, DisplayName: " \t "},
+			want: effectiveNameTestID,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.ws.EffectiveDisplayName())
+		})
+	}
+}

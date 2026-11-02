@@ -315,6 +315,23 @@ describe("workspace detail presentation editing", () => {
     expect(document.getElementById("workspace-display-label")).toBeNull()
   })
 
+  it("closes the editor when the workspace context changes underneath it", async () => {
+    render(WorkspaceDetailPage, { params: { id: "api" } })
+    await openEditor()
+    expect(document.getElementById("workspace-display-label")).not.toBeNull()
+    workspaces.set([
+      {
+        id: "api",
+        uid: "u1",
+        context: "other",
+        status: "Stopped",
+        provider: { name: "docker" },
+      },
+    ])
+    await settle()
+    expect(document.getElementById("workspace-display-label")).toBeNull()
+  })
+
   it("keeps the permanent ID and the separate Change workspace ID action in details", () => {
     render(WorkspaceDetailPage, { params: { id: "api" } })
     expect(

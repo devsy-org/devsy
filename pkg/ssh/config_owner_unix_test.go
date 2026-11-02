@@ -61,3 +61,31 @@ func TestChownLikeSameOwnerIsNoop(t *testing.T) {
 
 	require.NoError(t, chownLike(target, temp))
 }
+
+func foreignOwnedPath(t *testing.T) string {
+	t.Helper()
+
+	if os.Geteuid() == 0 {
+		t.Skip("root can chown to any owner")
+	}
+	info, err := os.Stat(string(filepath.Separator))
+	require.NoError(t, err)
+	owner, ok := fileOwner(info)
+	require.True(t, ok)
+	if int(owner[0]) == os.Geteuid() {
+		t.Skip("filesystem root is owned by the current user")
+	}
+
+	return string(filepath.Separator)
+}
+
+func TestChownLikeFailsWhenForeignOwnerCannotBePreserved(t *testing.T) {
+	target := foreignOwnedPath(t)
+	temp, err := os.CreateTemp(t.TempDir(), "owner")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = temp.Close() })
+
+	err = chownLike(target, temp)
+	require.ErrorIs(t, err, errOwnerMismatch)
+	require.ErrorIs(t, preserveConfigOwner(target, temp), errOwnerMismatch)
+}

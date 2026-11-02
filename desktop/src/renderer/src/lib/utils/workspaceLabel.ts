@@ -1,9 +1,6 @@
 import type { Workspace } from "$lib/types/index.js"
 import { workspaceLabel } from "$shared/workspace-label.js"
-import {
-  normalizeDisplayLabel,
-  SSH_HOST_SUFFIX,
-} from "$shared/workspace-presentation.js"
+import { foldLabel, SSH_HOST_SUFFIX } from "$shared/workspace-presentation.js"
 
 export { workspaceLabel }
 
@@ -35,10 +32,6 @@ export function workspaceMatchesQuery(
   return candidates.some(
     (candidate) => !!candidate && candidate.toLowerCase().includes(needle),
   )
-}
-
-function foldLabel(value: string): string {
-  return normalizeDisplayLabel(value).toUpperCase().toLowerCase()
 }
 
 export function findLabelConflict(

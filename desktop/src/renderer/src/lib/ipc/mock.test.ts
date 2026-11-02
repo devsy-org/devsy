@@ -59,6 +59,27 @@ describe("browser IPC mock workspace edit", () => {
     expect(aliasClash).toMatchObject({ ok: false, field: "sshHostAlias" })
   })
 
+  it("folds labels like the backend so Strasse and STRASSE conflict", async () => {
+    const first = await invoke<{ ok: boolean }>("workspace_edit", {
+      workspaceId: "my-project",
+      expectedUid: "ws-001",
+      displayName: "Stra\u00dfe",
+    })
+    expect(first.ok).toBe(true)
+    expect(
+      await invoke("workspace_edit", {
+        workspaceId: "backend-api",
+        expectedUid: "ws-002",
+        displayName: "STRASSE",
+      }),
+    ).toMatchObject({
+      ok: false,
+      field: "displayName",
+      code: "conflict",
+      conflict: "my-project",
+    })
+  })
+
   it("reports a stale UID as not found", async () => {
     expect(
       await invoke("workspace_edit", {

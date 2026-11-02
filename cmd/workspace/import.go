@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -20,6 +22,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
+
+var saveImportedPresentation = provider.SaveWorkspacePresentation
 
 // ImportCmd holds the export cmd flags.
 type ImportCmd struct {
@@ -155,7 +159,10 @@ func (cmd *ImportCmd) importWorkspace(
 	devsyConfig *config.Config,
 	exportConfig *provider.ExportConfig,
 ) error {
-	local := loadLocalWorkspace(devsyConfig, cmd.WorkspaceID)
+	local, err := loadLocalWorkspace(devsyConfig, cmd.WorkspaceID)
+	if err != nil {
+		return err
+	}
 	if err := extractWorkspaceData(
 		devsyConfig, cmd.WorkspaceID, exportConfig.Workspace.Data,
 	); err != nil {
@@ -206,8 +213,16 @@ func applyImportedPresentation(
 
 	imported.DisplayName = displayName
 	imported.SSHHostAlias = sshHostAlias
-	if err := provider.SaveWorkspacePresentation(imported); err != nil {
-		return fmt.Errorf("save workspace presentation: %w", err)
+	if err := saveImportedPresentation(imported); err != nil {
+		err = fmt.Errorf("save workspace presentation: %w", err)
+		if local == nil || local.UID != imported.UID {
+			imported.DisplayName = ""
+			imported.SSHHostAlias = ""
+			if resetErr := saveImportedPresentation(imported); resetErr != nil {
+				log.Warnf("reset imported workspace presentation: %v", resetErr)
+			}
+		}
+		return err
 	}
 	return nil
 }
@@ -241,12 +256,18 @@ func importedPresentation(
 	return displayName, sshHostAlias
 }
 
-func loadLocalWorkspace(devsyConfig *config.Config, workspaceID string) *provider.Workspace {
+func loadLocalWorkspace(
+	devsyConfig *config.Config,
+	workspaceID string,
+) (*provider.Workspace, error) {
 	local, err := provider.LoadWorkspaceConfig(devsyConfig.DefaultContext, workspaceID)
-	if err != nil {
-		return nil
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
 	}
-	return local
+	if err != nil {
+		return nil, fmt.Errorf("load existing workspace config: %w", err)
+	}
+	return local, nil
 }
 
 // extractWorkspaceData creates workspaceID's workspace dir and extracts the

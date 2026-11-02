@@ -4,4 +4,4 @@ package ssh
 
 import "os"
 
-func preserveConfigOwner(_ string, _ *os.File) {}
+func preserveConfigOwner(_ string, _ *os.File) error { return nil }

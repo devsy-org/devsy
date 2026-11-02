@@ -24,6 +24,7 @@ import type {
   LogRunSummary,
 } from "$shared/workspace-logs.js"
 import {
+  foldLabel,
   normalizeDisplayLabel,
   SSH_HOST_SUFFIX,
   validateWorkspacePresentationRequest,
@@ -523,9 +524,8 @@ function labelConflictFailure(
   others: MockWorkspace[],
 ): WorkspacePresentationFailure | null {
   if (label === "") return null
-  const clash = others.find(
-    (w) => workspaceLabel(w).toLowerCase() === label.toLowerCase(),
-  )
+  const needle = foldLabel(label)
+  const clash = others.find((w) => foldLabel(workspaceLabel(w)) === needle)
   if (!clash) return null
   return {
     field: "displayName",

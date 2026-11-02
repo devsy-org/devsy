@@ -62,17 +62,33 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 const detachedLookupTimeout = 30 * time.Second
 
 func (cmd *UpCmd) checkDetachedPresentation(cfg *config.Config, workspaceID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), detachedLookupTimeout)
+	defer cancel()
+
+	return cmd.checkDetachedPresentationContext(ctx, cfg, workspaceID)
+}
+
+func (cmd *UpCmd) checkDetachedPresentationContext(
+	ctx context.Context,
+	cfg *config.Config,
+	workspaceID string,
+) error {
 	if !cmd.hasPresentation() {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), detachedLookupTimeout)
-	defer cancel()
-	existed := workspaceID == "" ||
-		workspace2.Exists(
+	existed := workspaceID == ""
+	if !existed {
+		found, err := workspace2.CheckExists(
 			ctx,
 			cfg,
 			workspace2.LookupOptions{ID: workspaceID, Owner: cmd.Owner},
-		) != ""
+		)
+		if err != nil {
+			return fmt.Errorf("check whether workspace %q exists: %w", workspaceID, err)
+		}
+		existed = found
+	}
+
 	return cmd.checkPresentation(cfg, workspaceID, existed)
 }
 

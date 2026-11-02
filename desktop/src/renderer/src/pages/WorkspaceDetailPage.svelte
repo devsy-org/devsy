@@ -763,8 +763,13 @@ function cancelPresentationEdit() {
 }
 
 $effect(() => {
-  if (!presentationBase) return
-  if (presentationBase.id !== id || workspace?.uid !== presentationBase.uid)
+  const base = presentationBase
+  if (!base) return
+  if (
+    base.id !== id ||
+    workspace?.uid !== base.uid ||
+    (workspace?.context ?? "") !== base.context
+  )
     resetPresentationEdit()
 })
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Workspace } from "$lib/types/index.js"
+import { foldLabel } from "$shared/workspace-presentation.js"
 import {
   canonicalSshHost,
   findAliasConflict,
@@ -102,6 +103,15 @@ describe("conflict detection", () => {
     expect(findLabelConflict("stra\u00dfe", [german], "other")?.id).toBe("de")
   })
 
+  it("keeps dotless i distinct from i", () => {
+    const dotless: Workspace = { id: "tr", displayName: "\u0131stanbul" }
+    expect(findLabelConflict("istanbul", [dotless], "other")).toBeUndefined()
+    expect(findLabelConflict("ISTANBUL", [dotless], "other")).toBeUndefined()
+    expect(findLabelConflict("\u0131STANBUL", [dotless], "other")?.id).toBe(
+      "tr",
+    )
+  })
+
   it("treats composed and decomposed accents as the same label", () => {
     const accented: Workspace = { id: "fr", displayName: "Caf\u00e9" }
     expect(findLabelConflict("Cafe\u0301", [accented], "other")?.id).toBe("fr")
@@ -116,5 +126,24 @@ describe("conflict detection", () => {
     expect(findAliasConflict("API", all, "backend")?.id).toBe("api")
     expect(findAliasConflict("fresh", all, "backend")).toBeUndefined()
     expect(findAliasConflict("pay", all, "api")).toBeUndefined()
+  })
+})
+
+describe("foldLabel", () => {
+  it("keeps dotless i distinct from i", () => {
+    expect(foldLabel("\u0131")).toBe("\u0131")
+    expect(foldLabel("\u0131")).not.toBe(foldLabel("i"))
+    expect(foldLabel("I")).toBe("i")
+  })
+
+  it("folds each segment around dotless i separately", () => {
+    expect(foldLabel("A\u0131B")).toBe("a\u0131b")
+    expect(foldLabel("Stra\u00dfe\u0131Stra\u00dfe")).toBe(
+      "strasse\u0131strasse",
+    )
+  })
+
+  it("folds sharp s to ss", () => {
+    expect(foldLabel("Stra\u00dfe")).toBe(foldLabel("STRASSE"))
   })
 })

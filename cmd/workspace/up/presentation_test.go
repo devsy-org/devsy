@@ -1,6 +1,7 @@
 package up
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,11 @@ const (
 	testDisplayLabel = "My Label"
 	testShortAlias   = "short"
 	testWorkspaceAPI = "api"
+	testWorkspaceWeb = "web"
+	testWebUID       = "uid-web"
+	testAPIUID       = "uid-api"
+	testBackendAlias = "backend"
+	testFreshID      = "fresh"
 )
 
 func TestDetachedArgsKeepPresentationFlags(t *testing.T) {
@@ -85,23 +91,23 @@ func TestCheckNewWorkspaceIDRejectsExistingAlias(t *testing.T) {
 	cfg := &config.Config{DefaultContext: defaultValue}
 	sshConfig := filepath.Join(t.TempDir(), "config")
 	require.NoError(t, provider.SaveWorkspaceConfig(&provider.Workspace{
-		ID:           "web",
-		UID:          "uid-web",
+		ID:           testWorkspaceWeb,
+		UID:          testWebUID,
 		Context:      defaultValue,
-		SSHHostAlias: "backend",
+		SSHHostAlias: testBackendAlias,
 	}))
 
 	cmd := &UpCmd{}
 	cmd.SSHConfigPath = sshConfig
 
-	err := cmd.checkNewWorkspaceID(cfg, "backend", false)
+	err := cmd.checkNewWorkspaceID(cfg, testBackendAlias, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "backend.devsy")
 	assert.Contains(t, err.Error(), `"web"`)
 
-	require.NoError(t, cmd.checkNewWorkspaceID(cfg, "backend", true))
+	require.NoError(t, cmd.checkNewWorkspaceID(cfg, testBackendAlias, true))
 	require.NoError(t, cmd.checkNewWorkspaceID(cfg, "", false))
-	require.NoError(t, cmd.checkNewWorkspaceID(cfg, "fresh", false))
+	require.NoError(t, cmd.checkNewWorkspaceID(cfg, testFreshID, false))
 }
 
 func TestValidateTargetChecksNewIDWithoutPresentationFlags(t *testing.T) {
@@ -132,10 +138,10 @@ func (c presentationClient) WorkspaceConfig() *provider.Workspace { return c.ws 
 
 func TestSSHPresentationUsesCommittedAlias(t *testing.T) {
 	setupUpTestHome(t)
-	stored := &provider.Workspace{ID: testWorkspaceAPI, UID: "uid-api", Context: defaultValue}
+	stored := &provider.Workspace{ID: testWorkspaceAPI, UID: testAPIUID, Context: defaultValue}
 	require.NoError(t, provider.SaveWorkspaceConfig(stored))
 
-	inMemory := &provider.Workspace{ID: testWorkspaceAPI, UID: "uid-api", Context: defaultValue}
+	inMemory := &provider.Workspace{ID: testWorkspaceAPI, UID: testAPIUID, Context: defaultValue}
 	client := presentationClient{ws: inMemory}
 	assert.Equal(t, "api.devsy", sshPresentation(client))
 
@@ -182,8 +188,8 @@ func TestValidateResolvedIDRejectsDerivedIDMatchingAlias(t *testing.T) {
 	setupUpTestHome(t)
 	cfg := &config.Config{DefaultContext: defaultValue}
 	require.NoError(t, provider.SaveWorkspaceConfig(&provider.Workspace{
-		ID:           "web",
-		UID:          "uid-web",
+		ID:           testWorkspaceWeb,
+		UID:          testWebUID,
 		Context:      defaultValue,
 		SSHHostAlias: "derived",
 	}))
@@ -197,4 +203,70 @@ func TestValidateResolvedIDRejectsDerivedIDMatchingAlias(t *testing.T) {
 
 	free := &provider.Workspace{ID: "free", UID: "uid-free", Context: defaultValue}
 	require.NoError(t, cmd.validateResolvedID(cfg, presentationClient{ws: free}))
+}
+
+func TestConfigureSSHRejectsAliasHeldByOtherContext(t *testing.T) {
+	setupUpTestHome(t)
+	stored := &provider.Workspace{ID: testWorkspaceAPI, UID: testAPIUID, Context: defaultValue}
+	require.NoError(t, provider.SaveWorkspaceConfig(stored))
+	committed := *stored
+	committed.SSHHostAlias = testShortAlias
+	require.NoError(t, provider.SaveWorkspacePresentation(&committed))
+	require.NoError(t, provider.SaveWorkspaceConfig(&provider.Workspace{
+		ID:           testWorkspaceWeb,
+		UID:          testWebUID,
+		Context:      "other",
+		SSHHostAlias: testShortAlias,
+	}))
+
+	own := *stored
+	sshConfig := filepath.Join(t.TempDir(), "config")
+	err := configureSSH(
+		providerPresentationClient{presentationClient{ws: &own}},
+		configureSSHParams{sshConfigPath: sshConfig, user: "dev"},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "short.devsy")
+	assert.Contains(t, err.Error(), "other")
+	assert.NoFileExists(t, sshConfig)
+}
+
+func detachTestConfig() *config.Config {
+	return &config.Config{
+		DefaultContext: defaultValue,
+		Contexts:       map[string]*config.ContextConfig{defaultValue: {}},
+	}
+}
+
+func TestCheckDetachedPresentationReturnsLookupError(t *testing.T) {
+	setupUpTestHome(t)
+	cfg := detachTestConfig()
+	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	cmd.SSHHostAlias = testShortAlias
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := cmd.checkDetachedPresentationContext(ctx, cfg, testFreshID)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), testFreshID)
+
+	require.NoError(t, cmd.checkDetachedPresentationContext(t.Context(), cfg, testFreshID))
+	unset := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	require.NoError(t, unset.checkDetachedPresentationContext(ctx, cfg, testFreshID))
+}
+
+func TestCheckDetachedPresentationValidatesNewWorkspace(t *testing.T) {
+	setupUpTestHome(t)
+	cfg := detachTestConfig()
+	require.NoError(t, provider.SaveWorkspaceConfig(&provider.Workspace{
+		ID:           testWorkspaceWeb,
+		UID:          testWebUID,
+		Context:      defaultValue,
+		SSHHostAlias: testBackendAlias,
+	}))
+	cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
+	cmd.SSHHostAlias = testBackendAlias
+
+	require.Error(t, cmd.checkDetachedPresentation(cfg, testFreshID))
+	require.NoError(t, cmd.checkDetachedPresentation(cfg, testWorkspaceWeb))
 }
