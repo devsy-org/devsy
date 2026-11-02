@@ -1200,11 +1200,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             message: "Workspace edit returned an unexpected result.",
           }
         }
-        if (
+        const stale =
           result.id !== request.workspaceId ||
           result.uid !== request.expectedUid ||
           result.context !== context
-        ) {
+        await deps.refreshWorkspaces?.().catch((error) => {
+          mainLog.warn("[workspace-edit] workspace refresh failed", error)
+        })
+        if (stale) {
           return {
             ok: false,
             field: "workspace",
@@ -1212,9 +1215,6 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             message: "The workspace changed while saving. Reload and retry.",
           }
         }
-        await deps.refreshWorkspaces?.().catch((error) => {
-          mainLog.warn("[workspace-edit] workspace refresh failed", error)
-        })
         return { ok: true, result }
       } catch (err) {
         const cliError = (err as { cliError?: CLIError }).cliError

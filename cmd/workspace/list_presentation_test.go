@@ -17,7 +17,7 @@ func TestWorkspaceListEntryAddsPresentationFields(t *testing.T) {
 		SSHHostAlias: testSSHAlias,
 	}
 
-	encoded, err := json.Marshal(newWorkspaceListEntry(ws))
+	encoded, err := json.Marshal(provider.NewWorkspaceListEntry(ws))
 	require.NoError(t, err)
 
 	var got map[string]any
@@ -25,23 +25,44 @@ func TestWorkspaceListEntryAddsPresentationFields(t *testing.T) {
 	assert.Equal(t, testWorkspaceName, got["id"])
 	assert.Equal(t, "uid-1", got["uid"])
 	assert.Equal(t, testDisplayName, got["displayName"])
+	assert.Equal(t, testDisplayName, got["effectiveDisplayName"])
 	assert.Equal(t, testSSHAlias, got["sshHostAlias"])
 	assert.Equal(t, "node.devsy", got["preferredSSHHost"])
 	assert.Equal(t, "node-js.devsy", got["canonicalSSHHost"])
 }
 
-func TestWorkspaceListEntryFallsBackToID(t *testing.T) {
+func TestWorkspaceListEntryRawDisplayNameEmptyWhenUnset(t *testing.T) {
 	ws := &provider.Workspace{ID: testWorkspaceName}
 
-	encoded, err := json.Marshal(newWorkspaceListEntry(ws))
+	encoded, err := json.Marshal(provider.NewWorkspaceListEntry(ws))
 	require.NoError(t, err)
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(encoded, &got))
-	assert.Equal(t, testWorkspaceName, got["displayName"])
+	assert.Equal(t, "", got["displayName"])
+	assert.Equal(t, testWorkspaceName, got["effectiveDisplayName"])
 	assert.Equal(t, "", got["sshHostAlias"])
 	assert.Equal(t, "node-js.devsy", got["preferredSSHHost"])
 	assert.Equal(t, "node-js.devsy", got["canonicalSSHHost"])
+}
+
+func TestWorkspaceListEntryKeepsPlatformNameSeparateFromRawOverride(t *testing.T) {
+	ws := &provider.Workspace{
+		ID:          testWorkspaceName,
+		DisplayName: testDisplayName,
+		Platform:    &provider.PlatformMetadata{DisplayName: "Team Workspace"},
+	}
+
+	encoded, err := json.Marshal(provider.NewWorkspaceListEntry(ws))
+	require.NoError(t, err)
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &got))
+	assert.Equal(t, testDisplayName, got["displayName"])
+	assert.Equal(t, "Team Workspace", got["effectiveDisplayName"])
+	pro, ok := got["pro"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "Team Workspace", pro["displayName"])
 }
 
 func TestWorkspaceListNameShowsLabelOnlyWhenDifferent(t *testing.T) {

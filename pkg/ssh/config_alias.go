@@ -9,31 +9,34 @@ import (
 	"strings"
 )
 
-func ReplaceHostAliases(
-	sshConfigPath, sshConfigIncludePath, canonicalHost, preferredHost string,
-) (func() error, bool, error) {
-	noop := func() error { return nil }
+type AliasReplacement struct {
+	ConfigPath    string
+	IncludePath   string
+	CanonicalHost string
+	PreferredHost string
+}
 
-	target, err := resolveAliasTarget(sshConfigPath, sshConfigIncludePath)
+func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool, error) {
+	target, err := resolveAliasTarget(r.ConfigPath, r.IncludePath)
 	if err != nil {
-		return noop, false, err
+		return false, err
 	}
 
 	exists, err := aliasTargetExists(target)
 	if err != nil {
-		return noop, false, err
+		return false, err
 	}
 	if !exists {
-		return noop, false, nil
+		return false, runAliasCommit(commit)
 	}
 
 	unlock, err := lockConfigFile(target)
 	if err != nil {
-		return noop, false, err
+		return false, err
 	}
 	defer unlock()
 
-	return rewriteAliasTarget(target, canonicalHost, preferredHost)
+	return rewriteAliasTarget(target, r.CanonicalHost, r.PreferredHost, commit)
 }
 
 func aliasTargetExists(target string) (bool, error) {
@@ -48,36 +51,51 @@ func aliasTargetExists(target string) (bool, error) {
 	return true, nil
 }
 
-func rewriteAliasTarget(target, canonicalHost, preferredHost string) (func() error, bool, error) {
-	noop := func() error { return nil }
+func runAliasCommit(commit func() error) error {
+	if commit == nil {
+		return nil
+	}
 
+	return commit()
+}
+
+func rewriteAliasTarget(
+	target, canonicalHost, preferredHost string,
+	commit func() error,
+) (bool, error) {
 	original, err := os.ReadFile(filepath.Clean(target))
 	if errors.Is(err, fs.ErrNotExist) {
-		return noop, false, nil
+		return false, runAliasCommit(commit)
 	}
 	if err != nil {
-		return noop, false, fmt.Errorf("read ssh config: %w", err)
+		return false, fmt.Errorf("read ssh config: %w", err)
 	}
 
 	rewritten, found := rewriteHostLines(string(original), canonicalHost, preferredHost)
-	if !found {
-		return noop, false, nil
-	}
-
-	if rewritten == string(original) {
-		return noop, true, nil
+	if !found || rewritten == string(original) {
+		return false, runAliasCommit(commit)
 	}
 
 	err = writeFileAtomic(target, []byte(rewritten))
 	if err != nil {
-		return noop, false, fmt.Errorf("write ssh config: %w", err)
+		return false, fmt.Errorf("write ssh config: %w", err)
 	}
 
-	restore := func() error {
-		return restoreConfigFile(target, original)
+	err = runAliasCommit(commit)
+	if err != nil {
+		return false, rollbackAliasTarget(target, original, err)
 	}
 
-	return restore, true, nil
+	return true, nil
+}
+
+func rollbackAliasTarget(target string, original []byte, commitErr error) error {
+	err := writeFileAtomic(target, original)
+	if err != nil {
+		return errors.Join(commitErr, fmt.Errorf("restore ssh config: %w", err))
+	}
+
+	return commitErr
 }
 
 func resolveAliasTarget(sshConfigPath, sshConfigIncludePath string) (string, error) {
@@ -94,21 +112,6 @@ func resolveAliasTarget(sshConfigPath, sshConfigIncludePath string) (string, err
 	}
 
 	return resolveSymlinkTarget(target)
-}
-
-func restoreConfigFile(target string, original []byte) error {
-	unlock, err := lockConfigFile(target)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-
-	err = writeFileAtomic(target, original)
-	if err != nil {
-		return fmt.Errorf("restore ssh config: %w", err)
-	}
-
-	return nil
 }
 
 func rewriteHostLines(content, canonicalHost, preferredHost string) (string, bool) {

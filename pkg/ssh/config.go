@@ -38,7 +38,6 @@ type SSHConfigParams struct {
 	Provider             string
 	TunnelPort           int // If > 0, use TCP tunnel mode instead of ProxyCommand
 	PreferredHost        string
-	UID                  string
 }
 
 func ConfigureSSHConfig(params SSHConfigParams) error {

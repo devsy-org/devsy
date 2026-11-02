@@ -83,7 +83,7 @@ func (cmd *UpCmd) prepareClient(
 
 	existed := cmd.checkWorkspaceExisted(ctx, devsyConfig, args)
 	presentationID := cmd.targetWorkspaceID(args)
-	if err := cmd.checkPresentation(devsyConfig, presentationID, existed); err != nil {
+	if err := cmd.validateTarget(devsyConfig, presentationID, existed); err != nil {
 		return nil, err
 	}
 
@@ -137,6 +137,31 @@ func (cmd *UpCmd) checkWorkspaceExisted(
 
 func (cmd *UpCmd) hasPresentation() bool {
 	return cmd.DisplayName != "" || cmd.SSHHostAlias != ""
+}
+
+func (cmd *UpCmd) validateTarget(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if err := cmd.checkNewWorkspaceID(devsyConfig, id, existed); err != nil {
+		return err
+	}
+	return cmd.checkPresentation(devsyConfig, id, existed)
+}
+
+func (cmd *UpCmd) checkNewWorkspaceID(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if existed || id == "" {
+		return nil
+	}
+	return workspace2.ValidateNewWorkspaceID(devsyConfig, id, workspace2.SSHConfigLocation{
+		ConfigPath:  cmd.SSHConfigPath,
+		IncludePath: devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath),
+	})
 }
 
 func (cmd *UpCmd) checkPresentation(

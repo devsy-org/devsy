@@ -429,26 +429,16 @@ func commitPresentation(
 	if err != nil {
 		return false, err
 	}
-	restore, updated, err := ssh.ReplaceHostAliases(
-		paths.config,
-		paths.include,
-		next.CanonicalSSHHost(),
-		next.PreferredSSHHost(),
+	updated, err := ssh.ReplaceHostAliasesWithCommit(
+		ssh.AliasReplacement{
+			ConfigPath:    paths.config,
+			IncludePath:   paths.include,
+			CanonicalHost: next.CanonicalSSHHost(),
+			PreferredHost: next.PreferredSSHHost(),
+		},
+		func() error { return provider.SaveWorkspacePresentation(next) },
 	)
 	if err != nil {
-		return false, fmt.Errorf("update ssh config: %w", err)
-	}
-
-	if err := provider.SaveWorkspacePresentation(next); err != nil {
-		if updated && restore != nil {
-			if rollbackErr := restore(); rollbackErr != nil {
-				return false, errors.Join(
-					err,
-					fmt.Errorf("restore ssh config: %w", rollbackErr),
-				)
-			}
-		}
-
 		return false, err
 	}
 

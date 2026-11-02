@@ -140,6 +140,7 @@ export function applyWorkspacePresentation(
         ? {
             ...workspace,
             displayName: result.displayName || undefined,
+            effectiveDisplayName: result.effectiveDisplayName,
             sshHostAlias: result.sshHostAlias || undefined,
             preferredSSHHost: result.preferredSSHHost,
             canonicalSSHHost: result.canonicalSSHHost,

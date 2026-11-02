@@ -443,7 +443,7 @@ describe("workspace_edit IPC", () => {
     expect(cli.run).not.toHaveBeenCalled()
   })
 
-  it("does not apply a result that belongs to another workspace or context", async () => {
+  it("refreshes the workspace list even when the result belongs to another workspace or context", async () => {
     const { refreshWorkspaces } = setup(async () => ({
       ...resultPayload,
       context: "other",
@@ -455,7 +455,7 @@ describe("workspace_edit IPC", () => {
       displayName: "x",
     })
     expect(reply).toMatchObject({ ok: false, code: "stale" })
-    expect(refreshWorkspaces).not.toHaveBeenCalled()
+    expect(refreshWorkspaces).toHaveBeenCalledOnce()
   })
 
   it("surfaces structured CLI failures with their field", async () => {

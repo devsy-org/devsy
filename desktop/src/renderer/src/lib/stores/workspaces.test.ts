@@ -414,6 +414,7 @@ describe("applyWorkspacePresentation", () => {
     const [match, otherUid, otherContext, otherId] = get(workspaces)
     expect(match).toMatchObject({
       displayName: "Label",
+      effectiveDisplayName: "Label",
       sshHostAlias: "alias",
       preferredSSHHost: "alias.devsy",
       canonicalSSHHost: "ws.devsy",

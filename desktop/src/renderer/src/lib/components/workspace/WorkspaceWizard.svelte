@@ -446,8 +446,19 @@ let aliasConflict = $derived(
     ? findAliasConflict(launchAlias, $workspaces, resolvedId)
     : undefined,
 )
+let idHostConflict = $derived(
+  resolvedId !== "" && !resolvedIdInvalid
+    ? findAliasConflict(resolvedId, $workspaces, resolvedId)
+    : undefined,
+)
 let presentationInvalid = $derived(
-  !!(labelError || aliasError || labelConflict || aliasConflict),
+  !!(
+    labelError ||
+    aliasError ||
+    labelConflict ||
+    aliasConflict ||
+    idHostConflict
+  ),
 )
 
 let imageIncompatible = $derived(
@@ -1428,8 +1439,8 @@ function selectTemplate(t: { name: string; source: string }) {
             <Label for="workspace-name" class="text-sm">Workspace ID</Label>
             <Input
               id="workspace-name"
-              aria-invalid={resolvedIdInvalid || nameConflict}
-              aria-describedby={resolvedIdInvalid ? "workspace-name-invalid" : nameConflict ? "workspace-name-conflict" : "workspace-name-help"}
+              aria-invalid={resolvedIdInvalid || nameConflict || !!idHostConflict}
+              aria-describedby={resolvedIdInvalid ? "workspace-name-invalid" : nameConflict ? "workspace-name-conflict" : idHostConflict ? "workspace-name-host-conflict" : "workspace-name-help"}
               placeholder="Optional - derived from source if empty"
               value={workspaceName}
               oninput={(e) => (workspaceName = e.currentTarget.value)}
@@ -1451,6 +1462,15 @@ function selectTemplate(t: { name: string; source: string }) {
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
                 <span id="workspace-name-conflict">A workspace named "{resolvedId}" already exists. Choose a different name.</span>
+              </Alert.Description>
+            </Alert.Root>
+          {/if}
+
+          {#if idHostConflict}
+            <Alert.Root>
+              <TriangleAlert class="h-4 w-4 text-amber-600" />
+              <Alert.Description class="text-amber-700 dark:text-amber-400">
+                <span id="workspace-name-host-conflict">SSH host {resolvedId}{SSH_HOST_SUFFIX} is already used by workspace "{idHostConflict.id}". Choose a different workspace ID.</span>
               </Alert.Description>
             </Alert.Root>
           {/if}

@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/dotfiles"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
 
@@ -128,7 +129,7 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		sshConfigIncludePath = includePath
 	}
 
-	preferredHost, uid := sshPresentation(client)
+	preferredHost := sshPresentation(client)
 	return devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        path,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -140,7 +141,6 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		AgentForwarding:      devsyConfig.ContextOptionBool(config.ContextOptionSSHAgentForwarding),
 		Provider:             client.Provider(),
 		PreferredHost:        preferredHost,
-		UID:                  uid,
 	})
 }
 
@@ -170,7 +170,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		sshConfigIncludePath = includePath
 	}
 
-	preferredHost, uid := sshPresentation(client)
+	preferredHost := sshPresentation(client)
 	err = devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        sshConfigPath,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -183,7 +183,6 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
 		PreferredHost:        preferredHost,
-		UID:                  uid,
 	})
 	if err != nil {
 		return err
@@ -192,10 +191,17 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 	return nil
 }
 
-func sshPresentation(client client2.BaseWorkspaceClient) (string, string) {
+func sshPresentation(client client2.BaseWorkspaceClient) string {
 	ws := client.WorkspaceConfig()
 	if ws == nil {
-		return "", ""
+		return ""
 	}
-	return ws.PreferredSSHHost(), ws.UID
+
+	current := *ws
+	committed, err := provider.LoadWorkspaceConfig(client.Context(), client.Workspace())
+	if err == nil && committed.UID == ws.UID {
+		current.SSHHostAlias = committed.SSHHostAlias
+	}
+
+	return current.PreferredSSHHost()
 }

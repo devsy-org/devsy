@@ -629,6 +629,36 @@ describe("WorkspaceWizard", () => {
       expect(getLaunchButton().disabled).toBe(false)
       unmount()
     })
+
+    it("blocks Launch when the resolved ID is another workspace's SSH alias", async () => {
+      workspaces.set([{ id: "other", sshHostAlias: "python" } as never])
+      const { unmount } = await reviewStep()
+      expect(field("workspace-name").value).toBe("python")
+      expect(
+        document.querySelector("#workspace-name-host-conflict")?.textContent,
+      ).toContain('already used by workspace "other"')
+      expect(field("workspace-name").getAttribute("aria-invalid")).toBe("true")
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "fresh-id" },
+      })
+      await flushAsync()
+      expect(document.querySelector("#workspace-name-host-conflict")).toBeNull()
+      expect(getLaunchButton().disabled).toBe(false)
+      unmount()
+    })
+
+    it("blocks Launch when the resolved ID is another workspace's preferred host", async () => {
+      workspaces.set([
+        { id: "other", preferredSSHHost: "python.devsy" } as never,
+      ])
+      const { unmount } = await reviewStep()
+      expect(
+        document.querySelector("#workspace-name-host-conflict"),
+      ).not.toBeNull()
+      expect(getLaunchButton().disabled).toBe(true)
+      unmount()
+    })
   })
 
   it("registers the progress listener before awaiting workspaceUp", async () => {

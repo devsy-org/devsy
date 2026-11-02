@@ -197,6 +197,18 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 		)
 	}
 
+	if err := ValidateRenameTarget(
+		opts.DevsyConfig,
+		opts.OldName,
+		opts.NewName,
+		SSHConfigLocation{
+			ConfigPath:  wsConfig.SSHConfigPath,
+			IncludePath: wsConfig.SSHConfigIncludePath,
+		},
+	); err != nil {
+		return err
+	}
+
 	if err := stopWorkspaceIfRunning(ctx, opts.DevsyConfig, wsConfig); err != nil {
 		return err
 	}

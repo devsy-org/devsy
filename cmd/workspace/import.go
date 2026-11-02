@@ -155,6 +155,7 @@ func (cmd *ImportCmd) importWorkspace(
 	devsyConfig *config.Config,
 	exportConfig *provider.ExportConfig,
 ) error {
+	local := loadLocalWorkspace(devsyConfig, cmd.WorkspaceID)
 	if err := extractWorkspaceData(
 		devsyConfig, cmd.WorkspaceID, exportConfig.Workspace.Data,
 	); err != nil {
@@ -186,8 +187,64 @@ func (cmd *ImportCmd) importWorkspace(
 		return fmt.Errorf("save workspace config: %w", err)
 	}
 
+	if err := applyImportedPresentation(devsyConfig, local, workspaceConfig); err != nil {
+		return err
+	}
+
 	log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceID)
 	return nil
+}
+
+func applyImportedPresentation(
+	devsyConfig *config.Config,
+	local, imported *provider.Workspace,
+) error {
+	displayName, sshHostAlias := importedPresentation(devsyConfig, local, imported)
+	if displayName == imported.DisplayName && sshHostAlias == imported.SSHHostAlias {
+		return nil
+	}
+
+	imported.DisplayName = displayName
+	imported.SSHHostAlias = sshHostAlias
+	if err := provider.SaveWorkspacePresentation(imported); err != nil {
+		return fmt.Errorf("save workspace presentation: %w", err)
+	}
+	return nil
+}
+
+func importedPresentation(
+	devsyConfig *config.Config,
+	local, imported *provider.Workspace,
+) (string, string) {
+	if local != nil && local.UID == imported.UID {
+		return local.DisplayName, local.SSHHostAlias
+	}
+
+	displayName := imported.DisplayName
+	if err := workspace.ValidatePresentation(
+		devsyConfig, imported.ID, displayName, "",
+	); err != nil {
+		log.Warnf("dropping imported display name %q: %v", displayName, err)
+		displayName = ""
+	}
+
+	sshHostAlias := imported.SSHHostAlias
+	if err := workspace.ValidatePresentation(
+		devsyConfig, imported.ID, "", sshHostAlias,
+	); err != nil {
+		log.Warnf("dropping imported ssh host alias %q: %v", sshHostAlias, err)
+		sshHostAlias = ""
+	}
+
+	return displayName, sshHostAlias
+}
+
+func loadLocalWorkspace(devsyConfig *config.Config, workspaceID string) *provider.Workspace {
+	local, err := provider.LoadWorkspaceConfig(devsyConfig.DefaultContext, workspaceID)
+	if err != nil {
+		return nil
+	}
+	return local
 }
 
 // extractWorkspaceData creates workspaceID's workspace dir and extracts the

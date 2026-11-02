@@ -17,6 +17,7 @@ const (
 	presentationContext      = "default"
 	presentationWorkspaceAPI = "api"
 	presentationAliasBackend = "backend"
+	presentationUser         = "vscode"
 )
 
 type PresentationTestSuite struct {
@@ -588,8 +589,7 @@ func (s *PresentationTestSuite) TestAliasEditRewritesManagedHostLine() {
 		SSHConfigPath: s.sshConfigPath(),
 		Context:       presentationContext,
 		Workspace:     presentationWorkspaceAPI,
-		User:          "vscode",
-		UID:           "uid-api",
+		User:          presentationUser,
 	}))
 
 	req := s.request(presentationWorkspaceAPI)
@@ -612,6 +612,56 @@ func (s *PresentationTestSuite) TestAliasEditRewritesManagedHostLine() {
 	s.Require().NoError(err)
 	s.NotContains(string(content), "backend.devsy")
 	s.Contains(string(content), "Host api.devsy")
+}
+
+func (s *PresentationTestSuite) TestAliasEditNoopRewriteReportsNotUpdated() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+	s.Require().NoError(ssh.ConfigureSSHConfig(ssh.SSHConfigParams{
+		SSHConfigPath: s.sshConfigPath(),
+		Context:       presentationContext,
+		Workspace:     presentationWorkspaceAPI,
+		User:          presentationUser,
+		PreferredHost: presentationAliasBackend + ".devsy",
+	}))
+	before, err := os.ReadFile(s.sshConfigPath())
+	s.Require().NoError(err)
+
+	req := s.request(presentationWorkspaceAPI)
+	req.SSHHostAlias = new(presentationAliasBackend)
+	result, err := EditPresentation(req)
+	s.Require().NoError(err)
+	s.False(result.SSHEntryUpdated)
+	s.Equal(presentationAliasBackend, s.load(presentationWorkspaceAPI).SSHHostAlias)
+
+	after, err := os.ReadFile(s.sshConfigPath())
+	s.Require().NoError(err)
+	s.Equal(string(before), string(after))
+}
+
+func (s *PresentationTestSuite) TestCommitFailureRestoresSSHConfig() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+	s.Require().NoError(ssh.ConfigureSSHConfig(ssh.SSHConfigParams{
+		SSHConfigPath: s.sshConfigPath(),
+		Context:       presentationContext,
+		Workspace:     presentationWorkspaceAPI,
+		User:          presentationUser,
+	}))
+	before, err := os.ReadFile(s.sshConfigPath())
+	s.Require().NoError(err)
+
+	current := s.load(presentationWorkspaceAPI)
+	next := *current
+	next.SSHHostAlias = presentationAliasBackend
+	next.UID = "uid-recreated"
+
+	updated, err := commitPresentation(current, &next, true)
+	s.Require().Error(err)
+	s.False(updated)
+
+	after, err := os.ReadFile(s.sshConfigPath())
+	s.Require().NoError(err)
+	s.Equal(string(before), string(after))
+	s.Empty(s.load(presentationWorkspaceAPI).SSHHostAlias)
 }
 
 func (s *PresentationTestSuite) sshConfigPath() string {

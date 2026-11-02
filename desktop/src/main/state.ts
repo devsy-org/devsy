@@ -5,6 +5,7 @@ export interface Workspace {
   lastUsed?: string
   status?: string
   displayName?: string
+  effectiveDisplayName?: string
   sshHostAlias?: string
   preferredSSHHost?: string
   canonicalSSHHost?: string

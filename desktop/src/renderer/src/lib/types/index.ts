@@ -44,6 +44,7 @@ export interface Workspace {
   context?: string
   status?: string
   displayName?: string
+  effectiveDisplayName?: string
   sshHostAlias?: string
   preferredSSHHost?: string
   canonicalSSHHost?: string
