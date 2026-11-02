@@ -95,6 +95,17 @@ func (f *ownerFixture) legacyBlock(params addHostParams) string {
 	return block
 }
 
+func (f *ownerFixture) customHostnameBlock(hostname string) string {
+	f.t.Helper()
+
+	return strings.Replace(
+		f.legacyBlock(addHostParams{tunnelPort: 2222}),
+		"Hostname 127.0.0.1",
+		"Hostname "+hostname,
+		1,
+	)
+}
+
 func (f *ownerFixture) blockCount() int {
 	return strings.Count(f.read(), MarkerStartPrefix+ownTestHost)
 }
@@ -250,7 +261,6 @@ func TestConfigureClaimsLegacyBlockWithImpliedHome(t *testing.T) {
 
 func TestConfigureRejectsLegacyBlockWithoutMatchingEvidence(t *testing.T) {
 	cases := map[string]addHostParams{
-		"tunnel":           {tunnelPort: 2222},
 		"custom command":   {command: "ssh -W %h:%p jump"},
 		"other context":    {context: ownTestOther, devsyHome: ""},
 		"other workspace":  {workspace: "different"},
@@ -274,6 +284,18 @@ func TestConfigureRejectsLegacyBlockWithoutMatchingEvidence(t *testing.T) {
 			assert.Equal(t, before, f.read())
 		})
 	}
+}
+
+func TestConfigureRejectsLegacyTunnelBlockWithCustomHostname(t *testing.T) {
+	f := newOwnerFixture(t)
+	f.write(f.customHostnameBlock("10.0.0.5"))
+	before := f.read()
+
+	err := f.configure(f.owner(f.homeA), "")
+
+	ownership := asOwnershipError(t, err)
+	assert.Equal(t, ownTestHost, ownership.Host)
+	assert.Equal(t, before, f.read())
 }
 
 func TestRemoveFromConfigForOwnerRemovesOnlyOwnedBlock(t *testing.T) {
@@ -319,13 +341,85 @@ func TestRemoveFromConfigForOwnerClaimsLegacyBlockWithEvidence(t *testing.T) {
 
 func TestRemoveFromConfigForOwnerRejectsLegacyBlockWithoutEvidence(t *testing.T) {
 	f := newOwnerFixture(t)
-	f.write(f.legacyBlock(addHostParams{tunnelPort: 2222}))
+	f.write(f.customHostnameBlock("10.0.0.5"))
 	before := f.read()
 
 	err := RemoveFromConfigForOwner(f.owner(f.homeA), ownTestWorkspace, f.cfgPath, "")
 
 	requireOwnershipError(t, err)
 	assert.Equal(t, before, f.read())
+}
+
+func TestLegacyTunnelBlockIsClaimedForEveryHostname(t *testing.T) {
+	for _, hostname := range []string{"127.0.0.1", "localhost", "LOCALHOST", "::1"} {
+		t.Run(hostname, func(t *testing.T) {
+			f := newOwnerFixture(t)
+			owner := f.owner(f.homeA)
+			f.write(f.customHostnameBlock(hostname) + "\nHost keep\n  User x\n")
+
+			require.NoError(t, f.configure(owner, ""))
+
+			assert.Equal(t, 1, f.blockCount())
+			assert.Contains(t, f.read(), owner.Line())
+			assert.Contains(t, f.read(), "ProxyCommand")
+			assert.NotContains(t, f.read(), "Port 2222")
+			assert.Contains(t, f.read(), "Host keep")
+		})
+	}
+}
+
+func TestConfigureReplacesLegacyTunnelBlockAndAddsOwnerLine(t *testing.T) {
+	f := newOwnerFixture(t)
+	owner := f.owner(f.homeA)
+	f.write(f.legacyBlock(addHostParams{tunnelPort: 2222}))
+	assert.NotContains(t, f.read(), OwnerLinePrefix)
+
+	require.NoError(t, f.configure(owner, ""))
+
+	assert.Equal(t, 1, f.blockCount())
+	assert.Equal(t, 1, strings.Count(f.read(), owner.Line()))
+}
+
+func TestLegacyTunnelBlockWithoutPortIsNotClaimed(t *testing.T) {
+	f := newOwnerFixture(t)
+	f.write(MarkerStartPrefix + ownTestHost + "\nHost " + ownTestHost +
+		"\n  Hostname 127.0.0.1\n" + MarkerEndPrefix + ownTestHost + "\n")
+	before := f.read()
+
+	requireOwnershipError(t, f.configure(f.owner(f.homeA), ""))
+	assert.Equal(t, before, f.read())
+}
+
+func TestRemoveFromConfigForOwnerClaimsLegacyTunnelBlock(t *testing.T) {
+	f := newOwnerFixture(t)
+	f.write(f.legacyBlock(addHostParams{tunnelPort: 2222}))
+
+	require.NoError(t, RemoveFromConfigForOwner(f.owner(f.homeA), ownTestWorkspace, f.cfgPath, ""))
+	assert.Zero(t, f.blockCount())
+}
+
+func TestReplaceHostAliasesForOwnerClaimsLegacyTunnelBlock(t *testing.T) {
+	f := newOwnerFixture(t)
+	f.write(f.legacyBlock(addHostParams{tunnelPort: 2222}))
+
+	require.NoError(t, f.editAlias(f.owner(f.homeA), &aliasRecord{}, ownTestNewAlias))
+	assert.Equal(t, 1, f.blockCount())
+	assert.Contains(t, f.read(), "Host "+ownTestNewAlias+" "+ownTestHost)
+}
+
+func TestFindHostConflictsForOwnerExcludesLegacyTunnelBlock(t *testing.T) {
+	f := newOwnerFixture(t)
+	f.write(f.legacyBlock(addHostParams{tunnelPort: 2222, preferredHost: ownTestOldAlias}))
+
+	query := HostConflictQuery{
+		ConfigPath:    f.cfgPath,
+		Hosts:         []string{ownTestOldAlias},
+		CanonicalHost: ownTestHost,
+		Owner:         f.owner(f.homeA),
+	}
+	conflicts, err := FindHostConflictsForOwner(query)
+	require.NoError(t, err)
+	assert.Empty(t, conflicts)
 }
 
 func TestLegacyRemoveFromConfigIgnoresOwnership(t *testing.T) {

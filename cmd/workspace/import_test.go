@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	snapshotpkg "github.com/devsy-org/devsy/pkg/snapshot"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -54,6 +56,9 @@ const (
 	importTestContext = "default"
 	importTestID      = "imported-ws"
 	importTestUID     = "uid-imported"
+
+	importTestOtherID  = "web"
+	importTestOtherUID = "uid-web"
 
 	importTestTheirsLabel = "Theirs"
 	importTestTheirsAlias = "theirs"
@@ -170,8 +175,8 @@ func TestImportWorkspace_KeepsValidPresentationForNewWorkspace(t *testing.T) {
 func TestImportWorkspace_DropsConflictingPresentationForNewWorkspace(t *testing.T) {
 	devsyConfig := setupImportTestHome(t)
 	saveImportTestWorkspace(t, &provider.Workspace{
-		ID:           "web",
-		UID:          "uid-web",
+		ID:           importTestOtherID,
+		UID:          importTestOtherUID,
 		DisplayName:  "Web",
 		SSHHostAlias: "backend",
 	})
@@ -179,7 +184,7 @@ func TestImportWorkspace_DropsConflictingPresentationForNewWorkspace(t *testing.
 	got := runImportWorkspace(t, devsyConfig, &provider.Workspace{
 		ID:           importTestID,
 		UID:          importTestUID,
-		DisplayName:  "web",
+		DisplayName:  importTestOtherID,
 		SSHHostAlias: "backend",
 	})
 
@@ -201,7 +206,7 @@ func TestImportWorkspace_DropsOnlyInvalidImportedFields(t *testing.T) {
 	assert.Empty(t, got.SSHHostAlias)
 }
 
-func TestImportWorkspace_LocalLoadErrorAbortsBeforeExtraction(t *testing.T) {
+func TestImportWorkspace_LocalLoadErrorAbortsWithoutCommit(t *testing.T) {
 	devsyConfig := setupImportTestHome(t)
 	workspaceDir, err := provider.GetWorkspaceDir(importTestContext, importTestID)
 	require.NoError(t, err)
@@ -370,4 +375,97 @@ func assertNoImportStaging(t *testing.T) {
 	for _, entry := range entries {
 		assert.NotContains(t, entry.Name(), ".import-")
 	}
+}
+
+func importTestCmdAndExport(
+	t *testing.T,
+	imported *provider.Workspace,
+) (*ImportCmd, *provider.ExportConfig) {
+	t.Helper()
+
+	return &ImportCmd{WorkspaceID: importTestID, MachineID: "m", ProviderID: "p"},
+		&provider.ExportConfig{
+			Workspace: &provider.ExportWorkspaceConfig{Data: importArchive(t, imported)},
+		}
+}
+
+func TestImportWorkspace_RejectsIDEqualToAnotherWorkspaceAlias(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+	saveImportTestWorkspace(t, &provider.Workspace{
+		ID:           importTestOtherID,
+		UID:          importTestOtherUID,
+		SSHHostAlias: importTestID,
+	})
+	cmd, exportConfig := importTestCmdAndExport(
+		t, &provider.Workspace{ID: importTestID, UID: importTestUID},
+	)
+
+	err := cmd.importWorkspace(devsyConfig, exportConfig)
+
+	var presentationErr *workspace.PresentationError
+	require.ErrorAs(t, err, &presentationErr)
+	assert.Equal(t, workspace.PresentationCodeConflict, presentationErr.Code)
+	assert.NoDirExists(t, importWorkspaceDir(t))
+	assertNoImportStaging(t)
+}
+
+func TestImportWorkspace_SameUIDLocalSkipsNewWorkspaceIDCheck(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+	saveImportTestWorkspace(t, &provider.Workspace{ID: importTestID, UID: importTestUID})
+	saveImportTestWorkspace(t, &provider.Workspace{
+		ID:           importTestOtherID,
+		UID:          importTestOtherUID,
+		SSHHostAlias: importTestID,
+	})
+
+	got := runImportWorkspace(t, devsyConfig, &provider.Workspace{
+		ID:  importTestID,
+		UID: importTestUID,
+	})
+
+	assert.Equal(t, importTestUID, got.UID)
+	assertNoImportStaging(t)
+}
+
+func TestImportWorkspace_WaitsForPresentationLock(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+	cmd, exportConfig := importTestCmdAndExport(
+		t, &provider.Workspace{ID: importTestID, UID: importTestUID},
+	)
+
+	locked := make(chan struct{})
+	release := make(chan struct{})
+	holderDone := make(chan error, 1)
+	go func() {
+		holderDone <- workspace.WithPresentationLock(func() error {
+			close(locked)
+			<-release
+			return nil
+		})
+	}()
+	<-locked
+
+	importDone := make(chan error, 1)
+	go func() {
+		importDone <- cmd.importWorkspace(devsyConfig, exportConfig)
+	}()
+
+	select {
+	case err := <-importDone:
+		close(release)
+		t.Fatalf("import finished while the presentation lock was held: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	assert.NoDirExists(t, importWorkspaceDir(t))
+
+	close(release)
+	require.NoError(t, <-holderDone)
+	select {
+	case err := <-importDone:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("import did not finish after the presentation lock was released")
+	}
+	assert.DirExists(t, importWorkspaceDir(t))
+	assertNoImportStaging(t)
 }

@@ -179,7 +179,36 @@ func (p *blockPolicy) legacyEvidence(block []string) bool {
 		}
 	}
 
-	return false
+	return tunnelEvidence(block)
+}
+
+func tunnelEvidence(block []string) bool {
+	hostname, hasPort := "", false
+	for _, line := range block[min(1, len(block)):] {
+		args := configArguments(line)
+		if len(args) != 1 {
+			continue
+		}
+		switch strings.ToLower(sshConfigKeyword(line)) {
+		case "hostname":
+			if hostname == "" {
+				hostname = args[0]
+			}
+		case "port":
+			hasPort = true
+		}
+	}
+
+	return hasPort && isLoopbackHostname(hostname)
+}
+
+func isLoopbackHostname(host string) bool {
+	switch strings.ToLower(host) {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *blockPolicy) proxyEvidence(args []string) bool {

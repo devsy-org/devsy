@@ -158,10 +158,6 @@ func (cmd *ImportCmd) importWorkspace(
 	devsyConfig *config.Config,
 	exportConfig *provider.ExportConfig,
 ) error {
-	local, err := loadLocalWorkspace(devsyConfig, cmd.WorkspaceID)
-	if err != nil {
-		return err
-	}
 	workspaceDir, err := provider.GetWorkspaceDir(devsyConfig.DefaultContext, cmd.WorkspaceID)
 	if err != nil {
 		return fmt.Errorf("get workspace dir: %w", err)
@@ -173,6 +169,26 @@ func (cmd *ImportCmd) importWorkspace(
 	}
 	defer removeStage(stageDir)
 
+	err = workspace.WithPresentationLock(func() error {
+		return cmd.commitImportedWorkspace(devsyConfig, exportConfig, stageDir, workspaceDir)
+	})
+	if err != nil {
+		return err
+	}
+
+	log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceID)
+	return nil
+}
+
+func (cmd *ImportCmd) commitImportedWorkspace(
+	devsyConfig *config.Config,
+	exportConfig *provider.ExportConfig,
+	stageDir, workspaceDir string,
+) error {
+	local, err := loadLocalWorkspace(devsyConfig, cmd.WorkspaceID)
+	if err != nil {
+		return err
+	}
 	imported, err := readStagedWorkspace(stageDir)
 	if err != nil {
 		return err
@@ -180,15 +196,29 @@ func (cmd *ImportCmd) importWorkspace(
 	if err := cmd.prepareImportedWorkspace(devsyConfig, exportConfig, local, imported); err != nil {
 		return err
 	}
+	if err := checkImportedWorkspaceID(devsyConfig, local, imported); err != nil {
+		return err
+	}
 	if err := writeStagedWorkspace(stageDir, imported); err != nil {
 		return err
 	}
-	if err := commitStagedWorkspace(stageDir, workspaceDir); err != nil {
-		return err
+
+	return commitStagedWorkspace(stageDir, workspaceDir)
+}
+
+func checkImportedWorkspaceID(
+	devsyConfig *config.Config,
+	local, imported *provider.Workspace,
+) error {
+	if local != nil && local.UID == imported.UID {
+		return nil
 	}
 
-	log.Infof("imported workspace: workspaceId=%s", cmd.WorkspaceID)
-	return nil
+	return workspace.ValidateNewWorkspaceIDLocked(
+		devsyConfig,
+		imported.ID,
+		workspace.SSHConfigLocation{},
+	)
 }
 
 func (cmd *ImportCmd) prepareImportedWorkspace(

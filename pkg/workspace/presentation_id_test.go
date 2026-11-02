@@ -212,6 +212,35 @@ func (s *PresentationTestSuite) TestValidateNewWorkspaceIDWaitsForPresentationLo
 	s.requireLockAvailable()
 }
 
+func (s *PresentationTestSuite) TestWithPresentationLockHoldsLockAndAllowsLockedValidation() {
+	s.saveAliasedWeb()
+
+	err := WithPresentationLock(func() error {
+		done := make(chan error, 1)
+		go func() {
+			done <- ValidateNewWorkspaceID(
+				s.devsyConfig, presentationWorkspaceAPI, s.location(),
+			)
+		}()
+		select {
+		case err := <-done:
+			s.FailNow("validation finished while the lock was held", "err: %v", err)
+		case <-time.After(300 * time.Millisecond):
+		}
+
+		s.requireErr(
+			ValidateNewWorkspaceIDLocked(s.devsyConfig, presentationAliasBackend, s.location()),
+			PresentationFieldSSHHostAlias,
+			PresentationCodeConflict,
+		)
+
+		return nil
+	})
+
+	s.Require().NoError(err)
+	s.requireLockAvailable()
+}
+
 func (s *PresentationTestSuite) TestValidateNewWorkspaceIDSeesRecordSavedWhileWaiting() {
 	unlock, err := lockPresentation()
 	s.Require().NoError(err)

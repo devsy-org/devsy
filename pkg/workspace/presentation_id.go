@@ -34,7 +34,7 @@ func ValidateNewWorkspaceID(
 	}
 	defer unlock()
 
-	return checkWorkspaceIDHost(devsyConfig, id, id, location)
+	return ValidateNewWorkspaceIDLocked(devsyConfig, id, location)
 }
 
 func ValidateRenameTarget(
