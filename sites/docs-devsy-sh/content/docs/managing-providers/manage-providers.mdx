@@ -8,6 +8,7 @@ Providers you can add:
 - [Docker (docker)](https://github.com/devsy-org/devsy/tree/main/providers/docker)
 - [Podman (podman)](https://github.com/devsy-org/devsy/tree/main/providers/podman)
 - [Kubernetes (kubernetes)](https://github.com/devsy-org/devsy/tree/main/providers/kubernetes)
+- [Harvester (harvester)](https://github.com/devsy-org/devsy-provider-harvester)
 - [Apple (apple)](https://github.com/devsy-org/devsy/tree/main/providers/apple)
 - [MicroSandbox (microsandbox)](https://github.com/devsy-org/devsy-provider-microsandbox)
 - [Lima (lima)](https://github.com/devsy-org/devsy-provider-lima)
@@ -62,6 +63,17 @@ devsy provider add my-org/my-repo@v0.0.1
 devsy provider add ../devsy-provider-mock/provider.yaml
 devsy provider add https://github.com/devsy-org/devsy-provider-ssh/releases/download/v0.0.3/provider.yaml
 ```
+
+### Harvester
+
+```sh
+devsy provider add harvester
+```
+
+The [Harvester provider](https://github.com/devsy-org/devsy-provider-harvester)
+needs a cluster kubeconfig, an imported guest image, and a VM network
+reachable from the Devsy client. The guest must run SSH and Docker. See the
+provider repository for cloud-init and image selection setup.
 
 ### MicroSandbox
 

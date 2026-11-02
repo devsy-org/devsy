@@ -72,6 +72,11 @@ const PRESETS: ProviderPreset[] = [
     description: "Kubernetes clusters",
     category: "Remote",
   },
+  {
+    name: "harvester",
+    description: "Harvester HCI clusters",
+    category: "Remote",
+  },
   { name: "aws", description: "Amazon Web Services", category: "Cloud" },
   { name: "gcloud", description: "Google Cloud Platform", category: "Cloud" },
   { name: "azure", description: "Microsoft Azure", category: "Cloud" },
