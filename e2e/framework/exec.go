@@ -3,6 +3,7 @@ package framework
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,7 @@ const execWaitDelay = 30 * time.Second
 func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (string, error) {
 	var execOut bytes.Buffer
 
+	//nolint:gosec // e2e harness runs its own test commands by design
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
@@ -39,6 +41,7 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 
 // ExecCommandStdout executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error {
+	//nolint:gosec // e2e harness runs its own test commands by design
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
@@ -51,15 +54,16 @@ func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error 
 	return nil
 }
 
-// ExecCommand executes the command string with the devsy test binary.
-func (f *Framework) ExecCommand(
+// ExecCommandContaining executes the command string with the devsy test binary and
+// fails unless its stdout contains searchString.
+func (f *Framework) ExecCommandContaining(
 	ctx context.Context,
-	captureStdOut, searchForString bool,
 	searchString string,
 	args []string,
 ) error {
 	var execOut bytes.Buffer
 
+	//nolint:gosec // e2e harness runs its own test commands by design
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
@@ -70,22 +74,20 @@ func (f *Framework) ExecCommand(
 		return err
 	}
 
-	if captureStdOut && searchForString {
-		if strings.Contains(execOut.String(), searchString) {
-			return nil
-		}
-
+	if !strings.Contains(execOut.String(), searchString) {
 		return fmt.Errorf("expected to find string %s in output", searchString)
 	}
 
 	return nil
 }
 
-// ExecCommandCapture executes the command string with the devsy test binary, and returns stdout, stderr, and any error that occurred.
+// ExecCommandCapture executes the command string with the devsy test binary, and returns
+// stdout, stderr, and any error that occurred.
 func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (string, string, error) {
 	var execOut bytes.Buffer
 	var execErr bytes.Buffer
 
+	//nolint:gosec // e2e harness runs its own test commands by design
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
@@ -94,4 +96,19 @@ func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (stri
 
 	err := cmd.Run()
 	return execOut.String(), execErr.String(), err
+}
+
+// ExecCommandJSON runs the devsy test binary and decodes its stdout as a JSON object.
+func (f *Framework) ExecCommandJSON(ctx context.Context, args []string) (map[string]any, error) {
+	stdout, stderr, err := f.ExecCommandCapture(ctx, args)
+	if err != nil {
+		return nil, fmt.Errorf("devsy %s: %w (stderr: %s)", strings.Join(args, " "), err, stderr)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		return nil, fmt.Errorf("output should be valid JSON: %w", err)
+	}
+
+	return result, nil
 }

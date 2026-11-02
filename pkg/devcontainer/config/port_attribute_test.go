@@ -5,6 +5,7 @@ import (
 )
 
 const (
+	testPortRangeAttr      = "8080-8090"
 	labelThreeThousands    = "Three-thousands"
 	regexKeyThreeThousands = "^30\\d\\d$"
 )
@@ -26,7 +27,7 @@ func TestResolvePortAttribute_ExactMatch(t *testing.T) {
 
 func TestResolvePortAttribute_RangeMatch(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"8080-8090": {Label: "Dev servers", OnAutoForward: AutoForwardSilent},
+		testPortRangeAttr: {Label: "Dev servers", OnAutoForward: AutoForwardSilent},
 	}
 	got := ResolvePortAttribute(8085, attrs, nil)
 	if got.Label != "Dev servers" {
@@ -37,7 +38,7 @@ func TestResolvePortAttribute_RangeMatch(t *testing.T) {
 func TestResolvePortAttribute_RangeBoundaries(t *testing.T) {
 	const rangeLabel = "Range"
 	attrs := map[string]PortAttribute{
-		"8080-8090": {Label: rangeLabel},
+		testPortRangeAttr: {Label: rangeLabel},
 	}
 	tests := []struct {
 		port    int
@@ -247,7 +248,7 @@ func TestResolvePortAttribute_BareNumericKeyDoesNotSubstringMatchOtherPorts(t *t
 
 func TestResolvePortAttribute_RangeKeyDoesNotSubstringMatchOtherPorts(t *testing.T) {
 	attrs := map[string]PortAttribute{
-		"8080-8090": {Label: "should-not-leak"},
+		testPortRangeAttr: {Label: "should-not-leak"},
 	}
 
 	got := ResolvePortAttribute(180809, attrs, nil)
@@ -255,7 +256,7 @@ func TestResolvePortAttribute_RangeKeyDoesNotSubstringMatchOtherPorts(t *testing
 		t.Errorf(
 			"Label = %q, want empty (range key %q must not substring-match a different port)",
 			got.Label,
-			"8080-8090",
+			testPortRangeAttr,
 		)
 	}
 }

@@ -20,7 +20,8 @@ devsy internal agent git-ssh-signature "$@"
 `
 )
 
-var GitConfigTemplate = `
+var (
+	GitConfigTemplate = `
 [gpg "ssh"]
 	program = ` + pkgconfig.SSHSignatureHelperName + `
 [gpg]
@@ -28,6 +29,13 @@ var GitConfigTemplate = `
 [user]
 	signingkey = %s
 `
+	gitConfigValueEscaper = strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\t", `\t`,
+	)
+)
 
 // ConfigureHelper sets up the Git SSH signing helper script and updates the Git configuration for the specified user.
 //
@@ -79,7 +87,7 @@ func RemoveHelper(userName string) error {
 
 func createHelperScript() error {
 	// we do it this way instead of os.Create because we need sudo
-	cmd := exec.Command(
+	cmd := exec.Command( //nolint:gosec // signing program comes from git config by design
 		"sudo",
 		"bash",
 		"-c",
@@ -114,7 +122,7 @@ func updateGitConfig(gitConfigPath, userName, gitSigningKey string) error {
 	// with the current key. The previous guard (checking whether the program
 	// line already existed) would silently skip key updates after unclean
 	// shutdowns or key rotations.
-	newConfig := fmt.Sprintf(GitConfigTemplate, gitSigningKey)
+	newConfig := fmt.Sprintf(GitConfigTemplate, formatGitConfigValue(gitSigningKey))
 	newContent := removeSignatureHelper(configContent) + newConfig
 	if err := writeGitConfig(gitConfigPath, newContent, userName); err != nil {
 		return err
@@ -123,8 +131,15 @@ func updateGitConfig(gitConfigPath, userName, gitSigningKey string) error {
 	return nil
 }
 
+func formatGitConfigValue(val string) string {
+	if !strings.ContainsAny(val, "\\\"\n\r\t#;") && strings.TrimSpace(val) == val {
+		return val
+	}
+	return `"` + gitConfigValueEscaper.Replace(val) + `"`
+}
+
 func readGitConfig(gitConfigPath string) (string, error) {
-	out, err := os.ReadFile(gitConfigPath)
+	out, err := os.ReadFile(gitConfigPath) //nolint:gosec // path is the user git config
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}

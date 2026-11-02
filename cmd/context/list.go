@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 
@@ -27,7 +28,7 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 	listCmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List Devsy contexts",
+		Short:   "List contexts",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},
@@ -83,7 +84,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		fmt.Print(string(out))
+		_, _ = fmt.Fprint(os.Stdout, string(out))
 	}
 
 	return nil

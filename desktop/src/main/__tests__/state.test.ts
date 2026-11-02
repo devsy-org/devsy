@@ -79,6 +79,16 @@ describe("DaemonState", () => {
     ).toBe(true)
   })
 
+  it("publishes a provider whose only change is its icon revision", () => {
+    const state = new DaemonState()
+    state.updateProviders([{ name: "harvester", iconRevision: "rev-a" }])
+
+    expect(
+      state.updateProviders([{ name: "harvester", iconRevision: "rev-b" }]),
+    ).toBe(true)
+    expect(state.providerList()[0]).toMatchObject({ iconRevision: "rev-b" })
+  })
+
   it("confirms provider mode changes without mutating other cached data", () => {
     const state = new DaemonState()
     const provider = {

@@ -39,7 +39,8 @@ func setupAgentListener(reuseSock string) (net.Listener, string, error) {
 	}
 
 	// Check if we should create a "shared" socket to be reused by clients
-	// used for browser tunnels such as openvscode, since the IDE itself doesn't create an SSH connection it uses a "backhaul" connection and uses the existing socket
+	// used for browser tunnels such as openvscode, since the IDE itself doesn't create an SSH connection it uses a
+	// "backhaul" connection and uses the existing socket
 	dir := ""
 	if reuseSock != "" {
 		dir = filepath.Join(runtimeDir, fmt.Sprintf("auth-agent-%s", reuseSock))

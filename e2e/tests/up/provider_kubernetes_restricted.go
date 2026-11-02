@@ -111,20 +111,14 @@ var _ = ginkgo.Describe(
 				gomega.Expect(*sc.RunAsUser).To(gomega.Equal(int64(1000)))
 				gomega.Expect(*sc.RunAsNonRoot).To(gomega.BeTrue())
 
-				err = f.ExecCommand(
-					ctx,
-					true,
-					true,
-					"mYtEsTsTrInG",
-					[]string{
-						cmdWorkspace,
-						cmdSSH,
-						"--agent-forwarding=false",
-						flagCommand,
-						"echo 'bVl0RXNUc1RySW5H' | base64 -d",
-						tempDir,
-					},
-				)
+				err = f.ExecCommandContaining(ctx, "mYtEsTsTrInG", []string{
+					cmdWorkspace,
+					cmdSSH,
+					"--agent-forwarding=false",
+					flagCommand,
+					"echo 'bVl0RXNUc1RySW5H' | base64 -d",
+					tempDir,
+				})
 				framework.ExpectNoError(err)
 			},
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),

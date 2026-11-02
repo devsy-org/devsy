@@ -208,8 +208,7 @@ func isExitMissingErr(err error) bool {
 	if err == nil {
 		return false
 	}
-	var exitMissing *ssh.ExitMissingError
-	if errors.As(err, &exitMissing) {
+	if _, ok := errors.AsType[*ssh.ExitMissingError](err); ok {
 		return true
 	}
 	return strings.Contains(err.Error(), "remote command exited without exit status or exit signal")

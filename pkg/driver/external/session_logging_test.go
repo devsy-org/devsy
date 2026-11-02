@@ -2,6 +2,7 @@ package external
 
 import (
 	"context"
+	"time"
 
 	"github.com/devsy-org/devsy-runtime-sdk/conformance/fake"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -28,8 +29,11 @@ func (s *HostSuite) TestTraceKeepsHelperLifecycleDiagnostics() {
 	host := s.host(fake.Normal)
 	s.NotEmpty(host.Info().RuntimeName)
 
-	s.Positive(observed.FilterMessageSnippet("received EOF, stopping recv loop").Len())
 	s.Positive(observed.FilterMessageSnippet("plugin process exited").Len())
+	// go-plugin joins process cleanup, but its gRPC stdio receive loop exits asynchronously.
+	s.Require().Eventually(func() bool {
+		return observed.FilterMessageSnippet("received EOF, stopping recv loop").Len() > 0
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func (s *HostSuite) TestDebugKeepsUnexpectedHelperExitDiagnostics() {

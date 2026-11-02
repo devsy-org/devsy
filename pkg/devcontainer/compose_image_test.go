@@ -246,7 +246,11 @@ func TestComposeMetadataUsesResolvedPlatform(t *testing.T) {
 	}
 	info, err := r.prepareComposeBuildInfo(
 		context.Background(), &config.SubstitutionContext{},
-		&composetypes.ServiceConfig{Image: exampleBaseImage}, "selected-stage", details,
+		composeBuildSource{
+			service:     &composetypes.ServiceConfig{Image: exampleBaseImage},
+			buildTarget: "selected-stage",
+			resolved:    details,
+		},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "selected-user", info.imageBuildInfo.User)

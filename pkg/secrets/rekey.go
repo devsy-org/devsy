@@ -109,7 +109,7 @@ func restoreRekeyFile(dir, backup, target string, existed bool) error {
 	if err != nil {
 		return fmt.Errorf("read rekey rollback backup: %w", err)
 	}
-	return atomicWriteFile(filepath.Join(dir, target), raw, 0o600)
+	return atomicWriteFile(filepath.Join(dir, target), raw)
 }
 
 func removeRekeyFile(path string) error {
@@ -230,7 +230,7 @@ func writeRekeyJournal(dir string, j rekeyJournal) error {
 	if err != nil {
 		return err
 	}
-	if err := atomicWriteFile(filepath.Join(dir, rekeyJournalName), raw, 0o600); err != nil {
+	if err := atomicWriteFile(filepath.Join(dir, rekeyJournalName), raw); err != nil {
 		return err
 	}
 	return syncRekeyDir(dir)
@@ -247,7 +247,7 @@ func backupRekeyFile(dir, target, backup string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, atomicWriteFile(filepath.Join(dir, backup), raw, 0o600)
+	return true, atomicWriteFile(filepath.Join(dir, backup), raw)
 }
 
 func validateRekeyJournal(j rekeyJournal) error {

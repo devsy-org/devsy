@@ -24,10 +24,10 @@ func NewInfoTagsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	tagsCmd := &cobra.Command{
 		Use:   "tags <feature-id>",
 		Short: "List available tags for a published feature",
-		Long: `List all available tags from the registry for a published dev container feature.
+		Long: `List available tags for a published feature.
 
-Accepts a feature ID like ghcr.io/devcontainers/features/go and
-queries the registry for all available image tags.`,
+Accept a feature ID such as ghcr.io/devcontainers/features/go and list the
+image tags in its registry.`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,

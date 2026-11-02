@@ -92,6 +92,7 @@ type PathManager interface {
 	// State sub-paths.
 	LogDir() (string, error)
 	TaskDir() (string, error)
+	WorkspaceLogsDir() (string, error)
 }
 
 // basePathManager implements every sub-path method by delegating the top-level
@@ -306,6 +307,12 @@ func (b *basePathManager) homeOverrideDir(sub ...string) (string, bool, error) {
 	dir, err := b.ensureDir(filepath.Join(append([]string{home}, sub...)...))
 
 	return dir, true, err
+
+// WorkspaceLogsDir holds retained build and lifecycle output for workspace
+// runs. It sits outside the per-workspace directory so removing a workspace
+// does not remove its history.
+func (b *basePathManager) WorkspaceLogsDir() (string, error) {
+	return joinUnder(b.pm.StateDir, "workspace-logs")
 }
 
 // inContext returns elems joined beneath ContextDir(context).

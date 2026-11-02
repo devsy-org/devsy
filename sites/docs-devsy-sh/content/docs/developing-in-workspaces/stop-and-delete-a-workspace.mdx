@@ -43,4 +43,4 @@ If the provider is unreachable, you can force the delete:
 devsy workspace delete my-workspace --force
 ```
 
-This only removes the workspace on the Devsy side and ignores provider errors, so it can leave cloud resources behind.
+`--force` makes several provider teardown errors non-fatal. For container deletion (including machine providers without `autoDelete`), a failed container teardown is ignored, with errors other than a deadline timeout logged, and if Devsy cannot check the machine status it skips the container teardown. For auto-delete machines, a failed machine delete command is logged and the delete continues. Daemon-backed workspaces still attempt their instance delete under `--force`; delete request errors other than NotFound are logged and do not stop deletion, but waiting for deletion can still return an error. Provider resources may remain in these cases.

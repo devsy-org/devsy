@@ -104,12 +104,12 @@ func latestDevsyPod(
 		LabelSelector: "app=devsy",
 	})
 	if err != nil {
-		log.Warnf("Error trying to retrieve %s pod: %v", pkgconfig.ProductNamePro, err)
+		log.Warnf("Error trying to retrieve %s pod: %v", pkgconfig.ProductNamePlatform, err)
 		return nil
 	}
 	if len(pods.Items) == 0 {
 		if time.Now().After(now.Add(time.Second * 10)) {
-			log.Infof("Still waiting for a %s pod", pkgconfig.ProductNamePro)
+			log.Infof("Still waiting for a %s pod", pkgconfig.ProductNamePlatform)
 			*now = time.Now()
 		}
 		return nil
@@ -169,7 +169,7 @@ func devsyPodFailureError(params evalContainerStatusParams) error {
 	if err != nil {
 		return fmt.Errorf(
 			"there seems to be an issue with %s starting up: %s (%s). Reach out to our support at https://devsy.sh/",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			message,
 			reason,
 		)
@@ -182,7 +182,7 @@ func devsyPodFailureError(params evalContainerStatusParams) error {
 			"%[1]s logs: \n%[2]v \nThere seems to be an issue with %[1]s starting up. "+
 				"Looks like you try to install %[1]s into an air-gapped environment, "+
 				"reach out to our support at https://devsy.sh/ for an offline license",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			string(out),
 		)
 	}
@@ -190,7 +190,7 @@ func devsyPodFailureError(params evalContainerStatusParams) error {
 	return fmt.Errorf(
 		"%[1]s logs: \n%[2]v \nThere seems to be an issue with %[1]s starting up: %[3]s (%[4]s). "+
 			"Reach out to our support at https://devsy.sh/",
-		pkgconfig.ProductNamePro,
+		pkgconfig.ProductNamePlatform,
 		string(out),
 		message,
 		reason,
@@ -202,20 +202,20 @@ func logContainerWaiting(containerStatus corev1.ContainerStatus) {
 	case containerStatus.State.Waiting.Message != "":
 		log.Infof(
 			"Keep waiting, %s container is still starting up: %s (%s)",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			containerStatus.State.Waiting.Message,
 			containerStatus.State.Waiting.Reason,
 		)
 	case containerStatus.State.Waiting.Reason != "":
 		log.Infof(
 			"Keep waiting, %s container is still starting up: %s",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			containerStatus.State.Waiting.Reason,
 		)
 	default:
 		log.Infof(
 			"Keep waiting, %s container is still starting up",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 		)
 	}
 }

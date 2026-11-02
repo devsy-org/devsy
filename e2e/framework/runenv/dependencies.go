@@ -24,11 +24,12 @@ const (
 // Command describes one subprocess. Env is an overlay applied to the parent
 // environment of that process only; nothing mutates the global environment.
 type Command struct {
-	Path    string
-	Args    []string
-	Env     []string // NAME=value overlay; replaces same-named parent entries
-	Dir     string
-	Timeout time.Duration
+	Path               string
+	Args               []string
+	Env                []string // NAME=value overlay; replaces same-named parent entries
+	Dir                string
+	Timeout            time.Duration
+	CancelProcessGroup bool
 	// Stdout and Stderr optionally receive output live, in addition to the
 	// tail-capped capture returned in CommandResult.
 	Stdout io.Writer

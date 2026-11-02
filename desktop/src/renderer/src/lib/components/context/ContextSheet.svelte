@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from "svelte"
 import { Info } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -41,6 +42,7 @@ let opts = $state<ContextOptions>({
   dotfilesUrl: "",
   dotfilesScript: "",
   dockerCredentialForwarding: true,
+  githubCliCredentialForwarding: false,
   gitCredentialForwarding: true,
   gitSshSignatureForwarding: true,
   sshAgentForwarding: true,
@@ -61,6 +63,7 @@ let initialOpts = $state<ContextOptions>({
   dotfilesUrl: "",
   dotfilesScript: "",
   dockerCredentialForwarding: true,
+  githubCliCredentialForwarding: false,
   gitCredentialForwarding: true,
   gitSshSignatureForwarding: true,
   sshAgentForwarding: true,
@@ -82,7 +85,6 @@ let isDirty = $derived.by(() => {
 })
 
 let loading = $state(true)
-let hasLoadedOnce = $state(false)
 let saving = $state(false)
 let deleting = $state(false)
 let confirmDeleteOpen = $state(false)
@@ -104,25 +106,36 @@ async function handleDelete() {
   }
 }
 
-async function loadOptions() {
-  if (!hasLoadedOnce) {
-    loading = true
-  }
+let contextName = $derived(context.name)
+
+async function loadOptions(name: string, isCurrent: () => boolean) {
+  loading = true
+  opts = parseContextOptions({})
+  initialOpts = { ...opts }
   try {
-    const raw = await fetchContextOptions(context.name)
+    const raw = await fetchContextOptions(name)
+    if (!isCurrent()) return
     opts = parseContextOptions(raw)
     initialOpts = { ...opts }
-  } catch {
-    // Keep defaults
+  } catch (err) {
+    if (isCurrent())
+      toasts.error(
+        `Failed to load context options: ${extractErrorMessage(err)}`,
+      )
   } finally {
-    loading = false
-    hasLoadedOnce = true
+    if (isCurrent()) loading = false
   }
 }
 
 $effect(() => {
-  if (open) {
-    loadOptions()
+  const name = contextName
+  if (!open) return
+  let current = true
+  untrack(() => {
+    void loadOptions(name, () => current)
+  })
+  return () => {
+    current = false
   }
 })
 
@@ -394,6 +407,14 @@ async function handleSaveAll() {
               <p class="text-xs text-muted-foreground">Forward Git credential helper to workspaces</p>
             </div>
             <Switch checked={opts.gitCredentialForwarding} onCheckedChange={() => toggleOption("gitCredentialForwarding")} disabled={saving || loading} />
+          </div>
+
+          <div class="flex items-center justify-between gap-4">
+            <div class="min-w-0">
+              <Label for="github-cli-credentials">GitHub CLI Credentials</Label>
+              <p id="github-cli-credentials-description" class="text-xs text-muted-foreground">Let workspaces use active host accounts on all GitHub hosts. Reconnect to apply.</p>
+            </div>
+            <Switch id="github-cli-credentials" aria-describedby="github-cli-credentials-description" checked={opts.githubCliCredentialForwarding} onCheckedChange={() => toggleOption("githubCliCredentialForwarding")} disabled={saving || loading} />
           </div>
 
           <div class="flex items-center justify-between">

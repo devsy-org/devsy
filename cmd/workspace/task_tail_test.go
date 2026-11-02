@@ -3,6 +3,8 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/stretchr/testify/require"
@@ -24,6 +29,7 @@ func newTestTailer(t *testing.T, taskID string) (*logTailer, string) {
 	t.Cleanup(config.ResetPathManager)
 
 	tailer := newLogTailer(taskID)
+	t.Cleanup(func() { tailer.flush(io.Discard) })
 	if tailer.path == "" {
 		t.Fatal("newLogTailer produced an empty path")
 	}
@@ -231,8 +237,16 @@ func TestLogTailerStreamsStatusLifecyclesSeparatelyFromLogs(t *testing.T) {
 			State: status.StateSucceeded, Duration: 3 * time.Second,
 		},
 	}
-	for _, event := range events {
-		require.NoError(t, devcconfig.WriteStatusJSON(&worker, event))
+	reporter, err := status.NewCLIReporter(status.CLIOptions{
+		Format:   formatJSON,
+		Out:      &worker,
+		Pipeline: status.PipelineWorkspaceUp,
+		Envelope: func(event status.Event) error { return devcconfig.WriteStatusJSON(&worker, event) },
+	})
+	require.NoError(t, err)
+	for i := range events {
+		events[i].Pipeline = status.PipelineWorkspaceUp
+		reporter.Report(events[i])
 	}
 	worker.WriteString("worker log\n{\"kind\":\"result\",\"outcome\":\"success\"}\n")
 	require.NoError(t, os.WriteFile(path, worker.Bytes(), 0o600))
@@ -289,4 +303,246 @@ func TestFollowTaskDrainsStatusBeforeResult(t *testing.T) {
 	require.Equal(t, status.StateSucceeded, completion.State)
 	require.Equal(t, "ide", completion.OperationID)
 	require.Contains(t, lines[2], `"kind":"result"`)
+}
+
+func TestFollowTaskReconcilesExitedWorker(t *testing.T) {
+	config.SetPathManager(fakeRuntimeDirPathManager{dir: t.TempDir()})
+	t.Cleanup(config.ResetPathManager)
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{Command: "up"})
+	require.NoError(t, err)
+	require.NoError(t, tk.HoldWorkerLock())
+	require.NoError(t, tk.ReleaseWorkerLock())
+	streamsPath, err := config.DefaultPathManager().
+		ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(streamsPath, []byte("startup failed\n"), 0o600))
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	original := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = original; _ = r.Close(); _ = w.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	followErr := followTask(
+		ctx,
+		store,
+		followTaskOptions{id: tk.ID(), interval: time.Millisecond, emitJSON: true},
+	)
+	os.Stderr = original
+	require.NoError(t, w.Close())
+	logs, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Error(t, followErr)
+	require.NotErrorIs(t, followErr, context.DeadlineExceeded)
+	require.Equal(t, 1, strings.Count(string(logs), "startup failed"))
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.Equal(t, task.StatusFailed, state.Status)
+}
+
+type failingReconciliationStore struct {
+	*task.Store
+	reconcile func(context.Context, string) (*task.State, error)
+}
+
+func (s failingReconciliationStore) ReconcileTask(
+	ctx context.Context,
+	id string,
+) (*task.State, error) {
+	return s.reconcile(ctx, id)
+}
+
+func TestFollowTaskRetriesCleanupBeforeTerminalFailure(t *testing.T) {
+	config.SetPathManager(fakeRuntimeDirPathManager{dir: t.TempDir()})
+	t.Cleanup(config.ResetPathManager)
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{Command: "up"})
+	require.NoError(t, err)
+	require.NoError(t, tk.HoldWorkerLock())
+	require.NoError(t, tk.ReleaseWorkerLock())
+	path, err := config.DefaultPathManager().ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte("captured startup failure\n"), 0o600))
+	transient := errors.New("transient cleanup failure")
+	calls := 0
+	wrapper := failingReconciliationStore{
+		Store: store,
+		reconcile: func(ctx context.Context, id string) (*task.State, error) {
+			calls++
+			if calls == 1 {
+				return nil, transient
+			}
+			state, err := store.Get(id)
+			require.NoError(t, err)
+			require.False(t, state.Status.Terminal(), "cleanup failure must leave task retryable")
+			return store.ReconcileTask(ctx, id)
+		},
+	}
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	original := os.Stderr
+	os.Stderr = writer
+	t.Cleanup(func() { os.Stderr = original; _ = reader.Close(); _ = writer.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	followErr := followTask(
+		ctx,
+		wrapper,
+		followTaskOptions{id: tk.ID(), interval: time.Millisecond, emitJSON: true},
+	)
+	os.Stderr = original
+	require.NoError(t, writer.Close())
+	logs, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, 1, strings.Count(string(logs), "captured startup failure"))
+	require.Error(t, followErr)
+	require.NotErrorIs(t, followErr, transient)
+	require.NotErrorIs(t, followErr, context.DeadlineExceeded)
+	var classified *clierr.CLIError
+	require.ErrorAs(t, followErr, &classified)
+	require.Equal(t, 2, calls)
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.Equal(t, task.StatusFailed, state.Status)
+	require.Equal(t, state.Error, classified.Message)
+}
+
+func TestFollowTaskRetryHonorsCancellation(t *testing.T) {
+	config.SetPathManager(fakeRuntimeDirPathManager{dir: t.TempDir()})
+	t.Cleanup(config.ResetPathManager)
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{})
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	wrapper := failingReconciliationStore{
+		Store: store,
+		reconcile: func(context.Context, string) (*task.State, error) {
+			calls++
+			if calls == 2 {
+				cancel()
+			}
+			return nil, errors.New("cleanup unavailable")
+		},
+	}
+	err = followTask(ctx, wrapper, followTaskOptions{id: tk.ID(), interval: time.Millisecond})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 2, calls)
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.False(t, state.Status.Terminal())
+}
+
+func TestFollowTaskReconciliationDiagnostics(t *testing.T) {
+	for _, level := range []string{"debug", "info"} {
+		t.Run(level, func(t *testing.T) {
+			config.SetPathManager(fakeRuntimeDirPathManager{dir: t.TempDir()})
+			t.Cleanup(config.ResetPathManager)
+			secret := strings.Repeat("test-value-", 8)
+			reader, writer, err := os.Pipe()
+			require.NoError(t, err)
+			original := os.Stdout
+			os.Stdout = writer
+			t.Cleanup(func() { os.Stdout = original; _ = reader.Close(); _ = writer.Close() })
+			log.InitTest(t)
+			log.Init(
+				log.Config{
+					Level:    level,
+					Format:   formatJSON,
+					Redactor: secrets.NewRedactor([]string{"TOKEN=" + secret}),
+				},
+			)
+			var diagnostics bytes.Buffer
+			remove := log.AddSink(&diagnostics)
+			defer remove()
+			// Each follower must report its own first failure, suppress consecutive
+			// duplicates, and report a recurrence after successful reconciliation.
+			for range 2 {
+				runFollowerReconciliationSequence(t, secret)
+			}
+			_ = log.Sync()
+			os.Stdout = original
+			require.NoError(t, writer.Close())
+			output, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			require.Len(t, lines, 2, "only terminal result envelopes belong on stdout")
+			for _, line := range lines {
+				var envelope map[string]any
+				require.NoError(t, json.Unmarshal([]byte(line), &envelope))
+				require.Equal(t, "result", envelope["kind"])
+				require.NotContains(t, line, "cleanup")
+			}
+			requireReconciliationDiagnostics(t, level, diagnostics.String(), secret)
+		})
+	}
+}
+
+func requireReconciliationDiagnostics(t *testing.T, level, diagnostics, secret string) {
+	t.Helper()
+	require.NotContains(t, diagnostics, secret)
+	if level == "info" {
+		require.Empty(t, diagnostics)
+		return
+	}
+	records := strings.Split(strings.TrimSpace(diagnostics), "\n")
+	require.Len(t, records, 6)
+	for i, line := range records {
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		require.Equal(t, "debug", record["level"])
+		require.NotContains(t, record, "kind")
+		if i%3 == 1 {
+			require.Contains(t, record["msg"], "lock unavailable")
+		} else {
+			require.Contains(t, record["msg"], "cleanup ***")
+		}
+	}
+}
+
+func runFollowerReconciliationSequence(t *testing.T, secret string) {
+	t.Helper()
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{})
+	require.NoError(t, err)
+	sequence := []string{
+		"cleanup " + secret,
+		"cleanup " + secret,
+		"lock unavailable",
+		"lock unavailable",
+		"",
+		"cleanup " + secret,
+		"cleanup " + secret,
+	}
+	calls := 0
+	wrapper := failingReconciliationStore{
+		Store: store,
+		reconcile: func(_ context.Context, id string) (*task.State, error) {
+			if calls == len(sequence) {
+				require.NoError(t, tk.Succeed(nil))
+				return store.Get(id)
+			}
+			message := sequence[calls]
+			calls++
+			if message == "" {
+				return store.Get(id)
+			}
+			return nil, errors.New(message)
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	followErr := followTask(
+		ctx,
+		wrapper,
+		followTaskOptions{id: tk.ID(), interval: time.Millisecond, emitJSON: true},
+	)
+	cancel()
+	require.NoError(t, followErr)
+	require.Equal(t, len(sequence), calls)
 }

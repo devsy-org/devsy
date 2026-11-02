@@ -40,8 +40,8 @@ func NewResetPasswordCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 Resets the password of a user.
 
 Example:
-devsy pro user reset-password
-devsy pro user reset-password --user admin
+devsy platform user reset-password
+devsy platform user reset-password --user admin
 #######################################################
 	`
 	c := &cobra.Command{

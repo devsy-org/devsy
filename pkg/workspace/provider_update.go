@@ -95,12 +95,10 @@ func applyProviderUpdate(
 		return fmt.Errorf("find provider %s: %w", providerName, err)
 	}
 	originalSource := originalProvider.Config.Source
-	providerSource := provider2.GetProviderSource(originalSource, originalProvider.Config.Name)
-	sourceBase, _ := provider2.SplitSourceAndTag(providerSource)
-	if sourceBase == "" {
-		return fmt.Errorf("no provider source found %s", providerSource)
+	providerSource, err := sourceAtVersion(originalProvider, newVersion)
+	if err != nil {
+		return err
 	}
-	providerSource = sourceBase + "@" + newVersion
 
 	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, providerName)
 	if err != nil {
@@ -116,24 +114,24 @@ func applyProviderUpdate(
 		return err
 	}
 
-	// Another command may have updated the provider while this one waited on
-	// the lock; never replace an equal or newer version with this one, and
-	// never undo a source change made in the meantime.
-	currentProvider, err := FindProvider(devsyConfig, providerName)
+	reason, err := currentSkipReason(devsyConfig, providerName, originalSource, newVersion)
 	if err != nil {
-		return fmt.Errorf("find provider %s: %w", providerName, err)
+		return err
 	}
-	if reason := providerUpdateSkipReason(
-		originalSource,
-		currentProvider.Config.Source,
-		currentProvider.Config.Version,
-		newVersion,
-	); reason != "" {
+	if reason != "" {
 		log.Infof("%s, skipping update: provider=%s", reason, providerName)
 		return nil
 	}
 
-	_, err = UpdateProvider(ctx, devsyConfig, providerName, providerSource)
+	return replaceProviderSource(ctx, devsyConfig, providerName, providerSource)
+}
+
+func replaceProviderSource(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerName, providerSource string,
+) error {
+	_, err := UpdateProvider(ctx, devsyConfig, providerName, providerSource)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", providerName, err)
 	}
@@ -142,11 +140,33 @@ func applyProviderUpdate(
 	return nil
 }
 
+// currentSkipReason re-reads the provider after the lock is taken. Another
+// command may have updated it while this one waited. Never replace an equal or
+// newer version with this one, and never undo a source change made in the meantime.
+func currentSkipReason(
+	devsyConfig *config.Config,
+	providerName string,
+	originalSource provider2.ProviderSource,
+	newVersion string,
+) (string, error) {
+	currentProvider, err := FindProvider(devsyConfig, providerName)
+	if err != nil {
+		return "", fmt.Errorf("find provider %s: %w", providerName, err)
+	}
+
+	return providerUpdateSkipReason(
+		originalSource,
+		currentProvider.Config.Source,
+		currentProvider.Config.Version,
+		newVersion,
+	), nil
+}
+
 func providerUpdateSkipReason(
 	originalSource, currentSource provider2.ProviderSource,
 	currentVersion, newVersion string,
 ) string {
-	if originalSource != currentSource {
+	if !sameProviderSource(originalSource, currentSource) {
 		return "provider source changed"
 	}
 	newV, newErr := semver.Parse(strings.TrimPrefix(newVersion, "v"))
@@ -155,6 +175,15 @@ func providerUpdateSkipReason(
 		return "provider already up to date"
 	}
 	return ""
+}
+
+// sameProviderSource compares the user-chosen source identity. The resolved
+// release provenance only records which snapshot was installed, so an update
+// to a newer snapshot of the same source is not a source change.
+func sameProviderSource(a, b provider2.ProviderSource) bool {
+	a.ResolvedRef, a.ResolvedManifestURL = "", ""
+	b.ResolvedRef, b.ResolvedManifestURL = "", ""
+	return a == b
 }
 
 // GetProInstance returns the ProInstance associated with the given provider name, or nil if not found.
@@ -180,4 +209,14 @@ func GetProInstance(
 // shouldSkipProviderUpdate returns true if the provider update check should be skipped.
 func shouldSkipProviderUpdate(isDevVersion, isInternal bool) bool {
 	return isDevVersion || isInternal
+}
+
+// sourceAtVersion returns the provider source pinned to newVersion.
+func sourceAtVersion(p *ProviderWithOptions, newVersion string) (string, error) {
+	providerSource := provider2.GetProviderSource(p.Config.Source, p.Config.Name)
+	sourceBase, _ := provider2.SplitSourceAndTag(providerSource)
+	if sourceBase == "" {
+		return "", fmt.Errorf("no provider source found %s", providerSource)
+	}
+	return sourceBase + "@" + newVersion, nil
 }

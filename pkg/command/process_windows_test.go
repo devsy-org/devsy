@@ -735,3 +735,75 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 		t.Fatalf("KillTreeAfterWorkerExit after natural tree cleanup: %v", err)
 	}
 }
+
+func TestJobNameForMissingNestedHomeUsesCanonicalAncestor(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "parent")
+	home := filepath.Join(parent, "home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvHome, home)
+	before, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(home); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(parent); err != nil {
+		t.Fatal(err)
+	}
+	after, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Fatalf("deleted nested home changed job identity: %q != %q", before, after)
+	}
+}
+
+func TestJobNameForDeletedHomePreservesShortParentAlias(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "long parent directory for short alias")
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	parentPtr, err := windows.UTF16PtrFromString(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]uint16, 32768)
+	length, err := windows.GetShortPathName(parentPtr, &buffer[0], uint32(len(buffer)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if length >= uint32(len(buffer)) {
+		t.Fatal("short parent path exceeds buffer")
+	}
+	shortParent := windows.UTF16ToString(buffer[:length])
+	if strings.EqualFold(parent, shortParent) {
+		t.Skip("filesystem does not provide an 8.3 alias")
+	}
+	home := filepath.Join(shortParent, "home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvHome, home)
+	before, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(home); err != nil {
+		t.Fatal(err)
+	}
+	after, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Fatalf(
+			"deleted home with short parent alias changed job identity: %q != %q",
+			before,
+			after,
+		)
+	}
+}

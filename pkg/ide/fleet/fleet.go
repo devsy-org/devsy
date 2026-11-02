@@ -29,6 +29,9 @@ const (
 	DownloadArm64Option = "DOWNLOAD_ARM64"
 )
 
+const fleetDownloadBase = "https://download.jetbrains.com/product?" +
+	"code=FLL&release.type=preview&release.type=eap&platform="
+
 var fleetVersionRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 var Options = ide.Options{
@@ -40,12 +43,12 @@ var Options = ide.Options{
 	DownloadArm64Option: {
 		Name:        DownloadArm64Option,
 		Description: "The download url for the arm64 install script",
-		Default:     "https://download.jetbrains.com/product?code=FLL&release.type=preview&release.type=eap&platform=linux_aarch64",
+		Default:     fleetDownloadBase + "linux_aarch64",
 	},
 	DownloadAmd64Option: {
 		Name:        DownloadAmd64Option,
 		Description: "The download url for the amd64 install script",
-		Default:     "https://download.jetbrains.com/product?code=FLL&release.type=preview&release.type=eap&platform=linux_x64",
+		Default:     fleetDownloadBase + "linux_x64",
 	},
 }
 

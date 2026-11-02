@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
 const (
@@ -44,7 +47,11 @@ func (d *dockerDriver) CommandDevContainer(
 		return err
 	}
 
-	if err := d.ensureContainerRunning(ctx, container); err != nil {
+	if params.RequireRunning {
+		if container.State.Status != config.ContainerStatusRunning {
+			return fmt.Errorf("%w: container is %q", driver.ErrNotRunning, container.State.Status)
+		}
+	} else if err := d.ensureContainerRunning(ctx, container); err != nil {
 		return err
 	}
 
@@ -63,6 +70,9 @@ func (d *dockerDriver) CommandDevContainer(
 	}
 	return nil
 }
+
+// SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
+func (d *dockerDriver) SupportsRequireRunning() bool { return true }
 
 // ensureContainerRunning checks the container's state and starts it if necessary.
 func (d *dockerDriver) ensureContainerRunning(
@@ -422,7 +432,15 @@ func (d *dockerDriver) startContainer(
 	logHostEnvOnce(ctx, d.Docker)
 	logBindSources(args)
 
-	err := d.Docker.RunWithDir(ctx, dir, args, docker.Streams{Stdout: writer, Stderr: writer})
+	stderr := subprocess.NewBuffer(
+		secrets.NewEnvironmentRedactor(append(os.Environ(), d.Docker.Environment...)),
+	)
+	err := d.Docker.RunWithDir(
+		ctx,
+		dir,
+		args,
+		docker.Streams{Stdout: writer, Stderr: io.MultiWriter(writer, stderr)},
+	)
 	if err != nil {
 		log.Errorf(
 			"docker container failed to start: error=%v, command=%s, args=%s, cwd=%s",
@@ -431,6 +449,9 @@ func (d *dockerDriver) startContainer(
 			strings.Join(args, " "),
 			dir,
 		)
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return fmt.Errorf("failed to start dev container: %w: %s", err, detail)
+		}
 		return fmt.Errorf("failed to start dev container: %w", err)
 	}
 	return nil

@@ -52,13 +52,11 @@ func appendBindSrc(dst []string, spec string) []string {
 	return dst
 }
 
-// logBindSources records host-side resolution of each bind source. A
-// "host=exists" line followed by docker reporting the path missing is the
-// fingerprint of a Docker Desktop file-share cache race.
+// logBindSources records client-side Lstat results, not daemon-side source validation.
 func logBindSources(args []string) {
 	for _, src := range extractBindSources(args) {
 		_, err := os.Lstat(src)
-		log.Debugf("docker bind: src=%s exists=%t", src, err == nil)
+		log.Debugf("docker bind: src=%s client_path_exists=%t", src, err == nil)
 	}
 }
 

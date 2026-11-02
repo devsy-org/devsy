@@ -20,6 +20,7 @@ func waitForPodCount(
 ) *framework.PodList {
 	list := &framework.PodList{}
 	gomega.Eventually(func() int {
+		//nolint:gosec // e2e harness command by design
 		cmd := exec.CommandContext(
 			ctx,
 			"kubectl",

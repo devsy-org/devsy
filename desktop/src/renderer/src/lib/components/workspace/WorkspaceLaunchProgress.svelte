@@ -17,6 +17,7 @@ interface Props {
   running: boolean
   error?: string
   confirmationState: LaunchConfirmationState
+  logError?: string
   refreshError?: string
   refreshRetrying?: boolean
   onRetryStatus?: () => void
@@ -24,6 +25,8 @@ interface Props {
   logsAvailable: boolean
   logsOpen: boolean
   onToggleLogs: () => void
+  /** Set when the run recorded retained output, even for successful hooks. */
+  onViewOutput?: () => void
 }
 
 let {
@@ -34,6 +37,7 @@ let {
   running,
   error,
   confirmationState,
+  logError,
   refreshError,
   refreshRetrying = false,
   onRetryStatus,
@@ -41,6 +45,7 @@ let {
   logsAvailable,
   logsOpen,
   onToggleLogs,
+  onViewOutput,
 }: Props = $props()
 
 const visibleOperations = $derived(topLevelLaunchOperations(timeline))
@@ -117,10 +122,12 @@ function elapsed(value: number): string {
     </div>
   </header>
 
-  {#if confirmationState === "stale"}
+  {#if logError}
+    <p role="status" class="text-sm font-medium text-amber-700 dark:text-amber-400">{logError}</p>
+  {/if}
+  {#if confirmationState === "stale" && refreshError}
     <div class="space-y-2" role="status" aria-live="polite">
       <p class="text-sm font-medium text-amber-700 dark:text-amber-400">Status may be out of date</p>
-      {#if refreshError}
         <Button
           variant="outline"
           size="sm"
@@ -129,7 +136,6 @@ function elapsed(value: number): string {
         >
           {refreshRetrying ? "Retrying status…" : "Retry status"}
         </Button>
-      {/if}
     </div>
   {/if}
 
@@ -172,6 +178,14 @@ function elapsed(value: number): string {
                   <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{duration(operation.durationMs)}</span>
                 {/if}
               </div>
+              {#if onViewOutput && operation.phase === "running_lifecycle_hook" && operation.state !== "running"}
+                <button
+                  type="button"
+                  class="mt-1 text-xs text-primary underline-offset-2 hover:underline"
+                  aria-label="View output for {humanPhase(operation.phase) ?? operation.phase}"
+                  onclick={onViewOutput}
+                >View output</button>
+              {/if}
               {#if presentation.descendants.length}
                 <div class="mt-2 space-y-1.5 border-l border-border pl-3">
                   {#each presentation.descendants as descendant (descendant.operation.key)}
@@ -209,6 +223,13 @@ function elapsed(value: number): string {
 
   {#if error && !visibleFailure && visibleOperations.length > 0}
     <p class="break-words text-sm text-destructive" aria-live="assertive">{error}</p>
+  {/if}
+
+  {#if onViewOutput}
+    <Button variant="ghost" size="sm" class="-ml-2 text-muted-foreground" onclick={onViewOutput}>
+      <Terminal class="h-4 w-4" aria-hidden="true" />
+      View setup output
+    </Button>
   {/if}
 
   {#if logsAvailable}

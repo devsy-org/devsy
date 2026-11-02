@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"gotest.tools/assert"
@@ -128,4 +129,85 @@ func TestInspectionReadDevContainerConfig_DevContainerID(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, pathFound, ".devcontainer/my-profile/devcontainer.json")
 	assert.Assert(t, len(data) > 0)
+}
+
+const inspectTestRepository = "https://github.com/devsy-org/devsy.git"
+
+func useDefaultRunner(t *testing.T, runner Runner) {
+	t.Helper()
+	previous := defaultRunner
+	defaultRunner = runner
+	t.Cleanup(func() { defaultRunner = previous })
+}
+
+func isolateInspectTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMP", dir)
+	t.Setenv("TEMP", dir)
+	return dir
+}
+
+func tempEntryCount(t *testing.T, dir string) int {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	assert.NilError(t, err)
+	return len(entries)
+}
+
+func TestInspectRemoteRemovesTempCloneOnSetupFailure(t *testing.T) {
+	tests := []struct {
+		name     string
+		info     GitInfo
+		stdout   []byte
+		errUntil int
+	}{
+		{
+			name:     "clone fails",
+			info:     GitInfo{Repository: inspectTestRepository},
+			errUntil: 1,
+		},
+		{
+			name: "pull request reference invalid",
+			info: GitInfo{Repository: inspectTestRepository, PR: "not-a-pr"},
+		},
+		{
+			name: "commit sha empty",
+			info: GitInfo{Repository: inspectTestRepository},
+		},
+		{
+			name:   "subpath escapes repository",
+			info:   GitInfo{Repository: inspectTestRepository, SubPath: "../escape"},
+			stdout: []byte("abc123\n"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := isolateInspectTempDir(t)
+			useDefaultRunner(t, &fakeRunner{stdout: tt.stdout, errUntil: tt.errUntil})
+
+			inspection, err := InspectRemote(context.Background(), &tt.info, nil)
+			assert.Assert(t, err != nil)
+			assert.Assert(t, inspection == nil)
+			assert.Equal(t, tempEntryCount(t, tempDir), 0)
+		})
+	}
+}
+
+func TestInspectRemoteKeepsTempCloneUntilClose(t *testing.T) {
+	tempDir := isolateInspectTempDir(t)
+	useDefaultRunner(t, &fakeRunner{stdout: []byte("abc123\n")})
+
+	inspection, err := InspectRemote(
+		context.Background(),
+		&GitInfo{Repository: inspectTestRepository, SubPath: testSubPath},
+		nil,
+	)
+	assert.NilError(t, err)
+	assert.Equal(t, inspection.Revision(), "abc123")
+	assert.Equal(t, tempEntryCount(t, tempDir), 1)
+
+	assert.NilError(t, inspection.Close())
+	assert.Equal(t, tempEntryCount(t, tempDir), 0)
 }

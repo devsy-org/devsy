@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/ci"
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
+	"github.com/devsy-org/devsy/cmd/container"
 	"github.com/devsy-org/devsy/cmd/context"
 	"github.com/devsy-org/devsy/cmd/dependency"
 	envcmd "github.com/devsy-org/devsy/cmd/env"
@@ -326,29 +327,38 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 		}
 		return
 	}
+	writeCLIErrorText(cliErr)
+}
+
+func writeCLIErrorText(cliErr *clierr.CLIError) {
 	redactor := secrets.NewEnvironmentRedactor(os.Environ())
 	fmt.Fprintf(os.Stderr, "Error: %s\n", redactor.Redact(cliErr.Message))
 	if cliErr.Code != "" && cliErr.Code != clierr.CodeUnknown {
 		fmt.Fprintf(os.Stderr, "Error code: %s\n", redactor.Redact(string(cliErr.Code)))
 	}
-	if len(cliErr.Context) > 0 {
-		fmt.Fprintln(os.Stderr, "Context:")
-		keys := make([]string, 0, len(cliErr.Context))
-		for key := range cliErr.Context {
-			keys = append(keys, key)
-		}
-		slices.Sort(keys)
-		for _, key := range keys {
-			fmt.Fprintf(
-				os.Stderr,
-				"  %s: %s\n",
-				redactor.Redact(key),
-				redactor.Redact(cliErr.Context[key]),
-			)
-		}
-	}
+	writeCLIErrorContext(cliErr.Context, redactor)
 	if cliErr.Hint != "" {
 		fmt.Fprintf(os.Stderr, "Try: %s\n", redactor.Redact(cliErr.Hint))
+	}
+}
+
+func writeCLIErrorContext(errContext map[string]string, redactor *secrets.Redactor) {
+	if len(errContext) == 0 {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "Context:")
+	keys := make([]string, 0, len(errContext))
+	for key := range errContext {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		fmt.Fprintf(
+			os.Stderr,
+			"  %s: %s\n",
+			redactor.Redact(key),
+			redactor.Redact(errContext[key]),
+		)
 	}
 }
 
@@ -470,6 +480,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	rootCmd.AddCommand(
 		ci.NewCICmd(globalFlags),
 		cliconfig.NewConfigCmd(globalFlags),
+		container.NewContainerCmd(globalFlags, rootCmd.PersistentPreRunE),
 		context.NewContextCmd(globalFlags),
 		dependency.NewDependencyCmd(globalFlags),
 		envcmd.NewEnvCmd(globalFlags),
@@ -489,3 +500,4 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		rootCmd.AddCommand(pro.NewPlatformCmd(globalFlags))
 	}
 }
+

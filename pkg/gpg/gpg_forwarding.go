@@ -192,6 +192,7 @@ func (g *GPGConf) SetupRemoteSocketLink(ctx context.Context) error {
 		if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
 			return err
 		}
+		//nolint:gosec // path is inside the GPG forwarding directory
 		_ = os.Remove(link)
 		if err := os.Symlink(g.SocketPath, link); err != nil {
 			return err

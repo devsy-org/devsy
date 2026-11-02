@@ -89,26 +89,11 @@ func PushBlobStreaming(
 		return "", 0, fmt.Errorf("parse repository %q: %w", repository, err)
 	}
 
-	f, err := os.CreateTemp("", "devsy-snapshot-blob-*")
-	if err != nil {
-		return "", 0, fmt.Errorf("create temp file for blob spool: %w", err)
-	}
-	path := f.Name()
-	defer func() { _ = os.Remove(path) }()
-
-	size, err := io.Copy(f, r)
-	closeErr := f.Close()
-	if err != nil {
-		return "", 0, fmt.Errorf("spool blob to temp file: %w", err)
-	}
-	if closeErr != nil {
-		return "", 0, fmt.Errorf("close spooled blob temp file: %w", closeErr)
-	}
-
-	digest, err := digestOfFile(path)
+	blob, err := spoolBlob(r)
 	if err != nil {
 		return "", 0, err
 	}
+	defer blob.remove()
 
 	opts, err := remoteOptions(ctx)
 	if err != nil {
@@ -116,10 +101,10 @@ func PushBlobStreaming(
 	}
 
 	layer := &fileLayer{
-		path:      path,
+		path:      blob.path,
 		mediaType: types.MediaType(mediaType),
-		digest:    digest,
-		size:      size,
+		digest:    blob.digest,
+		size:      blob.size,
 	}
 	if err := remote.WriteLayer(repo, layer, opts...); err != nil {
 		return "", 0, fmt.Errorf(
@@ -128,7 +113,7 @@ func PushBlobStreaming(
 			image.SanitizeRegistryError(err),
 		)
 	}
-	return digest.String(), size, nil
+	return blob.digest.String(), blob.size, nil
 }
 
 func digestOfFile(path string) (v1.Hash, error) {
@@ -143,6 +128,56 @@ func digestOfFile(path string) (v1.Hash, error) {
 		return v1.Hash{}, fmt.Errorf("compute spooled blob digest: %w", err)
 	}
 	return digest, nil
+}
+
+// spooledBlob is a blob staged in a temp file. The holder owns path and must
+// call remove once the blob is no longer needed.
+type spooledBlob struct {
+	path   string
+	digest v1.Hash
+	size   int64
+}
+
+func (b spooledBlob) remove() {
+	_ = os.Remove(b.path)
+}
+
+func spoolBlob(r io.Reader) (spooledBlob, error) {
+	f, err := os.CreateTemp("", "devsy-snapshot-blob-*")
+	if err != nil {
+		return spooledBlob{}, fmt.Errorf("create temp file for blob spool: %w", err)
+	}
+	blob := spooledBlob{path: f.Name()}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			// Close before remove: Windows cannot delete an open file. Also runs on panic or runtime.Goexit from r.
+			_ = f.Close()
+			blob.remove()
+		}
+	}()
+
+	blob.size, err = copyToSpool(f, r)
+	if err == nil {
+		blob.digest, err = digestOfFile(blob.path)
+	}
+	if err != nil {
+		return spooledBlob{}, err
+	}
+	handedOff = true
+	return blob, nil
+}
+
+func copyToSpool(f *os.File, r io.Reader) (int64, error) {
+	size, err := io.Copy(f, r)
+	closeErr := f.Close()
+	if err != nil {
+		return 0, fmt.Errorf("spool blob to temp file: %w", err)
+	}
+	if closeErr != nil {
+		return 0, fmt.Errorf("close spooled blob temp file: %w", closeErr)
+	}
+	return size, nil
 }
 
 // fileLayer is a v1.Layer backed by a file on disk holding the blob's exact

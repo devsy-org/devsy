@@ -19,6 +19,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	devsy = "devsy"
+)
+
 func TestExitCodeForError_WorkspaceNotFound(t *testing.T) {
 	err := fmt.Errorf("get workspace: %w", workspace.ErrWorkspaceNotFound)
 	assert.Equal(t, exitcode.Retryable, exitCodeForError(err, true))
@@ -211,7 +215,7 @@ func TestConfigureOutput_SilencesCobra(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(config.EnvUI, "")
 			rootCmd, globalFlags := BuildRoot()
-			os.Args = append([]string{"devsy"}, tc.args...)
+			os.Args = append([]string{devsy}, tc.args...)
 			machineMode := configureOutput(rootCmd, globalFlags, tc.isInternal)
 			assert.Equal(t, tc.wantSilent, machineMode)
 			assert.True(t, rootCmd.SilenceErrors)
@@ -237,7 +241,7 @@ func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rootCmd, globalFlags := BuildRoot()
 			globalFlags.Verbosity = 1
-			os.Args = []string{"devsy", flagLogOutput, tc.flag}
+			os.Args = []string{devsy, flagLogOutput, tc.flag}
 			configureOutput(rootCmd, globalFlags, false)
 
 			var sink bytes.Buffer
@@ -295,7 +299,7 @@ func TestConfigureOutput_DefaultMachineModeUsesJSONLogs(t *testing.T) {
 	t.Cleanup(func() { os.Args = originalArgs })
 	rootCmd, globalFlags := BuildRoot()
 	globalFlags.Verbosity = 1
-	os.Args = []string{"devsy", internalCommand}
+	os.Args = []string{devsy, internalCommand}
 	assert.True(t, configureOutput(rootCmd, globalFlags, true))
 
 	var sink bytes.Buffer

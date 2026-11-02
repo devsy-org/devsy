@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
 )
@@ -48,6 +50,9 @@ func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStart
 	if opts.BinarySource == nil {
 		return fmt.Errorf("binary source is required for local docker delivery")
 	}
+	if err := rejectAgentMountConflicts(opts.RunOptions); err != nil {
+		return err
+	}
 
 	volumeName := volumePrefix + opts.WorkspaceID
 
@@ -72,6 +77,24 @@ func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStart
 	opts.RunOptions.Env[pkgconfig.EnvAgentPath] = volumeMountPath + "/" + binaryName()
 
 	return nil
+}
+
+func rejectAgentMountConflicts(run *driver.RunOptions) error {
+	if mount := run.WorkspaceMount; mount != nil && isAgentMountTarget(mount.Target) {
+		return fmt.Errorf("agent mount target %s is already in use", volumeMountPath)
+	}
+	for _, mount := range run.Mounts {
+		if mount != nil && isAgentMountTarget(mount.Target) {
+			return fmt.Errorf("agent mount target %s is already in use", volumeMountPath)
+		}
+	}
+
+	return nil
+}
+
+func isAgentMountTarget(target string) bool {
+	cleaned := path.Clean(target)
+	return cleaned == volumeMountPath || strings.HasPrefix(cleaned, volumeMountPath+"/")
 }
 
 func (d *LocalDockerDelivery) DeliverPostStart(_ context.Context, _ PostStartOptions) error {

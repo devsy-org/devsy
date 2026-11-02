@@ -1,17 +1,24 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -556,4 +563,86 @@ func TestIsTerminalOrContextError(t *testing.T) {
 	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", docker.ErrContainerTerminal)))
 	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", context.Canceled)))
 	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", context.DeadlineExceeded)))
+}
+
+func TestStartContainerPreservesEngineError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell")
+	}
+	source := filepath.Join(t.TempDir(), "missing.sock")
+	bin := filepath.Join(t.TempDir(), "engine")
+	require.NoError(t, os.WriteFile(bin, []byte(`#!/bin/sh
+if [ "$1" = run ]; then
+ printf '%s\n' "bind source path does not exist: $2" "$ENGINE_TOKEN" >&2
+ exit 17
+fi
+`), 0o600))
+	// #nosec G302 -- only the test owner can execute this temporary fake engine.
+	require.NoError(t, os.Chmod(bin, 0o700))
+	d := &dockerDriver{
+		Docker: &docker.DockerHelper{
+			DockerCommand: bin,
+			Environment:   []string{"ENGINE_TOKEN=private-engine-token"},
+		},
+	}
+	var streamed engineOutputBuffer
+	err := d.startContainer(
+		context.Background(),
+		t.TempDir(),
+		[]string{testRunArg, source},
+		&streamed,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to start dev container")
+	assert.Contains(t, err.Error(), "bind source path does not exist: "+source)
+	assert.NotContains(t, err.Error(), "private-engine-token")
+	assert.Contains(t, streamed.String(), "bind source path does not exist: "+source)
+	var exitErr *exec.ExitError
+	require.True(t, errors.As(err, &exitErr))
+	assert.Equal(t, 17, exitErr.ExitCode())
+}
+
+func TestStartContainerBoundsEngineError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell")
+	}
+	bin := filepath.Join(t.TempDir(), "engine")
+	require.NoError(t, os.WriteFile(bin, []byte(`#!/bin/sh
+if [ "$1" = run ]; then
+ i=0
+ while [ "$i" -lt 2048 ]; do
+ printf '%s' "`+strings.Repeat("x", 1024)+`" >&2
+ i=$((i + 1))
+ done
+ printf '%s' tail-marker >&2
+ exit 1
+fi
+`), 0o600))
+	// #nosec G302 -- only the test owner can execute this temporary fake engine.
+	require.NoError(t, os.Chmod(bin, 0o700))
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	var streamed engineOutputBuffer
+	err := d.startContainer(context.Background(), t.TempDir(), []string{testRunArg}, &streamed)
+	require.Error(t, err)
+	assert.Len(t, streamed.String(), 2048*1024+len("tail-marker"))
+	assert.True(t, strings.HasSuffix(err.Error(), "tail-marker"))
+	assert.LessOrEqual(t, len(err.Error()), subprocess.MaxCapturedBytes+100)
+	assert.Contains(t, err.Error(), strings.Repeat("x", 100))
+}
+
+type engineOutputBuffer struct {
+	mu   sync.Mutex
+	data bytes.Buffer
+}
+
+func (b *engineOutputBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.Write(p)
+}
+
+func (b *engineOutputBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.String()
 }

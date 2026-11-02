@@ -72,6 +72,11 @@ const PRESETS: ProviderPreset[] = [
     description: "Kubernetes clusters",
     category: "Remote",
   },
+  {
+    name: "harvester",
+    description: "Harvester HCI clusters",
+    category: "Remote",
+  },
   { name: "aws", description: "Amazon Web Services", category: "Cloud" },
   { name: "gcloud", description: "Google Cloud Platform", category: "Cloud" },
   { name: "azure", description: "Microsoft Azure", category: "Cloud" },
@@ -137,6 +142,11 @@ let availableProvidersError = $state("")
 
 // Step 2 state
 let providerName = $state("")
+// Undefined until the provider's manifest is installed, so setup shows the
+// bundled fallback first and the provider's own icon afterwards.
+let installedProvider = $derived(
+  $providers.find((p) => p.name === providerName),
+)
 let options = $state<Record<string, ProviderOption>>({})
 let optionValues = $state<Record<string, string>>({})
 let editedOptionKeys = $state<Record<string, true>>({})
@@ -758,19 +768,28 @@ function handleDone() {
 
       {:else if currentStep === "initialize"}
         <div class="space-y-4">
-          <div>
-            <h2 class="text-lg font-semibold">Initializing {providerName}</h2>
-            <p class="text-sm text-muted-foreground">
-              {#if initRunning}
-                Running provider initialization...
-              {:else if initError}
-                Initialization encountered an issue.
-              {:else if initSucceeded}
-                Initialization complete.
-              {:else}
-                Initialization has not completed.
-              {/if}
-            </p>
+          <div class="flex items-center gap-3">
+            <ProviderIcon
+              name={providerName}
+              icon={installedProvider?.icon}
+              iconDark={installedProvider?.iconDark}
+              iconRevision={installedProvider?.iconRevision}
+              class="size-8 shrink-0"
+            />
+            <div>
+              <h2 class="text-lg font-semibold">Initializing {providerName}</h2>
+              <p class="text-sm text-muted-foreground">
+                {#if initRunning}
+                  Running provider initialization...
+                {:else if initError}
+                  Initialization encountered an issue.
+                {:else if initSucceeded}
+                  Initialization complete.
+                {:else}
+                  Initialization has not completed.
+                {/if}
+              </p>
+            </div>
           </div>
 
           {#if initStartError}
@@ -824,11 +843,17 @@ function handleDone() {
           </div>
 
           <div class="flex items-center gap-3 rounded-lg border p-4">
-            <ProviderIcon name={providerName} class="size-10" />
+            <ProviderIcon
+              name={providerName}
+              icon={installedProvider?.icon}
+              iconDark={installedProvider?.iconDark}
+              iconRevision={installedProvider?.iconRevision}
+              class="size-10"
+            />
             <div>
               <div class="font-medium">{providerName}</div>
               <div class="text-sm text-muted-foreground">
-                {get(providers).find((p) => p.name === providerName)?.state?.initialized
+                {installedProvider?.state?.initialized
                   ? "Initialized"
                   : "Not initialized"}
               </div>

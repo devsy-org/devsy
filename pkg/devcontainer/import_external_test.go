@@ -94,7 +94,7 @@ func TestImportExternalDevContainer_BareFile(t *testing.T) {
 	cfg, err := r.importExternalDevContainer(filepath.Join(external, "devcontainer.json"))
 	require.NoError(t, err)
 	assert.FileExists(t, filepath.Join(importedProfilePath(ws), "devcontainer.json"))
-	assert.Equal(t, "alpine", cfg.Image)
+	assert.Equal(t, alpine, cfg.Image)
 }
 
 func TestImportExternalDevContainer_WritesMarker(t *testing.T) {
@@ -122,7 +122,7 @@ func TestImportExternalDevContainer_CollisionGetsSuffix(t *testing.T) {
 	cfg, err := r.importExternalDevContainer(filepath.Join(external, "devcontainer.json"))
 	require.NoError(t, err)
 
-	assert.Equal(t, "alpine", cfg.Image)
+	assert.Equal(t, alpine, cfg.Image)
 	base := filepath.Base(filepath.Dir(cfg.Origin))
 	assert.True(t, strings.HasPrefix(base, importedProfileName+"_"),
 		"expected a suffixed dir, got %q", base)
@@ -165,7 +165,7 @@ func TestSaveSynthesizedConfig_AddsGitExclude(t *testing.T) {
 	r := &runner{localWorkspaceFolder: ws}
 
 	_, err := r.saveSynthesizedConfig(&config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine"},
+		ImageContainer: config.ImageContainer{Image: alpine},
 	})
 	require.NoError(t, err)
 

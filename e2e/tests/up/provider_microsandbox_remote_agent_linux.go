@@ -94,9 +94,7 @@ var _ = ginkgo.Describe("published MicroSandbox provider remote agent binaries",
 				)
 				server := startRemoteAgentArtifactServer(runtimeBytes, agentPath)
 				ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
-					closeCtx, cancel := context.WithTimeout(
-						context.WithoutCancel(cleanupCtx), 10*time.Second,
-					)
+					closeCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, 10*time.Second)
 					defer cancel()
 					return server.close(closeCtx)
 				})
@@ -122,8 +120,9 @@ var _ = ginkgo.Describe("published MicroSandbox provider remote agent binaries",
 
 				workspace := session.newWorkspace()
 				ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
-					boundedCtx, cancel := context.WithTimeout(
-						context.WithoutCancel(cleanupCtx), 20*time.Second,
+					boundedCtx, cancel := framework.DetachedCleanupContext(
+						cleanupCtx,
+						20*time.Second,
 					)
 					defer cancel()
 					return removeRemoteAgentContainer(boundedCtx, containerName)

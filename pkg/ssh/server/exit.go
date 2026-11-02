@@ -11,8 +11,7 @@ import (
 
 func exitWithError(sess ssh.Session, err error) {
 	if err != nil {
-		var exitError *exec.ExitError
-		if !errors.As(err, &exitError) {
+		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			log.Errorf("Exit error: %v", err)
 			msg := strings.TrimPrefix(err.Error(), "exec: ")
 			if _, err := sess.Stderr().Write([]byte(msg)); err != nil {
@@ -33,8 +32,8 @@ func exitCode(err error) int {
 		return 0
 	}
 
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok {
 		return 1
 	}
 

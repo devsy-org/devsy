@@ -2,14 +2,21 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"sort"
+	"strings"
+	"time"
 
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 // DockerExecSubcommand is the docker subcommand used to exec into a container.
@@ -56,6 +63,23 @@ type LifecycleExecParams struct {
 	EnvArgs     []string
 	Workdir     string
 	User        string
+	// Recorder optionally retains each command's output and outcome. Nil
+	// records nothing.
+	Recorder *workspacelogs.Recorder
+	// HookIndex is the merged-config position of the hook being run.
+	HookIndex int
+}
+
+// EnvArgsRedactor masks sensitive values passed to docker exec as -e entries.
+func EnvArgsRedactor(envArgs []string) *secrets.Redactor {
+	entries := make([]string, 0, len(envArgs)/2)
+	for _, arg := range envArgs {
+		if arg != "-e" {
+			entries = append(entries, arg)
+		}
+	}
+
+	return secrets.NewEnvironmentRedactor(entries)
 }
 
 // ExecLifecycleHook runs a single devcontainer lifecycle hook against a container.
@@ -77,16 +101,116 @@ func ExecLifecycleHook(params *LifecycleExecParams, name string, hook types.Life
 			WorkspaceFolder: params.Workdir,
 			Command:         command,
 		})
-		if err := params.Helper.Run(params.Ctx, args, docker.Streams{
+		rec := newLifecycleRecording(params, name, key)
+		started := time.Now()
+		err := params.Helper.Run(params.Ctx, args, docker.Streams{
 			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-		}); err != nil {
-			return fmt.Errorf("command %q failed: %w", key, err)
+			Stdout: rec.tee(os.Stdout, workspacelogs.StreamStdout),
+			Stderr: rec.tee(os.Stderr, workspacelogs.StreamStderr),
+		})
+		rec.finish(params.Ctx, time.Since(started), err)
+		if err != nil {
+			return fmt.Errorf("command %q failed%s: %w", key, rec.hint(), err)
 		}
 	}
 
 	return nil
+}
+
+// lifecycleRecording retains one command's output and outcome. A nil value
+// records nothing and passes streams through untouched.
+type lifecycleRecording struct {
+	rec            *workspacelogs.Recorder
+	inv            workspacelogs.Invocation
+	stdout, stderr io.WriteCloser
+}
+
+func newLifecycleRecording(params *LifecycleExecParams, hook, key string) *lifecycleRecording {
+	if params.Recorder == nil {
+		return nil
+	}
+	id := workspacelogs.NewID()
+	index := params.HookIndex
+	r := &lifecycleRecording{
+		rec: params.Recorder,
+		inv: workspacelogs.Invocation{
+			ID: id, Phase: "lifecycle", Hook: hook, Index: &index, Key: key,
+		},
+		stdout: params.Recorder.Writer(id, workspacelogs.StreamStdout),
+		stderr: params.Recorder.Writer(id, workspacelogs.StreamStderr),
+	}
+	r.record(workspacelogs.InvocationRunning, "")
+
+	return r
+}
+
+// tee keeps dst as the only functional destination when nothing is recorded.
+func (r *lifecycleRecording) tee(dst io.Writer, stream workspacelogs.Stream) io.Writer {
+	if r == nil {
+		return dst
+	}
+	if stream == workspacelogs.StreamStderr {
+		return io.MultiWriter(dst, r.stderr)
+	}
+
+	return io.MultiWriter(dst, r.stdout)
+}
+
+func (r *lifecycleRecording) record(state workspacelogs.InvocationState, reason string) {
+	inv := r.inv
+	inv.State = state
+	inv.Reason = reason
+	r.rec.Invocation(inv)
+}
+
+// finish flushes output, then records the terminal state.
+func (r *lifecycleRecording) finish(ctx context.Context, elapsed time.Duration, runErr error) {
+	if r == nil {
+		return
+	}
+	_ = r.stdout.Close()
+	_ = r.stderr.Close()
+	inv := r.inv
+	inv.Duration = elapsed
+	inv.State, inv.Reason = lifecycleOutcome(ctx, runErr)
+	if exitErr, ok := errors.AsType[*exec.ExitError](runErr); ok {
+		if sig, isSig := strings.CutPrefix(exitErr.String(), "signal: "); isSig {
+			inv.Signal = sig
+		} else {
+			code := exitErr.ExitCode()
+			inv.ExitCode = &code
+		}
+	} else if runErr == nil {
+		code := 0
+		inv.ExitCode = &code
+	}
+	r.rec.Invocation(inv)
+}
+
+func lifecycleOutcome(ctx context.Context, runErr error) (workspacelogs.InvocationState, string) {
+	switch {
+	case runErr == nil:
+		return workspacelogs.InvocationSucceeded, ""
+	case ctx != nil && ctx.Err() != nil:
+		return workspacelogs.InvocationCanceled, ""
+	}
+	if _, ok := errors.AsType[*exec.ExitError](runErr); !ok {
+		return workspacelogs.InvocationFailed, "start_failed"
+	}
+
+	return workspacelogs.InvocationFailed, ""
+}
+
+// hint points at retained output, or is empty when no run is recorded.
+func (r *lifecycleRecording) hint() string {
+	if r == nil || r.rec.RunID() == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		" (full output: devsy workspace logs <workspace> --source setup --run %s --hook %s)",
+		r.rec.RunID(), r.inv.Hook,
+	)
 }
 
 // BuildLifecycleEnvArgs converts a merged config's RemoteEnv into -e KEY=VALUE

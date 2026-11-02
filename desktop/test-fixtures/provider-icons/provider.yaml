@@ -1,0 +1,7 @@
+name: my-docker-fleet
+version: v1.0.0
+description: Minimal provider whose manifest owns its icons
+icon: assets/light.svg
+iconDark: assets/dark.svg
+exec:
+  command: echo

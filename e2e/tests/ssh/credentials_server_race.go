@@ -14,6 +14,7 @@ import (
 const (
 	cmdWorkspace = "workspace"
 	cmdSSH       = "ssh"
+	flagCommand  = "--command"
 )
 
 var _ = ginkgo.Describe(
@@ -64,7 +65,7 @@ var _ = ginkgo.Describe(
 						)
 						defer cancelSSH()
 						_, stderr, sshErr := f.ExecCommandCapture(sshCtx, []string{
-							cmdWorkspace, cmdSSH, tempDir, "--command", "sleep 2",
+							cmdWorkspace, cmdSSH, tempDir, flagCommand, "sleep 2",
 						})
 						stderrs[i] = stderr
 						runErrs[i] = sshErr

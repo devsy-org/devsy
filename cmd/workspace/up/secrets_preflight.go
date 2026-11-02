@@ -43,6 +43,9 @@ func (e *unavailableValuesError) Unwrap() []error { return e.causes }
 // Preflight locally known requirements before workspace resolution can create
 // remote resources. Project SOPS sources remain on the later discovery path.
 func (cmd *UpCmd) preflightLocalValues(cfg *config.Config) error {
+	if err := cmd.preflightWSLgContext(cfg); err != nil {
+		return err
+	}
 	refs, err := cmd.localPreflightRefs(cfg)
 	if err != nil {
 		return err

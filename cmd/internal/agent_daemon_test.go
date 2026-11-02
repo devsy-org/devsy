@@ -9,12 +9,21 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	wsTestValue = "ws-test"
+)
+
+const (
+	wsTest = wsTestValue
 )
 
 const testEcho = "echo"
@@ -37,7 +46,7 @@ func writeWorkspaceConfig(t *testing.T, dir string, shutdown types.StrArray) str
 	t.Helper()
 	require.NoError(t, os.MkdirAll(dir, 0o750))
 
-	info := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: "ws-test"}}
+	info := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: wsTest}}
 	info.Agent.Exec.Shutdown = shutdown
 
 	data, err := json.Marshal(info)
@@ -55,7 +64,7 @@ func TestGetActivity_ShutdownConfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, activity)
 	require.NotNil(t, ws)
-	assert.Equal(t, "ws-test", ws.Workspace.ID)
+	assert.Equal(t, wsTest, ws.Workspace.ID)
 
 	stat, err := os.Stat(cfg)
 	require.NoError(t, err)
@@ -107,7 +116,7 @@ func TestFindLatestActivity_PicksLatest(t *testing.T) {
 }
 
 func workspaceWithShutdownAction(action string) *provider2.AgentWorkspaceInfo {
-	ws := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: "ws-test"}}
+	ws := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: wsTest}}
 	if action != "" {
 		ws.LastDevContainerConfig = &config.DevContainerConfigWithPath{
 			Config: &config.DevContainerConfig{
@@ -134,7 +143,7 @@ func TestEffectiveShutdownAction(t *testing.T) {
 	t.Run("falls back to flag when config action is empty", func(t *testing.T) {
 		cmd := &DaemonCmd{ShutdownAction: config.ShutdownActionNone}
 		ws := &provider2.AgentWorkspaceInfo{
-			Workspace: &provider2.Workspace{ID: "ws-test"},
+			Workspace: &provider2.Workspace{ID: wsTest},
 			LastDevContainerConfig: &config.DevContainerConfigWithPath{
 				Config: &config.DevContainerConfig{},
 			},
@@ -335,8 +344,8 @@ func TestDiagnosticsRetainsErrorHistoryWithoutInventingStartupPatrol(t *testing.
 func TestUpdateDiagnosticsRetainsWorkspaceContextAfterShutdownFailure(t *testing.T) {
 	recorder := &recordingDiagnostics{}
 	cmd := &DaemonCmd{recorder: recorder, startedAt: time.Now().UTC()}
-	workspaces := []machinediagnostics.WorkspaceStatus{{ID: "ws-test"}}
-	candidate := &machinediagnostics.ShutdownCandidate{WorkspaceID: "ws-test"}
+	workspaces := []machinediagnostics.WorkspaceStatus{{ID: wsTest}}
+	candidate := &machinediagnostics.ShutdownCandidate{WorkspaceID: wsTest}
 
 	cmd.updateDiagnostics(diagnosticsUpdate{
 		state:      machinediagnostics.DaemonRunning,
@@ -454,4 +463,50 @@ func TestEvaluateMachineInactivityBlocksDisabledWorkspace(t *testing.T) {
 	require.Len(t, evaluation.statuses, 1)
 	assert.True(t, evaluation.statuses[0].BlocksMachineShutdown)
 	assert.Equal(t, "Auto-stop is not configured", evaluation.statuses[0].BlockerReason)
+}
+
+func TestInitDiagnostics(t *testing.T) {
+	t.Run("publishes a locator for the active recorder", func(t *testing.T) {
+		locatorPath := filepath.Join(t.TempDir(), "locator.json")
+		t.Setenv(machinediagnostics.RuntimeLocatorPathEnv, locatorPath)
+		root := t.TempDir()
+		cmd := &DaemonCmd{DiagnosticsReaderUID: os.Getuid(), DiagnosticsReaderGID: os.Getgid()}
+
+		cmd.initDiagnostics(
+			agentdaemon.StateLocation{Root: root, Layout: agentdaemon.StateLayoutCanonical},
+			locatorPath,
+		)
+		store, ok := cmd.recorder.(*machinediagnostics.Store)
+		require.True(t, ok)
+		t.Cleanup(func() { _ = store.Close() })
+
+		data, err := os.ReadFile(filepath.Clean(locatorPath))
+		require.NoError(t, err)
+		var locator machinediagnostics.Locator
+		require.NoError(t, json.Unmarshal(data, &locator))
+		assert.Equal(t, store.SessionID(), locator.SessionID)
+		assert.Equal(t, machinediagnostics.DiagnosticsDir(root), locator.DiagnosticsDir)
+		assert.Equal(t, string(agentdaemon.StateLayoutCanonical), locator.StateLayout)
+		assert.True(t, cmd.startedAt.Equal(locator.StartedAt))
+	})
+
+	t.Run("falls back to a nop recorder without a locator", func(t *testing.T) {
+		locatorPath := filepath.Join(t.TempDir(), "locator.json")
+		t.Setenv(machinediagnostics.RuntimeLocatorPathEnv, locatorPath)
+		cmd := &DaemonCmd{DiagnosticsReaderUID: os.Getuid(), DiagnosticsReaderGID: os.Getgid()}
+
+		cmd.initDiagnostics(
+			agentdaemon.StateLocation{
+				Root:   "relative-state",
+				Layout: agentdaemon.StateLayoutCanonical,
+			},
+			locatorPath,
+		)
+
+		require.NotNil(t, cmd.recorder)
+		_, isStore := cmd.recorder.(*machinediagnostics.Store)
+		assert.False(t, isStore)
+		_, err := os.Stat(locatorPath)
+		assert.ErrorIs(t, err, os.ErrNotExist)
+	})
 }

@@ -7,6 +7,8 @@ export interface AppSettings {
   trayNotifications: TrayNotificationLevel
   desktopLogLevel: LogLevel
   cliCaptureLogLevel: LogLevel
+  /** The one-time "Add to applications" prompt was shown for an AppImage. */
+  appImageIntegrationPromptDismissed: boolean
   /** Removed after migration; accepted only when reading older settings files. */
   logLevel?: LogLevel
 }

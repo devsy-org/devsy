@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+const (
+	httpLocalhost10800 = "http://localhost:10800"
+)
+
 // spawnSleepHelper starts a long-running child process and registers cleanup
 // that kills + reaps it. Returns the spawned cmd.
 func spawnSleepHelper(t *testing.T) *exec.Cmd {
@@ -188,7 +192,7 @@ func TestLoadLiveTunnelState_LiveMatch(t *testing.T) {
 	want := TunnelState{
 		PID:        pid,
 		CreateTime: ct,
-		TargetURL:  "http://localhost:10800",
+		TargetURL:  httpLocalhost10800,
 		Label:      LabelVSCodeBrowser,
 	}
 	if err := WriteTunnelState("ctx", "ws", want); err != nil {
@@ -228,17 +232,15 @@ func TestTryReuseExistingTunnel_ReturnsRecordedURL(t *testing.T) {
 		t.Fatalf("WriteTunnelState: %v", err)
 	}
 
-	// OpenBrowser=false so the test doesn't spawn an actual browser process.
-	gotURL, ok := tryReuseExistingTunnel(
-		t.Context(),
+	gotState, ok := tryReuseExistingTunnel(
 		"ctx", "ws",
 		browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: false},
 	)
 	if !ok {
 		t.Fatal("expected tryReuseExistingTunnel to reuse live helper")
 	}
-	if gotURL != recordedURL {
-		t.Errorf("reused URL = %q, want %q", gotURL, recordedURL)
+	if gotState.TargetURL != recordedURL {
+		t.Errorf("reused URL = %q, want %q", gotState.TargetURL, recordedURL)
 	}
 }
 
@@ -250,7 +252,7 @@ func TestTryReuseExistingTunnel_DeadHelperReturnsFalse(t *testing.T) {
 	state := TunnelState{
 		PID:        1,
 		CreateTime: 1,
-		TargetURL:  "http://localhost:10800",
+		TargetURL:  httpLocalhost10800,
 		Label:      LabelVSCodeBrowser,
 	}
 	if err := WriteTunnelState("ctx", "ws", state); err != nil {
@@ -261,13 +263,12 @@ func TestTryReuseExistingTunnel_DeadHelperReturnsFalse(t *testing.T) {
 		t.Fatalf("TunnelStateFilePath: %v", err)
 	}
 
-	gotURL, ok := tryReuseExistingTunnel(
-		t.Context(),
+	gotState, ok := tryReuseExistingTunnel(
 		"ctx", "ws",
 		browserIDEInvocation{Label: LabelVSCodeBrowser, OpenBrowser: false},
 	)
 	if ok {
-		t.Errorf("expected reuse=false for non-matching helper, got url=%q", gotURL)
+		t.Errorf("expected reuse=false for non-matching helper, got state=%v", gotState)
 	}
 	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
 		t.Errorf("expected stale state file removed; stat err=%v", err)

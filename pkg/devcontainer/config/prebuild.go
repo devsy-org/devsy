@@ -125,12 +125,15 @@ func readDockerignore(contextDir string, dockerfile string) ([]string, error) {
 
 	dockerignorefilepath := dockerfile + ".dockerignore"
 	if filepath.IsAbs(dockerignorefilepath) {
+		//nolint:gosec // path is a prebuild repository file chosen by the user
 		f, err = os.Open(dockerignorefilepath)
 	} else {
+		//nolint:gosec // path is a prebuild repository file chosen by the user
 		f, err = os.Open(filepath.Join(contextDir, dockerignorefilepath))
 	}
 	if os.IsNotExist(err) {
 		dockerignorefilepath = ".dockerignore"
+		//nolint:gosec // path is a prebuild repository file chosen by the user
 		f, err = os.Open(filepath.Join(contextDir, dockerignorefilepath))
 		if os.IsNotExist(err) {
 			return ensureDockerIgnoreAndDockerFile(excludes, dockerfile, dockerignorefilepath), nil

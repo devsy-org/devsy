@@ -3,6 +3,7 @@ package cmdinternal
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/encoding"
@@ -30,7 +31,7 @@ func NewGetWorkspaceUIDCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *GetWorkspaceUIDCommand) Run(ctx context.Context, args []string) error {
-	fmt.Print(encoding.CreateNewUID("", ""))
+	_, _ = fmt.Fprint(os.Stdout, encoding.CreateNewUID("", ""))
 
 	return nil
 }

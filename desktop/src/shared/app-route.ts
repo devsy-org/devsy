@@ -43,3 +43,23 @@ export function workspaceRoute(
   const route = `/workspaces/${encodeURIComponent(workspaceId)}`
   return tab ? `${route}?tab=${encodeURIComponent(tab)}` : route
 }
+
+export interface WorkspaceLogsTarget {
+  context?: string
+  runId?: string
+  invocationId?: string
+}
+
+/** Opens the Logs tab, optionally pinned to a retained run and invocation. */
+export function workspaceLogsRoute(
+  workspaceId: string,
+  target: WorkspaceLogsTarget = {},
+): AppRoute {
+  const params = new URLSearchParams({ tab: "logs" })
+  if (target.runId) {
+    if (target.context) params.set("context", target.context)
+    params.set("run", target.runId)
+    if (target.invocationId) params.set("invocation", target.invocationId)
+  }
+  return `/workspaces/${encodeURIComponent(workspaceId)}?${params.toString()}`
+}

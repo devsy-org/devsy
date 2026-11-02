@@ -9,7 +9,7 @@ import (
 func NewCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:    "watch",
-		Short:  "Devsy Pro Provider watch commands",
+		Short:  "Devsy Platform Provider watch commands",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 	}

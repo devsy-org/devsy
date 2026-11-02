@@ -6,7 +6,7 @@ import (
 	"time"
 
 	rootflags "github.com/devsy-org/devsy/cmd/flags"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/suite"
@@ -40,15 +40,15 @@ func (s *loginSuite) TearDownTest() {
 }
 
 func (s *loginSuite) TestConcurrentLoginFindsCreatedInstance() {
-	lock, err := provider.GetPlatformInstanceOperationLock("default", "pro.example")
+	lock, err := provider.GetPlatformInstanceOperationLock("default", "platform.example")
 	s.Require().NoError(err)
 	s.Require().NoError(lock.Lock())
 	s.T().Cleanup(func() { _ = lock.Unlock() })
 
-	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
+	cmd := &LoginCmd{GlobalFlags: platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	result := make(chan error, 1)
 	go func() {
-		_, err := cmd.prepareProvider(context.Background(), "https://pro.example")
+		_, err := cmd.prepareProvider(context.Background(), "https://platform.example")
 		result <- err
 	}()
 	select {
@@ -59,7 +59,7 @@ func (s *loginSuite) TestConcurrentLoginFindsCreatedInstance() {
 
 	s.Require().NoError(provider.SavePlatformInstanceConfig("default", &provider.PlatformInstance{
 		Provider: testPlatformProviderName,
-		Host:     "pro.example",
+		Host:     "platform.example",
 	}))
 	s.Require().NoError(lock.Unlock())
 	s.Require().NoError(<-result)
@@ -76,7 +76,7 @@ func (s *loginSuite) TestDifferentHostDoesNotWaitForLoginLock() {
 		Host:     "second.example",
 	}))
 
-	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
+	cmd := &LoginCmd{GlobalFlags: platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	result := make(chan error, 1)
 	go func() {
 		_, err := cmd.prepareProvider(context.Background(), "https://second.example")
@@ -92,9 +92,9 @@ func (s *loginSuite) TestDifferentHostDoesNotWaitForLoginLock() {
 }
 
 func (s *loginSuite) TestHostLockDoesNotConflictWithProviderLock() {
-	hostLock, err := provider.GetPlatformInstanceOperationLock("default", "pro.example")
+	hostLock, err := provider.GetPlatformInstanceOperationLock("default", "platform.example")
 	s.Require().NoError(err)
-	providerLock, err := provider.GetProviderOperationLock("default", "pro-login")
+	providerLock, err := provider.GetProviderOperationLock("default", "platform-login")
 	s.Require().NoError(err)
 	s.Require().NoError(hostLock.Lock())
 	defer func() { _ = hostLock.Unlock() }()
@@ -117,7 +117,7 @@ func (s *loginSuite) TestEquivalentHostFindsExistingInstance() {
 		Provider: testPlatformProviderName,
 		Host:     "Foo.Example.com",
 	}))
-	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
+	cmd := &LoginCmd{GlobalFlags: platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	_, err := cmd.prepareProvider(context.Background(), "https://foo.example.com")
 	s.Require().NoError(err)
 	s.Equal(testPlatformProviderName, cmd.Provider)
@@ -128,7 +128,7 @@ func (s *loginSuite) TestDistinctHostsWithSameInstanceIDAreRejected() {
 		Provider: testPlatformProviderName,
 		Host:     "foo.example.com",
 	}))
-	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
+	cmd := &LoginCmd{GlobalFlags: platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	_, err := cmd.prepareProvider(context.Background(), "https://foo-example.com")
 	s.Require().ErrorContains(err, "conflicts with existing host")
 	stored, err := provider.LoadPlatformInstanceConfig("default", "foo.example.com")

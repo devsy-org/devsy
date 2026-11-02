@@ -13,8 +13,12 @@ import (
 )
 
 func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (string, error) {
-	if r.imageBackend == nil {
-		return "", fmt.Errorf("building requires an image backend")
+	if err := r.prepareWSLg(ctx, options.CLIOptions); err != nil {
+		return "", err
+	}
+	defer func() { r.wslgSnapshot = nil }()
+	if err := r.prepareStandaloneBuild(); err != nil {
+		return "", err
 	}
 
 	substitutedConfig, substitutionContext, err := r.getSubstitutedConfig(options.CLIOptions)
@@ -63,6 +67,22 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 	}
 
 	return prebuildImage, nil
+}
+
+func (r *runner) prepareStandaloneBuild() error {
+	r.imageDetails = nil
+	r.imageDetailsImage = ""
+	if d, ok := r.driver.(driver.ImageDetailsDriver); ok {
+		if _, err := d.ImageDetails(
+			driver.ImageDetailsRequest{UnsupportedReason: "standalone workspace build"},
+		); err != nil {
+			return err
+		}
+	}
+	if r.imageBackend == nil {
+		return fmt.Errorf("building requires an image backend")
+	}
+	return nil
 }
 
 // determinePrebuildImage computes the prebuild image reference, defaulting an

@@ -41,36 +41,7 @@ func (h *Host) call(
 		stream: secrets.NewStreamingRedactor(h.redactor),
 	}
 	defer func() { diagnostic.close(); _ = output.Close() }()
-	owned := supervisor.Runner(supervisor.Options{
-		SupervisorBinary: h.supervisorBinary, SupervisorArgs: h.supervisorArgs,
-		RuntimeBinary: binary, Args: h.config.External.Args,
-		Env: append(slices.Clone(h.environment), h.config.External.Binary+"="+binary),
-	})
-	// Routine helper lifecycle diagnostics belong at trace; runtime stderr is
-	// preserved independently below, including unstructured backend failures.
-	frameworkLogLevel := hclog.Warn
-	if log.LevelString() == log.LevelTraceName {
-		frameworkLogLevel = hclog.Trace
-	}
-	client := hplugin.NewClient(&hplugin.ClientConfig{
-		HandshakeConfig: sdkplugin.Handshake(),
-		VersionedPlugins: map[int]hplugin.PluginSet{
-			sdkplugin.ProtocolVersion: sdkplugin.ClientPlugins(),
-		},
-		AllowedProtocols: []hplugin.Protocol{hplugin.ProtocolGRPC},
-		StartTimeout:     h.timeout,
-		Logger: hclog.New(&hclog.LoggerOptions{
-			Output: diagnostic, Level: frameworkLogLevel,
-		}),
-		Stderr: diagnostic,
-		RunnerFunc: func(logger hclog.Logger, command *exec.Cmd, socketDir string) (runner.Runner, error) {
-			process, err := owned(logger, command, socketDir)
-			if err != nil {
-				return nil, err
-			}
-			return &contextRunner{Runner: process, caller: ctx}, nil
-		},
-	})
+	client := h.newPluginClient(ctx, binary, diagnostic)
 	defer client.Kill()
 	started := time.Now()
 	transport, err := client.Client()
@@ -128,4 +99,41 @@ func (w *diagnosticWriter) close() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	_, _ = io.WriteString(w.writer, w.stream.Flush())
+}
+
+func (h *Host) newPluginClient(
+	ctx context.Context,
+	binary string,
+	diagnostic *diagnosticWriter,
+) *hplugin.Client {
+	owned := supervisor.Runner(supervisor.Options{
+		SupervisorBinary: h.supervisorBinary, SupervisorArgs: h.supervisorArgs,
+		RuntimeBinary: binary, Args: h.config.External.Args,
+		Env: append(slices.Clone(h.environment), h.config.External.Binary+"="+binary),
+	})
+	// Routine helper lifecycle diagnostics belong at trace; runtime stderr is
+	// preserved independently below, including unstructured backend failures.
+	frameworkLogLevel := hclog.Warn
+	if log.LevelString() == log.LevelTraceName {
+		frameworkLogLevel = hclog.Trace
+	}
+	return hplugin.NewClient(&hplugin.ClientConfig{
+		HandshakeConfig: sdkplugin.Handshake(),
+		VersionedPlugins: map[int]hplugin.PluginSet{
+			sdkplugin.ProtocolVersion: sdkplugin.ClientPlugins(),
+		},
+		AllowedProtocols: []hplugin.Protocol{hplugin.ProtocolGRPC},
+		StartTimeout:     h.timeout,
+		Logger: hclog.New(&hclog.LoggerOptions{
+			Output: diagnostic, Level: frameworkLogLevel,
+		}),
+		Stderr: diagnostic,
+		RunnerFunc: func(logger hclog.Logger, command *exec.Cmd, socketDir string) (runner.Runner, error) {
+			process, err := owned(logger, command, socketDir)
+			if err != nil {
+				return nil, err
+			}
+			return &contextRunner{Runner: process, caller: ctx}, nil
+		},
+	})
 }

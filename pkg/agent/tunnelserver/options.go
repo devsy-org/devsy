@@ -9,9 +9,14 @@ import (
 	"github.com/devsy-org/devsy/pkg/netstat"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 type Option func(*tunnelServer) *tunnelServer
+
+func WithAllowGitHubCredentials(allow bool) Option {
+	return func(s *tunnelServer) *tunnelServer { s.allowGitHubCredentials = allow; return s }
+}
 
 func WithWorkspace(workspace *provider2.Workspace) Option {
 	return func(s *tunnelServer) *tunnelServer {
@@ -92,6 +97,14 @@ func WithGitToken(token *provider2.GitToken) Option {
 	}
 }
 
+// WithGitSSHSigningKey configures the host Git SSH signing key for fallback resolution.
+func WithGitSSHSigningKey(signingKey string) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.gitSSHSigningKey = signingKey
+		return s
+	}
+}
+
 // WithStatusReporter forwards inbound StatusUpdate RPCs to reporter. A nil
 // reporter is ignored, since it would replace the Nop default and panic.
 func WithStatusReporter(reporter status.Reporter) Option {
@@ -99,6 +112,15 @@ func WithStatusReporter(reporter status.Reporter) Option {
 		if reporter != nil {
 			s.statusReporter = reporter
 		}
+		return s
+	}
+}
+
+// WithSetupLogSink accepts AppendSetupLogs batches for the sink's expected run.
+// A nil sink leaves the RPC unimplemented, which senders treat as an old peer.
+func WithSetupLogSink(sink *workspacelogs.Sink) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.setupLogSink = sink
 		return s
 	}
 }

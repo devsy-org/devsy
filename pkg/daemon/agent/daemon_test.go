@@ -151,10 +151,13 @@ func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 			merged.ShutdownAction = tt.shutdownAction
 
 			cfg, err := BuildWorkspaceDaemonConfig(
-				devsy.PlatformOptions{},
-				&provider2.Workspace{},
-				&config.SubstitutionContext{},
-				merged,
+				WorkspaceDaemonInput{
+					PlatformOptions:     devsy.PlatformOptions{},
+					Workspace:           &provider2.Workspace{},
+					SubstitutionContext: &config.SubstitutionContext{},
+					MergedConfig:        merged,
+					Lifecycle:           LifecycleOptions{},
+				},
 			)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)

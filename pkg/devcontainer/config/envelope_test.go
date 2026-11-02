@@ -13,72 +13,26 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
+const (
+	vscodeValue       = "vscode"
+	workspacesProject = "/workspaces/project"
+	abc123            = "abc123"
+)
+
 const envelopeTestSecret = "status-secret"
 
+// resultCase is one input of TestWriteResultJSON.
+type resultCase struct {
+	name        string
+	containerID string
+	user        string
+	workdir     string
+	url         string
+	warnings    []string
+}
+
 func TestWriteResultJSON(t *testing.T) {
-	tests := []struct {
-		name        string
-		containerID string
-		user        string
-		workdir     string
-		url         string
-		warnings    []string
-	}{
-		{
-			name:        "typical values",
-			containerID: "abc123def456",
-			user:        "vscode",
-			workdir:     "/workspaces/project",
-			warnings:    nil,
-		},
-		{
-			name:        "root user",
-			containerID: "sha256:abcdef1234567890",
-			user:        "root",
-			workdir:     "/workspaces/my-app",
-			warnings:    nil,
-		},
-		{
-			name:        "empty strings",
-			containerID: "",
-			user:        "",
-			workdir:     "",
-			warnings:    nil,
-		},
-		{
-			name:        "special characters in container ID",
-			containerID: "container:with/special-chars_123",
-			user:        "dev-user",
-			workdir:     "/workspaces/my project",
-			warnings:    nil,
-		},
-		{
-			name:        "with warnings",
-			containerID: "abc123",
-			user:        "vscode",
-			workdir:     "/workspaces/project",
-			warnings: []string{
-				"cpus: required 128, available 4",
-				"memory: required 256gb (274877906944 bytes), available 17179869184 bytes",
-			},
-		},
-		{
-			name:        "with url",
-			containerID: "abc123",
-			user:        "vscode",
-			workdir:     "/workspaces/project",
-			url:         "http://localhost:8080/?folder=/workspaces/project",
-			warnings:    nil,
-		},
-		{
-			name:        "empty url omitted",
-			containerID: "abc123",
-			user:        "vscode",
-			workdir:     "/workspaces/project",
-			url:         "",
-			warnings:    nil,
-		},
-	}
+	tests := resultCases()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,63 +48,7 @@ func TestWriteResultJSON(t *testing.T) {
 				t.Fatalf("WriteResultJSON returned error: %v", err)
 			}
 
-			output := buf.Bytes()
-			if output[len(output)-1] != '\n' {
-				t.Fatal("output must be newline-terminated")
-			}
-
-			var envelope ResultEnvelope
-			if err := json.Unmarshal(output, &envelope); err != nil {
-				t.Fatalf("output is not valid JSON: %v", err)
-			}
-
-			if envelope.Outcome != "success" {
-				t.Errorf("outcome = %q, want %q", envelope.Outcome, "success")
-			}
-			if envelope.ContainerID != tt.containerID {
-				t.Errorf("containerId = %q, want %q", envelope.ContainerID, tt.containerID)
-			}
-			if envelope.RemoteUser != tt.user {
-				t.Errorf("remoteUser = %q, want %q", envelope.RemoteUser, tt.user)
-			}
-			if envelope.RemoteWorkspaceFolder != tt.workdir {
-				t.Errorf("remoteWorkspaceFolder = %q, want %q",
-					envelope.RemoteWorkspaceFolder, tt.workdir)
-			}
-			if envelope.URL != tt.url {
-				t.Errorf("url = %q, want %q", envelope.URL, tt.url)
-			}
-			if tt.url == "" && bytes.Contains(output, []byte(`"url"`)) {
-				t.Error("url field must be omitted when empty")
-			}
-			if tt.url != "" && !bytes.Contains(output, []byte(`"url"`)) {
-				t.Error("url field must be present when set")
-			}
-			if len(tt.warnings) == 0 {
-				if envelope.Warnings != nil {
-					t.Errorf("warnings = %v, want nil (omitempty)", envelope.Warnings)
-				}
-				if bytes.Contains(output, []byte(`"warnings"`)) {
-					t.Error("warnings field must be omitted when empty")
-				}
-			}
-			if len(tt.warnings) > 0 {
-				if len(envelope.Warnings) != len(tt.warnings) {
-					t.Fatalf(
-						"warnings length = %d, want %d",
-						len(envelope.Warnings), len(tt.warnings),
-					)
-				}
-				for i, w := range tt.warnings {
-					if envelope.Warnings[i] != w {
-						t.Errorf("warnings[%d] = %q, want %q", i, envelope.Warnings[i], w)
-					}
-				}
-			}
-
-			if bytes.Contains(output[:len(output)-1], []byte("\n")) {
-				t.Error("JSON must be single-line (no embedded newlines)")
-			}
+			assertResultEnvelope(t, tt, buf.Bytes())
 		})
 	}
 }
@@ -527,5 +425,151 @@ func assertStatusEnvelopeFields(t *testing.T, got StatusEnvelope) {
 	}
 	if got.State != status.StateFailed {
 		t.Fatalf("current status fields missing: %+v", got)
+	}
+}
+
+// assertResultEnvelope checks one encoded result envelope against the values
+// it was written from.
+func assertResultEnvelope(t *testing.T, want resultCase, output []byte) {
+	t.Helper()
+	containerID, user, workdir, url, warnings := want.containerID, want.user, want.workdir, want.url, want.warnings
+	if output[len(output)-1] != '\n' {
+		t.Fatal("output must be newline-terminated")
+	}
+
+	var envelope ResultEnvelope
+	if err := json.Unmarshal(output, &envelope); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+
+	assertCoreFields(
+		t,
+		envelope,
+		coreFields{containerID: containerID, user: user, workdir: workdir, url: url},
+	)
+	assertOptionalField(t, output, "url", url != "")
+	assertWarnings(t, envelope.Warnings, warnings, output)
+
+	if bytes.Contains(output[:len(output)-1], []byte("\n")) {
+		t.Error("JSON must be single-line (no embedded newlines)")
+	}
+}
+
+// coreFields are the envelope fields every successful run reports.
+type coreFields struct {
+	containerID, user, workdir, url string
+}
+
+func assertCoreFields(t *testing.T, envelope ResultEnvelope, want coreFields) {
+	t.Helper()
+	if envelope.Outcome != "success" {
+		t.Errorf("outcome = %q, want %q", envelope.Outcome, "success")
+	}
+	if envelope.ContainerID != want.containerID {
+		t.Errorf("containerId = %q, want %q", envelope.ContainerID, want.containerID)
+	}
+	if envelope.RemoteUser != want.user {
+		t.Errorf("remoteUser = %q, want %q", envelope.RemoteUser, want.user)
+	}
+	if envelope.RemoteWorkspaceFolder != want.workdir {
+		t.Errorf(
+			"remoteWorkspaceFolder = %q, want %q",
+			envelope.RemoteWorkspaceFolder,
+			want.workdir,
+		)
+	}
+	if envelope.URL != want.url {
+		t.Errorf("url = %q, want %q", envelope.URL, want.url)
+	}
+}
+
+// assertOptionalField checks that the named field appears only when present.
+func assertOptionalField(t *testing.T, output []byte, field string, present bool) {
+	t.Helper()
+	found := bytes.Contains(output, []byte(`"`+field+`"`))
+	if !present && found {
+		t.Errorf("%s field must be omitted when empty", field)
+	}
+	if present && !found {
+		t.Errorf("%s field must be present when set", field)
+	}
+}
+
+func assertWarnings(t *testing.T, got, want []string, output []byte) {
+	t.Helper()
+	if len(want) == 0 {
+		if got != nil {
+			t.Errorf("warnings = %v, want nil (omitempty)", got)
+		}
+		assertOptionalField(t, output, "warnings", false)
+		return
+	}
+	if len(got) != len(want) {
+		t.Fatalf("warnings length = %d, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("warnings[%d] = %q, want %q", i, got[i], w)
+		}
+	}
+}
+
+// resultCases lists the inputs of TestWriteResultJSON.
+func resultCases() []resultCase {
+	return []resultCase{
+		{
+			name:        "typical values",
+			containerID: "abc123def456",
+			user:        vscodeValue,
+			workdir:     workspacesProject,
+			warnings:    nil,
+		},
+		{
+			name:        "root user",
+			containerID: "sha256:abcdef1234567890",
+			user:        "root",
+			workdir:     "/workspaces/my-app",
+			warnings:    nil,
+		},
+		{
+			name:        "empty strings",
+			containerID: "",
+			user:        "",
+			workdir:     "",
+			warnings:    nil,
+		},
+		{
+			name:        "special characters in container ID",
+			containerID: "container:with/special-chars_123",
+			user:        "dev-user",
+			workdir:     "/workspaces/my project",
+			warnings:    nil,
+		},
+		{
+			name:        "with warnings",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
+			warnings: []string{
+				"cpus: required 128, available 4",
+				"memory: required 256gb (274877906944 bytes), available 17179869184 bytes",
+			},
+		},
+		{
+			name:        "with url",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
+			url:         "http://localhost:8080/?folder=/workspaces/project",
+			warnings:    nil,
+		},
+		{
+			name:        "empty url omitted",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
+			url:         "",
+			warnings:    nil,
+		},
 	}
 }

@@ -6,4 +6,4 @@ Icon=sh.devsy.app
 Terminal=false
 Type=Application
 Categories=Development;
-StartupWMClass=Devsy
+StartupWMClass=sh.devsy.app

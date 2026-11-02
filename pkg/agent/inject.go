@@ -82,6 +82,11 @@ func (o *InjectOptions) Validate() error {
 	if o.Exec == nil {
 		return fmt.Errorf("exec function is required")
 	}
+	for _, value := range []string{o.RemoteAgentPath, o.RemoteVersion, o.DownloadURL, o.Command} {
+		if strings.ContainsRune(value, 0) {
+			return fmt.Errorf("agent injection parameter contains NUL")
+		}
+	}
 	return nil
 }
 
@@ -277,12 +282,16 @@ type injectConfig struct {
 }
 
 func injectAgent(ctx context.Context, cfg *injectConfig) error {
+	params, err := buildScriptParams(cfg)
+	if err != nil {
+		return err
+	}
 	buf := &bytes.Buffer{}
 	//nolint:staticcheck
 	wasExecuted, err := inject.Inject(ctx, inject.InjectOptions{
 		Exec:         cfg.opts.Exec,
 		LocalFile:    createBinaryLoader(ctx, cfg),
-		ScriptParams: buildScriptParams(cfg),
+		ScriptParams: params,
 		Stdin:        cfg.opts.Stdin,
 		Stdout:       cfg.opts.Stdout,
 		Stderr:       setupStderr(cfg.opts, buf),
@@ -312,16 +321,20 @@ func createBinaryLoader(ctx context.Context, cfg *injectConfig) func(bool) (io.R
 	}
 }
 
-func buildScriptParams(cfg *injectConfig) *inject.Params {
+func buildScriptParams(cfg *injectConfig) (*inject.Params, error) {
 	opts := cfg.opts
+	existsCheck, err := cfg.vc.buildExistsCheck(opts.RemoteAgentPath)
+	if err != nil {
+		return nil, err
+	}
 	return &inject.Params{
 		Command:             opts.Command,
 		AgentRemotePath:     opts.RemoteAgentPath,
 		DownloadURLs:        inject.NewDownloadURLs(opts.DownloadURL),
-		ExistsCheck:         cfg.vc.buildExistsCheck(opts.RemoteAgentPath),
+		ExistsCheck:         existsCheck,
 		PreferAgentDownload: *opts.PreferDownloadFromRemoteUrl,
 		ShouldChmodPath:     true,
-	}
+	}, nil
 }
 
 func handleInjectError(err error, wasExecuted bool, buf *bytes.Buffer) error {
@@ -394,12 +407,20 @@ func newVersionChecker(opts *InjectOptions) *versionChecker {
 	}
 }
 
-func (vc *versionChecker) buildExistsCheck(agentPath string) string {
-	if vc.skipCheck {
-		return fmt.Sprintf(`! [ -x "%s" ]`, agentPath)
+func (vc *versionChecker) buildExistsCheck(agentPath string) (string, error) {
+	quotedPath, err := inject.QuotePOSIXLiteral(agentPath)
+	if err != nil {
+		return "", err
 	}
-	return fmt.Sprintf(`! { [ -x "%s" ] && [ "$("%s" --version 2>/dev/null)" = "%s" ]; }`,
-		agentPath, agentPath, vc.remoteVersion)
+	if vc.skipCheck {
+		return fmt.Sprintf(`! [ -x %s ]`, quotedPath), nil
+	}
+	quotedVersion, err := inject.QuotePOSIXLiteral(vc.remoteVersion)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`! { [ -x %s ] && [ "$(%s --version 2>/dev/null)" = %s ]; }`,
+		quotedPath, quotedPath, quotedVersion), nil
 }
 
 // session encapsulates the state and resources for an injection session.
@@ -409,12 +430,16 @@ func (vc *versionChecker) detectRemoteAgentVersion(
 	agentPath string,
 ) (string, error) {
 	buf := &bytes.Buffer{}
-	versionCmd := fmt.Sprintf("%s --version", agentPath)
+	quotedPath, err := inject.QuotePOSIXLiteral(agentPath)
+	if err != nil {
+		return "", err
+	}
+	versionCmd := fmt.Sprintf("%s --version", quotedPath)
 
 	checkCtx, cancel := context.WithTimeout(ctx, versionCheckTimeout)
 	defer cancel()
-	log.Debugf("checking remote agent version: %s", versionCmd)
-	err := exec(checkCtx, versionCmd, nil, buf, io.Discard)
+	log.Debug("checking remote agent version")
+	err = exec(checkCtx, versionCmd, nil, buf, io.Discard)
 	if err != nil {
 		if errors.Is(checkCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 			return "", fmt.Errorf(

@@ -50,10 +50,11 @@ func newRootCommand() *cobra.Command {
 
 func newSetupCommand() *cobra.Command {
 	cfg := SetupConfig{
-		PodmanPath:       platformDefaultPodmanPath(),
-		CrunPath:         "/usr/local/bin/crun",
-		BootstrapTimeout: 270 * time.Second,
-		GitHubEnvPath:    os.Getenv("GITHUB_ENV"),
+		PodmanPath:            platformDefaultPodmanPath(),
+		CrunPath:              "/usr/local/bin/crun",
+		BootstrapTimeout:      270 * time.Second,
+		GitHubEnvPath:         os.Getenv("GITHUB_ENV"),
+		GitHubStepSummaryPath: os.Getenv("GITHUB_STEP_SUMMARY"),
 	}
 	cmd := &cobra.Command{
 		Use: "setup", Short: "Configure and validate a Podman CI runtime", Args: cobra.NoArgs,
@@ -75,6 +76,12 @@ func newSetupCommand() *cobra.Command {
 		DurationVar(&cfg.BootstrapTimeout, "bootstrap-timeout", cfg.BootstrapTimeout, "maximum bootstrap duration")
 	cmd.Flags().
 		StringVar(&cfg.GitHubEnvPath, "github-env", cfg.GitHubEnvPath, "GitHub Actions environment file")
+	cmd.Flags().StringVar(
+		&cfg.GitHubStepSummaryPath,
+		"github-step-summary",
+		cfg.GitHubStepSummaryPath,
+		"GitHub Actions step summary file",
+	)
 	cmd.Flags().Var(newModeValue(&cfg.Mode), "mode", "Podman mode: rootless or rootful")
 	_ = cmd.MarkFlagRequired("mode")
 	return cmd

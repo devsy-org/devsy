@@ -9,7 +9,7 @@ import (
 func NewCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:    "get",
-		Short:  "Devsy Pro Provider get commands",
+		Short:  "Devsy Platform Provider get commands",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 	}

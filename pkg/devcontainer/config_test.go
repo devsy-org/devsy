@@ -12,6 +12,11 @@ import (
 )
 
 const (
+	testWorkspace = "test-workspace"
+	alpineLatest  = "alpine:latest"
+)
+
+const (
 	testWorkspaceFolder     = "/workspace"
 	testDevContainerProfile = "max"
 	testEmbeddedImage       = "embedded"
@@ -35,7 +40,7 @@ func (s *SubstituteTestSuite) SetupTest() {
 		localWorkspaceFolder: testWorkspaceFolder,
 		workspaceConfig: &provider2.AgentWorkspaceInfo{
 			Workspace: &provider2.Workspace{
-				ID: "test-workspace",
+				ID: testWorkspace,
 			},
 		},
 	}
@@ -122,7 +127,7 @@ func (s *SubstituteTestSuite) TestSubstitute_MultipleInitEnvVars() {
 func (s *SubstituteTestSuite) TestSubstitute_EmptyInitEnv() {
 	rawConfig := &config.DevContainerConfig{
 		ImageContainer: config.ImageContainer{
-			Image: "alpine:latest",
+			Image: alpineLatest,
 		},
 	}
 	options := provider2.CLIOptions{
@@ -132,13 +137,13 @@ func (s *SubstituteTestSuite) TestSubstitute_EmptyInitEnv() {
 	result, _, err := s.runner.substitute(options, rawConfig)
 
 	s.NoError(err)
-	s.Equal("alpine:latest", result.Config.Image)
+	s.Equal(alpineLatest, result.Config.Image)
 }
 
 func (s *SubstituteTestSuite) TestSubstitute_InitEnvInRemoteEnv() {
 	rawConfig := &config.DevContainerConfig{
 		ImageContainer: config.ImageContainer{
-			Image: "alpine:latest",
+			Image: alpineLatest,
 		},
 		DevContainerConfigBase: config.DevContainerConfigBase{
 			RemoteEnv: map[string]*string{
@@ -175,7 +180,7 @@ func (s *SubstituteTestSuite) TestSubstitute_MissingVariable() {
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeatures() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		AdditionalFeatures: `{"ghcr.io/devcontainers/features/git:1": {}}`,
@@ -189,7 +194,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeatures() {
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesMergesWithExisting() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		DevContainerConfigBase: config.DevContainerConfigBase{
 			Features: map[string]any{
 				"ghcr.io/devcontainers/features/node:1": map[string]any{"version": "20"},
@@ -210,7 +215,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesMergesWithExistin
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesOverridesExisting() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		DevContainerConfigBase: config.DevContainerConfigBase{
 			Features: map[string]any{
 				"ghcr.io/devcontainers/features/node:1": map[string]any{"version": "18"},
@@ -232,7 +237,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesOverridesExisting
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesInvalidJSON() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		AdditionalFeatures: `{invalid json`,
@@ -246,7 +251,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesInvalidJSON() {
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesEmpty() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		AdditionalFeatures: "",
@@ -261,7 +266,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesEmpty() {
 func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyApplied() {
 	const testVal = "delegated"
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		WorkspaceMountConsistency: testVal,
@@ -276,7 +281,7 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyApplied() 
 func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyReplacesExisting() {
 	const testVal = "delegated"
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		NonComposeBase: config.NonComposeBase{
 			WorkspaceMount: ptr("type=bind,source=/src,target=/ws,consistency='consistent'"),
 		},
@@ -294,7 +299,7 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyReplacesEx
 
 func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyEmpty() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		WorkspaceMountConsistency: "",
@@ -308,7 +313,7 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyEmpty() {
 
 func (s *SubstituteTestSuite) TestSubstitute_CLIMountsAppended() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		Mounts: []string{
@@ -331,7 +336,7 @@ func (s *SubstituteTestSuite) TestSubstitute_CLIMountsAppended() {
 
 func (s *SubstituteTestSuite) TestSubstitute_CLIMountsMergedWithExisting() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		NonComposeBase: config.NonComposeBase{
 			Mounts: []*config.Mount{
 				{Type: "bind", Source: "/existing", Target: "/existing-target"},
@@ -354,7 +359,7 @@ func (s *SubstituteTestSuite) TestSubstitute_CLIMountsMergedWithExisting() {
 
 func (s *SubstituteTestSuite) TestSubstitute_CLIMountsEmpty() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		NonComposeBase: config.NonComposeBase{
 			Mounts: []*config.Mount{
 				{Type: "bind", Source: "/existing", Target: "/existing-target"},
@@ -374,7 +379,7 @@ func (s *SubstituteTestSuite) TestSubstitute_LocalEnvInMountSource() {
 	s.T().Setenv("HOME", "/home/test")
 
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		NonComposeBase: config.NonComposeBase{
 			Mounts: []*config.Mount{
 				{
@@ -466,7 +471,7 @@ func newRunnerAt(folder string) *runner {
 		id:                   "test-id",
 		localWorkspaceFolder: folder,
 		workspaceConfig: &provider2.AgentWorkspaceInfo{
-			Workspace: &provider2.Workspace{ID: "test-workspace"},
+			Workspace: &provider2.Workspace{ID: testWorkspace},
 		},
 	}
 }

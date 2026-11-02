@@ -7,7 +7,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/provider/list"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -26,7 +26,7 @@ import (
 )
 
 type ImportCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	WorkspaceId      string
 	WorkspaceUid     string
@@ -36,7 +36,7 @@ type ImportCmd struct {
 }
 
 // NewImportCmd creates a new command.
-func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
+func NewImportCmd(globalFlags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &ImportCmd{
 		GlobalFlags: globalFlags,
 	}
@@ -72,7 +72,7 @@ func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 
 func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: devsy pro workspace import <devsy-pro-host>")
+		return fmt.Errorf("usage: devsy platform workspace import <devsy-platform-host>")
 	}
 
 	platformHost := args[0]
@@ -186,7 +186,7 @@ func (cmd *ImportCmd) importInstance(
 	devsyConfig *config.Config,
 	ref workspaceInstanceRef,
 ) error {
-	// old pro provider
+	// old platform provider
 	if !ref.provider.HasHealthCheck() {
 		instanceOpts, err := resolveInstanceOptions(ctx, ref.instance, ref.baseClient)
 		if err != nil {
@@ -201,7 +201,7 @@ func (cmd *ImportCmd) importInstance(
 		return nil
 	}
 
-	// new pro provider
+	// new platform provider
 	err := cmd.writeNewWorkspaceDefinition(devsyConfig, ref.instance, ref.provider.Name)
 	if err != nil {
 		return fmt.Errorf("prepare workspace to import definition: %w", err)
@@ -257,12 +257,11 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 
 	devsyConfig, err := options.ResolveOptions(
 		context.Background(),
-		devsyConfig,
-		provider,
-		instanceOpts,
-		false,
-		false,
-		nil,
+		options.ResolveOptionsRequest{
+			DevConfig:      devsyConfig,
+			ProviderConfig: provider,
+			UserOptions:    instanceOpts,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("resolve options: %w", err)

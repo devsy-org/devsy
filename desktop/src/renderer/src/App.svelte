@@ -2,6 +2,7 @@
 import "./app.css"
 import Router, { push } from "svelte-spa-router"
 import { onMount, onDestroy } from "svelte"
+import AppImageIntegrationPrompt from "$lib/components/layout/AppImageIntegrationPrompt.svelte"
 import SecretUnlockDialog from "$lib/components/layout/SecretUnlockDialog.svelte"
 import Sidebar from "$lib/components/layout/Sidebar.svelte"
 import ThemeSwitcher from "$lib/components/layout/ThemeSwitcher.svelte"
@@ -237,4 +238,5 @@ onDestroy(() => {
   <UpdateDialog bind:open={updateDialogOpen} autoDownloadEnabled={$autoUpdate} />
   <CommandPalette />
   <SecretUnlockDialog />
+  <AppImageIntegrationPrompt />
 </SidebarUI.Provider>

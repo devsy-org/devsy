@@ -24,12 +24,12 @@ func NewPublishCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	publishFlags := &PublishFlags{}
 	publishCmd := &cobra.Command{
 		Use:   "publish",
-		Short: "Package and push features to OCI registry",
-		Long: `Publish packaged dev container features to an OCI registry.
+		Short: "Package and push features to an OCI registry",
+		Long: `Package and push features to an OCI registry.
 
-Takes the path to a packaged feature directory (output of 'features package'
-or a directory containing devcontainer-feature.json) and pushes it as an
-OCI artifact.`,
+Pass the path to a packaged feature directory (output of
+'devsy feature package') or a directory containing devcontainer-feature.json.
+It is pushed as an OCI artifact.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

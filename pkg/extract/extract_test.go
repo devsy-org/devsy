@@ -11,6 +11,11 @@ import (
 	"testing"
 )
 
+const (
+	testWorld    = "world"
+	testEvilLink = "evil-link"
+)
+
 type tarEntry struct {
 	name       string
 	body       string
@@ -90,7 +95,7 @@ func writeTarEntry(t *testing.T, tw *tar.Writer, e tarEntry) {
 func TestExtract_NormalArchive(t *testing.T) {
 	t.Parallel()
 	buf := newTarGz(t, []tarEntry{
-		{name: "hello.txt", body: "world"},
+		{name: "hello.txt", body: testWorld},
 	})
 
 	dest := t.TempDir()
@@ -103,8 +108,8 @@ func TestExtract_NormalArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read extracted file: %v", err)
 	}
-	if string(content) != "world" {
-		t.Fatalf("got %q, want %q", string(content), "world")
+	if string(content) != testWorld {
+		t.Fatalf("got %q, want %q", string(content), testWorld)
 	}
 }
 
@@ -128,7 +133,7 @@ func TestExtract_SymlinkTraversalBlocked(t *testing.T) {
 	t.Parallel()
 	buf := newTarGz(t, []tarEntry{
 		{
-			name:       "evil-link",
+			name:       testEvilLink,
 			linkTarget: etcPasswd,
 			symlink:    true,
 		},
@@ -148,7 +153,7 @@ func TestExtract_HardLinkTraversalBlocked(t *testing.T) {
 	t.Parallel()
 	buf := newTarGz(t, []tarEntry{
 		{
-			name:       "evil-link",
+			name:       testEvilLink,
 			linkTarget: etcPasswd,
 			symlink:    false,
 		},
@@ -173,7 +178,7 @@ func TestExtract_HardLinkResolvesRelativeToDestinationNotCWD(t *testing.T) {
 	}
 
 	buf := newTarGz(t, []tarEntry{
-		{name: "evil-link", linkTarget: "sentinel.txt"},
+		{name: testEvilLink, linkTarget: "sentinel.txt"},
 	})
 
 	dest := t.TempDir()
@@ -196,7 +201,7 @@ func TestExtract_HardLinkResolvesRelativeToDestinationNotCWD(t *testing.T) {
 func TestExtract_HardLinkResolvesFromArchiveRootWhenNested(t *testing.T) {
 	t.Parallel()
 	buf := newTarGz(t, []tarEntry{
-		{name: testHardLinkRel, body: "world"},
+		{name: testHardLinkRel, body: testWorld},
 		{name: "dir/sub/link", linkTarget: testHardLinkRel},
 	})
 
@@ -210,8 +215,8 @@ func TestExtract_HardLinkResolvesFromArchiveRootWhenNested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hard link: %v", err)
 	}
-	if string(content) != "world" {
-		t.Fatalf("hard link content = %q, want %q", content, "world")
+	if string(content) != testWorld {
+		t.Fatalf("hard link content = %q, want %q", content, testWorld)
 	}
 
 	if _, err := os.Stat(filepath.Join(dest, "dir", "sub", "dir", "file")); !os.IsNotExist(err) {
@@ -283,7 +288,7 @@ func TestExtract_PreserveHeaderOwnershipUnprivilegedDegrades(t *testing.T) {
 		t.Skip("running as root: permission errors cannot occur")
 	}
 	buf := newTarGz(t, []tarEntry{
-		{name: "hello.txt", body: "world", uid: 0, gid: 0},
+		{name: "hello.txt", body: testWorld, uid: 0, gid: 0},
 	})
 
 	dest := t.TempDir()
@@ -295,7 +300,7 @@ func TestExtract_PreserveHeaderOwnershipUnprivilegedDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read extracted file: %v", err)
 	}
-	if string(content) != "world" {
-		t.Fatalf("got %q, want %q", string(content), "world")
+	if string(content) != testWorld {
+		t.Fatalf("got %q, want %q", string(content), testWorld)
 	}
 }

@@ -107,7 +107,7 @@ func TestOwnerEndpoint_ReturnsConfiguredOwner(t *testing.T) {
 	mock := &mockCredentialsClient{}
 	handler := newCredentialsHandler(context.Background(), mock, "alice")
 
-	req := httptest.NewRequest(http.MethodGet, ownerPath, nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost"+ownerPath, nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 

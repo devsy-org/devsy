@@ -69,7 +69,7 @@ func (cmd *StatusCmd) Run(
 			return err
 		}
 
-		fmt.Println(string(out))
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
 		return nil
 	}
 
@@ -86,9 +86,7 @@ func (cmd *StatusCmd) Run(
 	_, err = remotecommand.ExecuteConn(
 		ctx,
 		conn,
-		stdin,
-		stdout,
-		stderr,
+		remotecommand.Streams{Stdin: stdin, Stdout: stdout, Stderr: stderr},
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)

@@ -73,11 +73,15 @@ func TestKillTreeTerminatesGroupAfterWorkerExits(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = killTreeAfterWorkerExit(workerPID, "detached-task", identity) })
 
-	childPID := readTestPID(t, childPIDFile)
-
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("wait for worker exit: %v", err)
 	}
+	// #nosec G304 -- the exited worker has finished writing its own temporary PID file.
+	data, err := os.ReadFile(childPIDFile)
+	if err != nil {
+		t.Fatalf("read child PID: %v", err)
+	}
+	childPID := strings.TrimSpace(string(data))
 	waitForTestProcess(t, childPID, true)
 
 	if err := killTreeAfterWorkerExit(workerPID, "detached-task", identity); err != nil {
@@ -229,21 +233,6 @@ func processTreeIdentityForTest(t *testing.T, pid int) string {
 	return identity
 }
 
-func readTestPID(t *testing.T, path string) string {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		// #nosec G304 -- this test reads only its own temporary PID file.
-		data, err := os.ReadFile(path)
-		if err == nil {
-			return strings.TrimSpace(string(data))
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("worker did not publish PID in %s", path)
-	return ""
-}
-
 func waitForTestProcess(t *testing.T, pid string, wantRunning bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -315,7 +304,13 @@ func startSigtermIgnoringGroup(t *testing.T) *exec.Cmd {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
 	// #nosec G204 -- the fixed shell script and all paths are test-controlled.
-	cmd := exec.Command("sh", "-c", `trap '' TERM; printf 'ready\n' > "$1"; sleep 30`, "sh", ready)
+	cmd := exec.Command(
+		"sh",
+		"-c",
+		`trap '' TERM; printf 'ready\n' > "$1"; exec sleep 30`,
+		"sh",
+		ready,
+	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start SIGTERM-ignoring group: %v", err)

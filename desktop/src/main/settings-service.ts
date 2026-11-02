@@ -5,7 +5,7 @@ import {
 } from "./app-settings.js"
 import type { AutostartApplyResult } from "./autostart.js"
 
-function describe(err: unknown): string {
+function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
@@ -118,10 +118,10 @@ export class SettingsService {
         if (!restored) {
           const reason =
             rollbackError !== undefined
-              ? describe(rollbackError)
+              ? errorMessage(rollbackError)
               : `${rollback?.status}${rollback?.detail ? ` (${rollback.detail})` : ""}`
           throw new Error(
-            `failed to persist settings: ${describe(err)}; autostart rollback also failed: ${reason}`,
+            `failed to persist settings: ${errorMessage(err)}; autostart rollback also failed: ${reason}`,
           )
         }
       }

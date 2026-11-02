@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -21,20 +21,20 @@ import (
 
 // ListCmd holds the list cmd flags.
 type ListCmd struct {
-	proflags.GlobalFlags
+	platformflags.GlobalFlags
 
 	Login bool
 }
 
 // NewListCmd creates a new command.
-func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewListCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &ListCmd{
 		GlobalFlags: *flags,
 	}
 	listCmd := &cobra.Command{
 		Use:         "list",
 		Aliases:     []string{"ls"},
-		Short:       "List available Devsy Pro instances",
+		Short:       "List available Devsy Platform instances",
 		Args:        cobra.NoArgs,
 		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
@@ -170,15 +170,11 @@ func checkLogin(
 	platformInstance *provider.PlatformInstance,
 ) error {
 	// for every platform instance, check auth status by calling login
-	if err := login(
-		ctx,
-		devsyConfig,
-		platformInstance.Host,
-		platformInstance.Provider,
-		"",
-		true,
-		false,
-	); err != nil {
+	if err := login(ctx, devsyConfig, loginRequest{
+		URL:              platformInstance.Host,
+		ProviderName:     platformInstance.Provider,
+		SkipBrowserLogin: true,
+	}); err != nil {
 		return fmt.Errorf("not logged into %s", platformInstance.Host)
 	}
 

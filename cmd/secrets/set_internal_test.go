@@ -46,9 +46,9 @@ func TestSetRejectsConvertingAttachedEnvironmentToSecret(t *testing.T) {
 	}))
 	cfg, err := config.LoadConfig("", "")
 	require.NoError(t, err)
-	store, err := devsysecrets.NewStoreForConfig(cfg)
+	envs, err := envstore.NewStoreForConfig(cfg)
 	require.NoError(t, err)
-	require.NoError(t, store.Set(config.DefaultContext, "TOKEN", "plain", devsysecrets.KindEnv))
+	require.NoError(t, envs.Set(config.DefaultContext, "TOKEN", "plain"))
 
 	err = (&SetCmd{
 		GlobalFlags: &flags.GlobalFlags{},
@@ -57,9 +57,9 @@ func TestSetRejectsConvertingAttachedEnvironmentToSecret(t *testing.T) {
 	}).Run(context.Background(), "TOKEN")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "attached as an environment variable")
-	meta, err := store.Meta(config.DefaultContext, "TOKEN")
+	value, err := envs.Get(config.DefaultContext, "TOKEN")
 	require.NoError(t, err)
-	require.Equal(t, devsysecrets.KindEnv, meta.Kind)
+	require.Equal(t, "plain", value)
 }
 
 func TestResolveValue_Stdin(t *testing.T) {

@@ -10,6 +10,10 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const (
+	workspaceExec = "workspace_exec"
+)
+
 func TestServer_ListsAllTools(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("DEVSY_HOME", home)
@@ -42,7 +46,7 @@ func TestServer_ListsAllTools(t *testing.T) {
 	}
 	wantNames := []string{
 		"workspace_list", "workspace_status", "workspace_start", "workspace_stop",
-		"workspace_delete", "workspace_create", "workspace_exec",
+		"workspace_delete", "workspace_create", workspaceExec,
 		"provider_list", "provider_add", "provider_delete", "provider_use",
 	}
 	have := map[string]bool{}
@@ -99,7 +103,7 @@ func TestServer_WorkspaceExecRespectsSemaphore(t *testing.T) {
 	blockedCtx, blockedCancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer blockedCancel()
 	_, callErr := session.CallTool(blockedCtx, &sdkmcp.CallToolParams{
-		Name:      "workspace_exec",
+		Name:      workspaceExec,
 		Arguments: execArgs,
 	})
 	if callErr == nil {
@@ -109,7 +113,7 @@ func TestServer_WorkspaceExecRespectsSemaphore(t *testing.T) {
 	release()
 
 	res, callErr := session.CallTool(ctx, &sdkmcp.CallToolParams{
-		Name:      "workspace_exec",
+		Name:      workspaceExec,
 		Arguments: execArgs,
 	})
 	if callErr != nil {

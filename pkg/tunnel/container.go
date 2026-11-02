@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -131,7 +132,7 @@ func (c *ContainerTunnel) runHostTunnel(
 	defer closeAndDrain()
 	defer log.Debugf("Tunnel to host closed")
 
-	command := fmt.Sprintf("'%s' internal ssh-server --stdio", c.client.AgentPath())
+	command := shellescape.Quote(c.client.AgentPath()) + " internal ssh-server --stdio"
 	if log.DebugEnabled() {
 		command += " --debug"
 	}
@@ -186,14 +187,14 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 				break
 			}
 
-			buf := &bytes.Buffer{}
+			buf := &containerTunnelOutput{}
 			command := fmt.Sprintf(
-				"%q internal agent workspace update-config --workspace-info %q",
-				c.client.AgentPath(),
-				workspaceInfo,
+				"%s internal agent workspace update-config --workspace-info %s",
+				shellescape.Quote(c.client.AgentPath()),
+				shellescape.Quote(workspaceInfo),
 			)
 			if agentInfo.Agent.DataPath != "" {
-				command += fmt.Sprintf(" --agent-dir %q", agentInfo.Agent.DataPath)
+				command += " --agent-dir " + shellescape.Quote(agentInfo.Agent.DataPath)
 			}
 
 			log.Debugf("Run command in container: %s", command)
@@ -228,9 +229,9 @@ func (c *ContainerTunnel) runInContainer(
 	defer closeAndDrain()
 
 	command := fmt.Sprintf(
-		"%q internal agent container-tunnel --workspace-info %q",
-		c.client.AgentPath(),
-		workspaceInfo,
+		"%s internal agent container-tunnel --workspace-info %s",
+		shellescape.Quote(c.client.AgentPath()),
+		shellescape.Quote(workspaceInfo),
 	)
 	if log.DebugEnabled() {
 		command += " --debug"
@@ -264,4 +265,21 @@ func (c *ContainerTunnel) runInContainer(
 			return handler(ctx, containerClient)
 		},
 	})
+}
+
+type containerTunnelOutput struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *containerTunnelOutput) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *containerTunnelOutput) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
 }

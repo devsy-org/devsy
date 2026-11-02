@@ -64,3 +64,12 @@ func KillTreeAfterWorkerExit(pid, treeName, identity string) error {
 func ProcessTreeIdentity(pid int) (string, error) {
 	return processTreeIdentity(pid)
 }
+
+// ProcessExited reports positive evidence that the saved worker has exited.
+// Identityless records cannot distinguish a worker from a reused PID.
+func ProcessExited(ref ProcessRef) (bool, error) {
+	if ref.PID <= 0 || ref.Identity == "" || !strongProcessIdentitySupported {
+		return false, nil
+	}
+	return processRefExited(ref)
+}

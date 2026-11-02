@@ -31,7 +31,8 @@ func NewKubernetesDriver(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
-	// Namespace can be defined in many ways, we first check the kube config, then the provider options KUBERNETES_NAMESPACE, then failing that the default "devsy"
+	// Namespace can be defined in many ways, we first check the kube config, then the provider options
+	// KUBERNETES_NAMESPACE, then failing that the default "devsy"
 	if namespace == "" || namespace == "default" || options.KubernetesNamespace != "" {
 		log.Debugf("Using Explicit Kubernetes Namespace")
 		namespace = options.KubernetesNamespace
@@ -39,10 +40,11 @@ func NewKubernetesDriver(
 	log.Debugf("Use Kubernetes Namespace %q", namespace)
 
 	return &KubernetesDriver{
-		client:      client,
-		namespace:   namespace,
-		options:     &options,
-		agentConfig: &workspaceInfo.Agent,
+		client:        client,
+		namespace:     namespace,
+		options:       &options,
+		agentConfig:   &workspaceInfo.Agent,
+		disableDaemon: workspaceInfo.CLIOptions.DisableDaemon,
 	}, nil
 }
 
@@ -55,6 +57,7 @@ var (
 
 	_ driver.ReprovisioningDriver = (*KubernetesDriver)(nil)
 	_ driver.Preflighter          = (*KubernetesDriver)(nil)
+	_ driver.ImageDetailsDriver   = (*KubernetesDriver)(nil)
 )
 
 // Preflight verifies the cluster's API server is reachable. A remote cluster
@@ -74,12 +77,20 @@ type KubernetesDriver struct {
 
 	client *Client
 
-	options     *provider2.ProviderKubernetesDriverConfig
-	agentConfig *provider2.ProviderAgentConfig
+	options           *provider2.ProviderKubernetesDriverConfig
+	agentConfig       *provider2.ProviderAgentConfig
+	disableDaemon     bool
+	shutdownAction    string
+	hasShutdownAction bool
 }
 
 func (k *KubernetesDriver) CanReprovision() bool {
 	return true
+}
+
+func (k *KubernetesDriver) SetLifecycleShutdownAction(shutdownAction string) {
+	k.shutdownAction = shutdownAction
+	k.hasShutdownAction = true
 }
 
 func (k *KubernetesDriver) SupportsMountType(mountType string) bool {
@@ -154,6 +165,10 @@ func (k *KubernetesDriver) CommandDevContainer(
 	})
 }
 
+// SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
+// It only execs into the existing pod, so it never starts anything.
+func (k *KubernetesDriver) SupportsRequireRunning() bool { return true }
+
 // CommandContainerArgv execs argv in the workspace pod's dev container, streaming
 // the given stdin/stdout/stderr. Unlike CommandDevContainer it takes explicit
 // argv rather than wrapping the command in sh -c.
@@ -182,7 +197,11 @@ func (k *KubernetesDriver) GetDevContainerLogs(
 ) error {
 	workspaceID = getID(workspaceID)
 
-	logs, err := k.client.Logs(ctx, k.namespace, workspaceID, DevContainerName, true)
+	logs, err := k.client.Logs(ctx, logsTarget{
+		namespace: k.namespace,
+		pod:       workspaceID,
+		container: DevContainerName,
+	}, true)
 	if err != nil {
 		return fmt.Errorf("get logs: %w", err)
 	}
@@ -194,6 +213,12 @@ func (k *KubernetesDriver) GetDevContainerLogs(
 
 	return nil
 }
+
+func (d *KubernetesDriver) RequiresMountStreaming() bool { return true }
+
+func (d *KubernetesDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
+
+func (d *KubernetesDriver) RequiresWorkspaceChown() bool { return true }
 
 func (k *KubernetesDriver) getDevContainerPvc(
 	ctx context.Context,
@@ -278,9 +303,3 @@ func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspace
 
 	return nil
 }
-
-func (d *KubernetesDriver) RequiresMountStreaming() bool { return true }
-
-func (d *KubernetesDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
-
-func (d *KubernetesDriver) RequiresWorkspaceChown() bool { return true }

@@ -118,9 +118,11 @@ func (cmd *UpCmd) up(
 	_, err = remotecommand.ExecuteConn(
 		ctx,
 		conn,
-		cmd.streams.Stdin,
-		cmd.streams.Stdout,
-		cmd.streams.Stderr,
+		remotecommand.Streams{
+			Stdin:  cmd.streams.Stdin,
+			Stdout: cmd.streams.Stdout,
+			Stderr: cmd.streams.Stderr,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("error executing: %w", err)
@@ -155,5 +157,5 @@ func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 		Template:   instance.Spec.TemplateRef,
 		Parameters: instance.Spec.Parameters,
 	})
-	log.Debugf("Starting pro workspace with configuration %s", string(workspaceConfig))
+	log.Debugf("Starting platform workspace with configuration %s", string(workspaceConfig))
 }

@@ -17,6 +17,32 @@ import (
 
 const defaultCredentialsServerPort = "12049"
 
+var signatureServerURL string
+
+// HandleGitSSHProgramCall implements logic handling call from git when signing a commit.
+func HandleGitSSHProgramCall(certPath, namespace, bufferFile string) error {
+	content, err := extractContentFromGitBuffer(bufferFile)
+	if err != nil {
+		return err
+	}
+
+	signature, err := requestContentSignature(content, certPath, namespace)
+	if err != nil {
+		return err
+	}
+
+	if err := writeSignatureToFile(signature, bufferFile); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// SetSignatureServerURL sets the server URL override for testing.
+func SetSignatureServerURL(url string) {
+	signatureServerURL = url
+}
+
 func getCredentialsPort() (int, error) {
 	strPort := os.Getenv(config.EnvCredentialsServerPort)
 	if strPort == "" {
@@ -29,33 +55,14 @@ func getCredentialsPort() (int, error) {
 	return port, nil
 }
 
-// HandleGitSSHProgramCall implements logic handling call from git when signing a commit.
-func HandleGitSSHProgramCall(certPath, namespace, bufferFile string) error {
-	content, err := extractContentFromGitBuffer(bufferFile)
-	if err != nil {
-		return err
-	}
-
-	signature, err := requestContentSignature(content, certPath)
-	if err != nil {
-		return err
-	}
-
-	if err := writeSignatureToFile(signature, bufferFile); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // extractContentFromGitBuffer reads the content from the buffer file created by git.
 func extractContentFromGitBuffer(bufferFile string) ([]byte, error) {
-	return os.ReadFile(bufferFile)
+	return os.ReadFile(bufferFile) // #nosec G304 -- bufferFile is created by git
 }
 
 // requestContentSignature sends an HTTP request to the credentials server to sign the content.
-func requestContentSignature(content []byte, certPath string) ([]byte, error) {
-	requestBody, err := createSignatureRequestBody(content, certPath)
+func requestContentSignature(content []byte, certPath, namespace string) ([]byte, error) {
+	requestBody, err := createSignatureRequestBody(content, certPath, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -79,29 +86,14 @@ func writeSignatureToFile(signature []byte, bufferFile string) error {
 	return nil
 }
 
-func createSignatureRequestBody(content []byte, certPath string) ([]byte, error) {
-	var publicKey string
-	pubKeyData, readErr := os.ReadFile(
-		certPath,
-	) // #nosec G304 -- certPath comes from git config, not user input
-	if readErr == nil {
-		publicKey = strings.TrimSpace(string(pubKeyData))
-	}
-
+func createSignatureRequestBody(content []byte, certPath, namespace string) ([]byte, error) {
 	request := &GitSSHSignatureRequest{
 		Content:   string(content),
 		KeyPath:   certPath,
-		PublicKey: publicKey,
+		PublicKey: extractPublicKeyForRequest(certPath),
+		Namespace: namespace,
 	}
 	return json.Marshal(request)
-}
-
-// signatureServerURL overrides the server URL for testing. Empty means use credentials.GetPort().
-var signatureServerURL string
-
-// SetSignatureServerURL sets the server URL override for testing.
-func SetSignatureServerURL(url string) {
-	signatureServerURL = url
 }
 
 func getSignatureURL() (string, error) {

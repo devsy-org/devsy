@@ -139,14 +139,12 @@ func createFromEnv(ctx context.Context, baseClient client.Client) error {
 		return fmt.Errorf("unable to create new instance through CLI if stdin is not a terminal")
 	}
 
-	instance, err = form.CreateInstance(
-		ctx,
-		baseClient,
-		env.id,
-		env.uid,
-		env.source,
-		env.picture,
-	)
+	instance, err = form.CreateInstance(ctx, baseClient, form.InstanceSpec{
+		ID:      env.id,
+		UID:     env.uid,
+		Source:  env.source,
+		Picture: env.picture,
+	})
 	if err != nil {
 		return err
 	}

@@ -21,7 +21,7 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/api/pkg/auth"
 	devsyclientset "github.com/devsy-org/api/pkg/clientset/versioned"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
@@ -42,9 +42,15 @@ import (
 )
 
 const (
+	adminValue       = "admin"
+	namespaceValue   = "--namespace"
+	kubeContextValue = "--kube-context"
+)
+
+const (
 	DevsyRouterDomainSecret = "loft-router-domain" // #nosec G101
 	passwordChangedHint     = "(has been changed)"
-	defaultUser             = "admin"
+	defaultUser             = adminValue
 
 	ingressNginx         = "ingress-nginx"
 	helmRepositoryConfig = "--repository-config=''"
@@ -57,7 +63,7 @@ var defaultDeploymentName = "loft" // Need to update helm chart if we change thi
 
 // StartCmd holds the login cmd flags.
 type StartCmd struct {
-	proflags.GlobalFlags
+	platformflags.GlobalFlags
 
 	KubeClient       kubernetes.Interface
 	RestConfig       *rest.Config
@@ -86,7 +92,7 @@ type StartCmd struct {
 }
 
 // NewStartCmd creates a new command.
-func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewStartCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &StartCmd{
 		GlobalFlags: *flags,
 		Product:     config.PlatformReleaseName,
@@ -94,7 +100,7 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	}
 	startCmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start a Devsy Pro instance",
+		Short: "Start a Devsy Platform instance",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},
@@ -131,7 +137,7 @@ func (cmd *StartCmd) Run(ctx context.Context) error {
 	}
 
 	// Install Devsy
-	log.Info("Welcome to Devsy Pro!")
+	log.Info("Welcome to Devsy Platform!")
 	log.Info("This installer will help you to get started.")
 
 	// make sure we are ready for installing
@@ -269,10 +275,12 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 
 	manifests, err := getReleaseManifests(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
@@ -284,10 +292,12 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 	// Retry Devsy installation
 	err = upgradeRelease(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
@@ -321,18 +331,20 @@ func (cmd *StartCmd) upgrade(ctx context.Context) error {
 
 	err = upgradeRelease(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
 		if !cmd.Reset {
 			return errors.New(
 				err.Error() + fmt.Sprintf(
-					"\n\nIf want to purge and reinstall Devsy Pro, run: %s\n",
-					greenBold("devsy pro start --reset"),
+					"\n\nIf want to purge and reinstall Devsy Platform, run: %s\n",
+					greenBold("devsy platform start --reset"),
 				),
 			)
 		}
@@ -348,7 +360,7 @@ func (cmd *StartCmd) purgeManifests(ctx context.Context, manifests string) {
 	kubectlDelete := exec.CommandContext(ctx, // #nosec G204 -- args are internally constructed
 		"kubectl", "delete", "-f", "-",
 		"--context", cmd.Context,
-		"--namespace", cmd.Namespace,
+		namespaceValue, cmd.Namespace,
 		"--ignore-not-found=true",
 		"--grace-period=0", "--force",
 	)
@@ -451,7 +463,7 @@ func (cmd *StartCmd) successRemote(ctx context.Context, host string) error {
 		return err
 	}
 
-	log.Info("Devsy Pro is reachable at https://" + host)
+	log.Info("Devsy Platform is reachable at https://" + host)
 
 	cmd.printRemoteSuccessMessage(host)
 	return nil
@@ -469,8 +481,8 @@ func (cmd *StartCmd) printRemoteSuccessMessage(host string) {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Username: `+greenBold(adminValue)+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -481,12 +493,12 @@ Follow this guide to add a valid certificate: %s
 
 #################################################################
 
-Devsy Pro was successfully installed and can now be reached at: %s
+Devsy Platform was successfully installed and can now be reached at: %s
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `,
 		greenBold(url),
-		greenBold("devsy pro login "+url),
+		greenBold("devsy platform login "+url),
 		"https://devsy.sh/docs/administration/ssl",
 		url)
 }
@@ -509,12 +521,12 @@ EXTERNAL-IP may be 'pending' for a while until your cloud provider has created a
 
 #########################################################################################################
 
-The command will wait until Devsy Pro is reachable under the host.
+The command will wait until Devsy Platform is reachable under the host.
 
 `)
 
 	log.Info(
-		"Waiting for you to configure DNS, so Devsy Pro can be reached on https://" + host,
+		"Waiting for you to configure DNS, so Devsy Platform can be reached on https://" + host,
 	)
 }
 
@@ -549,8 +561,8 @@ func (cmd *StartCmd) successLocal() error {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Username: `+greenBold(adminValue)+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -559,10 +571,10 @@ Login via CLI: %s
 
 #################################################################
 
-Devsy Pro was successfully installed.
+Devsy Platform was successfully installed.
 
-Thanks for using Devsy Pro!
-`, greenBold(url), greenBold("devsy pro login"+" --insecure "+url))
+Thanks for using Devsy Platform!
+`, greenBold(url), greenBold("devsy platform login"+" --insecure "+url))
 	blockChan := make(chan bool)
 	<-blockChan
 	return nil
@@ -648,7 +660,7 @@ func (cmd *StartCmd) resolveKubeConfig(
 		contextToLoad = cmd.Context
 	} else if cfg.LastInstallContext != "" && cfg.LastInstallContext != contextToLoad {
 		contextToLoad, err = log.QuestionDefault(&survey.QuestionOptions{
-			Question: "Seems like you try to use 'devsy pro start' with a different kubernetes context than before. " +
+			Question: "Seems like you try to use 'devsy platform start' with a different kubernetes context than before. " +
 				"Choose which kubernetes context you want to use",
 			DefaultValue: contextToLoad,
 			Options:      []string{contextToLoad, cfg.LastInstallContext},
@@ -844,7 +856,7 @@ func (cmd *StartCmd) ensureHostAndIngress(ctx context.Context) error {
 
 func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error) {
 	// wait for devsy pod to start
-	log.Info("waiting for Devsy Pro pod to be running")
+	log.Info("waiting for Devsy Platform pod to be running")
 	devsyPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace)
 	log.Infof("release Pod started")
 	if err != nil {
@@ -891,11 +903,11 @@ func (cmd *StartCmd) pingDevsyRouter(ctx context.Context, devsyPod *corev1.Pod) 
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: true, //nolint:gosec // self-signed platform cert
 			},
 		},
 	}
-	log.Infof("Waiting until Devsy Pro is reachable at https://%s", devsyRouterDomain)
+	log.Infof("Waiting until Devsy Platform is reachable at https://%s", devsyRouterDomain)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second*3,
@@ -946,20 +958,20 @@ func (cmd *StartCmd) successDevsyRouter(url string) error {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Username: `+greenBold(adminValue)+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
 
 #################################################################
 
-Devsy Pro was successfully installed and can now be reached at: %s
+Devsy Platform was successfully installed and can now be reached at: %s
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `,
 		greenBold(url),
-		greenBold("devsy pro login"+" "+url),
+		greenBold("devsy platform login"+" "+url),
 		url,
 	)
 	return nil
@@ -1003,13 +1015,15 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 		Username: defaultUser,
 		Password: cmd.Password,
 	}
-	loginRequestBytes, err := json.Marshal(loginRequest)
+	loginRequestBytes, err := json.Marshal(loginRequest) //nolint:gosec // login request body
 	if err != nil {
 		return err
 	}
 	loginRequestBuf := bytes.NewBuffer(loginRequestBytes)
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // existing behaviour for self-signed platform endpoints
+		}, //nolint:gosec // self-signed platform cert
 	}
 	httpClient := &http.Client{Transport: tr}
 
@@ -1146,7 +1160,7 @@ func enterHostNameQuestion() (string, error) {
 	return log.QuestionDefault(&survey.QuestionOptions{
 		Question: fmt.Sprintf(
 			"Enter a hostname for your %s instance (e.g. loft.my-domain.tld): \n ",
-			config.ProductNamePro,
+			config.ProductNamePlatform,
 		),
 		ValidationFunc: func(answer string) error {
 			u, err := netUrl.Parse("https://" + answer)
@@ -1203,9 +1217,9 @@ func installNginxIngress(
 		helmRepositoryConfig,
 		"--repo",
 		"https://kubernetes.github.io/ingress-nginx",
-		"--kube-context",
+		kubeContextValue,
 		kubeContext,
-		"--namespace",
+		namespaceValue,
 		ingressNginx,
 		"--create-namespace",
 		"--set-string",
@@ -1287,19 +1301,19 @@ func ensureAdminPassword(
 		return false, err
 	}
 
-	admin, err := devsyClient.StorageV1().Users().Get(ctx, "admin", metav1.GetOptions{})
+	admin, err := devsyClient.StorageV1().Users().Get(ctx, adminValue, metav1.GetOptions{})
 	switch {
 	case err != nil && !kerrors.IsNotFound(err):
 		return false, err
 	case admin == nil:
 		admin, err = devsyClient.StorageV1().Users().Create(ctx, &storagev1.User{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "admin",
+				Name: adminValue,
 			},
 			Spec: storagev1.UserSpec{
-				Username: "admin",
+				Username: adminValue,
 				Email:    "test@domain.tld",
-				Subject:  "admin",
+				Subject:  adminValue,
 				Groups:   []string{"system:masters"},
 				PasswordRef: &storagev1.SecretRef{
 					SecretName:      "loft-user-secret-admin",
@@ -1356,7 +1370,7 @@ func ensureAdminPasswordSecret(
 		return false, nil
 	}
 
-	// create the password secret if it was not found, this can happen if you delete the loft namespace without deleting the admin user
+	// recreate the password secret if missing, e.g. after the loft namespace was deleted without the admin user
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ref.SecretName,
@@ -1418,7 +1432,9 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	transport.TLSClientConfig = &tls.Config{
+		InsecureSkipVerify: true, //nolint:gosec // existing behaviour for self-signed platform endpoints
+	} //nolint:gosec // self-signed platform cert
 	// wait until devsy is reachable at the given url
 	client := &http.Client{Transport: transport}
 	url := "https://" + host + "/version"
@@ -1440,14 +1456,14 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 				"error decoding response from %s: %w. Try running '%s --reset'",
 				url,
 				err,
-				"devsy pro start",
+				"devsy platform start",
 			)
 		} else if v.Version == "" {
 			return false, fmt.Errorf(
 				"unexpected response from %s: %s. Try running '%s --reset'",
 				url,
 				string(out),
-				"devsy pro start",
+				"devsy platform start",
 			)
 		}
 
@@ -1457,26 +1473,34 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	return false, nil
 }
 
+// helmTarget names the chart and the cluster a helm call acts on.
+type helmTarget struct {
+	chartName   string
+	chartRepo   string
+	kubeContext string
+	namespace   string
+}
+
 func upgradeRelease(
 	ctx context.Context,
-	chartName, chartRepo, kubeContext, namespace string,
+	target helmTarget,
 	extraArgs []string,
 ) error {
 	// now we install devsy
 	args := []string{
 		"upgrade",
 		defaultReleaseName,
-		chartName,
+		target.chartName,
 		"--install",
 		"--create-namespace",
 		helmRepositoryConfig,
-		"--kube-context",
-		kubeContext,
-		"--namespace",
-		namespace,
+		kubeContextValue,
+		target.kubeContext,
+		namespaceValue,
+		target.namespace,
 	}
-	if chartRepo != "" {
-		args = append(args, "--repo", chartRepo)
+	if target.chartRepo != "" {
+		args = append(args, "--repo", target.chartRepo)
 	}
 	args = append(args, extraArgs...)
 
@@ -1487,8 +1511,8 @@ func upgradeRelease(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
-	if chartRepo != "" {
-		helmWorkDir, err := getHelmWorkdir(chartName)
+	if target.chartRepo != "" {
+		helmWorkDir, err := getHelmWorkdir(target.chartName)
 		if err != nil {
 			return err
 		}
@@ -1500,27 +1524,27 @@ func upgradeRelease(
 		return fmt.Errorf("error during helm command: %s (%w)", string(output), err)
 	}
 
-	log.Infof("Devsy Pro has been deployed to your cluster!")
+	log.Infof("Devsy Platform has been deployed to your cluster!")
 	return nil
 }
 
 func getReleaseManifests(
 	ctx context.Context,
-	chartName, chartRepo, kubeContext, namespace string,
+	target helmTarget,
 	extraArgs []string,
 ) (string, error) {
 	args := []string{
 		"template",
 		defaultReleaseName,
-		chartName,
+		target.chartName,
 		helmRepositoryConfig,
-		"--kube-context",
-		kubeContext,
-		"--namespace",
-		namespace,
+		kubeContextValue,
+		target.kubeContext,
+		namespaceValue,
+		target.namespace,
 	}
-	if chartRepo != "" {
-		args = append(args, "--repo", chartRepo)
+	if target.chartRepo != "" {
+		args = append(args, "--repo", target.chartRepo)
 	}
 	args = append(args, extraArgs...)
 
@@ -1528,8 +1552,8 @@ func getReleaseManifests(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
-	if chartRepo != "" {
-		helmWorkDir, err := getHelmWorkdir(chartName)
+	if target.chartRepo != "" {
+		helmWorkDir, err := getHelmWorkdir(target.chartName)
 		if err != nil {
 			return "", err
 		}

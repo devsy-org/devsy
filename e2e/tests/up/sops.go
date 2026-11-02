@@ -147,9 +147,10 @@ var _ = ginkgo.Describe(
 					"sops-failure",
 					filepath.Join(tempDir, "secrets.enc.yaml"),
 				)
-				framework.ExpectNoError(os.Setenv("SOPS_AGE_KEY", ""))
-				framework.ExpectNoError(
-					os.Setenv("SOPS_AGE_KEY_FILE", filepath.Join(tempDir, "missing-age-key")),
+				framework.SetEnvForSpec("SOPS_AGE_KEY", "")
+				framework.SetEnvForSpec(
+					"SOPS_AGE_KEY_FILE",
+					filepath.Join(tempDir, "missing-age-key"),
 				)
 
 				stdout, stderr, upErr := dtc.f.DevsyUpStreams(
@@ -170,33 +171,9 @@ var _ = ginkgo.Describe(
 )
 
 func useSOPSAgeIdentity() {
-	setSOPSEnv("SOPS_AGE_KEY", sopsE2EAgeIdentity)
-	unsetSOPSEnv("SOPS_AGE_KEY_FILE")
-	unsetSOPSEnv("SOPS_AGE_KEY_CMD")
-}
-
-func setSOPSEnv(name, value string) {
-	previous, had := os.LookupEnv(name)
-	framework.ExpectNoError(os.Setenv(name, value))
-	ginkgo.DeferCleanup(func() {
-		if had {
-			_ = os.Setenv(name, previous)
-			return
-		}
-		_ = os.Unsetenv(name)
-	})
-}
-
-func unsetSOPSEnv(name string) {
-	previous, had := os.LookupEnv(name)
-	framework.ExpectNoError(os.Unsetenv(name))
-	ginkgo.DeferCleanup(func() {
-		if had {
-			_ = os.Setenv(name, previous)
-			return
-		}
-		_ = os.Unsetenv(name)
-	})
+	framework.SetEnvForSpec("SOPS_AGE_KEY", sopsE2EAgeIdentity)
+	framework.UnsetEnvForSpec("SOPS_AGE_KEY_FILE")
+	framework.UnsetEnvForSpec("SOPS_AGE_KEY_CMD")
 }
 
 func registerSOPSSource(ctx context.Context, dtc *dockerTestContext, name, filePath string) {

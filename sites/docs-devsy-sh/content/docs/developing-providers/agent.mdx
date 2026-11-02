@@ -33,7 +33,7 @@ Option values can be used in this section.
 - **local**: set to `true` when Devsy runs directly on this machine instead of reaching a remote one. The built-in providers do this.
 - **driver**: how the container is deployed. One of `docker` (default), `kubernetes`, `apple`, `microsandbox`, `custom` or `external`. See [Drivers](./driver.mdx).
 - **inactivityTimeout**: how long to wait before stopping an idle machine. For machine providers.
-- **containerInactivityTimeout**: how long to wait before stopping an idle container. For non-machine providers.
+- **containerInactivityTimeout**: how long the container may be idle before it stops. A Go duration such as `10m`; empty or `0` disables it. For non-machine providers.
 - **injectGitCredentials**, **injectDockerCredentials**: whether to copy those credentials into the environment.
 - **exec.shutdown**: the command that stops the machine once it is idle. Option values are available in it.
 - **binaries**: helper binaries for `exec.shutdown`. Same format as [provider binaries](./binaries.mdx).
@@ -44,7 +44,18 @@ Devsy tracks whether anyone is connected and stops the environment after the tim
 
 ### Non-machine providers
 
-The agent ends the container's main process, which stops the container. Set the timeout with `containerInactivityTimeout`.
+Set the timeout with `containerInactivityTimeout`. It is a Go duration such as `10m`; empty or `0` disables it.
+
+On the `kubernetes` driver, the Devsy daemon is the pod's main process. SSH, hooks and setup obtain acknowledged protection over a persistent Unix socket before doing work. Setup suspension belongs to that connection, so a dead setup process cannot leave the timer suspended indefinitely; loss of the owner connection aborts the client work. The daemon exits normally when the workspace has been idle for the timeout, ending the pod while keeping its volume. Other container drivers start a detached daemon whose exit does not by itself stop the container. See [Auto-Inactivity Timeout](../developing-in-workspaces/inactivity-timeout.mdx#kubernetes) for activity rules and pod-layout restrictions.
+
+The managed activity socket is container-local, not host remote-access IPC. Its `0666` permissions intentionally preserve the [existing cross-user heartbeat authority](https://github.com/devsy-org/devsy/blob/fe22f9a1225d6c1547001755e94c95bb2cdbc8db/cmd/internal/agentcontainer/daemon.go): any same-container UID may inhibit inactivity through its own live activity connection. This grants no general policy/control authority. The owner validates kernel peer UID/PID and process-start identity; only root or the daemon's UID can change setup or timeout policy. These checks do not isolate processes sharing a UID or add authentication to the existing SSH bridge. Do not expose the lifecycle socket outside its container. Host remote-access owner IPC retains its separate `0600` policy and context-plus-workspace-UID authorization.
+
+Admission is bounded to 128 connections. Non-owner pending and registered connections share a 96-slot activity budget, with at most 32 per UID and 16 per PID. Owner-UID activity and release requests also enter that shared budget, so an embedded SSH carrier cannot consume the remaining setup/control reserve. Owner/root pending admission is provisional, not proof of a control role; deliberate abuse by that already-privileged UID is outside this boundary. Unprotected connections have a nonrenewable 10-second deadline, restarted only when protected work ends; release-only chatter and exact ACK retries cannot renew it. Live acknowledged setup and activity have no time lease. A denied activity registration closes only that incoming SSH connection, not the listener or existing sessions.
+
+An exited peer, including an unreaped zombie, loses its registration even if another process inherited its socket. Linux liveness uses process state and start time from the same `/proc` snapshot; it does not rely only on the PID remaining present.
+
+Managed-mode detection uses the same mounted daemon configuration as the daemon itself, ahead of the process environment. An unreadable or malformed configuration aborts registration; absent runtime discovery cannot select legacy mode when managed configuration is present. Linux registration and liveness checks fail closed when the process-start identity cannot be established.
+
 
 ### Machine providers
 

@@ -8,6 +8,7 @@ Providers you can add:
 - [Docker (docker)](https://github.com/devsy-org/devsy/tree/main/providers/docker)
 - [Podman (podman)](https://github.com/devsy-org/devsy/tree/main/providers/podman)
 - [Kubernetes (kubernetes)](https://github.com/devsy-org/devsy/tree/main/providers/kubernetes)
+- [Harvester (harvester)](https://github.com/devsy-org/devsy-provider-harvester)
 - [Apple (apple)](https://github.com/devsy-org/devsy/tree/main/providers/apple)
 - [MicroSandbox (microsandbox)](https://github.com/devsy-org/devsy-provider-microsandbox)
 - [Lima (lima)](https://github.com/devsy-org/devsy-provider-lima)
@@ -63,6 +64,17 @@ devsy provider add ../devsy-provider-mock/provider.yaml
 devsy provider add https://github.com/devsy-org/devsy-provider-ssh/releases/download/v0.0.3/provider.yaml
 ```
 
+### Harvester
+
+```sh
+devsy provider add harvester
+```
+
+The [Harvester provider](https://github.com/devsy-org/devsy-provider-harvester)
+needs a cluster kubeconfig, an imported guest image, and a VM network
+reachable from the Devsy client. The guest must run SSH and Docker. See the
+provider repository for cloud-init and image selection setup.
+
 ### MicroSandbox
 
 ```sh
@@ -75,7 +87,7 @@ This installs the latest external provider from `github.com/devsy-org/devsy-prov
 devsy provider add github.com/devsy-org/devsy-provider-microsandbox@v0.1.8
 ```
 
-The provider needs the `msb` CLI on the machine that runs the workspace. Install it with the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli) and check it with `msb --version`. Replacing a workspace VM with `devsy up --recreate` requires MicroSandbox v0.7.7 or newer. The provider runs on Apple Silicon macOS, Linux with KVM, and Windows with Windows Hypervisor Platform.
+The provider needs the `msb` CLI on the machine that runs the workspace. Install it with the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli) and check it with `msb --version`. Replacing a workspace VM with `devsy workspace up <name> --recreate` requires MicroSandbox v0.7.7 or newer. The provider runs on Apple Silicon macOS, Linux with KVM, and Windows with Windows Hypervisor Platform.
 
 **Existing built-in installations.** The built-in MicroSandbox provider is deprecated, but existing providers and workspaces keep working. To switch one to the external provider, run:
 
@@ -111,6 +123,10 @@ Change one later:
 ```sh
 devsy provider set <provider-name> --option KEY=VALUE
 ```
+
+## Kubernetes registry access
+
+For digest-pinned prebuilt images on Kubernetes, [configure cluster registry access without client credentials](./kubernetes-registry-access.mdx).
 
 ## Docker provider
 
@@ -182,18 +198,29 @@ devsy provider set-source <name> ../path-to/provider.yaml
 
 In the desktop app, use the provider's **Select version**, **Update**, and **Initialize** actions.
 
-Existing workspaces keep the provider version they were created with. Recreate one with `devsy workspace up <name> --recreate` to pick up the new version.
+Workspaces reference a provider by name rather than pinning its version. Devsy looks up the named provider when it loads a workspace.
+
+## Provider icons
+
+A provider can supply its own logo through `icon` and `iconDark` in its `provider.yaml`. The Desktop app shows it on the provider card and in the setup flow. [Develop a provider](../developing-providers/quickstart.mdx#icons) explains where relative image paths point and which formats and sizes are accepted.
+
+- Devsy fetches the images when you add a provider, and again on `devsy provider set-source` or an update. Each installed provider has its own `provider-assets/` cache beside its configuration, so a restart or an offline session keeps showing the selected image revision.
+- Listing providers and opening the Desktop app never download images.
+- A provider installed before this feature shows the bundled logo until you update it or run `devsy provider set-source <name>`.
+- Missing or unusable artwork never blocks adding, updating or cloning an otherwise valid provider. The Desktop app shows the bundled logo for the provider's name, or a generic placeholder. Caller cancellation remains an operation error.
+- In dark mode the app prefers the provider's dark image, then its light image. In light mode it uses the light image.
+- Cloning copies available cached images and revision metadata into the new provider's own installation; renaming preserves them. Deleting the original provider does not remove the clone's cached logo.
 
 ## Remove a provider
 
-In the desktop app, click the trash icon on the provider. If a workspace uses it, Devsy asks you to remove that workspace first. With the CLI:
+In the desktop app, open the provider and click **Delete**, then confirm. The delete fails while a workspace uses the provider. With the CLI:
 
 ```sh
 devsy provider delete <provider-name>
 ```
 
 <Callout type="warn">
-Delete or move the provider's workspaces first. Otherwise you cannot use them until you add the provider again.
+Delete or move the provider's workspaces first. Otherwise the CLI refuses the delete.
 </Callout>
 
 ## Rename a provider
@@ -205,7 +232,7 @@ devsy provider rename <current-name> <new-name>
 Workspaces, machines, options, and the default setting follow the new name. If any step fails, Devsy rolls the rename back.
 
 - The new name must be unique and can use lowercase letters, numbers, and dashes, up to 32 characters.
-- Pro providers cannot be renamed.
-- Stop the provider's workspaces first.
+- Platform providers cannot be renamed.
+- Renaming can stop running workspaces that use the provider.
 
-In the desktop app, edit **Provider Name** in the provider's configuration and click **Update Options**.
+In the desktop app, click **Rename** on the provider, enter the new name, and submit.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	client2 "github.com/devsy-org/devsy/pkg/client"
@@ -91,16 +92,17 @@ func (cmd *UpCmd) devsyUpProxy(
 		errChan <- cmd.runProxyUpCommand(ctx, client, stdinReader, stdoutWriter)
 	}()
 
-	result, err := tunnelserver.RunUpServer(
-		cancelCtx,
-		stdoutReader,
-		stdinWriter,
-		true,
-		true,
-		client.WorkspaceConfig(),
-		tunnelserver.WithGitToken(cmd.GitToken),
-		tunnelserver.WithStatusReporter(cmd.reporter()),
-	)
+	result, err := tunnelserver.RunUpServer(cancelCtx, tunnelserver.UpSpec{
+		Reader:                 stdoutReader,
+		Writer:                 stdinWriter,
+		AllowGitCredentials:    true,
+		AllowDockerCredentials: true,
+		Workspace:              client.WorkspaceConfig(),
+		Options: append([]tunnelserver.Option{
+			tunnelserver.WithGitToken(cmd.GitToken),
+			tunnelserver.WithStatusReporter(cmd.reporter()),
+		}, cmd.setupHop.Options()...),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel machine: %w", err)
 	}
@@ -207,15 +209,15 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		return nil, fmt.Errorf("get agent info: %w", err)
 	}
 
-	sshTunnelCmd := fmt.Sprintf("'%s' internal ssh-server --stdio", client.AgentPath())
+	sshTunnelCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
 	if log.DebugEnabled() {
 		sshTunnelCmd += " --debug" //nolint:goconst
 	}
 
 	agentCommand := fmt.Sprintf(
-		"%q internal agent workspace up --workspace-info %q",
-		client.AgentPath(),
-		workspaceInfo,
+		"%s internal agent workspace up --workspace-info %s",
+		shellescape.Quote(client.AgentPath()),
+		shellescape.Quote(workspaceInfo),
 	)
 	if log.DebugEnabled() {
 		agentCommand += " --debug"
@@ -230,17 +232,18 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		SSHCommand:  sshTunnelCmd,
 		Command:     agentCommand,
 		TunnelServerFunc: func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error) {
-			return tunnelserver.RunUpServer(
-				ctx,
-				stdout,
-				stdin,
-				client.AgentInjectGitCredentials(cmd.CLIOptions),
-				client.AgentInjectDockerCredentials(cmd.CLIOptions),
-				client.WorkspaceConfig(),
-				tunnelserver.WithSecrets(cmd.SecretsEnv, cmd.SecretsMount),
-				tunnelserver.WithGitToken(cmd.GitToken),
-				tunnelserver.WithStatusReporter(cmd.reporter()),
-			)
+			return tunnelserver.RunUpServer(ctx, tunnelserver.UpSpec{
+				Reader:                 stdout,
+				Writer:                 stdin,
+				AllowGitCredentials:    client.AgentInjectGitCredentials(cmd.CLIOptions),
+				AllowDockerCredentials: client.AgentInjectDockerCredentials(cmd.CLIOptions),
+				Workspace:              client.WorkspaceConfig(),
+				Options: append([]tunnelserver.Option{
+					tunnelserver.WithSecrets(cmd.SecretsEnv, cmd.SecretsMount),
+					tunnelserver.WithGitToken(cmd.GitToken),
+					tunnelserver.WithStatusReporter(cmd.reporter()),
+				}, cmd.setupHop.Options()...),
+			})
 		},
 	})
 }

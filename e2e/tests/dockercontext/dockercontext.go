@@ -63,18 +63,8 @@ var _ = ginkgo.Describe(
 					"host="+activeEndpoint,
 				).Run()
 				framework.ExpectNoError(err)
-				origContext, hasContext := os.LookupEnv("DOCKER_CONTEXT")
-				origHost, hasHost := os.LookupEnv("DOCKER_HOST")
-				_ = os.Unsetenv("DOCKER_CONTEXT")
-				_ = os.Unsetenv("DOCKER_HOST")
-				ginkgo.DeferCleanup(func() {
-					if hasContext {
-						_ = os.Setenv("DOCKER_CONTEXT", origContext)
-					}
-					if hasHost {
-						_ = os.Setenv("DOCKER_HOST", origHost)
-					}
-				})
+				framework.UnsetEnvForSpec("DOCKER_CONTEXT")
+				framework.UnsetEnvForSpec("DOCKER_HOST")
 
 				origShow, showErr := exec.CommandContext(ctx, "docker", "context", "show").Output()
 				framework.ExpectNoError(showErr)
@@ -129,15 +119,7 @@ var _ = ginkgo.Describe(
 						Run()
 				})
 
-				origContext, hasContext := os.LookupEnv("DOCKER_CONTEXT")
-				_ = os.Setenv("DOCKER_CONTEXT", explicitContextName)
-				ginkgo.DeferCleanup(func() {
-					if hasContext {
-						_ = os.Setenv("DOCKER_CONTEXT", origContext)
-					} else {
-						_ = os.Unsetenv("DOCKER_CONTEXT")
-					}
-				})
+				framework.SetEnvForSpec("DOCKER_CONTEXT", explicitContextName)
 
 				tempDir := framework.CopyTestdata("tests/up/testdata/docker", initialDir)
 				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)

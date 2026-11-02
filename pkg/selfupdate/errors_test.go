@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/clierr"
-	"github.com/google/go-github/v91/github"
+	"github.com/google/go-github/v92/github"
 )
 
 func TestClassifyGitHubError_RateLimit(t *testing.T) {
@@ -20,8 +20,7 @@ func TestClassifyGitHubError_RateLimit(t *testing.T) {
 	if !stderrs.Is(err, clierr.ErrRateLimited) {
 		t.Fatalf("expected ErrRateLimited, got %v", err)
 	}
-	var rlErr *github.RateLimitError
-	if !stderrs.As(err, &rlErr) {
+	if _, ok := stderrs.AsType[*github.RateLimitError](err); !ok {
 		t.Fatal("original *github.RateLimitError should remain in the chain")
 	}
 }

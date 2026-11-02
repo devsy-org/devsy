@@ -598,15 +598,22 @@ func extractTarball(downloadFile, dest string) error {
 	return nil
 }
 
+// directTarRequest describes an HTTP(S) tarball feature to resolve.
+type directTarRequest struct {
+	id              string
+	httpHeaders     map[string]string
+	forceDownload   bool
+	pinnedIntegrity string
+}
+
 // processDirectTarFeature resolves an HTTP(S) tarball feature to a local folder
 // and returns its integrity digest (sha256:<hex> of the tarball).
 func processDirectTarFeature(
 	ctx context.Context,
-	id string,
-	httpHeaders map[string]string,
-	forceDownload bool,
-	pinnedIntegrity string,
+	req directTarRequest,
 ) (folder, integrity string, err error) {
+	id, httpHeaders := req.id, req.httpHeaders
+	forceDownload, pinnedIntegrity := req.forceDownload, req.pinnedIntegrity
 	log.Debugf("processing direct tar feature: featureId=%s, forceDownload=%v", id, forceDownload)
 
 	downloadBase := id[strings.LastIndex(id, "/"):]

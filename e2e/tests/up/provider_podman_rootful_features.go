@@ -33,9 +33,8 @@ var _ = ginkgo.Describe(
 				ginkgo.It("should mount volumes", func(ctx context.Context) {
 					tempDir, err := setupWorkspaceAndUp(
 						ctx,
-						"tests/up/testdata/docker-mounts",
-						initialDir,
 						f,
+						workspaceSource{"tests/up/testdata/docker-mounts", initialDir},
 						"--debug",
 					)
 					framework.ExpectNoError(err)
@@ -52,9 +51,8 @@ var _ = ginkgo.Describe(
 				ginkgo.It("should use custom image", func(ctx context.Context) {
 					tempDir, err := setupWorkspaceAndUp(
 						ctx,
-						"tests/up/testdata/docker",
-						initialDir,
 						f,
+						workspaceSource{"tests/up/testdata/docker", initialDir},
 						"--devcontainer-image",
 						"ghcr.io/devsy-org/test-images/base:alpine",
 					)
@@ -68,9 +66,11 @@ var _ = ginkgo.Describe(
 				ginkgo.It("should skip build with custom image", func(ctx context.Context) {
 					tempDir, err := setupWorkspaceAndUp(
 						ctx,
-						"tests/up/testdata/docker-with-multi-stage-build",
-						initialDir,
 						f,
+						workspaceSource{
+							"tests/up/testdata/docker-with-multi-stage-build",
+							initialDir,
+						},
 						"--devcontainer-image",
 						"ghcr.io/devsy-org/test-images/base:alpine",
 					)

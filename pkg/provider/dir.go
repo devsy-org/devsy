@@ -45,6 +45,16 @@ func GetProvidersDir(context string) (string, error) {
 	return config.DefaultPathManager().ProvidersDir(context)
 }
 
+// GetProviderAssetsDir returns the immutable icon cache alongside provider.json.
+func GetProviderAssetsDir(context, providerName string) (string, error) {
+	providerDir, err := GetProviderDir(context, providerName)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(providerDir, ProviderAssetsDirName), nil
+}
+
 func GetProviderDir(context, providerName string) (string, error) {
 	return config.DefaultPathManager().ProviderDir(context, providerName)
 }
@@ -249,6 +259,7 @@ func LoadProviderConfigWithPathManager(
 	}
 
 	providerFile := filepath.Join(providerDir, ProviderConfigFile)
+	//nolint:gosec // path is inside the provider state directory
 	providerConfigBytes, err := os.ReadFile(providerFile)
 	if err != nil {
 		return nil, err
@@ -282,7 +293,7 @@ func embeddedProviderConfig(sourceID string) *ProviderConfig {
 	if raw == "" {
 		return nil
 	}
-	parsed, err := ParseProvider(strings.NewReader(raw))
+	parsed, err := ParseAuthorProvider(strings.NewReader(raw))
 	if err != nil {
 		// Embedded YAML failing to parse is a build-time regression; log rather
 		// than silently fall back to the stale stored config this refresh fixes.

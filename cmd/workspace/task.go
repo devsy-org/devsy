@@ -12,6 +12,7 @@ import (
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/table"
@@ -23,7 +24,7 @@ import (
 func NewTaskCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	taskCmd := &cobra.Command{
 		Use:   "task",
-		Short: "Manage background tasks (e.g. from 'up --detach')",
+		Short: "Manage background tasks",
 	}
 	taskCmd.AddCommand(newTaskListCmd(globalFlags))
 	taskCmd.AddCommand(newTaskGetCmd(globalFlags))
@@ -42,7 +43,7 @@ func newTaskListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List background tasks, most recently started first",
+		Short:   "List background tasks",
 		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return cmd.run()
@@ -181,8 +182,14 @@ type followTaskOptions struct {
 	emitJSON bool
 }
 
-func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) error {
+type taskFollowerStore interface {
+	ReconcileTask(context.Context, string) (*task.State, error)
+	Get(string) (*task.State, error)
+}
+
+func followTask(ctx context.Context, store taskFollowerStore, opts followTaskOptions) error {
 	var last *task.State
+	var lastReconcileError error
 	ticker := time.NewTicker(opts.interval)
 	defer ticker.Stop()
 
@@ -195,7 +202,7 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 	for {
 		tailer.poll(os.Stderr)
 
-		state, err := store.Get(opts.id)
+		state, err := readTaskForFollower(ctx, store, opts.id, &lastReconcileError)
 		if err != nil {
 			return err
 		}
@@ -216,13 +223,31 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 	}
 }
 
-func emitTaskTransition(last, current *task.State, emitJSON bool) {
-	if last != nil && last.Phase == current.Phase && last.Step == current.Step &&
-		last.Status == current.Status && last.OperationID == current.OperationID &&
-		(!emitJSON || last.DurationMs == current.DurationMs) {
-		return
+func readTaskForFollower(
+	ctx context.Context,
+	store taskFollowerStore,
+	id string,
+	lastReconcileError *error,
+) (*task.State, error) {
+	state, err := store.ReconcileTask(ctx, id)
+	if err == nil {
+		*lastReconcileError = nil
+		return state, nil
 	}
-	if current.Phase == "" {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	message := err.Error()
+	if *lastReconcileError == nil || message != (*lastReconcileError).Error() {
+		log.Debugf("Reconcile task %s: %s", id, message)
+		*lastReconcileError = err
+	}
+	// Cleanup can be retried; only persisted terminal state ends the follower.
+	return store.Get(id)
+}
+
+func emitTaskTransition(last, current *task.State, emitJSON bool) {
+	if taskTransitionUnchanged(last, current, emitJSON) || current.Phase == "" {
 		return
 	}
 	event := taskStatusEvent(current)
@@ -231,6 +256,15 @@ func emitTaskTransition(last, current *task.State, emitJSON bool) {
 		return
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", current.ID, current.Phase)
+}
+
+func taskTransitionUnchanged(last, current *task.State, emitJSON bool) bool {
+	if last == nil {
+		return false
+	}
+	same := last.Phase == current.Phase && last.Step == current.Step &&
+		last.Status == current.Status && last.OperationID == current.OperationID
+	return same && (!emitJSON || last.DurationMs == current.DurationMs)
 }
 
 func taskStatusEvent(current *task.State) status.Event {
@@ -409,7 +443,7 @@ func taskStateError(state *task.State) error {
 
 func resultEnvelopeFrom(state *task.State) config2.ResultEnvelope {
 	if state.Result == nil {
-		return config2.ResultEnvelope{}
+		return config2.ResultEnvelope{RunID: state.RunID}
 	}
 	var workspaceFolder string
 	if state.Result.SubstitutionContext != nil {
@@ -421,5 +455,6 @@ func resultEnvelopeFrom(state *task.State) config2.ResultEnvelope {
 		RemoteWorkspaceFolder: workspaceFolder,
 		Warnings:              state.Result.HostWarnings,
 		Recovery:              state.Result.RecoveryContainer,
+		RunID:                 state.RunID,
 	}
 }

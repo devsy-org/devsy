@@ -168,11 +168,16 @@ func storeFilesInDirectory(content *Content, path string) (string, error) {
 		filePath := filepath.Join(path, filename)
 
 		dir := filepath.Dir(filePath)
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return "", err
 		}
 
-		err := os.WriteFile(filePath, []byte(fileContent), os.ModePerm)
+		//nolint:gosec // feature scripts must stay executable
+		err := os.WriteFile(
+			filePath,
+			[]byte(fileContent),
+			0o755,
+		) //nolint:gosec // feature scripts must stay executable
 		if err != nil {
 			_ = os.RemoveAll(path)
 			return "", fmt.Errorf("failed to write file %s: %w", filename, err)

@@ -10,7 +10,7 @@ import (
 
 func TestStatusReporterUsesDeterministicASCIIOutput(t *testing.T) {
 	var out bytes.Buffer
-	reporter, err := newStatusReporter(&out, false)
+	reporter, err := newStatusReporter(&out, false, false)
 	if err != nil {
 		t.Fatalf("newStatusReporter: %v", err)
 	}
@@ -32,6 +32,20 @@ func TestStatusReporterUsesDeterministicASCIIOutput(t *testing.T) {
 	for _, r := range got {
 		if r > 127 {
 			t.Fatalf("output contains non-ASCII rune %q: %q", r, got)
+		}
+	}
+}
+
+func TestStatusReporterNoStatus(t *testing.T) {
+	for _, verbose := range []bool{false, true} {
+		var out bytes.Buffer
+		reporter, err := newStatusReporter(&out, verbose, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reporter.Report(status.Event{Phase: status.PhaseRunningCommand, State: status.StateStarted})
+		if out.Len() != 0 {
+			t.Fatalf("unexpected status: %q", out.String())
 		}
 	}
 }

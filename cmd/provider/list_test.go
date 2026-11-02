@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
@@ -90,24 +91,36 @@ type providerListOutput struct {
 	err  error
 }
 
-func captureProviderListOutput(t *testing.T, render func() error) providerListOutput {
+func captureProviderListOutput(t *testing.T, render func() error) (output providerListOutput) {
 	t.Helper()
-	read, write, err := os.Pipe()
+	capture, err := os.CreateTemp(t.TempDir(), "stdout")
 	require.NoError(t, err)
 	previous := os.Stdout
-	os.Stdout = write
+	os.Stdout = capture
 	defer func() {
 		os.Stdout = previous
-		_ = write.Close()
-		_ = read.Close()
+		output.err = errors.Join(output.err, capture.Close())
 	}()
 	renderErr := render()
-	os.Stdout = previous
-	closeErr := write.Close()
-	data, readErr := io.ReadAll(read)
-	readCloseErr := read.Close()
+	_, seekErr := capture.Seek(0, io.SeekStart)
+	data, readErr := io.ReadAll(capture)
 	return providerListOutput{
 		text: string(data),
-		err:  errors.Join(renderErr, closeErr, readErr, readCloseErr),
+		err:  errors.Join(renderErr, seekErr, readErr),
 	}
+}
+
+func TestCaptureProviderListOutputLargeOutput(t *testing.T) {
+	want := strings.Repeat("0123456789abcdef", 1<<16)
+	renderErr := errors.New("render failed")
+	previous := os.Stdout
+	output := captureProviderListOutput(t, func() error {
+		n, err := io.WriteString(os.Stdout, want)
+		require.NoError(t, err)
+		require.Equal(t, len(want), n)
+		return renderErr
+	})
+	require.Equal(t, want, output.text)
+	require.ErrorIs(t, output.err, renderErr)
+	require.Same(t, previous, os.Stdout)
 }

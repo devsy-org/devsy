@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
@@ -402,13 +403,12 @@ func (s *workspaceClient) refreshMachineOptions(
 		return nil
 	}
 
-	machine, err := options.ResolveAndSaveOptionsMachine(
-		ctx,
-		s.devsyConfig,
-		s.providerConfig,
-		s.providerMachine,
-		userOptions,
-	)
+	machine, err := options.ResolveAndSaveOptionsMachine(ctx, options.ResolveMachineRequest{
+		DevConfig:       s.devsyConfig,
+		ProviderConfig:  s.providerConfig,
+		OriginalMachine: s.providerMachine,
+		UserOptions:     userOptions,
+	})
 	if err != nil {
 		return err
 	}
@@ -421,13 +421,12 @@ func (s *workspaceClient) refreshWorkspaceOptions(
 	ctx context.Context,
 	userOptions map[string]string,
 ) error {
-	workspace, err := options.ResolveAndSaveOptionsWorkspace(
-		ctx,
-		s.devsyConfig,
-		s.providerConfig,
-		s.providerWorkspace,
-		userOptions,
-	)
+	workspace, err := options.ResolveAndSaveOptionsWorkspace(ctx, options.ResolveWorkspaceRequest{
+		DevConfig:         s.devsyConfig,
+		ProviderConfig:    s.providerConfig,
+		OriginalWorkspace: s.providerWorkspace,
+		UserOptions:       userOptions,
+	})
 	if err != nil {
 		return fmt.Errorf("resolve and save workspace options: %w", err)
 	}
@@ -721,10 +720,10 @@ func (s *workspaceClient) agentWorkspaceCommand(subcommand string) (string, erro
 	}
 
 	return fmt.Sprintf(
-		"%q internal agent workspace %s --workspace-info %q",
-		info.Agent.Path,
+		"%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(info.Agent.Path),
 		subcommand,
-		compressed,
+		shellescape.Quote(compressed),
 	), nil
 }
 
@@ -1118,10 +1117,10 @@ func buildAgentCommand(
 	agentCommand, workspaceInfo string,
 ) string {
 	command := fmt.Sprintf(
-		"%q internal agent workspace %s --workspace-info %q",
-		workspaceClient.AgentPath(),
+		"%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(workspaceClient.AgentPath()),
 		agentCommand,
-		workspaceInfo,
+		shellescape.Quote(workspaceInfo),
 	)
 	if log.DebugEnabled() {
 		command += " --debug"
@@ -1220,15 +1219,14 @@ func runTunnelServer(
 	}
 	tunnelOptions = append(tunnelOptions, opts.TunnelOptions...)
 
-	result, err := tunnelserver.RunUpServer(
-		ctx,
-		stdoutReader,
-		stdinWriter,
-		opts.WorkspaceClient.AgentInjectGitCredentials(opts.CLIOptions),
-		opts.WorkspaceClient.AgentInjectDockerCredentials(opts.CLIOptions),
-		opts.WorkspaceClient.WorkspaceConfig(),
-		tunnelOptions...,
-	)
+	result, err := tunnelserver.RunUpServer(ctx, tunnelserver.UpSpec{
+		Reader:                 stdoutReader,
+		Writer:                 stdinWriter,
+		AllowGitCredentials:    opts.WorkspaceClient.AgentInjectGitCredentials(opts.CLIOptions),
+		AllowDockerCredentials: opts.WorkspaceClient.AgentInjectDockerCredentials(opts.CLIOptions),
+		Workspace:              opts.WorkspaceClient.WorkspaceConfig(),
+		Options:                tunnelOptions,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel server: %w", err)
 	}

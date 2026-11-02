@@ -8,6 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	v050 = "v0.5.0"
+)
+
 func TestClearInitialized(t *testing.T) {
 	newConfig := func(providers map[string]*config.ProviderConfig) *config.Config {
 		return &config.Config{
@@ -94,13 +98,13 @@ func TestProviderVersionNeedsUpdate(t *testing.T) {
 		name, newVer, curVer string
 		expected, expectErr  bool
 	}{
-		{"same version", "v0.5.0", "v0.5.0", false, false},
-		{"newer version", "v0.6.0", "v0.5.0", true, false},
-		{"older version (downgrade)", "v0.4.0", "v0.5.0", true, false},
+		{"same version", v050, v050, false, false},
+		{"newer version", "v0.6.0", v050, true, false},
+		{"older version (downgrade)", "v0.4.0", v050, true, false},
 		{"mixed v prefix", "v0.6.0", "0.5.0", true, false},
 		{"patch difference", "v1.2.4", "v1.2.3", true, false},
-		{"invalid new version", "not-a-version", "v0.5.0", false, true},
-		{"invalid current version", "v0.5.0", "not-a-version", false, true},
+		{"invalid new version", "not-a-version", v050, false, true},
+		{"invalid current version", v050, "not-a-version", false, true},
 	}
 
 	for _, tt := range tests {

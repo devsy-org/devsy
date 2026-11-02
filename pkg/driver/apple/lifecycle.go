@@ -22,7 +22,11 @@ func (d *appleDriver) CommandDevContainer(
 		return fmt.Errorf("container not found")
 	}
 
-	if err := d.ensureContainerRunning(ctx, container); err != nil {
+	if params.RequireRunning {
+		if container.State.Status != config.ContainerStatusRunning {
+			return fmt.Errorf("%w: container is %q", driver.ErrNotRunning, container.State.Status)
+		}
+	} else if err := d.ensureContainerRunning(ctx, container); err != nil {
 		return err
 	}
 
@@ -38,6 +42,9 @@ func (d *appleDriver) CommandDevContainer(
 		Stdin: params.Stdin, Stdout: params.Stdout, Stderr: params.Stderr,
 	})
 }
+
+// SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
+func (d *appleDriver) SupportsRequireRunning() bool { return true }
 
 func (d *appleDriver) ensureContainerRunning(
 	ctx context.Context,

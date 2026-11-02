@@ -36,10 +36,11 @@ func NewPackageCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	packageCmd := &cobra.Command{
 		Use:   "package",
 		Short: "Package feature source directories into OCI-compliant tarballs",
-		Long: `Bundle feature source directories into devcontainer-feature-<id>.tgz archives.
+		Long: `Package feature source directories into OCI-compliant tarballs.
 
-Scans the target directory for subdirectories containing devcontainer-feature.json
-and creates gzipped tar archives suitable for OCI distribution.`,
+Find subdirectories of the target directory that contain
+devcontainer-feature.json and write a devcontainer-feature-<id>.tgz archive
+for each.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {

@@ -49,12 +49,14 @@ func (s *ProductionHostSuite) TestPreparedRuntimeThroughCLIHelper() {
 		name += ".exe"
 	}
 	binary := filepath.Join(directory, name)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
 	// #nosec G204 -- Builds the checked-in runtime fixture in a private test directory.
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./internal/testfixture")
+	build := exec.CommandContext(
+		s.T().Context(), "go", "build", "-o", binary, "./internal/testfixture",
+	)
 	output, err := build.CombinedOutput()
 	s.Require().NoError(err, string(output))
+	ctx, cancel := context.WithTimeout(s.T().Context(), time.Minute)
+	defer cancel()
 	// #nosec G304 -- Reads only the executable just built in the test-owned directory.
 	data, err := os.ReadFile(binary)
 	s.Require().NoError(err)

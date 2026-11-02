@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
@@ -50,7 +51,7 @@ func (cmd *ProjectsCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Println(string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 
 	return nil
 }

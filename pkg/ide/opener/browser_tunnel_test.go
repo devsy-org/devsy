@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	httpLocalhost1234 = "http://localhost:1234"
+)
+
 // containsAdjacent reports whether flag appears immediately followed by
 // value in args, e.g. ["--user", "vscode"].
 func containsAdjacent(args []string, flag, value string) bool {
@@ -67,7 +71,7 @@ func TestBuildHelperArgs_Basic(t *testing.T) {
 
 func TestBuildHelperArgs_ForwardPorts(t *testing.T) {
 	args := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
-		TargetURL:    "http://localhost:1234",
+		TargetURL:    httpLocalhost1234,
 		ForwardPorts: true,
 	}, false)
 	if !containsArg(args, "--forward-ports") {
@@ -77,7 +81,7 @@ func TestBuildHelperArgs_ForwardPorts(t *testing.T) {
 
 func TestBuildHelperArgs_ExtraPorts(t *testing.T) {
 	args := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
-		TargetURL:  "http://localhost:1234",
+		TargetURL:  httpLocalhost1234,
 		ExtraPorts: []string{"localhost:10800", "127.0.0.1:8443"},
 	}, false)
 	if !containsAdjacent(args, "--extra-ports", "localhost:10800") {
@@ -92,14 +96,14 @@ func TestBuildHelperArgs_ExtraPorts(t *testing.T) {
 // emitted iff openBrowser=true.
 func TestBuildHelperArgs_OpenBrowser(t *testing.T) {
 	withFlag := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
-		TargetURL: "http://localhost:1234",
+		TargetURL: httpLocalhost1234,
 	}, true)
 	if !containsArg(withFlag, "--open-browser") {
 		t.Errorf("expected --open-browser in %v", withFlag)
 	}
 
 	withoutFlag := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
-		TargetURL: "http://localhost:1234",
+		TargetURL: httpLocalhost1234,
 	}, false)
 	if containsArg(withoutFlag, "--open-browser") {
 		t.Errorf("did not expect --open-browser in %v", withoutFlag)
@@ -108,7 +112,7 @@ func TestBuildHelperArgs_OpenBrowser(t *testing.T) {
 
 func TestBuildHelperArgs_GPGAgentForwarding(t *testing.T) {
 	withFlag := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
-		TargetURL:          "http://localhost:1234",
+		TargetURL:          httpLocalhost1234,
 		GPGAgentForwarding: true,
 	}, false)
 	if !containsArg(withFlag, "--ssh-gpg-forwarding=true") {
@@ -116,7 +120,7 @@ func TestBuildHelperArgs_GPGAgentForwarding(t *testing.T) {
 	}
 
 	withoutFlag := buildHelperArgs("ctx", "ws", tunnel.BrowserTunnelParams{
-		TargetURL:          "http://localhost:1234",
+		TargetURL:          httpLocalhost1234,
 		GPGAgentForwarding: false,
 	}, false)
 	if containsArg(withoutFlag, "--ssh-gpg-forwarding=true") {
@@ -127,7 +131,7 @@ func TestBuildHelperArgs_GPGAgentForwarding(t *testing.T) {
 func TestBuildHelperArgs_IncludesResolvedUser(t *testing.T) {
 	args := buildHelperArgs("default", "my-workspace", tunnel.BrowserTunnelParams{
 		User:      "vscode",
-		TargetURL: "http://localhost:1234",
+		TargetURL: httpLocalhost1234,
 	}, false)
 
 	joined := strings.Join(args, " ")
@@ -151,7 +155,7 @@ func TestWriteReadTunnelState_RoundTrip(t *testing.T) {
 	want := TunnelState{
 		PID:        12345,
 		CreateTime: 67890,
-		TargetURL:  "http://localhost:10800",
+		TargetURL:  httpLocalhost10800,
 		Label:      LabelVSCodeBrowser,
 	}
 	if err := WriteTunnelState("ctx-test", "ws-test", want); err != nil {

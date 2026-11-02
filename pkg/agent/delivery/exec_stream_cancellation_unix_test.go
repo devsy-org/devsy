@@ -129,27 +129,17 @@ func cancellationDeliveryExecutor(
 	t *testing.T, runtime driver.ArgvExecDriver, canceled chan<- error,
 ) func(context.Context, []string, driver.Streams) error {
 	return func(ctx context.Context, argv []string, streams driver.Streams) error {
+		err := runtime.CommandContainerArgv(ctx, "owned-delivery-test", argv, streams)
 		if streams.Stdin != nil {
-			callbackDone := make(chan struct{})
-			stop := context.AfterFunc(ctx, func() {
-				defer close(callbackDone)
+			if cause := context.Cause(ctx); cause != nil {
 				select {
-				case canceled <- context.Cause(ctx):
+				case canceled <- cause:
 				default:
 					t.Error("unexpected extra attempt cancellation")
 				}
-			})
-			defer func() {
-				if !stop() {
-					select {
-					case <-callbackDone:
-					case <-time.After(execStreamCancellationTestBound):
-						t.Error("attempt observer callback did not join")
-					}
-				}
-			}()
+			}
 		}
-		return runtime.CommandContainerArgv(ctx, "owned-delivery-test", argv, streams)
+		return err
 	}
 }
 
@@ -202,6 +192,30 @@ func awaitDeliveryRead(t *testing.T, sources *cancellationBinarySource) {
 	}
 }
 
+// awaitAttemptCancellation requires the attempt to be canceled with cause, which
+// may arrive after delivery already returned.
+func awaitAttemptCancellation(
+	t *testing.T,
+	canceled <-chan error,
+	call *cancellationDeliveryCall,
+	cause error,
+) {
+	t.Helper()
+	select {
+	case got := <-canceled:
+		require.ErrorIs(t, got, cause)
+	case <-call.done:
+		select {
+		case got := <-canceled:
+			require.ErrorIs(t, got, cause)
+		default:
+			t.Fatalf("delivery returned before attempt cancellation: %v", call.err)
+		}
+	case <-time.After(execStreamCancellationTestBound):
+		t.Fatal("actual attempt cancellation was not observed")
+	}
+}
+
 func TestExecStreamAttemptCancellationOwnsSource(t *testing.T) {
 	for _, testCase := range []struct {
 		name            string
@@ -231,19 +245,7 @@ func TestExecStreamAttemptCancellationOwnsSource(t *testing.T) {
 			outer, call := startCancellationDelivery(t, delivery, sources)
 			awaitDeliveryRead(t, sources)
 			if testCase.cause != nil {
-				select {
-				case cause := <-canceled:
-					require.ErrorIs(t, cause, testCase.cause)
-				case <-call.done:
-					select {
-					case cause := <-canceled:
-						require.ErrorIs(t, cause, testCase.cause)
-					default:
-						t.Fatalf("delivery returned before attempt cancellation: %v", call.err)
-					}
-				case <-time.After(execStreamCancellationTestBound):
-					t.Fatal("actual attempt cancellation was not observed")
-				}
+				awaitAttemptCancellation(t, canceled, call, testCase.cause)
 			}
 			select {
 			case <-call.done:

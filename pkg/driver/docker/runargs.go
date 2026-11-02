@@ -117,11 +117,7 @@ func (b *runArgsBuilder) addSELinux() error {
 }
 
 func (b *runArgsBuilder) addMounts() error {
-	args, err := b.driver.addMountArgs(b.args, b.params.Options)
-	if err != nil {
-		return err
-	}
-	b.args = args
+	b.args = b.driver.addMountArgs(b.args, b.params.Options)
 	return nil
 }
 
@@ -301,16 +297,11 @@ func (d *dockerDriver) addCapabilityArgs(args []string, options *driver.RunOptio
 	return args
 }
 
-func (d *dockerDriver) addMountArgs(args []string, options *driver.RunOptions) ([]string, error) {
+func (d *dockerDriver) addMountArgs(args []string, options *driver.RunOptions) []string {
 	for _, mount := range options.Mounts {
-		if mount.Type == "bind" && mount.Source != "" {
-			if _, err := os.Stat(mount.Source); os.IsNotExist(err) {
-				return nil, fmt.Errorf("bind mount source path does not exist %s", mount.Source)
-			}
-		}
 		args = append(args, "--mount", mount.String())
 	}
-	return args, nil
+	return args
 }
 
 // ideVolumeProviders maps each supported JetBrains IDE to its server

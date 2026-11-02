@@ -15,6 +15,7 @@ const {
   providerAvailable,
   providerInitStreaming,
   providerList,
+  providerIcon,
   providerOptions,
   providerReleaseJob,
   providerSetOptions,
@@ -24,6 +25,7 @@ const {
   providerAvailable: vi.fn(),
   providerInitStreaming: vi.fn(),
   providerList: vi.fn(),
+  providerIcon: vi.fn(),
   providerOptions: vi.fn(),
   providerReleaseJob: vi.fn(),
   providerSetOptions: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock("$lib/ipc/commands.js", () => ({
   providerAvailable,
   providerInitStreaming,
   providerList,
+  providerIcon,
   providerOptions,
   providerReleaseJob,
   providerSetOptions,
@@ -135,6 +138,29 @@ describe("ProviderWizard", () => {
     await waitFor(() => {
       expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
         "terraform",
+        undefined,
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("selects Harvester once as a remote preset when the catalog also lists it", async () => {
+    providerAvailable.mockResolvedValue(["harvester", "terraform"])
+    const page = renderWizard()
+    const preset = screen.getByRole("button", {
+      name: /harvester Harvester HCI clusters/,
+    })
+    expect(
+      screen.getByRole("region", { name: "Remote" }).contains(preset),
+    ).toBe(true)
+    await screen.findByRole("button", { name: /terraform/ })
+    expect(screen.getAllByRole("button", { name: /harvester/ })).toHaveLength(1)
+    await fireEvent.click(preset)
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "harvester",
         undefined,
         false,
       )
@@ -413,6 +439,54 @@ describe("ProviderWizard", () => {
     ).toBeDefined()
     expect(screen.queryByText(/is ready to use/)).toBeNull()
     expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    page.unmount()
+  })
+
+  it("shows the bundled fallback until the manifest is installed, then the provider's own icon", async () => {
+    const dataUrl = "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="
+    providerInitStreaming.mockRejectedValueOnce(new Error("worker unavailable"))
+    providerIcon.mockResolvedValue({ revision: "rev-a", dataUrl })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await screen.findByText(/Failed to start initialization/)
+
+    expect(screen.getByAltText("docker icon").getAttribute("src")).toBe(
+      "./icons/providers/docker.svg",
+    )
+    expect(providerIcon).not.toHaveBeenCalled()
+
+    const installed = {
+      ...makeProvider("docker"),
+      icon: "assets/logo.svg",
+      iconRevision: "rev-a",
+    }
+    providerList.mockResolvedValue([installed])
+    providers.set([installed])
+
+    await waitFor(() =>
+      expect(screen.getByAltText("docker icon").getAttribute("src")).toBe(
+        dataUrl,
+      ),
+    )
+    expect(providerIcon).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        providerName: "docker",
+        theme: "light",
+        expectedRevision: "rev-a",
+      }),
+    )
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Skip initialization" }),
+    )
+    await screen.findByText(/was added but is not initialized yet/)
+    await waitFor(() =>
+      expect(screen.getByAltText("docker icon").getAttribute("src")).toBe(
+        dataUrl,
+      ),
+    )
     page.unmount()
   })
 

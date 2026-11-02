@@ -4,7 +4,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	procluster "github.com/devsy-org/devsy/cmd/pro/cluster"
 	"github.com/devsy-org/devsy/cmd/pro/daemon"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	proproject "github.com/devsy-org/devsy/cmd/pro/project"
 	"github.com/devsy-org/devsy/cmd/pro/provider"
 	protemplate "github.com/devsy-org/devsy/cmd/pro/template"
@@ -15,15 +15,16 @@ import (
 
 // NewPlatformCmd returns a new command.
 func NewPlatformCmd(flags *flags.GlobalFlags) *cobra.Command {
-	globalFlags := &proflags.GlobalFlags{GlobalFlags: flags}
+	globalFlags := &platformflags.GlobalFlags{GlobalFlags: flags}
 	platformCmd := &cobra.Command{
-		Use:           "pro",
-		Short:         "Devsy Pro commands",
+		Use:           "platform",
+		Aliases:       []string{"pro"},
+		Short:         "Devsy Platform commands",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
-			globalFlags = proflags.SetGlobalFlags(c.PersistentFlags())
+			globalFlags = platformflags.SetGlobalFlags(c.PersistentFlags())
 			return nil
 		},
 	}

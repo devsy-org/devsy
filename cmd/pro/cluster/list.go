@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -34,9 +34,9 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Use:    "list",
 		Short:  "List clusters",
 		Hidden: true,
-		RunE:   proutil.HostRunE(globalFlags, &cmd.Host, cmd.Run),
+		RunE:   cmdutil.HostRunE(globalFlags, &cmd.Host, cmd.Run),
 	}
-	proutil.AddHostFlag(c, &cmd.Host)
+	cmdutil.AddHostFlag(c, &cmd.Host)
 	cliflags.Add(c, cliflags.String(&cmd.Project, names.Project, "", "The project to use"))
 	_ = c.MarkFlagRequired(names.Project)
 	flags.BindEnv(c.Flags(), names.Project)
@@ -49,7 +49,7 @@ func (cmd *ListClustersCmd) Run(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Online"}
+	headers := []string{cmdutil.HeaderName, cmdutil.HeaderDisplayName, "Online"}
 
 	return proxycmd.RunAndPrintTable(ctx, proxycmd.Options{
 		Command:     provider.Exec.Proxy.List.Clusters,

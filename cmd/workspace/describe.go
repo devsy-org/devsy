@@ -109,11 +109,13 @@ func (cmd *DescribeCmd) validArgs(
 ) ([]string, cobra.ShellCompDirective) {
 	return completion.GetWorkspaceSuggestions(
 		rootCmd,
-		cmd.Context,
-		cmd.Provider,
-		args,
-		toComplete,
-		cmd.Owner,
+		completion.SuggestionRequest{
+			Context:    cmd.Context,
+			Provider:   cmd.Provider,
+			Args:       args,
+			ToComplete: toComplete,
+			Owner:      cmd.Owner,
+		},
 	)
 }
 

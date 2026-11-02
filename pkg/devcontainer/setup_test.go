@@ -27,6 +27,11 @@ import (
 )
 
 const (
+	stderrValue = "stderr"
+	none        = "none"
+)
+
+const (
 	testDockerHostEnvKey      = "DOCKER_HOST"
 	testSetupSSHServerCommand = "ssh-server --stdio"
 )
@@ -109,7 +114,7 @@ func TestExecSetupSSHServer_SilentExecClosesStdin(t *testing.T) {
 }
 
 func TestExecSetupSSHServer_OutputDisarmsWatchdog(t *testing.T) {
-	for _, stream := range []string{"stdout", "stderr"} {
+	for _, stream := range []string{"stdout", stderrValue} {
 		t.Run(stream, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
@@ -119,7 +124,7 @@ func TestExecSetupSSHServer_OutputDisarmsWatchdog(t *testing.T) {
 				params *driver.CommandParams,
 			) error {
 				output := params.Stdout
-				if stream == "stderr" {
+				if stream == stderrValue {
 					output = params.Stderr
 				}
 				_, _ = io.WriteString(output, "SSH activity")
@@ -322,7 +327,7 @@ func TestBuildResult_DefaultUserEnvProbeOverride(t *testing.T) {
 	r := &runner{
 		workspaceConfig: &provider2.AgentWorkspaceInfo{
 			CLIOptions: provider2.CLIOptions{
-				DefaultUserEnvProbe: "none",
+				DefaultUserEnvProbe: none,
 			},
 		},
 	}
@@ -338,8 +343,8 @@ func TestBuildResult_DefaultUserEnvProbeOverride(t *testing.T) {
 	}
 
 	result := r.buildResult(params)
-	if result.MergedConfig.UserEnvProbe != "none" {
-		t.Errorf("expected UserEnvProbe=%q, got %q", "none", result.MergedConfig.UserEnvProbe)
+	if result.MergedConfig.UserEnvProbe != none {
+		t.Errorf("expected UserEnvProbe=%q, got %q", none, result.MergedConfig.UserEnvProbe)
 	}
 }
 
@@ -468,13 +473,13 @@ func TestPostStartDeliverySkipsUnusedBinarySource(t *testing.T) {
 }
 
 func TestPostStartDeliveryRetainsArchitectureForBinarySource(t *testing.T) {
-	d := &architectureDriver{arch: "arm64"}
+	d := &architectureDriver{arch: arm64}
 	r := newTestRunner(d)
 	strategy := &capturePostStartDelivery{usesBinarySource: true}
 	require.NoError(t, r.deliverPostStart(context.Background(), strategy))
 	assert.True(t, strategy.called)
 	assert.Equal(t, 1, d.architectureCalls)
-	assert.Equal(t, "arm64", strategy.opts.Arch)
+	assert.Equal(t, arm64, strategy.opts.Arch)
 	assert.NotNil(t, strategy.opts.BinarySource)
 	strategy.called = false
 	d.err = context.Canceled
@@ -499,7 +504,7 @@ func TestPostStartDeliveryCustomAgentVersionPolicy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(pkgconfig.EnvAgentBinary, tc.binaryPath)
 			t.Setenv(pkgconfig.EnvAgentURL, tc.envURL)
-			r := newTestRunner(&architectureDriver{arch: "arm64"})
+			r := newTestRunner(&architectureDriver{arch: arm64})
 			r.agentDownloadURL = tc.downloadURL
 			strategy := &capturePostStartDelivery{usesBinarySource: true}
 			require.NoError(t, r.deliverPostStart(context.Background(), strategy))
@@ -582,7 +587,7 @@ func TestBuildSSHTunnelArgvPreservesLiteralArguments(t *testing.T) {
 			want = append(want, "--debug")
 		}
 		assert.Equal(t, want, r.buildSSHTunnelArgv())
-		r.workspaceConfig.Workspace.IDE.Name = "none"
+		r.workspaceConfig.Workspace.IDE.Name = none
 		want = []string{r.agentContainerPath(), "internal", "ssh-server", "--stdio"}
 		if debug {
 			want = append(want, "--debug")
@@ -702,7 +707,7 @@ func TestExecSetupSSHServerArgvStartupSilenceClosesOwnedInput(t *testing.T) {
 }
 
 func TestExecSetupSSHServerArgvActivityRetainsCallerCancellation(t *testing.T) {
-	for _, output := range []string{"stdout", "stderr"} {
+	for _, output := range []string{"stdout", stderrValue} {
 		t.Run(output, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 			defer cancel()
@@ -714,7 +719,7 @@ func TestExecSetupSSHServerArgvActivityRetainsCallerCancellation(t *testing.T) {
 			d.argv = func(ctx context.Context, _ string, _ []string, streams driver.Streams) error {
 				defer close(done)
 				writer := streams.Stdout
-				if output == "stderr" {
+				if output == stderrValue {
 					writer = streams.Stderr
 				}
 				if _, err := io.WriteString(writer, "ready"); err != nil {

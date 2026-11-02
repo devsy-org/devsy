@@ -128,6 +128,28 @@ If the socket path is not the default, set it:
 devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 ```
 
+### Bind mounts from the Podman machine
+
+On macOS and Windows with remote Podman, additional bind mount sources are paths in the selected engine's filesystem. A host directory shared into the machine is valid when that share is configured and accessible there. Devsy passes these mounts to the engine for source validation; a path existing on your desktop alone does not establish that it exists in the machine. See [Podman's volume documentation](https://docs.podman.io/en/stable/markdown/podman-run.1.html#volume-v-source-volume-host-dir-container-dir-options).
+
+Check the connection, machine, and actual guest source, replacing `my-machine` and `/path/in/machine`:
+
+```bash
+podman system connection list
+podman machine inspect my-machine
+podman machine ssh my-machine id -u
+podman machine ssh my-machine stat /path/in/machine
+```
+
+The machine's rootless UID need not match your macOS or Windows host identity. For a rootless socket source, use the guest UID to check `/run/user/<guest-uid>/podman/podman.sock`; the rootful socket is normally `/run/podman/podman.sock`.
+
+- **Source missing in the guest:** correct the source path or configure the intended host share into the machine.
+- **Wrong connection or mode:** ensure the native Podman connection and Devsy's `PODMAN_HOST` select the same machine and rootless/rootful service.
+- **Source exists but access fails:** check filesystem permissions for the engine user and applicable SELinux policy. Avoid broad permission changes or relabeling shared system paths.
+- **Socket absent inside the workspace container:** connecting Devsy to the engine does not mount its socket into the container. If the workspace needs engine access, explicitly configure a bind mount from the verified guest socket to the path its tools expect.
+
+Sharing the socket grants the container [control of the engine as the service user](https://docs.podman.io/en/stable/markdown/podman-system-service.1.html#security). Devsy does not add this mount by default; configure it only for a workspace you trust.
+
 ## Known differences
 
 ### Dockerfile builds

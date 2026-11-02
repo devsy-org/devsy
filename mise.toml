@@ -9,10 +9,10 @@ locked = true
 [tools]
 go = "1.26.9"
 node = "24"
-golangci-lint = "2.13.2"
-prek = "0.5.3"
+golangci-lint = "2.14.0"
+prek = "0.5.4"
 protoc = "36.2"
-gh = "2.101.0"
+gh = "2.102.0"
 
 [tasks.setup]
 depends = ["setup:dependencies", "setup:hooks"]
@@ -112,12 +112,11 @@ protoc -I . tunnel.proto --go_out=. --go_opt=paths=source_relative --go-grpc_out
 '''
 
 [tasks."cli:test"]
-description = "run devsy unit tests"
+description = "run the unit-test tier defined in hack/ci/suites.yaml"
 shell = "bash -c"
 run = '''
 set -euo pipefail
-packages="$(go run ./hack/unit_test_packages)"
-go test -race -coverprofile=dist/profile.out -covermode=atomic $packages
+go run ./hack/ci unit --coverprofile=dist/profile.out
 '''
 
 [tasks."cli:test:e2e:build"]
@@ -125,7 +124,8 @@ description = "build devsy for e2e tests"
 run = [
   { task = "cli:build:dev" },
   "mkdir -p e2e/bin",
-  "cp dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 e2e/bin/devsy-linux-amd64",
+  'for binary in dist/devsy-dev_linux_*/devsy-linux-*; do cp "$binary" e2e/bin/; done',
+  'for arch in amd64 arm64; do CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "e2e/bin/ghfixture-linux-$arch" ./e2e/cmd/ghfixture; done',
   '''
 host_os="$(go env GOOS)"
 host_arch="$(go env GOARCH)"

@@ -27,6 +27,23 @@ var (
 	}
 )
 
+// ParseAuthorProvider parses a manifest supplied by a provider author (download,
+// local file, built-in). Fields that Devsy generates at install time are cleared
+// so an author can never forge installation provenance or an icon revision.
+// Trusted installed JSON must keep using ParseProvider.
+func ParseAuthorProvider(reader io.Reader) (*ProviderConfig, error) {
+	parsedConfig, err := ParseProvider(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	parsedConfig.IconRevision = ""
+	parsedConfig.Source.ResolvedRef = ""
+	parsedConfig.Source.ResolvedManifestURL = ""
+
+	return parsedConfig, nil
+}
+
 func ParseProvider(reader io.Reader) (*ProviderConfig, error) {
 	payload, err := io.ReadAll(reader)
 	if err != nil {

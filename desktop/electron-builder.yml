@@ -17,6 +17,10 @@ extraResources:
       - "**/*"
   - from: resources/image-catalog-seed.json
     to: image-catalog-seed.json
+  # Linux windows read this at runtime; the builder icon directory only feeds
+  # the desktop entry and package icon theme.
+  - from: resources/icon.png
+    to: app-icon.png
 
 mac:
   category: public.app-category.developer-tools
@@ -53,6 +57,8 @@ nsis:
 
 linux:
   icon: resources/icons
+  # Names the desktop entry after appId so it matches Electron's desktopName.
+  syncDesktopName: true
   category: Development
   artifactName: Devsy_${os}_${arch}.${ext}
   target:

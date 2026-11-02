@@ -7,6 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	value100 = "1.0.0"
+)
+
 func TestParseSemver_BareMajor(t *testing.T) {
 	v, err := parseSemver("2")
 	require.NoError(t, err)
@@ -55,7 +59,7 @@ func TestFindLatestVersion_SemverTags(t *testing.T) {
 }
 
 func TestFindLatestVersion_FullSemver(t *testing.T) {
-	tags := []string{"1.0.0", "1.1.0", "2.0.0", "2.1.0"}
+	tags := []string{value100, "1.1.0", "2.0.0", "2.1.0"}
 	result := findLatestVersion("1.1.0", tags)
 	assert.Equal(t, "2.1.0", result)
 }

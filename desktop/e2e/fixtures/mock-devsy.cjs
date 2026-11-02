@@ -2,7 +2,7 @@
 "use strict"
 // Mock devsy binary for e2e tests (cross-platform Node.js version)
 // Returns canned JSON responses for each subcommand
-// Handles --result-format json, --skip-pro, and other flags the app sends
+// Handles --result-format json, --skip-platform, --skip-pro, and other flags the app sends
 // Persists state to a JSON file so provider/workspace CRUD works across calls
 
 const fs = require("node:fs")
@@ -206,7 +206,12 @@ function parseArgs(args) {
       i += 2
       continue
     }
-    if (arg === "--skip-pro" || arg === "--force" || arg.startsWith("--use=")) {
+    if (
+      arg === "--skip-platform" ||
+      arg === "--skip-pro" ||
+      arg === "--force" ||
+      arg.startsWith("--use=")
+    ) {
       i++
       continue
     }
@@ -592,6 +597,93 @@ function handleRename(args) {
   out("")
 }
 
+// Retained setup history for `workspace logs --source setup`. Two fixed runs
+// for ws-001 let Desktop specs exercise list, read, hook filters and the
+// read-only branch without a real store.
+const SETUP_RUNS = {
+  "11111111-1111-4111-8111-111111111111": {
+    runId: "11111111-1111-4111-8111-111111111111",
+    context: "default",
+    workspaceUid: "ws-001",
+    workspaceIdAtStart: "example-repo",
+    command: "up",
+    createdAt: "2026-10-30T10:00:00Z",
+    commandState: "failed",
+    captureState: "complete",
+  },
+  "22222222-2222-4222-8222-222222222222": {
+    runId: "22222222-2222-4222-8222-222222222222",
+    context: "default",
+    workspaceUid: "ws-gone",
+    workspaceIdAtStart: "deleted-project",
+    command: "up",
+    createdAt: "2026-10-29T10:00:00Z",
+    commandState: "failed",
+    captureState: "complete",
+  },
+}
+const SETUP_PRODUCER = "b0000000-0000-4000-8000-000000000001"
+const SETUP_INV = "a1111111-0000-4000-8000-000000000001"
+
+function setupRecords(runId) {
+  let sequence = 0
+  const rec = (patch) => ({
+    schemaVersion: 1,
+    runId,
+    producerId: SETUP_PRODUCER,
+    sequence: ++sequence,
+    time: "2026-10-30T10:00:01Z",
+    ...patch,
+  })
+  return [
+    rec({ kind: "invocation", invocationId: SETUP_INV, hook: "postCreateCommand", phase: "lifecycle", state: "running" }),
+    rec({ kind: "output", invocationId: SETUP_INV, stream: "stdout", text: "npm install\n", bytes: 12 }),
+    rec({ kind: "output", invocationId: SETUP_INV, stream: "stderr", text: "{\"level\":\"error\",\"msg\":\"literal\"}\n", bytes: 33 }),
+    rec({ kind: "invocation", invocationId: SETUP_INV, hook: "postCreateCommand", phase: "lifecycle", state: "failed", exitCode: 1 }),
+  ]
+}
+
+function handleSetupLogs(args) {
+  const flag = (name) => {
+    const i = args.indexOf(name)
+    return i === -1 ? undefined : args[i + 1]
+  }
+  if (args.includes("--list")) {
+    // A leading workspace argument limits the index to that workspace.
+    const scoped = args.length > 0 && !args[0].startsWith("-")
+    const runs = Object.values(SETUP_RUNS).filter(
+      (r) =>
+        r.context === variableContext &&
+        !(scoped && r.workspaceUid === "ws-gone"),
+    )
+    out({ schemaVersion: 1, runs, hasMore: false })
+    return
+  }
+  const run = SETUP_RUNS[flag("--run")]
+  if (!run) {
+    process.stderr.write("mock-devsy: run not found\n")
+    process.exit(1)
+  }
+  out({
+    schemaVersion: 1,
+    run,
+    records: setupRecords(run.runId),
+    nextCursor: "mock-cursor",
+    hasMore: false,
+    complete: true,
+  })
+}
+
+function handleLogs(args) {
+  if (flagValue(args, "--source") === "setup") handleSetupLogs(args)
+  else out("")
+}
+
+function flagValue(args, name) {
+  const i = args.indexOf(name)
+  return i === -1 ? undefined : args[i + 1]
+}
+
 // Unimplemented workspace verbs: exit 0 with empty output.
 function handleNoop() {
   out("")
@@ -608,7 +700,7 @@ const workspaceHandlers = {
   stop: handleStop,
   delete: handleDelete,
   rename: handleRename,
-  logs: handleNoop,
+  logs: handleLogs,
   exec: handleNoop,
   build: handleNoop,
   export: handleNoop,
@@ -859,6 +951,7 @@ switch (cmd) {
           DOTFILES_SCRIPT: { value: "" },
           SSH_INJECT_DOCKER_CREDENTIALS: { value: "true" },
           SSH_INJECT_GIT_CREDENTIALS: { value: "true" },
+          SSH_INJECT_GITHUB_CREDENTIALS: { value: "false" },
           GIT_SSH_SIGNATURE_FORWARDING: { value: "true" },
           SSH_AGENT_FORWARDING: { value: "true" },
           SSH_ADD_PRIVATE_KEYS: { value: "true" },
@@ -869,10 +962,28 @@ switch (cmd) {
           EXIT_AFTER_TIMEOUT: { value: "true" },
           SSH_CONFIG_PATH: { value: "" },
           SSH_CONFIG_INCLUDE_PATH: { value: "" },
+          ...(state.contextOptions?.[variableContext] || {}),
         })
         break
+      case "set": {
+        if (state.failContextSave) {
+          process.stderr.write("fixture context save failure\n")
+          process.exit(1)
+        }
+        const name = extra || variableContext
+        state.contextOptions ??= {}
+        state.contextOptions[name] ??= {}
+        for (let i = 0; i < rawArgs.length; i++) {
+          if (rawArgs[i] === "-o") {
+            const [key, ...values] = rawArgs[++i].split("=")
+            state.contextOptions[name][key] = {value: values.join("=")}
+          }
+        }
+        saveState(state)
+        out("")
+        break
+      }
       case "use":
-      case "set":
       case "create":
       case "delete":
         out("")

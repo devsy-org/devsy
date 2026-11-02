@@ -23,11 +23,20 @@ import (
 
 const ParameterTypeBoolean = "boolean"
 
+// InstanceSpec describes the workspace instance a form creates.
+type InstanceSpec struct {
+	ID      string
+	UID     string
+	Source  string
+	Picture string
+}
+
 func CreateInstance(
 	ctx context.Context,
 	baseClient client.Client,
-	id, uid, source, picture string,
+	spec InstanceSpec,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
+	id, uid, source, picture := spec.ID, spec.UID, spec.Source, spec.Picture
 	instance, _, err := createInstance(ctx, baseClient, InstanceIdentity{
 		ID:      id,
 		UID:     uid,
@@ -77,16 +86,7 @@ func createInstance(
 		return nil, createSelection{}, err
 	}
 
-	instance := buildCreatedInstance(buildCreatedInstanceParams{
-		id:                      identity.ID,
-		uid:                     identity.UID,
-		source:                  identity.Source,
-		picture:                 identity.Picture,
-		selectedProject:         selection.project,
-		selectedTemplate:        selection.template,
-		selectedTemplateVersion: selection.templateVersion,
-		renderedParameters:      renderedParameters,
-	})
+	instance := buildCreatedInstance(identity, selection, renderedParameters)
 	return instance, selection, nil
 }
 
@@ -168,37 +168,33 @@ func renderedParametersForCreate(
 	return runParameterForm(formCtx, fieldParameters)
 }
 
-type buildCreatedInstanceParams struct {
-	id, uid, source, picture string
-	selectedProject          *managementv1.Project
-	selectedTemplate         *managementv1.DevsyWorkspaceTemplate
-	selectedTemplateVersion  string
-	renderedParameters       string
-}
-
-func buildCreatedInstance(p buildCreatedInstanceParams) *managementv1.DevsyWorkspaceInstance {
+func buildCreatedInstance(
+	identity InstanceIdentity,
+	selection createSelection,
+	renderedParameters string,
+) *managementv1.DevsyWorkspaceInstance {
 	return &managementv1.DevsyWorkspaceInstance{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: encoding.SafeConcatNameMax([]string{p.id}, 53) + "-",
-			Namespace:    project.ProjectNamespace(p.selectedProject.GetName()),
+			GenerateName: encoding.SafeConcatNameMax([]string{identity.ID}, 53) + "-",
+			Namespace:    project.ProjectNamespace(selection.project.GetName()),
 			Labels: map[string]string{
-				storagev1.DevsyWorkspaceIDLabel:  p.id,
-				storagev1.DevsyWorkspaceUIDLabel: p.uid,
-				config.K8sProjectLabel:           p.selectedProject.GetName(),
+				storagev1.DevsyWorkspaceIDLabel:  identity.ID,
+				storagev1.DevsyWorkspaceUIDLabel: identity.UID,
+				config.K8sProjectLabel:           selection.project.GetName(),
 			},
 			Annotations: map[string]string{
-				storagev1.DevsyWorkspacePictureAnnotation: p.picture,
-				storagev1.DevsyWorkspaceSourceAnnotation:  p.source,
+				storagev1.DevsyWorkspacePictureAnnotation: identity.Picture,
+				storagev1.DevsyWorkspaceSourceAnnotation:  identity.Source,
 			},
 		},
 		Spec: managementv1.DevsyWorkspaceInstanceSpec{
 			DevsyWorkspaceInstanceSpec: storagev1.DevsyWorkspaceInstanceSpec{
-				DisplayName: p.id,
+				DisplayName: identity.ID,
 				TemplateRef: &storagev1.TemplateRef{
-					Name:    p.selectedTemplate.GetName(),
-					Version: p.selectedTemplateVersion,
+					Name:    selection.template.GetName(),
+					Version: selection.templateVersion,
 				},
-				Parameters: p.renderedParameters,
+				Parameters: renderedParameters,
 			},
 		},
 	}
@@ -258,16 +254,12 @@ func UpdateInstance(
 		return nil, err
 	}
 
-	newInstance := instance.DeepCopy()
-	applyInstanceChanges(applyInstanceChangesParams{
-		instance:                instance,
-		newInstance:             newInstance,
-		selectedTemplate:        selectedTemplate,
-		selectedTemplateVersion: selectedTemplateVersion,
-		renderedParameters:      renderedParameters,
-	})
-
-	return newInstance, nil
+	return applyInstanceChanges(
+		instance,
+		selectedTemplate,
+		selectedTemplateVersion,
+		renderedParameters,
+	), nil
 }
 
 func selectUpdateTemplate(
@@ -429,31 +421,25 @@ func assignBoolFieldValue(fieldParameter *FieldParameter, value any) {
 	}
 }
 
-type applyInstanceChangesParams struct {
-	instance                *managementv1.DevsyWorkspaceInstance
-	newInstance             *managementv1.DevsyWorkspaceInstance
-	selectedTemplate        *managementv1.DevsyWorkspaceTemplate
-	selectedTemplateVersion string
-	renderedParameters      string
-}
+func applyInstanceChanges(
+	instance *managementv1.DevsyWorkspaceInstance,
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion, renderedParameters string,
+) *managementv1.DevsyWorkspaceInstance {
+	newInstance := instance.DeepCopy()
+	if instance.Spec.TemplateRef != nil &&
+		instance.Spec.TemplateRef.Name != selectedTemplate.GetName() {
+		newInstance.Spec.TemplateRef.Name = selectedTemplate.GetName()
+	}
+	if instance.Spec.TemplateRef != nil &&
+		instance.Spec.TemplateRef.Version != selectedTemplateVersion {
+		newInstance.Spec.TemplateRef.Version = selectedTemplateVersion
+	}
+	if instance.Spec.Parameters != renderedParameters {
+		newInstance.Spec.Parameters = renderedParameters
+	}
 
-func applyInstanceChanges(params applyInstanceChangesParams) {
-	instance := params.instance
-	newInstance := params.newInstance
-	// template
-	if instance.Spec.TemplateRef != nil &&
-		instance.Spec.TemplateRef.Name != params.selectedTemplate.GetName() {
-		newInstance.Spec.TemplateRef.Name = params.selectedTemplate.GetName()
-	}
-	// version
-	if instance.Spec.TemplateRef != nil &&
-		instance.Spec.TemplateRef.Version != params.selectedTemplateVersion {
-		newInstance.Spec.TemplateRef.Version = params.selectedTemplateVersion
-	}
-	// parameters
-	if instance.Spec.Parameters != params.renderedParameters {
-		newInstance.Spec.Parameters = params.renderedParameters
-	}
+	return newInstance
 }
 
 type (

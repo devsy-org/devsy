@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"context"
+	"encoding/base64"
 	"math/rand"
 	"net"
 	"os"
@@ -29,6 +30,26 @@ const (
 	sshOptStrictHostKeyCheckingNo = "StrictHostKeyChecking=no"
 	sshOptUserKnownHostsFileNull  = "UserKnownHostsFile=/dev/null"
 	sshOptForwardAgentNo          = "ForwardAgent=no"
+
+	gitCfgUserNameCmd   = "git config user.name 'Test User'"
+	gitCfgUserEmailCmd  = "git config user.email 'test@example.com'"
+	gitCfgCommitSignCmd = "git config commit.gpgsign true"
+	gitAddFileCmd       = "git add file.txt"
+	gitVerifyCommitCmd  = "git verify-commit HEAD 2>&1"
+)
+
+var _ = ginkgo.Describe(
+	"GitHub CLI credential forwarding",
+	ginkgo.Label(cmdSSH, "gh-forwarding"),
+	func() {
+		ginkgo.It(
+			"should forward host GitHub CLI authentication without a container login",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			testGitHubCLIForwarding,
+		)
+		ginkgo.It("should prepare credentials before the first public workspace SSH command",
+			ginkgo.SpecTimeout(framework.TimeoutLong()), testPublicGitHubCLIForwarding)
+	},
 )
 
 var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Ordered, func() {
@@ -44,24 +65,13 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 		"should start a new workspace with a docker provider (default) and SSH into it",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/local-test")
 
 			// Start up devsy workspace
 			devsyUpDeadline := time.Now().Add(5 * time.Minute)
 			devsyUpCtx, cancel := context.WithDeadline(ctx, devsyUpDeadline)
 			defer cancel()
-			err = f.DevsyUp(devsyUpCtx, tempDir)
+			err := f.DevsyUp(devsyUpCtx, tempDir)
 			framework.ExpectNoError(err)
 
 			devsySSHDeadline := time.Now().Add(20 * time.Second)
@@ -80,24 +90,13 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/gpg-forwarding")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/gpg-forwarding")
 
 			sshKeyDir := ginkgo.GinkgoT().TempDir()
 
 			keyPath := filepath.Join(sshKeyDir, "id_ed25519")
 			// #nosec G204 -- test command with controlled arguments
-			err = exec.Command(
+			err := exec.Command(
 				"ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-q",
 			).Run()
 			framework.ExpectNoError(err)
@@ -129,25 +128,14 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/gpg-forwarding")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/gpg-forwarding")
 
 			ginkgo.GinkgoT().Setenv("GNUPGHOME", ginkgo.GinkgoT().TempDir())
 			framework.ExpectNoError(
 				framework.ImportGpgKey(filepath.Join(tempDir, "gpg-private.key")),
 			)
 
-			err = f.DevsyUp(ctx, tempDir, names.Flag(names.SSHGPGForwarding))
+			err := f.DevsyUp(ctx, tempDir, names.Flag(names.SSHGPGForwarding))
 			framework.ExpectNoError(err)
 
 			sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
@@ -165,18 +153,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/ssh-signing")
 
 			// Generate a temporary SSH key for signing
 			sshKeyDir, err := os.MkdirTemp("", "devsy-ssh-signing-test")
@@ -236,24 +213,24 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				"cd /tmp",
 				"git init test-sign-repo",
 				"cd test-sign-repo",
-				"git config user.name 'Test User'",
-				"git config user.email 'test@example.com'",
-				"git config commit.gpgsign true",
+				gitCfgUserNameCmd,
+				gitCfgUserEmailCmd,
+				gitCfgCommitSignCmd,
 				"echo test > testfile",
 				"git add testfile",
 				"git commit -m 'signed test commit' 2>&1",
 				"ssh-add -L | head -1 > /tmp/test_signing_key.pub",
 				"git config --global user.signingkey /tmp/test_signing_key.pub",
 				"echo world >> file.txt",
-				"git add file.txt",
+				gitAddFileCmd,
 				"git commit -m 'signed commit with file path key' 2>&1",
 			}, " && ")
 
 			// The signing key must be passed on each SSH invocation so the
 			// credentials server can configure the helper inside the container.
 			sshBase := []string{
-				"workspace",
-				"ssh",
+				cmdWorkspace,
+				cmdSSH,
 				"--agent-forwarding",
 				"--start-services",
 				"--git-ssh-signing-key", keyPath + ".pub",
@@ -261,7 +238,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			}
 
 			stdout, stderr, err := f.ExecCommandCapture(ctx,
-				append(sshBase, "--command", commitCmd),
+				append(sshBase, flagCommand, commitCmd),
 			)
 			ginkgo.GinkgoWriter.Printf("commit stdout: %s\n", stdout)
 			ginkgo.GinkgoWriter.Printf("commit stderr: %s\n", stderr)
@@ -283,11 +260,11 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				"cd /tmp/test-sign-repo",
 				"echo 'test@example.com " + pubKey + "' > /tmp/allowed_signers",
 				"git config gpg.ssh.allowedSignersFile /tmp/allowed_signers",
-				"git verify-commit HEAD 2>&1",
+				gitVerifyCommitCmd,
 			}, " && ")
 
 			stdout, stderr, err = f.ExecCommandCapture(ctx,
-				append(sshBase, "--command", verifyCmd),
+				append(sshBase, flagCommand, verifyCmd),
 			)
 			ginkgo.GinkgoWriter.Printf("verify stdout: %s\n", stdout)
 			ginkgo.GinkgoWriter.Printf("verify stderr: %s\n", stderr)
@@ -303,7 +280,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			// And confirm the signature log shows the correct principal
 			logCmd := "cd /tmp/test-sign-repo && git log --show-signature -1 2>&1"
 			stdout, stderr, err = f.ExecCommandCapture(ctx,
-				append(sshBase, "--command", logCmd),
+				append(sshBase, flagCommand, logCmd),
 			)
 			ginkgo.GinkgoWriter.Printf("log stdout: %s\n", stdout)
 			ginkgo.GinkgoWriter.Printf("log stderr: %s\n", stderr)
@@ -329,21 +306,10 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/ssh-signing")
 
 			// Start workspace WITHOUT --git-ssh-signing-key
-			err = f.DevsyUp(ctx, tempDir)
+			err := f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			// Verify the helper script was NOT installed
@@ -376,18 +342,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/ssh-signing")
 
 			// Generate a key but do NOT add it to the ssh-agent so signing will fail
 			sshKeyDir, err := os.MkdirTemp("", "devsy-ssh-signing-err-test")
@@ -411,21 +366,21 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				"cd /tmp",
 				"git init test-sign-err-repo",
 				"cd test-sign-err-repo",
-				"git config user.name 'Test User'",
-				"git config user.email 'test@example.com'",
-				"git config commit.gpgsign true",
+				gitCfgUserNameCmd,
+				gitCfgUserEmailCmd,
+				gitCfgCommitSignCmd,
 				"echo test > testfile",
 				"git add testfile",
 				"git commit -m 'signed test commit' 2>&1",
 			}, " && ")
 
 			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
-				"workspace",
-				"ssh",
+				cmdWorkspace,
+				cmdSSH,
 				"--agent-forwarding",
 				"--start-services",
 				tempDir,
-				"--command", commitCmd,
+				flagCommand, commitCmd,
 			})
 			ginkgo.GinkgoWriter.Printf("error commit stdout: %s\n", stdout)
 			ginkgo.GinkgoWriter.Printf("error commit stderr: %s\n", stderr)
@@ -440,6 +395,66 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			gomega.Expect(combined).NotTo(
 				gomega.ContainSubstring("invalid character"),
 				"error should not contain JSON parse errors - error messages must be human-readable",
+			)
+		},
+	)
+
+	ginkgo.It(
+		"should sign commits via default relay using a tilde private key without ssh-agent",
+		ginkgo.SpecTimeout(framework.TimeoutLong()),
+		func(ctx ginkgo.SpecContext) {
+			if runtime.GOOS == osWindows {
+				ginkgo.Skip("skipping on windows")
+			}
+
+			privKeyBase64, pubKey := setupIsolatedTildeSigningHome()
+
+			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
+			framework.ExpectNoError(err)
+
+			f := framework.NewDefaultFramework(filepath.Join(initialDir, "bin"))
+			_ = f.DevsyProviderAdd(ctx, "docker")
+			err = f.DevsyProviderUse(ctx, "docker")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				framework.CleanupTempDir(initialDir, tempDir)
+			})
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			signCmd := buildTildeSigningScript(privKeyBase64, pubKey)
+			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+				cmdWorkspace,
+				cmdSSH,
+				names.Flag(names.StartServices),
+				tempDir,
+				names.Flag(names.Command),
+				signCmd,
+			})
+			ginkgo.GinkgoWriter.Printf("tilde signing stdout: %s\n", stdout)
+			ginkgo.GinkgoWriter.Printf("tilde signing stderr: %s\n", stderr)
+			framework.ExpectNoError(err)
+
+			const goodSig = `Good "git" signature`
+			combined := stdout + stderr
+			gomega.Expect(combined).To(
+				gomega.ContainSubstring("signed via default tilde relay"),
+				"commit signed via host-forwarded tilde key should succeed",
+			)
+			gomega.Expect(combined).To(
+				gomega.ContainSubstring("signed via workspace tilde override"),
+				"commit signed via workspace repo-local tilde private key should succeed",
+			)
+			gomega.Expect(combined).To(
+				gomega.ContainSubstring(goodSig),
+				"git verify-commit should report a valid SSH signature",
+			)
+			gomega.Expect(strings.Count(combined, goodSig)).To(
+				gomega.Equal(2),
+				"both signed commits should verify with Good \"git\" signature",
 			)
 		},
 	)
@@ -481,7 +496,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			defer serverCancel()
 			// #nosec G204 -- test command with controlled arguments
 			serverCmd := exec.CommandContext(serverCtx, f.DevsyBinDir+"/"+f.DevsyBinName,
-				"workspace", "ssh", tempDir, "--command",
+				cmdWorkspace, cmdSSH, tempDir, flagCommand,
 				"go run /workspaces/"+filepath.Base(tempDir)+"/server.go "+strconv.Itoa(port),
 			)
 			err = serverCmd.Start()
@@ -532,3 +547,120 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 		},
 	)
 })
+
+func setupSSHWorkspace(
+	ctx context.Context,
+	initialDir, fixture string,
+) (*framework.Framework, string) {
+	ginkgo.GinkgoHelper()
+
+	tempDir, err := framework.CopyToTempDir(fixture)
+	framework.ExpectNoError(err)
+
+	f := framework.NewDefaultFramework(initialDir + "/bin")
+	_ = f.DevsyProviderAdd(ctx, "docker")
+	err = f.DevsyProviderUse(ctx, "docker")
+	framework.ExpectNoError(err)
+
+	ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+		_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+		framework.CleanupTempDir(initialDir, tempDir)
+	})
+
+	return f, tempDir
+}
+
+func setupIsolatedTildeSigningHome() (string, string) {
+	t := ginkgo.GinkgoT()
+	origHome, err := os.UserHomeDir()
+	framework.ExpectNoError(err)
+	if os.Getenv("DOCKER_CONFIG") == "" && origHome != "" {
+		t.Setenv("DOCKER_CONFIG", filepath.Join(origHome, ".docker"))
+	}
+
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	t.Setenv("DEVSY_HOME", filepath.Join(hostHome, ".devsy"))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(hostHome, ".gitconfig"))
+	t.Setenv(envSSHAuthSock, "")
+
+	return writeTildeSigningKeyAndGitConfig(hostHome)
+}
+
+func writeTildeSigningKeyAndGitConfig(hostHome string) (string, string) {
+	sshDir := filepath.Join(hostHome, ".ssh")
+	framework.ExpectNoError(os.MkdirAll(sshDir, 0o700))
+
+	keyPath := filepath.Join(sshDir, "git_signing_ed25519")
+	// #nosec G204 -- test command with controlled arguments
+	err := exec.Command(
+		"ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-q",
+	).Run()
+	framework.ExpectNoError(err)
+
+	gitConfig := "[user]\n" +
+		"\tsigningkey = ~/.ssh/git_signing_ed25519\n" +
+		"[gpg]\n" +
+		"\tformat = ssh\n" +
+		"[commit]\n" +
+		"\tgpgsign = true\n"
+	err = os.WriteFile(filepath.Join(hostHome, ".gitconfig"), []byte(gitConfig), 0o600)
+	framework.ExpectNoError(err)
+
+	// #nosec G304 -- test file with controlled path
+	privKeyBytes, err := os.ReadFile(keyPath)
+	framework.ExpectNoError(err)
+
+	// #nosec G304 -- test file with controlled path
+	pubKeyBytes, err := os.ReadFile(keyPath + ".pub")
+	framework.ExpectNoError(err)
+
+	return base64.StdEncoding.EncodeToString(privKeyBytes),
+		strings.TrimSpace(string(pubKeyBytes))
+}
+
+func buildTildeSigningScript(privKeyBase64, pubKey string) string {
+	allowedSignersBase64 := base64.StdEncoding.EncodeToString(
+		[]byte("test@example.com " + pubKey + "\n"),
+	)
+	waitForHelperCmd := "for i in $(seq 1 30); do " +
+		"test -x /usr/local/bin/devsy-ssh-signature && " +
+		"test \"$(git config --global gpg.ssh.program)\" = devsy-ssh-signature && " +
+		"break; sleep 1; done"
+
+	return strings.Join([]string{
+		"mkdir -p ~/.ssh",
+		"chmod 700 ~/.ssh",
+		"printf '%s' '" + privKeyBase64 + "' | base64 -d > ~/.ssh/git_signing_ed25519",
+		"chmod 600 ~/.ssh/git_signing_ed25519",
+		waitForHelperCmd,
+		"test -x /usr/local/bin/devsy-ssh-signature",
+		"test \"$(git config --global gpg.ssh.program)\" = devsy-ssh-signature",
+		"test \"$(git config --global gpg.format)\" = ssh",
+		"rm -rf /tmp/test-tilde-sign-repo",
+		"git init /tmp/test-tilde-sign-repo",
+		"cd /tmp/test-tilde-sign-repo",
+		gitCfgUserNameCmd,
+		gitCfgUserEmailCmd,
+		gitCfgCommitSignCmd,
+		"printf '%s' '" + allowedSignersBase64 + "' | base64 -d > /tmp/tilde_allowed_signers",
+		"git config gpg.ssh.allowedSignersFile /tmp/tilde_allowed_signers",
+		"echo first > file.txt",
+		gitAddFileCmd,
+		"git commit -m 'signed via default tilde relay' 2>&1",
+		gitVerifyCommitCmd,
+		"git config user.signingkey '~/.ssh/git_signing_ed25519'",
+		"echo second >> file.txt",
+		gitAddFileCmd,
+		"git commit -m 'signed via workspace tilde override' 2>&1",
+		gitVerifyCommitCmd,
+		"ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/workspace_only_ed25519",
+		"git config user.signingkey '~/.ssh/workspace_only_ed25519'",
+		"echo third >> file.txt",
+		gitAddFileCmd,
+		"! git commit -m 'workspace-only key must not sign' 2>&1",
+		"test \"$(git rev-list --count HEAD)\" = 2",
+	}, " && ")
+}

@@ -99,6 +99,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		err := createTarGzArchive(featureArchiveFilePath, featureFiles)
 		framework.ExpectNoError(err)
 
+		//nolint:gosec // test helper reads files it created in its own temp directory
 		devContainerFileBuf, err := os.ReadFile(path.Join(tempDir, ".devcontainer.json"))
 		framework.ExpectNoError(err)
 
@@ -110,6 +111,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		respHeader := http.Header{}
 		respHeader.Set("Content-Disposition", "attachment; filename=devcontainer-feature-hello.tgz")
 
+		//nolint:gosec // test fixture path built in the temp directory
 		featureArchiveFileBuf, err := os.ReadFile(featureArchiveFilePath)
 		framework.ExpectNoError(err)
 

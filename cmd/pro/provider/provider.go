@@ -19,7 +19,7 @@ import (
 func NewPlatformProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:    "provider",
-		Short:  "Devsy Pro provider commands",
+		Short:  "Devsy Platform provider commands",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {

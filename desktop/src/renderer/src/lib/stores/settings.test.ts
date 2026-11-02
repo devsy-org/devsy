@@ -1,10 +1,15 @@
 import { get } from "svelte/store"
-import { beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import {
   applyTheme,
+  CONTEXT_OPTION_KEYS,
   cycleTheme,
+  DEFAULT_CONTEXT_OPTIONS,
+  effectiveTheme,
   getWorkspaceRecoveryState,
+  initSettings,
+  parseContextOptions,
   setWorkspaceRecoveryState,
   theme,
 } from "./settings.js"
@@ -43,6 +48,101 @@ describe("settings store", () => {
 
       applyTheme("dark")
       expect(localStorage.getItem("devsy-theme")).toBe("dark")
+    })
+  })
+
+  describe("effectiveTheme", () => {
+    const realMatchMedia = window.matchMedia
+    let osDark = false
+    let osListeners: Array<() => void> = []
+
+    function setOsDark(value: boolean) {
+      osDark = value
+      for (const listener of osListeners) listener()
+    }
+
+    beforeEach(() => {
+      osDark = false
+      osListeners = []
+      window.matchMedia = ((query: string) => ({
+        get matches() {
+          return osDark
+        },
+        media: query,
+        addEventListener: (_type: string, listener: () => void) => {
+          osListeners.push(listener)
+        },
+        removeEventListener: (_type: string, listener: () => void) => {
+          osListeners = osListeners.filter((entry) => entry !== listener)
+        },
+      })) as unknown as typeof window.matchMedia
+    })
+
+    afterEach(() => {
+      window.matchMedia = realMatchMedia
+    })
+
+    it("follows an explicit override regardless of the OS preference", () => {
+      osDark = false
+      applyTheme("dark")
+      expect(get(effectiveTheme)).toBe("dark")
+
+      osDark = true
+      applyTheme("light")
+      expect(get(effectiveTheme)).toBe("light")
+    })
+
+    it("resolves system to the current OS preference", () => {
+      osDark = true
+      applyTheme("system")
+      expect(get(effectiveTheme)).toBe("dark")
+
+      osDark = false
+      applyTheme("system")
+      expect(get(effectiveTheme)).toBe("light")
+    })
+
+    it("tracks live OS transitions while the setting stays system, through the single media-query listener", () => {
+      theme.set("system")
+      const dispose = initSettings()
+      try {
+        expect(osListeners).toHaveLength(1)
+        expect(get(effectiveTheme)).toBe("light")
+
+        setOsDark(true)
+        expect(get(theme)).toBe("system")
+        expect(get(effectiveTheme)).toBe("dark")
+        expect(document.documentElement.classList.contains("dark")).toBe(true)
+
+        setOsDark(false)
+        expect(get(effectiveTheme)).toBe("light")
+      } finally {
+        dispose()
+      }
+      expect(osListeners).toHaveLength(0)
+    })
+
+    it("ignores OS transitions while an explicit theme is set", () => {
+      theme.set("light")
+      const dispose = initSettings()
+      try {
+        setOsDark(true)
+        expect(get(effectiveTheme)).toBe("light")
+      } finally {
+        dispose()
+      }
+    })
+
+    it("follows theme changes made through the theme store", () => {
+      const dispose = initSettings()
+      try {
+        theme.set("light")
+        expect(get(effectiveTheme)).toBe("light")
+        theme.set("dark")
+        expect(get(effectiveTheme)).toBe("dark")
+      } finally {
+        dispose()
+      }
     })
   })
 
@@ -105,5 +205,33 @@ describe("settings store", () => {
       })
       expect(getWorkspaceRecoveryState("ws-1")).toEqual({})
     })
+  })
+})
+
+describe("GitHub CLI context forwarding", () => {
+  it("defaults off for absent and empty options", () => {
+    expect(DEFAULT_CONTEXT_OPTIONS.githubCliCredentialForwarding).toBe(false)
+    expect(parseContextOptions({}).githubCliCredentialForwarding).toBe(false)
+    expect(
+      parseContextOptions({ SSH_INJECT_GITHUB_CREDENTIALS: { value: "" } })
+        .githubCliCredentialForwarding,
+    ).toBe(false)
+    expect(CONTEXT_OPTION_KEYS.githubCliCredentialForwarding).toBe(
+      "SSH_INJECT_GITHUB_CREDENTIALS",
+    )
+  })
+  it("stays independent from Git and Docker", () => {
+    const enabled = parseContextOptions({
+      SSH_INJECT_GITHUB_CREDENTIALS: { value: "true" },
+      SSH_INJECT_GIT_CREDENTIALS: { value: "false" },
+      SSH_INJECT_DOCKER_CREDENTIALS: { value: "false" },
+    })
+    expect(enabled.githubCliCredentialForwarding).toBe(true)
+    expect(enabled.gitCredentialForwarding).toBe(false)
+    expect(enabled.dockerCredentialForwarding).toBe(false)
+    expect(
+      parseContextOptions({ SSH_INJECT_GITHUB_CREDENTIALS: { value: "false" } })
+        .githubCliCredentialForwarding,
+    ).toBe(false)
   })
 })

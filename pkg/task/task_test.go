@@ -1285,6 +1285,12 @@ func TestCancelUnpublishedPIDStaysRetryable(t *testing.T) {
 		t.Fatalf("BeginLaunch: %v", err)
 	}
 
+	t.Cleanup(func() {
+		if err := releaseLauncherLock(tk); err != nil {
+			t.Errorf("release launcher: %v", err)
+		}
+	})
+
 	setKillProcessForTest(store, tk, func(pid, treeName string) error {
 		t.Error("kill invoked before the worker published a pid")
 		return nil

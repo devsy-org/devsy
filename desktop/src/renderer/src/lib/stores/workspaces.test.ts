@@ -336,6 +336,50 @@ describe("workspace snapshot store", () => {
     expect(toasts.success).not.toHaveBeenCalled()
     expect(toasts.error).not.toHaveBeenCalled()
   })
+  it("does not toast ready while log persistence remains unconfirmed", async () => {
+    mockInvoke.mockResolvedValue({
+      revision: 1,
+      workspaces: [{ id: "ws", status: "Running" }],
+      jobs: { ws: job },
+    })
+    await initWorkspaces()
+    for (const revision of [2, 3])
+      event({
+        revision,
+        workspaces: [{ id: "ws", status: "Running" }],
+        jobs: {
+          ws: {
+            ...job,
+            state: "reconciling",
+            logError: "Workspace log could not be saved: disk unavailable",
+          },
+        },
+      })
+    expect(toasts.success).not.toHaveBeenCalled()
+    expect(toasts.error).not.toHaveBeenCalled()
+  })
+  it("retains a deleted workspace row while its log warning is unresolved", async () => {
+    mockInvoke.mockResolvedValue({
+      revision: 1,
+      workspaces: [{ id: "ws", status: "Running" }],
+      jobs: { ws: job },
+    })
+    await initWorkspaces()
+    event({
+      revision: 2,
+      workspaces: [],
+      jobs: {
+        ws: {
+          ...job,
+          activity: "deleting",
+          state: "reconciling",
+          logError: "Workspace log could not be saved: disk unavailable",
+        },
+      },
+    })
+    expect(get(workspaces).map((workspace) => workspace.id)).toEqual(["ws"])
+    expect(toasts.success).not.toHaveBeenCalled()
+  })
   it("leaves existing observations intact when snapshot loading fails", async () => {
     workspaces.set([{ id: "ws", status: "Running" }])
     mockInvoke.mockRejectedValue(new Error("offline"))

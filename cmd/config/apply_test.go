@@ -97,7 +97,7 @@ func TestApplyCmd_ResolveDockerPath_Custom(t *testing.T) {
 
 func TestApplyStatusReporterEmitsCurrentStatusEnvelope(t *testing.T) {
 	var out bytes.Buffer
-	reporter, err := newStatusReporter("json", &out, false)
+	reporter, err := newStatusReporter("json", &out, false, false)
 	require.NoError(t, err)
 	reporter.Report(status.Event{
 		Phase: status.PhaseReady,
@@ -110,4 +110,16 @@ func TestApplyStatusReporterEmitsCurrentStatusEnvelope(t *testing.T) {
 	assert.Equal(t, float64(1), envelope["schemaVersion"])
 	assert.Equal(t, string(status.PipelineWorkspaceUp), envelope["pipeline"])
 	assert.Equal(t, string(status.StateSucceeded), envelope["state"])
+}
+
+func TestStatusReporterNoStatus(t *testing.T) {
+	for _, format := range []string{"plain", "json"} {
+		t.Run(format, func(t *testing.T) {
+			var out bytes.Buffer
+			reporter, err := newStatusReporter(format, &out, false, true)
+			require.NoError(t, err)
+			reporter.Report(status.Event{Phase: status.PhaseReady, State: status.StateSucceeded})
+			require.Empty(t, out.String())
+		})
+	}
 }

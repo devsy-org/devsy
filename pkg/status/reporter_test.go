@@ -2,8 +2,12 @@ package status
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
@@ -103,7 +107,8 @@ func TestNewReporter_DesktopForcesEnvelope(t *testing.T) {
 	t.Setenv("DEVSY_UI", "true")
 	var events []Event
 	reporter, err := NewReporter(ReporterOptions{
-		Format: "plain",
+		Format:   "plain",
+		NoStatus: true,
 		Envelope: func(e Event) error {
 			events = append(events, e)
 			return nil
@@ -116,6 +121,80 @@ func TestNewReporter_DesktopForcesEnvelope(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("desktop events = %#v", events)
 	}
+}
+
+func TestNewReporter_NoStatus(t *testing.T) {
+	t.Setenv("DEVSY_UI", "")
+	var out bytes.Buffer
+	calls := 0
+	for _, format := range []string{formatPlain, formatJSON} {
+		reporter, err := NewReporter(ReporterOptions{
+			Format: format, Out: &out, NoStatus: true,
+			Envelope: func(Event) error { calls++; return nil },
+		})
+		if err != nil {
+			t.Fatalf("%s reporter: %v", format, err)
+		}
+		reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
+	}
+	if out.Len() != 0 || calls != 0 {
+		t.Fatalf("suppressed output = %q, envelope calls = %d", out.String(), calls)
+	}
+	for _, opts := range []ReporterOptions{
+		{Format: "ansi", NoStatus: true},
+		{Format: formatJSON, NoStatus: true},
+	} {
+		if _, err := NewReporter(opts); err == nil {
+			t.Fatalf("expected validation error for %+v", opts)
+		}
+	}
+}
+
+func TestNoStatusTeePreservesRunEvents(t *testing.T) {
+	t.Setenv("DEVSY_UI", "")
+	var out bytes.Buffer
+	presentation, err := NewCLIReporter(CLIOptions{Format: formatPlain, Out: &out, NoStatus: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory := NewMemoryReporter()
+	reporter := Tee(presentation, memory)
+	wantErr := errors.New("failure")
+	calls := 0
+	err = Run(
+		context.Background(),
+		reporter,
+		Operation{Phase: PhaseBuildingImage},
+		func(ctx context.Context) error {
+			return Run(
+				ctx,
+				reporter,
+				Operation{Phase: PhaseStartingContainer},
+				func(context.Context) error {
+					calls++
+					return wantErr
+				},
+			)
+		},
+	)
+	require.ErrorIs(t, err, wantErr)
+	require.Equal(t, 1, calls)
+	require.Empty(t, out.String())
+	events := memory.Events()
+	require.Len(t, events, 4)
+	outer, inner, innerDone, outerDone := events[0], events[1], events[2], events[3]
+	require.Equal(t, StateStarted, outer.State)
+	require.Equal(t, StateStarted, inner.State)
+	require.Equal(t, StateFailed, innerDone.State)
+	require.Equal(t, StateFailed, outerDone.State)
+	require.NotEmpty(t, outer.OperationID)
+	require.NotEmpty(t, inner.OperationID)
+	require.NotEqual(t, outer.OperationID, inner.OperationID)
+	require.Equal(t, outer.OperationID, inner.ParentOperationID)
+	require.Equal(t, outer.OperationID, innerDone.ParentOperationID)
+	require.Equal(t, inner.OperationID, innerDone.OperationID)
+	require.Equal(t, outer.OperationID, outerDone.OperationID)
+	require.Equal(t, outer.ParentOperationID, outerDone.ParentOperationID)
 }
 
 func TestNewReporter_RejectsUnknownFormat(t *testing.T) {

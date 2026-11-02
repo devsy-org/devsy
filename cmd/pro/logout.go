@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -24,19 +24,19 @@ import (
 
 // LogoutCmd holds the logout cmd flags.
 type LogoutCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	IgnoreNotFound bool
 }
 
 // NewLogoutCmd creates a new command.
-func NewLogoutCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewLogoutCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &LogoutCmd{
 		GlobalFlags: flags,
 	}
 	logoutCmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Log out of a Devsy Pro instance",
+		Short: "Log out of a Devsy Platform instance",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -97,13 +97,10 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 		if err != nil {
 			log.Warnf("failed to list workspaces: %v", err)
 		} else {
-			cleanupLocalWorkspaces(
-				ctx,
-				devsyConfig,
-				workspaces,
-				providerConfig.Name,
-				cmd.Owner,
-			)
+			cleanupLocalWorkspaces(ctx, devsyConfig, workspaces, workspaceCleanup{
+				providerName: providerConfig.Name,
+				owner:        cmd.Owner,
+			})
 		}
 
 		daemonClient := daemon.NewLocalClient(platformInstanceConfig.Provider)
@@ -160,13 +157,19 @@ func deletePlatformInstanceFiles(contextName string, instance *provider.Platform
 	return nil
 }
 
+// workspaceCleanup selects the provider and owner whose workspaces are removed.
+type workspaceCleanup struct {
+	providerName string
+	owner        platform.OwnerFilter
+}
+
 func cleanupLocalWorkspaces(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	workspaces []*provider.Workspace,
-	providerName string,
-	owner platform.OwnerFilter,
+	scope workspaceCleanup,
 ) {
+	providerName, owner := scope.providerName, scope.owner
 	usedWorkspaces := []*provider.Workspace{}
 
 	for _, workspace := range workspaces {

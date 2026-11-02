@@ -14,6 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	vscode    = "vscode"
+	nodeValue = "node"
+)
+
 const mountTypeVolume = "volume"
 
 type provisioningPreflightMockDriver struct {
@@ -238,16 +243,16 @@ func TestWithResolvedUser(t *testing.T) {
 
 	uid := true
 	merged := &config.MergedDevContainerConfig{}
-	merged.RemoteUser = "vscode"
-	merged.ContainerUser = "node"
+	merged.RemoteUser = vscode
+	merged.ContainerUser = nodeValue
 	merged.UpdateRemoteUserUID = &uid
 
 	got := withResolvedUser(parsed, merged)
 
-	if got.RemoteUser != "vscode" {
+	if got.RemoteUser != vscode {
 		t.Errorf("RemoteUser = %q, want vscode", got.RemoteUser)
 	}
-	if got.ContainerUser != "node" {
+	if got.ContainerUser != nodeValue {
 		t.Errorf("ContainerUser = %q, want node", got.ContainerUser)
 	}
 	if got.UpdateRemoteUserUID == nil || !*got.UpdateRemoteUserUID {
@@ -511,7 +516,7 @@ func TestAutomaticMigrationPreflightFailurePreservesExisting(t *testing.T) {
 
 func TestEffectiveRemoteUser(t *testing.T) {
 	for _, tt := range []struct{ remote, container, want string }{
-		{"vscode", containerRootUser, "vscode"}, {"", "node", "node"}, {"", "", containerRootUser},
+		{vscode, containerRootUser, vscode}, {"", nodeValue, nodeValue}, {"", "", containerRootUser},
 	} {
 		cfg := &config.MergedDevContainerConfig{}
 		cfg.RemoteUser = tt.remote
@@ -523,30 +528,30 @@ func TestRunOptionsSeparateDeveloperIdentity(t *testing.T) {
 	r := newTestRunner(&mockDriver{})
 	cfg := &config.MergedDevContainerConfig{}
 	cfg.ContainerUser = containerRootUser
-	cfg.RemoteUser = "vscode"
+	cfg.RemoteUser = vscode
 	info := &config.BuildInfo{
 		ImageName:     "final-image",
 		ImageMetadata: &config.ImageMetadataConfig{},
 		ImageDetails:  &config.ImageDetails{},
 	}
-	info.ImageDetails.Config.User = "node"
+	info.ImageDetails.Config.User = nodeValue
 	options, err := r.getRunOptions(cfg, &config.SubstitutionContext{}, info, false)
 	require.NoError(t, err)
 	require.Equal(t, containerRootUser, options.User)
-	require.Equal(t, "vscode", options.RemoteUser)
-	info.Dockerless = &config.BuildInfoDockerless{User: "node"}
+	require.Equal(t, vscode, options.RemoteUser)
+	info.Dockerless = &config.BuildInfoDockerless{User: nodeValue}
 	options, err = r.getDockerlessRunOptions(cfg, &config.SubstitutionContext{}, info, false)
 	require.NoError(t, err)
 	require.Equal(t, containerRootUser, options.User)
-	require.Equal(t, "vscode", options.RemoteUser)
+	require.Equal(t, vscode, options.RemoteUser)
 	require.True(t, options.Dockerless)
 }
 
 func TestMigrationUsesCurrentDeveloperIdentity(t *testing.T) {
 	for _, tt := range []struct{ remote, container, image, want string }{
-		{"new-user", containerRootUser, "node", "new-user"},
-		{"", "node", "vscode", "node"},
-		{"", "", "node", "node"},
+		{"new-user", containerRootUser, nodeValue, "new-user"},
+		{"", nodeValue, vscode, nodeValue},
+		{"", "", nodeValue, nodeValue},
 		{"", "", "", containerRootUser},
 	} {
 		d := &migrationMockDriver{

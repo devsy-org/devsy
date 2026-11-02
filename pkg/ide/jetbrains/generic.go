@@ -34,16 +34,39 @@ const (
 	downloadAmd64OptionDescription = "The download url for the amd64 server binary"
 )
 
+func newProductOptions() ide.Options {
+	return ide.Options{
+		VersionOption: {
+			Name:        VersionOption,
+			Description: versionOptionDescription,
+			Default:     versionOptionDefault,
+		},
+		DownloadArm64Option: {
+			Name:        DownloadArm64Option,
+			Description: downloadArm64OptionDescription,
+		},
+		DownloadAmd64Option: {
+			Name:        DownloadAmd64Option,
+			Description: downloadAmd64OptionDescription,
+		},
+	}
+}
+
 func getLatestDownloadURL(code string, platform string) string {
 	return fmt.Sprintf("https://download.jetbrains.com/product?code=%s&platform=%s", code, platform)
+}
+
+// downloadTemplates are fmt templates for a versioned download URL.
+type downloadTemplates struct {
+	amd64 string
+	arm64 string
 }
 
 func getDownloadURLs(
 	options ide.Options,
 	values map[string]config2.OptionValue,
 	productCode string,
-	templateAmd64 string,
-	templateArm64 string,
+	templates downloadTemplates,
 ) (string, string) {
 	version := options.GetValue(values, VersionOption)
 	var amd64Download, arm64Download string
@@ -53,11 +76,11 @@ func getDownloadURLs(
 	} else {
 		amd64Download = options.GetValue(values, DownloadAmd64Option)
 		if amd64Download == "" {
-			amd64Download = fmt.Sprintf(templateAmd64, version)
+			amd64Download = fmt.Sprintf(templates.amd64, version)
 		}
 		arm64Download = options.GetValue(values, DownloadArm64Option)
 		if arm64Download == "" {
-			arm64Download = fmt.Sprintf(templateArm64, version)
+			arm64Download = fmt.Sprintf(templates.arm64, version)
 		}
 	}
 
@@ -170,7 +193,7 @@ func (o *GenericJetBrainsServer) installPlugins(
 
 	log.Infof("installing JetBrains plugins: plugins=%v", plugins)
 
-	installPluginsCommand := exec.Command(
+	installPluginsCommand := exec.Command( //nolint:gosec // fixed JetBrains CLI with arguments built internally
 		path.Join(targetLocation, "bin", "remote-dev-server.sh"),
 		append(
 			[]string{"installPlugins", "--give-consent-to-use-third-party-plugins"},
@@ -212,6 +235,7 @@ func (o *GenericJetBrainsServer) getDirectory(baseFolder string) string {
 }
 
 func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) error {
+	//nolint:gosec // path is inside the JetBrains config directory
 	file, err := os.Open(fromPath)
 	if err != nil {
 		return err
@@ -222,7 +246,7 @@ func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) 
 }
 
 func (o *GenericJetBrainsServer) download(targetFolder string) (string, error) {
-	err := os.MkdirAll(targetFolder, os.ModePerm)
+	err := os.MkdirAll(targetFolder, 0o750)
 	if err != nil {
 		return "", err
 	}

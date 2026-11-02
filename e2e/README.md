@@ -33,6 +33,25 @@ mise run cli:test:e2e:focus "pattern"
 
 `cli:test:e2e:act:focus` runs a focused pattern through [act](https://github.com/nektos/act).
 
+The Docker lifecycle environment regression covers values containing `=` from both
+`--workspace-env` and `--workspace-env-file`, including restart and `remoteEnv` precedence:
+
+```bash
+mise run cli:test:e2e:focus "lifecycle hooks preserve equals signs"
+```
+
+When testing local changes with Docker on macOS, run this from `e2e/` and point
+`DEVSY_AGENT_BINARY` at the local Linux agent matching the Docker architecture:
+
+```bash
+DEVSY_AGENT_BINARY="$PWD/bin/devsy-linux-arm64" \
+  GOMAXPROCS=1 GOFLAGS=-p=1 mise exec -- go tool ginkgo --focus \
+  "lifecycle hooks preserve equals signs"
+```
+
+This bypasses cached release agents; otherwise the container can run a released
+binary rather than the code under test.
+
 ## Kubernetes tests
 
 Specs labeled `up-provider-kubernetes` or `build` need a kind cluster. The setup task
@@ -49,14 +68,21 @@ Remove the cluster afterwards:
 mise run cli:test:e2e:kind:teardown
 ```
 
+## CI test tiers
+
+`hack/ci/suites.yaml` defines every test tier that `.github/workflows/pr-ci.yml` runs;
+see `hack/ci/README.md`. To make a new Ginkgo label run in CI, add it to
+`e2e.suites` there. `go test ./hack/ci` fails while a label in this directory has no
+entry.
+
 #### CI helpers
 
-The `Windows Transport Tests` job runs native transport and runtime-helper unit
-tests independently of CLI artifact builds. After that job and the builds pass,
-the reusable `docker-buildkit-windows.yml` workflow runs the
-`docker-internal-buildkit` regression specs. It provisions Docker Engine in WSL2,
-reached over SSH, with `devsy-ci docker-wsl setup` (`e2e/cmd/devsy-ci`). The runtime
-logic lives in `e2e/framework`:
+Native Windows transport and runtime-helper unit tests run in the `Unit Tests
+(windows-latest)` job, independently of CLI artifact builds. After the CLI builds
+pass, the `docker-internal-buildkit` suite of the integration group (runtime
+`docker-wsl` in `hack/ci/suites.yaml`) runs the BuildKit regression specs. Its job
+provisions Docker Engine in WSL2, reached over SSH, with `devsy-ci docker-wsl setup`
+(`e2e/cmd/devsy-ci`). The runtime logic lives in `e2e/framework`:
 
 | Package | Responsibility |
 | --- | --- |
@@ -66,10 +92,10 @@ logic lives in `e2e/framework`:
 Their unit tests need no Docker, WSL or network:
 
 ```bash
-go test ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
+go test ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/framework/ginkgoreport ./e2e/cmd/devsy-ci
 ```
 
-Ginkgo executes the specs directly. `devsy-ci check-report` checks its JSON
-report: all six BuildKit specs must pass on their first attempt, with no
+Ginkgo executes the specs directly. `ci e2e run` (or `devsy-ci check-report`) checks the JSON
+report through `e2e/framework/ginkgoreport`: all six BuildKit specs must pass on their first attempt, with no
 selected skips, dry run or programmatic focus. Teardown runs on success and
 failure, before the report and non-secret diagnostics are uploaded.

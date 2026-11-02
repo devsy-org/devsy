@@ -364,7 +364,7 @@ func assertMicrosandboxHostEntries(
 
 func microsandboxHostOwner(ctx context.Context, entry string) string {
 	args := []string{"-c", "%u:%g", entry}
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == osDarwin {
 		args = []string{"-f", "%u:%g", entry}
 	}
 	// #nosec G204 -- fixed stat executable and test-created path

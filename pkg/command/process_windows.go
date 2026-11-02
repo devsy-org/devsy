@@ -406,3 +406,11 @@ func truncateOutput(output string) string {
 	}
 	return output
 }
+
+func processRefExited(ref ProcessRef) (bool, error) {
+	running, err := savedWorkerRunning(ref)
+	if err != nil {
+		return false, err
+	}
+	return !running, nil
+}
