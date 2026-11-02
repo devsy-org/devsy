@@ -215,11 +215,15 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 
 	updateWorkspaceResult(opts.DevsyConfig, opts.OldName, opts.NewName)
 
-	_ = devssh.RemoveFromConfig(
-		opts.OldName,
-		wsConfig.SSHConfigPath,
-		wsConfig.SSHConfigIncludePath,
-	)
+	owner, ownerErr := devssh.NewOwner(wsConfig.Context, wsConfig.UID)
+	if ownerErr == nil {
+		_ = devssh.RemoveFromConfigForOwner(
+			owner,
+			opts.OldName,
+			wsConfig.SSHConfigPath,
+			wsConfig.SSHConfigIncludePath,
+		)
+	}
 
 	log.Infof("renamed workspace %s to %s", opts.OldName, opts.NewName)
 	return nil

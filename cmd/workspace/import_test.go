@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -225,67 +224,150 @@ func TestImportWorkspace_LocalLoadErrorAbortsBeforeExtraction(t *testing.T) {
 	assert.Equal(t, "{not json", string(data))
 }
 
-func TestImportWorkspace_PresentationFailureResetsNewWorkspace(t *testing.T) {
+func TestImportWorkspace_DropsForeignAliasWithNewline(t *testing.T) {
 	devsyConfig := setupImportTestHome(t)
-	var saved []provider.Workspace
-	saveErr := errors.New("save failed")
-	original := saveImportedPresentation
-	t.Cleanup(func() { saveImportedPresentation = original })
-	saveImportedPresentation = func(ws *provider.Workspace) error {
-		saved = append(saved, *ws)
-		if len(saved) == 1 {
-			return saveErr
-		}
-		return original(ws)
-	}
 
-	cmd := &ImportCmd{WorkspaceID: importTestID, MachineID: "m", ProviderID: "p"}
-	exportConfig := &provider.ExportConfig{
-		Workspace: &provider.ExportWorkspaceConfig{
-			Data: importArchive(t, &provider.Workspace{
-				ID:           importTestID,
-				UID:          importTestUID,
-				DisplayName:  importTestTheirsLabel + " ",
-				SSHHostAlias: importTestTheirsAlias,
-			}),
-		},
-	}
-	err := cmd.importWorkspace(devsyConfig, exportConfig)
-	require.ErrorIs(t, err, saveErr)
+	got := runImportWorkspace(t, devsyConfig, &provider.Workspace{
+		ID:           importTestID,
+		UID:          importTestUID,
+		SSHHostAlias: "evil\nProxyCommand x",
+	})
 
-	require.Len(t, saved, 2)
-	assert.Equal(t, importTestTheirsLabel, saved[0].DisplayName)
-	assert.Equal(t, importTestTheirsAlias, saved[0].SSHHostAlias)
-	assert.Empty(t, saved[1].DisplayName)
-	assert.Empty(t, saved[1].SSHHostAlias)
-
-	got, loadErr := provider.LoadWorkspaceConfig(importTestContext, importTestID)
-	require.NoError(t, loadErr)
-	assert.Empty(t, got.DisplayName)
 	assert.Empty(t, got.SSHHostAlias)
+	configPath := filepath.Join(importWorkspaceDir(t), provider.WorkspaceConfigFile)
+	raw, err := os.ReadFile(filepath.Clean(configPath))
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "ProxyCommand")
 }
 
-func TestImportWorkspace_PresentationFailureKeepsExistingSameUIDWorkspace(t *testing.T) {
+func TestImportWorkspace_NormalizesForeignUppercaseAlias(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+
+	got := runImportWorkspace(t, devsyConfig, &provider.Workspace{
+		ID:           importTestID,
+		UID:          importTestUID,
+		DisplayName:  "  Theirs  ",
+		SSHHostAlias: "THEIRS",
+	})
+
+	assert.Equal(t, importTestTheirsLabel, got.DisplayName)
+	assert.Equal(t, importTestTheirsAlias, got.SSHHostAlias)
+}
+
+func TestImportWorkspace_DropsForeignSSHConfigPaths(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+
+	got := runImportWorkspace(t, devsyConfig, &provider.Workspace{
+		ID:                   importTestID,
+		UID:                  importTestUID,
+		SSHConfigPath:        "/foreign/home/.ssh/config",
+		SSHConfigIncludePath: "/foreign/home/.devsy/ssh_config",
+	})
+
+	assert.Empty(t, got.SSHConfigPath)
+	assert.Empty(t, got.SSHConfigIncludePath)
+	assert.Equal(t, importTestContext, got.Context)
+}
+
+func TestImportWorkspace_SameUIDKeepsLocalSSHConfigPaths(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+	saveImportTestWorkspace(t, &provider.Workspace{
+		ID:            importTestID,
+		UID:           importTestUID,
+		SSHConfigPath: "/local/.ssh/config",
+	})
+
+	got := runImportWorkspace(t, devsyConfig, &provider.Workspace{
+		ID:            importTestID,
+		UID:           importTestUID,
+		SSHConfigPath: "/foreign/.ssh/config",
+	})
+
+	assert.Equal(t, "/local/.ssh/config", got.SSHConfigPath)
+}
+
+func TestImportWorkspace_KeepsLocalOnlyFilesOfExistingWorkspace(t *testing.T) {
 	devsyConfig := setupImportTestHome(t)
 	saveImportTestWorkspace(t, &provider.Workspace{ID: importTestID, UID: importTestUID})
-	calls := 0
-	original := saveImportedPresentation
-	t.Cleanup(func() { saveImportedPresentation = original })
-	saveImportedPresentation = func(*provider.Workspace) error {
-		calls++
-		return errors.New("save failed")
-	}
+	localFile := filepath.Join(importWorkspaceDir(t), "local-only.txt")
+	require.NoError(t, os.WriteFile(localFile, []byte("keep"), 0o600))
+
+	runImportWorkspace(t, devsyConfig, &provider.Workspace{ID: importTestID, UID: importTestUID})
+
+	data, err := os.ReadFile(filepath.Clean(localFile))
+	require.NoError(t, err)
+	assert.Equal(t, "keep", string(data))
+	assertNoImportStaging(t)
+}
+
+func TestImportWorkspace_CommitLeavesNoStagingDir(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+
+	runImportWorkspace(t, devsyConfig, &provider.Workspace{ID: importTestID, UID: importTestUID})
+
+	assertNoImportStaging(t)
+}
+
+func TestImportWorkspace_ExtractionFailureLeavesNoWorkspaceDir(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
 
 	cmd := &ImportCmd{WorkspaceID: importTestID, MachineID: "m", ProviderID: "p"}
 	exportConfig := &provider.ExportConfig{
 		Workspace: &provider.ExportWorkspaceConfig{
-			Data: importArchive(t, &provider.Workspace{
-				ID:           importTestID,
-				UID:          importTestUID,
-				SSHHostAlias: importTestTheirsAlias,
-			}),
+			Data: base64.RawStdEncoding.EncodeToString([]byte("definitely not a tar archive")),
 		},
 	}
 	require.Error(t, cmd.importWorkspace(devsyConfig, exportConfig))
-	assert.Equal(t, 1, calls)
+
+	assert.NoDirExists(t, importWorkspaceDir(t))
+	assertNoImportStaging(t)
+}
+
+func TestImportWorkspace_MissingWorkspaceConfigLeavesNoWorkspaceDir(t *testing.T) {
+	devsyConfig := setupImportTestHome(t)
+
+	buf := &bytes.Buffer{}
+	tw := tar.NewWriter(buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name:     "other.txt",
+		Mode:     0o644,
+		Size:     1,
+		Typeflag: tar.TypeReg,
+	}))
+	_, err := tw.Write([]byte("x"))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	cmd := &ImportCmd{WorkspaceID: importTestID, MachineID: "m", ProviderID: "p"}
+	exportConfig := &provider.ExportConfig{
+		Workspace: &provider.ExportWorkspaceConfig{
+			Data: base64.RawStdEncoding.EncodeToString(buf.Bytes()),
+		},
+	}
+	err = cmd.importWorkspace(devsyConfig, exportConfig)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read imported workspace config")
+
+	assert.NoDirExists(t, importWorkspaceDir(t))
+	assertNoImportStaging(t)
+}
+
+func importWorkspaceDir(t *testing.T) string {
+	t.Helper()
+
+	dir, err := provider.GetWorkspaceDir(importTestContext, importTestID)
+	require.NoError(t, err)
+	return dir
+}
+
+func assertNoImportStaging(t *testing.T) {
+	t.Helper()
+
+	workspacesDir, err := provider.GetWorkspacesDir(importTestContext)
+	require.NoError(t, err)
+	entries, err := os.ReadDir(workspacesDir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		assert.NotContains(t, entry.Name(), ".import-")
+	}
 }

@@ -17,7 +17,32 @@ type AliasReplacement struct {
 	Verify        func() error
 }
 
+// ReplaceHostAliasesWithCommit rewrites the canonical host block without checking ownership.
 func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool, error) {
+	return replaceHostAliases(r, nil, commit)
+}
+
+// ReplaceHostAliasesForOwner rewrites the canonical host block only when owner owns it.
+func ReplaceHostAliasesForOwner(
+	r AliasReplacement,
+	owner Owner,
+	commit func() error,
+) (bool, error) {
+	policy, err := newResolvedBlockPolicy(
+		owner, workspaceIDFromHost(r.CanonicalHost), "",
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return replaceHostAliases(r, policy, commit)
+}
+
+func replaceHostAliases(
+	r AliasReplacement,
+	policy *blockPolicy,
+	commit func() error,
+) (bool, error) {
 	target, err := resolveWriteTarget(r.ConfigPath, r.IncludePath)
 	if err != nil {
 		return false, err
@@ -34,7 +59,7 @@ func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool
 		return false, err
 	}
 
-	return rewriteAliasTarget(target, r.CanonicalHost, r.PreferredHost, commit)
+	return rewriteAliasTarget(target, r, policy, commit)
 }
 
 func runAliasVerify(verify func() error) error {
@@ -54,7 +79,9 @@ func runAliasCommit(commit func() error) error {
 }
 
 func rewriteAliasTarget(
-	target, canonicalHost, preferredHost string,
+	target string,
+	r AliasReplacement,
+	policy *blockPolicy,
 	commit func() error,
 ) (bool, error) {
 	original, err := os.ReadFile(filepath.Clean(target))
@@ -65,7 +92,10 @@ func rewriteAliasTarget(
 		return false, fmt.Errorf("read ssh config: %w", err)
 	}
 
-	rewritten, found := rewriteHostLines(string(original), canonicalHost, preferredHost)
+	rewritten, found, err := rewriteHostLines(string(original), target, r, policy)
+	if err != nil {
+		return false, err
+	}
 	if !found || rewritten == string(original) {
 		return false, runAliasCommit(commit)
 	}
@@ -108,29 +138,43 @@ func resolveWriteTarget(sshConfigPath, sshConfigIncludePath string) (string, err
 	return resolveSymlinkTarget(target)
 }
 
-func rewriteHostLines(content, canonicalHost, preferredHost string) (string, bool) {
-	startMarker := MarkerStartPrefix + canonicalHost
-	endMarker := MarkerEndPrefix + canonicalHost
+func rewriteHostLines(
+	content, path string,
+	r AliasReplacement,
+	policy *blockPolicy,
+) (string, bool, error) {
+	startMarker := MarkerStartPrefix + r.CanonicalHost
+	endMarker := MarkerEndPrefix + r.CanonicalHost
 	lines := strings.Split(content, "\n")
-	inSection := false
-	hostIdx := -1
+	start := -1
 	found := false
 
 	for i, line := range lines {
 		switch {
 		case isMarkerLine(line, startMarker):
-			inSection = true
-			hostIdx = -1
-		case isMarkerLine(line, endMarker):
-			found = applyHostLine(lines, hostIdx, canonicalHost, preferredHost) || found
-			inSection = false
-			hostIdx = -1
-		case inSection && hostIdx < 0 && strings.EqualFold(sshConfigKeyword(line), "host"):
-			hostIdx = i
+			start = i
+		case start >= 0 && isMarkerLine(line, endMarker):
+			err := policy.claim(path, r.CanonicalHost, lines[start:i+1])
+			if err != nil {
+				return "", false, err
+			}
+			idx := firstHostLine(lines, start, i)
+			found = applyHostLine(lines, idx, r.CanonicalHost, r.PreferredHost) || found
+			start = -1
 		}
 	}
 
-	return strings.Join(lines, "\n"), found
+	return strings.Join(lines, "\n"), found, nil
+}
+
+func firstHostLine(lines []string, start, end int) int {
+	for i := start + 1; i < end; i++ {
+		if strings.EqualFold(sshConfigKeyword(lines[i]), "host") {
+			return i
+		}
+	}
+
+	return -1
 }
 
 func applyHostLine(lines []string, idx int, canonicalHost, preferredHost string) bool {

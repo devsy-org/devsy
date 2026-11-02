@@ -430,7 +430,7 @@ func checkNextAliasConflicts(others []*provider.Workspace, next *provider.Worksp
 		return err
 	}
 
-	return checkAliasSSHConflict(paths, next.CanonicalSSHHost(), next.SSHHostAlias)
+	return checkAliasSSHConflictForOwner(paths, next, next.SSHHostAlias)
 }
 
 func commitPresentation(
@@ -445,7 +445,11 @@ func commitPresentation(
 	if err != nil {
 		return false, err
 	}
-	updated, err := ssh.ReplaceHostAliasesWithCommit(
+	owner, err := ssh.NewOwner(next.Context, next.UID)
+	if err != nil {
+		return false, err
+	}
+	updated, err := ssh.ReplaceHostAliasesForOwner(
 		ssh.AliasReplacement{
 			ConfigPath:    paths.config,
 			IncludePath:   paths.include,
@@ -453,6 +457,7 @@ func commitPresentation(
 			PreferredHost: next.PreferredSSHHost(),
 			Verify:        aliasVerifier(paths, next),
 		},
+		owner,
 		func() error { return provider.SaveWorkspacePresentation(next) },
 	)
 	if err != nil {
@@ -468,7 +473,7 @@ func aliasVerifier(paths sshPaths, next *provider.Workspace) func() error {
 	}
 
 	return func() error {
-		return checkAliasSSHConflict(paths, next.CanonicalSSHHost(), next.SSHHostAlias)
+		return checkAliasSSHConflictForOwner(paths, next, next.SSHHostAlias)
 	}
 }
 
@@ -593,13 +598,33 @@ func resolveSSHPaths(configPath, includePath string) (sshPaths, error) {
 }
 
 func checkAliasSSHConflict(paths sshPaths, ownCanonicalHost, alias string) error {
-	host := alias + config.SSHHostSuffix
 	conflicts, err := ssh.FindHostConflicts(
 		paths.config,
 		paths.include,
-		[]string{host},
+		[]string{alias + config.SSHHostSuffix},
 		ownCanonicalHost,
 	)
+
+	return aliasConflictError(conflicts, err)
+}
+
+func checkAliasSSHConflictForOwner(paths sshPaths, ws *provider.Workspace, alias string) error {
+	owner, err := ssh.NewOwner(ws.Context, ws.UID)
+	if err != nil {
+		return err
+	}
+	conflicts, err := ssh.FindHostConflictsForOwner(ssh.HostConflictQuery{
+		ConfigPath:    paths.config,
+		IncludePath:   paths.include,
+		Hosts:         []string{alias + config.SSHHostSuffix},
+		CanonicalHost: ws.CanonicalSSHHost(),
+		Owner:         owner,
+	})
+
+	return aliasConflictError(conflicts, err)
+}
+
+func aliasConflictError(conflicts []ssh.HostConflict, err error) error {
 	if err != nil {
 		return fmt.Errorf("check ssh config for host conflicts: %w", err)
 	}

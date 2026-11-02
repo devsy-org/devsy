@@ -25,33 +25,65 @@ type HostConflict struct {
 
 type conflictScan struct {
 	hosts     []string
+	ownHost   string
 	ownMarker string
 	ownEnd    string
+	policy    *blockPolicy
 	homeDir   string
 	visited   map[string]struct{}
 	seen      map[HostConflict]struct{}
 	conflicts []HostConflict
 }
 
+type HostConflictQuery struct {
+	ConfigPath    string
+	IncludePath   string
+	Hosts         []string
+	CanonicalHost string
+	Owner         Owner
+}
+
+// FindHostConflicts excludes any block for ownCanonicalHost without checking ownership.
 func FindHostConflicts(
 	sshConfigPath, sshConfigIncludePath string,
 	hosts []string,
 	ownCanonicalHost string,
 ) ([]HostConflict, error) {
+	return findHostConflicts(HostConflictQuery{
+		ConfigPath:    sshConfigPath,
+		IncludePath:   sshConfigIncludePath,
+		Hosts:         hosts,
+		CanonicalHost: ownCanonicalHost,
+	}, nil)
+}
+
+// FindHostConflictsForOwner excludes only blocks for the canonical host that owner owns.
+func FindHostConflictsForOwner(query HostConflictQuery) ([]HostConflict, error) {
+	policy, err := newResolvedBlockPolicy(
+		query.Owner, workspaceIDFromHost(query.CanonicalHost), "",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return findHostConflicts(query, policy)
+}
+
+func findHostConflicts(query HostConflictQuery, policy *blockPolicy) ([]HostConflict, error) {
 	homeDir, err := util.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("get home dir: %w", err)
 	}
 
 	roots := make([]string, 0, 2)
-	rootPath, err := ResolveSSHConfigPath(sshConfigPath)
+	rootPath, err := ResolveSSHConfigPath(query.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("invalid ssh config path: %w", err)
 	}
 	roots = append(roots, rootPath)
 
-	if sshConfigIncludePath != "" {
-		includePath, err := ResolveSSHConfigPath(sshConfigIncludePath)
+	if query.IncludePath != "" {
+		includePath, err := ResolveSSHConfigPath(query.IncludePath)
 		if err != nil {
 			return nil, fmt.Errorf("invalid ssh config include path: %w", err)
 		}
@@ -59,9 +91,11 @@ func FindHostConflicts(
 	}
 
 	scan := &conflictScan{
-		hosts:     hosts,
-		ownMarker: MarkerStartPrefix + ownCanonicalHost,
-		ownEnd:    MarkerEndPrefix + ownCanonicalHost,
+		hosts:     query.Hosts,
+		ownHost:   query.CanonicalHost,
+		ownMarker: MarkerStartPrefix + query.CanonicalHost,
+		ownEnd:    MarkerEndPrefix + query.CanonicalHost,
+		policy:    policy,
 		homeDir:   homeDir,
 		visited:   map[string]struct{}{},
 		seen:      map[HostConflict]struct{}{},
@@ -102,11 +136,17 @@ func (c *conflictScan) scanFile(path string, depth int) error {
 }
 
 func (c *conflictScan) scanLines(path string, lines []string, depth int) error {
-	inOwn := false
-	for _, line := range lines {
-		var skip bool
-		inOwn, skip = c.trackOwnBlock(line, inOwn)
-		if skip {
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if isMarkerLine(line, c.ownMarker) {
+			end := managedBlockEnd(lines, i, c.ownEnd)
+			if c.policy.owns(path, c.ownHost, lines[i:end+1]) {
+				i = end
+			}
+
+			continue
+		}
+		if isMarkerLine(line, c.ownEnd) {
 			continue
 		}
 
@@ -128,17 +168,6 @@ func (c *conflictScan) scanLine(path, line string, depth int) error {
 	}
 
 	return nil
-}
-
-func (c *conflictScan) trackOwnBlock(line string, inOwn bool) (bool, bool) {
-	switch {
-	case isMarkerLine(line, c.ownMarker):
-		return true, true
-	case isMarkerLine(line, c.ownEnd):
-		return false, true
-	default:
-		return inOwn, inOwn
-	}
 }
 
 func (c *conflictScan) recordHosts(path, line string) {

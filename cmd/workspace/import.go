@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -22,8 +23,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
-
-var saveImportedPresentation = provider.SaveWorkspacePresentation
 
 // ImportCmd holds the export cmd flags.
 type ImportCmd struct {
@@ -163,38 +162,28 @@ func (cmd *ImportCmd) importWorkspace(
 	if err != nil {
 		return err
 	}
-	if err := extractWorkspaceData(
-		devsyConfig, cmd.WorkspaceID, exportConfig.Workspace.Data,
-	); err != nil {
+	workspaceDir, err := provider.GetWorkspaceDir(devsyConfig.DefaultContext, cmd.WorkspaceID)
+	if err != nil {
+		return fmt.Errorf("get workspace dir: %w", err)
+	}
+
+	stageDir, err := stageWorkspaceData(devsyConfig, exportConfig.Workspace.Data)
+	if err != nil {
 		return err
 	}
+	defer removeStage(stageDir)
 
-	// exchange config
-	workspaceConfig, err := provider.LoadWorkspaceConfig(
-		devsyConfig.DefaultContext,
-		cmd.WorkspaceID,
-	)
+	imported, err := readStagedWorkspace(stageDir)
 	if err != nil {
-		return fmt.Errorf("load machine config: %w", err)
+		return err
 	}
-	workspaceConfig.ID = cmd.WorkspaceID
-	workspaceConfig.Context = devsyConfig.DefaultContext
-	workspaceConfig.Machine.ID = cmd.MachineID
-	workspaceConfig.Provider.Name = cmd.ProviderID
-
-	if exportConfig.SnapshotRef != "" {
-		if err := applySnapshotSource(workspaceConfig, exportConfig.SnapshotRef); err != nil {
-			return err
-		}
+	if err := cmd.prepareImportedWorkspace(devsyConfig, exportConfig, local, imported); err != nil {
+		return err
 	}
-
-	// save machine config
-	err = provider.SaveWorkspaceConfig(workspaceConfig)
-	if err != nil {
-		return fmt.Errorf("save workspace config: %w", err)
+	if err := writeStagedWorkspace(stageDir, imported); err != nil {
+		return err
 	}
-
-	if err := applyImportedPresentation(devsyConfig, local, workspaceConfig); err != nil {
+	if err := commitStagedWorkspace(stageDir, workspaceDir); err != nil {
 		return err
 	}
 
@@ -202,39 +191,45 @@ func (cmd *ImportCmd) importWorkspace(
 	return nil
 }
 
-func applyImportedPresentation(
+func (cmd *ImportCmd) prepareImportedWorkspace(
 	devsyConfig *config.Config,
+	exportConfig *provider.ExportConfig,
 	local, imported *provider.Workspace,
 ) error {
-	displayName, sshHostAlias := importedPresentation(devsyConfig, local, imported)
-	if displayName == imported.DisplayName && sshHostAlias == imported.SSHHostAlias {
-		return nil
-	}
+	imported.ID = cmd.WorkspaceID
+	imported.Context = devsyConfig.DefaultContext
+	imported.Machine.ID = cmd.MachineID
+	imported.Provider.Name = cmd.ProviderID
+	applyImportedOwnership(devsyConfig, local, imported)
 
-	imported.DisplayName = displayName
-	imported.SSHHostAlias = sshHostAlias
-	if err := saveImportedPresentation(imported); err != nil {
-		err = fmt.Errorf("save workspace presentation: %w", err)
-		if local == nil || local.UID != imported.UID {
-			imported.DisplayName = ""
-			imported.SSHHostAlias = ""
-			if resetErr := saveImportedPresentation(imported); resetErr != nil {
-				log.Warnf("reset imported workspace presentation: %v", resetErr)
-			}
-		}
-		return err
+	if exportConfig.SnapshotRef != "" {
+		return applySnapshotSource(imported, exportConfig.SnapshotRef)
 	}
 	return nil
 }
 
-func importedPresentation(
-	devsyConfig *config.Config,
-	local, imported *provider.Workspace,
-) (string, string) {
+// applyImportedOwnership makes the destination the owner of the record. A
+// local record with the same UID keeps its own presentation and SSH config
+// locations. Otherwise the imported label and alias are validated against the
+// destination and the exporter's SSH config paths are discarded.
+func applyImportedOwnership(devsyConfig *config.Config, local, imported *provider.Workspace) {
 	if local != nil && local.UID == imported.UID {
-		return local.DisplayName, local.SSHHostAlias
+		imported.DisplayName = local.DisplayName
+		imported.SSHHostAlias = local.SSHHostAlias
+		imported.SSHConfigPath = local.SSHConfigPath
+		imported.SSHConfigIncludePath = local.SSHConfigIncludePath
+		return
 	}
 
+	imported.DisplayName, imported.SSHHostAlias = importedPresentation(devsyConfig, imported)
+	imported.SSHConfigPath = ""
+	imported.SSHConfigIncludePath = ""
+}
+
+func importedPresentation(
+	devsyConfig *config.Config,
+	imported *provider.Workspace,
+) (string, string) {
 	displayName := imported.DisplayName
 	if normalized, err := workspace.NormalizeDisplayName(displayName); err != nil ||
 		workspace.ValidatePresentation(
@@ -278,26 +273,137 @@ func loadLocalWorkspace(
 	return local, nil
 }
 
-// extractWorkspaceData creates workspaceID's workspace dir and extracts the
-// base64-encoded, archived workspace data into it.
-func extractWorkspaceData(devsyConfig *config.Config, workspaceID, data string) error {
-	workspaceDir, err := provider.GetWorkspaceDir(devsyConfig.DefaultContext, workspaceID)
+// stageWorkspaceData extracts the base64-encoded, archived workspace data into
+// a hidden staging dir next to the workspace dirs, so nothing is committed to
+// a workspace path until the imported record has been validated.
+func stageWorkspaceData(devsyConfig *config.Config, data string) (string, error) {
+	workspacesDir, err := provider.GetWorkspacesDir(devsyConfig.DefaultContext)
 	if err != nil {
-		return fmt.Errorf("get workspace dir: %w", err)
-	}
-
-	// #nosec G301
-	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
-		return fmt.Errorf("create workspace dir: %w", err)
+		return "", fmt.Errorf("get workspaces dir: %w", err)
 	}
 
 	decoded, err := base64.RawStdEncoding.DecodeString(data)
 	if err != nil {
-		return fmt.Errorf("decode workspace data: %w", err)
+		return "", fmt.Errorf("decode workspace data: %w", err)
 	}
 
-	if err := extract.Extract(bytes.NewReader(decoded), workspaceDir); err != nil {
-		return fmt.Errorf("extract workspace data: %w", err)
+	// #nosec G301
+	if err := os.MkdirAll(workspacesDir, 0o755); err != nil {
+		return "", fmt.Errorf("create workspaces dir: %w", err)
+	}
+	stageDir, err := os.MkdirTemp(workspacesDir, ".import-")
+	if err != nil {
+		return "", fmt.Errorf("create import staging dir: %w", err)
+	}
+
+	if err := extract.Extract(bytes.NewReader(decoded), stageDir); err != nil {
+		removeStage(stageDir)
+		return "", fmt.Errorf("extract workspace data: %w", err)
+	}
+	return stageDir, nil
+}
+
+func removeStage(stageDir string) {
+	if err := os.RemoveAll(stageDir); err != nil {
+		log.Warnf("remove import staging dir %s: %v", stageDir, err)
+	}
+}
+
+func readStagedWorkspace(stageDir string) (*provider.Workspace, error) {
+	data, err := os.ReadFile(filepath.Clean(filepath.Join(stageDir, provider.WorkspaceConfigFile)))
+	if err != nil {
+		return nil, fmt.Errorf("read imported workspace config: %w", err)
+	}
+
+	imported := &provider.Workspace{}
+	if err := json.Unmarshal(data, imported); err != nil {
+		return nil, fmt.Errorf("decode imported workspace config: %w", err)
+	}
+	return imported, nil
+}
+
+func writeStagedWorkspace(stageDir string, imported *provider.Workspace) error {
+	data, err := json.Marshal(imported)
+	if err != nil {
+		return fmt.Errorf("encode workspace config: %w", err)
+	}
+
+	configPath := filepath.Join(stageDir, provider.WorkspaceConfigFile)
+	if err := provider.WriteFileAtomic(configPath, data, 0o644); err != nil {
+		return fmt.Errorf("save workspace config: %w", err)
+	}
+	return nil
+}
+
+// commitStagedWorkspace moves the staging dir into workspaceDir. A new
+// workspace is renamed into place in one step. An existing workspace dir keeps
+// its local-only files: staged files are moved over it and the validated
+// workspace.json is moved last.
+func commitStagedWorkspace(stageDir, workspaceDir string) error {
+	// #nosec G302
+	if err := os.Chmod(stageDir, 0o755); err != nil {
+		return fmt.Errorf("set workspace dir permissions: %w", err)
+	}
+
+	renameErr := os.Rename(stageDir, workspaceDir)
+	if renameErr == nil {
+		return nil
+	}
+	if _, err := os.Stat(workspaceDir); err != nil {
+		return fmt.Errorf("move imported workspace into place: %w", renameErr)
+	}
+
+	return mergeStagedWorkspace(stageDir, workspaceDir)
+}
+
+type stagedEntry struct {
+	rel   string
+	isDir bool
+}
+
+func listStagedEntries(stageDir string) ([]stagedEntry, error) {
+	var entries []stagedEntry
+	err := filepath.WalkDir(stageDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(stageDir, path)
+		if err != nil {
+			return err
+		}
+		if rel != "." && rel != provider.WorkspaceConfigFile {
+			entries = append(entries, stagedEntry{rel: rel, isDir: entry.IsDir()})
+		}
+		return nil
+	})
+	return entries, err
+}
+
+func mergeStagedWorkspace(stageDir, workspaceDir string) error {
+	entries, err := listStagedEntries(stageDir)
+	if err != nil {
+		return fmt.Errorf("list imported workspace files: %w", err)
+	}
+
+	for _, entry := range entries {
+		target := filepath.Join(workspaceDir, entry.rel)
+		if entry.isDir {
+			// #nosec G301
+			err = os.MkdirAll(target, 0o755)
+		} else {
+			err = os.Rename(filepath.Join(stageDir, entry.rel), target)
+		}
+		if err != nil {
+			return fmt.Errorf("merge imported workspace: %w", err)
+		}
+	}
+
+	err = os.Rename(
+		filepath.Join(stageDir, provider.WorkspaceConfigFile),
+		filepath.Join(workspaceDir, provider.WorkspaceConfigFile),
+	)
+	if err != nil {
+		return fmt.Errorf("commit imported workspace config: %w", err)
 	}
 	return nil
 }

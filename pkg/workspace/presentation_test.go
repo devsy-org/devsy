@@ -672,6 +672,7 @@ func (s *PresentationTestSuite) TestAliasEditRewritesManagedHostLine() {
 		Context:       presentationContext,
 		Workspace:     presentationWorkspaceAPI,
 		User:          presentationUser,
+		Owner:         s.sshOwner(presentationWorkspaceAPI),
 	}))
 
 	req := s.request(presentationWorkspaceAPI)
@@ -703,6 +704,7 @@ func (s *PresentationTestSuite) TestAliasEditNoopRewriteReportsNotUpdated() {
 		Context:       presentationContext,
 		Workspace:     presentationWorkspaceAPI,
 		User:          presentationUser,
+		Owner:         s.sshOwner(presentationWorkspaceAPI),
 		PreferredHost: presentationAliasBackend + ".devsy",
 	}))
 	before, err := os.ReadFile(s.sshConfigPath())
@@ -727,6 +729,7 @@ func (s *PresentationTestSuite) TestCommitFailureRestoresSSHConfig() {
 		Context:       presentationContext,
 		Workspace:     presentationWorkspaceAPI,
 		User:          presentationUser,
+		Owner:         s.sshOwner(presentationWorkspaceAPI),
 	}))
 	before, err := os.ReadFile(s.sshConfigPath())
 	s.Require().NoError(err)
@@ -753,6 +756,7 @@ func (s *PresentationTestSuite) TestCommitRechecksSSHConflictUnderLock() {
 		Context:       presentationContext,
 		Workspace:     presentationWorkspaceAPI,
 		User:          presentationUser,
+		Owner:         s.sshOwner(presentationWorkspaceAPI),
 	}))
 
 	current := s.load(presentationWorkspaceAPI)
@@ -765,6 +769,7 @@ func (s *PresentationTestSuite) TestCommitRechecksSSHConflictUnderLock() {
 		Context:       presentationContext,
 		Workspace:     "web",
 		User:          presentationUser,
+		Owner:         s.sshOwner("web"),
 		PreferredHost: presentationAliasBackend + ".devsy",
 	}))
 	existing, err := os.ReadFile(s.sshConfigPath())
@@ -785,6 +790,13 @@ func (s *PresentationTestSuite) TestCommitRechecksSSHConflictUnderLock() {
 
 func (s *PresentationTestSuite) sshConfigPath() string {
 	return filepath.Join(s.sshDir, "config")
+}
+
+func (s *PresentationTestSuite) sshOwner(id string) ssh.Owner {
+	owner, err := ssh.NewOwner(presentationContext, "uid-"+id)
+	s.Require().NoError(err)
+
+	return owner
 }
 
 func (s *PresentationTestSuite) saveWorkspace(

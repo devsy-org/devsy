@@ -16,6 +16,7 @@ import (
 
 const (
 	newhost        = "newhost"
+	newWorkspace   = "new-workspace"
 	workspaceValue = "workspace"
 )
 
@@ -742,7 +743,7 @@ Match exec "true"
 	err := ConfigureSSHConfig(SSHConfigParams{
 		SSHConfigPath: configPath,
 		Context:       testSSHContext,
-		Workspace:     "new-workspace",
+		Workspace:     newWorkspace,
 		User:          testSSHUser,
 	})
 	assert.NoError(t, err)
@@ -753,7 +754,7 @@ Match exec "true"
 	)
 	assert.NoError(t, err)
 	result := string(resultBytes)
-	newHost := "new-workspace" + config.SSHHostSuffix
+	newHost := newWorkspace + config.SSHHostSuffix
 	newBlockStart := strings.Index(result, MarkerStartPrefix+newHost)
 	existingBlockStart := strings.Index(result, MarkerStartPrefix+"existing.devsy")
 	wildcardStart := strings.Index(result, "host *")
@@ -781,7 +782,7 @@ func TestConfigureSSHConfigResolvesPreferredHostUnderLock(t *testing.T) {
 	err := ConfigureSSHConfig(SSHConfigParams{
 		SSHConfigPath: configPath,
 		Context:       testSSHContext,
-		Workspace:     "new-workspace",
+		Workspace:     newWorkspace,
 		User:          testSSHUser,
 		PreferredHost: "stale.devsy",
 		ResolvePreferredHost: func() string {
@@ -813,7 +814,7 @@ func TestConfigureSSHConfigEmptyPathSharesResolvedLock(t *testing.T) {
 
 	err := ConfigureSSHConfig(SSHConfigParams{
 		Context:   testSSHContext,
-		Workspace: "new-workspace",
+		Workspace: newWorkspace,
 		User:      testSSHUser,
 		ResolvePreferredHost: func() string {
 			probe := flock.New(resolved + configLockSuffix)

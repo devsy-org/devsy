@@ -133,6 +133,11 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		sshConfigIncludePath = includePath
 	}
 
+	owner, err := sshOwner(client)
+	if err != nil {
+		return err
+	}
+
 	return devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        path,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -144,7 +149,17 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		AgentForwarding:      devsyConfig.ContextOptionBool(config.ContextOptionSSHAgentForwarding),
 		Provider:             client.Provider(),
 		ResolvePreferredHost: func() string { return sshPresentation(client) },
+		Owner:                owner,
 	})
+}
+
+func sshOwner(client client2.BaseWorkspaceClient) (devssh.Owner, error) {
+	uid := ""
+	if ws := client.WorkspaceConfig(); ws != nil {
+		uid = ws.UID
+	}
+
+	return devssh.NewOwner(client.Context(), uid)
 }
 
 type configureSSHParams struct {
@@ -177,6 +192,11 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		sshConfigIncludePath = includePath
 	}
 
+	owner, err := sshOwner(client)
+	if err != nil {
+		return err
+	}
+
 	err = devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        sshConfigPath,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -189,6 +209,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
 		ResolvePreferredHost: func() string { return sshPresentation(client) },
+		Owner:                owner,
 	})
 	if err != nil {
 		return err

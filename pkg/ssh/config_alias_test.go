@@ -309,7 +309,7 @@ func (s *SSHAliasTestSuite) TestReplaceHostAliasesSkipsBlockWithoutEndMarkerOrHo
 		"\n  User " + aliasTestUser + "\n"
 	s.write(s.cfgPath, content)
 
-	rewritten, found := rewriteHostLines(content, aliasCanonicalHost, aliasPreferredHost)
+	rewritten, found := s.rewriteUnchecked(content)
 	s.False(found)
 	s.Equal(content, rewritten)
 
@@ -323,7 +323,7 @@ func (s *SSHAliasTestSuite) TestRewriteHostLinesRewritesOnlyClosedBlockAfterUncl
 	unclosed := MarkerStartPrefix + aliasCanonicalHost + "\nHost " + aliasCanonicalHost + "\n"
 	closed := s.managedBlock(aliasCanonicalHost) + "\n"
 
-	rewritten, found := rewriteHostLines(unclosed+closed, aliasCanonicalHost, aliasPreferredHost)
+	rewritten, found := s.rewriteUnchecked(unclosed + closed)
 	s.True(found)
 	s.True(strings.HasPrefix(rewritten, unclosed))
 	s.Contains(rewritten[len(unclosed):], "Host "+aliasPreferredHost+" "+aliasCanonicalHost)
@@ -333,7 +333,7 @@ func (s *SSHAliasTestSuite) TestRewriteHostLinesSkipsUnterminatedBlockBeforeRest
 	start := MarkerStartPrefix + aliasCanonicalHost + "\nHost " + aliasCanonicalHost + "\n"
 	content := start + start
 
-	rewritten, found := rewriteHostLines(content, aliasCanonicalHost, aliasPreferredHost)
+	rewritten, found := s.rewriteUnchecked(content)
 	s.False(found)
 	s.Equal(content, rewritten)
 }
@@ -648,6 +648,16 @@ func (s *SSHAliasTestSuite) replace(
 		CanonicalHost: aliasCanonicalHost,
 		PreferredHost: preferredHost,
 	}, commit)
+}
+
+func (s *SSHAliasTestSuite) rewriteUnchecked(content string) (string, bool) {
+	rewritten, found, err := rewriteHostLines(content, s.cfgPath, AliasReplacement{
+		CanonicalHost: aliasCanonicalHost,
+		PreferredHost: aliasPreferredHost,
+	}, nil)
+	s.Require().NoError(err)
+
+	return rewritten, found
 }
 
 func countingCommit(called *int) func() error {
