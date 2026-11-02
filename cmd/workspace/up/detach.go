@@ -59,11 +59,14 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 	return cmd.renderDetachedTask(t, runID)
 }
 
+const detachedLookupTimeout = 30 * time.Second
+
 func (cmd *UpCmd) checkDetachedPresentation(cfg *config.Config, workspaceID string) error {
 	if !cmd.hasPresentation() {
 		return nil
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), detachedLookupTimeout)
+	defer cancel()
 	existed := workspaceID == "" ||
 		workspace2.Exists(
 			ctx,

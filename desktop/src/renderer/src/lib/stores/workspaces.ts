@@ -13,7 +13,6 @@ import {
   workspaceConfirmedToast,
   workspaceFailedHeadline,
 } from "$shared/workspace-operation.js"
-import type { WorkspacePresentationResult } from "$shared/workspace-presentation.js"
 import { activeContext } from "./contexts.js"
 import { toasts } from "./toasts.js"
 
@@ -129,23 +128,13 @@ export function destroyWorkspaces() {
   unlisten = null
 }
 
-export function applyWorkspacePresentation(
-  result: WorkspacePresentationResult,
-) {
-  workspaces.update((list) =>
-    list.map((workspace) =>
-      workspace.id === result.id &&
-      workspace.uid === result.uid &&
-      (workspace.context ?? result.context) === result.context
-        ? {
-            ...workspace,
-            displayName: result.displayName || undefined,
-            effectiveDisplayName: result.effectiveDisplayName,
-            sshHostAlias: result.sshHostAlias || undefined,
-            preferredSSHHost: result.preferredSSHHost,
-            canonicalSSHHost: result.canonicalSSHHost,
-          }
-        : workspace,
-    ),
-  )
+export async function reloadWorkspaces() {
+  const epoch = lifecycle
+  try {
+    const snapshot = await workspaceSnapshot()
+    if (epoch === lifecycle)
+      apply(snapshot.workspaces, snapshot.jobs, snapshot.revision, false)
+  } catch {
+    return
+  }
 }

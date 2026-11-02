@@ -25,6 +25,11 @@ vi.mock("$lib/ipc/commands.js", async (importOriginal) => {
     workspaceRename: vi.fn(),
     workspaceSetIde: vi.fn(),
     workspaceStatus: vi.fn(async () => "{}"),
+    workspaceSnapshot: vi.fn(async () => ({
+      revision: ++snapshot.revision,
+      workspaces: snapshot.workspaces,
+      jobs: {},
+    })),
     workspaceLogsList: vi.fn(async () => []),
     workspaceLogRead: vi.fn(async () => ""),
     workspaceLogDelete: vi.fn(),
@@ -50,6 +55,11 @@ vi.mock("$lib/components/log/LogTable.svelte", () => ({ default: vi.fn() }))
 import { WorkspaceEditError } from "$lib/ipc/commands.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import WorkspaceDetailPage from "./WorkspaceDetailPageHarness.svelte"
+
+const snapshot = vi.hoisted(() => ({
+  revision: 0,
+  workspaces: [] as unknown[],
+}))
 
 const result = {
   id: "api",
@@ -81,6 +91,15 @@ async function settle() {
 
 describe("workspace detail presentation editing", () => {
   beforeEach(() => {
+    snapshot.workspaces = [
+      {
+        id: "api",
+        uid: "u1",
+        context: "default",
+        status: "Stopped",
+        provider: { name: "docker" },
+      },
+    ]
     vi.clearAllMocks()
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText: copyText },
@@ -148,7 +167,19 @@ describe("workspace detail presentation editing", () => {
   })
 
   it("sends only dirty fields with expected values and does not navigate", async () => {
-    workspaceEdit.mockResolvedValue(result)
+    workspaceEdit.mockImplementation(async () => {
+      snapshot.workspaces = [
+        {
+          id: "api",
+          uid: "u1",
+          context: "default",
+          status: "Stopped",
+          displayName: result.displayName,
+          sshHostAlias: result.sshHostAlias,
+        },
+      ]
+      return result
+    })
     render(WorkspaceDetailPage, { params: { id: "api" } })
     await openEditor()
     await fireEvent.input(input("workspace-display-label"), {
@@ -240,6 +271,23 @@ describe("workspace detail presentation editing", () => {
     expect(save.disabled).toBe(true)
     pending.resolve(result)
     await settle()
+    await settle()
+    expect(document.getElementById("workspace-display-label")).toBeNull()
+  })
+
+  it("closes the editor when the workspace identity changes underneath it", async () => {
+    render(WorkspaceDetailPage, { params: { id: "api" } })
+    await openEditor()
+    expect(document.getElementById("workspace-display-label")).not.toBeNull()
+    workspaces.set([
+      {
+        id: "api",
+        uid: "u2",
+        context: "default",
+        status: "Stopped",
+        provider: { name: "docker" },
+      },
+    ])
     await settle()
     expect(document.getElementById("workspace-display-label")).toBeNull()
   })

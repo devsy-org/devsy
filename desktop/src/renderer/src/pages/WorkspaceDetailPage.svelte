@@ -45,7 +45,7 @@ import {
 import {
   workspaces,
   workspaceJobs,
-  applyWorkspacePresentation,
+  reloadWorkspaces,
 } from "$lib/stores/workspaces.js"
 import { addTerminal, removeTerminal } from "$lib/stores/terminals.js"
 import { destroyTerminalInstance } from "$lib/stores/terminal-instances.js"
@@ -763,7 +763,9 @@ function cancelPresentationEdit() {
 }
 
 $effect(() => {
-  if (presentationBase && presentationBase.id !== id) resetPresentationEdit()
+  if (!presentationBase) return
+  if (presentationBase.id !== id || workspace?.uid !== presentationBase.uid)
+    resetPresentationEdit()
 })
 
 async function savePresentation() {
@@ -788,8 +790,8 @@ async function savePresentation() {
   presentationSaving = true
   presentationErrors = {}
   try {
-    const result = await workspaceEdit(request)
-    applyWorkspacePresentation(result)
+    await workspaceEdit(request)
+    await reloadWorkspaces()
     if (presentationBase === base) resetPresentationEdit()
     toasts.success("Workspace details saved")
   } catch (err) {

@@ -80,6 +80,7 @@ describe("workspaceMatchesQuery", () => {
     ["API", true],
     ["pay.devsy", true],
     ["pay", true],
+    ["api.devsy", true],
     ["nothing", false],
   ])("matches %j -> %s", (query, expected) => {
     expect(workspaceMatchesQuery(labeled, query)).toBe(expected)
@@ -93,6 +94,17 @@ describe("conflict detection", () => {
     expect(findLabelConflict("payments api", all, "backend")?.id).toBe("api")
     expect(findLabelConflict("Backend", all, "other")?.id).toBe("backend")
     expect(findLabelConflict("Team workspace", all, "other")?.id).toBe("plat")
+  })
+
+  it("folds labels like the backend so sharp s matches SS", () => {
+    const german: Workspace = { id: "de", displayName: "Stra\u00dfe" }
+    expect(findLabelConflict("STRASSE", [german], "other")?.id).toBe("de")
+    expect(findLabelConflict("stra\u00dfe", [german], "other")?.id).toBe("de")
+  })
+
+  it("treats composed and decomposed accents as the same label", () => {
+    const accented: Workspace = { id: "fr", displayName: "Caf\u00e9" }
+    expect(findLabelConflict("Cafe\u0301", [accented], "other")?.id).toBe("fr")
   })
 
   it("ignores the workspace being edited", () => {

@@ -129,6 +129,8 @@ func writeFileAtomic(target string, data []byte) (retErr error) {
 		}
 	}()
 
+	preserveConfigOwner(target, temp)
+
 	err = fillTempConfig(temp, data, mode)
 	if err != nil {
 		return err

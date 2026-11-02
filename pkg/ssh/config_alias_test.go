@@ -354,6 +354,124 @@ func (s *SSHAliasTestSuite) TestFindHostConflictsTraversesIncludes() {
 	}, conflicts)
 }
 
+func (s *SSHAliasTestSuite) TestFindHostConflictsQuotedIncludeWithSpaces() {
+	spaced := filepath.Join(s.sshDir, "conf.d", "team hosts")
+	s.write(s.cfgPath, "Include \"conf.d/team hosts\"\n")
+	s.write(spaced, "Host other \"friendly.devsy\"\n")
+
+	conflicts, err := FindHostConflicts(
+		s.cfgPath, "", []string{aliasPreferredHost}, aliasCanonicalHost,
+	)
+	s.Require().NoError(err)
+	s.Equal([]HostConflict{{Host: aliasPreferredHost, File: spaced}}, conflicts)
+}
+
+func (s *SSHAliasTestSuite) TestConfigArgumentsQuoting() {
+	s.Equal(
+		[]string{"a b", "c", "d e", ""},
+		configArguments("Include \"a b\" c \"d e\" \"\""),
+	)
+	s.Equal([]string{"a b", "c"}, configArguments("Include = \"a b\"\tc"))
+	s.Empty(configArguments("Host"))
+}
+
+func (s *SSHAliasTestSuite) TestHostLineRejectsUnsafePreferredHost() {
+	canonical := "Host " + aliasCanonicalHost
+	s.Equal(canonical, hostLine(aliasCanonicalHost, "evil\n  ProxyCommand x.devsy"))
+	s.Equal(canonical, hostLine(aliasCanonicalHost, "a b.devsy"))
+	s.Equal(canonical, hostLine(aliasCanonicalHost, "a\tb.devsy"))
+	s.Equal(canonical, hostLine(aliasCanonicalHost, "friendly.devsy\n"))
+	s.Equal(canonical, hostLine(aliasCanonicalHost, "-friendly.devsy"))
+	s.Equal(canonical, hostLine(aliasCanonicalHost, "friendly"))
+	s.Equal(
+		"Host Friendly.DEVSY "+aliasCanonicalHost,
+		hostLine(aliasCanonicalHost, "Friendly.DEVSY"),
+	)
+}
+
+func (s *SSHAliasTestSuite) TestReplaceHostAliasesVerifyFailureSkipsWriteAndCommit() {
+	original := s.managedBlock(aliasCanonicalHost) + "\n"
+	s.write(s.cfgPath, original)
+	verifyErr := errors.New("conflict appeared")
+	called := 0
+
+	updated, err := ReplaceHostAliasesWithCommit(AliasReplacement{
+		ConfigPath:    s.cfgPath,
+		CanonicalHost: aliasCanonicalHost,
+		PreferredHost: aliasPreferredHost,
+		Verify:        func() error { return verifyErr },
+	}, countingCommit(&called))
+	s.Require().ErrorIs(err, verifyErr)
+	s.False(updated)
+	s.Zero(called)
+	s.Equal(original, s.read(s.cfgPath))
+}
+
+func (s *SSHAliasTestSuite) TestReplaceHostAliasesVerifyDetectsConflictAddedBeforeLock() {
+	s.write(s.cfgPath, s.managedBlock(aliasCanonicalHost)+"\n")
+	checks := 0
+	verify := func() error {
+		checks++
+		conflicts, err := FindHostConflicts(
+			s.cfgPath, "", []string{aliasPreferredHost}, aliasCanonicalHost,
+		)
+		if err != nil {
+			return err
+		}
+		if len(conflicts) > 0 {
+			return errors.New("conflict " + conflicts[0].Host)
+		}
+
+		return nil
+	}
+	s.Require().NoError(verify())
+	s.write(
+		s.cfgPath,
+		s.read(s.cfgPath)+"Host "+aliasPreferredHost+"\n  User racer\n",
+	)
+	called := 0
+
+	updated, err := ReplaceHostAliasesWithCommit(AliasReplacement{
+		ConfigPath:    s.cfgPath,
+		CanonicalHost: aliasCanonicalHost,
+		PreferredHost: aliasPreferredHost,
+		Verify:        verify,
+	}, countingCommit(&called))
+	s.Require().Error(err)
+	s.False(updated)
+	s.Zero(called)
+	s.Equal(2, checks)
+	s.NotContains(s.read(s.cfgPath), "Host "+aliasPreferredHost+" "+aliasCanonicalHost)
+}
+
+func (s *SSHAliasTestSuite) TestReplaceHostAliasesVerifyRunsWhenConfigMissing() {
+	verifyErr := errors.New("conflict appeared")
+	called := 0
+
+	_, err := ReplaceHostAliasesWithCommit(AliasReplacement{
+		ConfigPath:    s.cfgPath,
+		CanonicalHost: aliasCanonicalHost,
+		PreferredHost: aliasPreferredHost,
+		Verify:        func() error { return verifyErr },
+	}, countingCommit(&called))
+	s.Require().ErrorIs(err, verifyErr)
+	s.Zero(called)
+}
+
+func (s *SSHAliasTestSuite) TestReplaceHostAliasesVerifyPassRewrites() {
+	s.write(s.cfgPath, s.managedBlock(aliasCanonicalHost)+"\n")
+
+	updated, err := ReplaceHostAliasesWithCommit(AliasReplacement{
+		ConfigPath:    s.cfgPath,
+		CanonicalHost: aliasCanonicalHost,
+		PreferredHost: aliasPreferredHost,
+		Verify:        func() error { return nil },
+	}, nil)
+	s.Require().NoError(err)
+	s.True(updated)
+	s.Contains(s.read(s.cfgPath), "Host "+aliasPreferredHost+" "+aliasCanonicalHost)
+}
+
 func (s *SSHAliasTestSuite) TestFindHostConflictsScansIncludeTargetPath() {
 	includePath := filepath.Join(s.sshDir, "devsy_config")
 	s.write(s.cfgPath, "Host a\n")

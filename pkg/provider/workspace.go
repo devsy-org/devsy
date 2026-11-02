@@ -612,3 +612,13 @@ func (w *Workspace) PreferredSSHHost() string {
 
 	return w.CanonicalSSHHost()
 }
+
+func (w *Workspace) PreferredSSHHostCommitted() string {
+	current := *w
+	committed, err := LoadWorkspaceConfig(w.Context, w.ID)
+	if err == nil && committed.UID == w.UID {
+		current.SSHHostAlias = committed.SSHHostAlias
+	}
+
+	return current.PreferredSSHHost()
+}

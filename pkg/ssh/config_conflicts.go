@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/util"
@@ -235,9 +236,33 @@ func configArguments(line string) []string {
 	rest := strings.TrimSpace(trimmed[len(keyword):])
 	rest = strings.TrimSpace(strings.TrimPrefix(rest, "="))
 
+	return splitQuotedArguments(rest)
+}
+
+func splitQuotedArguments(rest string) []string {
 	arguments := []string{}
-	for field := range strings.FieldsSeq(rest) {
-		arguments = append(arguments, strings.Trim(field, "\""))
+	var current strings.Builder
+	inQuote := false
+	hasToken := false
+
+	for _, r := range rest {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+			hasToken = true
+		case !inQuote && unicode.IsSpace(r):
+			if hasToken {
+				arguments = append(arguments, current.String())
+				current.Reset()
+				hasToken = false
+			}
+		default:
+			current.WriteRune(r)
+			hasToken = true
+		}
+	}
+	if hasToken {
+		arguments = append(arguments, current.String())
 	}
 
 	return arguments

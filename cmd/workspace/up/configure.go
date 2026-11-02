@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/dotfiles"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 )
 
@@ -197,11 +196,5 @@ func sshPresentation(client client2.BaseWorkspaceClient) string {
 		return ""
 	}
 
-	current := *ws
-	committed, err := provider.LoadWorkspaceConfig(client.Context(), client.Workspace())
-	if err == nil && committed.UID == ws.UID {
-		current.SSHHostAlias = committed.SSHHostAlias
-	}
-
-	return current.PreferredSSHHost()
+	return ws.PreferredSSHHostCommitted()
 }

@@ -435,6 +435,7 @@ func commitPresentation(
 			IncludePath:   paths.include,
 			CanonicalHost: next.CanonicalSSHHost(),
 			PreferredHost: next.PreferredSSHHost(),
+			Verify:        aliasVerifier(paths, next),
 		},
 		func() error { return provider.SaveWorkspacePresentation(next) },
 	)
@@ -443,6 +444,16 @@ func commitPresentation(
 	}
 
 	return updated, nil
+}
+
+func aliasVerifier(paths sshPaths, next *provider.Workspace) func() error {
+	if next.SSHHostAlias == "" {
+		return nil
+	}
+
+	return func() error {
+		return checkAliasSSHConflict(paths, next.CanonicalSSHHost(), next.SSHHostAlias)
+	}
 }
 
 func newPresentationResult(ws *provider.Workspace, entryUpdated bool) *PresentationResult {

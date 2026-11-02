@@ -207,7 +207,12 @@ var vsCodeFlavorMap = map[string]vscode.Flavor{
 }
 
 func resolveSSHHost(c client2.BaseWorkspaceClient) string {
-	return sshHostFor(c.WorkspaceConfig(), c.Workspace())
+	ws := c.WorkspaceConfig()
+	if ws == nil {
+		return sshHostFor(nil, c.Workspace())
+	}
+
+	return ws.PreferredSSHHostCommitted()
 }
 
 func sshHostFor(ws *provider.Workspace, id string) string {

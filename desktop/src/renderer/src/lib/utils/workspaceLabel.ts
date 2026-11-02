@@ -29,6 +29,7 @@ export function workspaceMatchesQuery(
     workspaceLabel(workspace),
     workspace.id,
     preferredSshHost(workspace),
+    canonicalSshHost(workspace),
     workspace.sshHostAlias,
   ]
   return candidates.some(
@@ -36,17 +37,20 @@ export function workspaceMatchesQuery(
   )
 }
 
+function foldLabel(value: string): string {
+  return normalizeDisplayLabel(value).toUpperCase().toLowerCase()
+}
+
 export function findLabelConflict(
   label: string,
   workspaces: Workspace[],
   ownId: string,
 ): Workspace | undefined {
-  const needle = normalizeDisplayLabel(label).toLowerCase()
+  const needle = foldLabel(label)
   if (needle === "") return undefined
   return workspaces.find(
     (workspace) =>
-      workspace.id !== ownId &&
-      normalizeDisplayLabel(workspaceLabel(workspace)).toLowerCase() === needle,
+      workspace.id !== ownId && foldLabel(workspaceLabel(workspace)) === needle,
   )
 }
 

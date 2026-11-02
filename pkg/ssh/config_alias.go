@@ -14,6 +14,7 @@ type AliasReplacement struct {
 	IncludePath   string
 	CanonicalHost string
 	PreferredHost string
+	Verify        func() error
 }
 
 func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool, error) {
@@ -27,6 +28,11 @@ func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool
 		return false, err
 	}
 	if !exists {
+		err = runAliasVerify(r.Verify)
+		if err != nil {
+			return false, err
+		}
+
 		return false, runAliasCommit(commit)
 	}
 
@@ -35,6 +41,11 @@ func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool
 		return false, err
 	}
 	defer unlock()
+
+	err = runAliasVerify(r.Verify)
+	if err != nil {
+		return false, err
+	}
 
 	return rewriteAliasTarget(target, r.CanonicalHost, r.PreferredHost, commit)
 }
@@ -49,6 +60,14 @@ func aliasTargetExists(target string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func runAliasVerify(verify func() error) error {
+	if verify == nil {
+		return nil
+	}
+
+	return verify()
 }
 
 func runAliasCommit(commit func() error) error {

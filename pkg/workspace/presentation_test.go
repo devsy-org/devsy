@@ -664,6 +664,43 @@ func (s *PresentationTestSuite) TestCommitFailureRestoresSSHConfig() {
 	s.Empty(s.load(presentationWorkspaceAPI).SSHHostAlias)
 }
 
+func (s *PresentationTestSuite) TestCommitRechecksSSHConflictUnderLock() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+	s.Require().NoError(ssh.ConfigureSSHConfig(ssh.SSHConfigParams{
+		SSHConfigPath: s.sshConfigPath(),
+		Context:       presentationContext,
+		Workspace:     presentationWorkspaceAPI,
+		User:          presentationUser,
+	}))
+
+	current := s.load(presentationWorkspaceAPI)
+	next := *current
+	next.SSHHostAlias = presentationAliasBackend
+	s.Require().NoError(checkNextAliasConflicts(nil, &next))
+
+	s.Require().NoError(ssh.ConfigureSSHConfig(ssh.SSHConfigParams{
+		SSHConfigPath: s.sshConfigPath(),
+		Context:       presentationContext,
+		Workspace:     "web",
+		User:          presentationUser,
+		PreferredHost: presentationAliasBackend + ".devsy",
+	}))
+	existing, err := os.ReadFile(s.sshConfigPath())
+	s.Require().NoError(err)
+	racer := string(existing)
+
+	updated, err := commitPresentation(current, &next, true)
+	var presentationErr *PresentationError
+	s.Require().ErrorAs(err, &presentationErr)
+	s.Equal(PresentationFieldSSHHostAlias, presentationErr.Field)
+	s.False(updated)
+
+	after, err := os.ReadFile(s.sshConfigPath())
+	s.Require().NoError(err)
+	s.Equal(racer, string(after))
+	s.Empty(s.load(presentationWorkspaceAPI).SSHHostAlias)
+}
+
 func (s *PresentationTestSuite) sshConfigPath() string {
 	return filepath.Join(s.sshDir, "config")
 }

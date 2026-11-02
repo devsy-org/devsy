@@ -7,6 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devcontainerconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,4 +44,19 @@ func TestSaveWorkspaceResult_WritesWhenConfigExists(t *testing.T) {
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(dir, WorkspaceResultFile))
 	require.NoError(t, err)
+}
+
+func TestPreferredSSHHostCommittedUsesStoredAlias(t *testing.T) {
+	setupTestHome(t)
+	stored := &Workspace{ID: "api", UID: "uid-1", Context: config.DefaultContext}
+	require.NoError(t, SaveWorkspaceConfig(stored))
+	stale := *stored
+	assert.Equal(t, "api.devsy", stale.PreferredSSHHostCommitted())
+
+	stored.SSHHostAlias = "short"
+	require.NoError(t, SaveWorkspacePresentation(stored))
+	assert.Equal(t, "short.devsy", stale.PreferredSSHHostCommitted())
+
+	other := Workspace{ID: "api", UID: "uid-2", Context: config.DefaultContext}
+	assert.Equal(t, "api.devsy", other.PreferredSSHHostCommitted())
 }

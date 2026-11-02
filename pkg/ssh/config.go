@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -206,8 +207,13 @@ func newSSHConfigBuilder(host, preferredHost string) *sshConfigBuilder {
 	}
 }
 
+var preferredHostPattern = regexp.MustCompile(
+	`(?i)^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.devsy$`,
+)
+
 func hostLine(canonicalHost, preferredHost string) string {
-	if preferredHost == "" || strings.EqualFold(preferredHost, canonicalHost) {
+	if preferredHost == "" || strings.EqualFold(preferredHost, canonicalHost) ||
+		!preferredHostPattern.MatchString(preferredHost) {
 		return "Host " + canonicalHost
 	}
 

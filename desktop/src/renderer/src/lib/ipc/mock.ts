@@ -576,6 +576,7 @@ function applyPresentation(
   label: string,
   alias: string,
 ): WorkspacePresentationReply {
+  const aliasChanged = alias !== (target.sshHostAlias ?? "")
   target.displayName = label || undefined
   target.sshHostAlias = alias || undefined
   target.canonicalSSHHost = `${target.id}${SSH_HOST_SUFFIX}`
@@ -591,7 +592,7 @@ function applyPresentation(
       effectiveDisplayName: label || target.id,
       preferredSSHHost: target.preferredSSHHost,
       canonicalSSHHost: target.canonicalSSHHost,
-      sshEntryUpdated: alias !== "",
+      sshEntryUpdated: aliasChanged,
     },
   }
 }
@@ -601,7 +602,10 @@ function mockWorkspaceEdit(
 ): WorkspacePresentationReply {
   const invalid = validateWorkspacePresentationRequest(request)
   if (invalid) return mockFailure(invalid)
-  const target = WORKSPACES.find((w) => w.id === request.workspaceId)
+  const context = request.context || "default"
+  const target = WORKSPACES.find(
+    (w) => w.id === request.workspaceId && (w.context ?? "default") === context,
+  )
   if (!target || target.uid !== request.expectedUid) {
     return mockFailure({
       field: "workspace",
