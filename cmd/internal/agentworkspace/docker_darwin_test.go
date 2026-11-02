@@ -3,11 +3,16 @@
 package agentworkspace
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
 )
 
 func writeExecutable(t *testing.T, path string) {
@@ -110,5 +115,43 @@ func TestFindDarwinDockerCLIRejectsInaccessibleCandidate(t *testing.T) {
 	path, err := findDarwinDockerCLIInPaths([]string{inaccessible, valid})
 	if err != nil || path != valid {
 		t.Fatalf("expected fallback to valid candidate %q, got %q (err: %v)", valid, path, err)
+	}
+}
+
+func TestDarwinDockerDiscoveryPrecedesDisabledInstallation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	existing := filepath.Join(t.TempDir(), "docker")
+	writeExecutable(t, existing)
+	info := &provider.AgentWorkspaceInfo{}
+	info.Agent.Docker.Install = types.StrBool("false")
+	calls := 0
+	initializer := &workspaceInitializer{
+		workspaceInfo: info,
+		findDarwinDocker: func() (string, error) {
+			calls++
+			return findDarwinDockerCLIInPaths([]string{existing})
+		},
+		installDocker: func(context.Context) (string, error) {
+			t.Fatal("disabled installation called the installer")
+			return "", nil
+		},
+	}
+	path, err := initializer.ensureDockerInstalled(context.Background())
+	if err != nil || path != existing || calls != 1 {
+		t.Fatalf(
+			"Docker CLI discovery = %q, %v, calls %d; want %q, nil, 1",
+			path,
+			err,
+			calls,
+			existing,
+		)
+	}
+
+	initializer.findDarwinDocker = func() (string, error) {
+		return "", errors.New("Docker CLI absent")
+	}
+	path, err = initializer.ensureDockerInstalled(context.Background())
+	if path != "" || err == nil || !strings.Contains(err.Error(), "agent.docker.install is false") {
+		t.Fatalf("missing Docker CLI = %q, %v; want disabled installation error", path, err)
 	}
 }

@@ -11,6 +11,7 @@ Providers you can add:
 - [Harvester (harvester)](https://github.com/devsy-org/devsy-provider-harvester)
 - [Apple (apple)](https://github.com/devsy-org/devsy/tree/main/providers/apple)
 - [MicroSandbox (microsandbox)](https://github.com/devsy-org/devsy-provider-microsandbox)
+- [Docker Sandboxes (docker-sandbox)](https://github.com/devsy-org/devsy-provider-docker-sandbox)
 - [Lima (lima)](https://github.com/devsy-org/devsy-provider-lima)
 - [OrbStack (orbstack)](https://github.com/devsy-org/devsy-provider-orbstack)
 - [SSH (ssh)](https://github.com/devsy-org/devsy-provider-ssh)
@@ -102,6 +103,18 @@ devsy provider add builtin:microsandbox --name legacy-microsandbox --use=false
 ```
 
 If a switch fails during initialization, the new source stays selected. Fix the cause and run `devsy provider init <name>`, or set the previous source again. Add `--version <tag>` to `set-source` to pin a release.
+
+### Docker Sandboxes
+
+Install Docker Sandboxes and sign in with `sbx login` before adding the provider:
+
+```sh
+devsy provider add docker-sandbox
+```
+
+The [Docker Sandboxes guide](./docker-sandbox.mdx) covers qualified hosts, resource options, guest Docker, source files, networking, data deletion, and scoped recovery. The provider needs a published release containing native qualification for your host.
+
+
 
 ## Set provider options
 

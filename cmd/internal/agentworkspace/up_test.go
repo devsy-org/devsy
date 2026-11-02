@@ -5,12 +5,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -240,5 +243,203 @@ func TestWaitForDockerReturnsDiscoveryError(t *testing.T) {
 
 	if err := initializer.waitForDocker(resultChan); !errors.Is(err, discoveryErr) {
 		t.Fatalf("waitForDocker() error = %v, want wrapped %v", err, discoveryErr)
+	}
+}
+
+const (
+	dockerPolicyDisabled = "false"
+	dockerPolicyEnabled  = "true"
+	dockerPolicyInvalid  = "invalid"
+	testInstalledDocker  = "/installed/docker"
+)
+
+type dockerInstallationCase struct {
+	name      string
+	path      string
+	policy    string
+	existing  bool
+	wantCalls int
+	wantPath  string
+	wantError string
+}
+
+func TestDockerInstallationPolicy(t *testing.T) {
+	cases := []dockerInstallationCase{
+		{
+			name:      "missing disabled",
+			policy:    dockerPolicyDisabled,
+			wantError: `docker CLI is unavailable and agent.docker.install is false (executable "docker")`,
+		},
+		{name: "missing unset", wantCalls: 1, wantPath: testInstalledDocker},
+		{
+			name:      "missing enabled",
+			policy:    dockerPolicyEnabled,
+			wantCalls: 1,
+			wantPath:  testInstalledDocker,
+		},
+		{name: "existing disabled", policy: dockerPolicyDisabled, existing: true},
+		{
+			name:      "custom missing disabled",
+			path:      "missing-custom",
+			policy:    dockerPolicyDisabled,
+			wantError: "custom docker path",
+		},
+		{name: "custom missing unset", path: "missing-custom", wantError: "custom docker path"},
+		{
+			name:     "existing custom disabled",
+			path:     "custom-docker",
+			policy:   dockerPolicyDisabled,
+			existing: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertDockerInstallationPolicy(t, tc)
+		})
+	}
+}
+
+func assertDockerInstallationPolicy(t *testing.T, tc dockerInstallationCase) {
+	t.Helper()
+	if runtime.GOOS == "darwin" && tc.wantCalls > 0 {
+		tc.wantCalls = 0
+		tc.wantPath = ""
+		tc.wantError = "not found"
+	}
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	if tc.existing {
+		writeDockerFixture(t, bin, tc.path)
+	}
+	info := &provider.AgentWorkspaceInfo{}
+	info.Agent.Docker.Path = tc.path
+	info.Agent.Docker.Install = types.StrBool(tc.policy)
+	calls := 0
+	initializer := &workspaceInitializer{
+		workspaceInfo: info,
+		findDarwinDocker: func() (string, error) {
+			return "", errors.New("not found")
+		},
+		installDocker: func(context.Context) (string, error) {
+			calls++
+			return testInstalledDocker, nil
+		},
+	}
+	path, err := initializer.ensureDockerInstalled(context.Background())
+	if tc.wantError == "" {
+		assert.NoError(t, err)
+	} else {
+		assert.ErrorContains(t, err, tc.wantError)
+	}
+	assert.Equal(t, tc.wantCalls, calls)
+	assert.Equal(t, tc.wantPath, path)
+}
+
+func writeDockerFixture(t *testing.T, bin, configuredPath string) {
+	t.Helper()
+	name := configuredPath
+	if name == "" {
+		name = docker
+	}
+	path := filepath.Join(bin, name)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(executable, path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDockerInstallDisabledTriState(t *testing.T) {
+	for _, tc := range []struct {
+		policy   types.StrBool
+		disabled bool
+	}{
+		{policy: "", disabled: false},
+		{policy: dockerPolicyEnabled, disabled: false},
+		{policy: dockerPolicyDisabled, disabled: true},
+	} {
+		info := &provider.AgentWorkspaceInfo{}
+		info.Agent.Docker.Install = tc.policy
+		initializer := &workspaceInitializer{workspaceInfo: info}
+		if got := initializer.isDockerInstallDisabled(); got != tc.disabled {
+			t.Errorf("install %q disabled = %t, want %t", tc.policy, got, tc.disabled)
+		}
+	}
+}
+
+func TestDockerManagementPolicy(t *testing.T) {
+	for _, driver := range []string{provider.DockerDriver, provider.KubernetesDriver} {
+		for _, local := range []string{dockerPolicyDisabled, dockerPolicyEnabled} {
+			for _, policy := range []string{"", dockerPolicyEnabled, dockerPolicyDisabled, dockerPolicyInvalid} {
+				t.Run(driver+"/"+local+"/"+policy, func(t *testing.T) {
+					assertDockerManagementPolicy(t, driver, local, policy)
+				})
+			}
+		}
+	}
+}
+
+func assertDockerManagementPolicy(t *testing.T, driver, local, policy string) {
+	t.Helper()
+	info := &provider.AgentWorkspaceInfo{}
+	info.Agent.Driver = driver
+	info.Agent.Local = types.StrBool(local)
+	info.Agent.Docker.ConfigureDaemon = types.StrBool(policy)
+	configureCalls := 0
+	initializer := &workspaceInitializer{
+		workspaceInfo: info,
+		configureDocker: func(context.Context) error {
+			configureCalls++
+			return nil
+		},
+	}
+	err := initializer.validateDockerManagement()
+	if policy == dockerPolicyInvalid {
+		assert.ErrorContains(t, err, "agent.docker.configureDaemon")
+	} else {
+		assert.NoError(t, err)
+	}
+	initializer.tryConfigureDockerDaemon(context.Background())
+	want := 0
+	if driver == provider.DockerDriver && local == dockerPolicyDisabled &&
+		policy != dockerPolicyDisabled && policy != dockerPolicyInvalid {
+		want = 1
+	}
+	assert.Equal(t, want, configureCalls)
+}
+
+func TestInvalidDockerManagementFailsBeforeInitialization(t *testing.T) {
+	for _, field := range []string{"install", "configureDaemon"} {
+		t.Run(field, func(t *testing.T) {
+			info := &provider.AgentWorkspaceInfo{}
+			if field == "install" {
+				info.Agent.Docker.Install = dockerPolicyInvalid
+			} else {
+				info.Agent.Docker.ConfigureDaemon = dockerPolicyInvalid
+			}
+			calls := 0
+			initializer := &workspaceInitializer{
+				workspaceInfo: info,
+				installDocker: func(context.Context) (string, error) {
+					calls++
+					return "", nil
+				},
+				configureDocker: func(context.Context) error {
+					calls++
+					return nil
+				},
+			}
+			if err := initializer.initialize(
+				context.Background(),
+			); err == nil ||
+				!strings.Contains(err.Error(), field) {
+				t.Errorf("initialize() error = %v, want invalid %s error", err, field)
+			}
+			if calls != 0 {
+				t.Errorf("invalid policy triggered %d Docker management calls", calls)
+			}
+		})
 	}
 }

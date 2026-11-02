@@ -57,6 +57,11 @@ const PRESETS: ProviderPreset[] = [
     category: "Local",
   },
   {
+    name: "docker-sandbox",
+    description: "Devcontainers in Docker Sandboxes microVMs",
+    category: "Local",
+  },
+  {
     name: "lima",
     description: "Linux VMs via Lima (macOS)",
     category: "Local",

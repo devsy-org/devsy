@@ -19,11 +19,12 @@ import (
 )
 
 type CommandRunner struct {
-	Command string
-	Environ []string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
+	Command     string
+	Environ     []string
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	ExecHandler interp.ExecHandlerFunc
 }
 
 func RunEmulatedShell(
@@ -47,11 +48,12 @@ func RunEmulatedShell(
 	}
 
 	r, err := interp.New(buildRunnerOptions(shellRunnerOptions{
-		stdin:  runner.Stdin,
-		stdout: runner.Stdout,
-		stderr: runner.Stderr,
-		env:    runner.Environ,
-		dir:    dir,
+		stdin:       runner.Stdin,
+		stdout:      runner.Stdout,
+		stderr:      runner.Stderr,
+		env:         runner.Environ,
+		dir:         dir,
+		execHandler: runner.ExecHandler,
 	})...)
 	if err != nil {
 		return fmt.Errorf("create shell runner: %w", err)
@@ -71,23 +73,27 @@ func RunEmulatedShell(
 }
 
 type shellRunnerOptions struct {
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
-	env    []string
-	dir    string
+	stdin       io.Reader
+	stdout      io.Writer
+	stderr      io.Writer
+	env         []string
+	dir         string
+	execHandler interp.ExecHandlerFunc
 }
 
 func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
 	defaultOpenHandler := interp.DefaultOpenHandler()
-	defaultExecHandler := interp.DefaultExecHandler(2 * time.Second)
+	execHandler := p.execHandler
+	if execHandler == nil {
+		execHandler = interp.DefaultExecHandler(2 * time.Second)
+	}
 	return []interp.RunnerOption{
 		interp.StdIO(p.stdin, p.stdout, p.stderr),
 		interp.Env(expand.ListEnviron(p.env...)),
 		interp.Dir(p.dir),
 		interp.ExecHandlers(func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 			return func(ctx context.Context, args []string) error {
-				return defaultExecHandler(ctx, args)
+				return execHandler(ctx, args)
 			}
 		}),
 		// CallHandler intercepts builtin calls. mvdan.cc/sh/v3 v3.13.1 marks

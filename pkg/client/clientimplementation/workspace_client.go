@@ -245,12 +245,13 @@ func (s *workspaceClient) Command(ctx context.Context, opt client.CommandOptions
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command:   s.providerConfig.Exec.Command,
-		Environ:   environ,
-		Stdin:     opt.Stdin,
-		Stdout:    opt.Stdout,
-		Stderr:    opt.Stderr,
-		RawStdout: opt.RawStdout,
+		Command:      s.providerConfig.Exec.Command,
+		Environ:      environ,
+		Stdin:        opt.Stdin,
+		Stdout:       opt.Stdout,
+		Stderr:       opt.Stderr,
+		RawStdout:    opt.RawStdout,
+		Cancellation: s.providerConfig.Exec.Cancellation,
 	})
 }
 
@@ -269,7 +270,8 @@ func (s *workspaceClient) OpenCommandTransport(
 				Command: s.providerConfig.Exec.Command,
 				Environ: environ,
 				Stdin:   stdin, Stdout: stdout, Stderr: opt.Stderr,
-				RawStdout: true,
+				RawStdout:    true,
+				Cancellation: s.providerConfig.Exec.Cancellation,
 			})
 		},
 		transport.CallbackConnOptions{
@@ -810,25 +812,34 @@ func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) err
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command:   cfg.Command,
-		Environ:   environ,
-		Stdin:     cfg.Stdin,
-		Stdout:    cfg.Stdout,
-		Stderr:    cfg.Stderr,
-		RawStdout: cfg.RawStdout,
+		Command:      cfg.Command,
+		Environ:      environ,
+		Stdin:        cfg.Stdin,
+		Stdout:       cfg.Stdout,
+		Stderr:       cfg.Stderr,
+		RawStdout:    cfg.RawStdout,
+		Cancellation: cfg.Config.Exec.Cancellation,
 	})
 }
 
 type RunCommandOptions struct {
-	Command   types.StrArray
-	Environ   []string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
-	RawStdout bool
+	Command      types.StrArray
+	Environ      []string
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	RawStdout    bool
+	Cancellation provider.ProviderCancellationMode
 }
 
-func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
+func RunCommand(ctx context.Context, opts RunCommandOptions) error {
+	if opts.Cancellation == provider.ProviderCancellationFile {
+		return runProviderWithCancellation(ctx, opts)
+	}
+	return runCommandExecution(ctx, opts)
+}
+
+func runCommandExecution(ctx context.Context, opts RunCommandOptions) (retErr error) {
 	if len(opts.Command) == 0 {
 		return nil
 	}
@@ -856,33 +867,47 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
 	}()
 
 	if len(opts.Command) == 1 {
-		if err := shell.RunEmulatedShell(ctx, &shell.CommandRunner{
-			Command: opts.Command[0],
-			Stdin:   opts.Stdin,
-			Stdout:  stdout,
-			Stderr:  stderr,
-			Environ: opts.Environ,
-		}); err != nil {
-			return fmt.Errorf(
-				"run provider command %q (%s): %w",
-				opts.Command[0],
-				providerAction(opts.Environ),
-				err,
-			)
-		}
-		return nil
+		return runProviderShellCommand(ctx, opts, stdout, stderr)
 	}
+	return runProviderArgvCommand(ctx, opts, stdout, stderr)
+}
 
+func runProviderShellCommand(
+	ctx context.Context,
+	opts RunCommandOptions,
+	stdout, stderr io.Writer,
+) error {
+	runner := &shell.CommandRunner{
+		Command: opts.Command[0],
+		Stdin:   opts.Stdin,
+		Stdout:  stdout,
+		Stderr:  stderr,
+		Environ: opts.Environ,
+	}
+	if opts.Cancellation == provider.ProviderCancellationFile {
+		runner.ExecHandler = shell.ProviderExecHandler()
+	}
+	if err := shell.RunEmulatedShell(ctx, runner); err != nil {
+		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
+	}
+	return nil
+}
+
+func runProviderArgvCommand(
+	ctx context.Context,
+	opts RunCommandOptions,
+	stdout, stderr io.Writer,
+) error {
 	cmd := exec.CommandContext(ctx, opts.Command[0], opts.Command[1:]...) // #nosec G204
 	cmd.Stdin = opts.Stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Env = opts.Environ
+	if opts.Cancellation == provider.ProviderCancellationFile {
+		cmd.WaitDelay = 2 * time.Second
+	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf(
-			"run provider command %q (%s): %w",
-			strings.Join(opts.Command, " "), providerAction(opts.Environ), err,
-		)
+		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
 	}
 	return nil
 }
@@ -901,14 +926,13 @@ func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) err
 	return errors.Join(stdoutErr, stderrErr)
 }
 
-// providerAction extracts the provider action from the environment variables.
 func providerAction(environ []string) string {
 	for _, kv := range environ {
-		if rest, ok := strings.CutPrefix(kv, provider.CommandEnv+"="); ok {
-			return rest
+		if strings.HasPrefix(kv, provider.CommandEnv+"=") {
+			return "command"
 		}
 	}
-	return ""
+	return "lifecycle"
 }
 
 func DeleteMachineFolder(context, machineID string) error {

@@ -281,6 +281,12 @@ func validateStandardProvider(config *ProviderConfig) error {
 	if err := validateAgentDriver(config); err != nil {
 		return err
 	}
+	if value := config.Agent.Docker.ConfigureDaemon; value != "" &&
+		!templatedValueRegex.MatchString(string(value)) {
+		if _, err := value.Bool(); err != nil {
+			return fmt.Errorf("agent.docker.configureDaemon: %w", err)
+		}
+	}
 
 	if err := validateBinaries("agent.binaries", config.Agent.Binaries); err != nil {
 		return err
@@ -342,6 +348,11 @@ func validateCustomDriver(config *ProviderConfig) error {
 }
 
 func validateExecCommands(config *ProviderConfig) error {
+	if config.Exec.Cancellation != ProviderCancellationDefault &&
+		config.Exec.Cancellation != ProviderCancellationFile {
+		return fmt.Errorf("exec.cancellation must be empty or file")
+	}
+
 	if len(config.Exec.Command) == 0 {
 		return fmt.Errorf("exec.command is required")
 	}

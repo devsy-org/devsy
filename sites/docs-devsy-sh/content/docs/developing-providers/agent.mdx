@@ -38,6 +38,24 @@ This section can use option values.
 - **exec.shutdown**: the command that stops the machine once it is idle. Option values are available in it.
 - **binaries**: helper binaries for `exec.shutdown`. Same format as [provider binaries](./binaries.mdx).
 
+## Docker management policy
+
+For the `docker` driver, the `agent.docker` section controls how Devsy manages Docker on the agent machine:
+
+```yaml
+agent:
+  local: false
+  driver: docker
+  docker:
+    path: docker
+    install: false
+    configureDaemon: false
+```
+
+Set `install: false` when the provider supplies a Docker CLI. If that executable is missing, Devsy reports an error instead of installing Docker. An existing executable remains usable. With `install` unset or `true`, Devsy retains its existing installation behavior.
+
+Set `configureDaemon: false` when the provider owns the Docker daemon, including a private daemon inside a VM. Devsy then does not read or modify the daemon configuration for its management step and does not reload the daemon. With `configureDaemon` unset or `true`, Devsy retains its existing behavior of configuring the daemon for a remote Docker agent. Local agents are not configured by this step. These settings accept provider option templates, which must resolve to valid boolean values before the agent starts Docker setup. This policy controls Devsy's daemon management, not arbitrary commands a user runs inside a devcontainer.
+
 ## Stopping idle environments
 
 Devsy tracks connections and stops the environment after the timeout. It starts the environment again when the user returns. State survives only if the provider keeps the storage. A shutdown command that deletes the machine must keep workspace data elsewhere, for example on a persistent volume.

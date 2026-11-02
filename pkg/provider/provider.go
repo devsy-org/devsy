@@ -419,7 +419,8 @@ type ProviderDockerDriverConfig struct {
 	Path string `json:"path,omitempty"`
 
 	// If false, Devsy will not try to install docker into the machine.
-	Install types.StrBool `json:"install,omitempty"`
+	Install         types.StrBool `json:"install,omitempty"`
+	ConfigureDaemon types.StrBool `json:"configureDaemon,omitempty"`
 
 	// Builder to use with docker
 	Builder string `json:"builder,omitempty"`
@@ -517,7 +518,16 @@ type ProviderBinary struct {
 	Name string `json:"name,omitempty"`
 }
 
+type ProviderCancellationMode string
+
+const (
+	ProviderCancellationDefault ProviderCancellationMode = ""
+	ProviderCancellationFile    ProviderCancellationMode = "file"
+)
+
 type ProviderCommands struct {
+	Cancellation ProviderCancellationMode `json:"cancellation,omitempty"`
+
 	// Init is run directly after `devsy provider init`
 	Init types.StrArray `json:"init,omitempty"`
 

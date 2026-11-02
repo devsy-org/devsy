@@ -42,7 +42,7 @@ devsy workspace up github.com/microsoft/vscode-remote-try-go
 
 ## exec
 
-Each entry is a POSIX shell script. Only `command` is required.
+The `command`, `init`, `create`, `delete`, `start`, `stop`, `status` and `describe` entries are POSIX shell scripts or command arrays. Only `command` is required. `cancellation` is an execution policy, not a script.
 
 - **command**: runs a command in the environment. Devsy uses it to inject itself, and sends all traffic through its standard input and output. Devsy fills in the `${COMMAND}` placeholder.
 - **init**: checks that the options are valid and the provider is ready. Devsy runs it when options change.
@@ -50,8 +50,13 @@ Each entry is a POSIX shell script. Only `command` is required.
 - **start**, **stop**: start and stop a machine. Machine providers only.
 - **status**: prints one of `Running`, `Busy` (wait and check again), `Stopped` or `NotFound`.
 - **describe**: prints a text description of the machine.
+- **cancellation**: omit it for existing process cancellation behavior, or set `file` to give provider commands a cooperative cleanup window.
 
-A provider without `create` is a non-machine provider and uses only `command` and `init`.
+A provider without `create` is a non-machine provider and uses only `command` and `init`. The cancellation policy applies to both machine and non-machine providers.
+
+With `exec.cancellation: file`, Devsy sets the reserved `DEVSY_PROVIDER_CANCEL_FILE` environment variable to a private, initially nonexistent marker path for each invocation. The provider must watch for the marker, stop admitting work, cancel its owned processes, finish cleanup, and exit. On caller cancellation, Devsy creates the marker and allows up to 10 seconds for cleanup before forcing the owned provider process to stop. Devsy waits for the invocation to finish and still returns the caller's cancellation error even if cleanup exits successfully. A provider must not set or override the reserved variable.
+
+File mode requires finite or nonblocking standard streams, direct file handles, or blocking streams whose owner unblocks them on cancellation of the original calling context. A provider must not assume that an arbitrary blocked reader or writer is interrupted by process cancellation. Machine command transports close their pipe endpoints on cancellation of the original context. Standard input can close independently of standard output, so providers must continue draining output after input reaches EOF.
 
 On Windows, Devsy runs these scripts in an [emulated shell](https://github.com/mvdan/sh). The emulated shell has no `grep` or `sed`. Move that logic into a helper binary.
 

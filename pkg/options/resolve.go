@@ -344,6 +344,9 @@ func resolveAgentDockerConfig(
 	agentConfig.Docker.Install = types.StrBool(
 		resolver.ResolveDefaultValue(string(agentConfig.Docker.Install), options),
 	)
+	agentConfig.Docker.ConfigureDaemon = types.StrBool(
+		resolver.ResolveDefaultValue(string(agentConfig.Docker.ConfigureDaemon), options),
+	)
 	agentConfig.Docker.Env = resolver.ResolveDefaultValues(agentConfig.Docker.Env, options)
 }
 
