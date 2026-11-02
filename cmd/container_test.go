@@ -24,7 +24,7 @@ func TestContainerInfoFailureRendering(t *testing.T) {
 	root.SetOut(&out)
 	root.SetArgs([]string{
 		containerCommandName, infoCommandName, "--home", t.TempDir(),
-		"--context", "not-configured", "--provider", "not-configured", "--result-format", "json",
+		"--context", "not-configured", passiveTestProviderFlag, "not-configured", "--result-format", "json",
 	})
 	err := root.Execute()
 	require.ErrorContains(t, err, config.EnvWorkspaceID)

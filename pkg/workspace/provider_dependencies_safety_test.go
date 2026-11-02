@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const dependencyTestLinuxOS = "linux"
+
 func (s *providerDependencySurveySuite) TestUnreviewedProvenanceIsBlocked() {
 	for _, source := range []provider.ProviderSource{
 		{},
@@ -83,7 +85,10 @@ func (s *providerDependencySurveySuite) TestEveryManifestSectionIsComparedWithou
 func dependencyAdapterBinaries(path string) map[string][]*provider.ProviderBinary {
 	return map[string][]*provider.ProviderBinary{
 		"ADAPTER": {
-			{Path: path, OS: "linux", Arch: "amd64", Checksum: "must-not-verify-or-remove"},
+			{
+				Path: path, OS: dependencyTestLinuxOS, Arch: "amd64",
+				Checksum: "must-not-verify-or-remove",
+			},
 		},
 	}
 }

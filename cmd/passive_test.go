@@ -28,6 +28,7 @@ const (
 	passiveTestActive        = "active"
 	passiveTestHelpFlag      = "--help"
 	passiveTestHomeFlag      = "--home"
+	passiveTestProviderFlag  = "--provider"
 	passiveTestUnknownFlag   = "--unknown"
 	passiveTestUnknown       = "unknown"
 	passiveTestHelp          = "help"
@@ -156,7 +157,7 @@ func TestPassiveRootPreparation(t *testing.T) {
 					home,
 					"--context",
 					"chosen",
-					"--provider",
+					passiveTestProviderFlag,
 					"fixture-provider",
 				},
 			)

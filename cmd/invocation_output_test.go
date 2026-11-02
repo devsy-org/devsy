@@ -124,7 +124,7 @@ func TestInspectionInvocationReader(t *testing.T) {
 		},
 		{
 			"provider-repeat",
-			[]string{"--provider=first", inspectTestDocker, "--provider", "last"},
+			[]string{"--provider=first", inspectTestDocker, passiveTestProviderFlag, "last"},
 			false, true, "last", false, true,
 		},
 		{passiveTestHelp, []string{inspectTestDocker, passiveTestHelpFlag, inspectTestJSON}, true, false, "", false, false},

@@ -146,6 +146,13 @@ export async function providerList(): Promise<Provider[]> {
   return invoke<Provider[]>("provider_list")
 }
 
+export async function dependencyInspect(
+  tool: string,
+  providerName: string,
+): Promise<unknown | null> {
+  return invoke<unknown | null>("dependency:inspect", { tool, providerName })
+}
+
 export async function providerIcon(
   request: ProviderIconRequest,
 ): Promise<ProviderIconReply> {

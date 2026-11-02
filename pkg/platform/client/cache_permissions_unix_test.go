@@ -208,24 +208,23 @@ func (f cachePermissionFixture) saveAndReload(t *testing.T, path string) {
 
 func (f cachePermissionFixture) assertSavedModes(t *testing.T, path string) {
 	t.Helper()
-	wantFileMode := 0o660 &^ f.mask
+	wantFileMode := os.FileMode(0o600)
 	category := filepath.Dir(f.platform)
 	switch f.mode {
 	case cachePermissionExisting, cachePermissionOverrideExisting:
-		wantFileMode = 0o600
 		assertCachePermissionMode(t, category, 0o751)
 		assertCachePermissionMode(t, f.platform, 0o750)
 	case cachePermissionNative, cachePermissionOverride:
 		assertCachePermissionMode(t, category, 0o700)
-		assertCachePermissionMode(t, f.platform, 0o755&^f.mask)
+		assertCachePermissionMode(t, f.platform, 0o750&^f.mask)
 	case cachePermissionNested:
-		assertCachePermissionMode(t, category, 0o755&^f.mask)
-		assertCachePermissionMode(t, filepath.Dir(path), 0o755&^f.mask)
+		assertCachePermissionMode(t, category, 0o750&^f.mask)
+		assertCachePermissionMode(t, filepath.Dir(path), 0o750&^f.mask)
 	case cachePermissionCustom, cachePermissionPrefix:
 		require.NoDirExists(t, category, "custom Save must not create the default category")
-		assertCachePermissionMode(t, filepath.Dir(path), 0o755&^f.mask)
+		assertCachePermissionMode(t, filepath.Dir(path), 0o750&^f.mask)
 	case cachePermissionUnresolved:
-		assertCachePermissionMode(t, filepath.Dir(path), 0o755&^f.mask)
+		assertCachePermissionMode(t, filepath.Dir(path), 0o750&^f.mask)
 	}
 	assertCachePermissionMode(t, path, wantFileMode)
 	assertCachePermissionMode(t, f.root, 0o755)

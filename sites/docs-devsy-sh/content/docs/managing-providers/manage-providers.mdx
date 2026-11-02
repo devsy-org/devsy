@@ -103,6 +103,18 @@ devsy provider add builtin:microsandbox --name legacy-microsandbox --use=false
 
 If a switch fails during initialization, the new source stays selected. Fix the cause and run `devsy provider init <name>`, or set the previous source again. Add `--version <tag>` to `set-source` to pin a release.
 
+## Inspect installed provider dependencies
+
+Use `devsy dependency inspect` to check a saved Docker, Podman, Apple, or Kubernetes provider without running the tool or contacting its endpoint:
+
+```sh
+devsy dependency inspect docker --for-provider my-docker --json
+```
+
+Replace `docker` with `podman`, `apple-container`, or `kubernetes-config` to match the installed provider. The report describes observed paths and configuration. It does not verify a tool version, test connectivity, or change provider settings.
+
+The Desktop provider setup and settings screens show passive dependency status for recognized built-in providers. If setup reports a missing dependency, install or correct it outside Devsy, then retry inspection. Older CLI versions without the inspection command keep the existing provider setup flow. External provider manifests are not trusted for this inspection. Dependency installation, selection, and removal are not available.
+
 ## Set provider options
 
 Each provider has its own options. In the desktop app, open **Providers** and click **Edit** on a provider. With the CLI, set options when you add or initialize:

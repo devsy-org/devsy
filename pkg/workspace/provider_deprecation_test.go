@@ -78,7 +78,7 @@ func (s *providerDeprecationSuite) TestLoadAllProvidersMarksDeprecatedByDriver()
 			External: provider.ProviderExternalDriverConfig{Binary: "RUNTIME"},
 			Binaries: map[string][]*provider.ProviderBinary{
 				"RUNTIME": {{
-					OS: "linux", Arch: "amd64", Path: "https://example.invalid/runtime",
+					OS: dependencyTestLinuxOS, Arch: "amd64", Path: "https://example.invalid/runtime",
 					Checksum: "0000000000000000000000000000000000000000000000000000000000000000",
 				}},
 			},

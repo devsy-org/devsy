@@ -53,6 +53,12 @@ import { WorkspaceLogError, WorkspaceLogReader } from "./workspace-logs.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
 const execFileAsync = promisify(execFile)
+const dependencyInspectionTools: Record<string, true> = {
+  docker: true,
+  podman: true,
+  "apple-container": true,
+  "kubernetes-config": true,
+}
 
 interface SecretIpcFailure {
   ok: false
@@ -1180,6 +1186,44 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     const providers = parseProviderEntries(raw)
     state.updateProviders(providers, readRevision)
     return state.providerList()
+  })
+
+  ipcMain.handle("dependency:inspect", async (event, args: unknown) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      throw new Error(
+        "Dependency inspection requires the main application window.",
+      )
+    if (!args || typeof args !== "object" || Array.isArray(args))
+      throw new Error("Invalid dependency inspection request.")
+    const input = args as { tool?: unknown; providerName?: unknown }
+    if (Object.keys(input).sort().join(",") !== "providerName,tool")
+      throw new Error("Invalid dependency inspection request.")
+    if (
+      typeof input.tool !== "string" ||
+      !Object.hasOwn(dependencyInspectionTools, input.tool) ||
+      typeof input.providerName !== "string" ||
+      !/^[a-z0-9-]{1,32}$/.test(input.providerName)
+    )
+      throw new Error("Invalid dependency inspection request.")
+    try {
+      return await cli.run([
+        "dependency",
+        "inspect",
+        input.tool,
+        "--for-provider",
+        input.providerName,
+        "--json",
+      ])
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (
+        /unknown command\s+["']?dependency["']?|unknown flag\s+["']?--json["']?/i.test(
+          message,
+        )
+      )
+        return null
+      throw error
+    }
   })
 
   // Installed-asset reader only: the renderer names a provider and theme, never

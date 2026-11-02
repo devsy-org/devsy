@@ -278,6 +278,13 @@ func (b *basePathManager) TaskDir() (string, error) {
 	return joinUnder(b.pm.StateDir, "tasks")
 }
 
+// WorkspaceLogsDir holds retained build and lifecycle output for workspace
+// runs. It sits outside the per-workspace directory so removing a workspace
+// does not remove its history.
+func (b *basePathManager) WorkspaceLogsDir() (string, error) {
+	return joinUnder(b.pm.StateDir, "workspace-logs")
+}
+
 func (b *basePathManager) ensureDir(path string) (string, error) {
 	if b.readOnly {
 		return path, nil
@@ -307,12 +314,6 @@ func (b *basePathManager) homeOverrideDir(sub ...string) (string, bool, error) {
 	dir, err := b.ensureDir(filepath.Join(append([]string{home}, sub...)...))
 
 	return dir, true, err
-
-// WorkspaceLogsDir holds retained build and lifecycle output for workspace
-// runs. It sits outside the per-workspace directory so removing a workspace
-// does not remove its history.
-func (b *basePathManager) WorkspaceLogsDir() (string, error) {
-	return joinUnder(b.pm.StateDir, "workspace-logs")
 }
 
 // inContext returns elems joined beneath ContextDir(context).
