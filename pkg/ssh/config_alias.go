@@ -154,17 +154,45 @@ func rewriteHostLines(
 		case isMarkerLine(line, startMarker):
 			start = i
 		case start >= 0 && isMarkerLine(line, endMarker):
-			err := policy.claim(path, r.CanonicalHost, lines[start:i+1])
+			applied, err := rewriteClosedBlock(lines[start:i+1], path, r, policy)
 			if err != nil {
 				return "", false, err
 			}
-			idx := firstHostLine(lines, start, i)
-			found = applyHostLine(lines, idx, r.CanonicalHost, r.PreferredHost) || found
+			found = applied || found
 			start = -1
 		}
 	}
 
 	return strings.Join(lines, "\n"), found, nil
+}
+
+func rewriteClosedBlock(
+	block []string,
+	path string,
+	r AliasReplacement,
+	policy *blockPolicy,
+) (bool, error) {
+	err := policy.claim(path, r.CanonicalHost, block)
+	if err != nil {
+		return false, err
+	}
+	_, owned := blockOwnerHash(block)
+	idx := firstHostLine(block, 0, len(block)-1)
+	applied := applyHostLine(block, idx, r.CanonicalHost, r.PreferredHost)
+	if applied && policy != nil && !owned {
+		block[0] = stampOwnerLine(block[0], policy.owner.Line())
+	}
+
+	return applied, nil
+}
+
+func stampOwnerLine(startLine, ownerLine string) string {
+	ending := ""
+	if strings.HasSuffix(startLine, "\r") {
+		ending = "\r"
+	}
+
+	return startLine + "\n" + ownerLine + ending
 }
 
 func firstHostLine(lines []string, start, end int) int {

@@ -637,3 +637,108 @@ func TestReconcileDeleteRemovesOnlyOwnedBlock(t *testing.T) {
 	assert.Contains(t, f.read(), "Host before")
 	assert.Contains(t, f.read(), "Host after")
 }
+
+func (f *ownerFixture) legacyBlockKind(kind string) string {
+	if kind == "tunnel" {
+		return f.legacyBlock(addHostParams{tunnelPort: 2222})
+	}
+
+	return f.legacyBlock(addHostParams{devsyHome: f.homeA})
+}
+
+var legacyBlockKinds = []string{"tunnel", "proxy"}
+
+func TestReplaceHostAliasesForOwnerStampsLegacyBlock(t *testing.T) {
+	for _, kind := range legacyBlockKinds {
+		t.Run(kind, func(t *testing.T) {
+			f := newOwnerFixture(t)
+			legacy := f.legacyBlockKind(kind)
+			ownerA := f.owner(f.homeA)
+			f.write(legacy)
+			require.NotContains(t, f.read(), OwnerLinePrefix)
+
+			require.NoError(t, f.editAlias(ownerA, &aliasRecord{}, ownTestNewAlias))
+
+			lines := strings.Split(f.read(), "\n")
+			assert.Equal(t, MarkerStartPrefix+ownTestHost, lines[0])
+			assert.Equal(t, ownerA.Line(), lines[1])
+			assert.Equal(t, 1, strings.Count(f.read(), OwnerLinePrefix))
+			assert.Contains(t, f.read(), "Host "+ownTestNewAlias+" "+ownTestHost)
+			after := f.read()
+
+			_, err := ReplaceHostAliasesForOwner(
+				AliasReplacement{
+					ConfigPath:    f.cfgPath,
+					CanonicalHost: ownTestHost,
+					PreferredHost: ownTestThirdName,
+				},
+				f.owner(f.homeB),
+				nil,
+			)
+			requireOwnershipError(t, err)
+			requireOwnershipError(
+				t,
+				RemoveFromConfigForOwner(f.owner(f.homeB), ownTestWorkspace, f.cfgPath, ""),
+			)
+			assert.Equal(t, after, f.read())
+		})
+	}
+}
+
+func TestReplaceHostAliasesForOwnerRestoresOwnerlessLegacyBlockOnCommitFailure(t *testing.T) {
+	for _, kind := range legacyBlockKinds {
+		t.Run(kind, func(t *testing.T) {
+			f := newOwnerFixture(t)
+			legacy := f.legacyBlockKind(kind)
+			f.write(legacy)
+			original := f.read()
+			commitErr := errors.New("commit failed")
+			var duringCommit string
+
+			updated, err := ReplaceHostAliasesForOwner(
+				AliasReplacement{
+					ConfigPath:    f.cfgPath,
+					CanonicalHost: ownTestHost,
+					PreferredHost: ownTestNewAlias,
+				},
+				f.owner(f.homeA),
+				func() error {
+					duringCommit = f.read()
+
+					return commitErr
+				},
+			)
+
+			require.ErrorIs(t, err, commitErr)
+			assert.False(t, updated)
+			assert.Contains(t, duringCommit, OwnerLinePrefix)
+			assert.Equal(t, original, f.read())
+			assert.NotContains(t, f.read(), OwnerLinePrefix)
+		})
+	}
+}
+
+func TestReplaceHostAliasesForOwnerKeepsSingleOwnerLine(t *testing.T) {
+	f := newOwnerFixture(t)
+	owner := f.owner(f.homeA)
+	require.NoError(t, f.configure(owner, ownTestOldAlias))
+
+	require.NoError(t, f.editAlias(owner, &aliasRecord{}, ownTestNewAlias))
+	require.NoError(t, f.editAlias(owner, &aliasRecord{}, ownTestThirdName))
+
+	assert.Equal(t, 1, strings.Count(f.read(), OwnerLinePrefix))
+	assert.Equal(t, 1, strings.Count(f.read(), owner.Line()))
+}
+
+func TestReplaceHostAliasesForOwnerStampsLegacyBlockWithCRLF(t *testing.T) {
+	f := newOwnerFixture(t)
+	owner := f.owner(f.homeA)
+	f.write(strings.ReplaceAll(f.legacyBlock(addHostParams{tunnelPort: 2222}), "\n", "\r\n"))
+
+	require.NoError(t, f.editAlias(owner, &aliasRecord{}, ownTestNewAlias))
+
+	assert.True(t, strings.HasPrefix(
+		f.read(),
+		MarkerStartPrefix+ownTestHost+"\r\n"+owner.Line()+"\r\n",
+	))
+}
