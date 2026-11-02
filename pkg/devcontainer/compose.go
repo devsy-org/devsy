@@ -119,6 +119,18 @@ func (r *runner) composeHelper() (*compose.ComposeHelper, error) {
 	return helper, nil
 }
 
+// Only a v2 label carries a recorded environment; without one, keep whatever
+// the helper already has so legacy teardown can still resolve its variables.
+func replayComposeEnvironment(
+	helper *compose.ComposeHelper,
+	env map[string]string,
+) *compose.ComposeHelper {
+	if env == nil {
+		return helper
+	}
+	return helper.WithInvocationEnvironment(env)
+}
+
 func (r *runner) stopDockerCompose(ctx context.Context, projectName string) error {
 	composeHelper, err := r.composeHelper()
 	if err != nil {
@@ -130,7 +142,7 @@ func (r *runner) stopDockerCompose(ctx context.Context, projectName string) erro
 		return fmt.Errorf("get original Compose invocation: %w", err)
 	}
 
-	err = composeHelper.WithInvocationEnvironment(args.WSLgEnv).Stop(ctx, projectName, args.Args)
+	err = replayComposeEnvironment(composeHelper, args.WSLgEnv).Stop(ctx, projectName, args.Args)
 	if err != nil {
 		return err
 	}
@@ -153,7 +165,7 @@ func (r *runner) deleteDockerCompose(
 		return fmt.Errorf("get original Compose invocation: %w", err)
 	}
 
-	err = composeHelper.WithInvocationEnvironment(args.WSLgEnv).
+	err = replayComposeEnvironment(composeHelper, args.WSLgEnv).
 		Remove(ctx, projectName, args.Args, removeVolumes)
 	if err != nil {
 		return err

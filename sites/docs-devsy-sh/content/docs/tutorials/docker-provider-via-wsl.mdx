@@ -123,7 +123,7 @@ The experimental v1 substitution interface exposes only:
 | `WAYLAND_DISPLAY` | `DEVSY_WSLG_WAYLAND_DISPLAY` |
 | `XDG_RUNTIME_DIR` | `DEVSY_WSLG_XDG_RUNTIME_DIR` |
 
-Missing values stay absent, and present empty values stay empty. Discovery sets no container environment and adds no mounts. Explicitly map the desired values in your project. Audio, GPU, session bus, SSH sockets and `WAYLAND_SOCKET` file descriptors are not imported.
+Missing values stay absent, and present empty values stay empty. Discovery sets no container environment and adds no mounts. While discovery is enabled, Compose `containerEnv` values are written literally, so a `$` in them is not interpolated by Compose. Explicitly map the desired values in your project. Audio, GPU, session bus, SSH sockets and `WAYLAND_SOCKET` file descriptors are not imported.
 
 These names are reserved while discovery is enabled. Remove assignments to them from your Windows environment, `--init-env`, provider Docker environment and Compose interpolation `.env` files. Even empty assignments, or differently cased Windows names, are rejected. Ordinary `DISPLAY` remains user-controlled. Service `env_file` entries are container environment, separate from interpolation files. The separate `COMPOSE_ENV_FILES` environment override is unsupported while discovery is enabled; use the project `.env` files Devsy passes explicitly.
 
@@ -174,7 +174,7 @@ Wayland values can be referenced using the same explicit mapping, but `XDG_RUNTI
 
 Each up/recreate/build captures fresh display values. Already running containers can be reused only when the recorded distribution, user and values match. Stopped WSLg containers, changed values, newly enabled discovery and opting out all require explicit `devsy workspace up --recreate`. After a WSL restart, use `--recreate` even if the strings match: socket identities may have changed.
 
-Stop and delete never probe WSL. Compose containers record an allowlisted v2 invocation label containing the distribution/user and the three present display values, plus the original Compose paths needed for cleanup. Image containers carry the same display identity marker. These labels are visible to anyone who can inspect the Docker daemon; they contain host connection metadata, not credentials. Cleanup still needs a reachable Docker daemon and, for Compose, the original project files.
+Stop and delete never probe WSL. Compose containers record an allowlisted v2 invocation label containing the distribution/user and the three present display values, plus the original Compose paths needed for cleanup. Image containers carry the same display identity marker. These labels are visible to anyone who can inspect the Docker daemon; they contain host connection metadata, not credentials. Retained workspace build and lifecycle logs also record any command output, so a hook or build step that prints `DEVSY_WSLG_*` values stores them there. Cleanup still needs a reachable Docker daemon and, for Compose, the original project files.
 
 Disable discovery with:
 

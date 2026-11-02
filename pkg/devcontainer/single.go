@@ -164,8 +164,11 @@ func (r *runner) prepareContainerRecreation(
 	details *config.ContainerDetails,
 	params *resolveParams,
 ) error {
-	if err := r.checkWSLgReuse(details, params.options.Recreate); err != nil {
-		return err
+	// Devsy cannot recreate an externally managed container, so it carries no WSLg state.
+	if params.parsedConfig.Config.ContainerID == "" {
+		if err := r.checkWSLgReuse(details, params.options.Recreate); err != nil {
+			return err
+		}
 	}
 	if err := r.applyDriverRecreateRequirement(ctx, details, params); err != nil {
 		return err

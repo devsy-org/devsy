@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,6 +24,7 @@ import (
 const (
 	wslgTestContext      = "wslg-test"
 	wslgTestBadFlagValue = "yes"
+	wslgTestExternalID   = "external-container"
 )
 
 type WSLgSuite struct{ suite.Suite }
@@ -104,6 +106,28 @@ func (s *WSLgSuite) TestResumeRejectsStoppedWSLgContainer() {
 	s.Error(checkWSLgResume(details))
 	details.Config.Labels = nil
 	s.NoError(checkWSLgResume(details))
+}
+
+func (s *WSLgSuite) TestReplayKeepsHelperEnvironmentWithoutRecordedValues() {
+	helper := (&compose.ComposeHelper{}).WithInvocationEnvironment(s.snapshot(":0").Environment())
+	s.Same(helper, replayComposeEnvironment(helper, nil))
+	s.NotSame(helper, replayComposeEnvironment(helper, map[string]string{wslg.Display: ":1"}))
+}
+
+func (s *WSLgSuite) TestExternalContainerSkipsReuseCheck() {
+	r := newTestRunner(&mockDriver{})
+	r.wslgSnapshot = s.snapshot(":0")
+	details := &config.ContainerDetails{}
+	details.State.Status = config.ContainerStatusRunning
+	parsed := &config.SubstitutedConfig{Config: &config.DevContainerConfig{}}
+	params := &resolveParams{parsedConfig: parsed, options: UpOptions{}}
+	err := r.prepareContainerRecreation(context.Background(), details, params)
+	s.ErrorContains(err, "--recreate")
+	parsed.Config.ContainerID = wslgTestExternalID
+	s.NotContains(
+		fmt.Sprint(r.prepareContainerRecreation(context.Background(), details, params)),
+		"WSLg",
+	)
 }
 
 func (s *WSLgSuite) TestScopeIgnoresProviderInstallationName() {

@@ -56,14 +56,21 @@ func NewSnapshot(target Target, env map[string]string) (*Snapshot, error) {
 	if err := ValidateEnvironment(env); err != nil {
 		return nil, err
 	}
-	return &Snapshot{target: target, env: maps.Clone(env)}, nil
+	// Non-nil even when empty so collision checks keyed on a snapshot always run.
+	return &Snapshot{target: target, env: mapsCloneNonNil(env)}, nil
 }
 
 func (s *Snapshot) Environment() map[string]string {
 	if s == nil {
 		return nil
 	}
-	return maps.Clone(s.env)
+	return mapsCloneNonNil(s.env)
+}
+
+func mapsCloneNonNil(env map[string]string) map[string]string {
+	clone := make(map[string]string, len(env))
+	maps.Copy(clone, env)
+	return clone
 }
 
 func (s *Snapshot) Target() Target { return s.target }
@@ -100,10 +107,15 @@ func Reserved(key string, windows bool) bool {
 	return key == Display || key == WaylandDisplay || key == RuntimeDir
 }
 
+// Display values reach logs and Compose documents, so no control characters.
+func hasControl(value string) bool {
+	return strings.ContainsFunc(value, func(r rune) bool { return r < 0x20 || r == 0x7f })
+}
+
 func ValidateEnvironment(env map[string]string) error {
 	for key, value := range env {
 		if !Reserved(key, false) || len(value) > outputLimit-1 || !utf8.ValidString(value) ||
-			strings.ContainsAny(value, "\x00\r\n") {
+			hasControl(value) {
 			return fmt.Errorf("invalid WSLg replay environment")
 		}
 	}
@@ -277,7 +289,7 @@ func parseValue(stdout []byte) (string, error) {
 		return "", ErrProtocol
 	}
 	value := strings.TrimSuffix(strings.TrimSuffix(string(stdout), "\n"), "\r")
-	if strings.ContainsAny(value, "\x00\r\n") {
+	if hasControl(value) {
 		return "", ErrProtocol
 	}
 	return value, nil

@@ -24,8 +24,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/wslg"
 )
 
-const goosWindows = "windows"
-const projectNameFlag = "--project-name"
+const (
+	goosWindows     = "windows"
+	projectNameFlag = "--project-name"
+)
 
 func LoadDockerComposeProject(
 	ctx context.Context,

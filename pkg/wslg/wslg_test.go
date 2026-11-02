@@ -72,6 +72,19 @@ func (s *WSLgSuite) TestCaptureAllowlistPresenceAndImmutability() {
 	s.Equal(":0", snapshot.Environment()[Display])
 }
 
+func (s *WSLgSuite) TestEmptySnapshotEnvironmentIsNonNil() {
+	snapshot, err := NewSnapshot(Target{Distro: testDistro, User: testUser}, nil)
+	s.Require().NoError(err)
+	s.NotNil(snapshot.Environment())
+	s.Empty(snapshot.Environment())
+	s.Error(ValidateEnvironment(map[string]string{Display: "a\x1bb"}))
+}
+
+func (s *WSLgSuite) TestProbeEnvironmentDropsWSLENV() {
+	env := withoutWSLENV([]string{"A=1", "WSLENV=DISPLAY/u", "wslenv=x", "DISPLAY=:3"})
+	s.Equal([]string{"A=1", "DISPLAY=:3"}, env)
+}
+
 func (s *WSLgSuite) TestInvalidTargetsNeverRun() {
 	for _, target := range []Target{
 		{},
@@ -103,6 +116,9 @@ func (s *WSLgSuite) TestStrictProtocol() {
 		{Stdout: []byte("a\x00b\n")},
 		{Stdout: []byte{0xff, '\n'}},
 		{Stdout: []byte("a\rb\n")},
+		{Stdout: []byte("a\tb\n")},
+		{Stdout: []byte("a\x1bb\n")},
+		{Stdout: []byte("a\x7fb\n")},
 		{Stdout: []byte("a\n"), Stderr: []byte("private")},
 		{ExitCode: 1, Stdout: []byte("private\n")},
 		{ExitCode: 2},
