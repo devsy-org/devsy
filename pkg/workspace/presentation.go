@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -171,7 +172,7 @@ func validatePresentationConflicts(
 	if err != nil {
 		return err
 	}
-	if err := checkLabelConflict(others, label); err != nil {
+	if err := checkLabelConflict(others, devsyConfig.DefaultContext, label); err != nil {
 		return err
 	}
 	if alias == "" {
@@ -394,7 +395,7 @@ func checkNextConflicts(
 	needsLabel, needsAlias bool,
 ) error {
 	if needsLabel {
-		if err := checkLabelConflict(others, next.DisplayName); err != nil {
+		if err := checkLabelConflict(others, next.Context, next.DisplayName); err != nil {
 			return err
 		}
 	}
@@ -471,28 +472,58 @@ func newPresentationResult(ws *provider.Workspace, entryUpdated bool) *Presentat
 }
 
 func listOtherWorkspaces(contextName, id string) ([]*provider.Workspace, error) {
-	all, err := ListLocalWorkspaces(contextName, false)
+	contexts, err := listContextNames(contextName)
 	if err != nil {
-		return nil, fmt.Errorf("list workspaces: %w", err)
+		return nil, err
 	}
 
-	others := make([]*provider.Workspace, 0, len(all))
-	for _, ws := range all {
-		if ws.ID != id {
-			others = append(others, ws)
+	var others []*provider.Workspace
+	for _, ctxName := range contexts {
+		all, err := ListLocalWorkspaces(ctxName, false)
+		if err != nil {
+			return nil, fmt.Errorf("list workspaces in context %q: %w", ctxName, err)
+		}
+		for _, ws := range all {
+			if ctxName != contextName || ws.ID != id {
+				others = append(others, ws)
+			}
 		}
 	}
 
 	return others, nil
 }
 
-func checkLabelConflict(others []*provider.Workspace, label string) error {
+func listContextNames(selected string) ([]string, error) {
+	contextsDir, err := config.DefaultPathManager().ContextDir("")
+	if err != nil {
+		return nil, fmt.Errorf("get contexts dir: %w", err)
+	}
+
+	entries, err := os.ReadDir(contextsDir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("list contexts: %w", err)
+	}
+
+	names := []string{selected}
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != selected && !strings.HasPrefix(entry.Name(), ".") {
+			names = append(names, entry.Name())
+		}
+	}
+
+	return names, nil
+}
+
+func checkLabelConflict(others []*provider.Workspace, contextName, label string) error {
 	if label == "" {
 		return nil
 	}
 
 	folded := foldLabel(label)
 	for _, other := range others {
+		if other.Context != contextName {
+			continue
+		}
 		if foldLabel(other.EffectiveDisplayName()) == folded {
 			return newConflictError(
 				PresentationFieldDisplayName,
@@ -513,7 +544,10 @@ func checkAliasWorkspaceConflict(others []*provider.Workspace, alias string) err
 			return newConflictError(
 				PresentationFieldSSHHostAlias,
 				other.ID,
-				fmt.Sprintf("ssh host %q is already used by workspace %q", host, other.ID),
+				fmt.Sprintf(
+					"ssh host %q is already used by workspace %q in context %q",
+					host, other.ID, other.Context,
+				),
 			)
 		}
 	}

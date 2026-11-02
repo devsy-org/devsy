@@ -412,6 +412,17 @@ describe("workspace_edit IPC", () => {
     expect(refreshWorkspaces).toHaveBeenCalledOnce()
   })
 
+  it("refreshes workspaces when the CLI result is unparseable", async () => {
+    const { refreshWorkspaces } = setup(async () => ({ unexpected: true }))
+    const reply = await invokeEdit({
+      workspaceId: "backend",
+      expectedUid: "uid-1",
+      displayName: "New label",
+    })
+    expect(reply).toMatchObject({ ok: false, code: "failed" })
+    expect(refreshWorkspaces).toHaveBeenCalledOnce()
+  })
+
   it("falls back to the workspace context from state", async () => {
     const { cli } = setup(async () => ({
       ...resultPayload,

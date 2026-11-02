@@ -152,6 +152,32 @@ func TestSSHPresentationNilWorkspace(t *testing.T) {
 	assert.Empty(t, sshPresentation(&fakeWorkspaceClient{}))
 }
 
+type providerPresentationClient struct {
+	presentationClient
+}
+
+func (providerPresentationClient) Provider() string { return "docker" }
+
+func TestConfigureSSHWritesCommittedAliasNotStaleOne(t *testing.T) {
+	setupUpTestHome(t)
+	stored := &provider.Workspace{ID: testWorkspaceAPI, UID: "uid-stale", Context: defaultValue}
+	require.NoError(t, provider.SaveWorkspaceConfig(stored))
+	committed := *stored
+	committed.SSHHostAlias = testShortAlias
+	require.NoError(t, provider.SaveWorkspacePresentation(&committed))
+
+	stale := *stored
+	sshConfig := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, configureSSH(
+		providerPresentationClient{presentationClient{ws: &stale}},
+		configureSSHParams{sshConfigPath: sshConfig, user: "dev"},
+	))
+
+	data, err := os.ReadFile(filepath.Clean(sshConfig))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "Host short.devsy api.devsy")
+}
+
 func TestValidateResolvedIDRejectsDerivedIDMatchingAlias(t *testing.T) {
 	setupUpTestHome(t)
 	cfg := &config.Config{DefaultContext: defaultValue}

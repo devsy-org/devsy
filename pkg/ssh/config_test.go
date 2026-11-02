@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/gofrs/flock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -770,4 +771,35 @@ Match exec "true"
 	assert.Less(t, newBlockStart, wildcardStart)
 	assert.Less(t, newBlockStart, existingBlockStart)
 	assert.Less(t, newBlockStart, matchStart)
+}
+
+func TestConfigureSSHConfigResolvesPreferredHostUnderLock(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config")
+	held := false
+
+	err := ConfigureSSHConfig(SSHConfigParams{
+		SSHConfigPath: configPath,
+		Context:       testSSHContext,
+		Workspace:     "new-workspace",
+		User:          testSSHUser,
+		PreferredHost: "stale.devsy",
+		ResolvePreferredHost: func() string {
+			probe := flock.New(configPath + configLockSuffix)
+			locked, lockErr := probe.TryLock()
+			if locked {
+				_ = probe.Unlock()
+			}
+			held = lockErr == nil && !locked
+
+			return "fresh.devsy"
+		},
+	})
+	assert.NoError(t, err)
+	assert.True(t, held)
+
+	// #nosec G304 -- configPath is created within the test temporary directory.
+	data, err := os.ReadFile(configPath)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "Host fresh.devsy new-workspace"+config.SSHHostSuffix)
+	assert.NotContains(t, string(data), "stale.devsy")
 }

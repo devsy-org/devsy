@@ -201,6 +201,29 @@ describe("workspace detail presentation editing", () => {
     expect(document.getElementById("workspace-display-label")).toBeNull()
   })
 
+  it("saves a label-only change when the stored alias would fail local validation", async () => {
+    workspaces.set([
+      {
+        id: "api",
+        uid: "u1",
+        context: "default",
+        status: "Stopped",
+        provider: { name: "docker" },
+        sshHostAlias: "Imported_Alias",
+      },
+    ])
+    workspaceEdit.mockResolvedValue(result)
+    render(WorkspaceDetailPage, { params: { id: "api" } })
+    await openEditor()
+    await fireEvent.input(input("workspace-display-label"), {
+      target: { value: "Only Label" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await settle()
+    expect(workspaceEdit).toHaveBeenCalledOnce()
+    expect(workspaceEdit.mock.calls[0][0]).not.toHaveProperty("sshHostAlias")
+  })
+
   it("keeps the draft and shows a field error with aria-describedby on failure", async () => {
     workspaceEdit.mockRejectedValue(
       new WorkspaceEditError({

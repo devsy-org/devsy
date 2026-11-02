@@ -23,19 +23,6 @@ func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool
 		return false, err
 	}
 
-	exists, err := aliasTargetExists(target)
-	if err != nil {
-		return false, err
-	}
-	if !exists {
-		err = runAliasVerify(r.Verify)
-		if err != nil {
-			return false, err
-		}
-
-		return false, runAliasCommit(commit)
-	}
-
 	unlock, err := lockConfigFile(target)
 	if err != nil {
 		return false, err
@@ -48,18 +35,6 @@ func ReplaceHostAliasesWithCommit(r AliasReplacement, commit func() error) (bool
 	}
 
 	return rewriteAliasTarget(target, r.CanonicalHost, r.PreferredHost, commit)
-}
-
-func aliasTargetExists(target string) (bool, error) {
-	_, err := os.Stat(target)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("stat ssh config: %w", err)
-	}
-
-	return true, nil
 }
 
 func runAliasVerify(verify func() error) error {
@@ -138,24 +113,34 @@ func rewriteHostLines(content, canonicalHost, preferredHost string) (string, boo
 	endMarker := MarkerEndPrefix + canonicalHost
 	lines := strings.Split(content, "\n")
 	inSection := false
-	hostSeen := false
+	hostIdx := -1
 	found := false
 
 	for i, line := range lines {
 		switch {
 		case isMarkerLine(line, startMarker):
 			inSection = true
-			hostSeen = false
+			hostIdx = -1
 		case isMarkerLine(line, endMarker):
+			found = applyHostLine(lines, hostIdx, canonicalHost, preferredHost) || found
 			inSection = false
-		case inSection && !hostSeen && strings.EqualFold(sshConfigKeyword(line), "host"):
-			hostSeen = true
-			found = true
-			lines[i] = replacementHostLine(line, canonicalHost, preferredHost)
+			hostIdx = -1
+		case inSection && hostIdx < 0 && strings.EqualFold(sshConfigKeyword(line), "host"):
+			hostIdx = i
 		}
 	}
 
 	return strings.Join(lines, "\n"), found
+}
+
+func applyHostLine(lines []string, idx int, canonicalHost, preferredHost string) bool {
+	if idx < 0 {
+		return false
+	}
+
+	lines[idx] = replacementHostLine(lines[idx], canonicalHost, preferredHost)
+
+	return true
 }
 
 func replacementHostLine(line, canonicalHost, preferredHost string) string {

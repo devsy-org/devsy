@@ -128,7 +128,6 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		sshConfigIncludePath = includePath
 	}
 
-	preferredHost := sshPresentation(client)
 	return devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        path,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -139,7 +138,7 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		TunnelPort:           wctx.tunnelPort,
 		AgentForwarding:      devsyConfig.ContextOptionBool(config.ContextOptionSSHAgentForwarding),
 		Provider:             client.Provider(),
-		PreferredHost:        preferredHost,
+		ResolvePreferredHost: func() string { return sshPresentation(client) },
 	})
 }
 
@@ -169,7 +168,6 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		sshConfigIncludePath = includePath
 	}
 
-	preferredHost := sshPresentation(client)
 	err = devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        sshConfigPath,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -181,7 +179,7 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		AgentForwarding:      params.agentForwarding,
 		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
-		PreferredHost:        preferredHost,
+		ResolvePreferredHost: func() string { return sshPresentation(client) },
 	})
 	if err != nil {
 		return err

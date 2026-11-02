@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ssh"
@@ -115,4 +116,173 @@ func (s *PresentationTestSuite) TestRenameIntoAliasFailsBeforeDisruption() {
 
 	_, loadErr := provider.LoadWorkspaceConfig(presentationContext, presentationAliasBackend)
 	s.Require().Error(loadErr)
+}
+
+func (s *PresentationTestSuite) saveOtherContextWorkspace(id, alias string) {
+	s.Require().NoError(provider.SaveWorkspaceConfig(&provider.Workspace{
+		ID:           id,
+		UID:          "uid-" + id,
+		Context:      "other",
+		SSHHostAlias: alias,
+	}))
+}
+
+func (s *PresentationTestSuite) TestAliasInOtherContextBlocksEdit() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+	s.saveOtherContextWorkspace(presentationWorkspaceWeb, presentationAliasBackend)
+
+	req := s.request(presentationWorkspaceAPI)
+	req.SSHHostAlias = new(presentationAliasBackend)
+	_, err := EditPresentation(req)
+	conflict := s.requirePresentationErr(
+		err,
+		PresentationFieldSSHHostAlias,
+		PresentationCodeConflict,
+	)
+	s.Equal(presentationWorkspaceWeb, conflict.Conflict)
+	s.Contains(conflict.Message, `"web"`)
+	s.Contains(conflict.Message, `"other"`)
+	s.Empty(s.load(presentationWorkspaceAPI).SSHHostAlias)
+}
+
+func (s *PresentationTestSuite) TestCanonicalHostInOtherContextBlocksAlias() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+	s.saveOtherContextWorkspace(presentationWorkspaceWeb, "")
+
+	req := s.request(presentationWorkspaceAPI)
+	req.SSHHostAlias = new(presentationWorkspaceWeb)
+	_, err := EditPresentation(req)
+	s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
+}
+
+func (s *PresentationTestSuite) TestAliasInOtherContextBlocksValidation() {
+	s.saveOtherContextWorkspace(presentationWorkspaceWeb, presentationAliasBackend)
+
+	s.requireErr(
+		ValidatePresentation(s.devsyConfig, presentationWorkspaceAPI, "", presentationAliasBackend),
+		PresentationFieldSSHHostAlias,
+		PresentationCodeConflict,
+	)
+	s.requireErr(
+		ValidateNewWorkspaceID(s.devsyConfig, presentationAliasBackend, s.location()),
+		PresentationFieldSSHHostAlias,
+		PresentationCodeConflict,
+	)
+	s.requireErr(
+		ValidateRenameTarget(
+			s.devsyConfig, presentationWorkspaceAPI, presentationAliasBackend, s.location(),
+		),
+		PresentationFieldSSHHostAlias,
+		PresentationCodeConflict,
+	)
+}
+
+func (s *PresentationTestSuite) TestSameIDInOwnContextIsNotOther() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+
+	s.Require().NoError(ValidateRenameTarget(
+		s.devsyConfig, presentationWorkspaceAPI, "api-renamed", s.location(),
+	))
+}
+
+func (s *PresentationTestSuite) requireLockAvailable() {
+	acquired := make(chan error, 1)
+	go func() {
+		unlock, err := lockPresentation()
+		if err == nil {
+			unlock()
+		}
+		acquired <- err
+	}()
+
+	select {
+	case err := <-acquired:
+		s.Require().NoError(err)
+	case <-time.After(5 * time.Second):
+		s.FailNow("presentation lock was not released")
+	}
+}
+
+func (s *PresentationTestSuite) TestRenameWaitsForPresentationLock() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+
+	unlock, err := lockPresentation()
+	s.Require().NoError(err)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Rename(context.Background(), RenameOptions{
+			DevsyConfig: s.devsyConfig,
+			OldName:     presentationWorkspaceAPI,
+			NewName:     presentationAliasBackend,
+		})
+	}()
+	s.saveAliasedWeb()
+
+	select {
+	case err := <-done:
+		unlock()
+		s.FailNow("rename finished while the presentation lock was held", "err: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	unlock()
+	select {
+	case err := <-done:
+		s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
+	case <-time.After(5 * time.Second):
+		s.FailNow("rename did not resume after the presentation lock was released")
+	}
+	s.requireLockAvailable()
+}
+
+func (s *PresentationTestSuite) TestRenameReleasesPresentationLockOnError() {
+	err := Rename(context.Background(), RenameOptions{
+		DevsyConfig: s.devsyConfig,
+		OldName:     "missing",
+		NewName:     "other-name",
+	})
+	s.Require().Error(err)
+	s.requireLockAvailable()
+
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+	s.saveAliasedWeb()
+	err = Rename(context.Background(), RenameOptions{
+		DevsyConfig: s.devsyConfig,
+		OldName:     presentationWorkspaceAPI,
+		NewName:     presentationAliasBackend,
+	})
+	s.requireErr(err, PresentationFieldSSHHostAlias, PresentationCodeConflict)
+	s.requireLockAvailable()
+}
+
+func (s *PresentationTestSuite) TestEditPresentationWaitsForLockHeldByRename() {
+	s.saveWorkspace(presentationWorkspaceAPI, nil)
+
+	unlock, err := lockPresentation()
+	s.Require().NoError(err)
+
+	done := make(chan error, 1)
+	go func() {
+		req := s.request(presentationWorkspaceAPI)
+		req.DisplayName = new("Waiter")
+		_, err := EditPresentation(req)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		unlock()
+		s.FailNow("edit finished while the presentation lock was held", "err: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	unlock()
+	select {
+	case err := <-done:
+		s.Require().NoError(err)
+	case <-time.After(5 * time.Second):
+		s.FailNow("edit did not resume after the presentation lock was released")
+	}
+	s.Equal("Waiter", s.load(presentationWorkspaceAPI).DisplayName)
 }

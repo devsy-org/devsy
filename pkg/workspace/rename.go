@@ -184,15 +184,55 @@ func removeContainerForRename(
 // Rename auto-stops the workspace, deletes the stale container, moves its
 // directory, and clears the old SSH entry. The container is rebuilt on the
 // next `up`. Container removal happens before the disk move so a failure
-// aborts cleanly with the workspace still intact under its old name.
+// aborts cleanly with the workspace still intact under its old name. The
+// presentation lock is held for the whole operation so a concurrent
+// EditPresentation cannot claim the target name or alias between validation
+// and the final save.
 func Rename(ctx context.Context, opts RenameOptions) error {
+	unlock, err := lockPresentation()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	wsConfig, err := loadRenameSource(opts)
+	if err != nil {
+		return err
+	}
+
+	if err := stopWorkspaceIfRunning(ctx, opts.DevsyConfig, wsConfig); err != nil {
+		return err
+	}
+
+	lookupRunnerID := devcontainer.GetRunnerIDFromWorkspace(wsConfig)
+	if err := removeContainerForRename(ctx, wsConfig, lookupRunnerID); err != nil {
+		return fmt.Errorf("remove stale container: %w", err)
+	}
+
+	if err := relocateWorkspace(opts, wsConfig); err != nil {
+		return err
+	}
+
+	updateWorkspaceResult(opts.DevsyConfig, opts.OldName, opts.NewName)
+
+	_ = devssh.RemoveFromConfig(
+		opts.OldName,
+		wsConfig.SSHConfigPath,
+		wsConfig.SSHConfigIncludePath,
+	)
+
+	log.Infof("renamed workspace %s to %s", opts.OldName, opts.NewName)
+	return nil
+}
+
+func loadRenameSource(opts RenameOptions) (*provider.Workspace, error) {
 	wsConfig, err := provider.LoadWorkspaceConfig(opts.DevsyConfig.DefaultContext, opts.OldName)
 	if err != nil {
-		return fmt.Errorf("loading workspace config: %w", err)
+		return nil, fmt.Errorf("loading workspace config: %w", err)
 	}
 
 	if wsConfig.IsPlatform() {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"cannot rename platform workspaces; they are managed by the platform",
 		)
 	}
@@ -206,18 +246,13 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 			IncludePath: wsConfig.SSHConfigIncludePath,
 		},
 	); err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := stopWorkspaceIfRunning(ctx, opts.DevsyConfig, wsConfig); err != nil {
-		return err
-	}
+	return wsConfig, nil
+}
 
-	lookupRunnerID := devcontainer.GetRunnerIDFromWorkspace(wsConfig)
-	if err := removeContainerForRename(ctx, wsConfig, lookupRunnerID); err != nil {
-		return fmt.Errorf("remove stale container: %w", err)
-	}
-
+func relocateWorkspace(opts RenameOptions, wsConfig *provider.Workspace) error {
 	if err := moveWorkspace(opts.DevsyConfig, opts.OldName, opts.NewName); err != nil {
 		return fmt.Errorf("moving workspace: %w", err)
 	}
@@ -230,14 +265,5 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 		return errors.Join(err, rollbackErr)
 	}
 
-	updateWorkspaceResult(opts.DevsyConfig, opts.OldName, opts.NewName)
-
-	_ = devssh.RemoveFromConfig(
-		opts.OldName,
-		wsConfig.SSHConfigPath,
-		wsConfig.SSHConfigIncludePath,
-	)
-
-	log.Infof("renamed workspace %s to %s", opts.OldName, opts.NewName)
 	return nil
 }

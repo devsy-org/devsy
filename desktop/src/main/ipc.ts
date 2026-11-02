@@ -1193,6 +1193,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         )
         const result = parseWorkspacePresentationResult(raw)
         if (!result) {
+          await deps.refreshWorkspaces?.().catch((error) => {
+            mainLog.warn("[workspace-edit] workspace refresh failed", error)
+          })
           return {
             ok: false,
             field: "workspace",

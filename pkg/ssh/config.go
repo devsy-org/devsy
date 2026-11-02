@@ -39,6 +39,7 @@ type SSHConfigParams struct {
 	Provider             string
 	TunnelPort           int // If > 0, use TCP tunnel mode instead of ProxyCommand
 	PreferredHost        string
+	ResolvePreferredHost func() string
 }
 
 func ConfigureSSHConfig(params SSHConfigParams) error {
@@ -58,10 +59,15 @@ func ConfigureSSHConfig(params SSHConfigParams) error {
 	}
 	defer unlock()
 
+	preferredHost := params.PreferredHost
+	if params.ResolvePreferredHost != nil {
+		preferredHost = params.ResolvePreferredHost()
+	}
+
 	newFile, err := addHost(addHostParams{
 		path:            targetPath,
 		host:            params.Workspace + config.SSHHostSuffix,
-		preferredHost:   params.PreferredHost,
+		preferredHost:   preferredHost,
 		user:            params.User,
 		context:         params.Context,
 		workspace:       params.Workspace,
@@ -535,5 +541,10 @@ func scanHostSection(
 }
 
 func isMarkerLine(text, marker string) bool {
-	return strings.TrimRight(text, " \t\r") == marker
+	rest, ok := strings.CutPrefix(strings.TrimRight(text, " \t\r"), marker)
+	if !ok {
+		return false
+	}
+
+	return rest == "" || rest[0] == ' ' || rest[0] == '\t'
 }

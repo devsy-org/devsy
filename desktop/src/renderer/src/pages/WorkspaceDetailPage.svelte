@@ -773,7 +773,10 @@ async function savePresentation() {
   if (!base || presentationSaving) return
   const localErrors = {
     displayName: validateDisplayLabel(labelDraft) ?? undefined,
-    sshHostAlias: validateSshAlias(aliasDraft) ?? undefined,
+    sshHostAlias:
+      aliasDraft.trim() === base.sshHostAlias
+        ? undefined
+        : (validateSshAlias(aliasDraft) ?? undefined),
   }
   if (localErrors.displayName || localErrors.sshHostAlias) {
     presentationErrors = localErrors

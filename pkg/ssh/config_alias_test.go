@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -262,6 +263,87 @@ func (s *SSHAliasTestSuite) TestReplaceHostAliasesIgnoresSimilarMarker() {
 	s.Require().NoError(err)
 	s.False(updated)
 	s.Equal(content, s.read(s.cfgPath))
+}
+
+func (s *SSHAliasTestSuite) TestReplaceHostAliasesMissingFileVerifyAndCommitHoldLock() {
+	lockPath := s.cfgPath + configLockSuffix
+	heldDuring := map[string]bool{}
+	probe := func(name string) func() error {
+		return func() error {
+			probeLock := flock.New(lockPath)
+			locked, err := probeLock.TryLock()
+			if locked {
+				_ = probeLock.Unlock()
+			}
+			heldDuring[name] = err == nil && !locked
+
+			return nil
+		}
+	}
+
+	updated, err := ReplaceHostAliasesWithCommit(AliasReplacement{
+		ConfigPath:    s.cfgPath,
+		CanonicalHost: aliasCanonicalHost,
+		PreferredHost: aliasPreferredHost,
+		Verify:        probe("verify"),
+	}, probe("commit"))
+	s.Require().NoError(err)
+	s.False(updated)
+	s.True(heldDuring["verify"])
+	s.True(heldDuring["commit"])
+}
+
+func (s *SSHAliasTestSuite) TestReplaceHostAliasesSkipsBlockWithoutEndMarker() {
+	content := MarkerStartPrefix + aliasCanonicalHost + "\nHost " + aliasCanonicalHost +
+		"\n  User " + aliasTestUser + "\n"
+	s.write(s.cfgPath, content)
+
+	updated, err := s.replace("", aliasPreferredHost, nil)
+	s.Require().NoError(err)
+	s.False(updated)
+	s.Equal(content, s.read(s.cfgPath))
+}
+
+func (s *SSHAliasTestSuite) TestRewriteHostLinesSkipsUnterminatedBlockBeforeRestart() {
+	start := MarkerStartPrefix + aliasCanonicalHost + "\nHost " + aliasCanonicalHost + "\n"
+	content := start + start
+
+	rewritten, found := rewriteHostLines(content, aliasCanonicalHost, aliasPreferredHost)
+	s.False(found)
+	s.Equal(content, rewritten)
+}
+
+func (s *SSHAliasTestSuite) TestReplaceHostAliasesAcceptsMarkersWithTrailingComment() {
+	content := MarkerStartPrefix + aliasCanonicalHost + " # managed\nHost " + aliasCanonicalHost +
+		"\n  User " + aliasTestUser + "\n" + MarkerEndPrefix + aliasCanonicalHost + " # note\n"
+	s.write(s.cfgPath, content)
+
+	updated, err := s.replace("", aliasPreferredHost, nil)
+	s.Require().NoError(err)
+	s.True(updated)
+	s.Contains(s.read(s.cfgPath), "Host "+aliasPreferredHost+" "+aliasCanonicalHost)
+}
+
+func (s *SSHAliasTestSuite) TestIsMarkerLineBoundaries() {
+	marker := MarkerEndPrefix + aliasCanonicalHost
+	s.True(isMarkerLine(marker, marker))
+	s.True(isMarkerLine(marker+" \t\r", marker))
+	s.True(isMarkerLine(marker+" # note", marker))
+	s.True(isMarkerLine(marker+"\t# note", marker))
+	s.False(isMarkerLine(marker+"-other", marker))
+	s.False(isMarkerLine(marker+"#note", marker))
+	s.False(isMarkerLine(marker[:len(marker)-1], marker))
+}
+
+func (s *SSHAliasTestSuite) TestRemoveFromConfigHonorsCommentedEndMarker() {
+	other := s.managedBlock(aliasCanonicalHost + "-other")
+	own := MarkerStartPrefix + aliasCanonicalHost + "\nHost " + aliasCanonicalHost +
+		"\n" + MarkerEndPrefix + aliasCanonicalHost + " # note"
+	s.write(s.cfgPath, other+"\n"+own+"\nHost keep\n")
+
+	result, err := removeFromConfig(s.cfgPath, aliasCanonicalHost)
+	s.Require().NoError(err)
+	s.Equal(other+"\nHost keep", result)
 }
 
 func (s *SSHAliasTestSuite) TestReplaceHostAliasesFollowsSymlinkAndKeepsMode() {
