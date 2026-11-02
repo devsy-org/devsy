@@ -863,12 +863,7 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
 			Stderr:  stderr,
 			Environ: opts.Environ,
 		}); err != nil {
-			return fmt.Errorf(
-				"run provider command %q (%s): %w",
-				opts.Command[0],
-				providerAction(opts.Environ),
-				err,
-			)
+			return providerCommandError(opts.Command[0], opts.Environ, err)
 		}
 		return nil
 	}
@@ -879,10 +874,7 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
 	cmd.Stderr = stderr
 	cmd.Env = opts.Environ
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf(
-			"run provider command %q (%s): %w",
-			strings.Join(opts.Command, " "), providerAction(opts.Environ), err,
-		)
+		return providerCommandError(strings.Join(opts.Command, " "), opts.Environ, err)
 	}
 	return nil
 }
@@ -899,6 +891,25 @@ func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) err
 		stderrErr = fmt.Errorf("flush provider stderr: %w", err)
 	}
 	return errors.Join(stdoutErr, stderrErr)
+}
+
+const invalidProcessParameterHint = "Windows rejected starting the provider executable " +
+	"(ERROR_INVALID_PARAMETER) before it ran, so this is a local process-launch failure " +
+	"rather than a remote host error; the cause is unconfirmed, so please report the Windows " +
+	"version and whether running the executable directly from a terminal works"
+
+func providerCommandError(command string, environ []string, err error) error {
+	action := ""
+	if name := providerAction(environ); name != "" {
+		action = fmt.Sprintf(" (%s)", name)
+	}
+	if isInvalidProcessParameter(err) {
+		return fmt.Errorf(
+			"run provider command %q%s: %w; %s",
+			command, action, err, invalidProcessParameterHint,
+		)
+	}
+	return fmt.Errorf("run provider command %q%s: %w", command, action, err)
 }
 
 // providerAction extracts the provider action from the environment variables.
