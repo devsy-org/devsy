@@ -98,8 +98,10 @@ func TestGetDownloadURLs(t *testing.T) {
 				GolandOptions,
 				tt.values,
 				GolandProductCode,
-				GolandDownloadAmd64Template,
-				GolandDownloadArm64Template,
+				downloadTemplates{
+					amd64: GolandDownloadAmd64Template,
+					arm64: GolandDownloadArm64Template,
+				},
 			)
 			assert.Equal(t, tt.wantAmd64, amd64)
 			assert.Equal(t, tt.wantArm64, arm64)

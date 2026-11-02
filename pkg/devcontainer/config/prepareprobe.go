@@ -18,8 +18,8 @@ func PrepareCmdUser(cmd *exec.Cmd, userName string) error {
 	if err != nil {
 		return fmt.Errorf("lookup user %s: %w", userName, err)
 	}
-	uid, _ := strconv.Atoi(u.Uid)
-	gid, _ := strconv.Atoi(u.Gid)
+	uid, _ := strconv.ParseUint(u.Uid, 10, 32)
+	gid, _ := strconv.ParseUint(u.Gid, 10, 32)
 	cmd.Env = patchEnvVars(cmd.Environ(), map[string]string{
 		"HOME":    u.HomeDir,
 		"USER":    u.Username,

@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +42,13 @@ type RunUserCommandsCmd struct {
 	SkipOnCreate            bool
 	SkipUpdateContent       bool
 	statusReporter          status.Reporter
+	// identity is the resolved Devsy workspace, set only on the
+	// workspace-resolved path.
+	identity *workspaceIdentity
+}
+
+type workspaceIdentity struct {
+	context, uid, id string
 }
 
 // NewRunUserCommandsCmd creates a new run-user-commands command.
@@ -121,7 +129,10 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := cmd.runLifecycleHooks(params, result); err != nil {
+	recording := cmd.beginRunRecording(params)
+	err = cmd.runLifecycleHooks(params, result)
+	recording.end(ctx, err)
+	if err != nil {
 		return err
 	}
 
@@ -295,6 +306,7 @@ func (cmd *RunUserCommandsCmd) runWithContainerID(ctx context.Context) error {
 		EnvArgs:     envArgs,
 		Workdir:     workdir,
 		User:        devcconfig.GetRemoteUser(result),
+		Recorder:    workspacelogs.RecorderFrom(ctx),
 	}
 
 	if err := cmd.runLifecycleHooks(params, result); err != nil {
@@ -422,6 +434,9 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
+	cmd.identity = &workspaceIdentity{
+		context: workspaceConfig.Context, uid: workspaceConfig.UID, id: workspaceConfig.ID,
+	}
 	runtime, err := workspace2.NewContainerRuntime(workspaceConfig, cmd.DockerPath)
 	if err != nil {
 		return nil, nil, err
@@ -533,8 +548,10 @@ func execLifecycleHooks(
 	name string,
 	cmds []types.LifecycleHook,
 ) error {
-	for _, h := range cmds {
-		if err := workspace.ExecLifecycleHook(params, name, h); err != nil {
+	for i, h := range cmds {
+		indexed := *params
+		indexed.HookIndex = i
+		if err := workspace.ExecLifecycleHook(&indexed, name, h); err != nil {
 			return fmt.Errorf("lifecycle hooks: %s: %w", name, err)
 		}
 	}
@@ -562,4 +579,73 @@ func resolveWaitForBoundary(result *devcconfig.Result) int {
 		}
 	}
 	return 1
+}
+
+// runRecording is the fresh run opened for one run-user-commands invocation.
+// A nil value records nothing.
+type runRecording struct {
+	store *workspacelogs.Store
+	rec   *workspacelogs.Recorder
+	runID string
+}
+
+// beginRunRecording opens a new run for the resolved workspace and installs a
+// recorder on params. It never fails the command: any store error is logged
+// at debug level and recording is skipped. A container without a Devsy
+// workspace identity is not recorded.
+func (cmd *RunUserCommandsCmd) beginRunRecording(
+	params *workspace.LifecycleExecParams,
+) *runRecording {
+	id := cmd.identity
+	if id == nil || id.uid == "" {
+		return nil
+	}
+	store, err := workspacelogs.OpenDefault()
+	if err != nil {
+		log.Debugf("workspace history unavailable: %v", err)
+		return nil
+	}
+	m, err := store.CreateRun(workspacelogs.RunSpec{
+		Context: id.context, WorkspaceIDAtStart: id.id, Command: "run-user-commands",
+	})
+	if err == nil {
+		err = store.BindWorkspace(m.RunID, id.uid, id.id)
+	}
+	if err != nil {
+		log.Debugf("workspace history unavailable: %v", err)
+		return nil
+	}
+	rec, err := workspacelogs.NewRecorder(workspacelogs.RecorderOptions{
+		Backend:  store,
+		RunID:    m.RunID,
+		Location: workspacelogs.LocationContainer,
+		Redactor: workspace.EnvArgsRedactor(params.EnvArgs),
+	})
+	if err != nil {
+		log.Debugf("workspace history recorder unavailable: %v", err)
+	}
+	_ = store.SetCommandState(m.RunID, workspacelogs.CommandRunning)
+	params.Recorder = rec
+	params.Ctx = workspacelogs.WithRecorder(params.Ctx, rec)
+
+	return &runRecording{store: store, rec: rec, runID: m.RunID}
+}
+
+// end closes the recorder and records the command outcome.
+func (r *runRecording) end(ctx context.Context, runErr error) {
+	if r == nil {
+		return
+	}
+	r.rec.Close(workspacelogs.ProducerTerminal, true)
+	state := workspacelogs.CommandSucceeded
+	switch {
+	case runErr == nil:
+	case ctx.Err() != nil:
+		state = workspacelogs.CommandCanceled
+	default:
+		state = workspacelogs.CommandFailed
+	}
+	if err := r.store.SetCommandState(r.runID, state); err != nil {
+		log.Debugf("record run command state: %v", err)
+	}
 }

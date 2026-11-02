@@ -336,10 +336,13 @@ func validateContextDeletionRoots(intent *ContextDeletionIntent) error {
 // Keep safe legacy names recoverable, including device names on POSIX.
 func validDeletionContextName(name string) bool {
 	return name != DefaultContext && !invalidContextPathName(name) &&
-		(runtime.GOOS != "windows" || !reservedWindowsContextName(name))
+		(runtime.GOOS != goosWindows || !reservedWindowsContextName(name))
 }
 
-const maxContextPathComponentBytes = 255
+const (
+	maxContextPathComponentBytes = 255
+	goosWindows                  = "windows"
+)
 
 // ValidateContextPathName accepts safe legacy context names while rejecting
 // values that could escape the context directory when used as one path part.
@@ -350,7 +353,7 @@ func ValidateContextPathName(name string) error {
 	if len(name) > maxContextPathComponentBytes {
 		return errors.New("context name exceeds the path component limit")
 	}
-	if runtime.GOOS == "windows" && reservedWindowsContextName(name) {
+	if runtime.GOOS == goosWindows && reservedWindowsContextName(name) {
 		return errors.New("context name is a reserved Windows device name")
 	}
 	return nil
@@ -437,7 +440,7 @@ func syncContextDeletionDirectory(dir string) error {
 	}
 	defer func() { _ = file.Close() }()
 	err = file.Sync()
-	if runtime.GOOS == "windows" || errors.Is(err, os.ErrInvalid) {
+	if runtime.GOOS == goosWindows || errors.Is(err, os.ErrInvalid) {
 		return nil
 	}
 	return err

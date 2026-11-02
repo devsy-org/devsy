@@ -217,20 +217,28 @@ func TestVerifyNumberValue(t *testing.T) {
 	})
 }
 
-func TestGetDeepValue(t *testing.T) {
+const plainText = "plain"
+
+type deepValueCase struct {
+	name       string
+	parameters any
+	path       string
+	want       any
+}
+
+func deepValueCases() []deepValueCase {
+	return append(deepValuePathCases(), deepValueEdgeCases()...)
+}
+
+func deepValuePathCases() []deepValueCase {
 	nested := map[string]any{"a": map[string]any{"b": map[string]any{"c": 1}}}
 	withItems := map[string]any{
 		"items": []any{"x", "y"},
 		"list":  []any{map[string]any{varName: "first"}},
-		"text":  "plain",
+		"text":  plainText,
 	}
 
-	cases := []struct {
-		name       string
-		parameters any
-		path       string
-		want       any
-	}{
+	return []deepValueCase{
 		{name: "nil parameters yield nil", path: "a"},
 		{
 			name:       "top-level key returns its value",
@@ -251,6 +259,16 @@ func TestGetDeepValue(t *testing.T) {
 			path:       "list.0.name",
 			want:       "first",
 		},
+	}
+}
+
+func deepValueEdgeCases() []deepValueCase {
+	withItems := map[string]any{
+		"items": []any{"x", "y"},
+		"text":  plainText,
+	}
+
+	return []deepValueCase{
 		{name: "missing key yields nil", parameters: withItems, path: "absent"},
 		{name: "index past end of slice yields nil", parameters: withItems, path: "items.2"},
 		{name: "negative index yields nil", parameters: withItems, path: "items.-1"},
@@ -260,7 +278,7 @@ func TestGetDeepValue(t *testing.T) {
 			path:       "items.first",
 		},
 		{name: "path through scalar yields nil", parameters: withItems, path: "text.length"},
-		{name: "unsupported root type yields nil", parameters: "plain", path: "a"},
+		{name: "unsupported root type yields nil", parameters: plainText, path: "a"},
 		{
 			name:       "empty path looks up the empty-string key",
 			parameters: map[string]any{"": "blank"},
@@ -287,8 +305,10 @@ func TestGetDeepValue(t *testing.T) {
 			want:       "y",
 		},
 	}
+}
 
-	for _, tc := range cases {
+func TestGetDeepValue(t *testing.T) {
+	for _, tc := range deepValueCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.DeepEqual(t, GetDeepValue(tc.parameters, tc.path), tc.want)
 		})

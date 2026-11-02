@@ -22,6 +22,7 @@ const (
 // NOT reentrant: each call opens its own flock handle, so taking a lock while
 // one is already held on the same path in this process self-deadlocks.
 func acquireFlock(dir, name string) (func(), error) {
+	//nolint:gosec // lock file is inside the internal secrets store
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create secrets dir: %w", err)
 	}

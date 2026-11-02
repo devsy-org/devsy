@@ -2,6 +2,10 @@ package kubernetes
 
 import "testing"
 
+const (
+	shouldReturnOfficialDockerRegistry = "should return official docker registry"
+)
+
 func TestGetRegistryFromImageName(t *testing.T) {
 	type args struct {
 		imageName string
@@ -13,7 +17,7 @@ func TestGetRegistryFromImageName(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "should return official docker registry",
+			name: shouldReturnOfficialDockerRegistry,
 			args: args{
 				imageName: "docker.io/loftsh/devsy",
 			},
@@ -21,7 +25,7 @@ func TestGetRegistryFromImageName(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "should return official docker registry",
+			name: shouldReturnOfficialDockerRegistry,
 			args: args{
 				imageName: "hub.docker.com/loftsh/devsy",
 			},
@@ -29,7 +33,7 @@ func TestGetRegistryFromImageName(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "should return official docker registry",
+			name: shouldReturnOfficialDockerRegistry,
 			args: args{
 				imageName: "nginx:latest",
 			},

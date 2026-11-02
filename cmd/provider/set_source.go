@@ -77,14 +77,20 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		return cmd.runPinVersion(ctx, devsyConfig, args)
 	}
 
-	if len(args) != 1 && len(args) != 2 {
-		return fmt.Errorf("specify either a local file, URL or Git repository. " +
-			"E.g. devsy provider set-source my-provider " + config.ProviderPrefix + "gcloud")
-	}
+	return cmd.setSource(ctx, devsyConfig, providerName, args)
+}
 
-	providerSource := ""
-	if len(args) == 2 {
-		providerSource = args[1]
+// setSource points the provider at the source in args and optionally activates it.
+// The caller holds the provider lock.
+func (cmd *SetSourceCmd) setSource(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerName string,
+	args []string,
+) error {
+	providerSource, err := sourceArg(args)
+	if err != nil {
+		return err
 	}
 
 	reporter, err := newStatusReporter(
@@ -97,22 +103,10 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		return err
 	}
 
-	var providerConfig *provider2.ProviderConfig
-	err = status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseInstallingProvider, Step: args[0]},
-		func(ctx context.Context) error {
-			var updateErr error
-			providerConfig, updateErr = workspace.UpdateProvider(
-				ctx,
-				devsyConfig,
-				args[0],
-				providerSource,
-			)
-			return updateErr
-		},
-	)
+	providerConfig, err := updateProviderSource(ctx, reporter, devsyConfig, providerSourceChange{
+		name:   providerName,
+		source: providerSource,
+	})
 	if err != nil {
 		return err
 	}
@@ -125,6 +119,49 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 	}
 
 	return cmd.activateProvider(ctx, devsyConfig, providerConfig, reporter)
+}
+
+func sourceArg(args []string) (string, error) {
+	switch len(args) {
+	case 1:
+		return "", nil
+	case 2:
+		return args[1], nil
+	default:
+		return "", fmt.Errorf("specify either a local file, URL or Git repository. " +
+			"E.g. devsy provider set-source my-provider " + config.ProviderPrefix + "gcloud")
+	}
+}
+
+// providerSourceChange names a provider and the source to switch it to.
+type providerSourceChange struct {
+	name, source string
+}
+
+func updateProviderSource(
+	ctx context.Context,
+	reporter status.Reporter,
+	devsyConfig *config.Config,
+	change providerSourceChange,
+) (*provider2.ProviderConfig, error) {
+	providerName, providerSource := change.name, change.source
+	var providerConfig *provider2.ProviderConfig
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseInstallingProvider, Step: providerName},
+		func(ctx context.Context) error {
+			var updateErr error
+			providerConfig, updateErr = workspace.UpdateProvider(
+				ctx,
+				devsyConfig,
+				providerName,
+				providerSource,
+			)
+			return updateErr
+		},
+	)
+	return providerConfig, err
 }
 
 // activateProvider configures and activates a newly sourced provider,

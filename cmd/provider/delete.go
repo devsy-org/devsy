@@ -38,14 +38,20 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
-		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(
+			rootCmd *cobra.Command,
+			args []string,
+			toComplete string,
+		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetProviderSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
@@ -85,7 +91,12 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	// delete the provider
-	err = DeleteProvider(ctx, devsyConfig, provider, cmd.IgnoreNotFound, cmd.Force)
+	err = DeleteProvider(
+		ctx,
+		devsyConfig,
+		provider,
+		DeleteOptions{IgnoreNotFound: cmd.IgnoreNotFound, Force: cmd.Force},
+	)
 	if err != nil {
 		return err
 	}
@@ -94,12 +105,19 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
+// DeleteOptions controls DeleteProvider.
+type DeleteOptions struct {
+	IgnoreNotFound bool
+	Force          bool
+}
+
 func DeleteProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	provider string,
-	ignoreNotFound, force bool,
+	opts DeleteOptions,
 ) error {
+	ignoreNotFound, force := opts.IgnoreNotFound, opts.Force
 	// if force is not set, check if the provider is associated with a platform instance or workspace
 	if !force {
 		// check if this provider is associated with a platform instance

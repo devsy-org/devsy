@@ -30,6 +30,8 @@ import (
 	clienttesting "k8s.io/client-go/testing"
 )
 
+const testDiskSize = "1Gi"
+
 const (
 	testNamespace             = "devsy-test"
 	testPodID                 = "devsy-ws"
@@ -59,7 +61,7 @@ func newFakeCluster(t *testing.T, objects ...runtime.Object) *fakeCluster {
 			namespace: testNamespace,
 			options: &provider2.ProviderKubernetesDriverConfig{
 				PodTimeout: "2s",
-				DiskSize:   "1Gi",
+				DiskSize:   testDiskSize,
 			},
 			agentConfig: &provider2.ProviderAgentConfig{},
 		},
@@ -233,7 +235,7 @@ func TestReconcileReusesPodWhenOnlyImageConfigFileChanged(t *testing.T) {
 		phase: corev1.PodRunning,
 		options: &provider2.ProviderKubernetesDriverConfig{
 			PodTimeout:      "2s",
-			DiskSize:        "1Gi",
+			DiskSize:        testDiskSize,
 			ImageConfigFile: "/old/image-config.json",
 		},
 		devsy: &corev1.ContainerStatus{
@@ -250,7 +252,7 @@ func TestReconcileReusesPodWhenOnlyImageConfigFileChanged(t *testing.T) {
 
 func TestWithoutLocalOptionsDropsImageConfigFile(t *testing.T) {
 	options := &provider2.ProviderKubernetesDriverConfig{
-		DiskSize:        "1Gi",
+		DiskSize:        testDiskSize,
 		ImageConfigFile: "/home/me/image-config.json",
 	}
 
@@ -258,23 +260,14 @@ func TestWithoutLocalOptionsDropsImageConfigFile(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), "imageConfigFile")
-	assert.Contains(t, string(raw), "1Gi")
+	assert.Contains(t, string(raw), testDiskSize)
 	assert.Equal(t, "/home/me/image-config.json", options.ImageConfigFile)
 }
 
 func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 	c := newFakeCluster(t)
 	c.putPod(t, c.pod(t, podSpec{uid: "u1", phase: corev1.PodPending}))
-	observed := make(chan struct{}, 1)
-	c.cs.PrependReactor(
-		"get", podResourceName, func(clienttesting.Action) (bool, runtime.Object, error) {
-			select {
-			case observed <- struct{}{}:
-			default:
-			}
-			return false, nil, nil
-		},
-	)
+	observed := observePodGets(c)
 	type result struct {
 		reused bool
 		err    error
@@ -294,12 +287,7 @@ func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 		t.Fatalf("reconcile returned before the pod was ready: %+v", got)
 	case <-time.After(40 * time.Millisecond):
 	}
-	running := c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning})
-	running.Status.ContainerStatuses = []corev1.ContainerStatus{{
-		Name: DevContainerName, Ready: true,
-		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
-	}}
-	c.putPod(t, running)
+	c.putPod(t, readyRunningPod(t, c))
 	select {
 	case got := <-done:
 		require.NoError(t, got.err)
@@ -307,6 +295,33 @@ func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("reconcile did not return after the pod became ready")
 	}
+}
+
+func observePodGets(c *fakeCluster) chan struct{} {
+	observed := make(chan struct{}, 1)
+	c.cs.PrependReactor(
+		"get", podResourceName, func(clienttesting.Action) (bool, runtime.Object, error) {
+			select {
+			case observed <- struct{}{}:
+			default:
+			}
+
+			return false, nil, nil
+		},
+	)
+
+	return observed
+}
+
+func readyRunningPod(t *testing.T, c *fakeCluster) *corev1.Pod {
+	t.Helper()
+	running := c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning})
+	running.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: DevContainerName, Ready: true,
+		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+	}}
+
+	return running
 }
 
 func TestReconcileTerminatingPodWaitsForDeletionThenAllowsCreate(t *testing.T) {

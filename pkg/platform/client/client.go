@@ -194,17 +194,20 @@ func (c *client) Save() error {
 		c.config.APIVersion = "storage.devsy.sh/v1"
 	}
 
-	err := os.MkdirAll(filepath.Dir(c.configPath), 0o755)
+	err := os.MkdirAll(filepath.Dir(c.configPath), 0o750)
 	if err != nil {
 		return err
 	}
 
-	out, err := json.Marshal(c.config)
+	//nolint:gosec // value is a config field or a version number, not a secret or overflow risk
+	out, err := json.Marshal(
+		c.config,
+	) //nolint:gosec // config file is written with 0600 permissions
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(c.configPath, out, 0o660)
+	return os.WriteFile(c.configPath, out, 0o600)
 }
 
 func (c *client) ManagementConfig() (*rest.Config, error) {
@@ -417,10 +420,8 @@ func (c *client) verifyConnection() error {
 		return nil
 	}
 
-	var urlError *url.Error
-	if errors.As(err, &urlError) {
-		var authErr x509.UnknownAuthorityError
-		if errors.As(urlError.Err, &authErr) {
+	if urlError, ok := errors.AsType[*url.Error](err); ok {
+		if _, ok := errors.AsType[x509.UnknownAuthorityError](urlError.Err); ok {
 			return fmt.Errorf(
 				"unsafe login endpoint %q, if you wish to login into an insecure devsy endpoint run with the '--insecure' flag",
 				c.config.Host,
@@ -456,7 +457,10 @@ func VerifyVersion(baseClient Client) error {
 		return err
 	}
 
-	if int(cliVersion.Major) > backendMajor {
+	//nolint:gosec // value is a config field or a version number, not a secret or overflow risk
+	if int(
+		cliVersion.Major,
+	) > backendMajor { //nolint:gosec // major versions are small non-negative numbers
 		return fmt.Errorf(
 			"unsupported %[1]s version %[2]s. Downgrade your CLI to below v%[3]d.0.0 to support this version, "+
 				"as %[1]s v%[3]d.0.0 and newer versions are incompatible with v%[4]d.x.x",
@@ -465,7 +469,10 @@ func VerifyVersion(baseClient Client) error {
 			cliVersion.Major,
 			backendMajor,
 		)
-	} else if int(cliVersion.Major) < backendMajor {
+		//nolint:gosec // value is a config field or a version number, not a secret or overflow risk
+	} else if int(
+		cliVersion.Major,
+	) < backendMajor { //nolint:gosec // major versions are small non-negative numbers
 		return fmt.Errorf(
 			"unsupported %[1]s version %[2]s. Upgrade your CLI to v%[3]d.0.0 or above to support this version, "+
 				"as %[1]s v%[3]d.0.0 and newer versions are incompatible with v%[4]d.x.x",
@@ -533,7 +540,7 @@ func GetRestConfig(host, token string, insecure bool) (*rest.Config, error) {
 }
 
 func startServer(redirectURI string, keyChannel chan keyStruct) *http.Server {
-	srv := &http.Server{Addr: ":25843"}
+	srv := &http.Server{Addr: ":25843", ReadHeaderTimeout: 10 * time.Second}
 
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		keys, ok := r.URL.Query()["key"]

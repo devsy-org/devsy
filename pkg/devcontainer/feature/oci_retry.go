@@ -21,8 +21,7 @@ func isTransientError(err error) bool {
 		return false
 	}
 
-	var terr *transport.Error
-	if errors.As(err, &terr) {
+	if terr, ok := errors.AsType[*transport.Error](err); ok {
 		return terr.StatusCode >= http.StatusInternalServerError
 	}
 

@@ -20,8 +20,10 @@ func NewPhpStorm(
 		PhpStormOptions,
 		values,
 		PhpStormProductCode,
-		PhpStormDownloadAmd64Template,
-		PhpStormDownloadArm64Template,
+		downloadTemplates{
+			amd64: PhpStormDownloadAmd64Template,
+			arm64: PhpStormDownloadArm64Template,
+		},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "phpstorm",

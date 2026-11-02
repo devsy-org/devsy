@@ -252,15 +252,6 @@ func (r *runner) rawConfigFromContainer() *config.DevContainerConfig {
 	}
 }
 
-// rawConfigFromCrane pulls the config from the image source via crane.
-func (r *runner) rawConfigFromCrane(
-	options provider.CLIOptions,
-) (*config.DevContainerConfig, error) {
-	return r.rawConfigFromCraneWithContext(
-		context.Background(), options, r.effectiveDevContainerSelection(options),
-	)
-}
-
 func (r *runner) rawConfigFromCraneWithContext(
 	ctx context.Context,
 	options provider.CLIOptions,
@@ -288,16 +279,6 @@ func (r *runner) rawConfigFromCraneWithContext(
 		localWorkspaceFolder,
 		selection.path,
 		opts,
-	)
-}
-
-// rawConfigFromFilesystem discovers and parses the devcontainer.json under the
-// workspace folder, falling back to an auto-detected default when none is found.
-func (r *runner) rawConfigFromFilesystem(
-	options provider.CLIOptions,
-) (*config.DevContainerConfig, error) {
-	return r.rawConfigFromFilesystemWithContext(
-		context.Background(), options, r.effectiveDevContainerSelection(options),
 	)
 }
 
@@ -361,13 +342,6 @@ func workspaceMountFolderWarning(conf *config.DevContainerConfig) string {
 			"the spec requires both. Falling back to the default workspace mount."
 	}
 	return ""
-}
-
-func (r *runner) rawConfigFromSource(
-	source string,
-	options provider.CLIOptions,
-) (*config.DevContainerConfig, error) {
-	return r.rawConfigFromSourceWithContext(context.Background(), source, options)
 }
 
 func (r *runner) rawConfigFromSourceWithContext(

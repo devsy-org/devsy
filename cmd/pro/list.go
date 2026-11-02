@@ -170,15 +170,11 @@ func checkLogin(
 	platformInstance *provider.PlatformInstance,
 ) error {
 	// for every platform instance, check auth status by calling login
-	if err := login(
-		ctx,
-		devsyConfig,
-		platformInstance.Host,
-		platformInstance.Provider,
-		"",
-		true,
-		false,
-	); err != nil {
+	if err := login(ctx, devsyConfig, loginRequest{
+		URL:              platformInstance.Host,
+		ProviderName:     platformInstance.Provider,
+		SkipBrowserLogin: true,
+	}); err != nil {
 		return fmt.Errorf("not logged into %s", platformInstance.Host)
 	}
 

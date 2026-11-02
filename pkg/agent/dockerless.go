@@ -48,6 +48,7 @@ func GetDockerlessBuildContext() string {
 }
 
 func ImageConfigExists(path string) bool {
+	//nolint:gosec // paths come from the internal agent layout
 	_, err := os.Stat(path)
 	return err == nil
 }
@@ -273,6 +274,7 @@ func runDockerlessBuild(ctx context.Context, args []string, debug bool) error {
 	var stderrBuf bytes.Buffer
 	stderrWriter := io.MultiWriter(errWriter, &stderrBuf)
 
+	//nolint:gosec // command is built from the agent configuration by design
 	cmd := exec.CommandContext(ctx, "/.dockerless/dockerless", args...)
 	if debug {
 		debugWriter := log.Writer(log.LevelDebug)

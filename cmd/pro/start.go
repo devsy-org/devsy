@@ -42,9 +42,15 @@ import (
 )
 
 const (
+	adminValue       = "admin"
+	namespaceValue   = "--namespace"
+	kubeContextValue = "--kube-context"
+)
+
+const (
 	DevsyRouterDomainSecret = "loft-router-domain" // #nosec G101
 	passwordChangedHint     = "(has been changed)"
-	defaultUser             = "admin"
+	defaultUser             = adminValue
 
 	ingressNginx         = "ingress-nginx"
 	helmRepositoryConfig = "--repository-config=''"
@@ -269,10 +275,12 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 
 	manifests, err := getReleaseManifests(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
@@ -284,10 +292,12 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 	// Retry Devsy installation
 	err = upgradeRelease(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
@@ -321,10 +331,12 @@ func (cmd *StartCmd) upgrade(ctx context.Context) error {
 
 	err = upgradeRelease(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
@@ -348,7 +360,7 @@ func (cmd *StartCmd) purgeManifests(ctx context.Context, manifests string) {
 	kubectlDelete := exec.CommandContext(ctx, // #nosec G204 -- args are internally constructed
 		"kubectl", "delete", "-f", "-",
 		"--context", cmd.Context,
-		"--namespace", cmd.Namespace,
+		namespaceValue, cmd.Namespace,
 		"--ignore-not-found=true",
 		"--grace-period=0", "--force",
 	)
@@ -469,7 +481,7 @@ func (cmd *StartCmd) printRemoteSuccessMessage(host string) {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
+Username: `+greenBold(adminValue)+`
 Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
@@ -549,7 +561,7 @@ func (cmd *StartCmd) successLocal() error {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
+Username: `+greenBold(adminValue)+`
 Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
@@ -891,7 +903,7 @@ func (cmd *StartCmd) pingDevsyRouter(ctx context.Context, devsyPod *corev1.Pod) 
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: true, //nolint:gosec // self-signed platform cert
 			},
 		},
 	}
@@ -946,7 +958,7 @@ func (cmd *StartCmd) successDevsyRouter(url string) error {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
+Username: `+greenBold(adminValue)+`
 Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
@@ -1003,13 +1015,15 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 		Username: defaultUser,
 		Password: cmd.Password,
 	}
-	loginRequestBytes, err := json.Marshal(loginRequest)
+	loginRequestBytes, err := json.Marshal(loginRequest) //nolint:gosec // login request body
 	if err != nil {
 		return err
 	}
 	loginRequestBuf := bytes.NewBuffer(loginRequestBytes)
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // existing behaviour for self-signed platform endpoints
+		}, //nolint:gosec // self-signed platform cert
 	}
 	httpClient := &http.Client{Transport: tr}
 
@@ -1203,9 +1217,9 @@ func installNginxIngress(
 		helmRepositoryConfig,
 		"--repo",
 		"https://kubernetes.github.io/ingress-nginx",
-		"--kube-context",
+		kubeContextValue,
 		kubeContext,
-		"--namespace",
+		namespaceValue,
 		ingressNginx,
 		"--create-namespace",
 		"--set-string",
@@ -1287,19 +1301,19 @@ func ensureAdminPassword(
 		return false, err
 	}
 
-	admin, err := devsyClient.StorageV1().Users().Get(ctx, "admin", metav1.GetOptions{})
+	admin, err := devsyClient.StorageV1().Users().Get(ctx, adminValue, metav1.GetOptions{})
 	switch {
 	case err != nil && !kerrors.IsNotFound(err):
 		return false, err
 	case admin == nil:
 		admin, err = devsyClient.StorageV1().Users().Create(ctx, &storagev1.User{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "admin",
+				Name: adminValue,
 			},
 			Spec: storagev1.UserSpec{
-				Username: "admin",
+				Username: adminValue,
 				Email:    "test@domain.tld",
-				Subject:  "admin",
+				Subject:  adminValue,
 				Groups:   []string{"system:masters"},
 				PasswordRef: &storagev1.SecretRef{
 					SecretName:      "loft-user-secret-admin",
@@ -1356,7 +1370,7 @@ func ensureAdminPasswordSecret(
 		return false, nil
 	}
 
-	// create the password secret if it was not found, this can happen if you delete the loft namespace without deleting the admin user
+	// recreate the password secret if missing, e.g. after the loft namespace was deleted without the admin user
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ref.SecretName,
@@ -1418,7 +1432,9 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	transport.TLSClientConfig = &tls.Config{
+		InsecureSkipVerify: true, //nolint:gosec // existing behaviour for self-signed platform endpoints
+	} //nolint:gosec // self-signed platform cert
 	// wait until devsy is reachable at the given url
 	client := &http.Client{Transport: transport}
 	url := "https://" + host + "/version"
@@ -1457,26 +1473,34 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	return false, nil
 }
 
+// helmTarget names the chart and the cluster a helm call acts on.
+type helmTarget struct {
+	chartName   string
+	chartRepo   string
+	kubeContext string
+	namespace   string
+}
+
 func upgradeRelease(
 	ctx context.Context,
-	chartName, chartRepo, kubeContext, namespace string,
+	target helmTarget,
 	extraArgs []string,
 ) error {
 	// now we install devsy
 	args := []string{
 		"upgrade",
 		defaultReleaseName,
-		chartName,
+		target.chartName,
 		"--install",
 		"--create-namespace",
 		helmRepositoryConfig,
-		"--kube-context",
-		kubeContext,
-		"--namespace",
-		namespace,
+		kubeContextValue,
+		target.kubeContext,
+		namespaceValue,
+		target.namespace,
 	}
-	if chartRepo != "" {
-		args = append(args, "--repo", chartRepo)
+	if target.chartRepo != "" {
+		args = append(args, "--repo", target.chartRepo)
 	}
 	args = append(args, extraArgs...)
 
@@ -1487,8 +1511,8 @@ func upgradeRelease(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
-	if chartRepo != "" {
-		helmWorkDir, err := getHelmWorkdir(chartName)
+	if target.chartRepo != "" {
+		helmWorkDir, err := getHelmWorkdir(target.chartName)
 		if err != nil {
 			return err
 		}
@@ -1506,21 +1530,21 @@ func upgradeRelease(
 
 func getReleaseManifests(
 	ctx context.Context,
-	chartName, chartRepo, kubeContext, namespace string,
+	target helmTarget,
 	extraArgs []string,
 ) (string, error) {
 	args := []string{
 		"template",
 		defaultReleaseName,
-		chartName,
+		target.chartName,
 		helmRepositoryConfig,
-		"--kube-context",
-		kubeContext,
-		"--namespace",
-		namespace,
+		kubeContextValue,
+		target.kubeContext,
+		namespaceValue,
+		target.namespace,
 	}
-	if chartRepo != "" {
-		args = append(args, "--repo", chartRepo)
+	if target.chartRepo != "" {
+		args = append(args, "--repo", target.chartRepo)
 	}
 	args = append(args, extraArgs...)
 
@@ -1528,8 +1552,8 @@ func getReleaseManifests(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
-	if chartRepo != "" {
-		helmWorkDir, err := getHelmWorkdir(chartName)
+	if target.chartRepo != "" {
+		helmWorkDir, err := getHelmWorkdir(target.chartName)
 		if err != nil {
 			return "", err
 		}

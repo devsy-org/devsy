@@ -163,14 +163,13 @@ func (s *proxyClient) RefreshOptions(
 		return fmt.Errorf("parse options: %w", err)
 	}
 
-	workspace, err := options.ResolveAndSaveOptionsWorkspace(
-		ctx,
-		s.devsyConfig,
-		s.config,
-		s.workspace,
-		userOptions,
-		resolver.WithResolveSubOptions(),
-	)
+	workspace, err := options.ResolveAndSaveOptionsWorkspace(ctx, options.ResolveWorkspaceRequest{
+		DevConfig:         s.devsyConfig,
+		ProviderConfig:    s.config,
+		OriginalWorkspace: s.workspace,
+		UserOptions:       userOptions,
+		Options:           []resolver.Option{resolver.WithResolveSubOptions()},
+	})
 	if err != nil {
 		return err
 	}

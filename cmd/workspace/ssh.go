@@ -82,11 +82,13 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
@@ -586,13 +588,10 @@ func (cmd *SSHCmd) startTunnelServices(
 		) == config.BoolTrue,
 		GitSSHSigningKey: cmd.GitSSHSigningKey,
 	}
-	status := cmd.startServices(
-		ctx,
-		devsyConfig,
-		containerClient,
-		workspaceClient.WorkspaceConfig(),
-		opts,
-	)
+	status := cmd.startServices(ctx, devsyConfig, serviceTarget{
+		client:    containerClient,
+		workspace: workspaceClient.WorkspaceConfig(),
+	}, opts)
 	return tunnel.GitHubSessionEnvironment(status)
 }
 
@@ -672,13 +671,19 @@ type startServicesOptions struct {
 	GitSSHSigningKey               string
 }
 
+// serviceTarget is the container client and workspace that services run against.
+type serviceTarget struct {
+	client    *ssh.Client
+	workspace *provider.Workspace
+}
+
 func (cmd *SSHCmd) startServices(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	containerClient *ssh.Client,
-	workspace *provider.Workspace,
+	target serviceTarget,
 	opts startServicesOptions,
 ) credentials.Readiness {
+	containerClient, workspace := target.client, target.workspace
 	if cmd.User != "" {
 		return tunnel.StartPreparedServices(
 			ctx,

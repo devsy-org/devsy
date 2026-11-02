@@ -257,12 +257,11 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 
 	devsyConfig, err := options.ResolveOptions(
 		context.Background(),
-		devsyConfig,
-		provider,
-		instanceOpts,
-		false,
-		false,
-		nil,
+		options.ResolveOptionsRequest{
+			DevConfig:      devsyConfig,
+			ProviderConfig: provider,
+			UserOptions:    instanceOpts,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("resolve options: %w", err)

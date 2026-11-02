@@ -235,6 +235,7 @@ func runNetworkServer(
 	ctx context.Context,
 	cmd *DaemonCmd,
 ) error {
+	//nolint:gosec // daemon directory must be readable by the container user
 	if err := os.MkdirAll(RootDir, os.ModePerm); err != nil {
 		return err
 	}

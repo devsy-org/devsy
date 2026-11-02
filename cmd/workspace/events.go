@@ -29,14 +29,13 @@ func NewEventsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short: "Show workspace operation events",
 		RunE:  func(c *cobra.Command, args []string) error { return cmd.execute(c.Context(), args) },
 		ValidArgsFunction: func(root *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return completion.GetWorkspaceSuggestions(
-				root,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
-			)
+			return completion.GetWorkspaceSuggestions(root, completion.SuggestionRequest{
+				Context:    cmd.Context,
+				Provider:   cmd.Provider,
+				Args:       args,
+				ToComplete: toComplete,
+				Owner:      cmd.Owner,
+			})
 		},
 	}
 	cliflags.Add(

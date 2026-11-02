@@ -12,8 +12,11 @@ import type { CLIError, OperationStatus } from "../shared/cli-error.js"
 import {
   normalizeOperationStatus,
   parseCliEnvelope,
+  runIdentityFromContext,
+  runIdFromPayload,
 } from "../shared/cli-error.js"
 import type { ProviderIconRequest } from "../shared/provider-icon.js"
+import type { LogRunExportResult } from "../shared/workspace-logs.js"
 import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
@@ -46,6 +49,7 @@ import {
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
+import { WorkspaceLogError, WorkspaceLogReader } from "./workspace-logs.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
 const execFileAsync = promisify(execFile)
@@ -936,13 +940,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
    * workspace's log directory.
    */
   async function quiesceWorkspace(workspaceId: string): Promise<void> {
-    await serializePerWorkspace(workspaceId, async () => {
-      await cancelActiveUp(workspaceId)
-      await Promise.all([
-        cli.cancelFor(workspaceId),
-        pty.cancelFor(workspaceId),
-      ])
-    })
+    await serializePerWorkspace(workspaceId, () =>
+      quiesceWorkspaceLocked(workspaceId),
+    )
+  }
+
+  /** Callers must already hold the per-workspace lock. */
+  async function quiesceWorkspaceLocked(workspaceId: string): Promise<void> {
+    await cancelActiveUp(workspaceId)
+    await Promise.all([cli.cancelFor(workspaceId), pty.cancelFor(workspaceId)])
   }
 
   function errorMessage(error: unknown): string {
@@ -2040,6 +2046,52 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
+  // Retained build and lifecycle history. The reader owns only its own
+  // requests; closing a history view must not touch the task follower.
+  const logReader = new WorkspaceLogReader(cli)
+  const cancelledAsNull = async <T>(read: Promise<T>): Promise<T | null> => {
+    try {
+      return await read
+    } catch (error) {
+      if (error instanceof WorkspaceLogError && error.code === "cancelled")
+        return null
+      throw error
+    }
+  }
+  ipcMain.handle("workspace_log_runs", (_event, args: unknown) =>
+    cancelledAsNull(logReader.runs(args)),
+  )
+  ipcMain.handle("workspace_log_run_read", (_event, args: unknown) =>
+    cancelledAsNull(logReader.read(args)),
+  )
+  ipcMain.handle("workspace_log_run_cancel", () => logReader.cancel())
+  ipcMain.handle(
+    "workspace_log_run_export",
+    async (_event, args: unknown): Promise<LogRunExportResult> => {
+      const runId =
+        args && typeof args === "object"
+          ? String((args as { runId?: unknown }).runId ?? "")
+          : ""
+      const options = {
+        defaultPath: `devsy-setup-${runId.slice(0, 8) || "run"}.txt`,
+        filters: [{ name: "Text", extensions: ["txt"] }],
+      }
+      const win = deps.getMainWindow()
+      const picked = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options)
+      if (picked.canceled || !picked.filePath) return { status: "canceled" }
+      try {
+        const done = await logReader.exportRun(args, picked.filePath)
+        return { status: "saved", path: picked.filePath, ...done }
+      } catch (error) {
+        if (error instanceof WorkspaceLogError && error.code === "cancelled")
+          return { status: "canceled" }
+        throw error
+      }
+    },
+  )
+
   const runWorkspaceUp = (args: {
     source: string
     workspaceId?: string
@@ -2074,6 +2126,32 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     const cmdId = args.commandId ?? crypto.randomUUID()
     const activity = args.workspaceId ? "creating" : "starting"
     const generation = workspaceJobs.start(wsId, activity, cmdId)
+    const completion = runDetachedUp({
+      wsId,
+      cmdId,
+      generation,
+      cliArgs,
+      prepare: () => cancelActiveUp(wsId),
+    })
+    return { commandId: cmdId, completion }
+  }
+
+  type DetachedUpRun = {
+    wsId: string
+    cmdId: string
+    generation: number
+    cliArgs: string[]
+    /** Runs under the per-workspace lock, before the task is submitted. */
+    prepare: () => Promise<void>
+  }
+
+  /**
+   * Submits `workspace up --detach` and follows its task. Shared by create,
+   * start, rebuild and reset so task ownership, cancellation and result
+   * handling live in one place.
+   */
+  function runDetachedUp(run: DetachedUpRun): Promise<void> {
+    const { wsId, cmdId, generation, cliArgs } = run
     const started = performance.now()
     const timing = (stage: string) =>
       mainLog.debug(
@@ -2081,7 +2159,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       )
     timing("accepted")
     let failureSink = createLogSink(deps.getMainWindow, cmdId)
-    const completion = (async () => {
+    return (async () => {
       const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
       const sink = createLogSink(
         deps.getMainWindow,
@@ -2100,25 +2178,29 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         await workspaceJobs.finish(wsId, generation, error, flushError)
       }
 
+      workspaceJobs.phase(wsId, cmdId, "Closing connections")
       await serializePerWorkspace(wsId, async () => {
         // Tear down any prior run for this workspace before starting a new
         // one.
         let taskId: string
         try {
-          workspaceJobs.phase(wsId, cmdId, "Closing connections")
-          await cancelActiveUp(wsId)
+          await run.prepare()
           timing("shutdown-complete")
           workspaceJobs.phase(wsId, cmdId, "Launching command")
           timing("cli-launch")
           // Submit: returns immediately with the background task's id.
-          const submitted = await cli.run<{ kind: string; id: string }>([
-            ...cliArgs,
-            "--detach",
-          ])
+          const submitted = await cli.run<{
+            kind: string
+            id: string
+            runId?: string
+          }>([...cliArgs, "--detach"])
           if (!submitted?.id) {
             throw new Error("workspace up --detach returned no task id")
           }
           taskId = submitted.id
+          workspaceJobs.setRun(wsId, cmdId, {
+            runId: runIdFromPayload(submitted),
+          })
         } catch (error) {
           const safe = redactCLIError(cliErrorOrFallback(error, "up_failed"))
           await finishUp(
@@ -2182,6 +2264,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
               if (envelope?.kind === "result") {
                 signalledDone = true
+                workspaceJobs.setRun(wsId, cmdId, {
+                  runId: runIdFromPayload(envelope),
+                })
                 releaseTask()
                 timing("completed")
                 void finishUp(formatted, { success: true })
@@ -2190,6 +2275,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
               if (envelope?.kind === "error") {
                 signalledDone = true
+                workspaceJobs.setRun(
+                  wsId,
+                  cmdId,
+                  runIdentityFromContext(envelope.context),
+                )
                 releaseTask()
                 const safe = redactCLIError({
                   code: envelope.code ?? "up_failed",
@@ -2272,7 +2362,6 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       }
       await workspaceJobs.finish(wsId, generation, safe.message, flushError)
     })
-    return { commandId: cmdId, completion }
   }
   ipcMain.handle(
     "workspace_up",
@@ -2308,6 +2397,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         for (const line of raw.split("\n")) {
           const envelope = parseCliEnvelope(line)
           if (envelope?.kind === "result") {
+            workspaceJobs.setRun(wsId, commandId, {
+              runId: runIdFromPayload(envelope),
+            })
             release()
             const flushError = await sink.done(formatLogLine("Completed"), {
               success: true,
@@ -2332,6 +2424,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               status: string
               error?: string
               errorCode?: string
+              runId?: string
             }>
           >(["workspace", "task", "list"])
           const task = tasks.find((task) => task.id === taskId)
@@ -2339,6 +2432,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             task?.status === "failed" &&
             workspaceJobs.owns(wsId, commandId)
           ) {
+            workspaceJobs.setRun(wsId, commandId, {
+              runId: runIdFromPayload(task),
+            })
             release()
             const safe = redactCLIError({
               code: task.errorCode ?? "up_failed",
@@ -2497,6 +2593,32 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     return { commandId, completion }
   }
 
+  /** Rebuild and reset: a detached up, so run identity reaches the job. */
+  function startWorkspaceUp(
+    args: StopWorkspaceArgs,
+    activity: "rebuilding" | "resetting",
+    flag: "--recreate" | "--reset",
+  ): { commandId: string; completion: Promise<void> } {
+    const commandId = args.commandId ?? crypto.randomUUID()
+    const generation = workspaceJobs.start(
+      args.workspaceId,
+      activity,
+      commandId,
+    )
+    trackEvent(`workspace_${activity === "rebuilding" ? "rebuild" : "reset"}`, {
+      workspace_ref: hashWorkspaceRef(args.workspaceId),
+      source: "renderer",
+    })
+    const completion = runDetachedUp({
+      wsId: args.workspaceId,
+      cmdId: commandId,
+      generation,
+      cliArgs: ["workspace", "up", args.workspaceId, flag],
+      prepare: () => quiesceWorkspaceLocked(args.workspaceId),
+    })
+    return { commandId, completion }
+  }
+
   function startWorkspaceStop(
     args: StopWorkspaceArgs,
     source: WorkspaceActionSource,
@@ -2526,22 +2648,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("workspace_rebuild", (event, args: StopWorkspaceArgs) => {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       return secretRequestDenied
-    return startWorkspaceAction(args, "rebuilding", [
-      "workspace",
-      "up",
-      args.workspaceId,
-      "--recreate",
-    ]).commandId
+    return startWorkspaceUp(args, "rebuilding", "--recreate").commandId
   })
   ipcMain.handle("workspace_reset", (event, args: StopWorkspaceArgs) => {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       return secretRequestDenied
-    return startWorkspaceAction(args, "resetting", [
-      "workspace",
-      "up",
-      args.workspaceId,
-      "--reset",
-    ]).commandId
+    return startWorkspaceUp(args, "resetting", "--reset").commandId
   })
 
   // ── Terminal ──

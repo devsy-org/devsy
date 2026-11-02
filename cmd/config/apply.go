@@ -23,6 +23,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
 	pkgworkspace "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -111,26 +112,10 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		EnvArgs:     envArgs,
 		Workdir:     workdir,
 		User:        devcconfig.GetRemoteUser(result),
+		Recorder:    workspacelogs.RecorderFrom(ctx),
 	}
 
-	if err := status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseRunningLifecycleHook},
-		func(context.Context) error {
-			return cmd.runApplyLifecycleHooks(params, result)
-		},
-	); err != nil {
-		return err
-	}
-	if err := status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseReady},
-		func(context.Context) error {
-			return nil
-		},
-	); err != nil {
+	if err := cmd.runLifecycle(ctx, reporter, params, result); err != nil {
 		return err
 	}
 
@@ -143,6 +128,32 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		})
 	}
 	return nil
+}
+
+func (cmd *ApplyCmd) runLifecycle(
+	ctx context.Context,
+	reporter status.Reporter,
+	params *workspace.LifecycleExecParams,
+	result *devcconfig.Result,
+) error {
+	if err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseRunningLifecycleHook},
+		func(context.Context) error {
+			return cmd.runApplyLifecycleHooks(params, result)
+		},
+	); err != nil {
+		return err
+	}
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseReady},
+		func(context.Context) error {
+			return nil
+		},
+	)
 }
 
 func (cmd *ApplyCmd) resolveContainer(
@@ -333,8 +344,7 @@ func (cmd *ApplyCmd) installFeatures(
 	if err := cmd.copyAndExecFeatures(
 		ctx,
 		helper,
-		featureSets,
-		featureStageDir,
+		featureStage{featureSets: featureSets, dir: featureStageDir},
 		emitJSON,
 	); err != nil {
 		return err
@@ -359,13 +369,20 @@ func (cmd *ApplyCmd) resolveFeatureSets(
 	return featureSets, nil
 }
 
+// featureStage is the feature set to copy into the container and the local
+// folder it is staged in.
+type featureStage struct {
+	featureSets []*devcconfig.FeatureSet
+	dir         string
+}
+
 func (cmd *ApplyCmd) copyAndExecFeatures(
 	ctx context.Context,
 	helper *docker.DockerHelper,
-	featureSets []*devcconfig.FeatureSet,
-	featureStageDir string,
+	stage featureStage,
 	emitJSON bool,
 ) error {
+	featureSets, featureStageDir := stage.featureSets, stage.dir
 	containerFeaturesPath := "/tmp/build-features"
 	streams := docker.Streams{Stdout: os.Stdout, Stderr: os.Stderr}
 	if emitJSON {
@@ -466,8 +483,10 @@ func (cmd *ApplyCmd) runApplyLifecycleHooks(
 	}
 
 	for _, hook := range hooks {
-		for _, h := range hook.cmds {
-			if err := workspace.ExecLifecycleHook(params, hook.name, h); err != nil {
+		for i, h := range hook.cmds {
+			indexed := *params
+			indexed.HookIndex = i
+			if err := workspace.ExecLifecycleHook(&indexed, hook.name, h); err != nil {
 				return fmt.Errorf("lifecycle hooks: %s: %w", hook.name, err)
 			}
 		}

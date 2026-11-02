@@ -49,30 +49,11 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	names := []string{oldName, newName}
-	sort.Strings(names)
-
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, unlock, err := cmd.lockAndReload(oldName, newName)
 	if err != nil {
 		return err
 	}
-
-	unlock1, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[0])
-	if err != nil {
-		return err
-	}
-	defer unlock1()
-
-	unlock2, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[1])
-	if err != nil {
-		return err
-	}
-	defer unlock2()
-
-	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
-	if err != nil {
-		return err
-	}
+	defer unlock()
 
 	if err := validateProviderRename(devsyConfig, oldName); err != nil {
 		return err
@@ -83,6 +64,39 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	return renameProvider(ctx, devsyConfig, oldName, newName)
+}
+
+// lockAndReload locks both providers in a stable order and reloads the config
+// under the locks. The returned func releases both locks.
+func (cmd *RenameCmd) lockAndReload(oldName, newName string) (*config.Config, func(), error) {
+	names := []string{oldName, newName}
+	sort.Strings(names)
+
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	unlock1, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[0])
+	if err != nil {
+		return nil, nil, err
+	}
+	unlock2, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[1])
+	if err != nil {
+		unlock1()
+		return nil, nil, err
+	}
+	unlock := func() {
+		unlock2()
+		unlock1()
+	}
+
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+	if err != nil {
+		unlock()
+		return nil, nil, err
+	}
+	return devsyConfig, unlock, nil
 }
 
 // validateProviderName checks that the given name is non-empty, matches the
@@ -178,7 +192,8 @@ func switchMachines(machines []*provider.Machine, newName string) ([]*provider.M
 	return switched, nil
 }
 
-// setDefaultProvider updates the default provider setting if it currently
+// setDefaultProvider points the default provider at newName when it currently
+// equals oldName.
 func setDefaultProvider(devsyConfig *config.Config, oldName, newName string) (bool, error) {
 	if devsyConfig.Current().DefaultProvider != oldName {
 		return false, nil

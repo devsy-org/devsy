@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	testPodmanCmd     = "podman"
-	testDockerCmd     = "docker"
-	testComposeArg    = "compose"
-	testPodmanVersion = "2.32.4"
+	testPodmanCmd      = "podman"
+	testDockerCmd      = "docker"
+	testComposeArg     = "compose"
+	testPodmanVersion  = "2.32.4"
+	testComposeVersion = "2.37.1"
 )
 
 type HelperTestSuite struct {
@@ -35,18 +36,18 @@ func (s *HelperTestSuite) TestParseVersion() {
 	}{
 		{
 			name:    "standard semver",
-			version: "2.37.1",
-			want:    "2.37.1",
+			version: testComposeVersion,
+			want:    testComposeVersion,
 		},
 		{
 			name:    "semver with v prefix",
 			version: "v2.37.1",
-			want:    "2.37.1",
+			want:    testComposeVersion,
 		},
 		{
 			name:    "ubuntu package version",
 			version: "2.37.1+ds1-0ubuntu2~24.04.1",
-			want:    "2.37.1",
+			want:    testComposeVersion,
 		},
 		{
 			name:    "desktop version",
@@ -56,7 +57,7 @@ func (s *HelperTestSuite) TestParseVersion() {
 		{
 			name:    "another ubuntu variant",
 			version: "2.37.1+ds1-0ubuntu1~24",
-			want:    "2.37.1",
+			want:    testComposeVersion,
 		},
 		{
 			name:    "invalid version",

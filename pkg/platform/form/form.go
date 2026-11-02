@@ -23,11 +23,20 @@ import (
 
 const ParameterTypeBoolean = "boolean"
 
+// InstanceSpec describes the workspace instance a form creates.
+type InstanceSpec struct {
+	ID      string
+	UID     string
+	Source  string
+	Picture string
+}
+
 func CreateInstance(
 	ctx context.Context,
 	baseClient client.Client,
-	id, uid, source, picture string,
+	spec InstanceSpec,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
+	id, uid, source, picture := spec.ID, spec.UID, spec.Source, spec.Picture
 	instance, _, err := createInstance(ctx, baseClient, InstanceIdentity{
 		ID:      id,
 		UID:     uid,

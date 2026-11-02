@@ -20,8 +20,10 @@ func NewRubyMineServer(
 		RubyMineOptions,
 		values,
 		RubyMineProductCode,
-		RubyMineDownloadAmd64Template,
-		RubyMineDownloadArm64Template,
+		downloadTemplates{
+			amd64: RubyMineDownloadAmd64Template,
+			arm64: RubyMineDownloadArm64Template,
+		},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "rubymine",

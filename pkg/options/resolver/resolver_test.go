@@ -11,6 +11,11 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	testOption  = "Test option"
+	parentValue = "parent"
+)
+
 type ResolverTestSuite struct {
 	suite.Suite
 	resolver *Resolver
@@ -26,7 +31,7 @@ func TestResolverSuite(t *testing.T) {
 
 func (suite *ResolverTestSuite) TestBasicFunctionality() {
 	optionDefs := map[string]*types.Option{
-		"option1": {
+		option1Value: {
 			Description: "Test option 1",
 			Default:     "default1",
 		},
@@ -37,7 +42,7 @@ func (suite *ResolverTestSuite) TestBasicFunctionality() {
 	}
 
 	optionValues := map[string]config.OptionValue{
-		"option1": {Value: "value1"},
+		option1Value: {Value: value1},
 	}
 
 	resolved, newDefs, err := suite.resolver.Resolve(
@@ -49,14 +54,14 @@ func (suite *ResolverTestSuite) TestBasicFunctionality() {
 	suite.NoError(err)
 	suite.NotNil(resolved)
 	suite.NotNil(newDefs)
-	suite.Equal("value1", resolved["option1"].Value)
+	suite.Equal(value1, resolved[option1Value].Value)
 	suite.Equal("default2", resolved["option2"].Value)
 }
 
 func (suite *ResolverTestSuite) TestGraphFunctionality() {
 	optionDefs := map[string]*types.Option{
 		"test": {
-			Description: "Test option",
+			Description: testOption,
 			Default:     "test_default",
 		},
 	}
@@ -84,7 +89,7 @@ func (suite *ResolverTestSuite) TestResolveOptions_EmptyGraph() {
 func (suite *ResolverTestSuite) TestResolveOptions_SingleOption() {
 	suite.resolver.graph = graph.NewGraph[*types.Option]()
 	option := &types.Option{
-		Description: "Test option",
+		Description: testOption,
 		Default:     "default_value",
 	}
 	suite.Require().NoError(suite.resolver.graph.AddNode("test_option", option))
@@ -104,7 +109,7 @@ func (suite *ResolverTestSuite) TestResolveOptions_UserProvidedValue() {
 	suite.resolver.graph = graph.NewGraph[*types.Option]()
 
 	option := &types.Option{
-		Description: "Test option",
+		Description: testOption,
 		Default:     "default_value",
 	}
 	suite.Require().NoError(suite.resolver.graph.AddNode("test_option", option))
@@ -218,14 +223,14 @@ func (suite *ResolverTestSuite) TestResolveOptions_PreserveChildWhenParentUnchan
 	suite.setupParentChildGraph()
 
 	existingValues := map[string]config.OptionValue{
-		"parent": {Value: "old_parent_value", UserProvided: true},
-		"child":  {Value: "old_child_value", UserProvided: false},
+		parentValue: {Value: "old_parent_value", UserProvided: true},
+		"child":     {Value: "old_child_value", UserProvided: false},
 	}
 
 	result, err := suite.resolver.resolveOptions(context.Background(), existingValues)
 	suite.NoError(err)
 
-	suite.Equal("old_parent_value", result["parent"].Value)
+	suite.Equal("old_parent_value", result[parentValue].Value)
 	suite.Equal("old_child_value", result["child"].Value)
 }
 
@@ -233,14 +238,14 @@ func (suite *ResolverTestSuite) TestResolveOptions_PreserveUserProvidedChild() {
 	suite.setupParentChildGraph()
 
 	existingValues := map[string]config.OptionValue{
-		"parent": {Value: "old_parent_value", UserProvided: true},
-		"child":  {Value: "user_child_value", UserProvided: true},
+		parentValue: {Value: "old_parent_value", UserProvided: true},
+		"child":     {Value: "user_child_value", UserProvided: true},
 	}
 
 	result, err := suite.resolver.resolveOptions(context.Background(), existingValues)
 	suite.NoError(err)
 
-	suite.Equal("old_parent_value", result["parent"].Value)
+	suite.Equal("old_parent_value", result[parentValue].Value)
 	suite.Equal("user_child_value", result["child"].Value)
 }
 
@@ -282,7 +287,7 @@ func (suite *ResolverTestSuite) TestBasicResolverFunctionality() {
 	resolver := New(map[string]string{}, map[string]string{}, WithResolveSubOptions())
 
 	optionDefs := map[string]*types.Option{
-		"parent": {
+		parentValue: {
 			Default: "parent_value",
 		},
 	}
@@ -291,7 +296,7 @@ func (suite *ResolverTestSuite) TestBasicResolverFunctionality() {
 
 	resolved, _, err := resolver.Resolve(context.Background(), nil, optionDefs, optionValues)
 	suite.NoError(err)
-	suite.Equal("parent_value", resolved["parent"].Value)
+	suite.Equal("parent_value", resolved[parentValue].Value)
 }
 
 func (suite *ResolverTestSuite) TestAddOptionsToGraph_MultipleCalls() {
@@ -317,7 +322,7 @@ func (suite *ResolverTestSuite) setupParentChildGraph() {
 	parentOption := &types.Option{Description: "Parent", Default: "new_parent_value"}
 	childOption := &types.Option{Description: "Child", Default: "child_default"}
 
-	suite.Require().NoError(suite.resolver.graph.AddNode("parent", parentOption))
+	suite.Require().NoError(suite.resolver.graph.AddNode(parentValue, parentOption))
 	suite.Require().NoError(suite.resolver.graph.AddNode("child", childOption))
-	suite.Require().NoError(suite.resolver.graph.AddEdge("parent", "child"))
+	suite.Require().NoError(suite.resolver.graph.AddEdge(parentValue, "child"))
 }

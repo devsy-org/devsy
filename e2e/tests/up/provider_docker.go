@@ -23,6 +23,10 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	attachedSecret = "ATTACHED_SECRET"
+)
+
 const envEqualsIsolatedHomeLabel = "env-equals-isolated-home"
 
 var _ = ginkgo.Describe(
@@ -54,10 +58,10 @@ var _ = ginkgo.Describe(
 				framework.SetEnvForSpec(devsyconfig.EnvHome, home)
 			}
 
-			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			dtc.f, err = framework.SetupDockerProvider(
 				filepath.Join(dtc.initialDir, "bin"),
-				"docker",
+				dockerValue,
 			)
 			framework.ExpectNoError(err)
 		})
@@ -307,7 +311,7 @@ var _ = ginkgo.Describe(
 				})
 				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
 				framework.ExpectNoError(
-					dtc.f.DevsyProviderAdd(ctx, "docker", "-o", "DOCKER_PATH=docker"),
+					dtc.f.DevsyProviderAdd(ctx, dockerValue, "-o", "DOCKER_PATH=docker"),
 				)
 
 				tempDir, err := setupWorkspace(
@@ -978,9 +982,9 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 				})
 				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
 				framework.ExpectNoError(dtc.f.DevsyProviderAdd(
-					ctx, "docker", "-o", "DOCKER_PATH=docker",
+					ctx, dockerValue, "-o", "DOCKER_PATH=docker",
 				))
-				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, dockerValue))
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret-runtime-mount",
@@ -1084,9 +1088,9 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 				})
 				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
 				framework.ExpectNoError(
-					dtc.f.DevsyProviderAdd(ctx, "docker", "-o", "DOCKER_PATH=docker"),
+					dtc.f.DevsyProviderAdd(ctx, dockerValue, "-o", "DOCKER_PATH=docker"),
 				)
-				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, dockerValue))
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-env-attached",
@@ -1095,7 +1099,7 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 				)
 				framework.ExpectNoError(err)
 				dtc.storeEnv(ctx, "ATTACHED_ENV", "stored-value")
-				_, err = dtc.f.ExecCommandOutput(ctx, []string{envCmd, "attach", "ATTACHED_ENV"})
+				_, err = dtc.f.ExecCommandOutput(ctx, []string{envCmd, attach, "ATTACHED_ENV"})
 				framework.ExpectNoError(err)
 
 				framework.ExpectNoError(dtc.f.DevsyUp(
@@ -1126,10 +1130,10 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 					testdataDir:   "tests/up/testdata/docker-managed-secret-attached",
 					store:         dtc.storeSecret,
 					command:       secretCmd,
-					name:          "ATTACHED_SECRET",
+					name:          attachedSecret,
 					checkFile:     "/tmp/attached-secret-check.out",
 					sessionCheck:  `if [ "$ATTACHED_SECRET" = expected-value ]; then printf present; else printf absent; fi`,
-					sessionFile:   "ATTACHED_SECRET",
+					sessionFile:   attachedSecret,
 				})
 			},
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
@@ -1147,9 +1151,9 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 				})
 				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
 				framework.ExpectNoError(dtc.f.DevsyProviderAdd(
-					ctx, "docker", "-o", "DOCKER_PATH=docker",
+					ctx, dockerValue, "-o", "DOCKER_PATH=docker",
 				))
-				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, dockerValue))
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret-collision", dtc.initialDir, dtc.f,
@@ -1169,10 +1173,10 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 					dtc.dockerHelper.Inspect(ctx, ids, "container", &beforeDetails),
 				)
 
-				dtc.storeSecret(ctx, "ATTACHED_SECRET", "sentinel-late-secret")
+				dtc.storeSecret(ctx, attachedSecret, "sentinel-late-secret")
 				_, err = dtc.f.ExecCommandOutput(
 					ctx,
-					[]string{secretCmd, "attach", "ATTACHED_SECRET"},
+					[]string{secretCmd, attach, attachedSecret},
 				)
 				framework.ExpectNoError(err)
 				secretList, _, err := dtc.f.ExecCommandCapture(ctx,

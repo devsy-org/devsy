@@ -169,21 +169,8 @@ func (k *KubernetesDriver) buildPod(
 	options *driver.RunOptions,
 	initialize bool,
 ) (*corev1.Pod, error) {
-	mount, err := k.resolveWorkspaceMount(options)
+	pod, mount, err := k.loadValidatedPod(options)
 	if err != nil {
-		return nil, err
-	}
-
-	pod, err := loadPodTemplate(k.options.PodManifestTemplate)
-	if err != nil {
-		return nil, err
-	}
-	// Reject before any cluster object is created for this run.
-	timeout, err := lifecycleTimeout(options)
-	if err != nil {
-		return nil, fmt.Errorf("read lifecycle policy: %w", err)
-	}
-	if err := validateNoExtraContainers(pod, timeout); err != nil {
 		return nil, err
 	}
 
@@ -226,13 +213,40 @@ func (k *KubernetesDriver) buildPod(
 	}); err != nil {
 		return nil, err
 	}
+	setTopologyAnnotations(pod, options)
+
+	return pod, nil
+}
+
+func (k *KubernetesDriver) loadValidatedPod(
+	options *driver.RunOptions,
+) (*corev1.Pod, *config.Mount, error) {
+	mount, err := k.resolveWorkspaceMount(options)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pod, err := loadPodTemplate(k.options.PodManifestTemplate)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Reject before any cluster object is created for this run.
+	timeout, err := lifecycleTimeout(options)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read lifecycle policy: %w", err)
+	}
+	if err := validateNoExtraContainers(pod, timeout); err != nil {
+		return nil, nil, err
+	}
+	return pod, mount, nil
+}
+
+func setTopologyAnnotations(pod *corev1.Pod, options *driver.RunOptions) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[DevsyDockerlessAnnotation] = strconv.FormatBool(options.Dockerless)
 	pod.Annotations[DevsyImageEntrypointAnnotation] = strconv.FormatBool(options.ImageEntrypoint)
-
-	return pod, nil
 }
 
 type podSpecInputs struct {
@@ -589,7 +603,7 @@ func (k *KubernetesDriver) runPod(
 
 	// wait for pod running
 	log.Debugf("Waiting for DevContainer Pod %q to come up", id)
-	_, err = k.waitPodRunning(ctx, id)
+	err = k.waitPodRunning(ctx, id)
 	if err != nil {
 		return err
 	}

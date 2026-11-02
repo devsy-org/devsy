@@ -48,11 +48,13 @@ The setting is saved to the workspace config and applied on the next
 			if len(args) == 0 {
 				return completion.GetWorkspaceSuggestions(
 					rootCmd,
-					cmd.Context,
-					cmd.Provider,
-					args,
-					toComplete,
-					cmd.Owner,
+					completion.SuggestionRequest{
+						Context:    cmd.Context,
+						Provider:   cmd.Provider,
+						Args:       args,
+						ToComplete: toComplete,
+						Owner:      cmd.Owner,
+					},
 				)
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp

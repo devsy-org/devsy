@@ -3,6 +3,7 @@ package agentworkspace
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -61,20 +62,20 @@ func (cmd *StatusCmd) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	} else if containerDetails == nil {
-		fmt.Print(client.StatusNotFound)
+		_, _ = fmt.Fprint(os.Stdout, client.StatusNotFound)
 		return nil
 	}
 
 	// is running?
 	switch containerDetails.State.Status {
 	case config2.ContainerStatusRunning:
-		fmt.Print(client.StatusRunning)
+		_, _ = fmt.Fprint(os.Stdout, client.StatusRunning)
 		return nil
 	case config2.ContainerStatusExited:
-		fmt.Print(client.StatusStopped)
+		_, _ = fmt.Fprint(os.Stdout, client.StatusStopped)
 		return nil
 	}
 
-	fmt.Print(client.StatusBusy)
+	_, _ = fmt.Fprint(os.Stdout, client.StatusBusy)
 	return nil
 }

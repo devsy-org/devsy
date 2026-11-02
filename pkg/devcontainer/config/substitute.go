@@ -80,17 +80,13 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 	if substitutionCtx.ContainerWorkspaceFolder != "" {
 		substitutionCtx.ContainerWorkspaceFolder = ResolveString(
 			substitutionCtx.ContainerWorkspaceFolder,
-			func(match, variable string, args []string) string {
-				return replaceWithContext(isWindows, substitutionCtx, match, variable, args)
-			},
+			replaceWithContext(isWindows, substitutionCtx),
 		)
 	}
 
 	// Two-pass substitution: pre-container fields get a restricted replacer
 	// that preserves container-scoped variables as literals.
-	fullReplace := func(match, variable string, args []string) string {
-		return replaceWithContext(isWindows, substitutionCtx, match, variable, args)
-	}
+	fullReplace := replaceWithContext(isWindows, substitutionCtx)
 	preFieldValues := extractPreContainerFields(newVal, fullReplace)
 
 	// Full substitution for remaining fields.
@@ -164,27 +160,25 @@ func replaceWithContainerEnv(
 	}
 }
 
-func replaceWithContext(
-	isWindows bool,
-	substitutionCtx *SubstitutionContext,
-	match, variable string,
-	args []string,
-) string {
-	switch variable {
-	case "devcontainerId":
-		return valueOrMatch(substitutionCtx.DevContainerID, match)
-	case varLocalEnv:
-		return lookupValue(isWindows, substitutionCtx.Env, args, match)
-	case varLocalWorkspaceFolder:
-		return valueOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
-	case "localWorkspaceFolderBasename":
-		return baseOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
-	case "containerWorkspaceFolder":
-		return valueOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
-	case "containerWorkspaceFolderBasename":
-		return baseOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
-	default:
-		return match
+//nolint:unparam // the value depends on the build platform; Windows builds pass true
+func replaceWithContext(isWindows bool, substitutionCtx *SubstitutionContext) ReplaceFunction {
+	return func(match, variable string, args []string) string {
+		switch variable {
+		case "devcontainerId":
+			return valueOrMatch(substitutionCtx.DevContainerID, match)
+		case varLocalEnv:
+			return lookupValue(isWindows, substitutionCtx.Env, args, match)
+		case varLocalWorkspaceFolder:
+			return valueOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
+		case "localWorkspaceFolderBasename":
+			return baseOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
+		case "containerWorkspaceFolder":
+			return valueOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
+		case "containerWorkspaceFolderBasename":
+			return baseOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
+		default:
+			return match
+		}
 	}
 }
 

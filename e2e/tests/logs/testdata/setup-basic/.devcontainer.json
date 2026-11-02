@@ -1,0 +1,5 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "waitFor": "postCreateCommand",
+  "postCreateCommand": "echo out-marker-basic; echo err-marker-basic >&2; echo '{\"kind\":\"status\",\"schemaVersion\":1,\"id\":\"op-99\"}'; echo '{\"kind\":\"result\",\"runId\":\"not-a-run\"}'"
+}

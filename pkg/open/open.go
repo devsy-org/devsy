@@ -53,7 +53,10 @@ func JLabDesktop(ctx context.Context, url string) error {
 }
 
 func jlabOpen(url string) error {
-	return exec.Command("jlab", url).Run()
+	//nolint:gosec // fixed jlab binary; url is passed as one argument
+	return exec.Command("jlab", url).
+		Run()
+	//nolint:gosec // fixed jlab binary; url is passed as one argument
 }
 
 func tryOpen(ctx context.Context, url string, fn func(string) error) error {

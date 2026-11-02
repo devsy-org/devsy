@@ -18,6 +18,16 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+const (
+	hello = "hello"
+)
+
+const (
+	testWorkspacePath = "/workspaces/test"
+	testEchoCmd       = "echo"
+	testDotfilesRepo  = "https://github.com/user/dotfiles"
+)
+
 type LifecycleHookTestSuite struct {
 	suite.Suite
 }
@@ -35,9 +45,9 @@ func (s *LifecycleHookTestSuite) TestArrayCommand() {
 	currentUser, err := user.Current()
 	s.Require().NoError(err)
 
-	c := []string{"echo", "hello", "world"}
+	c := []string{testEchoCmd, hello, "world"}
 	args := buildCommandArgs(c, currentUser.Username, currentUser.Username)
-	assert.Equal(s.T(), []string{"echo", "hello", "world"}, args)
+	assert.Equal(s.T(), []string{testEchoCmd, hello, "world"}, args)
 }
 
 func (s *LifecycleHookTestSuite) TestArrayCommandWithShellWrapper() {
@@ -62,7 +72,7 @@ func (s *LifecycleHookTestSuite) TestArrayCommandWithUserSwitch() {
 	currentUser, err := user.Current()
 	s.Require().NoError(err)
 
-	c := []string{"echo", "hello"}
+	c := []string{testEchoCmd, hello}
 	args := buildCommandArgs(c, "otheruser", currentUser.Username)
 	assert.Equal(s.T(), []string{"su", "otheruser", "-c", "echo hello"}, args)
 }
@@ -95,7 +105,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 			State: config.ContainerDetailsState{},
 		},
 		SubstitutionContext: &config.SubstitutionContext{
-			ContainerWorkspaceFolder: "/workspaces/test",
+			ContainerWorkspaceFolder: testWorkspacePath,
 		},
 	}
 
@@ -103,7 +113,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 
-	err = RunPostAttachHooks(ctx, result, nil, nil)
+	err = RunPostAttachHooks(ctx, result, PostAttachOptions{})
 	assert.NoError(s.T(), err)
 }
 
@@ -126,7 +136,7 @@ func (s *LifecycleHookTestSuite) TestResolveLifecycleEnvIncludesSecrets() {
 			State: config.ContainerDetailsState{},
 		},
 		SubstitutionContext: &config.SubstitutionContext{
-			ContainerWorkspaceFolder: "/workspaces/test",
+			ContainerWorkspaceFolder: testWorkspacePath,
 		},
 	}
 
@@ -254,7 +264,7 @@ func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
 			State: config.ContainerDetailsState{},
 		},
 		SubstitutionContext: &config.SubstitutionContext{
-			ContainerWorkspaceFolder: "/workspaces/test",
+			ContainerWorkspaceFolder: testWorkspacePath,
 		},
 	}
 
@@ -418,7 +428,7 @@ func (s *LifecycleHookTestSuite) TestSingleStringCommandBackwardCompat() {
 	err = executeHookCommands(context.Background(), p, envArr)
 
 	assert.NoError(t, err)
-	assertFileContains(t, dir, "out.txt", "hello")
+	assertFileContains(t, dir, "out.txt", hello)
 }
 
 func (s *LifecycleHookTestSuite) TestSingleNamedCommandNoGoroutine() {
@@ -472,7 +482,7 @@ func (s *LifecycleHookTestSuite) TestInsertDotfilesPhaseOrdering() {
 	all := makeTestPhaseHooks()
 	ctx := context.Background()
 
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 	result := insertDotfilesPhase(ctx, all, cfg, "test-created")
 
 	// Should have 5 phases: onCreate, updateContent, postCreate, dotfiles, postStart
@@ -503,7 +513,7 @@ func (s *LifecycleHookTestSuite) TestDotfilesPhaseHasRunFunc() {
 	all := makeTestPhaseHooks()
 	ctx := context.Background()
 
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 	result := insertDotfilesPhase(ctx, all, cfg, "")
 
 	dotfilesHook := result[3]
@@ -516,7 +526,7 @@ func (s *LifecycleHookTestSuite) TestRunWithWaitForDefaultSplitWithDotfiles() {
 	all := makeTestPhaseHooks()
 	ctx := context.Background()
 
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 	all = insertDotfilesPhase(ctx, all, cfg, "")
 
 	deferred, err := runWithWaitFor(all, DefaultWaitFor)
@@ -535,7 +545,7 @@ func (s *LifecycleHookTestSuite) TestRunWithWaitForPostCreateWithDotfiles() {
 	all := makeTestPhaseHooks()
 	ctx := context.Background()
 
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 	all = insertDotfilesPhase(ctx, all, cfg, "")
 
 	deferred, err := runWithWaitFor(all, PhasePostCreate)
@@ -551,7 +561,7 @@ func (s *LifecycleHookTestSuite) TestDeferredHooksNotEmptyWithDotfiles() {
 	t := s.T()
 	ctx := context.Background()
 
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 	all := insertDotfilesPhase(ctx, nil, cfg, "")
 
 	d := DeferredHooks{hooks: all}
@@ -560,7 +570,7 @@ func (s *LifecycleHookTestSuite) TestDeferredHooksNotEmptyWithDotfiles() {
 
 func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForDefault() {
 	t := s.T()
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 
 	// Default waitFor (updateContentCommand) should be promoted to PhaseDotfiles.
 	result := promoteDotfilesWaitFor(DefaultWaitFor, cfg)
@@ -569,7 +579,7 @@ func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForDefault() {
 
 func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForPostCreate() {
 	t := s.T()
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 
 	// postCreateCommand is before dotfiles, so it should be promoted.
 	result := promoteDotfilesWaitFor(PhasePostCreate, cfg)
@@ -578,7 +588,7 @@ func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForPostCreate() {
 
 func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForPostStartNotPromoted() {
 	t := s.T()
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 
 	// postStartCommand is after dotfiles, no promotion needed.
 	result := promoteDotfilesWaitFor(PhasePostStart, cfg)
@@ -587,7 +597,7 @@ func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForPostStartNotPromoted(
 
 func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForInitializeCommandNotPromoted() {
 	t := s.T()
-	cfg := DotfilesConfig{Repository: "https://github.com/user/dotfiles"}
+	cfg := DotfilesConfig{Repository: testDotfilesRepo}
 
 	// initializeCommand defers everything; dotfiles promotion must not override it.
 	result := promoteDotfilesWaitFor(PhaseInitializeCommand, cfg)
@@ -606,7 +616,7 @@ func (s *LifecycleHookTestSuite) TestPhaseHasCommandsTrue() {
 	all := []phaseHook{
 		{
 			phase:  PhaseOnCreate,
-			params: hookRunParams{commands: []types.LifecycleHook{{"": {"echo", "hi"}}}},
+			params: hookRunParams{commands: []types.LifecycleHook{{"": {testEchoCmd, "hi"}}}},
 		},
 	}
 	assert.True(s.T(), phaseHasCommands(all, PhaseOnCreate))
@@ -725,7 +735,7 @@ func (s *LifecycleHookTestSuite) TestPostAttachHooksRunEveryTime() {
 
 	// Run postAttachCommand multiple times - it must execute every time.
 	for i := 1; i <= 3; i++ {
-		err := RunPostAttachHooks(context.Background(), result, nil, nil)
+		err := RunPostAttachHooks(context.Background(), result, PostAttachOptions{})
 		assert.NoError(t, err)
 
 		content, readErr := os.ReadFile(counterFile) //nolint:gosec // test file from TempDir
@@ -750,8 +760,8 @@ func (s *LifecycleHookTestSuite) TestPostCreateHookUsesOnceSemantics() {
 	result := &config.Result{
 		MergedConfig: &config.MergedDevContainerConfig{
 			UpdatedConfigProperties: config.UpdatedConfigProperties{
-				PostCreateCommands: []types.LifecycleHook{{"": {"echo", "hi"}}},
-				PostStartCommands:  []types.LifecycleHook{{"": {"echo", "hi"}}},
+				PostCreateCommands: []types.LifecycleHook{{"": {testEchoCmd, "hi"}}},
+				PostStartCommands:  []types.LifecycleHook{{"": {testEchoCmd, "hi"}}},
 			},
 		},
 		ContainerDetails: &config.ContainerDetails{

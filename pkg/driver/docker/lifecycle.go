@@ -47,7 +47,11 @@ func (d *dockerDriver) CommandDevContainer(
 		return err
 	}
 
-	if err := d.ensureContainerRunning(ctx, container); err != nil {
+	if params.RequireRunning {
+		if container.State.Status != config.ContainerStatusRunning {
+			return fmt.Errorf("%w: container is %q", driver.ErrNotRunning, container.State.Status)
+		}
+	} else if err := d.ensureContainerRunning(ctx, container); err != nil {
 		return err
 	}
 
@@ -66,6 +70,9 @@ func (d *dockerDriver) CommandDevContainer(
 	}
 	return nil
 }
+
+// SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
+func (d *dockerDriver) SupportsRequireRunning() bool { return true }
 
 // ensureContainerRunning checks the container's state and starts it if necessary.
 func (d *dockerDriver) ensureContainerRunning(

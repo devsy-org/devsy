@@ -11,6 +11,13 @@ import (
 )
 
 const (
+	value4gb   = "4gb"
+	value1tb   = "1tb"
+	value512mb = "512mb"
+	value1gb   = "1gb"
+)
+
+const (
 	testPortRange = "3000-3002"
 	testTouchHook = "touch /tmp/setup-test-marker"
 )
@@ -37,7 +44,7 @@ func TestMergeHostRequirements_AllNil(t *testing.T) {
 
 func TestMergeHostRequirements_SingleEntry(t *testing.T) {
 	entries := []*ImageMetadata{
-		hr(&HostRequirements{CPUs: 4, Memory: "8gb", Storage: "32gb", GPU: gpu(gpuTrue)}),
+		hr(&HostRequirements{CPUs: 4, Memory: value8gb, Storage: "32gb", GPU: gpu(gpuTrue)}),
 	}
 	got := mergeHostRequirements(entries)
 	if got == nil {
@@ -46,8 +53,8 @@ func TestMergeHostRequirements_SingleEntry(t *testing.T) {
 	if got.CPUs != 4 {
 		t.Errorf("CPUs = %d, want 4", got.CPUs)
 	}
-	if got.Memory != "8gb" {
-		t.Errorf("Memory = %q, want %q", got.Memory, "8gb")
+	if got.Memory != value8gb {
+		t.Errorf("Memory = %q, want %q", got.Memory, value8gb)
 	}
 	if got.Storage != "32gb" {
 		t.Errorf("Storage = %q, want %q", got.Storage, "32gb")
@@ -71,35 +78,35 @@ func TestMergeHostRequirements_MaxCPUs(t *testing.T) {
 
 func TestMergeHostRequirements_MaxMemory(t *testing.T) {
 	entries := []*ImageMetadata{
-		hr(&HostRequirements{Memory: "4gb"}),
-		hr(&HostRequirements{Memory: "16gb"}),
-		hr(&HostRequirements{Memory: "8gb"}),
+		hr(&HostRequirements{Memory: value4gb}),
+		hr(&HostRequirements{Memory: value16gb}),
+		hr(&HostRequirements{Memory: value8gb}),
 	}
 	got := mergeHostRequirements(entries)
-	if got.Memory != "16gb" {
-		t.Errorf("Memory = %q, want %q", got.Memory, "16gb")
+	if got.Memory != value16gb {
+		t.Errorf("Memory = %q, want %q", got.Memory, value16gb)
 	}
 }
 
 func TestMergeHostRequirements_MaxStorage(t *testing.T) {
 	entries := []*ImageMetadata{
 		hr(&HostRequirements{Storage: "64gb"}),
-		hr(&HostRequirements{Storage: "1tb"}),
+		hr(&HostRequirements{Storage: value1tb}),
 	}
 	got := mergeHostRequirements(entries)
-	if got.Storage != "1tb" {
-		t.Errorf("Storage = %q, want %q", got.Storage, "1tb")
+	if got.Storage != value1tb {
+		t.Errorf("Storage = %q, want %q", got.Storage, value1tb)
 	}
 }
 
 func TestMergeHostRequirements_MixedUnits(t *testing.T) {
 	entries := []*ImageMetadata{
-		hr(&HostRequirements{Memory: "512mb"}),
-		hr(&HostRequirements{Memory: "1gb"}),
+		hr(&HostRequirements{Memory: value512mb}),
+		hr(&HostRequirements{Memory: value1gb}),
 	}
 	got := mergeHostRequirements(entries)
-	if got.Memory != "1gb" {
-		t.Errorf("Memory = %q, want %q", got.Memory, "1gb")
+	if got.Memory != value1gb {
+		t.Errorf("Memory = %q, want %q", got.Memory, value1gb)
 	}
 }
 
@@ -149,17 +156,17 @@ func TestMergeHostRequirements_GPUEmptyPreservesValue(t *testing.T) {
 
 func TestMergeHostRequirements_MultiSource(t *testing.T) {
 	entries := []*ImageMetadata{
-		hr(&HostRequirements{CPUs: 2, Memory: "4gb"}),
+		hr(&HostRequirements{CPUs: 2, Memory: value4gb}),
 		hr(&HostRequirements{CPUs: 4, Storage: "64gb", GPU: gpu(gpuOptional)}),
-		hr(&HostRequirements{Memory: "8gb", GPU: gpu(gpuTrue)}),
+		hr(&HostRequirements{Memory: value8gb, GPU: gpu(gpuTrue)}),
 		hr(&HostRequirements{CPUs: 1, Storage: "128gb"}),
 	}
 	got := mergeHostRequirements(entries)
 	if got.CPUs != 4 {
 		t.Errorf("CPUs = %d, want 4", got.CPUs)
 	}
-	if got.Memory != "8gb" {
-		t.Errorf("Memory = %q, want %q", got.Memory, "8gb")
+	if got.Memory != value8gb {
+		t.Errorf("Memory = %q, want %q", got.Memory, value8gb)
 	}
 	if got.Storage != "128gb" {
 		t.Errorf("Storage = %q, want %q", got.Storage, "128gb")
@@ -172,18 +179,18 @@ func TestMergeHostRequirements_MultiSource(t *testing.T) {
 func TestMergeHostRequirements_PartialFields(t *testing.T) {
 	entries := []*ImageMetadata{
 		hr(&HostRequirements{CPUs: 8}),
-		hr(&HostRequirements{Memory: "16gb"}),
-		hr(&HostRequirements{Storage: "1tb"}),
+		hr(&HostRequirements{Memory: value16gb}),
+		hr(&HostRequirements{Storage: value1tb}),
 	}
 	got := mergeHostRequirements(entries)
 	if got.CPUs != 8 {
 		t.Errorf("CPUs = %d, want 8", got.CPUs)
 	}
-	if got.Memory != "16gb" {
-		t.Errorf("Memory = %q, want %q", got.Memory, "16gb")
+	if got.Memory != value16gb {
+		t.Errorf("Memory = %q, want %q", got.Memory, value16gb)
 	}
-	if got.Storage != "1tb" {
-		t.Errorf("Storage = %q, want %q", got.Storage, "1tb")
+	if got.Storage != value1tb {
+		t.Errorf("Storage = %q, want %q", got.Storage, value1tb)
 	}
 }
 
@@ -196,9 +203,9 @@ func TestParseByteSize(t *testing.T) {
 		{"garbage", 0},
 		{"1024", 1024},
 		{"4kb", 4 * 1024},
-		{"512mb", 512 * 1024 * 1024},
-		{"8gb", 8 * 1024 * 1024 * 1024},
-		{"1tb", 1024 * 1024 * 1024 * 1024},
+		{value512mb, 512 * 1024 * 1024},
+		{value8gb, 8 * 1024 * 1024 * 1024},
+		{value1tb, 1024 * 1024 * 1024 * 1024},
 		{"1.5gb", uint64(1.5 * 1024 * 1024 * 1024)},
 		{"  16GB  ", 16 * 1024 * 1024 * 1024},
 	}
@@ -218,13 +225,13 @@ func TestMaxByteString(t *testing.T) {
 		want string
 	}{
 		{"", "", ""},
-		{"", "8gb", "8gb"},
-		{"8gb", "", "8gb"},
-		{"4gb", "8gb", "8gb"},
-		{"8gb", "4gb", "8gb"},
-		{"512mb", "1gb", "1gb"},
-		{"1gb", "512mb", "1gb"},
-		{"1tb", "512gb", "1tb"},
+		{"", value8gb, value8gb},
+		{value8gb, "", value8gb},
+		{value4gb, value8gb, value8gb},
+		{value8gb, value4gb, value8gb},
+		{value512mb, value1gb, value1gb},
+		{value1gb, value512mb, value1gb},
+		{value1tb, "512gb", value1tb},
 	}
 	for _, tt := range tests {
 		t.Run(tt.a+"_vs_"+tt.b, func(t *testing.T) {

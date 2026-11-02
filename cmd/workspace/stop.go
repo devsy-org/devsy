@@ -36,14 +36,20 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.runArgs(cobraCmd.Context(), args)
 		},
-		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(
+			rootCmd *cobra.Command,
+			args []string,
+			toComplete string,
+		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
@@ -146,6 +152,19 @@ func (cmd *StopCmd) run(
 		return err
 	}
 
+	if err := cmd.stopRunning(ctx, devsyConfig, client); err != nil {
+		return err
+	}
+
+	opener.KillBrowserTunnel(client.Context(), client.Workspace())
+	return nil
+}
+
+func (cmd *StopCmd) stopRunning(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
 	if err := checkRunning(ctx, client); err != nil {
 		return err
 	}
@@ -155,14 +174,10 @@ func (cmd *StopCmd) run(
 	if err != nil {
 		return err
 	}
-	if !wasStopped {
-		if err := stopResources(ctx, client); err != nil {
-			return err
-		}
+	if wasStopped {
+		return nil
 	}
-
-	opener.KillBrowserTunnel(client.Context(), client.Workspace())
-	return nil
+	return stopResources(ctx, client)
 }
 
 func waitForLock(ctx context.Context, client client2.BaseWorkspaceClient) error {

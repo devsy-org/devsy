@@ -20,7 +20,8 @@ import (
 
 var configTTL time.Duration = time.Hour * 24 * 90 // 90 days
 
-// NewInstanceKubeConfig creates a KubeConfig (clientcmdapi.Config) based for either a space instance or virtual cluster instance.
+// NewInstanceKubeConfig creates a KubeConfig (clientcmdapi.Config) based for either a space instance or virtual cluster
+// instance.
 // We return the config as byte slice to ensure correct handling and formatting through the `clientcmd` methods.
 func NewInstanceKubeConfig(
 	ctx context.Context,

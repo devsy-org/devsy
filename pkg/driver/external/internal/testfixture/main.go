@@ -138,23 +138,27 @@ func (f *fixture) Preflight(
 	if f.mode != "blocked" && f.mode != "stream-block-child" {
 		return f.Driver.Preflight(ctx, request)
 	}
+	return blockPreflight(f.directory)
+}
+
+func blockPreflight(directory string) (*runtimev1.PreflightResponse, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
 	// #nosec G204 -- Relaunches this trusted test fixture; no shell or PATH lookup.
-	child := exec.Command(executable, "child", f.directory)
+	child := exec.Command(executable, "child", directory)
 	if err := child.Start(); err != nil {
 		return nil, err
 	}
 	go func() { _ = child.Wait() }()
 	for {
-		if _, err := os.Stat(filepath.Join(f.directory, "child-pids")); err == nil {
+		if _, err := os.Stat(filepath.Join(directory, "child-pids")); err == nil {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if err := os.WriteFile(filepath.Join(f.directory, "ready"), nil, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "ready"), nil, 0o600); err != nil {
 		return nil, err
 	}
 	// #nosec G118 -- Deliberately ignores cancellation to prove supervisor forced cleanup.

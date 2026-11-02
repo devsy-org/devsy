@@ -389,18 +389,12 @@ var _ = ginkgo.Describe(
 
 				err = f.DevsyContextUse(ctx, contextName)
 				framework.ExpectNoError(err)
-				err = f.ExecCommand(
-					ctx,
-					false,
-					true,
-					"",
-					[]string{
-						"context",
-						"set",
-						names.Flag(names.Option),
-						config.ContextOptionGPGAgentForwarding + "=" + config.BoolTrue,
-					},
-				)
+				err = f.ExecCommandStdout(ctx, []string{
+					"context",
+					"set",
+					names.Flag(names.Option),
+					config.ContextOptionGPGAgentForwarding + "=" + config.BoolTrue,
+				})
 				framework.ExpectNoError(err)
 
 				err = f.DevsyProviderAdd(ctx, "docker")

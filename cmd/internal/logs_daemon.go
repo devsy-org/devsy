@@ -46,22 +46,9 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
-		DevsyConfig: devsyConfig,
-		Args:        args,
-		Owner:       cmd.Owner,
-	})
+	workspaceClient, err := cmd.machineWorkspaceClient(ctx, devsyConfig, args)
 	if err != nil {
 		return err
-	} else if baseClient.WorkspaceConfig().Machine.ID == "" {
-		return fmt.Errorf(
-			"selected workspace is not a machine provider, there is not daemon running",
-		)
-	}
-
-	workspaceClient, ok := baseClient.(client.WorkspaceClient)
-	if !ok {
-		return fmt.Errorf("this command is not supported for proxy providers")
 	}
 
 	_, agentInfo, err := workspaceClient.AgentInfo(provider2.CLIOptions{})
@@ -92,6 +79,36 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
 		return fmt.Errorf("decode remote daemon diagnostics: %w", err)
 	}
+	printDaemonDiagnostics(response)
+	return nil
+}
+
+func (cmd *LogsDaemonCmd) machineWorkspaceClient(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	args []string,
+) (client.WorkspaceClient, error) {
+	baseClient, err := workspace.Get(ctx, workspace.GetOptions{
+		DevsyConfig: devsyConfig,
+		Args:        args,
+		Owner:       cmd.Owner,
+	})
+	if err != nil {
+		return nil, err
+	} else if baseClient.WorkspaceConfig().Machine.ID == "" {
+		return nil, fmt.Errorf(
+			"selected workspace is not a machine provider, there is not daemon running",
+		)
+	}
+
+	workspaceClient, ok := baseClient.(client.WorkspaceClient)
+	if !ok {
+		return nil, fmt.Errorf("this command is not supported for proxy providers")
+	}
+	return workspaceClient, nil
+}
+
+func printDaemonDiagnostics(response machinediagnostics.ReadResponse) {
 	for _, event := range response.Events {
 		_, _ = fmt.Fprintf(
 			os.Stdout,
@@ -105,5 +122,4 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 	if response.Availability != machinediagnostics.AvailabilityAvailable {
 		_, _ = fmt.Fprintf(os.Stdout, "Daemon diagnostics: %s\n", response.Availability)
 	}
-	return nil
 }

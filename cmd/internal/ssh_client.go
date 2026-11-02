@@ -71,7 +71,7 @@ func (cmd *SSHClient) getConfig() (*ssh.ClientConfig, error) {
 	clientConfig := &ssh.ClientConfig{
 		User:            cmd.User,
 		Auth:            []ssh.AuthMethod{},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // no known_hosts for workspaces
 	}
 
 	// key file authentication?

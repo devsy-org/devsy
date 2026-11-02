@@ -87,7 +87,7 @@ func RemoveHelper(userName string) error {
 
 func createHelperScript() error {
 	// we do it this way instead of os.Create because we need sudo
-	cmd := exec.Command(
+	cmd := exec.Command( //nolint:gosec // signing program comes from git config by design
 		"sudo",
 		"bash",
 		"-c",
@@ -139,7 +139,7 @@ func formatGitConfigValue(val string) string {
 }
 
 func readGitConfig(gitConfigPath string) (string, error) {
-	out, err := os.ReadFile(gitConfigPath)
+	out, err := os.ReadFile(gitConfigPath) //nolint:gosec // path is the user git config
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
