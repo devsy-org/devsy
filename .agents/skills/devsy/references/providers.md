@@ -25,10 +25,14 @@ can change the default. To keep the default, run
 without initializing it. Options given to add do not carry over to init.
 
 To use the provider, find the installed name and run
-`devsy provider init <configured-name>` with the required repeatable
-`--option KEY=VALUE` values. Init does not change the default. Then check the
-status and the default with `provider_list` before you create a workspace. If
-the user asked only for installation, report that init is still needed.
+`devsy provider init <configured-name>`. For sensitive options, use the
+`DEVSY_PROVIDER_<PROVIDER_NAME>_<OPTION_NAME>` environment variable instead
+of passing `--option KEY=VALUE` on the command line. Use an established
+credential mechanism to supply the variable without exposing it in shell
+history or logs. See [Safety and authority](safety.md). Init does not change
+the default. Then check the status and the default with `provider_list` before
+you create a workspace. If the user asked only for installation, report that
+init is still needed.
 
 After an MCP add, check the default and report any change. Do not turn a request
 for one workspace into a default change.
@@ -39,7 +43,7 @@ later creates that omit a provider and does not move existing workspaces.
 ## Remove or recover
 
 Deleting a provider changes shared configuration and does not repair a
-workspace. Confirm the target and intent, and check dependent workspaces. The
-delete fails if workspaces use the provider. Do not force-remove the provider or
-delete its workspaces to get past that. When a provider fails, diagnose its
-configuration, connectivity, or runtime. Do not delete or replace it.
+workspace. It fails if workspaces use the provider. When a provider fails,
+diagnose its configuration, connectivity, or runtime. Do not delete or replace
+the provider or its dependent workspaces as an automatic repair. Delete or
+replace only when the user explicitly authorizes the exact target and action.

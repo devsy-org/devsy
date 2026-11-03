@@ -85,6 +85,6 @@ A pod whose daemon uses an older lifecycle protocol must be replaced once. `devs
 Set `shutdownAction` in `devcontainer.json`. It is not a provider option.
 
 - `none` turns off the container timeout monitor. For machines, it also stops `agent.exec.shutdown` from running.
-- Any other value turns on the container timeout monitor. For machines, `agent.exec.shutdown` runs when the timeout passes, if the command is set.
+- Any other value allows the container timeout monitor to run when the effective timeout is positive. For machines, `agent.exec.shutdown` runs when the timeout passes, if the command is set.
 
 When `shutdownAction` is unset, the default is `stopCompose` for Compose workspaces and `stopContainer` for all others. Apart from `none`, and apart from Kubernetes rejecting `stopCompose`, the value does not change what the container timeout does.

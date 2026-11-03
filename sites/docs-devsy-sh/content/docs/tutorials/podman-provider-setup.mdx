@@ -114,7 +114,7 @@ devsy workspace ssh my-workspace
 
 ### Socket not found or permission denied
 
-Devsy cannot reach the Podman socket. On macOS and Windows, check `podman machine list` and start the machine with `podman machine start`. On Linux, check the user socket:
+Devsy cannot reach the Podman socket. On macOS and Windows, check `podman machine list` and start the selected machine with `podman machine start <machine-name>`. On Linux, check the user socket:
 
 ```bash
 systemctl --user status podman.socket

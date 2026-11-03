@@ -31,8 +31,9 @@ e2e group from `e2e.suites`.
 - **Ginkgo spec**: add its label to `e2e.suites` and choose a `group`. Set only
   the fields that differ from the group defaults, such as `runner`,
   `test_timeout`, `install_kind`, `install_podman`, `requires_secret`, and
-  `host_setup`. List labels that another workflow runs in `e2e.ungated` with a
-  reason.
+  `host_setup`. List labels that PR CI must not select directly in
+  `e2e.ungated` with a reason. These include sub-labels exercised by gated
+  suites and labels run manually or by another workflow.
 
 `go test ./hack/ci` fails when a Ginkgo label or Go test package has no tier, or
 when the manifest names a label that no longer exists. New tests need no

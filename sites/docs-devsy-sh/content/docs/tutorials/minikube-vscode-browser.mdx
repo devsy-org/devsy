@@ -154,10 +154,10 @@ ls ~/.kube
 cache  completion.bash.inc  config
 ```
 
-The `config` file in `~/.kube` is the kubeconfig for the Kubernetes provider. Set the kubeconfig path in the provider to:
+The `config` file in `~/.kube` is the kubeconfig for the Kubernetes provider. Print its absolute path and use the output when configuring the provider:
 
-```
-/home/dev/.kube/config
+```sh
+echo ~/.kube/config
 ```
 
 In production, give the kubeconfig a specific context, namespace, and user. Install kubectl on the machine where the Devsy client runs, because the Kubernetes provider runs kubectl with the local kubeconfig to reach a remote cluster.
@@ -191,7 +191,7 @@ Go to **Providers** > **+ Add** and select the Kubernetes provider.
 |---|---|
 | Kubernetes Namespace | default |
 | Disk Size | 1Gi |
-| Kubernetes Config | /home/dev/.kube/config |
+| Kubernetes Config | The absolute path printed by `echo ~/.kube/config` |
 
 Select **Add Provider**
 
