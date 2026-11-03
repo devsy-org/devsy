@@ -1,95 +1,93 @@
 # Devsy MCP tool contract
 
 The stdio server runs as `devsy mcp serve` in its configured Devsy context.
-Discover the connected tools and their schemas: the installed binary may differ
-from this reference. All names below are unprefixed server tool names.
+Discover the connected tools and their schemas, because the installed binary
+can differ from this reference. Tool names below have no server prefix.
 
-Tool failures use MCP `isError` with a classified `{code, message}` payload.
-Do not treat an absent result or a zero-valued `exit_code` in an error result as
-success. Lifecycle and provider mutations normally return `{ok, message?}`;
-create/status return workspace configuration.
+Tool failures return MCP `isError` with a `{code, message}` payload. A missing
+result, or a zero `exit_code` in an error result, is not success. Lifecycle and
+provider changes return `{ok, message?}`. Create and status return workspace
+configuration.
 
 ## Workspace tools
 
 | Tool | Required inputs | Optional inputs | Preconditions and next step |
 | --- | --- | --- | --- |
-| `workspace_list` | None | None | Discover workspaces in the server's scope; use exact returned names for subsequent operations. |
-| `workspace_status` | `name` string | None | Target must exist. Returns saved workspace configuration; use for identity and create-timeout discovery, then CLI status/describe if live state matters. |
-| `workspace_create` | `source` string | `name`, `provider`, `ide`, `devcontainer_path` strings | Determine source and provider; creates and starts. Use returned workspace configuration, then exec if work is requested. Check status/list after timeout before retry. |
-| `workspace_start` | `name` string | `force` boolean (shared schema; ignored for start) | Existing target only; does not intentionally create a missing workspace. Resume, then execute or verify live state. |
-| `workspace_stop` | `name` string | `force` boolean (shared schema; ignored for stop) | Existing target; stops compute while retaining workspace configuration/data for resume. Verify live state if needed. |
-| `workspace_delete` | `name` string | `force` boolean, default false | Destructive: verify intent/target. List afterward to verify configuration removal; that alone does not prove remote cleanup after force. |
-| `workspace_exec` | `name` string, `command` array of strings | `workdir` string, `env` map of strings, `id_labels` array of strings, `timeout_seconds` integer | Workspace must be running with an execution-supported runtime. Inspect errors, exit status, and partial-output flags. |
+| `workspace_list` | None | None | Lists workspaces in the server's scope. Use the returned names in later calls. |
+| `workspace_status` | `name` string | None | Target must exist. Returns saved configuration. Use it for identity and create-timeout checks. Use CLI status or describe for live state. |
+| `workspace_create` | `source` string | `name`, `provider`, `ide`, `devcontainer_path` strings | Choose the source and provider first. Creates and starts the workspace. Then exec if the user requested work. After a timeout, check status or list before you retry. |
+| `workspace_start` | `name` string | `force` boolean (shared schema; ignored for start) | Existing target only. Resumes it, then exec or verify live state. |
+| `workspace_stop` | `name` string | `force` boolean (shared schema; ignored for stop) | Existing target only. Stops compute and keeps configuration and data for resume. |
+| `workspace_delete` | `name` string | `force` boolean, default false | Destructive. Confirm intent and target. List afterward to verify the configuration is gone. The list does not confirm remote cleanup after force. |
+| `workspace_exec` | `name` string, `command` array of strings | `workdir` string, `env` map of strings, `id_labels` array of strings, `timeout_seconds` integer | The workspace must be running on a runtime that supports exec. Check errors, exit status, and output flags. |
 
-`workspace_list` returns `workspaces[]` with `name` and optional `provider`,
-`ide`, `source`, `last_used` (RFC 3339 timestamp). Source is canonical and can
-be passed back to create; the list does not include live running state.
+`workspace_list` returns `workspaces[]`. Each item has `name` and optional
+`provider`, `ide`, `source`, and `last_used` (RFC 3339 timestamp). Pass the
+canonical `source` back to create. The list has no live running state.
 
-`workspace_create.source` supports Git URLs (`https://`, `ssh://`,
+`workspace_create.source` accepts Git URLs (`https://`, `ssh://`,
 `git@host:repo`, and canonical `git:https://...`), absolute host-local paths,
 and container image references. `provider` is a configured provider name from
-`provider_list`; omission uses the active context's default. `devcontainer_path`
-is relative to the project. Set `ide` only when requested. Slow pulls, clones,
-and post-create commands can outlast client deadlines: server-side work may
-continue. Saved configuration can become visible before setup completes.
+`provider_list`. Omit it to use the context's default. `devcontainer_path` is
+relative to the project. Set `ide` only when the user asks. Slow pulls, clones,
+and post-create commands can outlast client deadlines while the server keeps
+working. Saved configuration can appear before setup finishes.
 
-`workspace_status` currently returns `WorkspaceConfig()` without probing
-container/provider state. A successful call proves configuration lookup, not
-readiness. The CLI `workspace status --result-format json` probes live state;
-`workspace describe --result-format json` combines configuration with live state.
+`workspace_status` returns the saved configuration without probing container or
+provider state, so success does not confirm readiness. CLI
+`workspace status --result-format json` probes live state.
+`workspace describe --result-format json` combines configuration with live
+state.
 
-Force-delete can remove local configuration when remote operations fail,
-leaving provider resources behind. It also overrides the normal remote-deletion
-skip for imported workspaces; force is not merely a local cleanup switch.
+Force-delete can remove local configuration when remote operations fail, which
+leaves provider resources behind. It also overrides the remote-deletion skip for
+imported workspaces.
 
 ## Exec results and limits
 
-Use direct argv, e.g. `["npm", "test"]`. For shell features explicitly use an
-available shell, e.g. `["sh", "-c", "npm test && npm run lint"]`. A string such
-as `"npm test"` is not valid `command` input. `workdir` is inside the container;
-`id_labels` select the runtime container and should not be guessed.
+Use direct argv, for example `["npm", "test"]`. For shell features, use an
+available shell, for example `["sh", "-c", "npm test && npm run lint"]`. A string
+such as `"npm test"` is not valid `command` input. `workdir` is inside the
+container. `id_labels` select the runtime container. Do not guess them.
 
 Results contain `stdout`, `stderr`, `exit_code`, `duration_ms`, `truncated`, and
-optional `timed_out`, `clamped`, `error` (`{code, message}`). Check the MCP error
-indicator first. A nonzero command exit differs from a transport/runtime error.
-Errors can carry useful partial streams; retain them without treating them as
-complete output or success.
+optional `timed_out`, `clamped`, `error` (`{code, message}`). Check the MCP
+error flag first. A nonzero command exit differs from a transport or runtime
+error. Errors can include partial streams. Keep them, but they are not complete
+output or success.
 
 | Setting | Default | Effect |
 | --- | --- | --- |
 | `--exec-timeout-default` | `5m` | Timeout used when the request has no positive timeout. |
-| `--exec-timeout-max` | `30m` | Positive request timeouts above this are clamped; result reports `clamped`. |
-| `--exec-output-cap` | `102400` bytes | Each stream is capped separately; output retains the tail with a truncation marker. |
-| `--max-concurrent-ops` | `8` | Shared slots for create/start/exec; excess requests wait. |
+| `--exec-timeout-max` | `30m` | Positive request timeouts above this are clamped. The result reports `clamped`. |
+| `--exec-output-cap` | `102400` bytes | Each stream is capped separately. Output keeps the tail with a truncation marker. |
+| `--mcp-max-concurrent-ops` | `8` | Shared slots for create, start, and exec. Extra requests wait. |
 
-These are configurable server defaults, not guarantees for every installation.
-Timeout covers execution behavior; client deadlines and waiting for a server
-slot can also interrupt a call. Neither timeout nor truncated output authorizes
-a blind retry of a command with side effects.
+These are server defaults and can differ per installation. The timeout covers
+execution. Client deadlines and waits for a server slot can also interrupt a
+call. After a timeout or truncated output, do not rerun a command with side
+effects.
 
 ## Provider tools
 
 | Tool | Required inputs | Optional inputs | Preconditions and next step |
 | --- | --- | --- | --- |
-| `provider_list` | None | None | Discover configured provider names/default/status before selecting or mutating one. |
-| `provider_add` | `source` string | `name` string, `options` map of strings, `use` boolean | Setup must be in scope; obtain provider-specific options from metadata/docs. List afterward to verify addition and default. |
-| `provider_delete` | `name` string | None | Unambiguous configuration-deletion intent; may be refused if workspaces still use it. Inspect dependents, then list to verify. |
-| `provider_use` | `name` string | None | Target must be configured; changes default for future creates with provider omitted. Verify with list. |
+| `provider_list` | None | None | Lists provider names, the default, and status. Call it before you select or change a provider. |
+| `provider_add` | `source` string | `name` string, `options` map of strings, `use` boolean | Setup must be in scope. Take options from provider metadata or docs. List afterward to verify. |
+| `provider_delete` | `name` string | None | Requires clear intent. The delete fails if workspaces use the provider. Check dependent workspaces, then list to verify. |
+| `provider_use` | `name` string | None | The target must be configured. Changes the default for later creates that omit `provider`. |
 
-`provider_list` returns `providers[]` with `name` and optional `version`,
-`default`, `status`. Missing `default` means it is not marked default.
-Provider status is not proof that every workspace is healthy.
+`provider_list` returns `providers[]`. Each item has `name` and optional
+`version`, `default`, and `status`. A missing `default` means the provider is not
+the default. Provider status does not show workspace health.
 
-`provider_add.source` accepts a registry name (e.g. `docker`, `kubernetes`),
-a GitHub release URL, or a local provider configuration file path. Its options
-are provider-specific strings. The current MCP adapter only forwards `--use`
-when `use=true`; the CLI add default is already true. **Omitting `use` or passing
-false does not reliably preserve the old default.** Inspect the default before
-and after adding; if preservation is needed, use CLI `provider add --use=false`
-as an operation MCP cannot currently express. That CLI path installs without
-initializing; before using the provider, run `provider init <configured-name>`
-with required `--option KEY=VALUE` settings and verify provider status/default.
-Initialization through CLI does not change the default.
-
-Contracts are maintained against `cmd/mcp/tools_workspace.go`,
-`tools_exec.go`, `tools_provider.go`, and `serve.go` in the Devsy repository.
+`provider_add.source` accepts a registry name (for example `docker` or
+`kubernetes`), a GitHub release URL, or a local provider configuration file
+path. Options are provider-specific strings. The MCP adapter forwards `--use`
+only when `use=true`, and the CLI add defaults to true, so omitting `use` or
+passing false can change the default. Check the default before and after.
+To keep the old default, use CLI `provider add --use=false`, which MCP
+cannot express. That path installs without initializing. Before you use the
+provider, run `provider init <configured-name>` with the required
+`--option KEY=VALUE` settings, then verify the provider status and default. CLI
+init does not change the default.

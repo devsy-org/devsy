@@ -3,7 +3,7 @@ title: Provider Options
 sidebar_label: Provider Options
 ---
 
-Options are settings the user can configure for a provider, such as an account, region, VM size or image. Define them in [`provider.yaml`](./quickstart.mdx#sections-of-provideryaml):
+Options are settings the user configures for a provider, such as an account, region, VM size, or image. Define them in [`provider.yaml`](./quickstart.mdx#sections-of-provideryaml):
 
 ```yaml
 options:
@@ -14,15 +14,15 @@ options:
     password: true
 ```
 
-Devsy validates options when the provider is added and passes them to every command as environment variables. They can also be used in the `agent` section and in `agent.exec`. The provider is responsible for reading and validating its own variables. Put that check in the `init` command, which Devsy runs when options change.
+Devsy validates options when the provider is added. It passes them to every command as environment variables. Options can also appear in the `agent` section and in `agent.exec`. The provider reads and validates its own variables. Put that check in the `init` command, which Devsy runs when options change.
 
 ## Attributes
 
-- `displayName`: name shown by tools such as the Desktop app, instead of the option name.
+- `displayName`: name shown in tools such as the Desktop app, instead of the option name.
 - `description`: shown by `devsy provider get` and in the Desktop app.
-- `default`: default value, as a string. It can reference other options, for example `${OTHER}-suffix`. Devsy resolves them in the right order. Cannot be combined with `command`.
-- `required`: the value must be non-empty. Devsy prompts for it in the CLI, and the Desktop app asks for it.
-- `password`: treat the value as a secret. It is hidden in `devsy provider get` and entered in a password field in the Desktop app.
+- `default`: default value, as a string. It can reference other options, for example `${OTHER}-suffix`. Devsy resolves them in order. Cannot be combined with `command`.
+- `required`: the value must be non-empty. The CLI prompts for it, and the Desktop app asks for it.
+- `password`: treat the value as a secret. `devsy provider get` hides it, and the Desktop app shows a password field.
 - `type`: `string` (default), `multiline`, `duration`, `number` or `boolean`. Devsy validates the value against it.
 - `enum`: the only allowed values. Devsy rejects anything else.
 - `suggestions`: values offered as autocomplete in the Desktop app. Not enforced, and not shown in the CLI.
@@ -32,7 +32,7 @@ Devsy validates options when the provider is added and passes them to every comm
 - `subOptionsCommand`: command that prints more `options`, in the same YAML shape, based on other option values.
 - `local`: fill the option separately for each machine or workspace.
 - `global`: reuse the option for every machine or workspace. Cannot be combined with `cache` or `mutable`.
-- `cache`: re-run `command` after this duration, for example `5m`. Use it for values that expire, such as tokens. Requires `command`.
+- `cache`: re-run `command` after this duration, for example `5m`. Use it for expiring values, such as tokens. Requires `command`.
 - `hidden`: hide the option in the Desktop app and `devsy provider get`. Use it for internal values.
 - `mutable`: allow changing the value on an existing machine or workspace. Cannot be combined with `global`.
 
@@ -59,7 +59,7 @@ AWS_TOKEN:
 
 ## Built-in options
 
-These can be used in `default` and `command`. Some exist only for `local` options, because the machine or workspace does not exist yet when others are resolved.
+Use these in `default` and `command`. Some work only in `local` options, because the machine or workspace does not exist yet when other options resolve.
 
 - **DEVSY**: absolute path to the Devsy binary. Also available on the agent side.
 - **DEVSY_OS**: `linux`, `darwin` or `windows`.
@@ -70,7 +70,7 @@ These can be used in `default` and `command`. Some exist only for `local` option
 
 ## Option groups
 
-Option groups organize options in the Desktop app. They have no effect in the CLI.
+Option groups organize options in the Desktop app. The CLI ignores them.
 
 ```yaml
 optionGroups:
@@ -87,5 +87,5 @@ optionGroups:
 
 Groups are collapsed unless `defaultVisible` is `true`.
 
-If your provider exposes `AGENT_PATH`, its value is a literal path, not a shell command.
-Host-tunnel startup escapes the resolved path, including spaces, apostrophes and shell metacharacters.
+If your provider exposes `AGENT_PATH`, Devsy treats its value as a literal path, not a shell command.
+Host-tunnel startup escapes the resolved path, including spaces, apostrophes, and shell metacharacters.

@@ -3,9 +3,9 @@ title: Connect to a Workspace
 sidebar_label: Connect to a Workspace
 ---
 
-Once a workspace is created, it is reachable over SSH at `WORKSPACE_NAME.devsy`. If you chose an IDE, Devsy opens it after the workspace starts.
+After a workspace is created, it accepts SSH connections at `WORKSPACE_NAME.devsy`. If you chose an IDE, Devsy opens it after the workspace starts.
 
-Pick the IDE with `--ide` when you start a workspace, or set a default for all workspaces:
+Set the IDE with `--ide` when you start a workspace, or set a default for all workspaces:
 
 ```sh
 devsy workspace up my-workspace --ide vscode
@@ -38,13 +38,13 @@ For a slow SSH connection, set the Remote - SSH connection timeout in seconds:
 devsy workspace up my-workspace --ide vscode --ide-option SSH_CONNECT_TIMEOUT=60
 ```
 
-Alternatively, set the option for all VS Code workspaces with `devsy ide set vscode -o SSH_CONNECT_TIMEOUT=60`. The value must be a positive whole number of seconds, up to 999999999. When specified, Devsy writes `remote.SSH.connectTimeout` to the host user settings for the selected editor flavor. This setting applies globally to all Remote - SSH hosts in that editor, including non-Devsy hosts. If the option is not set, Devsy leaves the existing timeout unchanged. For other VS Code-based editors, use their IDE name in place of `vscode`.
+To set the option for all VS Code workspaces, run `devsy ide set vscode -o SSH_CONNECT_TIMEOUT=60`. The value must be a positive whole number of seconds, up to 999999999. Devsy writes `remote.SSH.connectTimeout` to the host user settings for the selected editor. The setting applies to all Remote - SSH hosts in that editor, including hosts Devsy does not manage. Without the option, Devsy leaves the existing timeout unchanged. For other VS Code-based editors, use their IDE name in place of `vscode`.
 
 On Linux, Devsy uses `XDG_CONFIG_HOME` for editor settings when it is set. Otherwise, it uses `~/.config`.
 
 ### JetBrains IDEs
 
-Install [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/). You need a license for the IDE you use. Start the workspace with the IDE name, for example:
+Install [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/). You need a license for the IDE you use. Start the workspace with the IDE name:
 
 ```sh
 devsy workspace up my-workspace --ide goland
@@ -56,7 +56,7 @@ Fleet works only through a manually added SSH connection to `WORKSPACE_NAME.devs
 
 ### SSH
 
-When SSH configuration is enabled, Devsy adds a `WORKSPACE_NAME.devsy` entry to `~/.ssh/config` on the machine running Devsy when it creates a workspace.
+When SSH configuration is enabled, Devsy adds a `WORKSPACE_NAME.devsy` entry to `~/.ssh/config` on the machine that runs Devsy when it creates a workspace.
 
 ```sh
 ssh WORKSPACE_NAME.devsy
@@ -75,22 +75,22 @@ SFTP uses the SSH username for file operations inside the workspace. Files you u
 sftp USER@WORKSPACE_NAME.devsy
 ```
 
-If you are already inside a Devsy container and need the host and remote user for a manually configured IDE connection, run this from the container terminal:
+To get the host and remote user for a manually configured IDE connection, run this in the container terminal:
 
 ```sh
 devsy container info
 devsy container info --result-format json
 ```
 
-Run `devsy container info` inside the workspace container, not on your local machine. The printed `ssh` command works only from a client that has the matching Devsy SSH configuration on its host and a reachable transport. The `.devsy` suffix is an SSH alias that Devsy writes to the SSH config, not a network name that resolves on its own.
+Run `devsy container info` inside the workspace container, not on your local machine. The printed `ssh` command works only from a client with the matching Devsy SSH configuration and a reachable transport. The `.devsy` suffix is an SSH alias that Devsy writes to the SSH config, not a network name.
 
 When Devsy runs on a remote VM, a separate laptop or IDE client needs its own working SSH transport or host configuration. `devsy container info` does not configure it.
 
-Docker Compose workspaces created before Devsy injected `DEVSY_WORKSPACE_ID` into the service lack that variable, so `devsy container info` fails in them. Recreate the workspace to fix it.
+Docker Compose workspaces created before Devsy set `DEVSY_WORKSPACE_ID` in the service lack that variable, and `devsy container info` fails in them. Recreate the workspace to fix this.
 
 ## IDE options
 
-Each IDE has options such as the version. List and change them with:
+Each IDE has options, such as the version. Read and set them with:
 
 ```sh
 devsy ide get openvscode

@@ -5,7 +5,7 @@ sidebar_label: Quick Start
 
 import AddProvider from '../fragments/add-provider.mdx'
 
-Go from a fresh install to a running workspace: add a provider, start a workspace, open it in your editor. First, [install Devsy](./install.mdx).
+Add a provider, start a workspace, and open it in your editor. First, [install Devsy](./install.mdx).
 
 Run `devsy ide list` to see every supported editor. VS Code Browser (`openvscode`) and `none` (SSH only) need nothing installed locally. For any other editor, install it first. JetBrains IDEs also need [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/).
 
@@ -13,7 +13,7 @@ Run `devsy ide list` to see every supported editor. VS Code Browser (`openvscode
 
 ### 1. Add a provider
 
-A provider decides where workspaces run. Add local Docker:
+A provider decides where workspaces run. To add local Docker:
 
 ```
 devsy provider add docker
@@ -43,7 +43,7 @@ ssh WORKSPACE_NAME.devsy
 
 ### 2. Start a workspace
 
-Go to **Workspaces** > **+ Create** and follow the wizard: provider, source (a repository URL or a template), editor, review, launch. When the workspace is ready, the editor opens connected to it.
+Go to **Workspaces** > **+ Create** and follow the wizard: provider, source (a repository URL or a template), editor, review. When the workspace is ready, the editor opens connected to it.
 
 <Callout title="JetBrains Gateway">
 For a JetBrains IDE, Gateway opens with a prefilled form. Select **Check Connection and Continue** to start the IDE inside the workspace.

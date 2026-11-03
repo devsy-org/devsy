@@ -1,10 +1,9 @@
 # CLI fallback and extended capabilities
 
-Use an available equivalent MCP tool first. Use CLI when MCP is unavailable or
-cannot express the requested behavior. Check `devsy version` and command `--help`
-if the installed version differs from this reference. Preserve the MCP server's
-context/provider/owner scope when switching, using the corresponding global
-flags when set. Do not silently operate in a different context.
+Use the equivalent MCP tool first. Use the CLI when MCP is unavailable or cannot
+express the behavior. If the installed version differs from this reference, run
+`devsy version` and check the command `--help`. When you switch from MCP, pass
+the matching global flags so the context, provider, and owner stay the same.
 
 ## Fallback mappings
 
@@ -22,13 +21,12 @@ flags when set. Do not silently operate in a different context.
 | `provider_use` | `devsy provider use <name>` |
 | `provider_delete` | `devsy provider delete <name>` |
 
-`workspace up` is create-or-resume, so a missing name can be interpreted as a
-source. Never use it as a lookup. Supply `--id <name>` when intentionally naming
-a new workspace and `--provider <configured-name>` when selecting its provider.
-`--ide-launch skip` avoids launching the host editor/browser for automation;
-respect a user request to launch an IDE instead.
+`workspace up` creates or resumes a workspace. An unknown name becomes a
+source, so never use it as a lookup. Pass `--id <name>` to name a new workspace
+and `--provider <configured-name>` to select its provider. `--ide-launch skip`
+keeps the host editor or browser closed. Omit it when the user asks for an IDE.
 
-Prefer JSON where supported:
+Prefer JSON output when the command supports it:
 
 ```sh
 devsy workspace list --result-format json
@@ -37,66 +35,61 @@ devsy workspace describe my-workspace --result-format json
 devsy workspace events my-workspace --limit 20 --result-format json
 ```
 
-CLI status returns live `state`; describe adds live state to full configuration.
-Unlike these commands, MCP `workspace_status` currently returns configuration
-only. Do not scrape decorative tables when JSON exists. Exec stdout/stderr are
-command streams, not a JSON result object; adding `--result-format json` does
-not turn them into MCP's bounded exec response or reproduce its timeout limits.
+CLI `status` returns live `state`. `describe` adds live state to the full
+configuration. MCP `workspace_status` returns configuration only. Do not scrape
+tables when JSON exists. Exec stdout and stderr are command streams. Adding
+`--result-format json` does not give them MCP's bounded exec response or
+timeout limits.
 
 ## Diagnostics
 
 - `devsy workspace events <name> --limit 20 --result-format json`: recent
-  lifecycle journal, useful for pending/failed creation and start/stop operations.
-- `devsy workspace logs <name>`: agent logs; unsupported for proxy providers.
-  Bound log collection with the host tool's timeout and focus on relevant errors.
-- `devsy workspace ping <name>`: hidden diagnostic for **Devsy Platform workspaces
-  only**, not a general container-health probe.
-- `devsy workspace troubleshoot <name>`: hidden diagnostic that prints JSON
-  including config/provider/workspace information and an optional `Errors`
-  array. Inspect partial errors even if the process exits successfully. Review
-  and redact sensitive output before sharing; it is not a guaranteed clean bill
-  of health or a downloadable bundle.
+  lifecycle journal for pending or failed creation, start, and stop.
+- `devsy workspace logs <name>`: agent logs. Proxy providers do not support
+  them. Set a host timeout.
+- `devsy workspace ping <name>`: hidden command for Devsy Platform workspaces
+  only. It does not check container health.
+- `devsy workspace troubleshoot <name>`: hidden command. It prints JSON with
+  config, provider, and workspace information, plus an optional `Errors` array.
+  Read the `Errors` array even when the process exits with success. Redact
+  sensitive output before you share it.
 
 ## Additional operations
 
-Use only when requested or necessary; inspect installed `--help` for optional
-flags before using them.
+Use these when the user asks or the task needs them. Check `--help` for flags.
 
 | Command | Purpose and constraint |
 | --- | --- |
-| `devsy workspace build <name-or-source>` | Build/prebuild the workspace environment; publishing behavior depends on flags/configuration. Inspect help and requested destination first. |
-| `devsy workspace rename <current-name> <new-name>` | Change workspace identity; refresh discovery afterward. |
+| `devsy workspace build <name-or-source>` | Build or prebuild the workspace environment. Flags and configuration decide whether it publishes. Check help and the requested destination first. |
+| `devsy workspace rename <current-name> <new-name>` | Change the workspace name. Refresh discovery afterward. |
 | `devsy workspace edit <id> [--display-name <label>] [--ssh-host-alias <alias>]` | Change the display label and preferred SSH host without renaming or recreating. The canonical `<id>.devsy` host stays valid. |
 | `devsy workspace set-ide <name> <ide>` | Change the configured IDE. |
-| `devsy workspace export <name>` | Hidden command exporting configuration JSON, **not a data backup**. |
-| `devsy workspace import --data '<exported-json>'` | Hidden configuration import; validate intended identities/provider references first. |
-| `devsy workspace task list` | Discover background tasks, such as CLI `up --detach` work. |
-| `devsy workspace task get <task-id>` | Inspect a task's status. |
-| `devsy workspace task logs <task-id> --follow` | Follow a detached operation; bound the host wait. |
-| `devsy workspace task cancel <task-id>` | Cancel a task process; mutation requires intent. |
-| `devsy workspace task rm <task-id>` | Delete finished task state; not workspace deletion. |
-| `devsy workspace ssh <name>` | Interactive/SSH scenarios; prefer MCP exec or CLI exec for one-shot automation. |
-| `devsy workspace ssh <name> --command 'command'` | SSH-specific non-interactive command when needed for the task. |
+| `devsy workspace export <name>` | Hidden command. Exports configuration JSON, not a data backup. |
+| `devsy workspace import --data '<exported-json>'` | Hidden command. Imports configuration. Check identities and provider references first. |
+| `devsy workspace task list` | List background tasks, such as `up --detach` work. |
+| `devsy workspace task get <task-id>` | Show a task's status. |
+| `devsy workspace task logs <task-id> --follow` | Follow a detached operation. Bound the wait on the host. |
+| `devsy workspace task cancel <task-id>` | Cancel a task process. Confirm intent first. |
+| `devsy workspace task rm <task-id>` | Delete finished task state, not the workspace. |
+| `devsy workspace ssh <name>` | Interactive SSH session. For one-shot automation, use MCP exec or CLI exec. |
+| `devsy workspace ssh <name> --command 'command'` | Run a non-interactive SSH command. |
 
-Recreate/reset use `workspace up <name> --recreate` / `--reset`. Recreate loses
-container changes outside project paths/mounts; reset discards workspace source
-changes. Verify intent and target rather than using either as routine recovery.
+Recreate and reset use `workspace up <name> --recreate` and
+`workspace up <name> --reset`. Recreate loses container changes outside project
+paths and mounts. Reset discards workspace source changes. Confirm intent and
+target first. Neither is routine recovery.
 
 ## Providers and errors
 
-CLI `provider add` defaults to changing the current default. Use `--use=false`
-when adding without changing that default. This installs without initializing.
-Before using the new provider, run `devsy provider init <configured-name>` with
-required repeatable `--option KEY=VALUE` settings; pass those options to init,
-not just to the uninitialized add path. Init does not change the default. Verify
-provider status and the preserved default before creating a workspace. If only
-installation was requested, report the pending initialization. Obtain option
-values from provider docs/metadata; do not invent them.
+`provider add` makes the new provider the default unless you pass `--use=false`.
+With `--use=false`, the provider is installed but not initialized. Before you
+use it, run `devsy provider init <configured-name>` with the required repeatable
+`--option KEY=VALUE` settings. Init does not change the default. Check the
+provider status and the default before you create a workspace. If the user asked
+only for installation, report that initialization is pending. Take option values
+from provider docs or metadata.
 
-Preserve actual process exit status and Devsy error code/hint when available.
-Distinguish a project command failure from Devsy runtime/transport failure.
-Do not suppress unexpected stderr, log credentials, or automatically rerun
-mutating commands after an uncertain result.
-
-Syntax is maintained against `cmd/workspace`, `cmd/workspace/up`,
-`cmd/provider`, and `cmd/root.go` in the Devsy repository.
+Keep the process exit status and any Devsy error code and hint. Separate project
+command failures from Devsy runtime or transport failures. Do not hide
+stderr, log credentials, or rerun a mutating command after an uncertain
+result.

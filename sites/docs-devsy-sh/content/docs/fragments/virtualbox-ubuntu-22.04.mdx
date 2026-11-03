@@ -1,18 +1,18 @@
 
 
-## Create Ubuntu 22.04 Virtual machine
+## Create an Ubuntu 22.04 virtual machine
 
-### Download Ubuntu Desktop 22.04 ISO
+### Download the Ubuntu Desktop 22.04 ISO
 
-This walkthrough needs an x86-64 host. Download the official ISO for [Ubuntu 22.04](https://old-releases.ubuntu.com/releases/22.04/) (`ubuntu-22.04.x-desktop-amd64.iso`).
+This walkthrough needs an x86-64 host. Download `ubuntu-22.04.x-desktop-amd64.iso` from [Ubuntu 22.04](https://old-releases.ubuntu.com/releases/22.04/).
 
-### New Ubuntu 22.04 Virtual machine
+### Create the virtual machine
 
-With VirtualBox running, open the new virtual machine dialog with 'Machine' > 'New...'.
+In VirtualBox, go to 'Machine' > 'New...' to open the new virtual machine dialog.
 
 ### New virtual machine dialog
 
-#### Step 1 - Virtual Machine Name and Operating System
+#### Step 1 - Name and operating system
 
 | Input | Suggested Value |
 |---|---|
@@ -44,15 +44,15 @@ Select 'Next'
 
 #### Step 4 - Summary
 
-Review the configuration summary and click 'Finish' to commence creating the VM.
+Review the summary and click 'Finish' to create the VM.
 
 ### Start installation
 
-To start the Ubuntu installation, select the vm 'ubuntu-desktop-22.04' and 'Start'.
+To start the installation, select the VM 'ubuntu-desktop-22.04' and click 'Start'.
 
-This will power up the VM and trigger Ubuntu's installation process.
+VirtualBox powers up the VM and starts the Ubuntu installer.
 
-#### Step 1 - Ubuntu CLI Selection
+#### Step 1 - Installer mode
 
 Select 'Try/Install Ubuntu'
 
@@ -60,20 +60,20 @@ Select 'Try/Install Ubuntu'
 
 Select Language and Install Ubuntu
 
-#### Step 3 - Keyboard Layout
+#### Step 3 - Keyboard layout
 
-Select your desired Keyboard layout, select 'Continue'.
+Select your keyboard layout, then select 'Continue'.
 
-#### Step 4 - Update and Other Software
+#### Step 4 - Update and other software
 
 | Input | Suggested Value |
 |---|---|
 | Name | ubuntu-desktop-22.04 (name used through this example) |
 | Normal or Minimal Installation  | Minimal Installation |
 | Download updates while installing Ubuntu  | yes |
-| Install third party software for graphics and WI-FI hardware and additional media formats | yes (adds closed source drivers and software that can't be included in Ubuntu). You need to understand the consequences of this option for your personal needs. |
+| Install third party software for graphics and WI-FI hardware and additional media formats | yes. This adds closed-source drivers and software that Ubuntu does not include. |
 
-#### Step 5 - Installation Type
+#### Step 5 - Installation type
 
 Select 'Erase disk and install Ubuntu', click 'Install Now'
 

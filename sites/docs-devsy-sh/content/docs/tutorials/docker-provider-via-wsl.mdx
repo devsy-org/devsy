@@ -3,24 +3,24 @@ title: Docker provider via WSL
 sidebar_label: Docker provider via WSL
 ---
 
-This tutorial runs a Docker engine inside WSL2 and connects Devsy, running on Windows, to it over SSH. Docker runs inside WSL, while Devsy and the editor run on Windows. Keep local project files on a Windows drive so Devsy can translate their mount paths into WSL paths.
+This tutorial runs Docker Engine in WSL2 and connects Devsy on Windows to it over SSH. Devsy and the editor run on Windows. Keep project files on a Windows drive so Devsy can translate their mount paths into WSL paths.
 
 ## Install Docker in WSL
 
 ### Enable WSL2
 
-In PowerShell as Administrator, skip this step if WSL2 is already installed:
+If WSL2 is not installed, run this in PowerShell as Administrator:
 
 ```powershell
 wsl --install
 ```
 
-This enables the required features and installs a default Linux distribution. Without `wsl --install`, enable both the Windows Subsystem for Linux and the Virtual Machine Platform features by hand, restart, and run `wsl --set-default-version 2`. Without the Virtual Machine Platform, WSL falls back to WSL1.
+`wsl --install` enables the required features and installs a default Linux distribution. Without it, enable the Windows Subsystem for Linux and Virtual Machine Platform features by hand, restart, and run `wsl --set-default-version 2`. Without Virtual Machine Platform, WSL uses WSL1.
 
 To install a specific distribution, run `wsl --install Ubuntu-24.04` and set a username and password. Open its shell with `wsl`.
 
 <Callout type="info">
-The steps below use `systemctl`, which needs systemd inside WSL. Distributions installed through `wsl --install` enable it by default. If it is missing, add this to `/etc/wsl.conf`, then run `wsl --shutdown` from PowerShell and start `wsl` again:
+The steps below use `systemctl`, which needs systemd. If systemd is missing, add this to `/etc/wsl.conf`, run `wsl --shutdown` from PowerShell, and start `wsl` again:
 
 ```ini
 [boot]
@@ -41,7 +41,7 @@ Behind a corporate proxy, also [configure the Docker daemon proxy](https://docs.
 
 ### Install an SSH server
 
-The Windows Docker client reaches the daemon over SSH, not an open TCP port:
+The Windows Docker client reaches the daemon over SSH, so no TCP port needs to be open:
 
 ```bash
 sudo apt-get update
@@ -49,7 +49,7 @@ sudo apt-get install -y openssh-server
 sudo systemctl enable --now ssh.service
 ```
 
-WSL2 forwards `localhost` to Windows, so the server is reachable there. To avoid password prompts, run `ssh-keygen` on Windows and append the public key to `~/.ssh/authorized_keys` in WSL.
+WSL2 forwards `localhost` to Windows. To skip password prompts, run `ssh-keygen` on Windows and append the public key to `~/.ssh/authorized_keys` in WSL.
 
 ## Connect Windows to the daemon
 
@@ -87,9 +87,9 @@ Create the workspace. Devsy adds an SSH config entry named `<workspace-name>.dev
 devsy workspace up
 ```
 
-In VS Code or VSCodium with the [Open Remote - SSH](https://marketplace.visualstudio.com/items?itemName=jeanp413.open-remote-ssh) extension, choose **Open Folder in Remote...** and select that host. Devsy tunnels the session into the dev container, so no jump host setup is needed.
+In VS Code or VSCodium with the [Open Remote - SSH](https://marketplace.visualstudio.com/items?itemName=jeanp413.open-remote-ssh) extension, choose **Open Folder in Remote...** and select that host. Devsy tunnels the session into the dev container, so you need no jump host.
 
-The tunnel reuses your local SSH keys and agent. If the editor log shows `write EPIPE`, run `devsy workspace up` with `DEVSY_DEBUG=true`. The real cause, such as the WSL SSH server not running or an untrusted host key, is otherwise hidden behind that generic error.
+The tunnel uses your local SSH keys and agent. If the editor log shows `write EPIPE`, run `devsy workspace up` with `DEVSY_DEBUG=true` to see the cause, such as a stopped WSL SSH server or an untrusted host key.
 
 ## Next steps
 
@@ -97,9 +97,9 @@ See [Create a Workspace](../developing-in-workspaces/create-a-workspace.mdx).
 
 ## Experimental WSLg display discovery
 
-Windows Devsy can discover display connection values from an explicitly selected WSL2 distribution and non-root user. This is opt-in and requires a local Docker provider (the built-in `docker` provider or a named copy of it) with Docker Engine in that distribution, as configured above. Docker Desktop, Podman, remote providers and Devsy running inside WSL are outside this feature's scope. The Docker endpoint must reach the same distribution: its name or an SSH address alone does not establish that identity.
+Devsy on Windows can read display values from a WSL2 distribution and non-root user that you select. You opt in. It needs a local Docker provider (the built-in `docker` provider or a named copy) with Docker Engine in that distribution, as configured above. It does not support Docker Desktop, Podman, remote providers, or Devsy running inside WSL. The Docker endpoint must reach the same distribution.
 
-First check that a GUI application works directly in your distribution and that these commands from PowerShell return its display values. Replace the distribution and username:
+Check that a GUI application runs in your distribution and that these PowerShell commands return its display values. Replace the distribution and username:
 
 ```powershell
 wsl.exe --distribution Ubuntu-24.04 --user alice --exec /usr/bin/printenv DISPLAY
@@ -107,31 +107,31 @@ wsl.exe --distribution Ubuntu-24.04 --user alice --exec /usr/bin/printenv WAYLAN
 wsl.exe --distribution Ubuntu-24.04 --user alice --exec /usr/bin/printenv XDG_RUNTIME_DIR
 ```
 
-Devsy uses this fixed noninteractive probe, with a 30-second total deadline. It does not start a login shell or read shell profiles. If these commands cannot read the values used by your GUI application, this discovery method cannot support that setup.
+Devsy runs the same noninteractive probe with a 30-second limit. It does not start a login shell or read shell profiles. If these commands cannot read the values your GUI application uses, discovery cannot support your setup.
 
-Enable discovery in the owner-controlled Devsy context, using the same context as your workspace:
+Enable discovery in the Devsy context your workspace uses:
 
 ```powershell
 devsy context set -o WSLG_ENABLED=true -o WSLG_DISTRO=Ubuntu-24.04 -o WSLG_USER=alice
 ```
 
-The experimental v1 substitution interface exposes only:
+Devsy exposes these values:
 
-| WSL value | Devsy substitution / Compose interpolation key |
+| WSL value | Devsy substitution and Compose interpolation key |
 | --- | --- |
 | `DISPLAY` | `DEVSY_WSLG_DISPLAY` |
 | `WAYLAND_DISPLAY` | `DEVSY_WSLG_WAYLAND_DISPLAY` |
 | `XDG_RUNTIME_DIR` | `DEVSY_WSLG_XDG_RUNTIME_DIR` |
 
-Missing values stay absent, and present empty values stay empty. Discovery sets no container environment and adds no mounts. While discovery is enabled, Compose `containerEnv` values are written literally, so a `$` in them is not interpolated by Compose. Explicitly map the desired values in your project. Audio, GPU, session bus, SSH sockets and `WAYLAND_SOCKET` file descriptors are not imported.
+Missing values stay absent. Empty values stay empty. Discovery sets no container environment and adds no mounts, so map the values you need in your project. While discovery is enabled, Compose does not interpolate `$` in `containerEnv` values. Devsy does not import audio, GPU, session bus, SSH sockets, or `WAYLAND_SOCKET` file descriptors.
 
-These names are reserved while discovery is enabled. Remove assignments to them from your Windows environment, `--init-env`, provider Docker environment and Compose interpolation `.env` files. Even empty assignments, or differently cased Windows names, are rejected. Ordinary `DISPLAY` remains user-controlled. Service `env_file` entries are container environment, separate from interpolation files. The separate `COMPOSE_ENV_FILES` environment override is unsupported while discovery is enabled; use the project `.env` files Devsy passes explicitly.
+Devsy reserves these names while discovery is enabled. Remove assignments to them from your Windows environment, `--init-env`, provider Docker environment, and Compose interpolation `.env` files. Devsy rejects empty assignments and differently cased Windows names. Plain `DISPLAY` stays under your control. Service `env_file` entries set container environment and are separate from interpolation files. `COMPOSE_ENV_FILES` does not work while discovery is enabled. Use the project `.env` files that Devsy passes.
 
 ### X11 configuration mechanics
 
-The following examples show the environment and mount configuration. They require an image with an X11 client, a working WSLg server and a daemon-visible `/tmp/.X11-unix/X0` socket. Hosted CI checks environment transport and socket access; a visible Windows window still needs acceptance testing on your machine. See Microsoft's [WSLg container guidance](https://github.com/microsoft/wslg/blob/main/samples/container/Containers.md) for the underlying socket requirements.
+These examples need an image with an X11 client, a running WSLg server, and a `/tmp/.X11-unix/X0` socket that the Docker daemon can see. Test that a window appears on your machine. See Microsoft's [WSLg container guidance](https://github.com/microsoft/wslg/blob/main/samples/container/Containers.md) for the socket requirements.
 
-For an image or Dockerfile devcontainer, map the discovered display and pass an explicit daemon-side bind using Docker `runArgs`:
+For an image or Dockerfile devcontainer, map the display and bind the socket with Docker `runArgs`:
 
 ```json
 {
@@ -146,9 +146,9 @@ For an image or Dockerfile devcontainer, map the discovered display and pass an 
 }
 ```
 
-`runArgs` sends this explicit Linux source directly to Docker's strict `--mount` validation. Devsy's general `mounts` property still checks bind sources on the Windows client; use the explicit Docker argument for this daemon-only socket path. A missing source fails instead of creating a directory.
+Use `runArgs` because the `mounts` property checks bind sources on the Windows client, and this socket exists only on the daemon. A missing source fails instead of creating a directory.
 
-For Compose, the namespaced values are available when Devsy loads the original Compose files and when the Compose executable processes them:
+For Compose, the values are available when Devsy loads the Compose files and when Compose processes them:
 
 ```yaml
 services:
@@ -166,15 +166,15 @@ services:
           create_host_path: false
 ```
 
-A read-only Unix socket mount still allows communication with its server. Trust projects that receive access to your GUI session. Devsy does not change X11 authorization, socket permissions, user IDs or host networking. `remoteEnv` only affects later remote sessions; it cannot repair original Compose interpolation or configure the container entrypoint.
+A read-only mount of a Unix socket still lets the container talk to the server. Give GUI access only to projects you trust. Devsy does not change X11 authorization, socket permissions, user IDs, or host networking. `remoteEnv` applies only to later remote sessions. It does not affect Compose interpolation or the container entrypoint.
 
 ### Wayland and lifecycle
 
-Wayland values can be referenced using the same explicit mapping, but `XDG_RUNTIME_DIR` is a **host** path with user ownership and permission requirements. Do not copy it blindly into the container or mount the whole host `/run/user` directory. Map only the daemon-visible Wayland socket into a container runtime directory owned by the intended user, or use an absolute socket path with a client that supports it. A native Wayland GUI recipe requires separate runtime acceptance; the X11 example does not prove it.
+Map Wayland values the same way. `XDG_RUNTIME_DIR` is a host path with ownership and permission requirements. Do not copy it into the container or mount the host `/run/user` directory. Map only the Wayland socket into a container runtime directory that the intended user owns, or use an absolute socket path with a client that supports it. This page has no tested Wayland example.
 
-Each up/recreate/build captures fresh display values. Already running containers can be reused only when the recorded distribution, user and values match. Stopped WSLg containers, changed values, newly enabled discovery and opting out all require explicit `devsy workspace up --recreate`. After a WSL restart, use `--recreate` even if the strings match: socket identities may have changed.
+Each `up`, recreate, and build reads the display values again. Devsy reuses a running container only when the recorded distribution, user, and values match. Run `devsy workspace up --recreate` for a stopped WSLg container, changed values, newly enabled discovery, or opting out. After a WSL restart, run it even if the values match, because the sockets may have changed.
 
-Stop and delete never probe WSL. Compose containers record an allowlisted v2 invocation label containing the distribution/user and the three present display values, plus the original Compose paths needed for cleanup. Image containers carry the same display identity marker. These labels are visible to anyone who can inspect the Docker daemon; they contain host connection metadata, not credentials. Retained workspace build and lifecycle logs also record any command output, so a hook or build step that prints `DEVSY_WSLG_*` values stores them there. Cleanup still needs a reachable Docker daemon and, for Compose, the original project files.
+Stop and delete do not probe WSL. Containers carry a label with the distribution, user, and display values. Compose containers also record the Compose paths that cleanup needs. Anyone who can inspect the Docker daemon can read these labels. They hold connection metadata, not credentials. Workspace logs record command output, so a hook or build step that prints `DEVSY_WSLG_*` values stores them there. Cleanup needs a reachable Docker daemon and, for Compose, the original project files.
 
 Disable discovery with:
 
@@ -182,4 +182,4 @@ Disable discovery with:
 devsy context set -o WSLG_ENABLED=false
 ```
 
-Recreate existing WSLg workspaces after changing this setting. Disabled discovery preserves ordinary environment resolution and does not invoke WSL.
+Recreate existing WSLg workspaces after you change this setting. With discovery disabled, Devsy resolves the environment as usual and does not call WSL.

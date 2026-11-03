@@ -3,7 +3,7 @@ title: Reduce build times with remote caching
 sidebar_label: Reduce build times
 ---
 
-Devsy can use a container registry as a remote cache for builds. Prebuild once, and everyone who builds after that reuses the cached layers.
+Devsy can use a container registry as a remote build cache. Later builds reuse the cached layers.
 
 ## Set up
 
@@ -13,7 +13,7 @@ Point Devsy at a registry path, in the form `domain/project/repo`:
 devsy context set -o REGISTRY_CACHE=gcr.io/my-project/my-dev-env
 ```
 
-With the Docker provider, the Docker daemon needs the containerd image store. Merge this into your existing `/etc/docker/daemon.json`, or use **Settings > Docker Engine** in Docker Desktop, and keep any other settings already in the file:
+The Docker provider needs the containerd image store in the Docker daemon. Add this to your existing `/etc/docker/daemon.json`, or use **Settings > Docker Engine** in Docker Desktop. Keep the other settings in the file:
 
 ```json
 {
@@ -23,14 +23,14 @@ With the Docker provider, the Docker daemon needs the containerd image store. Me
 }
 ```
 
-Restart Docker, then check that the containerd image store is active. The output should include `driver-type io.containerd.snapshotter.v1`:
+Restart Docker, then check that the containerd image store is active. The output includes `driver-type io.containerd.snapshotter.v1`:
 
 ```
 docker info --format '{{.DriverStatus}}'
 ```
 
 <Callout type="warn">
-Switching the storage backend does not delete images or containers, but items stored under the old backend are not visible while the new one is active.
+Switching the storage backend keeps images and containers. Items stored under the old backend are hidden while the new one is active.
 </Callout>
 
 ## Populate the cache
@@ -41,12 +41,12 @@ Build the workspace image once to fill the cache:
 devsy workspace build my-workspace
 ```
 
-Later builds pull from the cache and build only what changed.
+Later builds pull cached layers and rebuild only what changed.
 
 ## How Devsy detects changes
 
-Devsy reads your Dockerfile and `devcontainer.json`, finds the files that affect the build, and hashes their contents into the image tag. When a file changes, the hash changes and Devsy rebuilds, reusing the cached layers it can. Follow Docker's Dockerfile best practices to keep rebuilds small.
+Devsy finds the files that affect the build from your Dockerfile and `devcontainer.json` and hashes their contents into the image tag. When a file changes, the hash changes and Devsy rebuilds, reusing the cached layers it can. Follow Docker's Dockerfile best practices to keep rebuilds small.
 
 ## Builds in Kubernetes
 
-With the Kubernetes driver and no container runtime on your machine, Devsy builds the image in the cluster with Kaniko. Kaniko builds in userspace without a Docker daemon. Whether it can run without root depends on the base image and Dockerfile commands.
+With the Kubernetes driver and no container runtime on your machine, Devsy builds the image in the cluster with Kaniko. Kaniko builds without a Docker daemon. Whether the build runs without root depends on the base image and Dockerfile commands.
