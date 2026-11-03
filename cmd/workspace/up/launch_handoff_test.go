@@ -1,7 +1,6 @@
 package up
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"testing"
@@ -20,12 +19,7 @@ func TestDetachedWorkerCommitsBeforeWorkspaceWork(t *testing.T) {
 		Name: task.WorkerProcessName(tk.ID()), Lease: tk.LaunchLease(), AtomicOwnership: true,
 		OnPrepared: tk.PrepareProcessOwnership,
 		OnStarted: func(ref command.ProcessRef) error {
-			if err := tk.PublishProcess(ref); err != nil {
-				return err
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), detachedLaunchTimeout)
-			defer cancel()
-			return tk.CommitLaunch(ctx)
+			return commitDetachedLaunch(tk, ref)
 		},
 	}, func() (*exec.Cmd, error) {
 		child := exec.Command(

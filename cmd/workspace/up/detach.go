@@ -136,12 +136,7 @@ func launchDetached(t *task.Task, invocationEnv []string) error {
 		AtomicOwnership: true,
 		OnPrepared:      t.PrepareProcessOwnership,
 		OnStarted: func(ref command.ProcessRef) error {
-			if err := t.PublishProcess(ref); err != nil {
-				return err
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), detachedLaunchTimeout)
-			defer cancel()
-			return t.CommitLaunch(ctx)
+			return commitDetachedLaunch(t, ref)
 		},
 	}, func() (*exec.Cmd, error) {
 		return &exec.Cmd{
@@ -151,6 +146,15 @@ func launchDetached(t *task.Task, invocationEnv []string) error {
 			Dir:  wd(),
 		}, nil
 	})
+}
+
+func commitDetachedLaunch(t *task.Task, ref command.ProcessRef) error {
+	if err := t.PublishProcess(ref); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), detachedLaunchTimeout)
+	defer cancel()
+	return t.CommitLaunch(ctx)
 }
 
 // detachedArgs strips --detach so it isn't duplicated alongside --task-id.
