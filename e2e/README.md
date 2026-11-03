@@ -30,6 +30,8 @@ mise run cli:test:e2e:suite up-docker-compose
 mise run cli:test:e2e:focus "pattern"
 ```
 
+The `with env vars` workspace spec uses a local Docker fixture. Its repeated `up` calls test environment changes without waiting for remote repository inspection.
+
 `cli:test:e2e:act:focus` runs a focused pattern through [act](https://github.com/nektos/act).
 
 The Docker lifecycle regression covers values with `=` from `--workspace-env` and

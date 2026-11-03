@@ -43,11 +43,10 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), dockerValue)
 		framework.ExpectNoError(err)
 
-		name := "vscode-remote-try-python"
+		name := framework.CopyTestdata("tests/up/testdata/docker", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, name)
 
-		// Wait for devsy workspace to come online (deadline: 30s)
-		err = f.DevsyUp(ctx, "https://github.com/microsoft/vscode-remote-try-python.git")
+		err = f.DevsyUp(ctx, name)
 		framework.ExpectNoError(err)
 
 		// check env var
