@@ -23,7 +23,7 @@ func TestDetachedWorkerCommitsBeforeWorkspaceWork(t *testing.T) {
 			if err := tk.PublishProcess(ref); err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), detachedLaunchTimeout)
 			defer cancel()
 			return tk.CommitLaunch(ctx)
 		},
@@ -52,6 +52,7 @@ func TestDetachedWorkerHandoffHelper(t *testing.T) {
 	if id == "" {
 		return
 	}
+	time.Sleep(6 * time.Second)
 	cmd := &UpCmd{taskID: id}
 	tk, err := cmd.openTask()
 	require.NoError(t, err)

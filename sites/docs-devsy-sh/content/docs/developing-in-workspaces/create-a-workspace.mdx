@@ -104,6 +104,8 @@ devsy workspace logs WORKSPACE_NAME --source setup --run RUN_ID --result-format=
 
 The run ID appears in the result of `devsy workspace up` and in the output of a detached creation task. Use `--list` to find IDs for earlier runs.
 
+For a detached creation, Devsy waits up to 30 seconds for the background worker to register. Workspace setup continues after the command returns. If the worker cannot register within that time, the launch fails and Devsy cleans it up.
+
 - Hooks that run after `waitFor` (default `updateContentCommand`) can finish after `up` returns. Their output joins the same run. Add `--follow` to watch them.
 - A hook that an earlier attempt already marked is skipped with the reason `already_attempted`. This does not mean the earlier attempt succeeded. Check that run.
 - `postAttachCommand` runs on every attach. Each run is recorded separately.
