@@ -72,6 +72,46 @@ func (s *ExecutablePathTestSuite) TestShortVariableFormWithSpacesInPathIsNotSpli
 	s.Equal("helper ran with init", output)
 }
 
+func (s *ExecutablePathTestSuite) TestCommandVariableWithCustomIFSIsNotSplit() {
+	output, err := s.run(
+		"IFS=a; ${SSH_PROVIDER} init",
+		"SSH_PROVIDER="+s.executable,
+		helperProcessEnv+"=1",
+	)
+
+	s.Require().NoError(err)
+	s.Equal("helper ran with init", output)
+}
+
+func (s *ExecutablePathTestSuite) TestCustomIFSAlsoSplitsPathsWithoutSpaces() {
+	executable := filepath.Join(s.T().TempDir(), "a-provider"+filepath.Ext(s.executable))
+	s.copyTestBinary(executable)
+	s.executablePaths["CMD"] = executable
+
+	output, err := s.run(
+		"IFS=a; $CMD init",
+		"CMD="+executable,
+		helperProcessEnv+"=1",
+	)
+
+	s.Require().NoError(err)
+	s.Equal("helper ran with init", output)
+}
+
+func (s *ExecutablePathTestSuite) TestWindowsProviderVariableCaseIsNotSignificant() {
+	if runtime.GOOS != "windows" {
+		s.T().Skip()
+	}
+	output, err := s.run(
+		"$ssh_provider init",
+		"SSH_PROVIDER="+s.executable,
+		helperProcessEnv+"=1",
+	)
+
+	s.Require().NoError(err)
+	s.Equal("helper ran with init", output)
+}
+
 func (s *ExecutablePathTestSuite) TestCommandVariableWithArgumentsStillSplits() {
 	output, err := s.run("${CMD} world", "CMD=echo hello")
 
