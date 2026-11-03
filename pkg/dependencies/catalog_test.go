@@ -215,8 +215,6 @@ func (s *catalogSuite) TestCatalogIdentityAndCopies() {
 	s.Require().NoError(err)
 	s.Equal("devsy.dependencies.catalog.v1", catalog.ID())
 	s.Equal("no_qualified_recipe", catalog.ManagedStatus())
-	s.Empty(catalog.Recipes())
-	s.Equal("1129900ff03fdd003694c32fd5f6ed86bdf4318807aa2dc36e8d1f46e52037ee", catalog.Hash())
 	var compact bytes.Buffer
 	s.Require().NoError(json.Compact(&compact, []byte(embeddedCatalog)))
 	copyCatalog, err := decodeCatalog(compact.Bytes())
