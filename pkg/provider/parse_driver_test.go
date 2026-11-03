@@ -27,7 +27,7 @@ exec:
 		{name: "kubernetes literal", driver: KubernetesDriver, wantErr: false},
 		{name: "templated braces", driver: "${AWS_DEPLOYMENT_MODE}", wantErr: false},
 		{name: "templated bare", driver: "$AWS_DEPLOYMENT_MODE", wantErr: false},
-		{name: "invalid literal", driver: "podman", wantErr: true},
+		{name: "invalid literal", driver: podmanProviderName, wantErr: true},
 	}
 
 	for _, tc := range cases {

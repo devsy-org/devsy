@@ -328,6 +328,9 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 		if embedded := embeddedProviderConfig(providerConfig.Source.Raw); embedded != nil {
 			providerConfig.Exec = embedded.Exec
 			providerConfig.Agent.Exec = embedded.Agent.Exec
+			if providerConfig.Source.Raw == DockerDriver {
+				providerConfig.Agent.Docker.Install = embedded.Agent.Docker.Install
+			}
 		}
 	}
 
