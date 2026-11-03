@@ -28,7 +28,10 @@ func (s *providerProcessSupervisor) start(
 ) (*exec.Cmd, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.forced || ctx.Err() != nil {
+	if s.forced {
+		return nil, context.Canceled
+	}
+	if ctx.Err() != nil {
 		return nil, context.Cause(ctx)
 	}
 	cmd, err := startProviderExecRetry(ctx, newCommand)
@@ -69,19 +72,20 @@ func (s *providerProcessSupervisor) reaped(cmd *exec.Cmd) {
 	s.mu.Unlock()
 }
 
-func (s *providerProcessSupervisor) settled() <-chan struct{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, done := range s.children {
-		return done
-	}
-	return nil
+func (s *providerProcessSupervisor) force(cancel context.CancelFunc) {
+	s.terminate(cancel)
 }
 
-func (s *providerProcessSupervisor) force(cancel context.CancelFunc) {
+func (s *providerProcessSupervisor) stop() {
+	s.terminate(nil)
+}
+
+func (s *providerProcessSupervisor) terminate(cancel context.CancelFunc) {
 	s.mu.Lock()
 	s.forced = true
-	cancel()
+	if cancel != nil {
+		cancel()
+	}
 	children := make([]*exec.Cmd, 0, len(s.children))
 	for cmd := range s.children {
 		children = append(children, cmd)
@@ -244,7 +248,6 @@ func errStringKind(err error) string {
 }
 
 type providerShellExecution struct {
-	ctx        context.Context
 	dir        string
 	token      string
 	root       *os.Root
@@ -288,7 +291,6 @@ func RunProviderShell(ctx context.Context, scriptPath, forcePath, ackPath string
 		})
 	}()
 	execution := providerShellExecution{
-		ctx:        ctx,
 		dir:        dir,
 		root:       root,
 		token:      token,
@@ -336,16 +338,15 @@ func (p *providerShellExecution) force(pollErr error) error {
 func (p *providerShellExecution) completed(err error) error {
 	forced, pollErr := providerForcePresent(p.dir)
 	if pollErr != nil {
+		p.supervisor.force(p.cancel)
 		return pollErr
 	}
 	if forced {
 		return p.canceled()
 	}
+	p.supervisor.stop()
 	if earlyErr := providerShellEarlyError(err); earlyErr != nil {
 		return earlyErr
-	}
-	if err := p.waitForChildren(); err != nil {
-		return err
 	}
 	if ackErr := providerWriteAck(p.root, p.token); ackErr != nil {
 		return ackErr
@@ -374,24 +375,4 @@ func (p *providerShellExecution) canceled() error {
 		return err
 	}
 	return context.Canceled
-}
-
-func (p *providerShellExecution) waitForChildren() error {
-	for done := p.supervisor.settled(); done != nil; done = p.supervisor.settled() {
-		select {
-		case <-done:
-		case <-p.ctx.Done():
-			return p.canceled()
-		case <-time.After(100 * time.Millisecond):
-			forced, pollErr := providerForcePresent(p.dir)
-			if pollErr != nil {
-				p.supervisor.force(p.cancel)
-				return pollErr
-			}
-			if forced {
-				return p.canceled()
-			}
-		}
-	}
-	return nil
 }

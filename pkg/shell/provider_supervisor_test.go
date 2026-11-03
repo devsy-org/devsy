@@ -303,6 +303,68 @@ func TestRunProviderShellNormalExitStatuses(t *testing.T) {
 	}
 }
 
+func TestRunProviderShellNormalCompletionReapsBackgroundChild(t *testing.T) {
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	command := strconv.Quote(binary) + " -test.run=^TestProviderShellTrackedChild$"
+	if runtime.GOOS == providerWindowsOS {
+		command = strings.ReplaceAll(command, `\`, `/`)
+	}
+	scriptPath, forcePath, ackPath := providerShellFixture(t, "")
+	pidPath := filepath.Join(filepath.Dir(scriptPath), "pid")
+	script := "export DEVSY_PROVIDER_SHELL_CHILD=1 DEVSY_PROVIDER_CHILD_PID=" +
+		strconv.Quote(pidPath) + "; " + command +
+		` & while [ ! -s "$DEVSY_PROVIDER_CHILD_PID" ]; do :; done; printf finished`
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	cmd := providerShellCommand(t, scriptPath, forcePath, ackPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		cleanupProviderShellChild(pidPath)
+	})
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		require.NoError(t, err, stderr.String())
+	case <-time.After(5 * time.Second):
+		t.Fatal("normal provider completion waited for a background child")
+	}
+	require.Contains(t, stdout.String(), "finished")
+	ack, err := providerTestReadAck(ackPath)
+	require.NoError(t, err)
+	require.Equal(t, providerTestAckToken, string(ack))
+	root, err := os.OpenRoot(filepath.Dir(pidPath))
+	require.NoError(t, err)
+	pidBytes, err := root.ReadFile("pid")
+	require.NoError(t, errors.Join(err, root.Close()))
+	pid, err := strconv.Atoi(string(pidBytes))
+	require.NoError(t, err)
+	require.NoError(t, providerChildReaped(pid))
+}
+
+func cleanupProviderShellChild(path string) {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return
+	}
+	pidBytes, readErr := root.ReadFile("pid")
+	_ = root.Close()
+	if readErr != nil {
+		return
+	}
+	pid, err := strconv.Atoi(string(pidBytes))
+	if err != nil {
+		return
+	}
+	process, err := os.FindProcess(pid)
+	if err == nil {
+		_ = process.Kill()
+	}
+}
+
 func TestRunProviderShellRawStreams(t *testing.T) {
 	binary, err := os.Executable()
 	require.NoError(t, err)

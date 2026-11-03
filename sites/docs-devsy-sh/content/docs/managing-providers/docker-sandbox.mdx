@@ -48,7 +48,7 @@ Stopping a machine preserves its guest sources, images, containers, and volumes.
 
 Provider state is stored under your user configuration directory at `devsy-provider-docker-sandbox/state-v1`. If creation fails, do not remove that directory or manually reuse a sandbox name. The provider reports the exact machine key and any unresolved child attempt or backend operation. A lost VM is never silently recreated in the same machine generation.
 
-After installation, find the installed binary with `devsy provider list --result-format=json`. Read `config.binaries.DOCKER_SANDBOX_PROVIDER` for the asset name. Devsy stores it under its data directory at `contexts/<context>/providers/<alias>/binaries/docker_sandbox_provider/<asset-name>`. With `DEVSY_HOME` set, that variable names the data directory. Otherwise Devsy uses `~/.devsy` on macOS and Linux, or `%LOCALAPPDATA%\devsy` on Windows. Use the resolved local executable, not the asset URL.
+After installation, run `devsy provider list --result-format=json`. In `config.binaries.DOCKER_SANDBOX_PROVIDER`, select the record whose `os` and `arch` match your host. An absolute `path` is the executable. For a remote archive, use `archivePath` under Devsy's data directory at `contexts/<context>/providers/<alias>/binaries/docker_sandbox_provider/`. Otherwise, use the record's `name` in that directory. If `name` is empty, use the base name of `path` instead. With `DEVSY_HOME` set, that variable names the data directory. Otherwise Devsy uses `~/.devsy` on macOS and Linux, or `%LOCALAPPDATA%\devsy` on Windows. Use the resolved local executable, not the asset URL.
 
 The provider executable installed with the provider accepts:
 
