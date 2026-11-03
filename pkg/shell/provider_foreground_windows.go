@@ -34,10 +34,10 @@ func PrepareProviderShellForeground(parentPID int) (func(), error) {
 	}
 	ok, _, err = providerSetConsoleCtrlHandler.Call(0, 0)
 	if ok == 0 {
-		providerSetConsoleCtrlHandler.Call(providerConsoleHandler, 0)
+		_, _, _ = providerSetConsoleCtrlHandler.Call(providerConsoleHandler, 0)
 		return nil, fmt.Errorf("enable child console interrupts: %w", err)
 	}
-	return func() { providerSetConsoleCtrlHandler.Call(providerConsoleHandler, 0) }, nil
+	return func() { _, _, _ = providerSetConsoleCtrlHandler.Call(providerConsoleHandler, 0) }, nil
 }
 
 func newProviderShellParentMonitor(parentPID int) (func() bool, func(), error) {

@@ -21,10 +21,6 @@ func providerPrivateDirectory(path string, info os.FileInfo) bool {
 	if err != nil {
 		return false
 	}
-	control, _, err := sd.Control()
-	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
-		return false
-	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return false
@@ -33,68 +29,104 @@ func providerPrivateDirectory(path string, info os.FileInfo) bool {
 }
 
 func providerPrivateDACL(sd *windows.SECURITY_DESCRIPTOR, user *windows.SID) bool {
-	control, _, err := sd.Control()
-	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
-		return false
-	}
-	acl, _, err := sd.DACL()
-	if err != nil || acl == nil {
+	acl, ok := providerProtectedACL(sd)
+	if !ok {
 		return false
 	}
 	system, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
 	if err != nil {
 		return false
 	}
-	getAce := windows.NewLazySystemDLL("advapi32.dll").NewProc("GetAce")
-	var directory, descendants [2]uint32
+	var grants providerACLGrants
 	for i := uint32(0); i < uint32(acl.AceCount); i++ {
-		var ptr unsafe.Pointer
-		ok, _, _ := getAce.Call(
-			uintptr(unsafe.Pointer(acl)),
-			uintptr(i),
-			uintptr(unsafe.Pointer(&ptr)),
-		)
-		if ok == 0 || ptr == nil {
+		ace, ok := providerACLAt(acl, i)
+		if !ok || !grants.allow(ace, user, system) {
 			return false
-		}
-		ace := (*windows.ACCESS_ALLOWED_ACE)(ptr)
-		flags := ace.Header.AceFlags
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
-			flags & ^uint8(
-				windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE|windows.INHERIT_ONLY_ACE,
-			) != 0 {
-			return false
-		}
-		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		index := 0
-		if sid.Equals(system) {
-			index = 1
-		} else if !sid.Equals(user) {
-			return false
-		}
-		mask := uint32(ace.Mask)
-		const genericAll = uint32(0x10000000)
-		const fileAll = uint32(0x001f01ff)
-		if mask & ^uint32(genericAll|fileAll) != 0 {
-			return false
-		}
-		if mask&genericAll != 0 {
-			mask |= fileAll
-		}
-		if flags&windows.INHERIT_ONLY_ACE == 0 {
-			directory[index] |= mask
-		}
-		if flags&(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE) == windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE {
-			descendants[index] |= mask
 		}
 	}
+	return grants.private(user.Equals(system))
+}
+
+func providerProtectedACL(sd *windows.SECURITY_DESCRIPTOR) (*windows.ACL, bool) {
+	control, _, err := sd.Control()
+	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
+		return nil, false
+	}
+	acl, _, err := sd.DACL()
+	return acl, err == nil && acl != nil
+}
+
+func providerACLAt(acl *windows.ACL, index uint32) (*windows.ACCESS_ALLOWED_ACE, bool) {
+	var ace *windows.ACCESS_ALLOWED_ACE
+	if err := windows.GetAce(acl, index, &ace); err != nil {
+		return nil, false
+	}
+	return ace, ace != nil
+}
+
+type providerACLGrants struct {
+	directory   [2]uint32
+	descendants [2]uint32
+}
+
+func (g *providerACLGrants) allow(ace *windows.ACCESS_ALLOWED_ACE, user, system *windows.SID) bool {
+	mask, ok := providerACEMask(ace)
+	if !ok {
+		return false
+	}
+	index, ok := providerACETrustee(ace, user, system)
+	if !ok {
+		return false
+	}
+	flags := ace.Header.AceFlags
+	if flags&windows.INHERIT_ONLY_ACE == 0 {
+		g.directory[index] |= mask
+	}
+	if flags&(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE) ==
+		windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE {
+		g.descendants[index] |= mask
+	}
+	return true
+}
+
+func providerACEMask(ace *windows.ACCESS_ALLOWED_ACE) (uint32, bool) {
+	flags := ace.Header.AceFlags
+	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
+		flags & ^uint8(
+			windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE|windows.INHERIT_ONLY_ACE,
+		) != 0 {
+		return 0, false
+	}
+	const genericAll = uint32(0x10000000)
 	const fileAll = uint32(0x001f01ff)
-	if user.Equals(system) {
-		return directory[1]&fileAll == fileAll && descendants[1]&fileAll == fileAll
+	mask := uint32(ace.Mask)
+	if mask & ^uint32(genericAll|fileAll) != 0 {
+		return 0, false
 	}
-	return directory[0]&fileAll == fileAll && directory[1]&fileAll == fileAll &&
-		descendants[0]&fileAll == fileAll &&
-		descendants[1]&fileAll == fileAll
+	if mask&genericAll != 0 {
+		mask |= fileAll
+	}
+	return mask, true
+}
+
+func providerACETrustee(ace *windows.ACCESS_ALLOWED_ACE, user, system *windows.SID) (int, bool) {
+	sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+	if sid.Equals(system) {
+		return 1, true
+	}
+	if sid.Equals(user) {
+		return 0, true
+	}
+	return 0, false
+}
+
+func (g providerACLGrants) private(userIsSystem bool) bool {
+	const fileAll = uint32(0x001f01ff)
+	if userIsSystem {
+		return g.directory[1]&fileAll == fileAll && g.descendants[1]&fileAll == fileAll
+	}
+	return g.directory[0]&fileAll == fileAll && g.directory[1]&fileAll == fileAll &&
+		g.descendants[0]&fileAll == fileAll && g.descendants[1]&fileAll == fileAll
 }
 
 func providerPrivateScript(info os.FileInfo) bool {
