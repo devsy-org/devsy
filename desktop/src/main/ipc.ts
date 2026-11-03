@@ -59,6 +59,14 @@ const dependencyInspectionTools: Record<string, true> = {
   "apple-container": true,
   "kubernetes-config": true,
 }
+const secretProtectionDescriptions: Record<string, string> = {
+  "set-passphrase": "Set a passphrase for all file-backed secrets?",
+  "change-passphrase": "Change the passphrase for all file-backed secrets?",
+  "remove-passphrase":
+    "Remove passphrase protection from all file-backed secrets?",
+  remember: "Remember the secrets passphrase in your OS keychain?",
+  forget: "Forget the secrets passphrase stored in your OS keychain?",
+}
 
 interface SecretIpcFailure {
   ok: false
@@ -92,6 +100,74 @@ function validateSecretUnlockInput(args: unknown): SecretUnlockInput {
   )
     return { ok: false, message: "Enter a non-empty passphrase." }
   return { ok: true, requestId: input.requestId, passphrase, remember }
+}
+
+function parseSecretProtectionInput(
+  args: unknown,
+):
+  | SecretIpcFailure
+  | { action: string; newPassphrase?: string; currentPassphrase?: string } {
+  if (!args || typeof args !== "object")
+    return { ok: false, message: "Unknown protection action." }
+  const input = args as {
+    action?: unknown
+    newPassphrase?: unknown
+    currentPassphrase?: unknown
+  }
+  if (
+    typeof input.action !== "string" ||
+    !Object.hasOwn(secretProtectionDescriptions, input.action)
+  )
+    return { ok: false, message: "Unknown protection action." }
+  if (
+    input.currentPassphrase !== undefined &&
+    typeof input.currentPassphrase !== "string"
+  )
+    return { ok: false, message: "Enter a valid current passphrase." }
+  if (
+    input.newPassphrase !== undefined &&
+    typeof input.newPassphrase !== "string"
+  )
+    return { ok: false, message: "Enter a non-empty passphrase." }
+  return {
+    action: input.action,
+    currentPassphrase: input.currentPassphrase,
+    newPassphrase: input.newPassphrase,
+  }
+}
+
+function secretProtectionFailure(
+  err: unknown,
+  currentPassphrase: string | undefined,
+  newPassphrase: string | undefined,
+) {
+  const redact = (value: string) =>
+    [currentPassphrase, newPassphrase].reduce<string>(
+      (text, credential) =>
+        credential ? text.replaceAll(credential, "***") : text,
+      value,
+    )
+  const error = (err as { cliError?: CLIError } | null)?.cliError
+  const cliError = error
+    ? {
+        code: redact(error.code),
+        message: redact(error.message),
+        hint: error.hint ? redact(error.hint) : undefined,
+        context: error.context
+          ? Object.fromEntries(
+              Object.entries(error.context).map(([key, value]) => [
+                redact(key),
+                redact(value),
+              ]),
+            )
+          : undefined,
+      }
+    : undefined
+  return {
+    ok: false,
+    message: cliError?.message ?? "Secret protection operation failed.",
+    cliError,
+  }
 }
 
 function providerVersionFlags(tag: unknown, required = false): string[] {
@@ -699,125 +775,57 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     cli.setSessionPassphrase(value)
   }
 
-  ipcMain.handle(
-    "secret_protection_action",
-    async (
-      event,
-      args: {
-        action: string
-        newPassphrase?: string
-        currentPassphrase?: string
-      },
-    ) => {
-      const win = getMainWindow()
-      if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
-        return secretRequestDenied
-      const allowed = [
-        "set-passphrase",
-        "change-passphrase",
-        "remove-passphrase",
-        "remember",
-        "forget",
-      ]
-      if (!args || typeof args !== "object" || !allowed.includes(args.action))
-        return { ok: false, message: "Unknown protection action." }
-      const action = args.action
-      const { newPassphrase, currentPassphrase } = args
-      if (
-        currentPassphrase !== undefined &&
-        typeof currentPassphrase !== "string"
+  ipcMain.handle("secret_protection_action", async (event, args: unknown) => {
+    const win = getMainWindow()
+    if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
+      return secretRequestDenied
+    const input = parseSecretProtectionInput(args)
+    if ("ok" in input) return input
+    const { action, newPassphrase, currentPassphrase } = input
+    const options: CliInvocationOptions = {
+      allowUnlockPrompt: false,
+      ...(currentPassphrase !== undefined
+        ? { env: { DEVSY_SECRETS_PASSPHRASE: currentPassphrase } }
+        : {}),
+    }
+    const cacheGeneration = secretCacheGeneration
+    const changesPassphrase =
+      action === "set-passphrase" || action === "change-passphrase"
+    try {
+      const command = ["secret", "protection", action]
+      if (changesPassphrase) {
+        if (typeof newPassphrase !== "string" || !newPassphrase.trim())
+          return { ok: false, message: "Enter a non-empty passphrase." }
+      }
+      const confirmation = await dialog.showMessageBox(win, {
+        type: "warning",
+        title: "Secret protection",
+        message: secretProtectionDescriptions[action],
+        detail: "This changes the shared secret store across all contexts.",
+        buttons: ["Cancel", "Continue"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      const approvalFailure = protectionApprovalFailure(
+        event,
+        cacheGeneration,
+        confirmation.response,
       )
-        return { ok: false, message: "Enter a valid current passphrase." }
-      if (newPassphrase !== undefined && typeof newPassphrase !== "string")
-        return { ok: false, message: "Enter a non-empty passphrase." }
-      const options: CliInvocationOptions = {
-        allowUnlockPrompt: false,
-        ...(currentPassphrase !== undefined
-          ? { env: { DEVSY_SECRETS_PASSPHRASE: currentPassphrase } }
-          : {}),
+      if (approvalFailure) return approvalFailure
+      if (changesPassphrase && typeof newPassphrase === "string") {
+        await cli.runRawStdin([...command, "--stdin"], newPassphrase, options)
+        updateProtectedSessionCredential(event, cacheGeneration, newPassphrase)
+      } else {
+        await cli.runRaw(command, options)
+        if (action === "remove-passphrase")
+          updateProtectedSessionCredential(event, cacheGeneration, undefined)
       }
-      const cacheGeneration = secretCacheGeneration
-      const changesPassphrase = [
-        "set-passphrase",
-        "change-passphrase",
-      ].includes(action)
-      try {
-        const command = ["secret", "protection", action]
-        if (changesPassphrase) {
-          if (typeof newPassphrase !== "string" || !newPassphrase.trim())
-            return { ok: false, message: "Enter a non-empty passphrase." }
-        }
-        const descriptions: Record<string, string> = {
-          "set-passphrase": "Set a passphrase for all file-backed secrets?",
-          "change-passphrase":
-            "Change the passphrase for all file-backed secrets?",
-          "remove-passphrase":
-            "Remove passphrase protection from all file-backed secrets?",
-          remember: "Remember the secrets passphrase in your OS keychain?",
-          forget: "Forget the secrets passphrase stored in your OS keychain?",
-        }
-        const confirmation = await dialog.showMessageBox(win, {
-          type: "warning",
-          title: "Secret protection",
-          message: descriptions[action],
-          detail: "This changes the shared secret store across all contexts.",
-          buttons: ["Cancel", "Continue"],
-          defaultId: 0,
-          cancelId: 0,
-          noLink: true,
-        })
-        const approvalFailure = protectionApprovalFailure(
-          event,
-          cacheGeneration,
-          confirmation.response,
-        )
-        if (approvalFailure) return approvalFailure
-        if (changesPassphrase && typeof newPassphrase === "string") {
-          await cli.runRawStdin([...command, "--stdin"], newPassphrase, options)
-          updateProtectedSessionCredential(
-            event,
-            cacheGeneration,
-            newPassphrase,
-          )
-        } else {
-          await cli.runRaw(command, options)
-          if (action === "remove-passphrase")
-            updateProtectedSessionCredential(event, cacheGeneration, undefined)
-        }
-        return { ok: true }
-      } catch (err) {
-        // Preserve structured recovery information without sending credential
-        // material (or arbitrary error properties) back across the IPC boundary.
-        const redact = (value: string) =>
-          [currentPassphrase, newPassphrase].reduce<string>(
-            (text, credential) =>
-              credential ? text.replaceAll(credential, "***") : text,
-            value,
-          )
-        const error = (err as { cliError?: CLIError } | null)?.cliError
-        const cliError = error
-          ? {
-              code: redact(error.code),
-              message: redact(error.message),
-              hint: error.hint ? redact(error.hint) : undefined,
-              context: error.context
-                ? Object.fromEntries(
-                    Object.entries(error.context).map(([key, value]) => [
-                      redact(key),
-                      redact(value),
-                    ]),
-                  )
-                : undefined,
-            }
-          : undefined
-        return {
-          ok: false,
-          message: cliError?.message ?? "Secret protection operation failed.",
-          cliError,
-        }
-      }
-    },
-  )
+      return { ok: true }
+    } catch (err) {
+      return secretProtectionFailure(err, currentPassphrase, newPassphrase)
+    }
+  })
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess

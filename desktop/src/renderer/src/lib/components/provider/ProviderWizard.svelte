@@ -334,24 +334,30 @@ function nameExists(name: string): boolean {
   return get(providers).some((p) => p.name === name)
 }
 
-async function handleSelect() {
-  const operationSession = activeSession
-  const src = source.trim()
+function selectedInstallationName(src: string): string | undefined {
   if (!src) {
     error = "Provider source is required"
-    return
+    return undefined
   }
   if (needsCustomName && !customName.trim()) {
     error = "Enter an installation name for this custom source."
-    return
+    return undefined
   }
   const name = customName.trim() || src
-  const providerSource =
-    selectedProviderOption && name === src ? undefined : src
   if (nameExists(name)) {
     error = `Provider "${name}" already exists. Choose a different name.`
-    return
+    return undefined
   }
+  return name
+}
+
+async function handleSelect() {
+  const operationSession = activeSession
+  const src = source.trim()
+  const name = selectedInstallationName(src)
+  if (name === undefined) return
+  const providerSource =
+    selectedProviderOption && name === src ? undefined : src
 
   error = ""
   adding = true
