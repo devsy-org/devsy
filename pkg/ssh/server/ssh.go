@@ -179,7 +179,7 @@ func NewServer(addr string, opts ServerOptions) (Server, error) {
 		workdir:     opts.Workdir,
 		reuseSock:   opts.ReuseSock,
 		currentUser: currentUser.Username,
-		sshServer:   buildSSHServer(addr, currentUser.Username),
+		sshServer:   buildSSHServer(addr),
 	}
 
 	if len(opts.Keys) > 0 {
@@ -204,7 +204,7 @@ func NewServer(addr string, opts ServerOptions) (Server, error) {
 
 // buildSSHServer constructs the underlying ssh.Server with its port
 // forwarding, channel, request, and SFTP subsystem handlers wired up.
-func buildSSHServer(addr, currentUsername string) ssh.Server {
+func buildSSHServer(addr string) ssh.Server {
 	forwardHandler := &ssh.ForwardedTCPHandler{}
 	forwardedUnixHandler := &ssh.ForwardedUnixHandler{}
 	keepAliveInterval, keepAliveCountMax := keepAliveConfig()
@@ -235,7 +235,7 @@ func buildSSHServer(addr, currentUsername string) ssh.Server {
 		},
 		SubsystemHandlers: map[string]ssh.SubsystemHandler{
 			"sftp": func(s ssh.Session) {
-				sftpHandler(s, currentUsername)
+				sftpHandler(s)
 			},
 		},
 	}

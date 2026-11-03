@@ -167,6 +167,30 @@ func TestSameEffectiveGroupIDsIgnoresOrderDuplicatesAndPrimaryRepresentation(t *
 	require.False(t, sameEffectiveGroupIDs(201, nil, 201, []int{-1}))
 }
 
+func TestPrepareExecIdentityForNamedSFTPAccountRetainsGroups(t *testing.T) {
+	account, lookups := execIdentityTestLookups()
+	lookups.userByID = func(id string) (*user.User, error) {
+		require.Equal(t, account.Uid, id)
+		return &user.User{Username: "other", Uid: id, Gid: "3000", HomeDir: "/home/other"}, nil
+	}
+	lookups.groups = func(got *user.User) ([]string, error) {
+		require.Same(t, account, got)
+		return []string{"2001", "2002"}, nil
+	}
+
+	cmd := exec.Command("true")
+	handled, err := prepareExecIdentityForAccountWithLookups(cmd, account.Uid, account, lookups)
+	require.NoError(t, err)
+	require.True(t, handled)
+	require.NotNil(t, cmd.SysProcAttr)
+	require.NotNil(t, cmd.SysProcAttr.Credential)
+	require.Equal(t, uint32(1000), cmd.SysProcAttr.Credential.Uid)
+	require.Equal(t, uint32(2000), cmd.SysProcAttr.Credential.Gid)
+	require.Equal(t, []uint32{2001, 2002}, cmd.SysProcAttr.Credential.Groups)
+	require.Equal(t, "alice", environmentMap(cmd.Environ())["USER"])
+	require.Equal(t, "/home/alice", cmd.Dir)
+}
+
 func TestPrepareExecIdentityLeavesNamedUserToExistingPath(t *testing.T) {
 	cmd := exec.Command("true")
 	attrs := &syscall.SysProcAttr{Setpgid: true}

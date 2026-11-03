@@ -55,7 +55,7 @@ func NewContainerServer(addr string, workdir string) (Server, error) {
 			},
 			SubsystemHandlers: map[string]ssh.SubsystemHandler{
 				"sftp": func(s ssh.Session) {
-					sftpHandler(s, "")
+					sftpHandler(s)
 				},
 			},
 		},
