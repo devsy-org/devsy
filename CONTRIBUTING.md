@@ -214,7 +214,7 @@ When your provider is ready:
 1. Add your provider to `community.yaml`.
 2. Document it in `sites/docs-devsy-sh/content/docs/managing-providers/manage-providers.mdx`.
 
-The docs and the UI then list your provider.
+The Desktop provider wizard does not read `community.yaml`. Its additional provider list comes from `devsy-org` repositories whose names start with `devsy-provider-`.
 
 ## Desktop deep links
 

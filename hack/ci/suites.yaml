@@ -1,18 +1,3 @@
-# Test tier manifest for the PR workflow (.github/workflows/pr-ci.yml).
-#
-# This file is the single place that defines what tests exist, where they run
-# and how they run. The workflow contains no per-suite conditions; it asks
-# `hack/ci matrix` for its job matrices and `hack/ci unit|e2e|setup` for the
-# behaviour. hack/ci/manifest_test.go fails when a Ginkgo label or a Go test
-# package is not assigned to a tier here.
-#
-# To add a test:
-#   - Go unit test in an ordinary package: nothing to do, it is discovered.
-#   - Go test in a package under test/ or e2e/ that must run as a unit test:
-#     add the package to a `unit.steps` entry.
-#   - Ginkgo spec: add its label to `e2e.suites` (or to `e2e.ungated` with a
-#     reason when another workflow runs it).
-
 unit:
   # One job per runner; every runner executes the steps whose `os` matches.
   runners:

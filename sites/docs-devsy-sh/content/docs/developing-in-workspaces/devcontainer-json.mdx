@@ -98,7 +98,7 @@ After you edit the configuration, apply it without deleting the workspace:
 devsy workspace up my-workspace --recreate
 ```
 
-Devsy applies every change, including the Dockerfile, mounts, and features. It replaces the running container only if the rebuild succeeds. A failed build leaves the existing workspace running.
+Devsy builds and validates the new image before stopping or replacing the existing container. If the build fails, the existing workspace stays in its previous state, whether running or stopped. A later failure can leave the old container stopped or removed, depending on the provider. Pass `--recovery` to start a recovery container with features and lifecycle commands disabled if the build fails.
 
 <Callout type="warn" title="Recreating">
 Anything outside volumes is lost. The project folder and other mounted paths stay.

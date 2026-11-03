@@ -3,7 +3,7 @@ title: Continuous Integration
 sidebar_label: Continuous Integration
 ---
 
-`devsy ci` builds a temporary devcontainer, runs a command in it, and deletes the workspace afterward. Use it to check that your `devcontainer.json` builds and your tests pass inside it.
+`devsy ci` starts a devcontainer workspace and runs a command in it. It deletes a newly created workspace afterward unless you pass `--keep`, but never deletes a workspace that existed before the run. Use it to run tests inside the container and check the build of a newly created workspace.
 
 ## How it works
 

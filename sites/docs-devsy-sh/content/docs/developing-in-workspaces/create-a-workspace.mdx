@@ -124,7 +124,7 @@ build/
 
 - A missing or empty file uploads everything.
 - An unreadable file or invalid pattern stops the upload with an error naming the file.
-- The file filters only the workspace folder upload. Extra bind mounts, local Docker bind mounts, and image builds follow their own rules. After a Git clone, Devsy deletes the paths the file lists, matched literally. Devsy does not read `.gitignore` or `.dockerignore`.
+- The file filters only the workspace folder upload. Extra bind mounts, local Docker bind mounts, and image builds follow their own rules. After a Git clone, Devsy deletes the paths the file lists, matched literally. A negated rule such as `!build/keep.txt` cannot restore a file deleted with `build/` after a Git clone. Devsy does not read `.gitignore` or `.dockerignore`.
 
 ## Inspect a workspace
 

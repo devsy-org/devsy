@@ -5,7 +5,7 @@ sidebar_label: Stop or Delete a Workspace
 
 ## Stop a workspace
 
-Stopping pauses a workspace so it stops using CPU and memory. Depending on the provider, Devsy stops the container or shuts down the VM it runs on. The data is kept.
+Stopping pauses a workspace so it stops using CPU and memory. Depending on the provider, Devsy stops the container or shuts down the VM it runs on. Workspace data is kept unless the provider discards disk state on shutdown, as microsandbox does with `ephemeral` enabled.
 
 In Devsy Desktop, open the workspace actions menu and choose **Stop**. From the CLI, run:
 
@@ -25,7 +25,7 @@ Stopping or deleting a workspace first cancels its running `devsy workspace up -
 
 ## Delete a workspace
 
-Deleting removes the workspace and all data Devsy stores about it. Depending on the provider, Devsy removes the container or deletes the VM.
+Deleting removes the workspace and its local workspace data. Depending on the provider, Devsy removes the container or deletes the VM. Build and lifecycle output in [setup history](../troubleshooting/setup-history.mdx) stays in the local store until retention prunes it.
 
 In Devsy Desktop, open the workspace actions menu, choose **Delete**, and confirm. If the delete fails, the workspace detail page shows the error and links to the logs.
 
