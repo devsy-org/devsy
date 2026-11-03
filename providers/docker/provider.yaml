@@ -38,7 +38,7 @@ agent:
     path: ${DOCKER_PATH}
     elevation: ${DOCKER_ELEVATION}
     builder: ${DOCKER_BUILDER}
-    install: true
+    install: false
     env:
       DOCKER_HOST: ${DOCKER_HOST}
       DOCKER_CONTEXT: ${DOCKER_CONTEXT}
