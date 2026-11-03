@@ -3,6 +3,7 @@ package agentworkspace
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -341,12 +342,62 @@ func writeDockerFixture(t *testing.T, bin, configuredPath string) {
 	if name == "" {
 		name = docker
 	}
+	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(name), ".exe") {
+		name += ".exe"
+	}
 	path := filepath.Join(bin, name)
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Link(executable, path); err != nil {
+	if err := os.Link(executable, path); err == nil {
+		return
+	}
+	copyDockerFixture(t, executable, path)
+}
+
+func copyDockerFixture(t *testing.T, executable, path string) {
+	t.Helper()
+	root, err := os.OpenRoot(filepath.Dir(executable))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := root.Open(filepath.Base(executable))
+	if err != nil {
+		_ = root.Close()
+		t.Fatal(err)
+	}
+	info, err := source.Stat()
+	if err != nil {
+		_ = source.Close()
+		_ = root.Close()
+		t.Fatal(err)
+	}
+	targetRoot, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		_ = source.Close()
+		_ = root.Close()
+		t.Fatal(err)
+	}
+	target, err := targetRoot.OpenFile(
+		filepath.Base(path),
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		info.Mode().Perm()&0o700,
+	)
+	if err != nil {
+		_ = source.Close()
+		_ = root.Close()
+		_ = targetRoot.Close()
+		t.Fatal(err)
+	}
+	_, copyErr := io.Copy(target, source)
+	if err := errors.Join(
+		copyErr,
+		source.Close(),
+		target.Close(),
+		root.Close(),
+		targetRoot.Close(),
+	); err != nil {
 		t.Fatal(err)
 	}
 }

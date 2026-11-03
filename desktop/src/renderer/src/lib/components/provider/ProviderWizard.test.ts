@@ -312,49 +312,6 @@ describe("ProviderWizard", () => {
     },
   )
 
-  it.each([true, false])(
-    "configures the Docker Sandbox preset and preserves Reuse machine %s",
-    async (reuseMachine) => {
-      providerOptions.mockResolvedValue({
-        SBX_CPUS: { name: "SBX_CPUS", default: "2" },
-      })
-      const page = renderWizard()
-      const preset = screen.getByRole("button", {
-        name: /docker-sandbox Devcontainers in Docker Sandboxes microVMs/,
-      })
-      expect(
-        screen.getByRole("region", { name: "Local" }).contains(preset),
-      ).toBe(true)
-      await fireEvent.click(preset)
-      if (reuseMachine)
-        await fireEvent.click(
-          screen.getByRole("switch", { name: "Reuse machine" }),
-        )
-      await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
-      await fireEvent.input(
-        await screen.findByRole("textbox", { name: "SBX_CPUS" }),
-        { target: { value: "4" } },
-      )
-      await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
-      await waitFor(() => {
-        expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
-          "docker-sandbox",
-          undefined,
-          reuseMachine,
-        )
-        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
-          "docker-sandbox",
-          { SBX_CPUS: "4" },
-          reuseMachine,
-        )
-        expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith(
-          "docker-sandbox",
-        )
-      })
-      page.unmount()
-    },
-  )
-
   it("retries loading options without adding the provider a second time", async () => {
     providerOptions
       .mockRejectedValueOnce(new Error("temporary read failure"))

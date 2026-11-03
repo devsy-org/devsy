@@ -1144,6 +1144,7 @@ func waitSupervisedProviderShellWithOwnedInput(
 	close(stopped)
 	<-monitorDone
 	closeErr := input.Close()
+	stdinCloseErr := closeProviderShellPipe(pipes.stdinWrite)
 	stdinResult := <-stdinDone
 	stdinErr := providerShellInputCopyError(stdinResult.copyErr, waitErr, closeErr)
 	return errors.Join(
@@ -1152,7 +1153,11 @@ func waitSupervisedProviderShellWithOwnedInput(
 		providerShellCopyError(action, "stdout", stdoutErr),
 		providerShellCopyError(action, "stderr", stderrErr),
 		providerShellCopyError(action, "stdin", stdinErr),
-		providerShellCloseError(action, "stdin pipe", stdinResult.closeErr),
+		providerShellCloseError(
+			action,
+			"stdin pipe",
+			errors.Join(stdinCloseErr, stdinResult.closeErr),
+		),
 		providerShellCloseError(action, "stdio pipes", pipeCloseErr),
 		providerShellCloseError(action, "input", closeErr),
 	)

@@ -60,15 +60,15 @@ func TestProviderCancellationHelper(t *testing.T) {
 	if os.Getenv("DEVSY_CANCEL_HELPER") != "1" {
 		return
 	}
+	if os.Getenv("DEVSY_CANCEL_HOLDER") == "1" {
+		time.Sleep(time.Minute)
+		return
+	}
 	runTestProviderCancellationBehavior(os.Getenv(config.EnvProviderCancelFile))
 	os.Exit(0)
 }
 
 func runTestProviderCancellationBehavior(marker string) {
-	if os.Getenv("DEVSY_CANCEL_HOLDER") == "1" {
-		time.Sleep(time.Minute)
-		return
-	}
 	switch behavior := os.Getenv("DEVSY_CANCEL_BEHAVIOR"); behavior {
 	case "acknowledge":
 		runAcknowledgingCancellationHelper(marker)
@@ -80,6 +80,8 @@ func runTestProviderCancellationBehavior(marker string) {
 		writeTestCancellationBulkAfterEOF()
 	case "orphan-output":
 		startTestCancellationOutputHolder()
+	case "orphan-input":
+		startTestCancellationInputHolder()
 	default:
 		runTestCancellationExit(behavior, marker)
 	}
@@ -182,6 +184,21 @@ func startTestCancellationOutputHolder() {
 	exitTestHelperOnError(holder.Process.Release())
 	_, err := fmt.Fprint(os.Stdout, "ready")
 	exitTestHelperOnError(err)
+}
+
+func startTestCancellationInputHolder() {
+	holder := &exec.Cmd{Path: os.Args[0], Args: []string{os.Args[0], testCancellationHelperArg}}
+	holder.Env = append(os.Environ(), "DEVSY_CANCEL_HOLDER=1")
+	holder.Stdin = os.Stdin
+	exitTestHelperOnError(holder.Start())
+	exitTestHelperOnError(
+		testHelperWriteFile(
+			os.Getenv("DEVSY_CANCEL_HOLDER_PID_PATH"),
+			strconv.Itoa(holder.Process.Pid),
+		),
+	)
+	exitTestHelperOnError(holder.Process.Release())
+	writeTestCancellationBytes()
 }
 
 func exitTestHelperOnError(err error) {
@@ -859,6 +876,31 @@ func TestProviderCancellationOwnedInputSuccessfulExitIgnoresEPIPE(t *testing.T) 
 		closeInputOnExit: input,
 	})
 	require.NoError(t, err)
+}
+
+func TestProviderCancellationOwnedInputStopsWithInheritedStdin(t *testing.T) {
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	holderPath := filepath.Join(t.TempDir(), "holder-pid")
+	t.Setenv("DEVSY_CANCEL_HOLDER_PID_PATH", holderPath)
+	t.Cleanup(func() { cleanupTestCancellationOutputHolder(holderPath) })
+	input := io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("x"), 2<<20)))
+	cmd := &exec.Cmd{Path: binary, Args: []string{binary, testCancellationHelperArg}}
+	cmd.Env = append(os.Environ(), "DEVSY_CANCEL_HELPER=1", "DEVSY_CANCEL_BEHAVIOR=orphan-input")
+	cmd.Stdin = input
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	finished := make(chan error, 1)
+	go func() {
+		finished <- waitSupervisedProviderShellWithOwnedInput(context.Background(), cmd, input, "test")
+	}()
+	select {
+	case err := <-finished:
+		require.NoError(t, err)
+		require.Equal(t, []byte{0, 0xff, 0x80, '\r', '\n'}, stdout.Bytes())
+	case <-time.After(5 * time.Second):
+		t.Fatal("provider completion waited for inherited stdin")
+	}
 }
 
 func TestProviderCancellationOwnedInputDrainsBinaryOutputAfterEOF(t *testing.T) {

@@ -3,7 +3,9 @@ title: Docker Sandboxes
 sidebar_label: Docker Sandboxes
 ---
 
-The Docker Sandboxes provider runs each Devsy machine in a local `sbx` microVM. The Devsy agent uses the private Docker Engine inside that VM to build and run ordinary devcontainers. A host Docker Engine is not required.
+The planned Docker Sandboxes provider runs each Devsy machine in a local `sbx` microVM. The Devsy agent uses the private Docker Engine inside that VM to build and run ordinary devcontainers. A host Docker Engine is not required.
+
+No provider release exists yet. The installation and machine instructions below apply only after native qualification and publication. The short name cannot be installed before a release.
 
 ## Requirements
 
@@ -11,14 +13,14 @@ Install the [standalone `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/
 
 Local Docker Sandboxes require Apple silicon with macOS 14 or later, Windows 11 on amd64 with Windows Hypervisor Platform, or Ubuntu 24.04 or later on amd64 or arm64 with accessible KVM. A VM running the provider also needs nested virtualization. A host system is supported only if the provider release lists that system as qualified. Docker Desktop and a host Docker Engine are not required.
 
-Install a published provider release with:
+After a qualified provider release is published, install it with:
 
 ```sh
 devsy provider add docker-sandbox
 devsy up https://github.com/devcontainers/samples --provider docker-sandbox
 ```
 
-Devsy Desktop offers the same provider under **Local**. Configure its options in the provider setup wizard. The provider does not install `sbx`, sign in, open a login browser, or change Docker Sandboxes settings.
+The Devsy Desktop setup wizard does not list this provider before a qualified release. The provider does not install `sbx`, sign in, open a login browser, or change Docker Sandboxes settings.
 
 ## Machine resources
 
@@ -46,7 +48,7 @@ Stopping a machine preserves its guest sources, images, containers, and volumes.
 
 Provider state is stored under your user configuration directory at `devsy-provider-docker-sandbox/state-v1`. If creation fails, do not remove that directory or manually reuse a sandbox name. The provider reports the exact machine key and any unresolved child attempt or backend operation. A lost VM is never silently recreated in the same machine generation.
 
-Find the installed binary with `devsy provider list --result-format=json`. Read `config.binaries.DOCKER_SANDBOX_PROVIDER` for the asset name. Devsy stores it under its data directory at `contexts/<context>/providers/<alias>/binaries/docker_sandbox_provider/<asset-name>`. With `DEVSY_HOME` set, that variable names the data directory. Otherwise Devsy uses `~/.devsy` on macOS and Linux, or `%LOCALAPPDATA%\devsy` on Windows. Use the resolved local executable, not the asset URL.
+After installation, find the installed binary with `devsy provider list --result-format=json`. Read `config.binaries.DOCKER_SANDBOX_PROVIDER` for the asset name. Devsy stores it under its data directory at `contexts/<context>/providers/<alias>/binaries/docker_sandbox_provider/<asset-name>`. With `DEVSY_HOME` set, that variable names the data directory. Otherwise Devsy uses `~/.devsy` on macOS and Linux, or `%LOCALAPPDATA%\devsy` on Windows. Use the resolved local executable, not the asset URL.
 
 The provider executable installed with the provider accepts:
 
@@ -57,4 +59,4 @@ The provider executable installed with the provider accepts:
 <provider-executable> delete --machine-key <full-key>
 ```
 
-Use `doctor` to inspect the saved identity and backend observation without starting a stopped VM. An attempt acknowledgement is appropriate only after its orphaned client has terminated or the host has restarted. A backend acknowledgement is appropriate only after the Docker side operation has settled. Neither acknowledgement starts, stops, or removes a VM. Use scoped deletion after provider removal only for a machine you intend to destroy. Never use global `sbx` reset or prune to recover one machine.
+Use `doctor` to inspect the saved identity and backend observation without starting a stopped VM. An attempt acknowledgement is appropriate only after its orphaned client has terminated or the host has restarted. A backend acknowledgement is appropriate only after the Docker side operation has settled. Neither acknowledgement starts, stops, or removes a VM. `devsy provider delete` removes the installed executable. Reinstall the same compatible release or preserve its executable before removal if you need scoped recovery afterward. Use scoped deletion only for a machine you intend to destroy. Never use global `sbx` reset or prune to recover one machine.
