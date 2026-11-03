@@ -1334,11 +1334,66 @@ func runProviderArgvCommand(
 	cmd.Env = opts.Environ
 	if opts.Cancellation == provider.ProviderCancellationFile {
 		cmd.WaitDelay = 2 * time.Second
+		if opts.closeInputOnExit != nil {
+			return runProviderArgvWithOwnedInput(
+				cmd, opts.Stdin, opts.closeInputOnExit, providerAction(opts.Environ),
+			)
+		}
 	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
 	}
 	return nil
+}
+
+func runProviderArgvWithOwnedInput(
+	cmd *exec.Cmd,
+	source io.Reader,
+	input io.Closer,
+	action string,
+) (retErr error) {
+	stdinRead, stdinWrite, err := os.Pipe()
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("create provider %s stdin pipe: %w", action, err),
+			providerShellCloseError(action, "input", input.Close()),
+		)
+	}
+	defer func() {
+		retErr = errors.Join(
+			retErr, closeProviderShellPipe(stdinRead), closeProviderShellPipe(stdinWrite),
+		)
+	}()
+	cmd.Stdin = stdinRead
+	if err := cmd.Start(); err != nil {
+		return errors.Join(
+			fmt.Errorf("run provider %s: %w", action, err),
+			providerShellCloseError(action, "input", input.Close()),
+		)
+	}
+	childPipeCloseErr := closeProviderShellPipe(stdinRead)
+	stdinDone := pumpProviderShellInput(stdinWrite, source)
+	waitErr := cmd.Wait()
+	inputCloseErr := input.Close()
+	stdinPipeCloseErr := closeProviderShellPipe(stdinWrite)
+	stdinResult := <-stdinDone
+	stdinErr := providerShellInputCopyError(stdinResult.copyErr, waitErr, inputCloseErr)
+	return errors.Join(
+		providerArgvWaitError(action, waitErr),
+		providerShellCopyError(action, "stdin", stdinErr),
+		providerShellCloseError(
+			action, "stdin pipe",
+			errors.Join(childPipeCloseErr, stdinPipeCloseErr, stdinResult.closeErr),
+		),
+		providerShellCloseError(action, "input", inputCloseErr),
+	)
+}
+
+func providerArgvWaitError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("run provider %s: %w", action, err)
 }
 
 func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) error {

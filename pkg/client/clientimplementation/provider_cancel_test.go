@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -880,6 +881,48 @@ func TestProviderCancellationRawBytesAndStderrRedaction(t *testing.T) {
 	require.Equal(t, []byte{0, 0xff, 0x80, '\r', '\n'}, stdout.Bytes())
 	require.NotContains(t, stderr.String(), secret)
 	require.Contains(t, stderr.String(), "***")
+}
+
+func TestProviderCancellationArgvTransportCompletesWithOpenInput(t *testing.T) {
+	local, remote := net.Pipe()
+	t.Cleanup(func() {
+		_ = local.Close()
+		_ = remote.Close()
+	})
+	opts := cancelHelperOptions("bytes")
+	opts.Stdin, opts.closeInputOnExit = remote, remote
+	opts.RawStdout = true
+	var stdout bytes.Buffer
+	opts.Stdout = &stdout
+	finished := make(chan error, 1)
+	go func() { finished <- RunCommand(context.Background(), opts) }()
+	select {
+	case err := <-finished:
+		require.NoError(t, err)
+		require.Equal(t, []byte{0, 0xff, 0x80, '\r', '\n'}, stdout.Bytes())
+	case <-time.After(5 * time.Second):
+		t.Fatal("argv provider completion waited for transport input closure")
+	}
+}
+
+func TestProviderCancellationArgvOwnedInputPreservesExitStatus(t *testing.T) {
+	local, remote := net.Pipe()
+	t.Cleanup(func() {
+		_ = local.Close()
+		_ = remote.Close()
+	})
+	opts := cancelHelperOptions("status")
+	opts.Stdin, opts.closeInputOnExit = remote, remote
+	finished := make(chan error, 1)
+	go func() { finished <- RunCommand(context.Background(), opts) }()
+	select {
+	case err := <-finished:
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr)
+		require.Equal(t, 7, exitErr.ExitCode())
+	case <-time.After(5 * time.Second):
+		t.Fatal("argv provider exit waited for transport input closure")
+	}
 }
 
 func TestProviderCancellationOwnedInputPreservesShellExitStatus(t *testing.T) {
