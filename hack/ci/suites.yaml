@@ -26,7 +26,15 @@ unit:
       description: every package outside test/ and e2e/ directories, with the race detector
       os: [linux, darwin]
       discover: true
-      args: [-race, -short]
+      args: [-race, -short, '-skip=^TestPassiveProcessLifecycle$']
+
+    - name: passive-process-lifecycle
+      description: passive startup process checks after package race tests
+      os: [linux, darwin]
+      packages: [./cmd]
+      run: '^TestPassiveProcessLifecycle$'
+      require_tests: [TestPassiveProcessLifecycle]
+      args: [-race, -short, -count=1, -p=1, -timeout=10m]
 
     - name: agent-bootstrap-busybox
       description: agent bootstrap script under BusyBox sh
