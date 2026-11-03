@@ -385,14 +385,16 @@ func (p *providerShellExecution) completed(err error) error {
 		return p.canceled()
 	}
 	p.supervisor.stop()
-	if earlyErr := providerShellEarlyError(err); earlyErr != nil {
-		return earlyErr
-	}
 	if !p.alive() {
 		return context.Canceled
 	}
-	if ackErr := providerWriteAck(p.root, p.token); ackErr != nil {
-		return ackErr
+	ackErr := providerWriteAck(p.root, p.token)
+	earlyErr := providerShellEarlyError(err)
+	if ackErr != nil {
+		return errors.Join(ackErr, earlyErr)
+	}
+	if earlyErr != nil {
+		return earlyErr
 	}
 	return err
 }

@@ -855,6 +855,20 @@ func TestProviderCancellationShellExits(t *testing.T) {
 	}
 }
 
+func TestProviderCancellationParseErrorAcknowledged(t *testing.T) {
+	command := "if then fi (((( private-provider-script-846307"
+	err := RunCommand(context.Background(), RunCommandOptions{
+		Command:      types.StrArray{command},
+		Environ:      os.Environ(),
+		Cancellation: provider.ProviderCancellationFile,
+	})
+	var status interp.ExitStatus
+	require.ErrorAs(t, err, &status)
+	require.Equal(t, 1, int(status))
+	require.NotContains(t, err.Error(), "without authentic acknowledgement")
+	require.NotContains(t, err.Error(), command)
+}
+
 func TestProviderCancellationRawBytesAndStderrRedaction(t *testing.T) {
 	opts := cancelHelperOptions("bytes")
 	secret := "provider-cancel-secret-84392"
