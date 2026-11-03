@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
@@ -18,23 +18,23 @@ import (
 
 // NetcheckCmd holds the Devsy daemon flags.
 type NetcheckCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	Host string
 }
 
 // NewNetcheckCmd creates a new command.
-func NewNetcheckCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewNetcheckCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &NetcheckCmd{
 		GlobalFlags: flags,
 	}
 	c := &cobra.Command{
 		Use:              "netcheck",
 		Short:            "Get the status of the current network",
-		RunE:             proutil.HostRunE(flags, &cmd.Host, cmd.Run),
-		PersistentPreRun: proutil.MarkAgentExecuted,
+		RunE:             cmdutil.HostRunE(flags, &cmd.Host, cmd.Run),
+		PersistentPreRun: cmdutil.MarkAgentExecuted,
 	}
-	proutil.AddHostFlag(c, &cmd.Host, proutil.WithHostCompletion(flags))
+	cmdutil.AddHostFlag(c, &cmd.Host, cmdutil.WithHostCompletion(flags))
 
 	return c
 }

@@ -20,8 +20,10 @@ func NewWebStormServer(
 		WebStormOptions,
 		values,
 		WebStormProductCode,
-		WebStormDownloadAmd64Template,
-		WebStormDownloadArm64Template,
+		downloadTemplates{
+			amd64: WebStormDownloadAmd64Template,
+			arm64: WebStormDownloadArm64Template,
+		},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "webstorm",

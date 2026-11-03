@@ -423,3 +423,21 @@ func prepareBackgroundTree(cmd *exec.Cmd) {
 	}
 	cmd.SysProcAttr.Setsid = true
 }
+
+func processRefExited(ref ProcessRef) (bool, error) {
+	live, err := processIsLive(ref.PID)
+	if err != nil {
+		return false, err
+	}
+	if !live {
+		return true, nil
+	}
+	current, err := processTreeIdentity(ref.PID)
+	if err != nil {
+		return false, err
+	}
+	if current == "" || current != ref.Identity {
+		return true, nil
+	}
+	return false, nil
+}

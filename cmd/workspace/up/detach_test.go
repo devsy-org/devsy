@@ -17,7 +17,7 @@ const (
 )
 
 func TestDetachedArgs_StripsDetachFlag(t *testing.T) {
-	got := detachedArgs([]string{testRepoArg, "--detach", testDebugFlag})
+	got := detachedArgs([]string{testRepoArg, testDetachFlag, testDebugFlag})
 	want := []string{testRepoArg, testDebugFlag}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("detachedArgs() = %v, want %v", got, want)
@@ -139,5 +139,12 @@ func assertWorkerLockReleased(t *testing.T, store *task.Store, id string) {
 	}
 	if err := lockHolder.ReleaseWorkerLock(); err != nil {
 		t.Fatalf("release worker lock: %v", err)
+	}
+}
+
+func TestDetachedArgsRetainsNoStatus(t *testing.T) {
+	got := detachedArgs([]string{testDetachFlag, "--no-status", "."})
+	if len(got) != 2 || got[0] != "--no-status" || got[1] != "." {
+		t.Fatalf("detachedArgs() = %v", got)
 	}
 }

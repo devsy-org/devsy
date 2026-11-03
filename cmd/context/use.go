@@ -25,7 +25,7 @@ func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	useCmd := &cobra.Command{
 		Use:   "use",
-		Short: "Set a Devsy context as the default",
+		Short: "Set the default context",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return fmt.Errorf("specify the context to use")

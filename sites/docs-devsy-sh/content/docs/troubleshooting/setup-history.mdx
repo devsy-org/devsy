@@ -1,0 +1,78 @@
+---
+title: Setup history
+sidebar_label: Setup history
+---
+
+Devsy keeps bounded, redacted build and lifecycle output for workspace runs in a local store. Read it with `devsy workspace logs --source setup` or in the **Logs** tab of Devsy Desktop. This page covers what is kept, for how long, and when it is unavailable. For the commands, see [Troubleshooting](./troubleshooting.mdx#find-the-right-log).
+
+History covers runs that start after you install a release with this feature. It cannot recover output from earlier runs.
+
+## Retention and limits
+
+These are the defaults of this release.
+
+| Bound | Value |
+| --- | --- |
+| Output text per chunk | 8 KiB |
+| Encoded read page | 256 KiB |
+| One metadata record | 64 KiB |
+| Producers per run | 64 |
+| Encoded cursor | 8 KiB |
+| Segment | 512 KiB |
+| Retained data per run, per store | 10 MiB |
+| Retained data per workspace generation, per store | 50 MiB |
+| Completed runs per workspace generation | 20 |
+| Retention age | 30 days |
+| Total per store | 512 MiB |
+
+Devsy removes completed runs first when a bound is reached. It never removes the segment an active run is writing.
+
+When a run reaches its budget, Devsy stops storing more output for that capture but keeps reading the command's output so the command is not blocked. The run is marked truncated, and the read response reports a capture gap with the affected producer and missing sequence range. Output is partial in that case.
+
+A full budget never changes how a hook runs or its exit status. A hook that fails still reports its own exit code, and one that succeeds still succeeds.
+
+## Redaction
+
+Devsy redacts output before it is written to disk and before it is sent between machines.
+
+Masked:
+
+- Known secret environment values.
+- Runtime and mount secrets.
+- Build secrets.
+- Credential patterns that Devsy already detects.
+
+Not stored:
+
+- Environment snapshots.
+- Argument dumps of commands.
+- Resolved configuration that contains secrets.
+- Contents of secret files.
+
+Devsy cannot guarantee that it detects arbitrary values a script invents or transforms. A script that prints a decoded or reformatted secret can leak it into history. Do not print secrets in lifecycle commands.
+
+## Availability
+
+Each source of history reports whether it is available. An unavailable source is a typed status in the response, not a command failure.
+
+- A workspace whose agent is older than this feature, or whose runtime does not support read-only access, shows cached history only. Run `devsy workspace logs` without `--source setup` for container logs.
+- History is stored on the machine where the run happened. Devsy does not share it between machines.
+- Output is first written next to the process that produced it, then copied to the machine you ran the command on. If the remote copy is gone, for example because the container was destroyed, Devsy reports the records that were never copied as unavailable. If the local copy is also gone, nothing can be recovered.
+- A response with `complete=false` and an availability reason is a successful read of partial history.
+
+To fetch missing remote records, Devsy makes one read-only attempt with a five-second limit. It does not start, unpause, rebuild or install anything. If the workspace is stopped, you get the cached records and an availability note.
+
+## Desktop
+
+Open the workspace and choose **Logs**.
+
+- The run selector lists retained runs. It opens the latest run first and keeps an older run you chose when a new operation starts.
+- The step list shows each build and lifecycle step with its command, time, outcome and capture condition.
+- Each step is in one of these states: `pending`, `deferred`, `running`, `succeeded`, `failed`, `skipped`, `canceled` or `completion unknown`. The recorded reason and exit code appear when known. A step that succeeded with zero bytes of output is shown differently from one whose output was never captured.
+- The workspace being Running and a hook having succeeded are separate facts.
+- **View logs** on a failure notification, the workspace operation view or the creation wizard opens the failed run, and the failing step when it can be identified. Successful steps offer **View output**.
+- Output is shown as literal text with whitespace, blank lines and the stdout or stderr label preserved. JSON-looking or HTML-looking output is not interpreted. Scroll up to pause auto-scroll.
+- A link to a known run still works after a failed creation or a deletion removed the workspace. That view is read-only.
+- Use the export action to save a run.
+
+**Desktop diagnostic files** are listed below the history. They are Desktop's own logs. The diagnostic log settings control them only. They do not turn off retained lifecycle output.

@@ -13,6 +13,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   trayNotifications: "failures",
   desktopLogLevel: "info",
   cliCaptureLogLevel: "info",
+  appImageIntegrationPromptDismissed: false,
 }
 
 const LEVELS: readonly TrayNotificationLevel[] = ["off", "failures", "all"]
@@ -53,6 +54,8 @@ export function normalizeAppSettings(raw: unknown): AppSettings {
     trayNotifications,
     desktopLogLevel,
     cliCaptureLogLevel,
+    appImageIntegrationPromptDismissed:
+      input.appImageIntegrationPromptDismissed === true,
   }
 }
 
@@ -78,6 +81,12 @@ export function sanitizeAppSettingsPatch(raw: unknown): Partial<AppSettings> {
     if (typeof input.openToTrayOnStartup !== "boolean")
       throw new Error("openToTrayOnStartup must be boolean")
     patch.openToTrayOnStartup = input.openToTrayOnStartup
+  }
+  if ("appImageIntegrationPromptDismissed" in input) {
+    if (typeof input.appImageIntegrationPromptDismissed !== "boolean")
+      throw new Error("appImageIntegrationPromptDismissed must be boolean")
+    patch.appImageIntegrationPromptDismissed =
+      input.appImageIntegrationPromptDismissed
   }
   if ("trayNotifications" in input) {
     if (!LEVELS.includes(input.trayNotifications as TrayNotificationLevel))

@@ -57,7 +57,10 @@ var (
 	DaemonStatePending DaemonState = "pending"
 )
 
-const platformStatusCheckInterval = 10 * time.Second
+const (
+	platformStatusCheckInterval = 10 * time.Second
+	readHeaderTimeout           = 10 * time.Second
+)
 
 type platformStatus struct {
 	mu            sync.RWMutex
@@ -81,7 +84,7 @@ var (
 	routeGetUserProfile    = "/user-profile"
 	routeUpdateUserProfile = "/update-user-profile"
 	routeGitCredentials    = "/git-credentials"
-	routeDockerCredentials = "/docker-credentials"
+	routeDockerCredentials = "/docker-credentials" //nolint:gosec // route path, not a credential
 )
 
 func newLocalServer(
@@ -122,7 +125,7 @@ func newLocalServer(
 		handlers.PrintRecoveryStack(true),
 	)(mux)
 	handler = handlers.LoggingHandler(log.Writer(log.LevelDebug), handler)
-	l.httpServer = &http.Server{Handler: handler}
+	l.httpServer = &http.Server{Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
 
 	return l
 }

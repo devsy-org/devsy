@@ -21,7 +21,7 @@ const (
 	testDevContainerPath  = ".devcontainer/devcontainer.json"
 )
 
-func TestValidateDesiredID(t *testing.T) {
+func TestValidateID(t *testing.T) {
 	cases := []struct {
 		name      string
 		desiredID string
@@ -45,7 +45,7 @@ func TestValidateDesiredID(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := validateDesiredID(c.desiredID)
+			err := ValidateID(c.desiredID)
 			if c.wantErr {
 				require.Error(t, err)
 			} else {
@@ -55,10 +55,10 @@ func TestValidateDesiredID(t *testing.T) {
 	}
 }
 
-func TestValidateDesiredID_InvalidCharsCheckedBeforeLength(t *testing.T) {
+func TestValidateID_InvalidCharsCheckedBeforeLength(t *testing.T) {
 	// An over-length id that also contains invalid characters should report the
 	// character rule first, matching the historical ordering.
-	err := validateDesiredID(strings.Repeat("A", maxWorkspaceIDLength+1))
+	err := ValidateID(strings.Repeat("A", maxWorkspaceIDLength+1))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "lowercase letters")
 }

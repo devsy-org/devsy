@@ -155,13 +155,15 @@ type server struct {
 	sshServer   ssh.Server
 }
 
-func NewServer(
-	addr string,
-	hostKey []byte,
-	keys []ssh.PublicKey,
-	workdir string,
-	reuseSock string,
-) (Server, error) {
+// ServerOptions configures NewServer.
+type ServerOptions struct {
+	HostKey   []byte
+	Keys      []ssh.PublicKey
+	Workdir   string
+	ReuseSock string
+}
+
+func NewServer(addr string, opts ServerOptions) (Server, error) {
 	sh, err := shell.GetShell("")
 	if err != nil {
 		return nil, err
@@ -174,18 +176,18 @@ func NewServer(
 
 	server := &server{
 		shell:       sh,
-		workdir:     workdir,
-		reuseSock:   reuseSock,
+		workdir:     opts.Workdir,
+		reuseSock:   opts.ReuseSock,
 		currentUser: currentUser.Username,
-		sshServer:   buildSSHServer(addr, currentUser.Username),
+		sshServer:   buildSSHServer(addr),
 	}
 
-	if len(keys) > 0 {
-		server.sshServer.PublicKeyHandler = makePublicKeyHandler(keys)
+	if len(opts.Keys) > 0 {
+		server.sshServer.PublicKeyHandler = makePublicKeyHandler(opts.Keys)
 	}
 
-	if len(hostKey) > 0 {
-		err = server.sshServer.SetOption(ssh.HostKeyPEM(hostKey))
+	if len(opts.HostKey) > 0 {
+		err = server.sshServer.SetOption(ssh.HostKeyPEM(opts.HostKey))
 		if err != nil {
 			return nil, err
 		}
@@ -202,7 +204,7 @@ func NewServer(
 
 // buildSSHServer constructs the underlying ssh.Server with its port
 // forwarding, channel, request, and SFTP subsystem handlers wired up.
-func buildSSHServer(addr, currentUsername string) ssh.Server {
+func buildSSHServer(addr string) ssh.Server {
 	forwardHandler := &ssh.ForwardedTCPHandler{}
 	forwardedUnixHandler := &ssh.ForwardedUnixHandler{}
 	keepAliveInterval, keepAliveCountMax := keepAliveConfig()
@@ -233,7 +235,7 @@ func buildSSHServer(addr, currentUsername string) ssh.Server {
 		},
 		SubsystemHandlers: map[string]ssh.SubsystemHandler{
 			"sftp": func(s ssh.Session) {
-				sftpHandler(s, currentUsername)
+				sftpHandler(s)
 			},
 		},
 	}

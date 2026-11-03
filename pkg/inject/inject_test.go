@@ -837,14 +837,7 @@ func TestInjectScript_RealShellRejectsInvalidBinarySize(t *testing.T) {
 	tmp := t.TempDir()
 	installPath := filepath.Join(tmp, "bin", "agent")
 	require.NoError(t, os.MkdirAll(filepath.Dir(installPath), 0o750))
-	toolsDir := filepath.Join(tmp, "tools")
-	require.NoError(t, os.Mkdir(toolsDir, 0o700))
-	curlPath := filepath.Join(toolsDir, "curl")
-	require.NoError(t, os.WriteFile(curlPath, []byte("#!/bin/sh\nexit 1\n"), 0o600))
-	require.NoError(t, os.Chmod(curlPath, 0o700)) //nolint:gosec // fake curl must be executable
-	sleepPath := filepath.Join(toolsDir, "sleep")
-	require.NoError(t, os.WriteFile(sleepPath, []byte("#!/bin/sh\nexit 0\n"), 0o600))
-	require.NoError(t, os.Chmod(sleepPath, 0o700)) //nolint:gosec // fake sleep must be executable
+	toolsDir := writeFakeTools(t, tmp)
 
 	rendered, err := GenerateScript(Script, &Params{
 		Command:             "echo should-not-run",
@@ -856,62 +849,23 @@ func TestInjectScript_RealShellRejectsInvalidBinarySize(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	stdinR, stdinW := io.Pipe()
-	stdoutR, stdoutW := io.Pipe()
-	stderrR, stderrW := io.Pipe()
-	cmd := exec.Command( //nolint:gosec // G204: script content is test-generated, not external input
-		"sh",
-		"-c",
-		rendered,
-	)
-	cmd.Env = append(
-		os.Environ(),
-		"PATH="+toolsDir+string(os.PathListSeparator)+os.Getenv("PATH"),
-	)
-	cmd.Stdin = stdinR
-	cmd.Stdout = stdoutW
-	cmd.Stderr = stderrW
-	require.NoError(t, cmd.Start())
-	waitDone := make(chan struct{})
-	t.Cleanup(func() {
-		_ = stdinW.Close()
-		_ = stdoutW.Close()
-		_ = stderrW.Close()
-		select {
-		case <-waitDone:
-		case <-time.After(5 * time.Second):
-			_ = cmd.Process.Kill()
-			<-waitDone
-		}
-	})
-	go func() {
-		_ = cmd.Wait()
-		close(waitDone)
-	}()
+	sh := startShScript(t, rendered, toolsDir)
 
-	shPipe := shTestPipe{in: stdinW, out: stdoutR}
-	expectLine(t, shPipe.out, "ping")
-	requireWrite(t, shPipe.in, testPong)
-	if got := readLineFatal(t, shPipe.out); !strings.HasPrefix(got, "ARM-") {
+	expectLine(t, sh.pipe.out, "ping")
+	requireWrite(t, sh.pipe.in, testPong)
+	if got := readLineFatal(t, sh.pipe.out); !strings.HasPrefix(got, "ARM-") {
 		t.Fatalf("expected ARM-..., got %q", got)
 	}
-	requireWrite(t, shPipe.in, "1K\n")
+	requireWrite(t, sh.pipe.in, "1K\n")
 
-	if got := readLineFatal(t, stderrR); !strings.Contains(got, "Invalid binary size") {
+	if got := readLineFatal(t, sh.stderr); !strings.Contains(got, "Invalid binary size") {
 		t.Fatalf("expected an invalid-size rejection on stderr, got %q", got)
 	}
 
 	_, statErr := os.Stat(installPath)
 	require.True(t, os.IsNotExist(statErr), "invalid size must not install anything")
 
-	_ = stdinW.Close()
-	_ = stdoutW.Close()
-	_ = stderrW.Close()
-	select {
-	case <-waitDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("inject.sh did not finish the failed-download fallback")
-	}
+	sh.finish(t)
 }
 
 func requireWrite(t *testing.T, w io.Writer, s string) {
@@ -935,5 +889,95 @@ func readDelimitedLine(r io.Reader) (string, error) {
 		if err != nil {
 			return string(b), err
 		}
+	}
+}
+
+// writeFakeTools puts a curl that always fails and a no-op sleep in a new
+// directory under dir, so the script takes its download fallback path.
+func writeFakeTools(t *testing.T, dir string) string {
+	t.Helper()
+	toolsDir := filepath.Join(dir, "tools")
+	require.NoError(t, os.Mkdir(toolsDir, 0o700))
+	writeExecutable(t, filepath.Join(toolsDir, "curl"), "#!/bin/sh\nexit 1\n")
+	writeExecutable(t, filepath.Join(toolsDir, "sleep"), "#!/bin/sh\nexit 0\n")
+
+	return toolsDir
+}
+
+func writeExecutable(t *testing.T, path, content string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	require.NoError(t, os.Chmod(path, 0o700)) //nolint:gosec // fake tool must be executable
+}
+
+// shScript is a rendered inject script running under sh with its stdio piped
+// to the test.
+type shScript struct {
+	pipe     shTestPipe
+	stderr   *io.PipeReader
+	stdinW   *io.PipeWriter
+	stdoutW  *io.PipeWriter
+	stderrW  *io.PipeWriter
+	waitDone chan struct{}
+}
+
+func startShScript(t *testing.T, rendered, toolsDir string) *shScript {
+	t.Helper()
+	stdinR, stdinW := io.Pipe()
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+	cmd := exec.Command( //nolint:gosec // G204: script content is test-generated, not external input
+		"sh",
+		"-c",
+		rendered,
+	)
+	cmd.Env = append(
+		os.Environ(),
+		"PATH="+toolsDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+	cmd.Stdin = stdinR
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
+	require.NoError(t, cmd.Start())
+
+	s := &shScript{
+		pipe:     shTestPipe{in: stdinW, out: stdoutR},
+		stderr:   stderrR,
+		stdinW:   stdinW,
+		stdoutW:  stdoutW,
+		stderrW:  stderrW,
+		waitDone: make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		s.closeStdio()
+		select {
+		case <-s.waitDone:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			<-s.waitDone
+		}
+	})
+	go func() {
+		_ = cmd.Wait()
+		close(s.waitDone)
+	}()
+
+	return s
+}
+
+func (s *shScript) closeStdio() {
+	_ = s.stdinW.Close()
+	_ = s.stdoutW.Close()
+	_ = s.stderrW.Close()
+}
+
+// finish closes the script's stdio and requires the script to exit.
+func (s *shScript) finish(t *testing.T) {
+	t.Helper()
+	s.closeStdio()
+	select {
+	case <-s.waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("inject.sh did not finish the failed-download fallback")
 	}
 }

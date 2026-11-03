@@ -67,7 +67,12 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		return nil, err
 	}
 
-	return waitTaskDone(ctx, managementClient, instance, taskID, reporterOrNop(opt.Reporter))
+	return waitTaskDone(ctx, taskWait{
+		managementClient: managementClient,
+		instance:         instance,
+		taskID:           taskID,
+		reporter:         reporterOrNop(opt.Reporter),
+	})
 }
 
 func migratedRebuildError(
@@ -210,14 +215,18 @@ func createUpTask(ctx context.Context, params createUpTaskParams) (string, error
 	return task.Status.TaskID, nil
 }
 
-func waitTaskDone(
-	ctx context.Context,
-	managementClient kube.Interface,
-	instance *managementv1.DevsyWorkspaceInstance,
-	taskID string,
-	reporter status.Reporter,
-) (*config.Result, error) {
-	exitCode, err := observeTask(ctx, managementClient, instance, taskID, reporter)
+// taskWait identifies the instance task to wait on and where to report progress.
+type taskWait struct {
+	managementClient kube.Interface
+	instance         *managementv1.DevsyWorkspaceInstance
+	taskID           string
+	reporter         status.Reporter
+}
+
+func waitTaskDone(ctx context.Context, wait taskWait) (*config.Result, error) {
+	managementClient, instance := wait.managementClient, wait.instance
+	taskID := wait.taskID
+	exitCode, err := observeTask(ctx, wait)
 	if err != nil {
 		return nil, fmt.Errorf("up: %w", err)
 	} else if exitCode != 0 {
@@ -287,13 +296,9 @@ func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 	log.Debug("Starting platform workspace with configuration", string(workspaceConfig))
 }
 
-func observeTask(
-	ctx context.Context,
-	managementClient kube.Interface,
-	instance *managementv1.DevsyWorkspaceInstance,
-	taskID string,
-	reporter status.Reporter,
-) (int, error) {
+func observeTask(ctx context.Context, wait taskWait) (int, error) {
+	managementClient, instance := wait.managementClient, wait.instance
+	taskID := wait.taskID
 	var (
 		exitCode int
 		err      error
@@ -307,7 +312,7 @@ func observeTask(
 		// cancel ongoing task if context is done
 		select {
 		case <-ctx.Done():
-			timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			timeoutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			defer cancelPrintCtx()
 
@@ -327,7 +332,7 @@ func observeTask(
 		}
 	}()
 	go func() {
-		exitCode, err = printLogs(printCtx, managementClient, instance, taskID, reporter)
+		exitCode, err = printLogs(printCtx, wait)
 		errChan <- err
 	}()
 
@@ -348,13 +353,9 @@ type Message struct {
 	Bytes    []byte      `json:"bytes,omitempty"`
 }
 
-func printLogs(
-	ctx context.Context,
-	managementClient kube.Interface,
-	workspace *managementv1.DevsyWorkspaceInstance,
-	taskID string,
-	reporter status.Reporter,
-) (int, error) {
+func printLogs(ctx context.Context, wait taskWait) (int, error) {
+	managementClient, workspace := wait.managementClient, wait.instance
+	taskID, reporter := wait.taskID, wait.reporter
 	logsReader, err := openTaskLogsStream(ctx, managementClient, workspace, taskID)
 	if err != nil {
 		return -1, err

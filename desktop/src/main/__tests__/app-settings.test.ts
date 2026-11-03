@@ -31,6 +31,7 @@ describe("normalizeAppSettings", () => {
       trayNotifications: "all",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
   })
 
@@ -43,6 +44,7 @@ describe("normalizeAppSettings", () => {
       trayNotifications: "failures",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
   })
 
@@ -79,6 +81,7 @@ describe("patchAppSettings", () => {
       trayNotifications: "all" as const,
       desktopLogLevel: "info" as const,
       cliCaptureLogLevel: "info" as const,
+      appImageIntegrationPromptDismissed: false,
     }
     expect(patchAppSettings(current, { runAtStartup: false })).toEqual({
       runAtStartup: false,
@@ -86,6 +89,7 @@ describe("patchAppSettings", () => {
       trayNotifications: "all",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
   })
 
@@ -96,6 +100,7 @@ describe("patchAppSettings", () => {
       trayNotifications: "off" as const,
       desktopLogLevel: "info" as const,
       cliCaptureLogLevel: "info" as const,
+      appImageIntegrationPromptDismissed: false,
     }
     expect(patchAppSettings(current, { openToTrayOnStartup: true })).toEqual({
       runAtStartup: true,
@@ -103,6 +108,7 @@ describe("patchAppSettings", () => {
       trayNotifications: "off",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
   })
 })
@@ -169,6 +175,7 @@ describe("AppSettingsStore", () => {
       trayNotifications: "off",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
   })
 
@@ -186,6 +193,7 @@ describe("AppSettingsStore", () => {
       trayNotifications: "failures",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
   })
 
@@ -213,5 +221,30 @@ describe("AppSettingsStore", () => {
     off()
     store.save({ ...DEFAULT_APP_SETTINGS })
     expect(calls).toBe(1)
+  })
+})
+
+describe("appImageIntegrationPromptDismissed", () => {
+  it("persists a dismissed prompt and defaults to not dismissed", () => {
+    expect(normalizeAppSettings({}).appImageIntegrationPromptDismissed).toBe(
+      false,
+    )
+    expect(
+      normalizeAppSettings({ appImageIntegrationPromptDismissed: true })
+        .appImageIntegrationPromptDismissed,
+    ).toBe(true)
+    expect(
+      normalizeAppSettings({ appImageIntegrationPromptDismissed: "yes" })
+        .appImageIntegrationPromptDismissed,
+    ).toBe(false)
+  })
+
+  it("accepts only a boolean from the renderer", () => {
+    expect(
+      sanitizeAppSettingsPatch({ appImageIntegrationPromptDismissed: true }),
+    ).toEqual({ appImageIntegrationPromptDismissed: true })
+    expect(() =>
+      sanitizeAppSettingsPatch({ appImageIntegrationPromptDismissed: 1 }),
+    ).toThrow("appImageIntegrationPromptDismissed must be boolean")
   })
 })

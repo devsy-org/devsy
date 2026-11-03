@@ -20,8 +20,7 @@ func NewGolandServer(
 		GolandOptions,
 		values,
 		GolandProductCode,
-		GolandDownloadAmd64Template,
-		GolandDownloadArm64Template,
+		downloadTemplates{amd64: GolandDownloadAmd64Template, arm64: GolandDownloadArm64Template},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "goland",

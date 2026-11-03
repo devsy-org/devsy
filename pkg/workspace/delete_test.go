@@ -14,6 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	chosen = "chosen"
+)
+
 type testQuiescer func(context.Context, string) error
 
 func (f testQuiescer) Quiesce(ctx context.Context, workspaceID string) error {
@@ -86,8 +90,8 @@ func TestDeleteWithPreResolvedClientSkipsSelection(t *testing.T) {
 	setupTestPathManager(t)
 
 	fake := &preResolvedDeleteClient{
-		workspaceID: "chosen",
-		config:      &provider.Workspace{ID: "chosen", Context: testDefaultContext},
+		workspaceID: chosen,
+		config:      &provider.Workspace{ID: chosen, Context: testDefaultContext},
 	}
 	devsyConfig := &config.Config{
 		DefaultContext: testDefaultContext,
@@ -100,7 +104,7 @@ func TestDeleteWithPreResolvedClientSkipsSelection(t *testing.T) {
 		Force:       true,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "chosen", id)
+	require.Equal(t, chosen, id)
 	require.True(t, fake.deleted)
 }
 
@@ -129,12 +133,12 @@ func TestDeleteQuiescesPersistedUpTaskBeforeDeleting(t *testing.T) {
 
 	store, err := task.NewStore()
 	require.NoError(t, err)
-	tk, err := store.Create(task.CreateOptions{Command: "up", WorkspaceID: "chosen"})
+	tk, err := store.Create(task.CreateOptions{Command: "up", WorkspaceID: chosen})
 	require.NoError(t, err)
 
 	fake := &preResolvedDeleteClient{
-		workspaceID: "chosen",
-		config:      &provider.Workspace{ID: "chosen", Context: testDefaultContext},
+		workspaceID: chosen,
+		config:      &provider.Workspace{ID: chosen, Context: testDefaultContext},
 	}
 	devsyConfig := &config.Config{
 		DefaultContext: testDefaultContext,
@@ -147,7 +151,7 @@ func TestDeleteQuiescesPersistedUpTaskBeforeDeleting(t *testing.T) {
 		Force:       true,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "chosen", id)
+	require.Equal(t, chosen, id)
 	require.True(t, fake.deleted)
 
 	state, err := store.Get(tk.ID())
@@ -160,8 +164,8 @@ func TestDeleteBlockedWhenActiveUpTaskCannotBeQuiesced(t *testing.T) {
 	setupTestPathManager(t)
 
 	fake := &preResolvedDeleteClient{
-		workspaceID: "chosen",
-		config:      &provider.Workspace{ID: "chosen", Context: testDefaultContext},
+		workspaceID: chosen,
+		config:      &provider.Workspace{ID: chosen, Context: testDefaultContext},
 	}
 	devsyConfig := &config.Config{
 		DefaultContext: testDefaultContext,

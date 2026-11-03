@@ -113,7 +113,7 @@ func (fixture *compatibilityFixture) registerCleanup() {
 	// Faults are cleared independently so a failed workspace cleanup cannot block fallback.
 	ginkgo.DeferCleanup(fixture.shim.restoreEnvironment)
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		fixture.shim.clearVersionFault()
 		out, err := microsandboxResourceCommand(cleanupCtx, "list", "--quiet")
@@ -136,7 +136,7 @@ func (fixture *compatibilityFixture) registerCleanup() {
 		return nil
 	})
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		fixture.shim.clearVersionFault()
 		return fixture.framework.CleanupWorkspace(cleanupCtx, fixture.hostPath)

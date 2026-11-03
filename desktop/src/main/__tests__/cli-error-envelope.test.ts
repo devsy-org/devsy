@@ -215,3 +215,44 @@ describe("CLI envelopes", () => {
     expect(cliErrorFromLegacy(structured)?.context).toEqual({ attempt: "1" })
   })
 })
+
+describe("run identity compatibility", () => {
+  const run = "11111111-1111-4111-8111-111111111111"
+
+  it("keeps status envelope schema v1 strict", () => {
+    const status = {
+      kind: "status",
+      schemaVersion: 1,
+      phase: "building_image",
+      state: "started",
+    }
+    expect(parseCliEnvelope(JSON.stringify(status))).toBeDefined()
+    expect(
+      parseCliEnvelope(JSON.stringify({ ...status, runId: run })),
+    ).toBeUndefined()
+  })
+
+  it("parses result envelopes with and without a run ID", () => {
+    const result = {
+      kind: "result",
+      outcome: "success",
+      containerId: "c",
+      remoteUser: "u",
+      remoteWorkspaceFolder: "/w",
+    }
+    expect(parseCliEnvelope(JSON.stringify(result))).toMatchObject(result)
+    expect(
+      parseCliEnvelope(JSON.stringify({ ...result, runId: run })),
+    ).toMatchObject({ runId: run })
+  })
+
+  it("carries run identity in string-valued error context", () => {
+    const err = cliErrorFromEnvelope({
+      kind: "error",
+      outcome: "error",
+      message: "hook failed",
+      context: { runId: run, failedInvocationId: run },
+    })
+    expect(err?.context).toEqual({ runId: run, failedInvocationId: run })
+  })
+})

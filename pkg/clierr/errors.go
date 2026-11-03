@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/secrets"
@@ -102,6 +103,26 @@ func Recoverable(err error) error {
 		return nil
 	}
 	return recoverableBuildError{err: err}
+}
+
+// WithContext returns err classified, with values added to its context. Keys
+// the error already carries are kept. The original error stays in the chain.
+func WithContext(err error, values map[string]string) error {
+	if err == nil || len(values) == 0 {
+		return err
+	}
+	classified := Classify(err)
+	merged := make(map[string]string, len(classified.Context)+len(values))
+	maps.Copy(merged, values)
+	maps.Copy(merged, classified.Context)
+
+	return &CLIError{
+		Code:    classified.Code,
+		Message: classified.Message,
+		Hint:    classified.Hint,
+		Context: merged,
+		wrapped: err,
+	}
 }
 
 func Classify(err error) *CLIError {

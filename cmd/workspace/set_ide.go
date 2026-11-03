@@ -34,7 +34,9 @@ func NewSetIDECmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	setIDECmd := &cobra.Command{
 		Use:   "set-ide <workspace> <ide>",
 		Short: "Set a workspace's IDE",
-		Long: `Set a workspace's IDE, persisted to its config and applied on the next
+		Long: `Set a workspace's IDE.
+
+The setting is saved to the workspace config and applied on the next
 'devsy workspace up'. List available IDEs with 'devsy ide list'.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
@@ -46,11 +48,13 @@ func NewSetIDECmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			if len(args) == 0 {
 				return completion.GetWorkspaceSuggestions(
 					rootCmd,
-					cmd.Context,
-					cmd.Provider,
-					args,
-					toComplete,
-					cmd.Owner,
+					completion.SuggestionRequest{
+						Context:    cmd.Context,
+						Provider:   cmd.Provider,
+						Args:       args,
+						ToComplete: toComplete,
+						Owner:      cmd.Owner,
+					},
 				)
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp

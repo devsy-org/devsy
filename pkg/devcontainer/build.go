@@ -175,9 +175,11 @@ func (r *runner) buildAndExtendImage(
 	imageBuildInfo, err := r.getImageBuildInfoFromDockerfile(
 		ctx,
 		substitutionContext,
-		string(base.content),
-		parsedConfig.Config.GetArgs(),
-		parsedConfig.Config.GetTarget(),
+		dockerfileInput{
+			content:   string(base.content),
+			buildArgs: parsedConfig.Config.GetArgs(),
+			target:    parsedConfig.Config.GetTarget(),
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get image build info: %w", err)
@@ -252,9 +254,16 @@ func (r *runner) getImageBuildInfoFromImage(
 	substitutionContext *config.SubstitutionContext,
 	imageName string,
 ) (*config.ImageBuildInfo, error) {
-	imageDetails, err := r.inspectImage(ctx, imageName)
-	if err != nil {
-		return nil, err
+	imageDetails := r.imageDetails
+	var err error
+	if imageDetails != nil && imageName != r.imageDetailsImage {
+		return nil, fmt.Errorf("configured image details do not match selected image %q", imageName)
+	}
+	if imageDetails == nil {
+		imageDetails, err = r.inspectImage(ctx, imageName)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return imageBuildInfoFromDetails(substitutionContext, imageDetails)
 }
@@ -280,13 +289,19 @@ func imageBuildInfoFromDetails(
 	}, nil
 }
 
+// dockerfileInput is the Dockerfile content and build settings to inspect.
+type dockerfileInput struct {
+	content   string
+	buildArgs map[string]string
+	target    string
+}
+
 func (r *runner) getImageBuildInfoFromDockerfile(
 	ctx context.Context,
 	substitutionContext *config.SubstitutionContext,
-	dockerFileContent string,
-	buildArgs map[string]string,
-	target string,
+	input dockerfileInput,
 ) (*config.ImageBuildInfo, error) {
+	dockerFileContent, buildArgs, target := input.content, input.buildArgs, input.target
 	parsedDockerfile, err := dockerfile.Parse(dockerFileContent)
 	if err != nil {
 		return nil, fmt.Errorf("parse dockerfile: %w", err)
@@ -470,6 +485,7 @@ func (r *runner) buildImage(
 			return nil, err
 		}
 		if prebuilt != nil {
+			buildkit.RecordSkipped(ctx, "prebuild", "prebuild_reused")
 			return prebuilt, nil
 		}
 	}

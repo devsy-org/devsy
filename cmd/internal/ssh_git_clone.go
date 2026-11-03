@@ -99,6 +99,7 @@ func runSSHSession(sshConfig *ssh.ClientConfig, addr string, sshCmdArgs []string
 func getConfig(userName string, keyFilePaths []string) (*ssh.ClientConfig, error) {
 	signers := []ssh.Signer{}
 	for _, keyFilePath := range keyFilePaths {
+		//nolint:gosec // keyFilePath is an SSH identity file the user configured
 		out, err := os.ReadFile(keyFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("read private ssh key: %w", err)
@@ -115,7 +116,7 @@ func getConfig(userName string, keyFilePaths []string) (*ssh.ClientConfig, error
 	return &ssh.ClientConfig{
 		User:            userName,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signers...)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // existing behaviour; host key checks are out of scope
 	}, nil
 }
 

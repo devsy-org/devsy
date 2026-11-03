@@ -20,8 +20,7 @@ func NewCLionServer(
 		CLionOptions,
 		values,
 		CLionProductCode,
-		CLionDownloadAmd64Template,
-		CLionDownloadArm64Template,
+		downloadTemplates{amd64: CLionDownloadAmd64Template, arm64: CLionDownloadArm64Template},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "clion",

@@ -18,6 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	wsTestValue = "ws-test"
+)
+
+const (
+	wsTest = wsTestValue
+)
+
 const testEcho = "echo"
 
 type recordingDiagnostics struct {
@@ -38,7 +46,7 @@ func writeWorkspaceConfig(t *testing.T, dir string, shutdown types.StrArray) str
 	t.Helper()
 	require.NoError(t, os.MkdirAll(dir, 0o750))
 
-	info := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: "ws-test"}}
+	info := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: wsTest}}
 	info.Agent.Exec.Shutdown = shutdown
 
 	data, err := json.Marshal(info)
@@ -56,7 +64,7 @@ func TestGetActivity_ShutdownConfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, activity)
 	require.NotNil(t, ws)
-	assert.Equal(t, "ws-test", ws.Workspace.ID)
+	assert.Equal(t, wsTest, ws.Workspace.ID)
 
 	stat, err := os.Stat(cfg)
 	require.NoError(t, err)
@@ -108,7 +116,7 @@ func TestFindLatestActivity_PicksLatest(t *testing.T) {
 }
 
 func workspaceWithShutdownAction(action string) *provider2.AgentWorkspaceInfo {
-	ws := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: "ws-test"}}
+	ws := &provider2.AgentWorkspaceInfo{Workspace: &provider2.Workspace{ID: wsTest}}
 	if action != "" {
 		ws.LastDevContainerConfig = &config.DevContainerConfigWithPath{
 			Config: &config.DevContainerConfig{
@@ -135,7 +143,7 @@ func TestEffectiveShutdownAction(t *testing.T) {
 	t.Run("falls back to flag when config action is empty", func(t *testing.T) {
 		cmd := &DaemonCmd{ShutdownAction: config.ShutdownActionNone}
 		ws := &provider2.AgentWorkspaceInfo{
-			Workspace: &provider2.Workspace{ID: "ws-test"},
+			Workspace: &provider2.Workspace{ID: wsTest},
 			LastDevContainerConfig: &config.DevContainerConfigWithPath{
 				Config: &config.DevContainerConfig{},
 			},
@@ -336,8 +344,8 @@ func TestDiagnosticsRetainsErrorHistoryWithoutInventingStartupPatrol(t *testing.
 func TestUpdateDiagnosticsRetainsWorkspaceContextAfterShutdownFailure(t *testing.T) {
 	recorder := &recordingDiagnostics{}
 	cmd := &DaemonCmd{recorder: recorder, startedAt: time.Now().UTC()}
-	workspaces := []machinediagnostics.WorkspaceStatus{{ID: "ws-test"}}
-	candidate := &machinediagnostics.ShutdownCandidate{WorkspaceID: "ws-test"}
+	workspaces := []machinediagnostics.WorkspaceStatus{{ID: wsTest}}
+	candidate := &machinediagnostics.ShutdownCandidate{WorkspaceID: wsTest}
 
 	cmd.updateDiagnostics(diagnosticsUpdate{
 		state:      machinediagnostics.DaemonRunning,

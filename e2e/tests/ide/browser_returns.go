@@ -218,8 +218,12 @@ var _ = ginkgo.Describe(
 				}).WithTimeout(30*time.Second).WithPolling(500*time.Millisecond).
 					Should(gomega.Succeed(), "helper port-forward at %s never came up", addr)
 
-				// Now sleep past the OLD 5s idle window with NO connections.
-				time.Sleep(8 * time.Second)
+				// The helper must outlive an idle period with no client connections.
+				gomega.Consistently(func() error {
+					return syscall.Kill(state.PID, 0)
+				}).WithTimeout(8*time.Second).WithPolling(500*time.Millisecond).
+					Should(gomega.Succeed(),
+						"expected helper PID %d to stay alive through 8s idle", state.PID)
 
 				// And the listener must still accept.
 				conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
@@ -385,18 +389,12 @@ var _ = ginkgo.Describe(
 
 				err = f.DevsyContextUse(ctx, contextName)
 				framework.ExpectNoError(err)
-				err = f.ExecCommand(
-					ctx,
-					false,
-					true,
-					"",
-					[]string{
-						"context",
-						"set",
-						names.Flag(names.Option),
-						config.ContextOptionGPGAgentForwarding + "=" + config.BoolTrue,
-					},
-				)
+				err = f.ExecCommandStdout(ctx, []string{
+					"context",
+					"set",
+					names.Flag(names.Option),
+					config.ContextOptionGPGAgentForwarding + "=" + config.BoolTrue,
+				})
 				framework.ExpectNoError(err)
 
 				err = f.DevsyProviderAdd(ctx, "docker")

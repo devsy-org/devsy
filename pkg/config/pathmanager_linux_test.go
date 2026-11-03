@@ -101,21 +101,14 @@ func TestConfigFilePathDEVSYCONFIGOverride(t *testing.T) {
 	}
 }
 
-func TestContextDataSubPaths(t *testing.T) {
-	skipIfNotLinux(t)
+type subPathCase struct {
+	name string
+	fn   func() (string, error)
+	want string
+}
 
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	pm := newTestLinuxPM()
-	ctx := "myctx"
-	base := filepath.Join(home, "."+RepoName, "contexts", ctx)
-
-	tests := []struct {
-		name string
-		fn   func() (string, error)
-		want string
-	}{
+func contextDataSubPathCases(pm PathManager, ctx, base string) []subPathCase {
+	return []subPathCase{
 		{"ContextDir", func() (string, error) { return pm.ContextDir(ctx) }, base},
 		{
 			"WorkspacesDir",
@@ -163,6 +156,19 @@ func TestContextDataSubPaths(t *testing.T) {
 			filepath.Join(base, "providers"),
 		},
 	}
+}
+
+func TestContextDataSubPaths(t *testing.T) {
+	skipIfNotLinux(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	pm := newTestLinuxPM()
+	ctx := "myctx"
+	base := filepath.Join(home, "."+RepoName, "contexts", ctx)
+
+	tests := contextDataSubPathCases(pm, ctx, base)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

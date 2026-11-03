@@ -46,9 +46,11 @@ func (s Status) Terminal() bool {
 // doing the work, distinct from whatever process is merely polling this
 // state.
 type State struct {
-	ID                     string              `json:"id"`
-	Command                string              `json:"command,omitempty"`
-	WorkspaceID            string              `json:"workspaceId,omitempty"`
+	ID          string `json:"id"`
+	Command     string `json:"command,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	// RunID links the task to its retained setup history.
+	RunID                  string              `json:"runId,omitempty"`
 	Status                 Status              `json:"status"`
 	Phase                  string              `json:"phase,omitempty"`
 	Step                   string              `json:"step,omitempty"`
@@ -66,6 +68,10 @@ type State struct {
 	ProcessCleanupComplete bool                `json:"processCleanupComplete,omitempty"`
 	CancelRequested        bool                `json:"cancelRequested,omitempty"`
 	LaunchPending          bool                `json:"launchPending,omitempty"`
+	LaunchProtocol         int                 `json:"launchProtocol,omitempty"`
+	WorkerReady            bool                `json:"workerReady,omitempty"`
+	LaunchTreeID           string              `json:"launchTreeId,omitempty"`
+	LaunchOwned            bool                `json:"launchOwned,omitempty"`
 	StartedAt              time.Time           `json:"startedAt"`
 	UpdatedAt              time.Time           `json:"updatedAt"`
 }
@@ -74,6 +80,8 @@ type State struct {
 type CreateOptions struct {
 	Command     string
 	WorkspaceID string
+	// RunID is the retained-history run allocated before the task exists.
+	RunID string
 }
 
 // Task is a handle to a single background task, bound to the Store it was
@@ -85,9 +93,21 @@ type Task struct {
 	// Held for the worker process's lifetime; see HoldWorkerLock.
 	workerLock   *flock.Flock
 	launcherLock *flock.Flock
+	launchLease  *command.LaunchLease
 }
 
 func (t *Task) ID() string { return t.id }
+
+// RunID returns the retained-history run bound to the task, or empty when the
+// task has none or its state cannot be read.
+func (t *Task) RunID() string {
+	state, err := t.store.readState(t.id)
+	if err != nil {
+		return ""
+	}
+
+	return state.RunID
+}
 
 func (s *State) Canceled() bool {
 	return s != nil && s.Status == StatusFailed && s.ErrorCode == string(clierr.CodeCanceled)
@@ -141,30 +161,25 @@ func (s *State) NeedsReconciliation() bool {
 }
 
 func (t *Task) BeginLaunch() error {
-	launcherLock, available, err := t.store.tryLauncherLock(t.id)
-	if err != nil {
-		return fmt.Errorf("lock task %s launcher: %w", t.id, err)
-	}
-	if !available {
-		return fmt.Errorf("task %s already has a launcher", t.id)
+	if err := t.claimLaunchOwnership(); err != nil {
+		return err
 	}
 	var canceled bool
-	err = t.store.update(t.id, func(s *State) {
-		if s.Status.Terminal() || s.CancelRequested {
+	err := t.store.update(t.id, func(s *State) {
+		if s.Status.Terminal() || s.CancelRequested || s.LaunchProtocol != 0 || s.PID != 0 {
 			canceled = true
 			return
 		}
 		s.LaunchPending = true
+		s.LaunchProtocol = 1
+		s.WorkerReady = false
 	})
 	if err != nil {
-		_ = launcherLock.Unlock()
-		return err
+		return errors.Join(err, releaseLauncherLock(t))
 	}
 	if canceled {
-		_ = launcherLock.Unlock()
-		return ErrCanceled
+		return errors.Join(ErrCanceled, releaseLauncherLock(t))
 	}
-	t.launcherLock = launcherLock
 	return nil
 }
 
@@ -237,15 +252,20 @@ func (t *Task) ReleaseWorkerLock() error {
 }
 
 func releaseLauncherLock(t *Task) error {
+	var leaseErr error
+	if t.launchLease != nil {
+		leaseErr = t.launchLease.Close()
+		t.launchLease = nil
+	}
 	if t.launcherLock == nil {
-		return nil
+		return leaseErr
 	}
 	lock := t.launcherLock
 	t.launcherLock = nil
 	if err := lock.Unlock(); err != nil {
 		return fmt.Errorf("unlock task %s launcher: %w", t.id, err)
 	}
-	return nil
+	return leaseErr
 }
 
 // SetWorkspaceID corrects the task's workspace label to the resolved ID,
@@ -470,23 +490,15 @@ func waitForLaunchStep(t *Task) (*State, bool, error) {
 }
 
 func clearAbandonedLaunch(t *Task) (bool, error) {
-	launcherLock, available, err := t.store.tryLauncherLock(t.id)
+	state, err := t.store.Get(t.id)
 	if err != nil {
-		return false, fmt.Errorf("cancel task %s: inspect launcher lock: %w", t.id, err)
+		return false, err
 	}
-	if !available {
-		return false, nil
+	if state.LaunchProtocol == 1 {
+		current, err := t.store.reconcilePendingLaunch(context.Background(), t.id)
+		return current != nil && !current.LaunchPending, err
 	}
-	defer func() { _ = launcherLock.Unlock() }()
-	err = t.store.update(t.id, func(current *State) {
-		if current.CancelRequested && current.LaunchPending {
-			current.LaunchPending = false
-		}
-	})
-	if err != nil {
-		return false, fmt.Errorf("cancel task %s: clear abandoned launch: %w", t.id, err)
-	}
-	return true, nil
+	return false, errors.New("cannot verify cleanup of a legacy abandoned launch")
 }
 
 func waitForCancellation(ctx context.Context) error {
@@ -511,6 +523,10 @@ func markCanceled(s *State) {
 // Fail preserves an existing terminal state, so the error a canceled worker
 // reports on its way out doesn't mask ErrCanceled as the reason it stopped.
 func (t *Task) Fail(err error) error {
+	return t.recordFailure(err, false)
+}
+
+func (t *Task) recordFailure(err error, failedLaunch bool) error {
 	message := ""
 	var classified *clierr.CLIError
 	if err != nil {
@@ -526,7 +542,14 @@ func (t *Task) Fail(err error) error {
 		message = classified.Message
 	}
 	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	var runContext map[string]string
+	if current, readErr := t.store.readState(t.id); readErr == nil {
+		runContext = runFailureContext(current.RunID)
+	}
 	return t.store.update(t.id, func(s *State) {
+		if failedLaunch {
+			s.markLaunchCleanupPending()
+		}
 		if s.Status.Terminal() || s.CancelRequested {
 			return
 		}
@@ -538,6 +561,7 @@ func (t *Task) Fail(err error) error {
 			s.ErrorHint = redactor.Redact(classified.Hint)
 			s.ErrorContext = redactContext(classified.Context, redactor)
 		}
+		s.ErrorContext = withRunContext(s.ErrorContext, runContext)
 	})
 }
 

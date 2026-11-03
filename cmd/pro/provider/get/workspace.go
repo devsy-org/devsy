@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/platform"
@@ -58,7 +59,7 @@ func (cmd *WorkspaceCmd) Run(ctx context.Context) error {
 		return nil
 	}
 
-	fmt.Println(string(instanceBytes))
+	_, _ = fmt.Fprintln(os.Stdout, string(instanceBytes))
 
 	return nil
 }

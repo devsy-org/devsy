@@ -29,6 +29,7 @@ import (
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	open2 "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/port"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 )
 
@@ -147,11 +148,11 @@ func openDesktopIDE(
 		return "", openJetBrains(ideName, ideOptions, params)
 
 	case string(config.IDEZed):
-		return "", zed.Open(
-			ctx, ideOptions, params.User,
-			params.Result.SubstitutionContext.ContainerWorkspaceFolder,
-			params.Client.Workspace(),
-		)
+		return "", zed.Open(ctx, ideOptions, zed.Target{
+			UserName:        params.User,
+			WorkspaceFolder: params.Result.SubstitutionContext.ContainerWorkspaceFolder,
+			SSHHost:         resolveSSHHost(params.Client),
+		})
 
 	default:
 		return "", nil
@@ -205,6 +206,23 @@ var vsCodeFlavorMap = map[string]vscode.Flavor{
 	string(config.IDEBob):            vscode.FlavorBob,
 }
 
+func resolveSSHHost(c client2.BaseWorkspaceClient) string {
+	ws := c.WorkspaceConfig()
+	if ws == nil {
+		return sshHostFor(nil, c.Workspace())
+	}
+
+	return ws.PreferredSSHHostCommitted()
+}
+
+func sshHostFor(ws *provider.Workspace, id string) string {
+	if ws == nil {
+		return id + config.SSHHostSuffix
+	}
+
+	return ws.PreferredSSHHost()
+}
+
 func openVSCodeFlavor(
 	ctx context.Context,
 	ideName string,
@@ -212,11 +230,15 @@ func openVSCodeFlavor(
 	params IDEParams,
 ) error {
 	return vscode.Open(ctx, vscode.OpenParams{
-		Workspace:  params.Client.Workspace(),
-		Folder:     params.Result.SubstitutionContext.ContainerWorkspaceFolder,
-		NewWindow:  vscode.Options.GetValue(ideOptions, vscode.OpenNewWindow) == config.BoolTrue,
-		Flavor:     vsCodeFlavorMap[ideName],
-		TunnelMode: params.TunnelMode,
+		SSHHost: resolveSSHHost(params.Client),
+		Folder:  params.Result.SubstitutionContext.ContainerWorkspaceFolder,
+		NewWindow: vscode.Options.GetValue(
+			ideOptions,
+			vscode.OpenNewWindow,
+		) == config.BoolTrue,
+		Flavor:            vsCodeFlavorMap[ideName],
+		TunnelMode:        params.TunnelMode,
+		SSHConnectTimeout: vscode.Options.GetValue(ideOptions, vscode.SSHConnectTimeout),
 	})
 }
 
@@ -226,7 +248,7 @@ func openJetBrains(
 	params IDEParams,
 ) error {
 	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
-	workspace := params.Client.Workspace()
+	sshHost := resolveSSHHost(params.Client)
 	user := params.User
 	type jetbrainsFactory func() interface{ OpenGateway(string, string) error }
 
@@ -264,7 +286,7 @@ func openJetBrains(
 	}
 
 	if factory, ok := jetbrainsMap[ideName]; ok {
-		return factory().OpenGateway(folder, workspace)
+		return factory().OpenGateway(folder, sshHost)
 	}
 	return fmt.Errorf("unknown JetBrains IDE: %s", ideName)
 }

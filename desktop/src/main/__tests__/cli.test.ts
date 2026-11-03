@@ -154,6 +154,20 @@ describe("CliRunner", () => {
     )
   })
 
+  it("raises the stdout cap of run() only when asked to", async () => {
+    const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    mock.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) =>
+        callback(null, { stdout: "{}", stderr: "" }),
+    )
+
+    await cli.run(["provider", "list"])
+    await cli.run(["provider", "icon", "harvester"], { maxBuffer: 4096 })
+
+    expect(mock.mock.calls[0][2]).not.toHaveProperty("maxBuffer")
+    expect(mock.mock.calls[1][2].maxBuffer).toBe(4096)
+  })
+
   it.each(["run", "runRaw"] as const)(
     "%s preserves unlock errors without invoking the handler when prompting is disabled",
     async (method) => {

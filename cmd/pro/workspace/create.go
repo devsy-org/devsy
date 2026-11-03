@@ -4,8 +4,8 @@ package workspace
 import (
 	"context"
 
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -33,7 +33,7 @@ func NewCreateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Create workspace instance",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := proutil.FindPlatformProvider(
+			devsyConfig, provider, err := cmdutil.FindPlatformProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,

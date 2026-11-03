@@ -98,8 +98,10 @@ func TestGetDownloadURLs(t *testing.T) {
 				GolandOptions,
 				tt.values,
 				GolandProductCode,
-				GolandDownloadAmd64Template,
-				GolandDownloadArm64Template,
+				downloadTemplates{
+					amd64: GolandDownloadAmd64Template,
+					arm64: GolandDownloadArm64Template,
+				},
 			)
 			assert.Equal(t, tt.wantAmd64, amd64)
 			assert.Equal(t, tt.wantArm64, arm64)
@@ -115,6 +117,18 @@ func TestGetDirectoryUnderHome(t *testing.T) {
 		"/home/alice/.cache/JetBrains/RemoteDev/dist/goland",
 		s.getDirectory("/home/alice"),
 	)
+}
+
+func TestGatewayURLUsesGivenSSHHost(t *testing.T) {
+	s := newGenericServer("alice", &GenericOptions{ID: testID})
+
+	canonical := s.gatewayURL("/workspaces/ws", "ws.devsy")
+	assert.Contains(t, canonical, "&host=ws.devsy&")
+	assert.Contains(t, canonical, "&projectPath=%2Fworkspaces%2Fws&")
+
+	alias := s.gatewayURL("/workspaces/ws", "friendly.devsy")
+	assert.Contains(t, alias, "&host=friendly.devsy&port=22&user=alice&")
+	assert.NotContains(t, alias, "host=ws.devsy")
 }
 
 type tarEntry struct {

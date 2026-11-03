@@ -216,14 +216,13 @@ func (c *client) RefreshOptions(
 		return fmt.Errorf("parse options: %w", err)
 	}
 
-	workspace, err := options.ResolveAndSaveOptionsWorkspace(
-		ctx,
-		c.devsyConfig,
-		c.config,
-		c.workspace,
-		userOptions,
-		resolver.WithResolveSubOptions(),
-	)
+	workspace, err := options.ResolveAndSaveOptionsWorkspace(ctx, options.ResolveWorkspaceRequest{
+		DevConfig:         c.devsyConfig,
+		ProviderConfig:    c.config,
+		OriginalWorkspace: c.workspace,
+		UserOptions:       userOptions,
+		Options:           []resolver.Option{resolver.WithResolveSubOptions()},
+	})
 	if err != nil {
 		return err
 	}

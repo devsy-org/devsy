@@ -137,6 +137,7 @@ func (h *Helper) getFromWorkspaceServer(serverURL string) (string, string, error
 
 	client := &http.Client{Timeout: credentialsTimeout}
 	endpoint := fmt.Sprintf("http://localhost:%s/docker-credentials", workspacePort)
+	//nolint:gosec // endpoint is always loopback; only the port comes from the agent environment
 	resp, err := client.Post(endpoint, "application/json", bytes.NewReader(requestBody))
 	if err != nil {
 		return "", "", err

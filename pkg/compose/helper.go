@@ -6,18 +6,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/blang/semver/v4"
 	composecli "github.com/compose-spec/compose-go/v2/cli"
+	"github.com/compose-spec/compose-go/v2/dotenv"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/wslg"
+)
+
+const (
+	goosWindows     = "windows"
+	projectNameFlag = "--project-name"
 )
 
 func LoadDockerComposeProject(
@@ -25,10 +34,32 @@ func LoadDockerComposeProject(
 	paths []string,
 	envFiles []string,
 ) (*composetypes.Project, error) {
+	return LoadDockerComposeProjectWithEnv(ctx, paths, envFiles, nil)
+}
+
+func LoadDockerComposeProjectWithEnv(
+	ctx context.Context,
+	paths, envFiles []string,
+	candidates map[string]string,
+) (*composetypes.Project, error) {
+	if candidates != nil {
+		if err := wslg.CheckCollisions(
+			"process environment",
+			os.Environ(),
+			runtime.GOOS == goosWindows,
+		); err != nil {
+			return nil, err
+		}
+	}
+	if err := wslg.ValidateEnvironment(candidates); err != nil {
+		return nil, err
+	}
 	projectOptions, err := composecli.NewProjectOptions(
 		paths,
 		composecli.WithOsEnv,
+		composecli.WithEnv(wslg.Pairs(candidates)),
 		composecli.WithEnvFiles(envFiles...),
+		checkWSLgEnvFiles(candidates),
 		composecli.WithDotEnv,
 		composecli.WithDefaultProfiles(),
 	)
@@ -45,10 +76,43 @@ func LoadDockerComposeProject(
 }
 
 type ComposeHelper struct {
-	Command string
-	Version string
-	Args    []string
-	Docker  *docker.DockerHelper
+	Command               string
+	Version               string
+	Args                  []string
+	Docker                *docker.DockerHelper
+	invocationEnvironment map[string]string
+}
+
+// WithInvocationEnvironment leaves the shared provider helper unchanged.
+func (h *ComposeHelper) WithInvocationEnvironment(env map[string]string) *ComposeHelper {
+	clone := *h
+	clone.Args = append([]string(nil), h.Args...)
+	clone.invocationEnvironment = maps.Clone(env)
+	return &clone
+}
+
+func checkWSLgEnvFiles(candidates map[string]string) composecli.ProjectOptionsFn {
+	return func(options *composecli.ProjectOptions) error {
+		if candidates == nil {
+			return nil
+		}
+		// Parse each source with Compose's own dotenv parser so even shadowed and
+		// empty assignments count. Service env_file is a different namespace.
+		for _, file := range options.EnvFiles {
+			env, err := dotenv.GetEnvFromFile(options.Environment, []string{file})
+			if err != nil {
+				return fmt.Errorf("cannot validate WSLg interpolation file %s", file)
+			}
+			if err := wslg.CheckCollisions(
+				file,
+				wslg.Pairs(env),
+				runtime.GOOS == goosWindows,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 }
 
 // NewComposeHelper creates a new ComposeHelper instance after detecting whether
@@ -89,10 +153,18 @@ func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error)
 
 // tryDockerComposeV2 checks if Docker Compose V2 is available and returns a ComposeHelper if so.
 // The Compose V2 plugin can be installed on linux using
-// sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
+//
+//	sudo curl -SL \
+//	  https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) \
+//	  -o /usr/libexec/docker/cli-plugins/docker-compose
+//
 // sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 // Docker Compose V2 requires the buildx plugin for building images and can be installed using
-// sudo curl -SL https://github.com/docker/buildx/releases/latest/download/buildx-v0.30.1.linux-amd64 -o /usr/libexec/docker/cli-plugins/docker-buildx
+//
+//	sudo curl -SL \
+//	  https://github.com/docker/buildx/releases/latest/download/buildx-v0.30.1.linux-amd64 \
+//	  -o /usr/libexec/docker/cli-plugins/docker-buildx
+//
 // sudo chmod +x /usr/libexec/docker/cli-plugins/docker-buildx.
 func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 	if exec.Command(dockerCmd, "compose").Run() != nil {
@@ -202,17 +274,15 @@ func (h *ComposeHelper) FindDevContainer(
 func (h *ComposeHelper) Run(
 	ctx context.Context,
 	args []string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
+	streams docker.Streams,
 ) error {
 	cmd := h.buildCmd(ctx, args...)
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
+	cmd.Stdin = streams.Stdin
+	cmd.Stdout = streams.Stdout
 
 	var stderrBuf strings.Builder
-	if stderr != nil {
-		cmd.Stderr = io.MultiWriter(stderr, &stderrBuf)
+	if streams.Stderr != nil {
+		cmd.Stderr = io.MultiWriter(streams.Stderr, &stderrBuf)
 	} else {
 		cmd.Stderr = &stderrBuf
 	}
@@ -225,7 +295,7 @@ func (h *ComposeHelper) Run(
 }
 
 func (h *ComposeHelper) Stop(ctx context.Context, projectName string, args []string) error {
-	buildArgs := []string{"--project-name", projectName}
+	buildArgs := []string{projectNameFlag, projectName}
 	buildArgs = append(buildArgs, args...)
 	buildArgs = append(buildArgs, "stop")
 
@@ -250,7 +320,7 @@ func (h *ComposeHelper) Remove(
 	args []string,
 	removeVolumes bool,
 ) error {
-	buildArgs := []string{"--project-name", projectName}
+	buildArgs := []string{projectNameFlag, projectName}
 	buildArgs = append(buildArgs, args...)
 	buildArgs = append(buildArgs, "down")
 	if removeVolumes {
@@ -294,7 +364,7 @@ func (h *ComposeHelper) FindProjectFiles(
 	ctx context.Context,
 	projectName string,
 ) ([]string, error) {
-	buildArgs := []string{"--project-name", projectName}
+	buildArgs := []string{projectNameFlag, projectName}
 	buildArgs = append(buildArgs, "ls", "-a", "--filter", "name="+projectName, "--format", "json")
 
 	rawOut, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
@@ -361,6 +431,12 @@ func (h *ComposeHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd 
 	cmd := exec.CommandContext(ctx, h.Command, allArgs...)
 	if h.Docker != nil && h.Docker.Environment != nil {
 		cmd.Env = append(os.Environ(), h.Docker.Environment...)
+	}
+	if h.invocationEnvironment != nil {
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = wslg.Overlay(cmd.Env, h.invocationEnvironment, runtime.GOOS == goosWindows)
 	}
 	return cmd
 }

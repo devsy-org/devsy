@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/compose"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -104,6 +105,9 @@ func (r *runner) startComposeInstance(
 	params *composeContainerParams,
 	details *config.ContainerDetails,
 ) (*config.ContainerDetails, error) {
+	if err := checkWSLgResume(details); err != nil {
+		return nil, err
+	}
 	args, err := composeResumeArgs(details, params.project.Name)
 	if err != nil {
 		return nil, err
@@ -111,7 +115,11 @@ func (r *runner) startComposeInstance(
 	args = r.onlyRunServices(append(args, "start"), params.runParams.parsedConfig)
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	if err := params.composeHelper.Run(ctx, args, nil, writer, writer); err != nil {
+	if err := params.composeHelper.Run(
+		ctx,
+		args,
+		docker.Streams{Stdout: writer, Stderr: writer},
+	); err != nil {
 		return nil, fmt.Errorf("start existing compose workspace: %w", err)
 	}
 	started, err := params.composeHelper.FindDevContainer(
@@ -142,7 +150,7 @@ func composeResumeArgs(details *config.ContainerDetails, projectName string) ([]
 		return nil, err
 	}
 	if found {
-		return append(args, persisted...), nil
+		return append(args, persisted.Args...), nil
 	}
 	for _, file := range files {
 		args = append(args, "-f", file)

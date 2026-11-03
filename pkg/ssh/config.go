@@ -2,14 +2,16 @@ package ssh
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -17,8 +19,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/util"
 )
-
-var configLock sync.Mutex
 
 var (
 	MarkerStartPrefix = "# Devsy Start "
@@ -40,20 +40,37 @@ type SSHConfigParams struct {
 	DevsyHome            string
 	Provider             string
 	TunnelPort           int // If > 0, use TCP tunnel mode instead of ProxyCommand
+	PreferredHost        string
+	ResolvePreferredHost func() string
+	Owner                Owner
 }
 
 func ConfigureSSHConfig(params SSHConfigParams) error {
-	configLock.Lock()
-	defer configLock.Unlock()
+	owner, err := resolveOwner(params.Owner, params.Context)
+	if err != nil {
+		return err
+	}
 
-	targetPath := params.SSHConfigPath
-	if params.SSHConfigIncludePath != "" {
-		targetPath = params.SSHConfigIncludePath
+	targetPath, err := resolveWriteTarget(params.SSHConfigPath, params.SSHConfigIncludePath)
+	if err != nil {
+		return err
+	}
+
+	unlock, err := lockConfigFile(targetPath)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	preferredHost := params.PreferredHost
+	if params.ResolvePreferredHost != nil {
+		preferredHost = params.ResolvePreferredHost()
 	}
 
 	newFile, err := addHost(addHostParams{
 		path:            targetPath,
 		host:            params.Workspace + config.SSHHostSuffix,
+		preferredHost:   preferredHost,
 		user:            params.User,
 		context:         params.Context,
 		workspace:       params.Workspace,
@@ -64,6 +81,8 @@ func ConfigureSSHConfig(params SSHConfigParams) error {
 		devsyHome:       params.DevsyHome,
 		provider:        params.Provider,
 		tunnelPort:      params.TunnelPort,
+		ownerLine:       owner.Line(),
+		policy:          newBlockPolicy(owner, params.Workspace, params.DevsyHome),
 	})
 	if err != nil {
 		return fmt.Errorf("parse ssh config: %w", err)
@@ -81,6 +100,7 @@ type DevsySSHEntry struct {
 type addHostParams struct {
 	path            string
 	host            string
+	preferredHost   string
 	user            string
 	context         string
 	workspace       string
@@ -91,10 +111,12 @@ type addHostParams struct {
 	devsyHome       string
 	provider        string
 	tunnelPort      int
+	ownerLine       string
+	policy          *blockPolicy
 }
 
 func addHost(params addHostParams) (string, error) {
-	newConfig, err := removeFromConfig(params.path, params.host)
+	newConfig, err := removeFromConfigOwned(params.path, params.host, params.policy)
 	if err != nil {
 		return "", err
 	}
@@ -189,13 +211,26 @@ type sshConfigBuilder struct {
 	lines []string
 }
 
-func newSSHConfigBuilder(host string) *sshConfigBuilder {
-	return &sshConfigBuilder{
-		lines: []string{
-			MarkerStartPrefix + host,
-			"Host " + host,
-		},
+func newSSHConfigBuilder(host, preferredHost, ownerLine string) *sshConfigBuilder {
+	lines := []string{MarkerStartPrefix + host}
+	if ownerLine != "" {
+		lines = append(lines, ownerLine)
 	}
+
+	return &sshConfigBuilder{lines: append(lines, hostLine(host, preferredHost))}
+}
+
+var preferredHostPattern = regexp.MustCompile(
+	`(?i)^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.devsy$`,
+)
+
+func hostLine(canonicalHost, preferredHost string) string {
+	if preferredHost == "" || strings.EqualFold(preferredHost, canonicalHost) ||
+		!preferredHostPattern.MatchString(preferredHost) {
+		return "Host " + canonicalHost
+	}
+
+	return "Host " + preferredHost + " " + canonicalHost
 }
 
 func (b *sshConfigBuilder) addSSHOptions(provider string, agentForwarding bool) *sshConfigBuilder {
@@ -262,7 +297,7 @@ func buildProxyCommand(execPath string, params addHostParams) string {
 
 // buildSSHConfigLines creates the SSH config entry lines.
 func buildSSHConfigLines(params addHostParams, proxyCmd string) []string {
-	return newSSHConfigBuilder(params.host).
+	return newSSHConfigBuilder(params.host, params.preferredHost, params.ownerLine).
 		addSSHOptions(params.provider, params.agentForwarding).
 		addProxyCommand(proxyCmd).
 		addUser(params.user, params.host).
@@ -271,7 +306,7 @@ func buildSSHConfigLines(params addHostParams, proxyCmd string) []string {
 
 // buildTunnelConfigLines creates the SSH config entry lines for TCP tunnel mode.
 func buildTunnelConfigLines(params addHostParams) []string {
-	return newSSHConfigBuilder(params.host).
+	return newSSHConfigBuilder(params.host, params.preferredHost, params.ownerLine).
 		addSSHOptions(params.provider, params.agentForwarding).
 		addTunnelConnection(params.tunnelPort).
 		addUser(params.user, params.host).
@@ -393,20 +428,48 @@ func GetUser(
 	return user, nil
 }
 
+// RemoveFromConfig removes the managed block for workspaceID without checking ownership.
 func RemoveFromConfig(
 	workspaceID string,
 	sshConfigPath string,
 	sshConfigIncludePath string,
 ) error {
-	configLock.Lock()
-	defer configLock.Unlock()
+	return removeManagedBlock(workspaceID, sshConfigPath, sshConfigIncludePath, nil)
+}
 
-	targetPath := sshConfigPath
-	if sshConfigIncludePath != "" {
-		targetPath = sshConfigIncludePath
+// RemoveFromConfigForOwner removes only blocks owned by owner and fails on foreign blocks.
+func RemoveFromConfigForOwner(
+	owner Owner,
+	workspaceID string,
+	sshConfigPath string,
+	sshConfigIncludePath string,
+) error {
+	policy, err := newResolvedBlockPolicy(owner, workspaceID, "")
+	if err != nil {
+		return err
 	}
 
-	newFile, err := removeFromConfig(targetPath, workspaceID+config.SSHHostSuffix)
+	return removeManagedBlock(workspaceID, sshConfigPath, sshConfigIncludePath, policy)
+}
+
+func removeManagedBlock(
+	workspaceID string,
+	sshConfigPath string,
+	sshConfigIncludePath string,
+	policy *blockPolicy,
+) error {
+	targetPath, err := resolveWriteTarget(sshConfigPath, sshConfigIncludePath)
+	if err != nil {
+		return err
+	}
+
+	unlock, err := lockConfigFile(targetPath)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	newFile, err := removeFromConfigOwned(targetPath, workspaceID+config.SSHHostSuffix, policy)
 	if err != nil {
 		return fmt.Errorf("parse ssh config: %w", err)
 	}
@@ -415,13 +478,7 @@ func RemoveFromConfig(
 }
 
 func writeSSHConfig(path, content string) error {
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err := os.MkdirAll(filepath.Dir(path), 0o755)
-	if err != nil {
-		log.Debugf("error creating ssh directory: %v", err)
-	}
-
-	err = os.WriteFile(path, []byte(content), 0o600)
+	err := writeFileAtomic(path, []byte(content))
 	if err != nil {
 		return fmt.Errorf("write ssh config: %w", err)
 	}
@@ -446,14 +503,63 @@ func ResolveSSHConfigPath(sshConfigPath string) (string, error) {
 	return filepath.Abs(sshConfigPath)
 }
 
+func removeFromConfigOwned(path, host string, policy *blockPolicy) (string, error) {
+	lines, err := readConfigLines(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("parse ssh config: %w", err)
+	}
+
+	kept, err := dropManagedBlocks(lines, path, host, policy)
+	if err != nil {
+		return "", err
+	}
+
+	if len(kept) > 0 && kept[0] == "" {
+		kept = kept[1:]
+	}
+
+	return strings.Join(kept, "\n"), nil
+}
+
+func dropManagedBlocks(lines []string, path, host string, policy *blockPolicy) ([]string, error) {
+	startMarker := MarkerStartPrefix + host
+	endMarker := MarkerEndPrefix + host
+	kept := make([]string, 0, len(lines))
+
+	for i := 0; i < len(lines); i++ {
+		switch {
+		case isMarkerLine(lines[i], startMarker):
+			end := managedBlockEnd(lines, i, endMarker)
+			if err := policy.claim(path, host, lines[i:end+1]); err != nil {
+				return nil, err
+			}
+			i = end
+		case isMarkerLine(lines[i], endMarker):
+		default:
+			kept = append(kept, lines[i])
+		}
+	}
+
+	return kept, nil
+}
+
+func managedBlockEnd(lines []string, start int, endMarker string) int {
+	for i := start + 1; i < len(lines); i++ {
+		if isMarkerLine(lines[i], endMarker) {
+			return i
+		}
+	}
+
+	return len(lines) - 1
+}
+
 func removeFromConfig(path, host string) (string, error) {
-	return transformHostSection(path, host, func(line string) string {
-		return ""
-	})
+	return removeFromConfigOwned(path, host, nil)
 }
 
 func transformHostSection(path, host string, transform func(line string) string) (string, error) {
 	var reader io.Reader
+	//nolint:gosec // path is the user ssh config
 	f, err := os.Open(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -492,9 +598,9 @@ func scanHostSection(
 	for configScanner.Scan() {
 		text := configScanner.Text()
 		switch {
-		case strings.HasPrefix(text, startMarker):
+		case isMarkerLine(text, startMarker):
 			inSection = true
-		case strings.HasPrefix(text, endMarker):
+		case isMarkerLine(text, endMarker):
 			inSection = false
 		case !inSection:
 			newLines = append(newLines, text)
@@ -507,4 +613,13 @@ func scanHostSection(
 	}
 
 	return newLines, configScanner.Err()
+}
+
+func isMarkerLine(text, marker string) bool {
+	rest, ok := strings.CutPrefix(strings.TrimRight(text, " \t\r"), marker)
+	if !ok {
+		return false
+	}
+
+	return rest == "" || rest[0] == ' ' || rest[0] == '\t'
 }

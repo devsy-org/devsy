@@ -15,6 +15,10 @@ import (
 	"gotest.tools/assert"
 )
 
+const (
+	trueValue = "true"
+)
+
 type testCase struct {
 	Name                       string
 	ProviderOptions            map[string]*types.Option
@@ -787,14 +791,14 @@ func TestResolveAgentAppleConfig(t *testing.T) {
 
 	options := map[string]string{
 		"CONTAINER_PATH": "/opt/homebrew/bin/container",
-		"ROSETTA":        "true",
+		"ROSETTA":        trueValue,
 		"VAL":            "resolved",
 	}
 
 	resolveAgentAppleConfig(agentConfig, options)
 
 	assert.Equal(t, "/opt/homebrew/bin/container", agentConfig.Apple.Path)
-	assert.Equal(t, types.StrBool("true"), agentConfig.Apple.Rosetta)
+	assert.Equal(t, types.StrBool(trueValue), agentConfig.Apple.Rosetta)
 	assert.Equal(t, "resolved", agentConfig.Apple.Env["KEY"])
 }
 
@@ -813,9 +817,9 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 	options := map[string]string{
 		"MICROSANDBOX_MEMORY":                        "2048",
 		"MICROSANDBOX_CPUS":                          "4",
-		"MICROSANDBOX_EPHEMERAL":                     "true",
+		"MICROSANDBOX_EPHEMERAL":                     trueValue,
 		"MICROSANDBOX_MAX_MEMORY":                    "8192",
-		"MICROSANDBOX_BLOCK_EGRESS":                  "true",
+		"MICROSANDBOX_BLOCK_EGRESS":                  trueValue,
 		"MICROSANDBOX_STORAGE":                       "32",
 		"MICROSANDBOX_WORKSPACE_HOST_PERMISSIONS":    "private",
 		"MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION": "relaxed",
@@ -825,9 +829,9 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 
 	assert.Equal(t, "2048", agentConfig.Microsandbox.Memory)
 	assert.Equal(t, "4", agentConfig.Microsandbox.CPUs)
-	assert.Equal(t, types.StrBool("true"), agentConfig.Microsandbox.Ephemeral)
+	assert.Equal(t, types.StrBool(trueValue), agentConfig.Microsandbox.Ephemeral)
 	assert.Equal(t, "8192", agentConfig.Microsandbox.MaxMemory)
-	assert.Equal(t, types.StrBool("true"), agentConfig.Microsandbox.BlockEgress)
+	assert.Equal(t, types.StrBool(trueValue), agentConfig.Microsandbox.BlockEgress)
 	assert.Equal(t, "32", agentConfig.Microsandbox.Storage)
 	assert.Equal(t, "private", agentConfig.Microsandbox.WorkspaceHostPermissions)
 	assert.Equal(t, "relaxed", agentConfig.Microsandbox.WorkspaceStatVirtualization)

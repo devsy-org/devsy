@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -81,6 +82,10 @@ func (cmd *UpCmd) prepareClient(
 	args = cmd.ensureArgs(args)
 
 	existed := cmd.checkWorkspaceExisted(ctx, devsyConfig, args)
+	presentationID := cmd.targetWorkspaceID(args)
+	if err := cmd.validateTarget(devsyConfig, presentationID, existed); err != nil {
+		return nil, err
+	}
 
 	log.Debugf("resolving workspace with ide=%q launch=%q", cmd.IDE, cmd.IDELaunch)
 	resolver := cmd.resolveWorkspace
@@ -102,20 +107,133 @@ func (cmd *UpCmd) prepareClient(
 	return client, nil
 }
 
+func (cmd *UpCmd) targetWorkspaceID(args []string) string {
+	switch {
+	case cmd.ID != "":
+		return cmd.ID
+	case len(args) > 0:
+		_, name := file.IsLocalDir(args[0])
+		return workspace2.ToID(name)
+	default:
+		return ""
+	}
+}
+
 func (cmd *UpCmd) checkWorkspaceExisted(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	args []string,
 ) bool {
-	switch {
-	case cmd.ID != "":
-		return workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
-	case len(args) > 0:
-		_, name := file.IsLocalDir(args[0])
-		return workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
-	default:
+	id := cmd.targetWorkspaceID(args)
+	if id == "" {
 		return true
 	}
+	return workspace2.Exists(
+		ctx,
+		devsyConfig,
+		workspace2.LookupOptions{ID: id, Owner: cmd.Owner},
+	) != ""
+}
+
+func (cmd *UpCmd) hasPresentation() bool {
+	return cmd.DisplayName != "" || cmd.SSHHostAlias != ""
+}
+
+func (cmd *UpCmd) validateTarget(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if err := cmd.checkNewWorkspaceID(devsyConfig, id, existed); err != nil {
+		return err
+	}
+	return cmd.checkPresentation(devsyConfig, id, existed)
+}
+
+func (cmd *UpCmd) checkNewWorkspaceID(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if existed || id == "" {
+		return nil
+	}
+	return workspace2.ValidateNewWorkspaceID(devsyConfig, id, cmd.sshConfigLocation(devsyConfig))
+}
+
+func (cmd *UpCmd) checkPresentation(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if !cmd.hasPresentation() {
+		return nil
+	}
+	if existed || id == "" {
+		log.Warnf(
+			"ignoring --%s and --%s: the workspace already exists, use 'devsy workspace edit'",
+			names.DisplayName,
+			names.SSHHostAlias,
+		)
+		return nil
+	}
+	return workspace2.ValidatePresentation(
+		devsyConfig,
+		workspace2.PresentationCandidate{
+			ID:           id,
+			DisplayName:  cmd.DisplayName,
+			SSHHostAlias: cmd.SSHHostAlias,
+		},
+		cmd.sshConfigLocation(devsyConfig),
+	)
+}
+
+func (cmd *UpCmd) sshConfigLocation(devsyConfig *config.Config) workspace2.SSHConfigLocation {
+	return workspace2.SSHConfigLocation{
+		ConfigPath:  cmd.SSHConfigPath,
+		IncludePath: devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath),
+	}
+}
+
+func (cmd *UpCmd) persistPresentation(
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	if !cmd.hasPresentation() {
+		return nil
+	}
+	ws := client.WorkspaceConfig()
+	if ws == nil {
+		return nil
+	}
+	if ws.IsPlatform() {
+		log.Warnf(
+			"ignoring --%s and --%s: platform workspaces are managed by the platform",
+			names.DisplayName,
+			names.SSHHostAlias,
+		)
+		return nil
+	}
+
+	req := workspace2.PresentationRequest{
+		DevsyConfig: devsyConfig,
+		ID:          ws.ID,
+		ExpectedUID: ws.UID,
+	}
+	if cmd.DisplayName != "" {
+		req.DisplayName = &cmd.DisplayName
+	}
+	if cmd.SSHHostAlias != "" {
+		req.SSHHostAlias = &cmd.SSHHostAlias
+	}
+	result, err := workspace2.EditPresentation(req)
+	if err != nil {
+		return err
+	}
+
+	ws.DisplayName = result.DisplayName
+	ws.SSHHostAlias = result.SSHHostAlias
+	return nil
 }
 
 func (cmd *UpCmd) postResolveWorkspace(
@@ -130,13 +248,35 @@ func (cmd *UpCmd) postResolveWorkspace(
 		}
 		return err
 	}
+	if err := cmd.preflightWSLgClient(devsyConfig, client); err != nil {
+		return cleanupOnFailure(err)
+	}
 	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
 		return cleanupOnFailure(err)
 	}
 	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
 		return cleanupOnFailure(err)
 	}
+	if !existed {
+		if err := cmd.validateResolvedID(devsyConfig, client); err != nil {
+			return cleanupOnFailure(err)
+		}
+		if err := cmd.persistPresentation(devsyConfig, client); err != nil {
+			return cleanupOnFailure(err)
+		}
+	}
 	return nil
+}
+
+func (cmd *UpCmd) validateResolvedID(
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	ws := client.WorkspaceConfig()
+	if ws == nil || ws.IsPlatform() {
+		return nil
+	}
+	return cmd.checkNewWorkspaceID(devsyConfig, ws.ID, false)
 }
 
 func (cmd *UpCmd) prepareClientEnvironment(
@@ -145,6 +285,9 @@ func (cmd *UpCmd) prepareClientEnvironment(
 	ctx context.Context,
 ) error {
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
+		return err
+	}
+	if err := workspace2.ValidateID(cmd.ID); err != nil {
 		return err
 	}
 	if cmd.Platform.Enabled {
@@ -245,26 +388,15 @@ func (cmd *UpCmd) prepareSecretsWithProject(
 		return err
 	}
 
-	if cmd.SecretsFile != "" {
-		parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
-		if err != nil {
-			return err
-		}
-		for k, v := range parsed {
-			cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
-		}
+	if err := cmd.appendSecretsFile(); err != nil {
+		return err
 	}
 
 	if err := cmd.resolveStoredSecrets(ctx, devsyConfig, project); err != nil {
 		return err
 	}
 
-	if cmd.FeatureSecretsFile == "" {
-		cmd.FeatureSecretsFile = os.Getenv("DEVCONTAINER_SECRETS_FILE")
-	}
-	if cmd.FeatureSecretsFile != "" {
-		cmd.CLIOptions.FeatureSecretsFile = cmd.FeatureSecretsFile
-	}
+	cmd.resolveFeatureSecretsFile()
 
 	cmd.WorkspaceEnv = options2.InheritFromEnvironment(
 		cmd.WorkspaceEnv,
@@ -273,6 +405,29 @@ func (cmd *UpCmd) prepareSecretsWithProject(
 	)
 
 	return nil
+}
+
+func (cmd *UpCmd) appendSecretsFile() error {
+	if cmd.SecretsFile == "" {
+		return nil
+	}
+	parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
+	if err != nil {
+		return err
+	}
+	for k, v := range parsed {
+		cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
+	}
+	return nil
+}
+
+func (cmd *UpCmd) resolveFeatureSecretsFile() {
+	if cmd.FeatureSecretsFile == "" {
+		cmd.FeatureSecretsFile = os.Getenv("DEVCONTAINER_SECRETS_FILE")
+	}
+	if cmd.FeatureSecretsFile != "" {
+		cmd.CLIOptions.FeatureSecretsFile = cmd.FeatureSecretsFile
+	}
 }
 
 func (cmd *UpCmd) prepareBootstrapGitToken(
@@ -319,6 +474,15 @@ func (cmd *UpCmd) resolveStoredSecrets(
 		}
 		return cmd.applyEnvVars(ctx, devsyConfig, resolver)
 	}
+	return cmd.resolveWithStore(ctx, devsyConfig, project, requests)
+}
+
+func (cmd *UpCmd) resolveWithStore(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	project *projectSecretContext,
+	requests []secretRequest,
+) error {
 	resolver, err := secrets.NewResolverForConfig(devsyConfig, cmd.unlockOptions())
 	if err != nil {
 		return err
@@ -392,27 +556,9 @@ func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVar
 		explicit = append(explicit, req)
 		explicitRefs[req.ref.String()] = struct{}{}
 	}
-	implicit := make([]envVarRequest, 0)
-	if current := devsyConfig.Current(); current != nil {
-		for _, name := range current.EnvVars {
-			ref, err := secrets.ParseRef(name)
-			if err != nil {
-				return nil, fmt.Errorf("invalid attached environment variable %q: %w", name, err)
-			}
-			if ref.Source != secrets.LocalSourceName ||
-				(ref.Type != "" && ref.Type != secrets.LocalSourceName) {
-				return nil, fmt.Errorf(
-					"attached environment variable %q must use the local Devsy store",
-					name,
-				)
-			}
-			if _, overridden := explicitRefs[ref.String()]; overridden {
-				continue
-			}
-			implicit = append(implicit, envVarRequest{
-				ref: ref, target: ref.Name, origin: envVarAttached,
-			})
-		}
+	implicit, err := attachedEnvVarRequests(devsyConfig, explicitRefs)
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(
 		implicit,
@@ -421,28 +567,69 @@ func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVar
 	return append(implicit, explicit...), nil
 }
 
-func parseEnvVarRequest(entry string) (envVarRequest, error) {
-	name, target, hasTarget := strings.Cut(entry, "=")
+func attachedEnvVarRequests(
+	devsyConfig *config.Config,
+	explicitRefs map[string]struct{},
+) ([]envVarRequest, error) {
+	implicit := make([]envVarRequest, 0)
+	current := devsyConfig.Current()
+	if current == nil {
+		return implicit, nil
+	}
+	for _, name := range current.EnvVars {
+		ref, err := secrets.ParseRef(name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid attached environment variable %q: %w", name, err)
+		}
+		if !isLocalStoreRef(ref) {
+			return nil, fmt.Errorf(
+				"attached environment variable %q must use the local Devsy store",
+				name,
+			)
+		}
+		if _, overridden := explicitRefs[ref.String()]; overridden {
+			continue
+		}
+		implicit = append(implicit, envVarRequest{
+			ref: ref, target: ref.Name, origin: envVarAttached,
+		})
+	}
+	return implicit, nil
+}
+
+func isLocalStoreRef(ref secrets.SecretRef) bool {
+	return ref.Source == secrets.LocalSourceName &&
+		(ref.Type == "" || ref.Type == secrets.LocalSourceName)
+}
+
+func validateEnvTarget(entry, name, target string, hasTarget bool) error {
 	if hasTarget && target == "" {
-		return envVarRequest{}, fmt.Errorf(
+		return fmt.Errorf(
 			"invalid --env %q: target after %q= must not be empty",
 			entry,
 			name,
 		)
 	}
 	if hasTarget && strings.Contains(target, "=") {
-		return envVarRequest{}, fmt.Errorf(
+		return fmt.Errorf(
 			"invalid --env %q: target %q must not contain =",
 			entry,
 			target,
 		)
 	}
+	return nil
+}
+
+func parseEnvVarRequest(entry string) (envVarRequest, error) {
+	name, target, hasTarget := strings.Cut(entry, "=")
+	if err := validateEnvTarget(entry, name, target, hasTarget); err != nil {
+		return envVarRequest{}, err
+	}
 	ref, err := secrets.ParseRef(name)
 	if err != nil {
 		return envVarRequest{}, err
 	}
-	if ref.Source != secrets.LocalSourceName ||
-		(ref.Type != "" && ref.Type != secrets.LocalSourceName) {
+	if !isLocalStoreRef(ref) {
 		return envVarRequest{}, fmt.Errorf(
 			"--env only accepts Devsy-managed values; use --secret %s instead",
 			name,

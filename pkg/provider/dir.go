@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/id"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/providers"
+	"github.com/gofrs/flock"
 )
 
 const (
@@ -43,6 +44,16 @@ func GetWorkspacesDir(context string) (string, error) {
 
 func GetProvidersDir(context string) (string, error) {
 	return config.DefaultPathManager().ProvidersDir(context)
+}
+
+// GetProviderAssetsDir returns the immutable icon cache alongside provider.json.
+func GetProviderAssetsDir(context, providerName string) (string, error) {
+	providerDir, err := GetProviderDir(context, providerName)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(providerDir, ProviderAssetsDirName), nil
 }
 
 func GetProviderDir(context, providerName string) (string, error) {
@@ -181,10 +192,7 @@ func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
 
 	// Unlike saveJSON, this never creates the workspace dir: a result is only
 	// valid while the workspace config exists.
-	if _, err := os.Stat(filepath.Join(workspaceDir, WorkspaceConfigFile)); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("workspace %s no longer exists", workspace.ID)
-		}
+	if _, err := requireWorkspaceConfigFile(workspaceDir, workspace.ID); err != nil {
 		return err
 	}
 
@@ -197,7 +205,76 @@ func SaveWorkspaceConfig(workspace *Workspace) error {
 		return err
 	}
 
-	return saveJSON(workspaceDir, WorkspaceConfigFile, workspace, 0o644)
+	unlock, err := lockWorkspacePersistence(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	toSave := *workspace
+	committed, err := LoadWorkspaceConfig(workspace.Context, workspace.ID)
+	if err == nil && committed.UID == workspace.UID {
+		toSave.DisplayName = committed.DisplayName
+		toSave.SSHHostAlias = committed.SSHHostAlias
+	}
+
+	return saveJSON(workspaceDir, WorkspaceConfigFile, &toSave, 0o644)
+}
+
+func SaveWorkspacePresentation(workspace *Workspace) error {
+	unlock, err := lockWorkspacePersistence(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	workspaceDir, err := GetWorkspaceDir(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	configPath, err := requireWorkspaceConfigFile(workspaceDir, workspace.ID)
+	if err != nil {
+		return err
+	}
+
+	committed, err := LoadWorkspaceConfig(workspace.Context, workspace.ID)
+	if err != nil {
+		return fmt.Errorf("load workspace %s: %w", workspace.ID, err)
+	}
+	if committed.UID != workspace.UID {
+		return fmt.Errorf("workspace %s was recreated with a different uid", workspace.ID)
+	}
+
+	committed.DisplayName = workspace.DisplayName
+	committed.SSHHostAlias = workspace.SSHHostAlias
+
+	return writeJSONFile(configPath, committed, 0o644)
+}
+
+func requireWorkspaceConfigFile(workspaceDir, workspaceID string) (string, error) {
+	configPath := filepath.Join(workspaceDir, WorkspaceConfigFile)
+	if _, err := os.Stat(configPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("workspace %s no longer exists", workspaceID)
+		}
+
+		return "", err
+	}
+
+	return configPath, nil
+}
+
+func lockWorkspacePersistence(contextName, workspaceID string) (func(), error) {
+	locksDir, err := ensureOperationLocksDir(contextName)
+	if err != nil {
+		return nil, err
+	}
+	lock := flock.New(filepath.Join(locksDir, workspaceID+".workspace-persist.lock"))
+	if err := lock.Lock(); err != nil {
+		return nil, fmt.Errorf("acquire workspace persistence lock: %w", err)
+	}
+
+	return func() { _ = lock.Unlock() }, nil
 }
 
 func SaveMachineConfig(machine *Machine) error {
@@ -236,6 +313,7 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 	}
 
 	providerFile := filepath.Join(providerDir, ProviderConfigFile)
+	//nolint:gosec // path is inside the provider state directory
 	providerConfigBytes, err := os.ReadFile(providerFile)
 	if err != nil {
 		return nil, err
@@ -269,7 +347,7 @@ func embeddedProviderConfig(sourceID string) *ProviderConfig {
 	if raw == "" {
 		return nil
 	}
-	parsed, err := ParseProvider(strings.NewReader(raw))
+	parsed, err := ParseAuthorProvider(strings.NewReader(raw))
 	if err != nil {
 		// Embedded YAML failing to parse is a build-time regression; log rather
 		// than silently fall back to the stale stored config this refresh fixes.

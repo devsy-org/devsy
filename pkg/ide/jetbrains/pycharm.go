@@ -20,8 +20,7 @@ func NewPyCharmServer(
 		PyCharmOptions,
 		values,
 		PycharmProductCode,
-		PycharmDownloadAmd64Template,
-		PycharmDownloadArm64Template,
+		downloadTemplates{amd64: PycharmDownloadAmd64Template, arm64: PycharmDownloadArm64Template},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "pycharm",

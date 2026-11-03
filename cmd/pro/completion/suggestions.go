@@ -9,13 +9,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// SuggestionRequest carries the inputs of the completion helpers.
+type SuggestionRequest struct {
+	Context    string
+	Provider   string
+	Args       []string
+	ToComplete string
+	Owner      platform.OwnerFilter
+}
+
 func GetPlatformHostSuggestions(
 	rootCmd *cobra.Command,
-	context, provider string,
-	args []string,
-	toComplete string,
-	owner platform.OwnerFilter,
+	req SuggestionRequest,
 ) ([]string, cobra.ShellCompDirective) {
+	context, provider, toComplete := req.Context, req.Provider, req.ToComplete
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError

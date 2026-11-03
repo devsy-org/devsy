@@ -20,6 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	binSh = "/bin/sh"
+)
+
 func TestHandleForceError(t *testing.T) {
 	sentinel := errors.New("boom")
 
@@ -121,7 +125,7 @@ func TestRunCommand(t *testing.T) {
 		stderr := &bytes.Buffer{}
 		err := RunCommand(context.Background(), RunCommandOptions{
 			Command: types.StrArray{
-				"/bin/sh",
+				binSh,
 				"-c",
 				`printf '%s' "$DEVSY_RUN_COMMAND_SECRET"; printf '%s' "$DEVSY_RUN_COMMAND_SECRET" >&2`,
 			},
@@ -142,7 +146,7 @@ func TestRunCommand_RawStdoutDoesNotHoldProtocolBytes(t *testing.T) {
 		t,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return RunCommand(ctx, RunCommandOptions{
-				Command:   types.StrArray{"/bin/sh", "-c", "printf h; read ack"},
+				Command:   types.StrArray{binSh, "-c", "printf h; read ack"},
 				Environ:   []string{"DEVSY_RUN_COMMAND_SECRET=hidden"},
 				Stdin:     stdin,
 				Stdout:    stdout,
@@ -158,7 +162,7 @@ func TestRunCommand_RawStdoutStillRedactsStderr(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := RunCommand(context.Background(), RunCommandOptions{
 		Command: types.StrArray{
-			"/bin/sh",
+			binSh,
 			"-c",
 			`printf '%s' "$DEVSY_RUN_COMMAND_SECRET"; printf '%s' "$DEVSY_RUN_COMMAND_SECRET" >&2`,
 		},
@@ -208,7 +212,7 @@ func TestRunCommand_ReportsFlushFailureWithoutReplacingCommandError(t *testing.T
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := RunCommand(context.Background(), RunCommandOptions{
-				Command: types.StrArray{"/bin/sh", "-c", tt.command},
+				Command: types.StrArray{binSh, "-c", tt.command},
 				Environ: []string{"DEVSY_RUN_COMMAND_SECRET=" + secret},
 				Stdout:  tt.stdout,
 				Stderr:  tt.stderr,
@@ -236,7 +240,7 @@ func TestProxyUp_PreservesProtocolStdout(t *testing.T) {
 			Name: "test",
 			Exec: provider.ProviderCommands{
 				Proxy: &provider.ProxyCommands{
-					Up: types.StrArray{"/bin/sh", "-c", "printf h; read ack"},
+					Up: types.StrArray{binSh, "-c", "printf h; read ack"},
 				},
 			},
 		},

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 )
 
@@ -245,6 +246,25 @@ func (s *DockerDriverTestSuite) TestAddMountArgs_DoesNotModifySourceOrOptions() 
 		s.Equal(formatted[i], mount.String())
 		s.Same(pointers[i], mount)
 	}
+}
+
+func (s *DockerDriverTestSuite) TestRunArgsBuilderPreservesRawMountFlags() {
+	const rawMount = "--volume=user-data:/opt/devsy"
+	rt, err := docker.RuntimeFromName(string(docker.RuntimeDocker))
+	s.Require().NoError(err)
+	helper := &docker.DockerHelper{DockerCommand: "docker", Runtime: rt}
+	s.driver.Docker = helper
+	args, err := s.driver.buildRunArgs(
+		&driver.RunImageDevContainerParams{
+			ParsedConfig: &config.DevContainerConfig{
+				NonComposeBase: config.NonComposeBase{RunArgs: []string{rawMount}},
+			},
+			Options: &driver.RunOptions{Image: "alpine"},
+		},
+		helper,
+	)
+	s.Require().NoError(err)
+	s.Contains(args, rawMount)
 }
 
 func (s *DockerDriverTestSuite) TestRunArgsBuilder_AdditionalMountReachesArgs() {

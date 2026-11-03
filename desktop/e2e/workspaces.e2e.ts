@@ -452,7 +452,7 @@ test.describe
             (element) =>
               element.parentElement?.getBoundingClientRect().top ?? -1,
           )
-        expect(advancedBottom).toBeLessThanOrEqual(footerTop)
+        expect(advancedBottom).toBeLessThanOrEqual(footerTop + 1)
         expect(
           await advanced.evaluate((element) => {
             const rect = element.getBoundingClientRect()

@@ -40,7 +40,7 @@ func NewOutdatedCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &OutdatedCmd{GlobalFlags: f}
 	outdatedCmd := &cobra.Command{
 		Use:   "outdated",
-		Short: "Checks for newer versions of installed devcontainer features",
+		Short: "Check for newer versions of installed devcontainer features",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
 			return cmd.Run(cobraCmd.Context())

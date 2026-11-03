@@ -158,7 +158,7 @@ func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) e
 	if err != nil {
 		return err
 	}
-	return cmdprovider.DeleteProvider(ctx, devsyConfig, name, false, false)
+	return cmdprovider.DeleteProvider(ctx, devsyConfig, name, cmdprovider.DeleteOptions{})
 }
 
 func runProviderUse(_ context.Context, g *flags.GlobalFlags, name string) error {

@@ -55,7 +55,7 @@ func NewContainerServer(addr string, workdir string) (Server, error) {
 			},
 			SubsystemHandlers: map[string]ssh.SubsystemHandler{
 				"sftp": func(s ssh.Session) {
-					sftpHandler(s, "")
+					sftpHandler(s)
 				},
 			},
 		},
@@ -143,9 +143,11 @@ func (s *containerServer) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, e
 	}
 
 	if len(sess.RawCommand()) == 0 {
+		//nolint:gosec // command is built from fixed arguments by design
 		cmd = exec.Command(shell[0], args...)
 	} else {
 		args = append(args, "-c", sess.RawCommand())
+		//nolint:gosec // command is built from fixed arguments by design
 		cmd = exec.Command(shell[0], args...)
 	}
 

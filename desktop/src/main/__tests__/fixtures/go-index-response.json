@@ -1,0 +1,15 @@
+{
+  "hasMore": false,
+  "runs": [
+    {
+      "captureState": "complete",
+      "command": "up",
+      "commandState": "running",
+      "context": "default",
+      "createdAt": "2026-10-30T12:00:00Z",
+      "runId": "00000000-0000-4000-8000-000000000001",
+      "workspaceUid": "uid"
+    }
+  ],
+  "schemaVersion": 1
+}

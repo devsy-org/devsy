@@ -21,6 +21,7 @@ type GlobalFlags struct {
 	Verbosity    int
 	Quiet        bool
 	Debug        bool
+	NoStatus     bool
 }
 
 // SetGlobalFlags applies the global flags.
@@ -59,6 +60,10 @@ func registerCoreFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 }
 
 func registerOutputFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
+	flags.BoolVar(
+		&globalFlags.NoStatus, names.NoStatus, false,
+		"Suppress live CLI progress messages; preserve results, errors, and recorded events",
+	)
 	flags.StringVar(
 		&globalFlags.ResultFormat,
 		names.ResultFormat,

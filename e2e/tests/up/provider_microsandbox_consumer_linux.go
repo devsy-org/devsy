@@ -151,7 +151,7 @@ func runMicrosandboxConsumerAttempt(ctx context.Context, attempt microsandboxCon
 
 	host := newMicrosandboxConsumerHost(ctx, providerName, workspaceID, consumerProvider)
 	ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
-		deleteCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		deleteCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		return host.DeleteDevContainer(deleteCtx, workspaceID)
 	})
@@ -191,7 +191,7 @@ func newMicrosandboxConsumerRegistry(handler http.Handler) *registryfixture.Serv
 }
 
 func closeMicrosandboxConsumerRegistry(ctx context.Context, fixture *registryfixture.Server) error {
-	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	closeCtx, cancel := framework.DetachedCleanupContext(ctx, 30*time.Second)
 	defer cancel()
 	return fixture.Close(closeCtx)
 }

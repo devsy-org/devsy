@@ -37,11 +37,11 @@ var _ = ginkgo.Describe(
 			tc.initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			tc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			tc.dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", "docker")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
 
@@ -113,11 +113,7 @@ var _ = ginkgo.Describe(
 			err = tc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			restartIds, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			restartIds, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -145,16 +141,10 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			// Distinct markers verify the persisted selector survived restart.
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"[max]",
-				[]string{
-					cmdWorkspace, cmdSSH, flagCommand,
-					"echo \"[$SELECTED_PROFILE]\"", workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "[max]", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"echo \"[$SELECTED_PROFILE]\"", workspace.ID,
+			})
 			framework.ExpectNoError(err)
 
 			err = tc.f.DevsyWorkspaceDelete(ctx, tempDir)
@@ -203,16 +193,10 @@ var _ = ginkgo.Describe(
 				)
 
 				assertSelectionMarker := func(want string) {
-					err := tc.f.ExecCommand(
-						ctx,
-						true,
-						true,
-						"["+want+"]",
-						[]string{
-							cmdWorkspace, cmdSSH, flagCommand,
-							"echo \"[$SELECTION_MARKER]\"", workspace.ID,
-						},
-					)
+					err := tc.f.ExecCommandContaining(ctx, "["+want+"]", []string{
+						cmdWorkspace, cmdSSH, flagCommand,
+						"echo \"[$SELECTION_MARKER]\"", workspace.ID,
+					})
 					framework.ExpectNoError(err)
 				}
 				assertSelectionMarker("legacy")
@@ -249,14 +233,40 @@ var _ = ginkgo.Describe(
 
 			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
+			err = tc.f.ExecCommandContaining(
 				ctx,
-				true,
-				true,
 				"BAR",
 				[]string{cmdWorkspace, cmdSSH, flagCommand, "echo $FOO", workspace.ID},
 			)
 			framework.ExpectNoError(err)
+
+			identity, err := tc.f.DevsySSH(
+				ctx,
+				workspace.ID,
+				"echo $"+pkgconfig.EnvWorkspaceID+" $"+pkgconfig.EnvWorkspaceUID,
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.Fields(identity)).To(
+				gomega.Equal([]string{workspace.ID, workspace.UID}),
+			)
+
+			infoOutput, err := tc.f.DevsySSH(
+				ctx,
+				workspace.ID,
+				"devsy container info --result-format json",
+			)
+			framework.ExpectNoError(err)
+			var info struct {
+				SSHCommand string `json:"sshCommand"`
+				SSHHost    string `json:"sshHost"`
+				RemoteUser string `json:"remoteUser"`
+			}
+			framework.ExpectNoError(json.Unmarshal([]byte(infoOutput), &info))
+			gomega.Expect(info.SSHHost).To(gomega.Equal(workspace.ID + pkgconfig.SSHHostSuffix))
+			gomega.Expect(info.RemoteUser).NotTo(gomega.BeEmpty())
+			gomega.Expect(info.SSHCommand).To(
+				gomega.Equal("ssh " + info.RemoteUser + "@" + info.SSHHost),
+			)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("user", func(ctx context.Context) {
@@ -268,10 +278,8 @@ var _ = ginkgo.Describe(
 
 			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
+			err = tc.f.ExecCommandContaining(
 				ctx,
-				true,
-				true,
 				"root",
 				[]string{cmdWorkspace, cmdSSH, flagCommand, "ps u -p 1", workspace.ID},
 			)
@@ -315,11 +323,7 @@ var _ = ginkgo.Describe(
 				ws, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir)
 				framework.ExpectNoError(err, "failed to setup workspace")
 
-				ids, err := findComposeContainer(
-					ctx,
-					tc.dockerHelper,
-					tc.composeHelper,
-					ws.UID,
+				ids, err := tc.findComposeContainer(ctx, ws.UID,
 					"webserver",
 				)
 				framework.ExpectNoError(err)
@@ -341,15 +345,15 @@ var _ = ginkgo.Describe(
 
 				containerUID := getContainerUID(ctx, tc.f, tempDir, username)
 				containerGID := getContainerGID(ctx, tc.f, tempDir, username)
-				verifyUIDMapping(
-					containerUID,
-					containerGID,
-					testUID,
-					testGID,
-					defaultUID,
-					defaultGID,
-					username,
-				)
+				verifyUIDMapping(uidMapping{
+					ContainerUID: containerUID,
+					ContainerGID: containerGID,
+					HostUID:      testUID,
+					HostGID:      testGID,
+					DefaultUID:   defaultUID,
+					DefaultGID:   defaultGID,
+					Username:     username,
+				})
 
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
@@ -380,11 +384,7 @@ var _ = ginkgo.Describe(
 				ws, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir)
 				framework.ExpectNoError(err, "failed to setup workspace")
 
-				ids, err := findComposeContainer(
-					ctx,
-					tc.dockerHelper,
-					tc.composeHelper,
-					ws.UID,
+				ids, err := tc.findComposeContainer(ctx, ws.UID,
 					"devcontainer",
 				)
 				framework.ExpectNoError(err)
@@ -399,15 +399,15 @@ var _ = ginkgo.Describe(
 
 				containerUID := getContainerUID(ctx, tc.f, tempDir, username)
 				containerGID := getContainerGID(ctx, tc.f, tempDir, username)
-				verifyUIDMapping(
-					containerUID,
-					containerGID,
-					testUID,
-					testGID,
-					defaultUID,
-					defaultGID,
-					username,
-				)
+				verifyUIDMapping(uidMapping{
+					ContainerUID: containerUID,
+					ContainerGID: containerGID,
+					HostUID:      testUID,
+					HostGID:      testGID,
+					DefaultUID:   defaultUID,
+					DefaultGID:   defaultGID,
+					Username:     username,
+				})
 
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
@@ -469,34 +469,22 @@ var _ = ginkgo.Describe(
 
 			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"/home/vscode/remote-env.out",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"ls $HOME/remote-env.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "/home/vscode/remote-env.out", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"ls $HOME/remote-env.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"BAR",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"cat $HOME/remote-env.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "BAR", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"cat $HOME/remote-env.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -510,31 +498,19 @@ var _ = ginkgo.Describe(
 			tc.expectSingleAppContainer(ctx, workspace)
 
 			// Verify SET_VAR is set
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"SET=hello",
-				[]string{
-					cmdWorkspace, cmdSSH, flagCommand,
-					"head -1 $HOME/remote-env-null.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "SET=hello", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"head -1 $HOME/remote-env-null.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 
 			// Verify UNSET_VAR was unset (not just empty)
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"UNSET=true",
-				[]string{
-					cmdWorkspace, cmdSSH, flagCommand,
-					"tail -1 $HOME/remote-env-null.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "UNSET=true", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"tail -1 $HOME/remote-env-null.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -547,19 +523,13 @@ var _ = ginkgo.Describe(
 
 			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"root",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"cat $HOME/remote-user.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "root", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"cat $HOME/remote-user.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -791,7 +761,7 @@ var _ = ginkgo.Describe(
 
 				btc.f, err = framework.SetupDockerProvider(
 					filepath.Join(btc.initialDir, "bin"),
-					"docker",
+					dockerValue,
 				)
 				framework.ExpectNoError(err)
 			})

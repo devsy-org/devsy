@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/compress"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
@@ -108,8 +109,7 @@ func (r *runner) setupContainer(
 				ctx,
 				info.result,
 				setupCommand,
-				params.secretsEnv,
-				params.secretsMount,
+				setupSecrets{env: params.secretsEnv, mount: params.secretsMount},
 			)
 			return executeErr
 		},
@@ -309,6 +309,12 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 }
 
 func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, error) {
+	if params.containerDetails.LifecycleTopologyError != "" {
+		return nil, fmt.Errorf(
+			"workspace lifecycle topology: %s",
+			params.containerDetails.LifecycleTopologyError,
+		)
+	}
 	result := r.buildResult(params)
 
 	compressed, err := r.compressResult(result)
@@ -316,7 +322,11 @@ func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, err
 		return nil, err
 	}
 
-	workspaceConfigCompressed, err := r.compressWorkspaceConfig()
+	workspaceConfigCompressed, err := r.compressWorkspaceConfig(
+		result.MergedConfig,
+		params.containerDetails.Dockerless,
+		params.containerDetails.ImageEntrypoint,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +385,10 @@ func (r *runner) compressResult(result *config.Result) (string, error) {
 	return compressed, nil
 }
 
-func (r *runner) compressWorkspaceConfig() (string, error) {
+func (r *runner) compressWorkspaceConfig(
+	mergedConfig *config.MergedDevContainerConfig,
+	dockerless, imageEntrypoint bool,
+) (string, error) {
 	cliOptions := r.workspaceConfig.CLIOptions
 	cliOptions.SecretsEnv = nil
 	cliOptions.SecretsMount = nil
@@ -395,6 +408,18 @@ func (r *runner) compressWorkspaceConfig() (string, error) {
 		Source:           r.workspaceConfig.Workspace.Source,
 		Agent:            r.workspaceConfig.Agent,
 		ContentFolder:    r.workspaceConfig.ContentFolder,
+		SetupRun:         r.setupRunRef(cliOptions),
+	}
+	workspaceConfig.Agent.Kubernetes.ImageConfigFile = ""
+	lifecycle, err := r.lifecycleOptions(mergedConfig, dockerless, imageEntrypoint)
+	if err != nil {
+		return "", err
+	}
+	if r.managedLifecycle() {
+		workspaceConfig.ContainerTimeout = agentd.FormatTimeout(lifecycle.Timeout)
+	}
+	if lifecycle.Managed {
+		workspaceConfig.LifecycleOwner = provider2.ContainerLifecycleOwnerManagedDaemon
 	}
 	workspaceConfig.PullFromInsideContainer = resolvePullFromInsideContainer(
 		r.workspaceConfig.CLIOptions,
@@ -537,28 +562,36 @@ func (r *runner) isDebugMode() bool {
 	return log.DebugEnabled()
 }
 
+// setupSecrets are the secret env vars and mount paths passed to lifecycle commands.
+type setupSecrets struct {
+	env, mount []string
+}
+
 func (r *runner) executeSetup(
 	ctx context.Context,
 	result *config.Result,
 	setupCommand string,
-	secretsEnv, secretsMount []string,
+	secretOpts setupSecrets,
 ) (*config.Result, error) {
+	secretsEnv, secretsMount := secretOpts.env, secretOpts.mount
+	setupLogOptions := tunnelserver.SetupLogOptionsFrom(ctx)
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
-		return tunnelserver.RunSetupServer(
-			ctx,
-			stdout,
-			stdin,
-			r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
-			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
-			result,
-			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
-			tunnelserver.WithSecrets(
-				secretsEnv,
-				secretsMount,
-			),
-			tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
-			tunnelserver.WithStatusReporter(r.reporter),
-		)
+		return tunnelserver.RunSetupServer(ctx, tunnelserver.SetupSpec{
+			Reader:                 stdout,
+			Writer:                 stdin,
+			AllowGitCredentials:    r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
+			AllowDockerCredentials: r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
+			SetupInfo:              result,
+			Options: append([]tunnelserver.Option{
+				tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
+				tunnelserver.WithSecrets(
+					secretsEnv,
+					secretsMount,
+				),
+				tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
+				tunnelserver.WithStatusReporter(r.reporter),
+			}, setupLogOptions...),
+		})
 	}
 
 	sshTunnelArgv := r.buildSSHTunnelArgv()
@@ -677,4 +710,21 @@ func filterWorkspaceMounts(
 	}
 
 	return retMounts
+}
+
+// setupRunRef describes the run this setup records into, or nil when the CLI
+// options name none.
+func (r *runner) setupRunRef(cliOptions provider2.CLIOptions) *provider2.SetupRunRef {
+	ws := r.workspaceConfig.Workspace
+	if cliOptions.SetupRunID == "" || ws == nil {
+		return nil
+	}
+
+	return &provider2.SetupRunRef{
+		RunID:            cliOptions.SetupRunID,
+		ParentProducerID: cliOptions.SetupParentProducerID,
+		Context:          ws.Context,
+		WorkspaceUID:     ws.UID,
+		WorkspaceID:      ws.ID,
+	}
 }

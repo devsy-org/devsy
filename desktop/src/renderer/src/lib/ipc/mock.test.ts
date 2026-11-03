@@ -20,3 +20,115 @@ describe("browser IPC mock", () => {
     ).toBe(true)
   })
 })
+
+describe("browser IPC mock workspace edit", () => {
+  it("applies a label and alias and rejects duplicates", async () => {
+    const saved = await invoke<{
+      ok: boolean
+      result?: { preferredSSHHost: string; effectiveDisplayName: string }
+    }>("workspace_edit", {
+      workspaceId: "my-project",
+      expectedUid: "ws-001",
+      displayName: "Primary",
+      sshHostAlias: "primary",
+    })
+    expect(saved.ok).toBe(true)
+    expect(saved.result?.preferredSSHHost).toBe("primary.devsy")
+    expect(saved.result?.effectiveDisplayName).toBe("Primary")
+
+    const labelClash = await invoke<{ ok: boolean; field?: string }>(
+      "workspace_edit",
+      {
+        workspaceId: "backend-api",
+        expectedUid: "ws-002",
+        displayName: "primary",
+      },
+    )
+    expect(labelClash).toMatchObject({
+      ok: false,
+      field: "displayName",
+      code: "conflict",
+      conflict: "my-project",
+    })
+
+    const aliasClash = await invoke("workspace_edit", {
+      workspaceId: "backend-api",
+      expectedUid: "ws-002",
+      sshHostAlias: "primary",
+    })
+    expect(aliasClash).toMatchObject({ ok: false, field: "sshHostAlias" })
+  })
+
+  it("folds labels like the backend so Strasse and STRASSE conflict", async () => {
+    const first = await invoke<{ ok: boolean }>("workspace_edit", {
+      workspaceId: "my-project",
+      expectedUid: "ws-001",
+      displayName: "Stra\u00dfe",
+    })
+    expect(first.ok).toBe(true)
+    expect(
+      await invoke("workspace_edit", {
+        workspaceId: "backend-api",
+        expectedUid: "ws-002",
+        displayName: "STRASSE",
+      }),
+    ).toMatchObject({
+      ok: false,
+      field: "displayName",
+      code: "conflict",
+      conflict: "my-project",
+    })
+  })
+
+  it("reports a stale UID as not found", async () => {
+    expect(
+      await invoke("workspace_edit", {
+        workspaceId: "ml-notebook",
+        expectedUid: "different",
+        displayName: "x",
+      }),
+    ).toMatchObject({ ok: false, field: "workspace", code: "not-found" })
+  })
+
+  it("reports sshEntryUpdated only when the alias value changed", async () => {
+    const labelOnly = await invoke<{
+      ok: boolean
+      result?: { sshEntryUpdated: boolean; sshHostAlias: string }
+    }>("workspace_edit", {
+      workspaceId: "my-project",
+      expectedUid: "ws-001",
+      displayName: "Primary renamed",
+    })
+    expect(labelOnly.ok).toBe(true)
+    expect(labelOnly.result?.sshHostAlias).toBe("primary")
+    expect(labelOnly.result?.sshEntryUpdated).toBe(false)
+
+    const aliasChange = await invoke<{
+      result?: { sshEntryUpdated: boolean }
+    }>("workspace_edit", {
+      workspaceId: "my-project",
+      expectedUid: "ws-001",
+      sshHostAlias: "primary-two",
+    })
+    expect(aliasChange.result?.sshEntryUpdated).toBe(true)
+  })
+
+  it("selects the workspace by both ID and context", async () => {
+    expect(
+      await invoke("workspace_edit", {
+        workspaceId: "my-project",
+        expectedUid: "ws-001",
+        context: "other",
+        displayName: "x",
+      }),
+    ).toMatchObject({ ok: false, field: "workspace", code: "not-found" })
+    expect(
+      await invoke("workspace_edit", {
+        workspaceId: "my-project",
+        expectedUid: "ws-001",
+        context: "default",
+        displayName: "Context default",
+      }),
+    ).toMatchObject({ ok: true })
+  })
+})

@@ -35,11 +35,7 @@ import {
   reduceWorkspaceLaunchTimeline,
 } from "$lib/utils/workspace-launch-timeline.js"
 import type { LaunchConfirmationState } from "$lib/utils/workspace-launch-presentation.js"
-import {
-  uniqueNamesGenerator,
-  adjectives,
-  animals,
-} from "unique-names-generator"
+
 import {
   workspaceUp,
   workspaceRefresh,
@@ -61,6 +57,9 @@ import type {
 } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { activeContext } from "$lib/stores/contexts.js"
+import { workspaceLogsRoute } from "$shared/app-route.js"
+import { runIdentityFromContext } from "$shared/cli-error.js"
 import { isImageCompatible } from "$lib/stores/imageCatalog.js"
 import { loadLocalOptions } from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -71,6 +70,23 @@ import {
   stripAnsi,
 } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
+
+import {
+  deriveWorkspaceId,
+  isValidWorkspaceId,
+  uniqueWorkspaceId,
+  workspaceIdRule,
+} from "$lib/utils/workspace-id.js"
+import {
+  findAliasConflict,
+  findLabelConflict,
+} from "$lib/utils/workspaceLabel.js"
+import {
+  normalizeDisplayLabel,
+  SSH_HOST_SUFFIX,
+  validateDisplayLabel,
+  validateSshAlias,
+} from "$shared/workspace-presentation.js"
 
 type Step = "provider" | "source" | "ide" | "review" | "launch"
 type StepState = "pending" | "active" | "complete" | "error"
@@ -254,6 +270,10 @@ let workspaceFolder = $state("")
 let advancedOpen = $state(false)
 let selectedIde = $state("none")
 let workspaceName = $state("")
+let displayLabel = $state("")
+let displayLabelTouched = $state(false)
+let sshAlias = $state("")
+let sshAliasTouched = $state(false)
 
 let assembled = $derived(
   sourceType === "image"
@@ -312,6 +332,9 @@ let launchJob = $derived(
 let jobMatchesAttempt = $derived(
   !!commandId && launchJob?.commandId === commandId,
 )
+let launchLogError = $derived(
+  jobMatchesAttempt ? launchJob?.logError : undefined,
+)
 let launchConfirmationState: LaunchConfirmationState = $derived(
   launchSuccess
     ? "confirmed"
@@ -319,7 +342,7 @@ let launchConfirmationState: LaunchConfirmationState = $derived(
       ? "failed"
       : launchRefreshRetrying
         ? "confirming"
-        : launchStatusRefreshError
+        : launchStatusRefreshError || launchLogError
           ? "stale"
           : launchCommandSucceeded
             ? "confirming"
@@ -337,6 +360,7 @@ $effect(() => {
     finishSuccessfulCommand(lastAttemptedId)
     if (job.refreshError) finishUnconfirmedLaunch(job.refreshError)
     else launchStatusRefreshError = null
+    if (job.logError) stopLaunchTimer()
     return
   }
   if (job.state === "succeeded") {
@@ -380,19 +404,61 @@ let filteredIdes = $derived(
 )
 
 let resolvedId = $derived(
-  workspaceName.trim() || deriveWorkspaceNameFromSource(assembled.source),
+  workspaceName || deriveWorkspaceNameFromSource(assembled.source),
 )
 
-let resolvedIdInvalid = $derived(
-  resolvedId === "" ||
-    resolvedId === "." ||
-    resolvedId.includes(":") ||
-    !/^[A-Za-z0-9._-]+$/.test(resolvedId),
-)
+let resolvedIdInvalid = $derived(!isValidWorkspaceId(resolvedId))
 
 let nameConflict = $derived(
   resolvedId !== "" &&
     $workspaces.some((ws) => ws.id.toLowerCase() === resolvedId.toLowerCase()),
+)
+
+let displayLabelValue = $derived(
+  displayLabelTouched ? displayLabel : resolvedId,
+)
+let sshAliasValue = $derived(sshAliasTouched ? sshAlias : resolvedId)
+let explicitLabel = $derived(
+  displayLabelTouched ? normalizeDisplayLabel(displayLabel) : "",
+)
+let explicitAlias = $derived(sshAliasTouched ? sshAlias.trim() : "")
+let launchLabel = $derived(
+  explicitLabel !== "" && explicitLabel !== resolvedId ? explicitLabel : "",
+)
+let launchAlias = $derived(
+  explicitAlias !== "" && explicitAlias !== resolvedId ? explicitAlias : "",
+)
+let launchPresentation = $derived({
+  displayName: launchLabel || undefined,
+  sshHostAlias: launchAlias || undefined,
+})
+let labelError = $derived(
+  displayLabelTouched ? validateDisplayLabel(displayLabel) : null,
+)
+let aliasError = $derived(sshAliasTouched ? validateSshAlias(sshAlias) : null)
+let labelConflict = $derived(
+  !labelError && launchLabel
+    ? findLabelConflict(launchLabel, $workspaces, resolvedId)
+    : undefined,
+)
+let aliasConflict = $derived(
+  !aliasError && launchAlias
+    ? findAliasConflict(launchAlias, $workspaces, resolvedId)
+    : undefined,
+)
+let idHostConflict = $derived(
+  resolvedId !== "" && !resolvedIdInvalid
+    ? findAliasConflict(resolvedId, $workspaces, resolvedId)
+    : undefined,
+)
+let presentationInvalid = $derived(
+  !!(
+    labelError ||
+    aliasError ||
+    labelConflict ||
+    aliasConflict ||
+    idHostConflict
+  ),
 )
 
 let imageIncompatible = $derived(
@@ -474,6 +540,10 @@ function reset() {
   advancedOpen = false
   selectedIde = "none"
   workspaceName = ""
+  displayLabel = ""
+  displayLabelTouched = false
+  sshAlias = ""
+  sshAliasTouched = false
   ideComboOpen = false
   ideSearch = ""
   commandId = null
@@ -485,6 +555,7 @@ function reset() {
   }
   launchRunning = false
   launchError = ""
+  launchFailureContext = undefined
   launchBuildFailed = false
   launchIsRecovery = false
   launchCommandSucceeded = false
@@ -644,6 +715,35 @@ function finishConfirmedLaunch() {
   if (launchedWorkspaceId) oncomplete?.(launchedWorkspaceId)
 }
 
+let launchFailureContext = $state<Record<string, string> | undefined>()
+let launchRunIdentity = $derived.by(() => {
+  const fromJob = jobMatchesAttempt
+    ? {
+        runId: launchJob?.runId,
+        failedInvocationId: launchJob?.failedInvocationId,
+      }
+    : {}
+  return fromJob.runId ? fromJob : runIdentityFromContext(launchFailureContext)
+})
+
+function viewLaunchOutput() {
+  const id = launchedWorkspaceId ?? lastAttemptedId ?? resolvedId
+  const run = launchRunIdentity
+  if (!id || !run.runId) return
+  const context =
+    $workspaces.find((ws) => ws.id === id)?.context ||
+    $activeContext ||
+    "default"
+  open = false
+  goto(
+    workspaceLogsRoute(id, {
+      context,
+      runId: run.runId,
+      invocationId: run.failedInvocationId,
+    }),
+  )
+}
+
 function finishJobFailure(job: WorkspaceJob) {
   launchStatusRefreshError = null
   finishFailedLaunch({
@@ -671,6 +771,7 @@ function finishFailedLaunch(progress: CommandProgress) {
   clearWatchdog()
   stopLaunchTimer()
   const cliError = progress.cliError
+  launchFailureContext = cliError?.context
   launchError = cliError?.message
     ? `${cliError.message}${cliError.hint ? ` Try: ${cliError.hint}` : ""}`
     : "Workspace creation failed. Check output for details."
@@ -693,7 +794,11 @@ function handleProgress(progress: CommandProgress, wsId: string | undefined) {
 async function handleLaunch(recovery = false) {
   // Retrying/recovering the id we already attempted is allowed; only a
   // genuinely new conflicting id is blocked.
-  if (resolvedIdInvalid || (nameConflict && resolvedId !== lastAttemptedId)) {
+  if (
+    resolvedIdInvalid ||
+    presentationInvalid ||
+    (nameConflict && resolvedId !== lastAttemptedId)
+  ) {
     return
   }
   lastAttemptedId = resolvedId
@@ -713,6 +818,7 @@ async function handleLaunch(recovery = false) {
     }
   }, 1000)
   launchError = ""
+  launchFailureContext = undefined
   launchBuildFailed = false
   launchSuccess = false
   showLogs = false
@@ -758,9 +864,11 @@ async function handleLaunch(recovery = false) {
       }
     })
 
+    if (!isValidWorkspaceId(workspaceId)) throw new Error(workspaceIdRule)
     const cmdId = await workspaceUp({
       source: assembled.source,
       workspaceId,
+      ...launchPresentation,
       provider: selectedProvider || undefined,
       ide: selectedIde,
       ideLaunch: "auto",
@@ -846,32 +954,15 @@ function goToStep(step: Step) {
   currentStep = step
 }
 
-function randomName(): string {
-  return uniqueNamesGenerator({
-    dictionaries: [adjectives, animals],
-    separator: "-",
-    length: 2,
-    style: "lowerCase",
-  })
-}
-
 function deriveWorkspaceNameFromSource(source: string): string {
-  const leaf = source.trim().split(/[\\/]/).pop() ?? ""
-  return leaf
-    .replace(/\.git$/i, "")
-    .replace(/@.*$/, "")
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+  return deriveWorkspaceId(source)
 }
 
 function uniquifyName(base: string): string {
-  const existing = new Set($workspaces.map((ws) => ws.id.toLowerCase()))
-  if (base && !existing.has(base.toLowerCase())) return base
-  for (let i = 0; i < 50; i++) {
-    const candidate = randomName()
-    if (!existing.has(candidate.toLowerCase())) return candidate
-  }
-  return `${randomName()}-${Date.now().toString(36)}`
+  return uniqueWorkspaceId(
+    base,
+    $workspaces.map((ws) => ws.id),
+  )
 }
 
 function continueFromProvider() {
@@ -884,8 +975,6 @@ function continueFromSource() {
   if (!workspaceName.trim()) {
     const derived = deriveWorkspaceNameFromSource(assembled.source)
     if (derived) workspaceName = uniquifyName(derived)
-  } else {
-    workspaceName = uniquifyName(workspaceName.trim())
   }
   currentStep = "ide"
 }
@@ -912,12 +1001,7 @@ function continueFromReview() {
 function selectTemplate(t: { name: string; source: string }) {
   repoUrl = t.source
   if (!workspaceName) {
-    workspaceName = uniquifyName(
-      t.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, ""),
-    )
+    workspaceName = uniquifyName(deriveWorkspaceId(t.name))
   }
 }
 </script>
@@ -1310,23 +1394,65 @@ function selectTemplate(t: { name: string; source: string }) {
           </div>
 
           <div class="space-y-1.5">
-            <Label for="workspace-name" class="text-sm">Workspace Name</Label>
+            <Label for="workspace-display-label" class="text-sm">Display label</Label>
+            <Input
+              id="workspace-display-label"
+              aria-invalid={!!(labelError || labelConflict)}
+              aria-describedby={labelError || labelConflict ? "workspace-display-label-help workspace-display-label-error" : "workspace-display-label-help"}
+              autocomplete="off"
+              value={displayLabelValue}
+              oninput={(e) => { displayLabel = e.currentTarget.value; displayLabelTouched = true }}
+            />
+            <p id="workspace-display-label-help" class="text-xs text-muted-foreground">How this workspace is shown in Devsy. Does not change the ID or SSH host.</p>
+            {#if labelError || labelConflict}
+              <p id="workspace-display-label-error" class="text-xs font-medium text-destructive" role="alert">
+                {labelError ?? `Display label is already used by workspace "${labelConflict?.id}".`}
+              </p>
+            {/if}
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="workspace-ssh-alias" class="text-sm">SSH alias</Label>
+            <div class="flex items-center gap-2">
+              <Input
+                id="workspace-ssh-alias"
+                class="font-mono"
+                aria-invalid={!!(aliasError || aliasConflict)}
+                aria-describedby={aliasError || aliasConflict ? "workspace-ssh-alias-help workspace-ssh-alias-error" : "workspace-ssh-alias-help"}
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck={false}
+                value={sshAliasValue}
+                oninput={(e) => { sshAlias = e.currentTarget.value; sshAliasTouched = true }}
+              />
+              <span class="font-mono text-sm text-muted-foreground">{SSH_HOST_SUFFIX}</span>
+            </div>
+            <p id="workspace-ssh-alias-help" class="text-xs text-muted-foreground">Preferred SSH host. The workspace stays reachable as {resolvedId}{SSH_HOST_SUFFIX}.</p>
+            {#if aliasError || aliasConflict}
+              <p id="workspace-ssh-alias-error" class="text-xs font-medium text-destructive" role="alert">
+                {aliasError ?? `SSH host ${launchAlias}${SSH_HOST_SUFFIX} is already used by workspace "${aliasConflict?.id}".`}
+              </p>
+            {/if}
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="workspace-name" class="text-sm">Workspace ID</Label>
             <Input
               id="workspace-name"
-              aria-invalid={resolvedIdInvalid || nameConflict}
-              aria-describedby={resolvedIdInvalid ? "workspace-name-invalid" : nameConflict ? "workspace-name-conflict" : "workspace-name-help"}
+              aria-invalid={resolvedIdInvalid || nameConflict || !!idHostConflict}
+              aria-describedby={resolvedIdInvalid ? "workspace-name-invalid" : nameConflict ? "workspace-name-conflict" : idHostConflict ? "workspace-name-host-conflict" : "workspace-name-help"}
               placeholder="Optional - derived from source if empty"
               value={workspaceName}
               oninput={(e) => (workspaceName = e.currentTarget.value)}
             />
-            <p id="workspace-name-help" class="text-xs text-muted-foreground">Leave blank to derive a name from the source.</p>
+            <p id="workspace-name-help" class="text-xs text-muted-foreground">Permanent internal identifier and canonical SSH host name. Leave blank to derive it from the source.</p>
           </div>
 
           {#if resolvedIdInvalid}
             <Alert.Root>
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
-                <span id="workspace-name-invalid">Please provide an explicit workspace name. The derived id is empty or invalid.</span>
+                <span id="workspace-name-invalid">{workspaceIdRule} Try "{deriveWorkspaceId(resolvedId)}".</span>
               </Alert.Description>
             </Alert.Root>
           {/if}
@@ -1336,6 +1462,15 @@ function selectTemplate(t: { name: string; source: string }) {
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
                 <span id="workspace-name-conflict">A workspace named "{resolvedId}" already exists. Choose a different name.</span>
+              </Alert.Description>
+            </Alert.Root>
+          {/if}
+
+          {#if idHostConflict}
+            <Alert.Root>
+              <TriangleAlert class="h-4 w-4 text-amber-600" />
+              <Alert.Description class="text-amber-700 dark:text-amber-400">
+                <span id="workspace-name-host-conflict">SSH host {resolvedId}{SSH_HOST_SUFFIX} is already used by workspace "{idHostConflict.id}". Choose a different workspace ID.</span>
               </Alert.Description>
             </Alert.Root>
           {/if}
@@ -1401,6 +1536,18 @@ function selectTemplate(t: { name: string; source: string }) {
                 <Button type="button" aria-label="Edit IDE" variant="ghost" size="sm" class="h-7 shrink-0 px-2" onclick={() => goToStep("ide")}>Edit</Button>
               </dd>
             </div>
+            {#if launchLabel}
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Display label</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{launchLabel}</dd>
+              </div>
+            {/if}
+            {#if launchAlias}
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">SSH host</dt>
+                <dd class="text-left font-medium font-mono [overflow-wrap:anywhere]">{launchAlias}{SSH_HOST_SUFFIX}</dd>
+              </div>
+            {/if}
             <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
               <dt class="text-muted-foreground">Workspace ID</dt>
               <dd class="text-left font-medium font-mono [overflow-wrap:anywhere]">{resolvedId}</dd>
@@ -1469,12 +1616,14 @@ function selectTemplate(t: { name: string; source: string }) {
         <div class="space-y-4">
           <WorkspaceLaunchProgress
             workspaceId={launchedWorkspaceId ?? lastAttemptedId ?? resolvedId}
+            label={launchLabel || undefined}
             provider={selectedProvider || undefined}
             ideLabel={selectedIde === "none" ? "No IDE" : (selectedIdeEntry?.label ?? selectedIde)}
             timeline={launchTimeline}
             running={launchRunning || launchConfirmationState === "confirming"}
             error={launchError || undefined}
             confirmationState={launchConfirmationState}
+            logError={launchLogError}
             refreshError={launchStatusRefreshError ?? undefined}
             refreshRetrying={launchRefreshRetrying}
             onRetryStatus={retryLaunchStatus}
@@ -1482,6 +1631,7 @@ function selectTemplate(t: { name: string; source: string }) {
             logsAvailable={outputLines.length > 0}
             logsOpen={showLogs}
             onToggleLogs={() => (showLogs = !showLogs)}
+            onViewOutput={launchRunIdentity.runId ? viewLaunchOutput : undefined}
           />
 
           {#if outputLines.length > 0}
@@ -1510,9 +1660,9 @@ function selectTemplate(t: { name: string; source: string }) {
             </div>
           {/if}
 
-          {#if launchError || launchSuccess || launchStatusRefreshError}
+          {#if launchError || launchSuccess || launchStatusRefreshError || launchLogError}
             <div class="flex flex-wrap justify-end gap-2 border-t pt-4">
-              {#if !launchError && (launchSuccess || launchStatusRefreshError)}
+              {#if !launchError && (launchSuccess || launchStatusRefreshError || launchLogError)}
                 <Button variant="outline" onclick={() => (open = false)}>Close</Button>
                 <Button
                   onclick={() => {
@@ -1523,6 +1673,7 @@ function selectTemplate(t: { name: string; source: string }) {
                 >
                   Open Workspace
                 </Button>
+                {#if launchLogError}<Button onclick={() => handleLaunch()}>Retry</Button>{/if}
               {:else if launchError}
                 <Button variant="outline" onclick={() => (open = false)}>Close</Button>
                 {#if launchBuildFailed && !launchIsRecovery}
@@ -1559,7 +1710,7 @@ function selectTemplate(t: { name: string; source: string }) {
           <Button onclick={continueFromIde}>Continue</Button>
         {:else if currentStep === "review"}
           <Button variant="outline" onclick={() => goToStep("ide")}>Back</Button>
-          <Button disabled={resolvedIdInvalid || nameConflict} onclick={continueFromReview}>
+          <Button disabled={resolvedIdInvalid || nameConflict || presentationInvalid} onclick={continueFromReview}>
             Launch
           </Button>
         {/if}

@@ -9,6 +9,8 @@ import {
   type WorkspaceJob,
 } from "$shared/workspace-operation.js"
 import { goto } from "$lib/router.js"
+import { activeContext } from "$lib/stores/contexts.js"
+import { workspaceLogsRoute } from "$shared/app-route.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 
 let {
@@ -30,6 +32,14 @@ let refreshing = $state(false)
 function viewLogs(event: MouseEvent) {
   event.stopPropagation()
   if (onViewLogs) onViewLogs()
+  else if (job?.runId)
+    goto(
+      workspaceLogsRoute(id, {
+        context: $activeContext || "default",
+        runId: job.runId,
+        invocationId: job.failedInvocationId,
+      }),
+    )
   else goto(`/workspaces/${id}?tab=logs`)
 }
 async function retryRefresh(event: MouseEvent) {
@@ -91,5 +101,8 @@ const badgeVariant = $derived(
         {view.phase}
       {/if}
     </span>
+  {/if}
+  {#if density === "expanded" && view.error && job?.logError}
+    <p class="text-sm text-amber-600 dark:text-amber-400">{job.logError}</p>
   {/if}
 </div>

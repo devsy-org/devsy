@@ -199,8 +199,10 @@ func DialInstance(
 		devsyURL += "?" + values.Encode()
 	}
 
+	//nolint:gosec // platform instances commonly use self-signed certificates
+	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	dialer := websocket.Dialer{
-		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig:  tlsConfig,
 		Proxy:            http.ProxyFromEnvironment,
 		HandshakeTimeout: 45 * time.Second,
 	}

@@ -79,6 +79,10 @@ const (
 	SSHGPGForwarding     = "ssh-gpg-forwarding"
 	SSHConfig            = "ssh-config"
 	SSHTunnel            = "ssh-tunnel"
+	SSHHostAlias         = "ssh-host-alias"
+	ExpectedUID          = "expected-uid"
+	ExpectedDisplayName  = "expected-display-name"
+	ExpectedSSHHostAlias = "expected-ssh-host-alias"
 	AgentForwarding      = "agent-forwarding"
 	ReuseSSHAuthSock     = "reuse-ssh-auth-sock"
 	Stdio                = "stdio"
@@ -207,6 +211,7 @@ const (
 	LogLevel             = "log-level"
 	LogFormat            = "log-format"
 	ResultFormat         = "result-format"
+	NoStatus             = "no-status"
 	SetupInfo            = "setup-info"
 	SecretsEnv           = "secrets-env"
 	OwnerTrust           = "ownertrust"
@@ -261,11 +266,12 @@ const (
 	FromExisting   = "from-existing"
 	Prerelease     = "prerelease"
 	ProviderSource = "provider-source"
+	Theme          = "theme"
 	Use            = "use"
 	Version        = "version"
 )
 
-// Pro / platform commands.
+// Platform commands.
 const (
 	Channel          = "channel"
 	ChartPath        = "chart-path"

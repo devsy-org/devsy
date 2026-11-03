@@ -31,7 +31,7 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 	deleteCmd := &cobra.Command{
 		Use:     "delete [name]",
 		Aliases: []string{"rm"},
-		Short:   "Deletes an existing machine",
+		Short:   "Delete a machine",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

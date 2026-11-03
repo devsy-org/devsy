@@ -199,18 +199,15 @@ func isRetriableError(err error) bool {
 		return false
 	}
 
-	var httpErr *download.HTTPStatusError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*download.HTTPStatusError](err); ok {
 		return isRetriableHTTPStatus(httpErr.StatusCode)
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) {
+	if netErr, ok := errors.AsType[net.Error](err); ok {
 		return netErr.Timeout()
 	}
 
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
+	if _, ok := errors.AsType[*net.OpError](err); ok {
 		return true
 	}
 

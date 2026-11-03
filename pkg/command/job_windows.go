@@ -87,7 +87,7 @@ func canonicalDirectoryPath(path string) (string, error) {
 	if err != nil {
 		if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) ||
 			errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
-			return normalizedWindowsPath(absPath), nil
+			return canonicalMissingDirectoryPath(absPath, err)
 		}
 		return "", err
 	}
@@ -105,15 +105,16 @@ func canonicalDirectoryPath(path string) (string, error) {
 	return windows.UTF16ToString(buffer[:length]), nil
 }
 
-func normalizedWindowsPath(path string) string {
-	path = filepath.Clean(path)
-	if strings.HasPrefix(path, `\\?\`) {
-		return path
+func canonicalMissingDirectoryPath(absPath string, lookupErr error) (string, error) {
+	parent := filepath.Dir(absPath)
+	if parent == absPath {
+		return "", lookupErr
 	}
-	if strings.HasPrefix(path, `\\`) {
-		return `\\?\UNC\` + strings.TrimPrefix(path, `\\`)
+	canonicalParent, err := canonicalDirectoryPath(parent)
+	if err != nil {
+		return "", err
 	}
-	return `\\?\` + path
+	return filepath.Join(canonicalParent, filepath.Base(absPath)), nil
 }
 
 func prepareBackgroundTree(cmd *exec.Cmd) {

@@ -1,0 +1,117 @@
+{
+  "availability": [
+    {
+      "available": true,
+      "producerId": "00000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "complete": true,
+  "hasMore": false,
+  "nextCursor": "opaque-cursor",
+  "records": [
+    {
+      "hook": "postCreateCommand",
+      "invocationId": "00000000-0000-4000-8000-000000000002",
+      "kind": "invocation",
+      "phase": "setup",
+      "producerId": "00000000-0000-4000-8000-000000000001",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "schemaVersion": 1,
+      "sequence": 1,
+      "state": "running",
+      "time": "2026-10-30T12:00:00Z"
+    },
+    {
+      "hook": "postCreateCommand",
+      "invocationId": "00000000-0000-4000-8000-000000000002",
+      "kind": "invocation",
+      "phase": "setup",
+      "producerId": "00000000-0000-4000-8000-000000000001",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "schemaVersion": 1,
+      "sequence": 2,
+      "state": "succeeded",
+      "time": "2026-10-30T12:00:00Z"
+    },
+    {
+      "hook": "postStartCommand",
+      "invocationId": "00000000-0000-4000-8000-000000000004",
+      "kind": "invocation",
+      "phase": "setup",
+      "producerId": "00000000-0000-4000-8000-000000000001",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "schemaVersion": 1,
+      "sequence": 3,
+      "state": "running",
+      "time": "2026-10-30T12:00:00Z"
+    },
+    {
+      "bytes": 6,
+      "invocationId": "00000000-0000-4000-8000-000000000004",
+      "kind": "output",
+      "producerId": "00000000-0000-4000-8000-000000000001",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "schemaVersion": 1,
+      "sequence": 4,
+      "stream": "stdout",
+      "text": "out-1\n",
+      "time": "2026-10-30T12:00:00Z"
+    },
+    {
+      "bytes": 6,
+      "invocationId": "00000000-0000-4000-8000-000000000004",
+      "kind": "output",
+      "producerId": "00000000-0000-4000-8000-000000000001",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "schemaVersion": 1,
+      "sequence": 5,
+      "stream": "stderr",
+      "text": "err-1\n",
+      "time": "2026-10-30T12:00:00Z"
+    },
+    {
+      "bytes": 6,
+      "invocationId": "00000000-0000-4000-8000-000000000004",
+      "kind": "output",
+      "producerId": "00000000-0000-4000-8000-000000000001",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "schemaVersion": 1,
+      "sequence": 6,
+      "stream": "stdout",
+      "text": "out-2\n",
+      "time": "2026-10-30T12:00:00Z"
+    },
+    {
+      "hook": "postStartCommand",
+      "invocationId": "00000000-0000-4000-8000-000000000004",
+      "kind": "invocation",
+      "phase": "setup",
+      "producerId": "00000000-0000-4000-8000-000000000001",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "schemaVersion": 1,
+      "sequence": 7,
+      "state": "failed",
+      "time": "2026-10-30T12:00:00Z"
+    },
+    {
+      "discoverySealed": true,
+      "kind": "producer",
+      "producerId": "00000000-0000-4000-8000-000000000001",
+      "producerState": "terminal",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "schemaVersion": 1,
+      "sequence": 8,
+      "time": "2026-10-30T12:00:00Z"
+    }
+  ],
+  "run": {
+    "captureState": "complete",
+    "command": "up",
+    "commandState": "running",
+    "context": "default",
+    "createdAt": "2026-10-30T12:00:00Z",
+    "runId": "00000000-0000-4000-8000-000000000003",
+    "workspaceUid": "uid"
+  },
+  "schemaVersion": 1
+}

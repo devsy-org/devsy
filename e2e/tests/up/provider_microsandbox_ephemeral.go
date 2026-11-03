@@ -43,8 +43,8 @@ var _ = ginkgo.Describe("microsandbox ephemeral root parity",
 						f.DevsyProviderAdd(ctx, provider.source, "--name", provider.name),
 					)
 					ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-						cleanupCtx, cancel := context.WithTimeout(
-							context.WithoutCancel(cleanupCtx),
+						cleanupCtx, cancel := framework.DetachedCleanupContext(
+							cleanupCtx,
 							time.Minute,
 						)
 						defer cancel()
@@ -55,8 +55,8 @@ var _ = ginkgo.Describe("microsandbox ephemeral root parity",
 						if ownedLabel == "" {
 							return nil
 						}
-						cleanupCtx, cancel := context.WithTimeout(
-							context.WithoutCancel(cleanupCtx),
+						cleanupCtx, cancel := framework.DetachedCleanupContext(
+							cleanupCtx,
 							time.Minute,
 						)
 						defer cancel()
@@ -82,8 +82,8 @@ var _ = ginkgo.Describe("microsandbox ephemeral root parity",
 						if !volumeOwned {
 							return nil
 						}
-						cleanupCtx, cancel := context.WithTimeout(
-							context.WithoutCancel(cleanupCtx),
+						cleanupCtx, cancel := framework.DetachedCleanupContext(
+							cleanupCtx,
 							time.Minute,
 						)
 						defer cancel()

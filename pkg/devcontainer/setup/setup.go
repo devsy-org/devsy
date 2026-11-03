@@ -26,6 +26,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/sharedfile"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -82,14 +83,7 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, err
 	}
 
-	if err := writeSecretFiles(cfg); err != nil {
-		return DeferredHooks{}, err
-	}
-	if err := writeSecretEnvironment(
-		cfg.SecretsEnv,
-		cfg.TerminalSecretEnvNames,
-		config.GetRemoteUser(cfg.SetupInfo),
-	); err != nil {
+	if err := writeSecrets(cfg); err != nil {
 		return DeferredHooks{}, err
 	}
 
@@ -120,13 +114,11 @@ func SetupContainerPreAttach(
 // Called after the IDE has been opened.
 func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) error {
 	log.Debugf("running post-attach lifecycle hooks")
-	if err := RunPostAttachHooks(
-		ctx,
-		cfg.SetupInfo,
-		cfg.SecretsEnv,
-		cfg.SecretsMount,
-		cfg.SkipPostAttach,
-	); err != nil {
+	if err := RunPostAttachHooks(ctx, cfg.SetupInfo, PostAttachOptions{
+		SecretsEnv:   cfg.SecretsEnv,
+		SecretsMount: cfg.SecretsMount,
+		Skip:         cfg.SkipPostAttach,
+	}); err != nil {
 		return fmt.Errorf("lifecycle hooks post-attach: %w", err)
 	}
 
@@ -380,10 +372,6 @@ func secretMountPath(target string) (string, error) {
 	return filepath.Join(config.SecretsMountDir, target), nil
 }
 
-func writeResultFile(cfg *ContainerSetupConfig) error {
-	return writeResultFileWithContext(context.Background(), cfg)
-}
-
 func writeResultFileWithContext(ctx context.Context, cfg *ContainerSetupConfig) error {
 	rawBytes, err := json.Marshal(cfg.SetupInfo)
 	if err != nil {
@@ -471,6 +459,17 @@ func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {
 	return nil
 }
 
+func writeSecrets(cfg *ContainerSetupConfig) error {
+	if err := writeSecretFiles(cfg); err != nil {
+		return err
+	}
+	return writeSecretEnvironment(
+		cfg.SecretsEnv,
+		cfg.TerminalSecretEnvNames,
+		config.GetRemoteUser(cfg.SetupInfo),
+	)
+}
+
 func setupEnvironment(cfg *ContainerSetupConfig) error {
 	log.Debugf("patching etc environment")
 
@@ -540,68 +539,103 @@ func linkRootHome(setupInfo *config.Result) error {
 
 func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	workspaceFolder := setupInfo.SubstitutionContext.ContainerWorkspaceFolder
-	// Compose services are not guaranteed a workspaceMount
-	if _, err := os.Lstat(workspaceFolder); err != nil {
-		if os.IsNotExist(err) {
-			log.Debugf("skip chown: workspace folder does not exist: %s", workspaceFolder)
-			return nil
-		}
-		return fmt.Errorf("stat workspace %s: %w", workspaceFolder, err)
+	workspaceID := os.Getenv(pkgconfig.EnvWorkspaceID)
+	skip, err := skipWorkspaceChown(workspaceFolder, workspaceID)
+	if err != nil || skip {
+		return err
 	}
 
 	user := config.GetRemoteUser(setupInfo)
-	// Scope the marker to a workspace so a restored image does not suppress
-	// ownership setup for a different workspace; an unset workspace ID can't
-	// be scoped, so skip the marker gate entirely and chown every run.
-	workspaceID := os.Getenv(pkgconfig.EnvWorkspaceID)
-	if workspaceID != "" {
-		exists, err := markerExists("chownWorkspace", workspaceID)
-		if err != nil {
-			return err
-		} else if exists {
-			return nil
-		}
-	}
-
-	workspaceRoot := filepath.Dir(workspaceFolder)
-	if workspaceRoot != "/" {
-		log.Debugf("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
-		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.DeniedByFilesystem(err) {
-			return fmt.Errorf("chown %s: %w", workspaceRoot, err)
-		} else if err != nil {
-			// A non-root container (e.g. an OpenShift restricted-SCC pod) does
-			// not own workspaceRoot and cannot chown it; the workspace folder
-			// itself may still get a usable owner below.
-			log.Debugf("chown workspace: %s kept its owner: %v", workspaceRoot, err)
-		}
+	if err := chownWorkspaceRoot(user, workspaceFolder); err != nil {
+		return err
 	}
 
 	if recursive {
-		log.Debugf(
-			"chown workspace recursively: user=%s, workspaceFolder=%s",
-			user,
-			workspaceFolder,
-		)
-		err := copy2.ChownR(workspaceFolder, user)
-		var failures copy2.ChownFailures
-		switch {
-		case err == nil:
-		case errors.As(err, &failures) && failures.AllDenied():
-			// Read-only shared files, such as virtiofs pack files, can refuse chown.
-			// A future container for this workspace may not share the same read-only mount.
-			log.Warnf("chown workspace: %d entries kept their owner: %v", len(failures), err)
-			return nil
-		default:
-			return fmt.Errorf("chown %s recursively: %w", workspaceFolder, err)
-		}
-	}
-
-	if workspaceID != "" {
-		if err := writeMarker("chownWorkspace", workspaceID); err != nil {
+		persist, err := chownWorkspaceTree(user, workspaceFolder)
+		if err != nil || !persist {
 			return err
 		}
 	}
+
+	return recordWorkspaceChown(workspaceID)
+}
+
+func skipWorkspaceChown(workspaceFolder, workspaceID string) (bool, error) {
+	present, err := workspaceFolderPresent(workspaceFolder)
+	if err != nil || !present {
+		return true, err
+	}
+	return workspaceChownLatched(workspaceID)
+}
+
+// Compose services are not guaranteed a workspaceMount.
+func workspaceFolderPresent(workspaceFolder string) (bool, error) {
+	_, err := os.Lstat(workspaceFolder)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		log.Debugf("skip chown: workspace folder does not exist: %s", workspaceFolder)
+		return false, nil
+	}
+	return false, fmt.Errorf("stat workspace %s: %w", workspaceFolder, err)
+}
+
+// Scope the marker to a workspace so a restored image does not suppress
+// ownership setup for a different workspace; an unset workspace ID can't
+// be scoped, so skip the marker gate entirely and chown every run.
+func workspaceChownLatched(workspaceID string) (bool, error) {
+	if workspaceID == "" {
+		return false, nil
+	}
+	return markerExists("chownWorkspace", workspaceID)
+}
+
+func chownWorkspaceRoot(user, workspaceFolder string) error {
+	workspaceRoot := filepath.Dir(workspaceFolder)
+	if workspaceRoot == "/" {
+		return nil
+	}
+	log.Debugf("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
+	if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.DeniedByFilesystem(err) {
+		return fmt.Errorf("chown %s: %w", workspaceRoot, err)
+	} else if err != nil {
+		// A non-root container (e.g. an OpenShift restricted-SCC pod) does
+		// not own workspaceRoot and cannot chown it; the workspace folder
+		// itself may still get a usable owner below.
+		log.Debugf("chown workspace: %s kept its owner: %v", workspaceRoot, err)
+	}
 	return nil
+}
+
+// chownWorkspaceTree reports false when every entry kept its owner, so the
+// marker is not written and a future container for this workspace retries.
+func chownWorkspaceTree(user, workspaceFolder string) (bool, error) {
+	log.Debugf(
+		"chown workspace recursively: user=%s, workspaceFolder=%s",
+		user,
+		workspaceFolder,
+	)
+	err := copy2.ChownR(workspaceFolder, user)
+	var failures copy2.ChownFailures
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &failures) && failures.AllDenied():
+		// Read-only shared files, such as virtiofs pack files, can refuse chown.
+		// A future container for this workspace may not share the same read-only mount.
+		log.Warnf("chown workspace: %d entries kept their owner: %v", len(failures), err)
+		return false, nil
+	default:
+		return false, fmt.Errorf("chown %s recursively: %w", workspaceFolder, err)
+	}
+}
+
+func recordWorkspaceChown(workspaceID string) error {
+	if workspaceID == "" {
+		return nil
+	}
+	return writeMarker("chownWorkspace", workspaceID)
 }
 
 func patchEtcProfile() error {
@@ -959,6 +993,18 @@ func dirIsWritable(dir string) bool {
 
 func containerDataDir() string {
 	return writableContainerDataDirOnce()
+}
+
+// WorkspaceLogsRoot returns the container-side spool for retained setup
+// history, inside the already selected secure data directory, or empty when no
+// secure directory is available. The caller opens it as a workspacelogs store.
+func WorkspaceLogsRoot() string {
+	dir := containerDataDir()
+	if dir == "" {
+		return ""
+	}
+
+	return filepath.Join(dir, workspacelogs.SpoolDirName)
 }
 
 func setupPlatformGitCredentials(

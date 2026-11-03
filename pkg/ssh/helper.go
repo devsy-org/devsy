@@ -35,7 +35,7 @@ func handleKeepAliveRequests(in <-chan *ssh.Request) <-chan *ssh.Request {
 func NewSSHPassClient(user, addr, password string) (*ssh.Client, error) {
 	clientConfig := &ssh.ClientConfig{
 		Auth:            []ssh.AuthMethod{},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // tunnelled, no known_hosts
 	}
 
 	clientConfig.Auth = append(clientConfig.Auth, ssh.Password(password))
@@ -233,7 +233,7 @@ func handshakeWithIdleTimeout(
 func ConfigFromKeyBytes(keyBytes []byte) (*ssh.ClientConfig, error) {
 	clientConfig := &ssh.ClientConfig{
 		Auth:            []ssh.AuthMethod{},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // tunnelled, no known_hosts
 	}
 
 	// key file authentication?
@@ -366,8 +366,7 @@ func handleRunError(ctx context.Context, err error, command string) error {
 	}
 
 	// Check for exit errors with exit codes
-	var exitErr *ssh.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
 		exitCode := exitErr.ExitStatus()
 
 		if isSignalInterrupt(exitCode) {

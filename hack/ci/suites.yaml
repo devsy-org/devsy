@@ -38,7 +38,13 @@ unit:
 
     - name: e2e-runtime-helpers
       description: E2E runtime helper packages
-      packages: [./e2e/framework/runenv/..., ./e2e/framework/dockerwsl, ./e2e/framework/ginkgoreport, ./e2e/cmd/devsy-ci]
+      packages:
+        - ./e2e/framework/runenv/...
+        - ./e2e/framework/dockerwsl
+        - ./e2e/framework/ginkgoreport
+        - ./e2e/cmd/devsy-ci
+        - ./e2e/tests/ssh
+      require_tests: [TestProxyCommandExcerptProtectsFailureReport]
       args: [-race, -count=1, -timeout=5m]
 
     - name: e2e-framework
@@ -73,6 +79,21 @@ unit:
       packages: [./e2e/framework/ghfixture]
       args: [-race, -count=1, -timeout=90s]
 
+    - name: windows-detached-task-storage
+      description: native Windows detached task storage and process ownership
+      os: [windows]
+      packages: [./pkg/command, ./pkg/task, ./pkg/workspace]
+      require_tests: [TestTaskQueriesRejectUncertainRecords, TestGetWaitsForWriterHoldingExclusiveFileHandle]
+      args: [-race, -count=1, -timeout=10m]
+
+    - name: windows-detached-workspace-lifecycle
+      description: native Windows detached workers, followers, and task results
+      os: [windows]
+      packages: [./cmd/workspace/up, ./cmd/workspace]
+      run: '^Test(Detached.*|DetachWorkspaceLabel.*|WorkerRecords.*|DuplicateWorkerCannotFailOwnerTask|FinalizeWorker.*|OpenTaskExitsWhenAlreadyCanceled|FollowTask.*|LogTailer.*|ResultEnvelopeFrom.*|EmitTaskTransition|ReportTaskStateJSON.*|TaskErrorMessage|TaskStatusEvent.*)$'
+      require_tests: [TestWorkerRecordsConfigAndClientErrors, TestDetachedWorkerCommitsBeforeWorkspaceWork, TestFollowTaskReconcilesExitedWorker]
+      args: [-race, -count=1, -timeout=10m]
+
     - name: windows-transport
       description: native Windows Docker transport
       os: [windows]
@@ -87,6 +108,14 @@ unit:
       run: '^(TestExecutablePathTestSuite|TestProviderCommandErrorTestSuite)$'
       require_tests: [TestExecutablePathTestSuite, TestProviderCommandErrorTestSuite]
       args: [-race, -count=1, -v, -timeout=5m]
+
+    - name: windows-wslg-boundaries
+      description: WSLg preflight, discovery and Compose environment boundaries on native Windows
+      os: [windows]
+      packages: [./cmd/workspace/up, ./pkg/wslg, ./pkg/compose, ./pkg/devcontainer]
+      run: '^TestWSLg'
+      require_tests: [TestWSLgSuite, TestWSLgPreflightBeforeWorkspaceProvisioning]
+      args: [-race, -count=1, -timeout=5m]
 
     - name: ci-tooling-windows
       description: Go CI helpers that also run on Windows
@@ -130,6 +159,8 @@ e2e:
   ungated:
     - label: gh-forwarding
       reason: sub-label that always accompanies the ssh suite label
+    - label: env-equals-isolated-home
+      reason: sub-label that always accompanies the up-provider-docker suite label
     - label: up-provider-podman-machine-bind
       reason: darwin-only spec that needs a local Podman machine; run manually on macOS
     - label: gpg
@@ -157,6 +188,10 @@ e2e:
       reason: sub-label that always accompanies the up-provider-kubernetes suite label
     - label: up-provider-kubernetes-ignore
       reason: sub-label that always accompanies the up-provider-kubernetes suite label
+    - label: up-provider-kubernetes-image-config-file
+      reason: sub-label that always accompanies the up-provider-kubernetes suite label
+    - label: setup-logs
+      reason: sub-label that always accompanies the logs suite label
 
   suites:
     # --- unprivileged ---
@@ -204,6 +239,7 @@ e2e:
     - { group: integration, label: up-private-token, requires_secret: true }
     - { group: integration, label: up-provider-kubernetes, free_disk_space: true, install_kind: true }
     - { group: integration, label: up-provider-kubernetes-restricted-scc, free_disk_space: true, install_kind: true }
+    - { group: integration, label: up-provider-kubernetes-inactivity, free_disk_space: true, install_kind: true, test_timeout: 60m, job_timeout_minutes: 75 }
     - { group: integration, label: up-provider-docker, install_kind: true }
     - { group: integration, label: snapshot, host_setup: [insecure-registry] }
     - group: integration
@@ -247,6 +283,15 @@ e2e:
       expected_spec_count: 6
       test_timeout: 900s
       job_timeout_minutes: 25
+    # Same fixture, own job: the specs create real workspaces through the
+    # selected WSL user's display, and the job also runs the Compose parity probe.
+    - group: integration
+      label: wslg
+      runner: windows-latest
+      runtime: docker-wsl
+      expected_spec_count: 2
+      test_timeout: 600s
+      job_timeout_minutes: 40
 
     # --- microsandbox ---
     - { group: microsandbox, label: up-provider-microsandbox, expected_spec_count: 2, performance_capture: true }

@@ -10,8 +10,8 @@ import (
 	"syscall"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -22,22 +22,22 @@ import (
 
 // StartCmd holds the devsy daemon flags.
 type StartCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	Host string
 }
 
 // NewStartCmd creates a new command.
-func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewStartCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &StartCmd{
 		GlobalFlags: flags,
 	}
 	c := &cobra.Command{
 		Use:   "start",
 		Short: "Start the client daemon",
-		RunE:  proutil.HostRunE(flags, &cmd.Host, cmd.Run),
+		RunE:  cmdutil.HostRunE(flags, &cmd.Host, cmd.Run),
 	}
-	proutil.AddHostFlag(c, &cmd.Host, proutil.WithHostCompletion(flags))
+	cmdutil.AddHostFlag(c, &cmd.Host, cmdutil.WithHostCompletion(flags))
 
 	return c
 }
@@ -140,10 +140,10 @@ func ensureDaemonDir(context, providerName string) (string, error) {
 func printStatus(status daemon.Status) {
 	out, err := json.Marshal(status)
 	if err != nil {
-		fmt.Printf("failed to marshal status: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stdout, "failed to marshal status: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println(string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 }
 
 func getUserName(self *managementv1.Self) string {

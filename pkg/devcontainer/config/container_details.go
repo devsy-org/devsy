@@ -36,6 +36,9 @@ type ContainerDetails struct {
 	ImageID                 string                 `json:"Image,omitempty"`
 	ImageManifestDescriptor *ocispec.Descriptor    `json:"ImageManifestDescriptor,omitempty"`
 	Created                 string                 `json:"Created,omitempty"`
+	Dockerless              bool                   `json:"Dockerless,omitempty"`
+	ImageEntrypoint         bool                   `json:"ImageEntrypoint,omitempty"`
+	LifecycleTopologyError  string                 `json:"LifecycleTopologyError,omitempty"`
 	State                   ContainerDetailsState  `json:"State"`
 	Config                  ContainerDetailsConfig `json:"Config"`
 	Mounts                  []ContainerMount       `json:"Mounts,omitempty"`

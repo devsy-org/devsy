@@ -114,7 +114,7 @@ func TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace(t *testing.T) {
 		DefaultContext: testContext,
 		Contexts:       map[string]*config.ContextConfig{testContext: {}},
 	}
-	reporter, err := newWorkspaceStatusReporter(formatPlain, os.Stdout, false)
+	reporter, err := newWorkspaceStatusReporter(formatPlain, os.Stdout, false, false)
 	require.NoError(t, err)
 
 	captureStdout(t, func() {
@@ -166,7 +166,7 @@ func TestDeleteCmd_DeleteMultipleReusesResolvedClients(t *testing.T) {
 		DefaultContext: testContext,
 		Contexts:       map[string]*config.ContextConfig{testContext: {}},
 	}
-	reporter, err := newWorkspaceStatusReporter(formatPlain, os.Stdout, false)
+	reporter, err := newWorkspaceStatusReporter(formatPlain, os.Stdout, false, false)
 	require.NoError(t, err)
 
 	targets := map[string]resolvedDeleteTarget{
@@ -178,8 +178,7 @@ func TestDeleteCmd_DeleteMultipleReusesResolvedClients(t *testing.T) {
 			t.Context(),
 			devsyConfig,
 			reporter,
-			targets,
-			[]string{argA, argB},
+			deleteBatch{targets: targets, args: []string{argA, argB}},
 		))
 	})
 	require.True(t, fakeA.deleted)

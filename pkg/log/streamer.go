@@ -151,13 +151,10 @@ func (s *JSONLogStreamer) capture(line string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for (s.captureLines > 0 && len(s.lastLines) >= s.captureLines) ||
-		(s.captureBytes > 0 && len(s.lastLines) > 0 &&
-			s.capturedBytes+1+len(line) > s.captureBytes) {
+	for s.overCaptureLimit(len(line)) {
 		s.dropOldestLine()
 	}
-	if s.captureBytes > 0 && len(s.lastLines) > 0 &&
-		s.capturedBytes+1+len(line) > s.captureBytes {
+	if s.byteOverflow(len(line)) {
 		line = line[len(line)-(s.captureBytes-s.capturedBytes-1):]
 	}
 	if len(s.lastLines) > 0 {
@@ -165,6 +162,21 @@ func (s *JSONLogStreamer) capture(line string) {
 	}
 	s.lastLines = append(s.lastLines, line)
 	s.capturedBytes += len(line)
+}
+
+// overCaptureLimit reports whether the oldest line must go before a new line of
+// size n can be captured.
+func (s *JSONLogStreamer) overCaptureLimit(n int) bool {
+	if s.captureLines > 0 && len(s.lastLines) >= s.captureLines {
+		return true
+	}
+	return s.captureBytes > 0 && len(s.lastLines) > 0 && s.capturedBytes+1+n > s.captureBytes
+}
+
+// byteOverflow reports whether a new line of size n must be cut to fit the
+// byte budget, after older lines were dropped.
+func (s *JSONLogStreamer) byteOverflow(n int) bool {
+	return s.captureBytes > 0 && len(s.lastLines) > 0 && s.capturedBytes+1+n > s.captureBytes
 }
 
 func (s *JSONLogStreamer) dropOldestLine() {

@@ -22,8 +22,10 @@ func newTestRoot(t *testing.T) *cobra.Command {
 	require.NoError(t, pf.MarkHidden("hidden-global"))
 
 	noop := func(*cobra.Command, []string) {}
-	ws := &cobra.Command{Use: "workspace", Short: "Manage workspaces"}
-	list := &cobra.Command{Use: "list", Short: "List workspaces", Run: noop}
+	ws := &cobra.Command{Use: "workspace", Aliases: []string{"ws"}, Short: "Manage workspaces"}
+	list := &cobra.Command{
+		Use: "list", Aliases: []string{"ls"}, Short: "List workspaces", Run: noop,
+	}
 	list.Flags().Bool("skip-platform", false, "Don't list platform workspaces")
 	ws.AddCommand(list)
 	root.AddCommand(ws)
@@ -147,4 +149,52 @@ func sectionBody(t *testing.T, out, header string) string {
 		body = append(body, line)
 	}
 	return strings.Join(body, "\n")
+}
+
+func TestRender_SubcommandListShowsAliases(t *testing.T) {
+	root := newTestRoot(t)
+
+	assert.Contains(t, sectionBody(t, renderHelp(t, root), "SUBCOMMANDS:"), "workspace (ws)")
+	assert.Contains(
+		t,
+		sectionBody(t, renderHelp(t, root, "workspace"), "SUBCOMMANDS:"),
+		"list (ls)",
+	)
+}
+
+func TestRender_AliasesSection(t *testing.T) {
+	root := newTestRoot(t)
+
+	body := sectionBody(t, renderHelp(t, root, "workspace", "list"), "ALIASES:")
+	assert.Equal(t, "devsy workspace ls", strings.TrimSpace(body))
+	assert.NotContains(t, renderHelp(t, root, "loose"), "ALIASES:")
+}
+
+func TestRender_SubcommandDescriptionsAlign(t *testing.T) {
+	root := newTestRoot(t)
+	root.AddCommand(&cobra.Command{
+		Use: "resolve-dependencies", Short: "Resolve order", Run: func(*cobra.Command, []string) {},
+	})
+
+	body := sectionBody(t, renderHelp(t, root), "SUBCOMMANDS:")
+	assert.Contains(t, body, "resolve-dependencies  Resolve order")
+	assert.Contains(t, body, "loose                 A loose command")
+	assert.Contains(t, body, "workspace (ws)        Manage workspaces")
+}
+
+func TestRender_LongAliasedLabelStaysInsideWidth(t *testing.T) {
+	root := newTestRoot(t)
+	root.AddCommand(&cobra.Command{
+		Use:     "describe",
+		Aliases: []string{"show", "inspect", "details", "info"},
+		Short:   "Show details",
+		Run:     func(*cobra.Command, []string) {},
+	})
+
+	body := sectionBody(t, renderHelp(t, root), "SUBCOMMANDS:")
+	for line := range strings.SplitSeq(body, "\n") {
+		assert.LessOrEqual(t, len(line), defaultWidth, line)
+	}
+	assert.Contains(t, body, "describe (show, inspect, details, info)\n")
+	assert.Contains(t, body, "\n"+strings.Repeat(" ", 28)+"Show details")
 }

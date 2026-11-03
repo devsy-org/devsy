@@ -260,7 +260,7 @@ func TestComposeResumePreservesSavedInvocation(t *testing.T) {
 	require.Equal(t, []string{
 		composeProjectNameFlag,
 		composeTestProject,
-		"--project-directory",
+		composeProjectDirFlag,
 		dir,
 		composeTestEnvFlag,
 		envFile,

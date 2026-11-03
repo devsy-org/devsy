@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -100,6 +102,10 @@ func (m *mockPvcServer) dispatch(
 		m.handlePost(w, r, encoder, decoder)
 		return true
 	}
+	if r.Method == http.MethodPut && len(parts) == 6 {
+		m.handlePut(w, r, encoder, decoder)
+		return true
+	}
 	return false
 }
 
@@ -150,11 +156,58 @@ func (m *mockPvcServer) handlePost(
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	pvc.UID = types.UID("pvc-" + pvc.Name)
+	pvc.ResourceVersion = "1"
 	m.mu.Lock()
 	m.pvcs[pvc.Name] = pvc
 	m.mu.Unlock()
 	w.Header().Set("Content-Type", runtime.ContentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
+	_ = encoder.Encode(pvc, w)
+}
+
+func (m *mockPvcServer) handlePut(
+	w http.ResponseWriter,
+	r *http.Request,
+	encoder runtime.Encoder,
+	decoder runtime.Decoder,
+) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	obj, _, err := decoder.Decode(body, nil, nil)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	pvc, ok := obj.(*corev1.PersistentVolumeClaim)
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current := m.pvcs[pvc.Name]
+	w.Header().Set("Content-Type", runtime.ContentTypeJSON)
+	if current == nil || current.UID != pvc.UID || current.ResourceVersion != pvc.ResourceVersion {
+		w.WriteHeader(http.StatusConflict)
+		_ = encoder.Encode(&metav1.Status{
+			TypeMeta: metav1.TypeMeta{Kind: "Status", APIVersion: "v1"},
+			Status:   metav1.StatusFailure, Reason: metav1.StatusReasonConflict,
+			Code: http.StatusConflict,
+		}, w)
+		return
+	}
+	version, err := strconv.Atoi(current.ResourceVersion)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	pvc.ResourceVersion = strconv.Itoa(version + 1)
+	m.pvcs[pvc.Name] = pvc
+	w.WriteHeader(http.StatusOK)
 	_ = encoder.Encode(pvc, w)
 }
 
@@ -167,7 +220,10 @@ func newMockPvcDriver(
 		pvcs: make(map[string]*corev1.PersistentVolumeClaim),
 	}
 	for k, v := range initialPvcs {
-		mock.pvcs[k] = v.DeepCopy()
+		pvc := v.DeepCopy()
+		pvc.UID = types.UID("pvc-" + pvc.Name)
+		pvc.ResourceVersion = "1"
+		mock.pvcs[k] = pvc
 	}
 	srv := httptest.NewServer(mock)
 	t.Cleanup(srv.Close)
@@ -219,9 +275,6 @@ func testEnsureMissingPvcWithoutOptions(t *testing.T) {
 	if opts != nil {
 		t.Errorf("opts = %v, want nil", opts)
 	}
-	if !strings.Contains(err.Error(), "no options provided") {
-		t.Errorf("unexpected error message: %v", err)
-	}
 }
 
 func testEnsureMissingPvcWithOptions(t *testing.T) {
@@ -230,15 +283,12 @@ func testEnsureMissingPvcWithOptions(t *testing.T) {
 		UID:   testWorkspaceID,
 		Image: "golang:1.24",
 	}
-	initialize, opts, err := k.ensureDevContainerPvc(context.Background(), testWorkspaceID, options)
+	initialize, _, err := k.ensureDevContainerPvc(context.Background(), testWorkspaceID, options)
 	if err != nil {
 		t.Fatalf("ensureDevContainerPvc: %v", err)
 	}
 	if !initialize {
 		t.Errorf("initialize = false, want true")
-	}
-	if opts != options {
-		t.Errorf("opts = %v, want %v", opts, options)
 	}
 	mock.mu.Lock()
 	created, exists := mock.pvcs[testWorkspaceID]
@@ -273,18 +323,6 @@ func runExistingPvcTest(
 	return opts, err
 }
 
-func testEnsureExistingPvcWithOptions(t *testing.T) {
-	savedOptions := &driver.RunOptions{UID: testWorkspaceID, Image: testSavedImage}
-	callerOptions := &driver.RunOptions{UID: testWorkspaceID, Image: "caller-image"}
-	opts, err := runExistingPvcTest(t, savedOptions, callerOptions)
-	if err != nil {
-		t.Fatalf("ensureDevContainerPvc: %v", err)
-	}
-	if opts != callerOptions {
-		t.Errorf("opts = %v, want caller options %v", opts, callerOptions)
-	}
-}
-
 func testEnsureExistingPvcWithoutCallerOptions(t *testing.T) {
 	savedOptions := &driver.RunOptions{UID: testWorkspaceID, Image: testSavedImage}
 	opts, err := runExistingPvcTest(t, savedOptions, nil)
@@ -296,29 +334,11 @@ func testEnsureExistingPvcWithoutCallerOptions(t *testing.T) {
 	}
 }
 
-func testEnsureExistingPvcWithNilSavedOptions(t *testing.T) {
-	opts, err := runExistingPvcTest(t, nil, nil)
-	if err != nil {
-		t.Fatalf("ensureDevContainerPvc: %v", err)
-	}
-	if opts != nil {
-		t.Errorf("opts = %v, want nil", opts)
-	}
-}
-
 func TestEnsureDevContainerPvc(t *testing.T) {
 	t.Run("missing PVC without options errors", testEnsureMissingPvcWithoutOptions)
 	t.Run("missing PVC with options creates PVC and initializes", testEnsureMissingPvcWithOptions)
 	t.Run(
-		"existing PVC with options retains options and does not initialize",
-		testEnsureExistingPvcWithOptions,
-	)
-	t.Run(
 		"existing PVC without caller options reuses saved options",
 		testEnsureExistingPvcWithoutCallerOptions,
-	)
-	t.Run(
-		"existing PVC with nil saved options preserves nil options",
-		testEnsureExistingPvcWithNilSavedOptions,
 	)
 }

@@ -4,15 +4,23 @@ import (
 	"testing"
 )
 
-func TestGetProviderSource_GithubCanonicalization(t *testing.T) {
-	const githubPath = "devsy-org/devsy-provider-ssh"
-	const canonicalGithub = "github.com/" + githubPath
+const (
+	githubPath      = "devsy-org/devsy-provider-ssh"
+	canonicalGithub = "github.com/" + githubPath
+)
 
-	tests := []struct {
-		name string
-		src  ProviderSource
-		want string
-	}{
+type providerSourceCase struct {
+	name string
+	src  ProviderSource
+	want string
+}
+
+func githubCanonicalizationCases() []providerSourceCase {
+	return append(githubSourceCases(), otherSourceCases()...)
+}
+
+func githubSourceCases() []providerSourceCase {
+	return []providerSourceCase{
 		{
 			name: "bare org/repo gets github.com prefix",
 			src:  ProviderSource{Github: githubPath},
@@ -62,6 +70,11 @@ func TestGetProviderSource_GithubCanonicalization(t *testing.T) {
 			},
 			want: canonicalGithub,
 		},
+	}
+}
+
+func otherSourceCases() []providerSourceCase {
+	return []providerSourceCase{
 		{
 			name: "internal source returns raw",
 			src:  ProviderSource{Internal: true, Raw: "docker"},
@@ -78,8 +91,10 @@ func TestGetProviderSource_GithubCanonicalization(t *testing.T) {
 			want: "/tmp/p.yaml",
 		},
 	}
+}
 
-	for _, tc := range tests {
+func TestGetProviderSource_GithubCanonicalization(t *testing.T) {
+	for _, tc := range githubCanonicalizationCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			got := GetProviderSource(tc.src, "config-name")
 			if got != tc.want {

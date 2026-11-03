@@ -119,4 +119,21 @@ describe("WorkspaceJobs", () => {
     await jobs.finish("ws", generation)
     expect(jobs.generation("ws")).not.toBe(generation)
   })
+
+  it("associates a run with the owning command only", async () => {
+    const jobs = new WorkspaceJobs()
+    const run = "11111111-1111-4111-8111-111111111111"
+    const other = "22222222-2222-4222-8222-222222222222"
+    const generation = jobs.start("ws", "rebuilding", "cmd")
+    jobs.setRun("ws", "stale", { runId: other })
+    expect(jobs.get("ws")?.runId).toBeUndefined()
+    jobs.setRun("ws", "cmd", { runId: run })
+    jobs.setRun("ws", "cmd", { runId: other })
+    jobs.setRun("ws", "cmd", { runId: run, failedInvocationId: other })
+    await jobs.finish("ws", generation, "failed")
+    expect(jobs.get("ws")).toMatchObject({
+      runId: run,
+      failedInvocationId: other,
+    })
+  })
 })

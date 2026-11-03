@@ -25,6 +25,20 @@ Open **Workspaces** and click **Create**. The wizard has five steps:
 
 The desktop app runs `devsy workspace up` for you.
 
+### Workspace IDs
+
+The workspace name is its ID. Use lowercase ASCII letters (`a-z`), digits (`0-9`), and hyphens (`-`), with a maximum of 48 characters.
+
+Desktop suggests a valid ID from your source. For example, a local folder named `Backend` suggests `backend`; the source path keeps its original case. If you enter a name yourself, it must follow the same rules:
+
+```sh
+devsy workspace up ./Projects/Backend --id backend
+```
+
+<Callout title="Workspace creation fix">
+Uppercase workspace IDs are rejected before detached creation starts. Startup failures are recorded as failed tasks and shown in Desktop instead of leaving creation waiting indefinitely. Mixed-case source folder and repository names remain supported.
+</Callout>
+
 ### Devsy CLI
 
 [Install the CLI](../getting-started/install.mdx#install-devsy-cli) and add a provider, for example Docker:
@@ -78,6 +92,23 @@ Only the `docker` provider supports this, and `--recreate` is rejected for these
 <Callout title="Devsy home">
 To change where Devsy keeps its data, pass `--home=PATH` or set `DEVSY_HOME`. This helps on WSL when a workspace tries to mount a Windows path instead of a path inside WSL.
 </Callout>
+
+## Read setup output
+
+Devsy keeps the output of the build and of each lifecycle hook, such as `postCreateCommand`, after `devsy workspace up` finishes. Find the run and read it:
+
+```sh
+devsy workspace logs WORKSPACE_NAME --source setup --list
+devsy workspace logs WORKSPACE_NAME --source setup --run RUN_ID --result-format=plain
+```
+
+The run ID is in the result of `devsy workspace up` and in the output of a detached creation task. `--list` shows it for earlier runs.
+
+- Hooks after `waitFor` (the default is `updateContentCommand`) can run after `up` returns. Their output is added to the same run. Add `--follow` to watch it.
+- A hook skipped because its marker shows an earlier attempt is listed as skipped with the reason `already_attempted`. That does not mean the earlier attempt succeeded. Check the earlier run.
+- `postAttachCommand` runs on each attach and is recorded as its own invocation each time.
+
+See [Troubleshooting](../troubleshooting/troubleshooting.mdx#find-the-right-log) for all options and [Setup history](../troubleshooting/setup-history.mdx) for limits and redaction.
 
 ## .devsyignore
 

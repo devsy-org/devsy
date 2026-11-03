@@ -26,6 +26,11 @@ import (
 )
 
 const (
+	userValue = "--user"
+	root      = "root"
+)
+
+const (
 	composeSecretCommand       = "secret"
 	composeSecretSetCommand    = "set"
 	composeSecretDeleteCommand = "delete"
@@ -45,11 +50,11 @@ var _ = ginkgo.Describe(
 			tc.initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			tc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			tc.dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", "docker")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
 
@@ -65,9 +70,9 @@ var _ = ginkgo.Describe(
 				})
 				framework.ExpectNoError(tc.f.DevsyContextUse(ctx, contextName))
 				framework.ExpectNoError(tc.f.DevsyProviderAdd(
-					ctx, "docker", "-o", "DOCKER_PATH=docker",
+					ctx, dockerValue, "-o", "DOCKER_PATH=docker",
 				))
-				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, "docker"))
+				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, dockerValue))
 
 				tempDir, workspace, err := tc.setupAndStartWorkspace(
 					ctx, "tests/up-docker-compose/testdata/docker-compose",
@@ -223,9 +228,9 @@ var _ = ginkgo.Describe(
 				})
 				framework.ExpectNoError(tc.f.DevsyContextUse(ctx, contextName))
 				framework.ExpectNoError(tc.f.DevsyProviderAdd(
-					ctx, "docker", "-o", "DOCKER_PATH=docker",
+					ctx, dockerValue, "-o", "DOCKER_PATH=docker",
 				))
-				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, "docker"))
+				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, dockerValue))
 
 				secretName := "COMPOSE_SESSION_SECRET"
 				_, err := tc.f.ExecCommandOutput(ctx, []string{
@@ -345,11 +350,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -363,8 +364,8 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"touch /home/vscode/mnt1/foo.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectNoError(err)
@@ -377,8 +378,8 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"echo -n BAR > /home/vscode/mnt1/foo.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectNoError(err)
@@ -400,11 +401,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -434,8 +431,8 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"touch /home/vscode/mnt-ro/should-not-write.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectError(
@@ -474,11 +471,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -488,6 +481,7 @@ var _ = ginkgo.Describe(
 
 			sshContext, sshCancel := context.WithCancel(context.Background())
 			go func() {
+				//nolint:gosec // e2e harness command by design
 				cmd := exec.CommandContext(
 					sshContext,
 					filepath.Join(tc.f.DevsyBinDir, tc.f.DevsyBinName),
@@ -540,11 +534,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -612,11 +602,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -741,9 +727,7 @@ var _ = ginkgo.Describe(
 					To(gomega.Equal("overlay-init-ran"))
 				expectedWorkspaceMountSource, err := filepath.EvalSymlinks(tempDir)
 				framework.ExpectNoError(err)
-				appIDs, err := findComposeContainer(
-					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app",
-				)
+				appIDs, err := tc.findComposeContainer(ctx, workspace.UID, "app")
 				framework.ExpectNoError(err)
 				app, err := tc.inspectContainer(ctx, appIDs)
 				framework.ExpectNoError(err)
@@ -768,9 +752,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(sidecarMarker)).To(gomega.Equal("sidecar-started"))
 
-				sidecarIDs, err := findComposeContainer(
-					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "sidecar",
-				)
+				sidecarIDs, err := tc.findComposeContainer(ctx, workspace.UID, "sidecar")
 				framework.ExpectNoError(err)
 				gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
 				sidecar, err := tc.inspectContainer(ctx, sidecarIDs)
@@ -795,14 +777,10 @@ var _ = ginkgo.Describe(
 				initMarker, err = tc.f.DevsySSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(initMarker)).To(gomega.Equal("overlay-init-ran"))
-				appIDs, err = findComposeContainer(
-					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app",
-				)
+				appIDs, err = tc.findComposeContainer(ctx, workspace.UID, "app")
 				framework.ExpectNoError(err)
 				gomega.Expect(appIDs).To(gomega.HaveLen(1))
-				alternateIDs, err := findComposeContainer(
-					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "alternate",
-				)
+				alternateIDs, err := tc.findComposeContainer(ctx, workspace.UID, "alternate")
 				framework.ExpectNoError(err)
 				gomega.Expect(alternateIDs).To(gomega.BeEmpty())
 
@@ -814,14 +792,10 @@ var _ = ginkgo.Describe(
 					overlayPath,
 				)
 				framework.ExpectNoError(err)
-				appIDs, err = findComposeContainer(
-					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app",
-				)
+				appIDs, err = tc.findComposeContainer(ctx, workspace.UID, "app")
 				framework.ExpectNoError(err)
 				gomega.Expect(appIDs).To(gomega.BeEmpty())
-				alternateIDs, err = findComposeContainer(
-					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "alternate",
-				)
+				alternateIDs, err = tc.findComposeContainer(ctx, workspace.UID, "alternate")
 				framework.ExpectNoError(err)
 				gomega.Expect(alternateIDs).To(gomega.HaveLen(1))
 				alternate, err := tc.inspectContainer(ctx, alternateIDs)
@@ -835,9 +809,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(alternateMarker)).
 					To(gomega.Equal("alternate-started"))
-				sidecarIDs, err = findComposeContainer(
-					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "sidecar",
-				)
+				sidecarIDs, err = tc.findComposeContainer(ctx, workspace.UID, "sidecar")
 				framework.ExpectNoError(err)
 				gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
 				sidecarMarker, err = tc.f.DevsySSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
@@ -874,9 +846,7 @@ var _ = ginkgo.Describe(
 					overlayPath,
 				)
 				framework.ExpectNoError(err)
-				alternateIDs, err = findComposeContainer(
-					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "alternate",
-				)
+				alternateIDs, err = tc.findComposeContainer(ctx, workspace.UID, "alternate")
 				framework.ExpectNoError(err)
 				gomega.Expect(alternateIDs).To(gomega.HaveLen(1))
 				alternate, err = tc.inspectContainer(ctx, alternateIDs)
@@ -937,11 +907,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -1098,6 +1064,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
+			//nolint:gosec // test output file inside the temp directory
 			initializeCommand, err := os.ReadFile(filepath.Join(tempDir, "initialize-command.out"))
 			framework.ExpectNoError(err)
 			gomega.Expect(initializeCommand).To(gomega.ContainSubstring("initializeCommand"))
@@ -1207,7 +1174,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(ctx, tc.dockerHelper, tc.composeHelper, ws.UID, "app")
+			ids, err := tc.findComposeContainer(ctx, ws.UID, "app")
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
@@ -1223,21 +1190,13 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			appIDs, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			appIDs, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(appIDs).To(gomega.HaveLen(1), "app container to be created")
 
-			dbIDs, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			dbIDs, err := tc.findComposeContainer(ctx, workspace.UID,
 				"db",
 			)
 			framework.ExpectNoError(err)
@@ -1251,21 +1210,13 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			appIDs, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			appIDs, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(appIDs).To(gomega.HaveLen(1), "app container to be created")
 
-			dbIDs, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			dbIDs, err := tc.findComposeContainer(ctx, workspace.UID,
 				"db",
 			)
 			framework.ExpectNoError(err)
@@ -1301,11 +1252,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -1325,11 +1272,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)

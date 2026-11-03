@@ -86,3 +86,6 @@ optionGroups:
 ```
 
 Groups are collapsed unless `defaultVisible` is `true`.
+
+If your provider exposes `AGENT_PATH`, its value is a literal path, not a shell command.
+Host-tunnel startup escapes the resolved path, including spaces, apostrophes and shell metacharacters.

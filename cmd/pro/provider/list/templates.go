@@ -62,7 +62,7 @@ func (cmd *TemplatesCmd) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 
 	return nil
 }

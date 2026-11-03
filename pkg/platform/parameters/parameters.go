@@ -190,44 +190,31 @@ func checkNumberBounds(num int, parameter storagev1.AppParameter) error {
 }
 
 func GetDeepValue(parameters any, path string) any {
-	if parameters == nil {
-		return nil
+	current := parameters
+	for segment := range strings.SplitSeq(path, ".") {
+		next, ok := childValue(current, segment)
+		if !ok {
+			return nil
+		}
+		current = next
 	}
 
-	pathSegments := strings.Split(path, ".")
-	switch t := parameters.(type) {
+	return current
+}
+
+// childValue returns the map key or list index segment of v.
+func childValue(v any, segment string) (any, bool) {
+	switch t := v.(type) {
 	case map[string]any:
-		return getDeepValueFromMap(t, pathSegments)
+		val, ok := t[segment]
+		return val, ok
 	case []any:
-		return getDeepValueFromSlice(t, pathSegments)
+		index, err := strconv.Atoi(segment)
+		if err != nil || index < 0 || index >= len(t) {
+			return nil, false
+		}
+		return t[index], true
+	default:
+		return nil, false
 	}
-
-	return nil
-}
-
-func getDeepValueFromMap(t map[string]any, pathSegments []string) any {
-	val, ok := t[pathSegments[0]]
-	if !ok {
-		return nil
-	} else if len(pathSegments) == 1 {
-		return val
-	}
-
-	return GetDeepValue(val, strings.Join(pathSegments[1:], "."))
-}
-
-func getDeepValueFromSlice(t []any, pathSegments []string) any {
-	index, err := strconv.Atoi(pathSegments[0])
-	if err != nil {
-		return nil
-	} else if index < 0 || index >= len(t) {
-		return nil
-	}
-
-	val := t[index]
-	if len(pathSegments) == 1 {
-		return val
-	}
-
-	return GetDeepValue(val, strings.Join(pathSegments[1:], "."))
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -22,6 +23,8 @@ import (
 // LogsCmd holds the configuration.
 type LogsCmd struct {
 	*flags.GlobalFlags
+
+	setupLogsFlags
 }
 
 // NewLogsCmd creates a new destroy command.
@@ -40,20 +43,32 @@ func NewLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
+
+	registerSetupLogsFlags(startCmd, &cmd.setupLogsFlags)
 
 	return startCmd
 }
 
 // Run runs the command logic.
 func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
+	// Selectors are checked before any config, provider or storage access.
+	if err := cmd.validateSource(args); err != nil {
+		return err
+	}
+	if cmd.Source == sourceSetup {
+		return cmd.runSetup(ctx, args)
+	}
+
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
@@ -64,7 +79,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	sshServerCmd := fmt.Sprintf("'%s' internal ssh-server --stdio", client.AgentPath())
+	sshServerCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
 	if log.DebugEnabled() {
 		sshServerCmd += " --debug"
 	}
@@ -167,10 +182,10 @@ func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) er
 	defer func() { _ = session.Close() }()
 
 	agentCommand := fmt.Sprintf(
-		"%q internal agent workspace logs --context %q --id %q",
-		client.AgentPath(),
-		client.Context(),
-		client.Workspace(),
+		"%s internal agent workspace logs --context %s --id %s",
+		shellescape.Quote(client.AgentPath()),
+		shellescape.Quote(client.Context()),
+		shellescape.Quote(client.Workspace()),
 	)
 	if log.DebugEnabled() {
 		agentCommand += " --debug"

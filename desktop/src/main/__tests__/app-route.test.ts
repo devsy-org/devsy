@@ -4,6 +4,7 @@ import {
   isAppRoute,
   newWorkspaceRoute,
   settingsRoute,
+  workspaceLogsRoute,
   workspaceRoute,
   workspacesRoute,
 } from "../../shared/app-route.js"
@@ -30,5 +31,32 @@ describe("application routes", () => {
     expect(isAppNavigationRequest({ id: 0, route: "/settings" })).toBe(false)
     expect(isAppRoute("//example.com")).toBe(false)
     expect(isAppRoute("/settings#external")).toBe(false)
+  })
+})
+
+describe("workspace logs route", () => {
+  const run = "11111111-1111-4111-8111-111111111111"
+  const inv = "a1111111-0000-4000-8000-000000000001"
+
+  it("encodes context, run and invocation as query parameters", () => {
+    const route = workspaceLogsRoute("api", {
+      context: "my ctx&x",
+      runId: run,
+      invocationId: inv,
+    })
+    expect(isAppRoute(route)).toBe(true)
+    const url = new URL(route, "http://x")
+    expect(url.pathname).toBe("/workspaces/api")
+    expect(url.searchParams.get("tab")).toBe("logs")
+    expect(url.searchParams.get("context")).toBe("my ctx&x")
+    expect(url.searchParams.get("run")).toBe(run)
+    expect(url.searchParams.get("invocation")).toBe(inv)
+  })
+
+  it("keeps the plain logs route when no run is known", () => {
+    expect(workspaceLogsRoute("api")).toBe("/workspaces/api?tab=logs")
+    expect(workspaceLogsRoute("api", { invocationId: inv })).toBe(
+      "/workspaces/api?tab=logs",
+    )
   })
 })

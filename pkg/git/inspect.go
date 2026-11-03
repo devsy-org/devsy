@@ -38,25 +38,34 @@ func InspectRemote(ctx context.Context, info *GitInfo, env []string) (*Inspectio
 	if err != nil {
 		return nil, err
 	}
-
-	repo, err := cloneInspectionRepo(ctx, root, info, env)
+	inspection, err := setupInspection(ctx, root, info, env)
 	if err != nil {
 		_ = os.RemoveAll(root)
+		return nil, err
+	}
+	return inspection, nil
+}
+
+func setupInspection(
+	ctx context.Context,
+	root string,
+	info *GitInfo,
+	env []string,
+) (*Inspection, error) {
+	repo, err := cloneInspectionRepo(ctx, root, info, env)
+	if err != nil {
 		return nil, err
 	}
 	rev, err := selectInspectionRevision(ctx, repo, info)
 	if err != nil {
-		_ = os.RemoveAll(root)
 		return nil, err
 	}
 	commitSHA, err := resolveCommitSHA(ctx, repo, rev)
 	if err != nil {
-		_ = os.RemoveAll(root)
 		return nil, err
 	}
 	subPath, err := cleanInspectionSubPath(info.SubPath)
 	if err != nil {
-		_ = os.RemoveAll(root)
 		return nil, err
 	}
 	return &Inspection{repo: repo, rev: commitSHA, root: root, subPath: subPath}, nil

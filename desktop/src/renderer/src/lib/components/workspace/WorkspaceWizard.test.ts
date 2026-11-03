@@ -382,6 +382,41 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it.each([
+    ["Local Directory", "/var/home/dev/Projects/Backend", "Local Directory *"],
+    ["Git Repository", "https://example.com/Backend.git", "Repository URL *"],
+  ])(
+    "derives a valid ID from %s without changing the source",
+    async (tab, source, label) => {
+      providers.set([makeProvider("docker")])
+      const { getByText, getByLabelText, unmount } = render(WorkspaceWizard, {
+        props: { open: true },
+      })
+      await flushAsync()
+      await fireEvent.click(getByText("docker"))
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      if (tab === "Local Directory")
+        await fireEvent.click(getByText("Local Directory"))
+      await fireEvent.input(getByLabelText(label), {
+        target: { value: source },
+      })
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      expect(
+        (document.querySelector("#workspace-name") as HTMLInputElement).value,
+      ).toBe("backend")
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: "backend", source }),
+      )
+      unmount()
+    },
+  )
+
   it("shows the image picker when the Image tab is selected", async () => {
     providers.set([makeProvider("docker")])
     const { getByText, unmount } = render(WorkspaceWizard, {
@@ -432,6 +467,32 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it.each(["Backend", "back_end", "back.end", "back end", "a".repeat(49)])(
+    "blocks invalid explicit ID %s with an accessible rule",
+    async (id) => {
+      providers.set([makeProvider("docker")])
+      const { getByText, unmount } = render(WorkspaceWizard, {
+        props: { open: true },
+      })
+      await flushAsync()
+      await advanceToReview(getByText)
+      const input = document.querySelector(
+        "#workspace-name",
+      ) as HTMLInputElement
+      await fireEvent.input(input, { target: { value: id } })
+      await flushAsync()
+      expect(input.value).toBe(id)
+      expect(input.getAttribute("aria-invalid")).toBe("true")
+      expect(input.getAttribute("aria-describedby")).toBe(
+        "workspace-name-invalid",
+      )
+      expect(getByText(/1-48 lowercase letters/)).toBeTruthy()
+      expect(getLaunchButton().disabled).toBe(true)
+      expect(workspaceUp).not.toHaveBeenCalled()
+      unmount()
+    },
+  )
+
   it("blocks Launch when the user edits the name into a conflict", async () => {
     providers.set([makeProvider("docker")])
     workspaces.set([{ id: "python" }])
@@ -453,6 +514,151 @@ describe("WorkspaceWizard", () => {
     ) as HTMLButtonElement
     expect(launchBtn.disabled).toBe(true)
     unmount()
+  })
+
+  describe("display label and SSH alias", () => {
+    const field = (id: string) =>
+      document.querySelector(`#${id}`) as HTMLInputElement
+
+    async function reviewStep() {
+      providers.set([makeProvider("docker")])
+      const view = render(WorkspaceWizard, { props: { open: true } })
+      await flushAsync()
+      await advanceToReview(view.getByText)
+      return view
+    }
+
+    it("prefills label and alias from the proposed ID without sending them", async () => {
+      const { unmount } = await reviewStep()
+      expect(field("workspace-display-label").value).toBe("python")
+      expect(field("workspace-ssh-alias").value).toBe("python")
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledOnce()
+      const args = workspaceUp.mock.calls[0][0]
+      expect(args.workspaceId).toBe("python")
+      expect(args.displayName).toBeUndefined()
+      expect(args.sshHostAlias).toBeUndefined()
+      unmount()
+    })
+
+    it("follows the proposed ID until the user edits the field", async () => {
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "renamed" },
+      })
+      await flushAsync()
+      expect(field("workspace-display-label").value).toBe("renamed")
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "My Python Box" },
+      })
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "again" },
+      })
+      await flushAsync()
+      expect(field("workspace-display-label").value).toBe("My Python Box")
+      unmount()
+    })
+
+    it("sends explicit values verbatim, independent of the internal ID", async () => {
+      workspaces.set([{ id: "python" }])
+      const { unmount } = await reviewStep()
+      const generatedId = field("workspace-name").value
+      expect(generatedId).not.toBe("python")
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "  Python Box  " },
+      })
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "pybox" },
+      })
+      await flushAsync()
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: generatedId,
+          displayName: "Python Box",
+          sshHostAlias: "pybox",
+        }),
+      )
+      unmount()
+    })
+
+    it("shows label conflicts before launch and blocks Launch", async () => {
+      workspaces.set([{ id: "other", displayName: "Taken" } as never])
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "taken" },
+      })
+      await flushAsync()
+      const input = field("workspace-display-label")
+      expect(input.getAttribute("aria-invalid")).toBe("true")
+      expect(input.getAttribute("aria-describedby")).toContain(
+        "workspace-display-label-error",
+      )
+      expect(
+        document.querySelector("#workspace-display-label-error")?.textContent,
+      ).toContain("other")
+      expect(getLaunchButton().disabled).toBe(true)
+      unmount()
+    })
+
+    it("shows alias conflicts and validation errors before launch", async () => {
+      workspaces.set([{ id: "other", sshHostAlias: "dev" } as never])
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "dev" },
+      })
+      await flushAsync()
+      expect(
+        document.querySelector("#workspace-ssh-alias-error")?.textContent,
+      ).toContain("already used")
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "Bad.Alias" },
+      })
+      await flushAsync()
+      expect(field("workspace-ssh-alias").getAttribute("aria-invalid")).toBe(
+        "true",
+      )
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "fresh" },
+      })
+      await flushAsync()
+      expect(getLaunchButton().disabled).toBe(false)
+      unmount()
+    })
+
+    it("blocks Launch when the resolved ID is another workspace's SSH alias", async () => {
+      workspaces.set([{ id: "other", sshHostAlias: "python" } as never])
+      const { unmount } = await reviewStep()
+      expect(field("workspace-name").value).toBe("python")
+      expect(
+        document.querySelector("#workspace-name-host-conflict")?.textContent,
+      ).toContain('already used by workspace "other"')
+      expect(field("workspace-name").getAttribute("aria-invalid")).toBe("true")
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "fresh-id" },
+      })
+      await flushAsync()
+      expect(document.querySelector("#workspace-name-host-conflict")).toBeNull()
+      expect(getLaunchButton().disabled).toBe(false)
+      unmount()
+    })
+
+    it("blocks Launch when the resolved ID is another workspace's preferred host", async () => {
+      workspaces.set([
+        { id: "other", preferredSSHHost: "python.devsy" } as never,
+      ])
+      const { unmount } = await reviewStep()
+      expect(
+        document.querySelector("#workspace-name-host-conflict"),
+      ).not.toBeNull()
+      expect(getLaunchButton().disabled).toBe(true)
+      unmount()
+    })
   })
 
   it("registers the progress listener before awaiting workspaceUp", async () => {
@@ -685,6 +891,33 @@ describe("WorkspaceWizard", () => {
     ).toBeTruthy()
     expect(queryByText("Workspace ready")).toBeNull()
     unmount()
+  })
+
+  it("keeps a log failure unconfirmed without a status spinner or completion", async () => {
+    providers.set([makeProvider("docker")])
+    const oncomplete = vi.fn()
+    const ui = render(WorkspaceWizard, { props: { open: true, oncomplete } })
+    await flushAsync()
+    await advanceToReview(ui.getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "reconciling",
+        phase: "",
+        logError: "Workspace log could not be saved: disk unavailable",
+      },
+    })
+    await flushAsync()
+    expect(ui.getByText(/Workspace log could not be saved/)).toBeTruthy()
+    expect(ui.queryByText("Workspace ready")).toBeNull()
+    expect(ui.queryByText("Confirming workspace status")).toBeNull()
+    expect(ui.queryByRole("button", { name: "Retry status" })).toBeNull()
+    expect(ui.getByRole("button", { name: /^Retry$/ })).toBeTruthy()
+    expect(oncomplete).not.toHaveBeenCalled()
+    ui.unmount()
   })
 
   it("keeps a refresh-only failure stale until Retry status confirms the workspace", async () => {
@@ -1035,7 +1268,7 @@ describe("WorkspaceWizard", () => {
     const nameInput = document.querySelector(
       'input[placeholder*="derived from source"]',
     ) as HTMLInputElement
-    expect(nameInput.value).toBe("ubuntu-22.04")
+    expect(nameInput.value).toBe("ubuntu-22-04")
 
     const launchBtn = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent?.trim() === "Launch",

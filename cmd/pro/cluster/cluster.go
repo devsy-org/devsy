@@ -1,13 +1,13 @@
 package cluster
 
 import (
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/spf13/cobra"
 )
 
 // NewClusterCmd builds the 'devsy platform cluster' parent command for managing
 // Platform clusters.
-func NewClusterCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
+func NewClusterCmd(globalFlags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster",
 		Short: "Manage Devsy Platform clusters",

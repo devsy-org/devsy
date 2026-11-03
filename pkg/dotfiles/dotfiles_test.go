@@ -6,6 +6,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	fooBar                     = "FOO=bar"
+	foo                        = "FOO"
+	httpsGithubComUserDotfiles = "https://github.com/user/dotfiles"
+	repository                 = "--repository"
+)
+
 func TestExtractKeysFromEnvKeyValuePairs(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -19,28 +26,28 @@ func TestExtractKeysFromEnvKeyValuePairs(t *testing.T) {
 		},
 		{
 			name:     "single key-value pair",
-			input:    []string{"FOO=bar"},
-			expected: []string{"FOO"},
+			input:    []string{fooBar},
+			expected: []string{foo},
 		},
 		{
 			name:     "multiple key-value pairs",
-			input:    []string{"FOO=bar", "BAZ=qux"},
-			expected: []string{"FOO", "BAZ"},
+			input:    []string{fooBar, "BAZ=qux"},
+			expected: []string{foo, "BAZ"},
 		},
 		{
 			name:     "value contains equals sign",
 			input:    []string{"FOO=bar=baz"},
-			expected: []string{"FOO"},
+			expected: []string{foo},
 		},
 		{
 			name:     "entry without equals sign is skipped",
-			input:    []string{"NOEQ", "FOO=bar"},
-			expected: []string{"FOO"},
+			input:    []string{"NOEQ", fooBar},
+			expected: []string{foo},
 		},
 		{
 			name:     "empty value",
 			input:    []string{"FOO="},
-			expected: []string{"FOO"},
+			expected: []string{foo},
 		},
 	}
 
@@ -76,31 +83,31 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 	}{
 		{
 			name:         "basic repo only",
-			dotfilesRepo: "https://github.com/user/dotfiles",
+			dotfilesRepo: httpsGithubComUserDotfiles,
 			expected: []string{
 				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
-				"--repository", "https://github.com/user/dotfiles",
+				repository, httpsGithubComUserDotfiles,
 			},
 		},
 		{
 			name:           "with script",
-			dotfilesRepo:   "https://github.com/user/dotfiles",
+			dotfilesRepo:   httpsGithubComUserDotfiles,
 			dotfilesScript: "install.sh",
 			expected: []string{
 				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
-				"--repository", "https://github.com/user/dotfiles",
+				repository, httpsGithubComUserDotfiles,
 				"--install-script", "install.sh",
 			},
 		},
 		{
 			name:           "all options enabled",
-			dotfilesRepo:   "https://github.com/user/dotfiles",
+			dotfilesRepo:   httpsGithubComUserDotfiles,
 			dotfilesScript: "setup.sh",
 			strictHostKey:  true,
 			debug:          true,
 			expected: []string{
 				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
-				"--repository", "https://github.com/user/dotfiles",
+				repository, httpsGithubComUserDotfiles,
 				"--strict-host-key-checking", "--debug",
 				"--install-script", "setup.sh",
 			},

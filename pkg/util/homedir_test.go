@@ -12,6 +12,8 @@ import (
 	gotoolsassert "gotest.tools/assert"
 )
 
+const userProfileValue = "userProfile"
+
 func TestUserHomeDir(t *testing.T) {
 	// Remember to reset environment variables after the test
 	origHome := os.Getenv("HOME")
@@ -37,7 +39,7 @@ func TestUserHomeDir(t *testing.T) {
 			Name: "both HOME and USERPROFILE are set",
 			Input: input{
 				home:        "home",
-				userProfile: "userProfile",
+				userProfile: userProfileValue,
 			},
 			Expect: "home",
 		},
@@ -48,9 +50,9 @@ func TestUserHomeDir(t *testing.T) {
 			Name: "HOME is unset and USERPROFILE is set",
 			Input: input{
 				home:        "",
-				userProfile: "userProfile",
+				userProfile: userProfileValue,
 			},
-			Expect: "userProfile",
+			Expect: userProfileValue,
 		})
 	}
 

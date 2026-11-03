@@ -1,0 +1,6 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "waitFor": "postStartCommand",
+  "postCreateCommand": "echo create-output-marker; echo run >> /tmp/create-count",
+  "postStartCommand": "echo start-output-marker"
+}

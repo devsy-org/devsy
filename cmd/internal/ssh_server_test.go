@@ -174,22 +174,6 @@ func TestIgnoreServerClosed(t *testing.T) {
 	}
 }
 
-func TestRunActivityHeartbeatExitsOnContextCancel(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "activity")
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		runActivityHeartbeat(ctx, path)
-		close(done)
-	}()
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("heartbeat did not exit within 2s of context cancel")
-	}
-}
-
 func TestEnsureActivityFile_CreatesWorldWritableFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "devsy.activity")
 

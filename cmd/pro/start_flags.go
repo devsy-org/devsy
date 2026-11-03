@@ -1,7 +1,7 @@
 package pro
 
 import (
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -53,7 +53,7 @@ func (cmd *StartCmd) registerClusterFlags(startCmd *cobra.Command) {
 		),
 	)
 
-	proflags.BindEnv(startCmd.Flags(), names.Host)
+	platformflags.BindEnv(startCmd.Flags(), names.Host)
 }
 
 func (cmd *StartCmd) registerChartFlags(startCmd *cobra.Command) {

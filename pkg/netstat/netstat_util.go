@@ -281,6 +281,7 @@ func extractProcInfo(sktab []SockTabEntry) {
 // callers degrade gracefully instead of aborting the entire port scan. All
 // other errors, including permission and parse failures, still propagate.
 func doNetstat(path string, fn AcceptFn) ([]SockTabEntry, error) {
+	//nolint:gosec // reads a kernel-provided status file
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {

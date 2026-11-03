@@ -19,6 +19,10 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	dockerValue = "docker"
+)
+
 var _ = ginkgo.Describe(
 	"devsy up docker compose test suite",
 	ginkgo.Label("up-docker-compose"),
@@ -33,11 +37,11 @@ var _ = ginkgo.Describe(
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			composeHelper, err = compose.NewComposeHelper(dockerHelper)
 			framework.ExpectNoError(err)
 
-			f, err = framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			f, err = framework.SetupDockerProvider(initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
 
@@ -99,10 +103,12 @@ var _ = ginkgo.Describe(
 			err = os.Remove(origPath)
 			framework.ExpectNoError(err)
 
+			//nolint:gosec // test fixture path inside the temp directory
 			failingConfig, err := os.Open(filepath.Join(tempDir, "fail.devcontainer.json"))
 			framework.ExpectNoError(err)
 			defer func() { _ = failingConfig.Close() }()
 
+			//nolint:gosec // test fixture path inside the temp directory
 			newConfig, err := os.Create(origPath)
 			framework.ExpectNoError(err)
 			defer func() { _ = newConfig.Close() }()

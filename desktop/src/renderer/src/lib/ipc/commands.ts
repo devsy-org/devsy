@@ -18,7 +18,31 @@ import type {
   Workspace,
 } from "$lib/types/index.js"
 import type { AppNavigationAcknowledgment } from "$shared/app-route.js"
+import type {
+  LinuxDesktopIntegrationResult,
+  LinuxDesktopIntegrationStatus,
+} from "$shared/linux-desktop-integration.js"
 import type { MachineDiagnosticsCache } from "$shared/machine-diagnostics-types.js"
+import type {
+  ProviderIconReply,
+  ProviderIconRequest,
+} from "$shared/provider-icon.js"
+import type {
+  LogIndexResponse,
+  LogReadResponse,
+  LogRunExportRequest,
+  LogRunExportResult,
+  LogRunReadRequest,
+  LogRunsRequest,
+} from "$shared/workspace-logs.js"
+import type {
+  WorkspacePresentationErrorCode,
+  WorkspacePresentationFailure,
+  WorkspacePresentationField,
+  WorkspacePresentationReply,
+  WorkspacePresentationRequest,
+  WorkspacePresentationResult,
+} from "$shared/workspace-presentation.js"
 import { invoke } from "./bridge.js"
 
 type CommandEnvelope =
@@ -59,6 +83,8 @@ export function workspaceRefresh(workspaceId: string): Promise<void> {
 export async function workspaceUp(params: {
   source: string
   workspaceId?: string
+  displayName?: string
+  sshHostAlias?: string
   provider?: string
   ide?: string
   ideLaunch?: "auto" | "headless" | "skip"
@@ -114,6 +140,30 @@ export async function workspaceRename(
   return invoke("workspace_rename", { workspaceId, newWorkspaceId })
 }
 
+export class WorkspaceEditError extends Error {
+  readonly field: WorkspacePresentationField
+  readonly code: WorkspacePresentationErrorCode
+  readonly conflict?: string
+
+  constructor(failure: WorkspacePresentationFailure) {
+    super(failure.message)
+    this.name = "WorkspaceEditError"
+    this.field = failure.field
+    this.code = failure.code
+    this.conflict = failure.conflict
+  }
+}
+
+export async function workspaceEdit(
+  request: WorkspacePresentationRequest,
+): Promise<WorkspacePresentationResult> {
+  const reply = await invoke<WorkspacePresentationReply>("workspace_edit", {
+    ...request,
+  })
+  if (!reply.ok) throw new WorkspaceEditError(reply)
+  return reply.result
+}
+
 export async function workspaceSetIde(
   workspaceId: string,
   ide: string,
@@ -128,6 +178,12 @@ export async function openDirectoryDialog(): Promise<string | null> {
 // Provider commands
 export async function providerList(): Promise<Provider[]> {
   return invoke<Provider[]>("provider_list")
+}
+
+export async function providerIcon(
+  request: ProviderIconRequest,
+): Promise<ProviderIconReply> {
+  return invoke<ProviderIconReply>("provider_icon", { ...request })
 }
 
 export async function providerAdd(
@@ -518,6 +574,35 @@ export async function workspaceLogDelete(
   return invoke<void>("workspace_log_delete", { workspaceId, filename })
 }
 
+// Retained build and lifecycle history. A null result means the request was
+// superseded or cancelled and must be ignored.
+export async function workspaceLogRuns(
+  request: LogRunsRequest,
+): Promise<LogIndexResponse | null> {
+  return invoke<LogIndexResponse | null>("workspace_log_runs", { ...request })
+}
+
+export async function workspaceLogRunRead(
+  request: LogRunReadRequest,
+): Promise<LogReadResponse | null> {
+  return invoke<LogReadResponse | null>("workspace_log_run_read", {
+    ...request,
+  })
+}
+
+/** Cancels only history readers, never the workspace task follower. */
+export async function workspaceLogRunCancel(): Promise<void> {
+  return invoke<void>("workspace_log_run_cancel")
+}
+
+export async function workspaceLogRunExport(
+  request: LogRunExportRequest,
+): Promise<LogRunExportResult> {
+  return invoke<LogRunExportResult>("workspace_log_run_export", {
+    ...request,
+  })
+}
+
 // SSH key commands
 export async function sshKeyList(): Promise<SshKeyInfo[]> {
   return invoke<SshKeyInfo[]>("ssh_key_list")
@@ -590,5 +675,21 @@ export async function setAppSettings(
   return invoke<import("$shared/app-settings.js").AppSettingsState>(
     "set_app_settings",
     { patch },
+  )
+}
+
+export async function getLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationStatus> {
+  return invoke<LinuxDesktopIntegrationStatus>("get_linux_desktop_integration")
+}
+
+export async function installLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationResult> {
+  return invoke<LinuxDesktopIntegrationResult>(
+    "install_linux_desktop_integration",
+  )
+}
+
+export async function removeLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationResult> {
+  return invoke<LinuxDesktopIntegrationResult>(
+    "remove_linux_desktop_integration",
   )
 }

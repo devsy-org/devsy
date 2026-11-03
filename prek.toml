@@ -64,7 +64,7 @@ hooks = [
 # Tracked upstream: https://github.com/rhysd/actionlint/issues/693
 [[repos]]
 repo = "https://github.com/rhysd/actionlint"
-rev = "v1.7.12"
+rev = "fd33e9f582a01a02885c93ae3775e1190cf63653"
 hooks = [
   {
     id = "actionlint",
@@ -78,7 +78,7 @@ hooks = [
 
 [[repos]]
 repo = "https://github.com/biomejs/pre-commit"
-rev = "v2.5.14"
+rev = "v2.5.15"
 hooks = [
   {
     id = "biome-format",
@@ -99,7 +99,7 @@ hooks = [
 
 [[repos]]
 repo = "https://github.com/commitizen-tools/commitizen"
-rev = "v4.18.1"
+rev = "v4.19.1"
 hooks = [
   {
     id = "commitizen",

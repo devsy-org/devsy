@@ -14,6 +14,10 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	dockerValue = "docker"
+)
+
 var _ = ginkgo.Describe(
 	"testing up command for dockerfile builds",
 	ginkgo.Label("up-provider-docker"),
@@ -27,9 +31,9 @@ var _ = ginkgo.Describe(
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 
-			f, err = framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			f, err = framework.SetupDockerProvider(initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
 

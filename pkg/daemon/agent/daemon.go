@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,74 +30,56 @@ type DaemonConfig struct {
 	Ssh            SshConfig             `json:"ssh"`
 	Timeout        string                `json:"timeout"`
 	ShutdownAction string                `json:"shutdownAction,omitempty"`
+	Lifecycle      LifecycleConfig       `json:"lifecycle,omitzero"`
 }
 
-func BuildWorkspaceDaemonConfig(
-	platformOptions devsy.PlatformOptions,
-	workspaceConfig *provider2.Workspace,
-	substitutionContext *config.SubstitutionContext,
-	mergedConfig *config.MergedDevContainerConfig,
-) (*DaemonConfig, error) {
-	var workdir string
-	if workspaceConfig.Source.GitSubPath != "" {
-		substitutionContext.ContainerWorkspaceFolder = filepath.Join(
-			substitutionContext.ContainerWorkspaceFolder,
-			workspaceConfig.Source.GitSubPath,
-		)
-		workdir = substitutionContext.ContainerWorkspaceFolder
-	}
-	if workdir == "" && mergedConfig != nil {
-		workdir = mergedConfig.WorkspaceFolder
-	}
-	if workdir == "" && substitutionContext != nil {
-		workdir = substitutionContext.ContainerWorkspaceFolder
-	}
+// WorkspaceDaemonInput carries the inputs of the workspace daemon configuration.
+type WorkspaceDaemonInput struct {
+	PlatformOptions     devsy.PlatformOptions
+	Workspace           *provider2.Workspace
+	SubstitutionContext *config.SubstitutionContext
+	MergedConfig        *config.MergedDevContainerConfig
+	Lifecycle           LifecycleOptions
+}
 
-	// Get remote user; default to "root" if empty.
-	user := mergedConfig.RemoteUser
-	if user == "" {
-		user = "root"
-	}
-
-	// build info isn't required in the workspace and can be omitted
-	platformOptions.Build = nil
-
-	shutdownAction := mergedConfig.ShutdownAction
+func BuildWorkspaceDaemonConfig(in WorkspaceDaemonInput) (*DaemonConfig, error) {
+	platformOptions, workspaceConfig := in.PlatformOptions, in.Workspace
+	substitutionContext, mergedConfig, lifecycle := in.SubstitutionContext, in.MergedConfig, in.Lifecycle
+	workdir := containerWorkdir(workspaceConfig, substitutionContext, mergedConfig)
 
 	daemonConfig := &DaemonConfig{
-		Platform: platformOptions,
-		Ssh: SshConfig{
-			Workdir: workdir,
-			User:    user,
-		},
-		ShutdownAction: shutdownAction,
+		Platform:       platformOptions,
+		Timeout:        FormatTimeout(lifecycle.Timeout),
+		ShutdownAction: mergedConfig.ShutdownAction,
 	}
+	if lifecycle.Managed {
+		daemonConfig.Lifecycle = LifecycleConfig{
+			Owner:          LifecycleOwnerManagedDaemon,
+			SetupArmsTimer: true,
+		}
+	}
+
+	// A timeout-only config must not request the embedded SSH or network server.
+	if platformOptions.AccessKey != "" {
+		user := mergedConfig.RemoteUser
+		if user == "" {
+			user = "root"
+		}
+		daemonConfig.Ssh = SshConfig{Workdir: workdir, User: user}
+	}
+	// build info isn't required in the workspace and can be omitted
+	daemonConfig.Platform.Build = nil
 
 	return daemonConfig, nil
 }
 
-func GetEncodedWorkspaceDaemonConfig(
-	platformOptions devsy.PlatformOptions,
-	workspaceConfig *provider2.Workspace,
-	substitutionContext *config.SubstitutionContext,
-	mergedConfig *config.MergedDevContainerConfig,
-) (string, error) {
-	daemonConfig, err := BuildWorkspaceDaemonConfig(
-		platformOptions,
-		workspaceConfig,
-		substitutionContext,
-		mergedConfig,
-	)
+func GetEncodedWorkspaceDaemonConfig(in WorkspaceDaemonInput) (string, error) {
+	daemonConfig, err := BuildWorkspaceDaemonConfig(in)
 	if err != nil {
 		return "", err
 	}
 
-	data, err := json.Marshal(daemonConfig)
-	if err != nil {
-		return "", err
-	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return encoded, nil
+	return EncodeDaemonConfig(daemonConfig)
 }
 
 const systemdDir = "/etc/systemd/system"
@@ -553,4 +533,28 @@ func isDaemonProcess(pid string) bool {
 	// Handle " (deleted)" suffix when binary was replaced during upgrade
 	baseName = strings.TrimSuffix(baseName, " (deleted)")
 	return baseName == pkgconfig.BinaryName
+}
+
+// containerWorkdir resolves the working directory inside the container, with
+// the git sub path applied to the substitution context when there is one.
+func containerWorkdir(
+	workspaceConfig *provider2.Workspace,
+	substitutionContext *config.SubstitutionContext,
+	mergedConfig *config.MergedDevContainerConfig,
+) string {
+	var workdir string
+	if workspaceConfig.Source.GitSubPath != "" {
+		substitutionContext.ContainerWorkspaceFolder = filepath.Join(
+			substitutionContext.ContainerWorkspaceFolder,
+			workspaceConfig.Source.GitSubPath,
+		)
+		workdir = substitutionContext.ContainerWorkspaceFolder
+	}
+	if workdir == "" && mergedConfig != nil {
+		workdir = mergedConfig.WorkspaceFolder
+	}
+	if workdir == "" && substitutionContext != nil {
+		workdir = substitutionContext.ContainerWorkspaceFolder
+	}
+	return workdir
 }

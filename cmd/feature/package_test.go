@@ -208,7 +208,7 @@ func TestPackageCmd_IDMustMatchDirectory(t *testing.T) {
 
 	feat := localFeature{
 		dir:    "actual-dir",
-		config: &config.FeatureConfig{ID: "different-id", Version: "1.0.0", Name: "Test"},
+		config: &config.FeatureConfig{ID: "different-id", Version: value100, Name: "Test"},
 	}
 	_, err := cmd.packageFeature(feat, targetDir, outputDir)
 	require.Error(t, err)
@@ -236,7 +236,7 @@ func TestPackageCmd_MissingName(t *testing.T) {
 
 	feat := localFeature{
 		dir:    testFeatureIDPkg,
-		config: &config.FeatureConfig{ID: testFeatureIDPkg, Version: "1.0.0"},
+		config: &config.FeatureConfig{ID: testFeatureIDPkg, Version: value100},
 	}
 	_, err := cmd.packageFeature(feat, targetDir, outputDir)
 	require.Error(t, err)

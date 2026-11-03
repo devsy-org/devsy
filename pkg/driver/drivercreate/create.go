@@ -24,32 +24,11 @@ func New(ctx context.Context, workspaceInfo *provider2.AgentWorkspaceInfo) (*Bun
 	if err != nil {
 		return nil, err
 	}
-	bundle := &Bundle{Runtime: runtimeDriver}
-	if workspaceInfo.Agent.Driver == provider2.ExternalDriver {
-		switch workspaceInfo.Agent.External.ImageBackend {
-		case "", provider2.DockerDriver:
-			bundle.Images, err = docker.NewDockerDriver(workspaceInfo)
-			if err != nil {
-				return nil, fmt.Errorf("external runtime image backend: %w", err)
-			}
-		case "none":
-			// Image-only workspaces can opt out of host-side builds and publication.
-		default:
-			return nil, fmt.Errorf(
-				"unsupported external runtime image backend %q",
-				workspaceInfo.Agent.External.ImageBackend,
-			)
-		}
-	} else if workspaceInfo.Agent.Driver == provider2.MicrosandboxDriver {
-		// Preserve registry inspection and defer Docker setup until a build or publish.
-		bundle.Images = &microsandboxImages{
-			ImageInspector: runtimeDriver.(driver.ImageInspector),
-			workspaceInfo:  workspaceInfo,
-		}
-	} else if images, ok := runtimeDriver.(driver.ImageBackend); ok {
-		bundle.Images = images
+	images, err := newImageBackend(runtimeDriver, workspaceInfo)
+	if err != nil {
+		return nil, err
 	}
-	return bundle, nil
+	return &Bundle{Runtime: runtimeDriver, Images: images}, nil
 }
 
 // NewDriver retains the runtime-only constructor for existing callers.
@@ -88,4 +67,39 @@ func newRuntime(
 		"unrecognized driver %q, possible values are %s, %s, %s, %s, %s or %s",
 		driver, provider2.DockerDriver, provider2.CustomDriver, provider2.KubernetesDriver,
 		provider2.AppleDriver, provider2.MicrosandboxDriver, provider2.ExternalDriver)
+}
+
+func newImageBackend(
+	runtimeDriver driver.Driver,
+	workspaceInfo *provider2.AgentWorkspaceInfo,
+) (driver.ImageBackend, error) {
+	switch workspaceInfo.Agent.Driver {
+	case provider2.ExternalDriver:
+		switch workspaceInfo.Agent.External.ImageBackend {
+		case "", provider2.DockerDriver:
+			images, err := docker.NewDockerDriver(workspaceInfo)
+			if err != nil {
+				return nil, fmt.Errorf("external runtime image backend: %w", err)
+			}
+			return images, nil
+		case "none":
+			// Image-only workspaces can opt out of host-side builds and publication.
+			return nil, nil
+		default:
+			return nil, fmt.Errorf(
+				"unsupported external runtime image backend %q",
+				workspaceInfo.Agent.External.ImageBackend,
+			)
+		}
+	case provider2.MicrosandboxDriver:
+		// Preserve registry inspection and defer Docker setup until a build or publish.
+		return &microsandboxImages{
+			ImageInspector: runtimeDriver.(driver.ImageInspector),
+			workspaceInfo:  workspaceInfo,
+		}, nil
+	}
+	if images, ok := runtimeDriver.(driver.ImageBackend); ok {
+		return images, nil
+	}
+	return nil, nil
 }

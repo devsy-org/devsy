@@ -197,11 +197,14 @@ var _ = ginkgo.Describe(
 				})
 
 				var logs bytes.Buffer
-				err = buildkit.Build(ctx, buildKitClient, &logs, "", &build.BuildOptions{
-					Dockerfile: filepath.Join(contextDir, "Dockerfile"),
-					Context:    contextDir,
-					Images:     []string{tag},
-					Load:       true,
+				err = buildkit.Build(ctx, buildKitClient, buildkit.BuildRequest{
+					Writer: &logs,
+					Options: &build.BuildOptions{
+						Dockerfile: filepath.Join(contextDir, "Dockerfile"),
+						Context:    contextDir,
+						Images:     []string{tag},
+						Load:       true,
+					},
 				})
 				framework.ExpectNoError(err, "internal BuildKit build failed:\n%s", logs.String())
 

@@ -9,6 +9,7 @@ service Tunnel {
   rpc Ping(Empty) returns (Empty) {}
   rpc Log(LogMessage) returns (Empty) {}
   rpc Status(StatusUpdate) returns (Empty) {}
+  rpc AppendSetupLogs(AppendSetupLogsRequest) returns (AppendSetupLogsResponse) {}
   rpc SendResult(Message) returns (Empty) {}
 
   rpc DockerCredentials(Message) returns (Message) {}
@@ -95,6 +96,35 @@ message StatusError {
   string message = 2;
   string hint = 3;
   map<string, string> context = 4;
+}
+
+// AppendSetupLogsRequest carries one contiguous batch of a producer's records.
+// Each record is a JSON encoded workspacelogs.Record. The encoded request is
+// capped at 256 KiB.
+message AppendSetupLogsRequest {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  string producer_id = 3;
+  uint64 first_sequence = 4;
+  uint64 last_sequence = 5;
+  repeated bytes records = 6;
+}
+
+enum SetupLogResult {
+  SETUP_LOG_RESULT_UNSPECIFIED = 0;
+  SETUP_LOG_RESULT_ACCEPTED = 1;
+  SETUP_LOG_RESULT_RETENTION_GAP = 2;
+  SETUP_LOG_RESULT_REJECTED_INVALID = 3;
+}
+
+message AppendSetupLogsResponse {
+  // Highest contiguous sequence persisted for the producer.
+  uint64 accepted_sequence = 1;
+  SetupLogResult result = 2;
+  // Sequences the receiver will never hold, set for RETENTION_GAP.
+  uint64 gap_first_sequence = 3;
+  uint64 gap_last_sequence = 4;
+  string detail = 5;
 }
 
 message Empty {

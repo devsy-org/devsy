@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devsysecrets "github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -141,23 +143,37 @@ func (s *ListTestSuite) TestListEntriesReportsAvailabilityInJSONAndPlainOutput()
 
 func captureListOutput(t *testing.T, render func()) string {
 	t.Helper()
-	read, write, err := os.Pipe()
+	capture, err := os.CreateTemp(t.TempDir(), "stdout")
 	if err != nil {
 		t.Fatal(err)
 	}
 	previous := os.Stdout
-	os.Stdout = write
-	defer func() { os.Stdout = previous }()
+	os.Stdout = capture
+	defer func() {
+		os.Stdout = previous
+		if err := capture.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	render()
-	if err := write.Close(); err != nil {
+	if _, err := capture.Seek(0, io.SeekStart); err != nil {
 		t.Fatal(err)
 	}
-	output, err := io.ReadAll(read)
+	output, err := io.ReadAll(capture)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := read.Close(); err != nil {
-		t.Fatal(err)
-	}
 	return string(output)
+}
+
+func TestCaptureListOutputLargeOutput(t *testing.T) {
+	want := strings.Repeat("0123456789abcdef", 1<<16)
+	previous := os.Stdout
+	output := captureListOutput(t, func() {
+		n, err := io.WriteString(os.Stdout, want)
+		require.NoError(t, err)
+		require.Equal(t, len(want), n)
+	})
+	require.Equal(t, want, output)
+	require.Same(t, previous, os.Stdout)
 }

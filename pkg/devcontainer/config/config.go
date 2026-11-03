@@ -61,34 +61,42 @@ type DevContainerConfigBase struct {
 	// Features to add to the dev container.
 	Features map[string]any `json:"features,omitempty"`
 
-	// Array consisting of the Feature id (without the semantic version) of Features in the order the user wants them to be installed.
+	// Array consisting of the Feature id (without the semantic version) of Features in the order the user wants them to be
+	// installed.
 	OverrideFeatureInstallOrder []string `json:"overrideFeatureInstallOrder,omitempty"`
 
-	// Ports that are forwarded from the container to the local machine. Can be an integer port number, or a string of the format "host:port_number".
+	// Ports that are forwarded from the container to the local machine. Can be an integer port number, or a string of the
+	// format "host:port_number".
 	ForwardPorts types.StrIntArray `json:"forwardPorts,omitempty"`
 
 	// Set default properties that are applied when a specific port number is forwarded.
 	PortsAttributes map[string]PortAttribute `json:"portsAttributes,omitempty"`
 
-	// Set default properties that are applied to all ports that don't get properties from the setting `remote.portsAttributes`.
+	// Set default properties that are applied to all ports that don't get properties from the setting
+	// `remote.portsAttributes`.
 	OtherPortsAttributes *PortAttribute `json:"otherPortsAttributes,omitempty"`
 
-	// Controls whether on Linux the container's user should be updated with the local user's UID and GID. On by default when opening from a local folder.
+	// Controls whether on Linux the container's user should be updated with the local user's UID and GID. On by default
+	// when opening from a local folder.
 	UpdateRemoteUserUID *bool `json:"updateRemoteUserUID,omitempty"`
 
-	// Remote environment variables to set for processes spawned in the container including lifecycle scripts and any remote editor/IDE server process.
+	// Remote environment variables to set for processes spawned in the container including lifecycle scripts and any
+	// remote editor/IDE server process.
 	RemoteEnv map[string]*string `json:"remoteEnv,omitempty"`
 
-	// The username to use for spawning processes in the container including lifecycle scripts and any remote editor/IDE server process. The default is the same user as the container.
+	// The username to use for spawning processes in the container including lifecycle scripts and any remote editor/IDE
+	// server process. The default is the same user as the container.
 	RemoteUser string `json:"remoteUser,omitempty"`
 
-	// A command to run locally before anything else. This command is run before "onCreateCommand". If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// A command to run locally before anything else. This command is run before "onCreateCommand". If this is a single
+	// string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
 	InitializeCommand types.LifecycleHook `json:"initializeCommand,omitempty"`
 
 	// Action to take when the user disconnects from the container in their editor. The default is to stop the container.
 	ShutdownAction string `json:"shutdownAction,omitempty"`
 
-	// The user command to wait for before continuing execution in the background while the UI is starting up. The default is "updateContentCommand".
+	// The user command to wait for before continuing execution in the background while the UI is starting up. The default
+	// is "updateContentCommand".
 	WaitFor string `json:"waitFor,omitempty"`
 
 	// User environment probe to run. The default is "loginInteractiveShell".
@@ -104,7 +112,8 @@ type DevContainerConfigBase struct {
 	WorkspaceFolder string `json:"workspaceFolder,omitempty"`
 
 	// Deprecated: Use 'customizations/vscode/settings' instead
-	// Machine specific settings that should be copied into the container. These are only copied when connecting to the container for the first time, rebuilding the container then triggers it again.
+	// Machine specific settings that should be copied into the container. These are only copied when connecting to the
+	// container for the first time, rebuilding the container then triggers it again.
 	Settings map[string]any `json:"settings,omitempty"`
 
 	// Deprecated: Use 'customizations/vscode/extensions' instead
@@ -127,27 +136,37 @@ type SecretConfig struct {
 }
 
 type DevContainerActions struct {
-	// A command to run when creating the container. This command is run after "initializeCommand" and before "updateContentCommand". If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// A command to run when creating the container. This command is run after "initializeCommand" and before
+	// "updateContentCommand". If this is a single string, it will be run in a shell. If this is an array of strings, it
+	// will be run as a single command without shell.
 	OnCreateCommand types.LifecycleHook `json:"onCreateCommand,omitempty"`
 
-	// A command to run when creating the container and rerun when the workspace content was updated while creating the container.
-	// This command is run after "onCreateCommand" and before "postCreateCommand". If this is a single string, it will be run in a shell.
+	// A command to run when creating the container and rerun when the workspace content was updated while creating the
+	// container.
+	// This command is run after "onCreateCommand" and before "postCreateCommand". If this is a single string, it will be
+	// run in a shell.
 	// If this is an array of strings, it will be run as a single command without shell.
 	UpdateContentCommand types.LifecycleHook `json:"updateContentCommand,omitempty"`
 
-	// A command to run after creating the container. This command is run after "updateContentCommand" and before "postStartCommand".
-	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// A command to run after creating the container. This command is run after "updateContentCommand" and before
+	// "postStartCommand".
+	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single
+	// command without shell.
 	PostCreateCommand types.LifecycleHook `json:"postCreateCommand,omitempty"`
 
-	// A command to run after starting the container. This command is run after "postCreateCommand" and before "postAttachCommand".
-	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// A command to run after starting the container. This command is run after "postCreateCommand" and before
+	// "postAttachCommand".
+	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single
+	// command without shell.
 	PostStartCommand types.LifecycleHook `json:"postStartCommand,omitempty"`
 
 	// A command to run when attaching to the container. This command is run after "postStartCommand".
-	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single
+	// command without shell.
 	PostAttachCommand types.LifecycleHook `json:"postAttachCommand,omitempty"`
 
-	// Tool-specific configuration. Each tool should use a JSON object subproperty with a unique name to group its customizations.
+	// Tool-specific configuration. Each tool should use a JSON object subproperty with a unique name to group its
+	// customizations.
 	Customizations map[string]any `json:"customizations,omitempty"`
 }
 
@@ -155,27 +174,37 @@ type UpdatedConfigProperties struct {
 	// Entrypoint script that should fire at container start up.
 	Entrypoints []string `json:"entrypoints,omitempty"`
 
-	// A command to run when creating the container. This command is run after "initializeCommand" and before "updateContentCommand". If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// A command to run when creating the container. This command is run after "initializeCommand" and before
+	// "updateContentCommand". If this is a single string, it will be run in a shell. If this is an array of strings, it
+	// will be run as a single command without shell.
 	OnCreateCommands []types.LifecycleHook `json:"onCreateCommand,omitempty"`
 
-	// A command to run when creating the container and rerun when the workspace content was updated while creating the container.
-	// This command is run after "onCreateCommand" and before "postCreateCommand". If this is a single string, it will be run in a shell.
+	// A command to run when creating the container and rerun when the workspace content was updated while creating the
+	// container.
+	// This command is run after "onCreateCommand" and before "postCreateCommand". If this is a single string, it will be
+	// run in a shell.
 	// If this is an array of strings, it will be run as a single command without shell.
 	UpdateContentCommands []types.LifecycleHook `json:"updateContentCommand,omitempty"`
 
-	// A command to run after creating the container. This command is run after "updateContentCommand" and before "postStartCommand".
-	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// A command to run after creating the container. This command is run after "updateContentCommand" and before
+	// "postStartCommand".
+	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single
+	// command without shell.
 	PostCreateCommands []types.LifecycleHook `json:"postCreateCommand,omitempty"`
 
-	// A command to run after starting the container. This command is run after "postCreateCommand" and before "postAttachCommand".
-	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// A command to run after starting the container. This command is run after "postCreateCommand" and before
+	// "postAttachCommand".
+	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single
+	// command without shell.
 	PostStartCommands []types.LifecycleHook `json:"postStartCommand,omitempty"`
 
 	// A command to run when attaching to the container. This command is run after "postStartCommand".
-	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single command without shell.
+	// If this is a single string, it will be run in a shell. If this is an array of strings, it will be run as a single
+	// command without shell.
 	PostAttachCommands []types.LifecycleHook `json:"postAttachCommand,omitempty"`
 
-	// Tool-specific configuration. Each tool should use a JSON object subproperty with a unique name to group its customizations.
+	// Tool-specific configuration. Each tool should use a JSON object subproperty with a unique name to group its
+	// customizations.
 	Customizations map[string][]any `json:"customizations,omitempty"`
 }
 
@@ -183,7 +212,8 @@ type ComposeContainer struct {
 	// The name of the docker-compose file(s) used to start the services.
 	DockerComposeFile types.StrArray `json:"dockerComposeFile,omitempty"`
 
-	// The service you want to work on. This is considered the primary container for your dev environment which your editor will connect to.
+	// The service you want to work on. This is considered the primary container for your dev environment which your editor
+	// will connect to.
 	Service string `json:"service,omitempty"`
 
 	// An array of services that should be started and stopped.
@@ -196,8 +226,10 @@ type ImageContainer struct {
 }
 
 type NonComposeBase struct {
-	// Application ports that are exposed by the container. This can be a single port or an array of ports. Each port can be a number or a string.
-	// A number is mapped to the same port on the host. A string is passed to Docker unchanged and can be used to map ports differently,
+	// Application ports that are exposed by the container. This can be a single port or an array of ports. Each port can
+	// be a number or a string.
+	// A number is mapped to the same port on the host. A string is passed to Docker unchanged and can be used to map ports
+	// differently,
 	// e.g. "8000:8010".
 	AppPort types.StrIntArray `json:"appPort,omitempty"`
 
@@ -207,7 +239,8 @@ type NonComposeBase struct {
 	// The user the container will be started with. The default is the user on the Docker image.
 	ContainerUser string `json:"containerUser,omitempty"`
 
-	// Mounts points to set up when creating the container. See Docker's documentation for the --mount option for the supported syntax.
+	// Mounts points to set up when creating the container. See Docker's documentation for the --mount option for the
+	// supported syntax.
 	Mounts []*Mount `json:"mounts,omitempty"`
 
 	// Passes the --init flag when creating the dev container.
@@ -231,10 +264,12 @@ type NonComposeBase struct {
 }
 
 type DockerfileContainer struct {
-	// The location of the Dockerfile that defines the contents of the container. The path is relative to the folder containing the `devcontainer.json` file.
+	// The location of the Dockerfile that defines the contents of the container. The path is relative to the folder
+	// containing the `devcontainer.json` file.
 	Dockerfile string `json:"dockerFile,omitempty"`
 
-	// The location of the context folder for building the Docker image. The path is relative to the folder containing the `devcontainer.json` file.
+	// The location of the context folder for building the Docker image. The path is relative to the folder containing the
+	// `devcontainer.json` file.
 	Context string `json:"context,omitempty"`
 
 	// Docker build-related options.
@@ -294,10 +329,12 @@ func (d DockerfileContainer) GetCacheFrom() types.StrArray {
 }
 
 type ConfigBuildOptions struct {
-	// The location of the Dockerfile that defines the contents of the container. The path is relative to the folder containing the `devcontainer.json` file.
+	// The location of the Dockerfile that defines the contents of the container. The path is relative to the folder
+	// containing the `devcontainer.json` file.
 	Dockerfile string `json:"dockerfile,omitempty"`
 
-	// The location of the context folder for building the Docker image. The path is relative to the folder containing the `devcontainer.json` file.
+	// The location of the context folder for building the Docker image. The path is relative to the folder containing the
+	// `devcontainer.json` file.
 	Context string `json:"context,omitempty"`
 
 	// Target stage in a multi-stage build.
@@ -413,7 +450,8 @@ type PortAttribute struct {
 	// default=notify
 	OnAutoForward string `json:"onAutoForward,omitempty"`
 
-	// Automatically prompt for elevation (if needed) when this port is forwarded. Elevate is required if the local port is a privileged port.
+	// Automatically prompt for elevation (if needed) when this port is forwarded. Elevate is required if the local port is
+	// a privileged port.
 	ElevateIfNeeded bool `json:"elevateIfNeeded,omitempty"`
 
 	// Label that will be shown in the UI for this port.

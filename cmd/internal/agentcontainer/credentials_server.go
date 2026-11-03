@@ -122,22 +122,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	}
 
 	cmd.maybeForwardPorts(runCtx, tunnelClient)
-	githubState := "disabled"
-	if cmd.ConfigureGitHubHelper {
-		result, installErr := ghcredentials.Install(runCtx, port, cmd.User)
-		githubState = result.Status
-		if err := installErr; err != nil {
-			log.Warnf("GitHub CLI wrapper installation unavailable: %v", err)
-		}
-	}
-	status := credentials.Readiness{
-		Version:       credentials.ReadinessVersion,
-		Owner:         cmd.User,
-		HostOwner:     cmd.HostOwner,
-		Instance:      rand.Text(),
-		GitHubAllowed: cmd.ConfigureGitHubHelper,
-		GitHubState:   githubState,
-	}
+	status := cmd.readiness(runCtx, port)
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- credentials.RunPreparedCredentialsServer(runCtx, ln, tunnelClient, status) }()
 
@@ -159,6 +144,25 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	defer cleanupGitSigning()
 
 	return <-serverDone
+}
+
+func (cmd *CredentialsServerCmd) readiness(ctx context.Context, port int) credentials.Readiness {
+	githubState := "disabled"
+	if cmd.ConfigureGitHubHelper {
+		result, err := ghcredentials.Install(ctx, port, cmd.User)
+		githubState = result.Status
+		if err != nil {
+			log.Warnf("GitHub CLI wrapper installation unavailable: %v", err)
+		}
+	}
+	return credentials.Readiness{
+		Version:       credentials.ReadinessVersion,
+		Owner:         cmd.User,
+		HostOwner:     cmd.HostOwner,
+		Instance:      rand.Text(),
+		GitHubAllowed: cmd.ConfigureGitHubHelper,
+		GitHubState:   githubState,
+	}
 }
 
 // errPortOwnedByAnotherSession marks a bind failure as another session

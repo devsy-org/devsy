@@ -1,7 +1,15 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
 import { DaemonState } from "../state.js"
 import { parseProviderEntries, Watcher } from "../watcher.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
+
+const fixtureDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../test-fixtures/provider-icons",
+)
 
 function makeWatcher(
   runProviderList: () => Promise<Record<string, unknown>>,
@@ -10,6 +18,7 @@ function makeWatcher(
 ) {
   const state = {
     updateProviders: vi.fn().mockReturnValue(false),
+    updateWorkspaces: vi.fn().mockReturnValue(false),
     providerReadRevision: vi.fn().mockReturnValue(0),
     providerList: vi.fn().mockReturnValue([]),
     workspaceList: vi.fn().mockReturnValue(workspaces),
@@ -64,6 +73,33 @@ describe("parseProviderEntries", () => {
     })
     expect(legacy).toMatchObject({ name: "legacy-provider", deprecated: false })
     expect(external).toMatchObject({ name: "microsandbox", deprecated: false })
+  })
+
+  it("carries provider-owned icon fields from the CLI list JSON to renderer fields", () => {
+    const raw = JSON.parse(
+      readFileSync(join(fixtureDir, "provider-list.json"), "utf8"),
+    )
+
+    const [provider] = parseProviderEntries(raw)
+
+    expect(provider).toMatchObject({
+      name: "my-docker-fleet",
+      icon: "assets/light.svg",
+      iconDark: "assets/dark.svg",
+      iconRevision: "rev-a",
+    })
+  })
+
+  it("defaults icon fields to empty strings for providers without icons", () => {
+    const [provider] = parseProviderEntries({
+      plain: { config: { name: "plain" } },
+    })
+
+    expect(provider).toMatchObject({
+      icon: "",
+      iconDark: "",
+      iconRevision: "",
+    })
   })
 })
 
@@ -328,5 +364,170 @@ describe("workspace status ordering", () => {
     )
     cli.runRaw.mockResolvedValue('{"state":"Stopped"}')
     await expect(watcher.refreshWorkspaceStatus("ws")).resolves.toBeUndefined()
+  })
+})
+
+describe("Watcher job broadcasts", () => {
+  it.each(
+    ["success", "failure"].flatMap((outcome) =>
+      ["send", "lookup", "window", "contents"].map((boundary) => [
+        outcome,
+        boundary,
+      ]),
+    ),
+  )(
+    "keeps %s reconciliation independent of renderer %s failure",
+    async (outcome, boundary) => {
+      const state = new DaemonState()
+      const workspaceJobs = new WorkspaceJobs()
+      const send = vi.fn()
+      const win = {
+        isDestroyed: vi.fn(() => false),
+        webContents: { isDestroyed: vi.fn(() => false), send },
+      }
+      const getMainWindow = vi.fn(() => win)
+      const cli = {
+        run: vi.fn(async () => [{ id: "ws", context: "default" }]),
+        runRaw: vi.fn(async () => JSON.stringify({ state: "running" })),
+      }
+      const watcher = new Watcher({
+        cli: cli as never,
+        state,
+        getMainWindow: getMainWindow as never,
+        providerJobs: { snapshot: () => ({}) } as never,
+        workspaceJobs,
+      })
+      workspaceJobs.onChange(() => watcher.broadcastWorkspaces())
+      const refresh = vi.fn(async () => {
+        await watcher.refreshWorkspaces()
+        await watcher.refreshWorkspaceStatus("ws")
+        watcher.broadcastWorkspaces()
+      })
+      workspaceJobs.setRefresh(refresh)
+      const generation = workspaceJobs.start("ws", "creating", "first")
+      send.mockClear()
+      if (boundary === "send")
+        send.mockImplementation(() => {
+          throw new Error("renderer delivery failed")
+        })
+      if (boundary === "lookup")
+        getMainWindow.mockImplementation(() => {
+          throw new Error("window lookup failed")
+        })
+      if (boundary === "window") win.isDestroyed.mockReturnValue(true)
+      if (boundary === "contents")
+        win.webContents.isDestroyed.mockReturnValue(true)
+      expect(() =>
+        workspaceJobs.phase("ws", "first", "Launching command"),
+      ).not.toThrow()
+      expect(() =>
+        workspaceJobs.progress("ws", "first", {
+          phase: "building_image",
+          state: "started",
+        }),
+      ).not.toThrow()
+      const originalError = outcome === "failure" ? "invalid ID" : undefined
+      await expect(
+        workspaceJobs.finish("ws", generation, originalError),
+      ).resolves.toBeUndefined()
+      expect(refresh).toHaveBeenCalledOnce()
+      expect(cli.run).toHaveBeenCalledExactlyOnceWith([
+        "workspace",
+        "list",
+        "--skip-platform",
+      ])
+      expect(cli.runRaw).toHaveBeenCalledOnce()
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        state: outcome === "failure" ? "failed" : "succeeded",
+        error: originalError,
+        refreshError: undefined,
+      })
+      if (boundary === "window" || boundary === "contents")
+        expect(send).not.toHaveBeenCalled()
+      expect(() => workspaceJobs.start("ws", "creating", "retry")).not.toThrow()
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        commandId: "retry",
+        state: "running",
+      })
+    },
+  )
+})
+
+describe("Watcher log confirmation", () => {
+  it.each([undefined, "command denied"])(
+    "preserves log failures through polling and manual refresh (%s)",
+    async (error) => {
+      const { watcher, workspaceJobs } = makeWatcher(async () => ({}))
+      const refresh = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("offline"))
+        .mockResolvedValue(undefined)
+      workspaceJobs.setRefresh(refresh)
+      const generation = workspaceJobs.start("ws", "creating", "first")
+      await workspaceJobs.finish(
+        "ws",
+        generation,
+        error,
+        "Workspace log could not be saved: disk unavailable",
+      )
+      await (watcher as unknown as { pollOnce(): Promise<void> }).pollOnce()
+      expect(refresh).not.toHaveBeenCalled()
+      await workspaceJobs.retryRefresh("ws")
+      expect(workspaceJobs.get("ws")?.refreshError).toBe("offline")
+      await (watcher as unknown as { pollOnce(): Promise<void> }).pollOnce()
+      for (let i = 0; i < 20; i++) await Promise.resolve()
+      if (error) await workspaceJobs.retryRefresh("ws")
+      expect(refresh).toHaveBeenCalledTimes(2)
+      await workspaceJobs.retryRefresh("ws")
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        state: error ? "failed" : "reconciling",
+        logError: "Workspace log could not be saved: disk unavailable",
+        refreshError: undefined,
+        error,
+      })
+      const next = workspaceJobs.start("ws", "creating", "retry")
+      expect(next).not.toBe(generation)
+      expect(workspaceJobs.get("ws")?.state).toBe("running")
+      expect(workspaceJobs.get("ws")?.logError).toBeUndefined()
+      await workspaceJobs.finish("ws", generation)
+      expect(workspaceJobs.get("ws")?.commandId).toBe("retry")
+    },
+  )
+})
+
+describe("Watcher workspace list freshness", () => {
+  function makeListWatcher(daemonList: ReturnType<typeof vi.fn>) {
+    const state = new DaemonState()
+    const cli = { run: vi.fn(async () => []) }
+    const watcher = new Watcher({
+      cli: cli as never,
+      daemon: { listWorkspaces: daemonList } as never,
+      state,
+      getMainWindow: () => null,
+      providerJobs: { snapshot: () => ({}) } as never,
+      workspaceJobs: new WorkspaceJobs(),
+    })
+    return { watcher, state, cli }
+  }
+
+  it("asks the daemon to bypass its list cache on an explicit refresh", async () => {
+    const daemonList = vi.fn(async () => [{ id: "ws", displayName: "New" }])
+    const { watcher, state } = makeListWatcher(daemonList)
+
+    await watcher.refreshWorkspaces()
+
+    expect(daemonList).toHaveBeenCalledExactlyOnceWith({ fresh: true })
+    expect(state.workspaceList()[0].displayName).toBe("New")
+  })
+
+  it("uses the daemon cache for scheduled polls", async () => {
+    const daemonList = vi.fn(async () => [{ id: "ws" }])
+    const { watcher } = makeListWatcher(daemonList)
+
+    await (
+      watcher as unknown as { pollWorkspaces(strict?: boolean): Promise<void> }
+    ).pollWorkspaces()
+
+    expect(daemonList).toHaveBeenCalledExactlyOnceWith({ fresh: false })
   })
 })

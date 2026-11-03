@@ -28,7 +28,7 @@ func NewCreateCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	createCmd := &cobra.Command{
 		Use:   "create CONTEXT",
-		Short: "Create a new Devsy context",
+		Short: "Create a context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args[0])

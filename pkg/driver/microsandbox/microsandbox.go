@@ -342,119 +342,6 @@ func (d *microsandboxDriver) ProvisioningPreflight(ctx context.Context) error {
 	return nil
 }
 
-func (d *microsandboxDriver) runFromOptions(
-	ctx context.Context,
-	workspaceID string,
-	options *driver.RunOptions,
-	hostReqs *config.HostRequirements,
-) error {
-	if options == nil {
-		return fmt.Errorf(
-			"microsandbox driver requires run options (in-place reprovision is unsupported)",
-		)
-	}
-	if options.Image == "" {
-		return fmt.Errorf("microsandbox driver requires an image to run")
-	}
-	if err := d.ProvisioningPreflight(ctx); err != nil {
-		return err
-	}
-	if options.AllowRecreate {
-		if err := d.recreationPreflight(ctx); err != nil {
-			return err
-		}
-	}
-	prepared, err := d.client.PrepareImage(ctx, options.Image, options.ImageBuilt)
-	if err != nil {
-		return fmt.Errorf("prepare microsandbox final image: %w", err)
-	}
-	defer prepared.cleanup()
-	owner, err := d.resolveWorkspaceOwner(ctx, options, prepared.image)
-	if err != nil {
-		return err
-	}
-	warnUnsupportedOptions(options)
-	if err := d.client.EnsureImage(ctx, prepared); err != nil {
-		return fmt.Errorf("ensure microsandbox final image: %w", err)
-	}
-	info, err := d.client.Find(ctx, sandboxName(workspaceID))
-	if err != nil {
-		return err
-	}
-	if info != nil && !options.AllowRecreate {
-		return fmt.Errorf(
-			"microsandbox VM already exists; back up VM-local data and rerun with --recreate: " +
-				"replacement discards the VM root disk and cannot roll back after removal",
-		)
-	}
-	spec := d.buildSpec(workspaceID, options, hostReqs, owner)
-	spec.AllowRecreate = options.AllowRecreate
-	spec.Image = prepared.reference
-	if err := d.client.PrepareVolumes(ctx, spec.Mounts); err != nil {
-		return fmt.Errorf("prepare microsandbox volumes: %w", err)
-	}
-	if err := d.client.Create(
-		ctx,
-		sandboxName(workspaceID),
-		spec,
-	); err != nil {
-		return fmt.Errorf("create microsandbox VM: %w", err)
-	}
-	return nil
-}
-
-// buildSpec resolves sizing from, in priority order, the operator-configured
-// MICROSANDBOX_* defaults, then the devcontainer's hostRequirements, falling
-// back to the microsandbox runtime default (zero) when neither is set.
-func (d *microsandboxDriver) buildSpec(
-	workspaceID string,
-	options *driver.RunOptions,
-	hostReqs *config.HostRequirements,
-	owner *mountOwner,
-) sandboxSpec {
-	labels := config.ListToObject(options.Labels)
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	maps.Copy(labels, config.ListToObject(config.GetIDLabels(workspaceID, d.idLabels)))
-	labels[workspaceMountContractLabel] = d.workspaceMountContract()
-	if owner != nil {
-		labels[workspaceRemoteUserLabel] = workspaceRemoteUser(options)
-	}
-	if options.User != "" {
-		labels[userLabel] = options.User
-	}
-	memory := d.defaults.memory
-	if memory == 0 {
-		memory = hostRequirementMemoryMiB(hostReqs)
-	}
-	cpus := d.defaults.cpus
-	if cpus == 0 {
-		cpus = hostRequirementCPUs(hostReqs)
-	}
-	rootDiskGB := d.defaults.rootDiskGB
-	if rootDiskGB == 0 {
-		rootDiskGB = hostRequirementStorageGB(hostReqs)
-	}
-	return sandboxSpec{
-		Image:       options.Image,
-		User:        options.User,
-		Entrypoint:  options.Entrypoint,
-		Cmd:         options.Cmd,
-		Memory:      memory,
-		CPUs:        cpus,
-		Env:         options.Env,
-		Labels:      labels,
-		Ephemeral:   d.defaults.ephemeral,
-		IdleTimeout: d.defaults.idleTimeout,
-		Mounts:      d.volumeMounts(options, owner),
-		MaxMemory:   d.defaults.maxMemory,
-		MaxCPUs:     d.defaults.maxCPUs,
-		BlockEgress: d.defaults.blockEgress,
-		RootDiskGB:  rootDiskGB,
-	}
-}
-
 func warnUnsupportedOptions(options *driver.RunOptions) {
 	var ignored []string
 	if isPrivileged(options) {
@@ -644,6 +531,158 @@ func (d *microsandboxDriver) RequiresRecreate(
 		return true, "microsandbox workspace developer identity changed"
 	}
 	return false, ""
+}
+
+// createVM prepares the volumes and creates the VM from the prepared image.
+// vmCreate carries what createVM needs to build the sandbox.
+type vmCreate struct {
+	workspaceID string
+	options     *driver.RunOptions
+	hostReqs    *config.HostRequirements
+	owner       *mountOwner
+	prepared    *preparedImage
+}
+
+func (d *microsandboxDriver) createVM(ctx context.Context, req vmCreate) error {
+	workspaceID, options, prepared := req.workspaceID, req.options, req.prepared
+	spec := d.buildSpec(workspaceID, options, req.hostReqs, req.owner)
+	spec.AllowRecreate = options.AllowRecreate
+	spec.Image = prepared.reference
+	if err := d.client.PrepareVolumes(ctx, spec.Mounts); err != nil {
+		return fmt.Errorf("prepare microsandbox volumes: %w", err)
+	}
+	if err := d.client.Create(ctx, sandboxName(workspaceID), spec); err != nil {
+		return fmt.Errorf("create microsandbox VM: %w", err)
+	}
+	return nil
+}
+
+// rejectExistingVM refuses to replace an existing VM unless recreation was requested.
+func (d *microsandboxDriver) rejectExistingVM(
+	ctx context.Context,
+	workspaceID string,
+	options *driver.RunOptions,
+) error {
+	info, err := d.client.Find(ctx, sandboxName(workspaceID))
+	if err != nil {
+		return err
+	}
+	if info != nil && !options.AllowRecreate {
+		return fmt.Errorf(
+			"microsandbox VM already exists; back up VM-local data and rerun with --recreate: " +
+				"replacement discards the VM root disk and cannot roll back after removal",
+		)
+	}
+	return nil
+}
+
+// checkRunPreconditions rejects run options this driver cannot honour and runs
+// the provisioning and recreation preflights.
+func (d *microsandboxDriver) checkRunPreconditions(
+	ctx context.Context,
+	options *driver.RunOptions,
+) error {
+	if options == nil {
+		return fmt.Errorf(
+			"microsandbox driver requires run options (in-place reprovision is unsupported)",
+		)
+	}
+	if options.Image == "" {
+		return fmt.Errorf("microsandbox driver requires an image to run")
+	}
+	if err := d.ProvisioningPreflight(ctx); err != nil {
+		return err
+	}
+	if options.AllowRecreate {
+		return d.recreationPreflight(ctx)
+	}
+	return nil
+}
+
+func (d *microsandboxDriver) runFromOptions(
+	ctx context.Context,
+	workspaceID string,
+	options *driver.RunOptions,
+	hostReqs *config.HostRequirements,
+) error {
+	if err := d.checkRunPreconditions(ctx, options); err != nil {
+		return err
+	}
+	prepared, err := d.client.PrepareImage(ctx, options.Image, options.ImageBuilt)
+	if err != nil {
+		return fmt.Errorf("prepare microsandbox final image: %w", err)
+	}
+	defer prepared.cleanup()
+	owner, err := d.resolveWorkspaceOwner(ctx, options, prepared.image)
+	if err != nil {
+		return err
+	}
+	warnUnsupportedOptions(options)
+	if err := d.client.EnsureImage(ctx, prepared); err != nil {
+		return fmt.Errorf("ensure microsandbox final image: %w", err)
+	}
+	if err := d.rejectExistingVM(ctx, workspaceID, options); err != nil {
+		return err
+	}
+	return d.createVM(ctx, vmCreate{
+		workspaceID: workspaceID,
+		options:     options,
+		hostReqs:    hostReqs,
+		owner:       owner,
+		prepared:    prepared,
+	})
+}
+
+// buildSpec resolves sizing from, in priority order, the operator-configured
+// MICROSANDBOX_* defaults, then the devcontainer's hostRequirements, falling
+// back to the microsandbox runtime default (zero) when neither is set.
+func (d *microsandboxDriver) buildSpec(
+	workspaceID string,
+	options *driver.RunOptions,
+	hostReqs *config.HostRequirements,
+	owner *mountOwner,
+) sandboxSpec {
+	labels := config.ListToObject(options.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	maps.Copy(labels, config.ListToObject(config.GetIDLabels(workspaceID, d.idLabels)))
+	labels[workspaceMountContractLabel] = d.workspaceMountContract()
+	if owner != nil {
+		labels[workspaceRemoteUserLabel] = workspaceRemoteUser(options)
+	}
+	if options.User != "" {
+		labels[userLabel] = options.User
+	}
+	memory := d.defaults.memory
+	if memory == 0 {
+		memory = hostRequirementMemoryMiB(hostReqs)
+	}
+	cpus := d.defaults.cpus
+	if cpus == 0 {
+		cpus = hostRequirementCPUs(hostReqs)
+	}
+	rootDiskGB := d.defaults.rootDiskGB
+	if rootDiskGB == 0 {
+		rootDiskGB = hostRequirementStorageGB(hostReqs)
+	}
+	return sandboxSpec{
+		Image:       options.Image,
+		User:        options.User,
+		Entrypoint:  options.Entrypoint,
+		Cmd:         options.Cmd,
+		Memory:      memory,
+		CPUs:        cpus,
+		Env:         options.Env,
+		Labels:      labels,
+		Ephemeral:   d.defaults.ephemeral,
+		IdleTimeout: d.defaults.idleTimeout,
+		Mounts:      d.volumeMounts(options, owner),
+		MaxMemory:   d.defaults.maxMemory,
+		MaxCPUs:     d.defaults.maxCPUs,
+		BlockEgress: d.defaults.blockEgress,
+		RootDiskGB:  rootDiskGB,
+	}
 }
 
 func (d *microsandboxDriver) workspaceMountContract() string {

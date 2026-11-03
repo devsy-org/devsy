@@ -73,26 +73,33 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) CommandResult {
 		Stderr:    stderr,
 	}
 	if waitResult.timedOut {
-		result.Stderr += fmt.Sprintf(
-			"\nPODMAN_COMMAND_TIMEOUT: direct_process_stopped=%t",
-			waitResult.stopped,
-		)
-		if !waitResult.stopped {
-			result.Stderr += "\nPODMAN_TERMINATION_FAILED"
-		}
+		result.Stderr += timeoutNotice(waitResult.stopped)
 		return result
 	}
-	code := 0
-	if waitResult.err != nil {
-		if exitErr, ok := errors.AsType[*exec.ExitError](waitResult.err); ok {
-			code = exitErr.ExitCode()
-		} else {
-			code = -1
-			result.Stderr += "\n" + waitResult.err.Error()
-		}
-	}
+	code := exitCodeOf(waitResult.err, &result)
 	result.ExitCode = &code
 	return result
+}
+
+func timeoutNotice(stopped bool) string {
+	notice := fmt.Sprintf("\nPODMAN_COMMAND_TIMEOUT: direct_process_stopped=%t", stopped)
+	if !stopped {
+		notice += "\nPODMAN_TERMINATION_FAILED"
+	}
+	return notice
+}
+
+// exitCodeOf returns the process exit code for err, appending non-exit errors
+// to the captured stderr.
+func exitCodeOf(err error, result *CommandResult) int {
+	if err == nil {
+		return 0
+	}
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		return exitErr.ExitCode()
+	}
+	result.Stderr += "\n" + err.Error()
+	return -1
 }
 
 type commandCapture struct {

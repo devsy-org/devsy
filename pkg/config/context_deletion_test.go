@@ -260,3 +260,32 @@ func TestContextDeletionIntentAllowsLegacyWindowsReservedNameOnPosix(t *testing.
 	require.NoError(t, WriteContextDeletionIntent(intent))
 	require.NoError(t, ClearContextDeletionIntent())
 }
+
+func TestValidateContextPathName(t *testing.T) {
+	for _, name := range []string{
+		DefaultContext,
+		"Legacy.Context_Name_That_Is_Over_48_Characters_Long",
+		"\u6771\u4eac-legacy",
+	} {
+		require.NoError(t, ValidateContextPathName(name), name)
+	}
+
+	for _, name := range []string{
+		"",
+		".",
+		"..",
+		"../other",
+		`..\target`,
+		`C:\target`,
+		"name.",
+		"name ",
+		"bad\x00name",
+		strings.Repeat("a", maxContextPathComponentBytes+1),
+	} {
+		require.Error(t, ValidateContextPathName(name), name)
+	}
+
+	if runtime.GOOS == localContextDeletionTestWindows {
+		require.Error(t, ValidateContextPathName("CON"))
+	}
+}

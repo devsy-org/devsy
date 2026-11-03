@@ -20,8 +20,10 @@ func NewIntellij(
 		IntellijOptions,
 		values,
 		IntellijProductCode,
-		IntellijDownloadAmd64Template,
-		IntellijDownloadArm64Template,
+		downloadTemplates{
+			amd64: IntellijDownloadAmd64Template,
+			arm64: IntellijDownloadArm64Template,
+		},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "intellij",

@@ -11,14 +11,15 @@ import (
 func newStatusReporter(
 	resultFormat string,
 	out io.Writer,
-	verbose ...bool,
+	verbose bool,
+	noStatus bool,
 ) (status.Reporter, error) {
-	showDurations := len(verbose) > 0 && verbose[0]
 	return status.NewCLIReporter(status.CLIOptions{
 		Format:   resultFormat,
 		Out:      out,
 		Prefix:   "up",
-		Verbose:  showDurations,
+		Verbose:  verbose,
+		NoStatus: noStatus,
 		Pipeline: status.PipelineWorkspaceUp,
 		Labels:   phaseLabels,
 		Envelope: func(e status.Event) error {

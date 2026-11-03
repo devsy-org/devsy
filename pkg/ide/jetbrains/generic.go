@@ -56,12 +56,17 @@ func getLatestDownloadURL(code string, platform string) string {
 	return fmt.Sprintf("https://download.jetbrains.com/product?code=%s&platform=%s", code, platform)
 }
 
+// downloadTemplates are fmt templates for a versioned download URL.
+type downloadTemplates struct {
+	amd64 string
+	arm64 string
+}
+
 func getDownloadURLs(
 	options ide.Options,
 	values map[string]config2.OptionValue,
 	productCode string,
-	templateAmd64 string,
-	templateArm64 string,
+	templates downloadTemplates,
 ) (string, string) {
 	version := options.GetValue(values, VersionOption)
 	var amd64Download, arm64Download string
@@ -71,11 +76,11 @@ func getDownloadURLs(
 	} else {
 		amd64Download = options.GetValue(values, DownloadAmd64Option)
 		if amd64Download == "" {
-			amd64Download = fmt.Sprintf(templateAmd64, version)
+			amd64Download = fmt.Sprintf(templates.amd64, version)
 		}
 		arm64Download = options.GetValue(values, DownloadArm64Option)
 		if arm64Download == "" {
-			arm64Download = fmt.Sprintf(templateArm64, version)
+			arm64Download = fmt.Sprintf(templates.arm64, version)
 		}
 	}
 
@@ -105,17 +110,9 @@ type GenericJetBrainsServer struct {
 	options  *GenericOptions
 }
 
-func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, workspaceID string) error {
+func (o *GenericJetBrainsServer) OpenGateway(workspaceFolder, sshHost string) error {
 	log.Infof("Starting %s through JetBrains Gateway", o.options.DisplayName)
-	err := devsyopen.Run(
-		`jetbrains-gateway://connect#idePath=` + url.QueryEscape(
-			o.getDirectory(path.Join("/", "home", o.userName)),
-		) + `&projectPath=` + url.QueryEscape(
-			workspaceFolder,
-		) + `&host=` + workspaceID + config2.SSHHostSuffix + `&port=22&user=` + url.QueryEscape(
-			o.userName,
-		) + `&type=ssh&deploy=false`,
-	)
+	err := devsyopen.Run(o.gatewayURL(workspaceFolder, sshHost))
 	if err != nil {
 		log.Debugf("Error opening jetbrains-gateway: %v", err)
 		log.Errorf(
@@ -170,6 +167,16 @@ func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 	return o.installPlugins(setupInfo, targetLocation, baseFolder)
 }
 
+func (o *GenericJetBrainsServer) gatewayURL(workspaceFolder, sshHost string) string {
+	return `jetbrains-gateway://connect#idePath=` + url.QueryEscape(
+		o.getDirectory(path.Join("/", "home", o.userName)),
+	) + `&projectPath=` + url.QueryEscape(
+		workspaceFolder,
+	) + `&host=` + url.QueryEscape(sshHost) + `&port=22&user=` + url.QueryEscape(
+		o.userName,
+	) + `&type=ssh&deploy=false`
+}
+
 func (o *GenericJetBrainsServer) getDownloadFolder() string {
 	return filepath.Join(config2.ContainerDataDir, o.options.ID)
 }
@@ -188,7 +195,7 @@ func (o *GenericJetBrainsServer) installPlugins(
 
 	log.Infof("installing JetBrains plugins: plugins=%v", plugins)
 
-	installPluginsCommand := exec.Command(
+	installPluginsCommand := exec.Command( //nolint:gosec // fixed JetBrains CLI with arguments built internally
 		path.Join(targetLocation, "bin", "remote-dev-server.sh"),
 		append(
 			[]string{"installPlugins", "--give-consent-to-use-third-party-plugins"},
@@ -230,6 +237,7 @@ func (o *GenericJetBrainsServer) getDirectory(baseFolder string) string {
 }
 
 func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) error {
+	//nolint:gosec // path is inside the JetBrains config directory
 	file, err := os.Open(fromPath)
 	if err != nil {
 		return err
@@ -240,7 +248,7 @@ func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) 
 }
 
 func (o *GenericJetBrainsServer) download(targetFolder string) (string, error) {
-	err := os.MkdirAll(targetFolder, os.ModePerm)
+	err := os.MkdirAll(targetFolder, 0o750)
 	if err != nil {
 		return "", err
 	}

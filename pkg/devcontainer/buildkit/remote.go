@@ -20,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/docker/cli/cli/config/types"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -30,6 +31,11 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/tonistiigi/fsutil"
+)
+
+const (
+	localMountContext    = "context"
+	localMountDockerfile = "dockerfile"
 )
 
 type BuildRemoteOptions struct {
@@ -79,10 +85,11 @@ func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInf
 	}
 
 	if err := executeBuild(executeBuildParams{
-		Ctx:       ctx,
-		Client:    bk.Client,
-		Info:      bk.Info,
-		SolveOpts: solveOpts,
+		Ctx:          ctx,
+		Client:       bk.Client,
+		Info:         bk.Info,
+		SolveOpts:    solveOpts,
+		BuildSecrets: opts.Options.BuildSecrets,
 	}); err != nil {
 		return nil, err
 	}
@@ -230,6 +237,7 @@ func checkExistingImage(params checkExistingImageParams) *config.BuildInfo {
 	}
 
 	log.Debugf("skipping build because an existing image was found %s", params.ImageName)
+	RecordSkipped(params.Ctx, "buildkit-remote", "image_reused")
 
 	var imageMetadata *config.ImageMetadataConfig
 	if params.Opts.ExtendedBuildInfo != nil {
@@ -261,7 +269,12 @@ func setupRegistryAuth(ref name.Reference, keychain authn.Keychain) ([]session.A
 	registry := ref.Context().RegistryStr()
 	return []session.Attachable{
 		authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
-			AuthConfigProvider: func(ctx context.Context, host string, scope []string, cacheCheck authprovider.ExpireCachedAuthCheck) (types.AuthConfig, error) {
+			AuthConfigProvider: func(
+				ctx context.Context,
+				host string,
+				scope []string,
+				cacheCheck authprovider.ExpireCachedAuthCheck,
+			) (types.AuthConfig, error) {
 				if host == registry {
 					return types.AuthConfig{
 						Username:      authConfig.Username,
@@ -318,8 +331,8 @@ func prepareSolveOptions(
 	solveOpts := client.SolveOpt{
 		Frontend: "dockerfile.v0",
 		FrontendAttrs: map[string]string{
-			"filename": filepath.Base(buildOpts.Dockerfile),
-			"context":  buildOpts.Context,
+			"filename":        filepath.Base(buildOpts.Dockerfile),
+			localMountContext: buildOpts.Context,
 		},
 		LocalMounts:  localMounts,
 		Session:      authSession,
@@ -388,8 +401,8 @@ func setupLocalMounts(buildOpts *build.BuildOptions) (map[string]fsutil.FS, erro
 	}
 
 	return map[string]fsutil.FS{
-		"dockerfile": dockerfileMount,
-		"context":    contextMount,
+		localMountDockerfile: dockerfileMount,
+		localMountContext:    contextMount,
 	}, nil
 }
 
@@ -444,7 +457,7 @@ func addMultiContexts(solveOpts *client.SolveOpt, buildOpts *build.BuildOptions)
 		}
 
 		localName := k
-		if k == "context" || k == "dockerfile" {
+		if k == localMountContext || k == localMountDockerfile {
 			localName = "_" + k
 		}
 
@@ -459,10 +472,11 @@ func addMultiContexts(solveOpts *client.SolveOpt, buildOpts *build.BuildOptions)
 }
 
 type executeBuildParams struct {
-	Ctx       context.Context
-	Client    *client.Client
-	Info      *client.Info
-	SolveOpts client.SolveOpt
+	Ctx          context.Context
+	Client       *client.Client
+	Info         *client.Info
+	SolveOpts    client.SolveOpt
+	BuildSecrets []string
 }
 
 func executeBuild(params executeBuildParams) error {
@@ -472,16 +486,23 @@ func executeBuild(params executeBuildParams) error {
 		params.Info.BuildkitVersion.Version,
 	)
 
+	step := StartStep(params.Ctx, "buildkit-remote", params.BuildSecrets...)
+	err := runRemoteSolve(params, step)
+	step.Finish(params.Ctx, err)
+
+	return err
+}
+
+func runRemoteSolve(params executeBuildParams, step *Step) error {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	pw, err := NewPrinter(params.Ctx, writer)
+	pw, err := NewPrinter(params.Ctx, step.Tee(writer, workspacelogs.StreamCombined))
 	if err != nil {
 		return err
 	}
 
-	_, err = params.Client.Solve(params.Ctx, nil, params.SolveOpts, pw.Status())
-	return err
+	return solve(params.Ctx, params.Client, params.SolveOpts, pw)
 }
 
 func getImageDetails(

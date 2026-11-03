@@ -48,12 +48,20 @@ func (s *addDeprecationSuite) SetupTest() {
 	client := devsyhttp.GetHTTPClient()
 	previousTransport := client.Transport
 	client.Transport = providerAddRoundTripper(func(req *http.Request) (*http.Response, error) {
-		const manifestURL = "https://github.com/devsy-org/devsy-provider-microsandbox/" +
-			"releases/latest/download/provider.yaml"
-		if req.URL.String() != manifestURL {
-			s.T().Fatalf("unexpected source request: %s", req.URL)
+		const (
+			latestReleaseURL = "https://api.github.com/repos/devsy-org/" +
+				"devsy-provider-microsandbox/releases/latest"
+			manifestURL = "https://github.com/devsy-org/devsy-provider-microsandbox/" +
+				"releases/download/v0.1.8/provider.yaml"
+		)
+		switch req.URL.String() {
+		case latestReleaseURL:
+			return providerAddResponse(req, `{"tag_name":"v0.1.8"}`), nil
+		case manifestURL:
+			return providerAddResponse(req, externalMicrosandboxManifest), nil
 		}
-		return providerAddResponse(req, externalMicrosandboxManifest), nil
+		s.T().Fatalf("unexpected source request: %s", req.URL)
+		return nil, nil
 	})
 	s.T().Cleanup(func() { client.Transport = previousTransport })
 }
@@ -76,6 +84,7 @@ func (s *addDeprecationSuite) TestMicrosandboxAliasUsesLatestExternalProvider() 
 		s.Require().Equal(tc.want, resolved.name)
 		s.Require().Equal("github.com/devsy-org/devsy-provider-microsandbox", resolved.source.Raw)
 		s.Require().Equal("devsy-org/devsy-provider-microsandbox", resolved.source.Github)
+		s.Require().Equal("v0.1.8", resolved.source.ResolvedRef)
 		parsed, err := providerpkg.ParseProvider(bytes.NewReader(resolved.raw))
 		s.Require().NoError(err)
 		s.Require().Equal(providerpkg.ExternalDriver, parsed.Agent.Driver)

@@ -135,7 +135,7 @@ func loadLatestProvider(
 	if err != nil {
 		return nil, fmt.Errorf("resolve provider: %w", err)
 	}
-	providerConfig, err := provider.ParseProvider(bytes.NewReader(providerRaw))
+	providerConfig, err := provider.ParseAuthorProvider(bytes.NewReader(providerRaw))
 	if err != nil {
 		return nil, fmt.Errorf("parse provider: %w", err)
 	}

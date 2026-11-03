@@ -221,6 +221,14 @@ func privateSSHGitFixture(
 		}
 		return nil
 	}).WithTimeout(time.Minute).WithPolling(time.Second).Should(gomega.Succeed())
+	expectUnauthenticatedDenied(ctx, source, sshOptions)
+
+	return source, sha
+}
+
+// expectUnauthenticatedDenied asserts that the private repository refuses
+// ls-remote when no agent key is offered.
+func expectUnauthenticatedDenied(ctx context.Context, source, sshOptions string) {
 	out, err := runFixtureCommand(
 		ctx,
 		2*time.Minute,
@@ -233,7 +241,6 @@ func privateSSHGitFixture(
 		To(gomega.HaveOccurred(), "private repository must deny unauthenticated ls-remote: %s", out)
 	gomega.Expect(out).
 		To(gomega.ContainSubstring("Permission denied"), "unauthenticated failure must be authentication rejection")
-	return source, sha
 }
 
 func createKindSSHGitRepository(ctx context.Context, fixtureDir string) string {
@@ -320,6 +327,11 @@ func startKindSSHGitServer(ctx context.Context, buildDir, id string) string {
 	return host
 }
 
+// sshArgv returns the ssh command line for the given options and arguments.
+func sshArgv(options []string, args ...string) []string {
+	return append(append([]string{cmdSSH}, options...), args...)
+}
+
 func verifyKindSSHAgentCleanup(
 	ctx context.Context,
 	f *framework.Framework,
@@ -341,31 +353,12 @@ func verifyKindSSHAgentCleanup(
 		"-o",
 		"ConnectTimeout=10",
 	}
-	fixtureCommand(
-		ctx,
-		2*time.Minute,
-		env,
-		append([]string{cmdSSH},
-			append(
-				options,
-				"-o",
-				"ForwardAgent=yes",
-				"-o",
-				"ControlMaster=yes",
-				"-o",
-				"ControlPersist=60",
-				"-N",
-				"-f",
-				host,
-			)...)...)
+	fixtureCommand(ctx, 2*time.Minute, env, sshArgv(options,
+		"-o", "ForwardAgent=yes", "-o", "ControlMaster=yes", "-o", "ControlPersist=60",
+		"-N", "-f", host)...)
 	closed := false
 	closeMaster := func(cleanupCtx context.Context) {
-		fixtureCommand(
-			cleanupCtx,
-			2*time.Minute,
-			env,
-			append([]string{cmdSSH},
-				append(options, "-O", "exit", host)...)...)
+		fixtureCommand(cleanupCtx, 2*time.Minute, env, sshArgv(options, "-O", "exit", host)...)
 	}
 	ginkgo.DeferCleanup(func(specCtx ginkgo.SpecContext) {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(specCtx), time.Minute)
@@ -375,12 +368,7 @@ func verifyKindSSHAgentCleanup(
 		}
 	})
 	remote := func(command string) string {
-		return fixtureCommand(
-			ctx,
-			2*time.Minute,
-			env,
-			append([]string{cmdSSH},
-				append(options, host, "--", command)...)...)
+		return fixtureCommand(ctx, 2*time.Minute, env, sshArgv(options, host, "--", command)...)
 	}
 	socket := strings.TrimSpace(remote("printf %s \"$SSH_AUTH_SOCK\""))
 	gomega.Expect(socket).NotTo(gomega.BeEmpty())

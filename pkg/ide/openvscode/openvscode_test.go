@@ -9,7 +9,7 @@ import (
 )
 
 func TestGetReleaseURLDefaultVersion(t *testing.T) {
-	o := NewOpenVSCodeServer(nil, "", "", "", "", nil)
+	o := NewOpenVSCodeServer(ServerConfig{})
 	url := o.getReleaseUrl()
 
 	wantVersion := Options[VersionOption].Default
@@ -33,9 +33,9 @@ func TestGetReleaseURLDefaultVersion(t *testing.T) {
 }
 
 func TestGetReleaseURLVersionOverride(t *testing.T) {
-	o := NewOpenVSCodeServer(nil, "", "", "", "", map[string]config.OptionValue{
+	o := NewOpenVSCodeServer(ServerConfig{Values: map[string]config.OptionValue{
 		VersionOption: {Value: "v1.99.0"},
-	})
+	}})
 	url := o.getReleaseUrl()
 	if !strings.Contains(url, "v1.99.0") {
 		t.Fatalf("expected url to honor VERSION override, got %q", url)
@@ -48,9 +48,9 @@ func TestGetReleaseURLDownloadOverride(t *testing.T) {
 	if runtime.GOARCH == "arm64" {
 		opt = DownloadArm64Option
 	}
-	o := NewOpenVSCodeServer(nil, "", "", "", "", map[string]config.OptionValue{
+	o := NewOpenVSCodeServer(ServerConfig{Values: map[string]config.OptionValue{
 		opt: {Value: custom},
-	})
+	}})
 	if got := o.getReleaseUrl(); got != custom {
 		t.Fatalf("expected explicit download url %q, got %q", custom, got)
 	}
