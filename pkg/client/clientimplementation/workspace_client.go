@@ -958,7 +958,14 @@ func removeSSHConfig(params DeleteWorkspaceFolderParams) error {
 		}
 	}
 
-	if err := ssh.RemoveFromConfig(
+	owner, err := removeSSHOwner(params)
+	if err != nil {
+		log.Errorf("resolve ssh owner for workspace %q: %v", params.WorkspaceID, err)
+		return nil
+	}
+
+	if err := ssh.RemoveFromConfigForOwner(
+		owner,
 		params.WorkspaceID,
 		sshConfigPath,
 		sshConfigIncludePath,
@@ -967,6 +974,15 @@ func removeSSHConfig(params DeleteWorkspaceFolderParams) error {
 	}
 
 	return nil
+}
+
+func removeSSHOwner(params DeleteWorkspaceFolderParams) (ssh.Owner, error) {
+	uid := ""
+	if ws, err := provider.LoadWorkspaceConfig(params.Context, params.WorkspaceID); err == nil {
+		uid = ws.UID
+	}
+
+	return ssh.NewOwner(params.Context, uid)
 }
 
 func removeWorkspaceDir(context, workspaceID string) error {

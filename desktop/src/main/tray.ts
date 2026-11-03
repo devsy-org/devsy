@@ -5,6 +5,7 @@ import {
   workspaceRoute,
   workspacesRoute,
 } from "../shared/app-route.js"
+import { workspaceLabel } from "../shared/workspace-label.js"
 import {
   type WorkspaceJob,
   workspaceJobBusy,
@@ -192,7 +193,7 @@ export function buildTrayMenuTemplate(
         })
       }
       return {
-        label: `${STATE_GLYPHS[state]} ${workspace.id} - ${jobLabel && (state === "busy" || state === "failed") ? jobLabel : STATE_TEXT[state]}`,
+        label: `${STATE_GLYPHS[state]} ${workspaceLabel(workspace)} - ${jobLabel && (state === "busy" || state === "failed") ? jobLabel : STATE_TEXT[state]}`,
         submenu,
       }
     },

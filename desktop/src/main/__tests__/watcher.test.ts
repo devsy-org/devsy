@@ -494,3 +494,40 @@ describe("Watcher log confirmation", () => {
     },
   )
 })
+
+describe("Watcher workspace list freshness", () => {
+  function makeListWatcher(daemonList: ReturnType<typeof vi.fn>) {
+    const state = new DaemonState()
+    const cli = { run: vi.fn(async () => []) }
+    const watcher = new Watcher({
+      cli: cli as never,
+      daemon: { listWorkspaces: daemonList } as never,
+      state,
+      getMainWindow: () => null,
+      providerJobs: { snapshot: () => ({}) } as never,
+      workspaceJobs: new WorkspaceJobs(),
+    })
+    return { watcher, state, cli }
+  }
+
+  it("asks the daemon to bypass its list cache on an explicit refresh", async () => {
+    const daemonList = vi.fn(async () => [{ id: "ws", displayName: "New" }])
+    const { watcher, state } = makeListWatcher(daemonList)
+
+    await watcher.refreshWorkspaces()
+
+    expect(daemonList).toHaveBeenCalledExactlyOnceWith({ fresh: true })
+    expect(state.workspaceList()[0].displayName).toBe("New")
+  })
+
+  it("uses the daemon cache for scheduled polls", async () => {
+    const daemonList = vi.fn(async () => [{ id: "ws" }])
+    const { watcher } = makeListWatcher(daemonList)
+
+    await (
+      watcher as unknown as { pollWorkspaces(strict?: boolean): Promise<void> }
+    ).pollWorkspaces()
+
+    expect(daemonList).toHaveBeenCalledExactlyOnceWith({ fresh: false })
+  })
+})

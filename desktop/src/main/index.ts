@@ -327,6 +327,7 @@ app.whenReady().then(async () => {
         sender.send("deep-link", url)
     },
     workspaceSnapshot: () => watcher?.workspaceSnapshot(),
+    refreshWorkspaces: () => watcher?.refreshWorkspaces() ?? Promise.resolve(),
     appNavigation,
     settingsService,
     linuxDesktopIntegration,

@@ -77,6 +77,16 @@ import {
   uniqueWorkspaceId,
   workspaceIdRule,
 } from "$lib/utils/workspace-id.js"
+import {
+  findAliasConflict,
+  findLabelConflict,
+} from "$lib/utils/workspaceLabel.js"
+import {
+  normalizeDisplayLabel,
+  SSH_HOST_SUFFIX,
+  validateDisplayLabel,
+  validateSshAlias,
+} from "$shared/workspace-presentation.js"
 
 type Step = "provider" | "source" | "ide" | "review" | "launch"
 type StepState = "pending" | "active" | "complete" | "error"
@@ -260,6 +270,10 @@ let workspaceFolder = $state("")
 let advancedOpen = $state(false)
 let selectedIde = $state("none")
 let workspaceName = $state("")
+let displayLabel = $state("")
+let displayLabelTouched = $state(false)
+let sshAlias = $state("")
+let sshAliasTouched = $state(false)
 
 let assembled = $derived(
   sourceType === "image"
@@ -400,6 +414,53 @@ let nameConflict = $derived(
     $workspaces.some((ws) => ws.id.toLowerCase() === resolvedId.toLowerCase()),
 )
 
+let displayLabelValue = $derived(
+  displayLabelTouched ? displayLabel : resolvedId,
+)
+let sshAliasValue = $derived(sshAliasTouched ? sshAlias : resolvedId)
+let explicitLabel = $derived(
+  displayLabelTouched ? normalizeDisplayLabel(displayLabel) : "",
+)
+let explicitAlias = $derived(sshAliasTouched ? sshAlias.trim() : "")
+let launchLabel = $derived(
+  explicitLabel !== "" && explicitLabel !== resolvedId ? explicitLabel : "",
+)
+let launchAlias = $derived(
+  explicitAlias !== "" && explicitAlias !== resolvedId ? explicitAlias : "",
+)
+let launchPresentation = $derived({
+  displayName: launchLabel || undefined,
+  sshHostAlias: launchAlias || undefined,
+})
+let labelError = $derived(
+  displayLabelTouched ? validateDisplayLabel(displayLabel) : null,
+)
+let aliasError = $derived(sshAliasTouched ? validateSshAlias(sshAlias) : null)
+let labelConflict = $derived(
+  !labelError && launchLabel
+    ? findLabelConflict(launchLabel, $workspaces, resolvedId)
+    : undefined,
+)
+let aliasConflict = $derived(
+  !aliasError && launchAlias
+    ? findAliasConflict(launchAlias, $workspaces, resolvedId)
+    : undefined,
+)
+let idHostConflict = $derived(
+  resolvedId !== "" && !resolvedIdInvalid
+    ? findAliasConflict(resolvedId, $workspaces, resolvedId)
+    : undefined,
+)
+let presentationInvalid = $derived(
+  !!(
+    labelError ||
+    aliasError ||
+    labelConflict ||
+    aliasConflict ||
+    idHostConflict
+  ),
+)
+
 let imageIncompatible = $derived(
   sourceType === "image" &&
     hostPlatform !== "" &&
@@ -479,6 +540,10 @@ function reset() {
   advancedOpen = false
   selectedIde = "none"
   workspaceName = ""
+  displayLabel = ""
+  displayLabelTouched = false
+  sshAlias = ""
+  sshAliasTouched = false
   ideComboOpen = false
   ideSearch = ""
   commandId = null
@@ -729,7 +794,11 @@ function handleProgress(progress: CommandProgress, wsId: string | undefined) {
 async function handleLaunch(recovery = false) {
   // Retrying/recovering the id we already attempted is allowed; only a
   // genuinely new conflicting id is blocked.
-  if (resolvedIdInvalid || (nameConflict && resolvedId !== lastAttemptedId)) {
+  if (
+    resolvedIdInvalid ||
+    presentationInvalid ||
+    (nameConflict && resolvedId !== lastAttemptedId)
+  ) {
     return
   }
   lastAttemptedId = resolvedId
@@ -799,6 +868,7 @@ async function handleLaunch(recovery = false) {
     const cmdId = await workspaceUp({
       source: assembled.source,
       workspaceId,
+      ...launchPresentation,
       provider: selectedProvider || undefined,
       ide: selectedIde,
       ideLaunch: "auto",
@@ -1324,16 +1394,58 @@ function selectTemplate(t: { name: string; source: string }) {
           </div>
 
           <div class="space-y-1.5">
-            <Label for="workspace-name" class="text-sm">Workspace Name</Label>
+            <Label for="workspace-display-label" class="text-sm">Display label</Label>
+            <Input
+              id="workspace-display-label"
+              aria-invalid={!!(labelError || labelConflict)}
+              aria-describedby={labelError || labelConflict ? "workspace-display-label-help workspace-display-label-error" : "workspace-display-label-help"}
+              autocomplete="off"
+              value={displayLabelValue}
+              oninput={(e) => { displayLabel = e.currentTarget.value; displayLabelTouched = true }}
+            />
+            <p id="workspace-display-label-help" class="text-xs text-muted-foreground">How this workspace is shown in Devsy. Does not change the ID or SSH host.</p>
+            {#if labelError || labelConflict}
+              <p id="workspace-display-label-error" class="text-xs font-medium text-destructive" role="alert">
+                {labelError ?? `Display label is already used by workspace "${labelConflict?.id}".`}
+              </p>
+            {/if}
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="workspace-ssh-alias" class="text-sm">SSH alias</Label>
+            <div class="flex items-center gap-2">
+              <Input
+                id="workspace-ssh-alias"
+                class="font-mono"
+                aria-invalid={!!(aliasError || aliasConflict)}
+                aria-describedby={aliasError || aliasConflict ? "workspace-ssh-alias-help workspace-ssh-alias-error" : "workspace-ssh-alias-help"}
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck={false}
+                value={sshAliasValue}
+                oninput={(e) => { sshAlias = e.currentTarget.value; sshAliasTouched = true }}
+              />
+              <span class="font-mono text-sm text-muted-foreground">{SSH_HOST_SUFFIX}</span>
+            </div>
+            <p id="workspace-ssh-alias-help" class="text-xs text-muted-foreground">Preferred SSH host. The workspace stays reachable as {resolvedId}{SSH_HOST_SUFFIX}.</p>
+            {#if aliasError || aliasConflict}
+              <p id="workspace-ssh-alias-error" class="text-xs font-medium text-destructive" role="alert">
+                {aliasError ?? `SSH host ${launchAlias}${SSH_HOST_SUFFIX} is already used by workspace "${aliasConflict?.id}".`}
+              </p>
+            {/if}
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="workspace-name" class="text-sm">Workspace ID</Label>
             <Input
               id="workspace-name"
-              aria-invalid={resolvedIdInvalid || nameConflict}
-              aria-describedby={resolvedIdInvalid ? "workspace-name-invalid" : nameConflict ? "workspace-name-conflict" : "workspace-name-help"}
+              aria-invalid={resolvedIdInvalid || nameConflict || !!idHostConflict}
+              aria-describedby={resolvedIdInvalid ? "workspace-name-invalid" : nameConflict ? "workspace-name-conflict" : idHostConflict ? "workspace-name-host-conflict" : "workspace-name-help"}
               placeholder="Optional - derived from source if empty"
               value={workspaceName}
               oninput={(e) => (workspaceName = e.currentTarget.value)}
             />
-            <p id="workspace-name-help" class="text-xs text-muted-foreground">Leave blank to derive a name from the source.</p>
+            <p id="workspace-name-help" class="text-xs text-muted-foreground">Permanent internal identifier and canonical SSH host name. Leave blank to derive it from the source.</p>
           </div>
 
           {#if resolvedIdInvalid}
@@ -1350,6 +1462,15 @@ function selectTemplate(t: { name: string; source: string }) {
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
                 <span id="workspace-name-conflict">A workspace named "{resolvedId}" already exists. Choose a different name.</span>
+              </Alert.Description>
+            </Alert.Root>
+          {/if}
+
+          {#if idHostConflict}
+            <Alert.Root>
+              <TriangleAlert class="h-4 w-4 text-amber-600" />
+              <Alert.Description class="text-amber-700 dark:text-amber-400">
+                <span id="workspace-name-host-conflict">SSH host {resolvedId}{SSH_HOST_SUFFIX} is already used by workspace "{idHostConflict.id}". Choose a different workspace ID.</span>
               </Alert.Description>
             </Alert.Root>
           {/if}
@@ -1415,6 +1536,18 @@ function selectTemplate(t: { name: string; source: string }) {
                 <Button type="button" aria-label="Edit IDE" variant="ghost" size="sm" class="h-7 shrink-0 px-2" onclick={() => goToStep("ide")}>Edit</Button>
               </dd>
             </div>
+            {#if launchLabel}
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Display label</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{launchLabel}</dd>
+              </div>
+            {/if}
+            {#if launchAlias}
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">SSH host</dt>
+                <dd class="text-left font-medium font-mono [overflow-wrap:anywhere]">{launchAlias}{SSH_HOST_SUFFIX}</dd>
+              </div>
+            {/if}
             <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
               <dt class="text-muted-foreground">Workspace ID</dt>
               <dd class="text-left font-medium font-mono [overflow-wrap:anywhere]">{resolvedId}</dd>
@@ -1483,6 +1616,7 @@ function selectTemplate(t: { name: string; source: string }) {
         <div class="space-y-4">
           <WorkspaceLaunchProgress
             workspaceId={launchedWorkspaceId ?? lastAttemptedId ?? resolvedId}
+            label={launchLabel || undefined}
             provider={selectedProvider || undefined}
             ideLabel={selectedIde === "none" ? "No IDE" : (selectedIdeEntry?.label ?? selectedIde)}
             timeline={launchTimeline}
@@ -1576,7 +1710,7 @@ function selectTemplate(t: { name: string; source: string }) {
           <Button onclick={continueFromIde}>Continue</Button>
         {:else if currentStep === "review"}
           <Button variant="outline" onclick={() => goToStep("ide")}>Back</Button>
-          <Button disabled={resolvedIdInvalid || nameConflict} onclick={continueFromReview}>
+          <Button disabled={resolvedIdInvalid || nameConflict || presentationInvalid} onclick={continueFromReview}>
             Launch
           </Button>
         {/if}

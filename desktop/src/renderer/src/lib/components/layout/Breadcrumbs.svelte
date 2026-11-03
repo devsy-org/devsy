@@ -1,6 +1,8 @@
 <script lang="ts">
 import { ChevronRight } from "@lucide/svelte"
 import { location } from "$lib/router.js"
+import { workspaces } from "$lib/stores/workspaces.js"
+import { workspaceLabel } from "$lib/utils/workspaceLabel.js"
 
 interface Crumb {
   label: string
@@ -32,7 +34,14 @@ let crumbs = $derived.by(() => {
   for (let i = 0; i < parts.length; i++) {
     path += `/${parts[i]}`
     const isLast = i === parts.length - 1
-    const label = LABELS[parts[i]] ?? decodeURIComponent(parts[i])
+    const decoded = decodeURIComponent(parts[i])
+    const workspace =
+      parts[0] === "workspaces" && i === 1
+        ? $workspaces.find((candidate) => candidate.id === decoded)
+        : undefined
+    const label = workspace
+      ? workspaceLabel(workspace)
+      : (LABELS[parts[i]] ?? decoded)
     result.push({ label, href: isLast ? undefined : `#${path}` })
   }
 
