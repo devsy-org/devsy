@@ -37,6 +37,9 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	if err := cmd.checkDetachedPresentation(cfg, workspaceID); err != nil {
+		return err
+	}
 	runID := provisionalRun(cfg, workspaceID)
 	t, err := store.CreateLaunch(task.CreateOptions{
 		Command:     "up",
@@ -54,6 +57,39 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 		return errors.Join(fmt.Errorf("launch detached up: %w", err), t.FailLaunch(err))
 	}
 	return cmd.renderDetachedTask(t, runID)
+}
+
+const detachedLookupTimeout = 30 * time.Second
+
+func (cmd *UpCmd) checkDetachedPresentation(cfg *config.Config, workspaceID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), detachedLookupTimeout)
+	defer cancel()
+
+	return cmd.checkDetachedPresentationContext(ctx, cfg, workspaceID)
+}
+
+func (cmd *UpCmd) checkDetachedPresentationContext(
+	ctx context.Context,
+	cfg *config.Config,
+	workspaceID string,
+) error {
+	if !cmd.hasPresentation() {
+		return nil
+	}
+	existed := workspaceID == ""
+	if !existed {
+		found, err := workspace2.CheckExists(
+			ctx,
+			cfg,
+			workspace2.LookupOptions{ID: workspaceID, Owner: cmd.Owner},
+		)
+		if err != nil {
+			return fmt.Errorf("check whether workspace %q exists: %w", workspaceID, err)
+		}
+		existed = found
+	}
+
+	return cmd.checkPresentation(cfg, workspaceID, existed)
 }
 
 func (cmd *UpCmd) renderDetachedTask(t *task.Task, runID string) error {

@@ -4,7 +4,6 @@ package zed
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -17,15 +16,9 @@ func Open(
 	values map[string]config.OptionValue,
 	target Target,
 ) error {
-	workspaceFolder, workspaceID := target.WorkspaceFolder, target.WorkspaceID
 	log.Info("Opening Zed editor")
 
-	if len(workspaceFolder) == 0 || workspaceFolder[0] != '/' {
-		workspaceFolder = fmt.Sprintf("/%s", workspaceFolder)
-	}
-
-	sshHost := workspaceID + config.SSHHostSuffix + workspaceFolder
-	openURL := fmt.Sprintf("zed://ssh/%s", sshHost)
+	openURL := buildOpenURL(target.SSHHost, target.WorkspaceFolder)
 	err := devsyopen.Run(openURL)
 	if err != nil {
 		log.Debugf("Starting Zed caused error: %v", err)

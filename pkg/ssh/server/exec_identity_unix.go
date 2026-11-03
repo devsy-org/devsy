@@ -38,6 +38,20 @@ func prepareExecIdentity(cmd *exec.Cmd, spec string) (bool, error) {
 	return prepareExecIdentityWithLookups(cmd, spec, systemExecIdentityLookups())
 }
 
+func prepareExecIdentityForAccount(cmd *exec.Cmd, spec string, account *user.User) (bool, error) {
+	return prepareExecIdentityForAccountWithLookups(cmd, spec, account, systemExecIdentityLookups())
+}
+
+func prepareExecIdentityForAccountWithLookups(
+	cmd *exec.Cmd,
+	spec string,
+	account *user.User,
+	lookups execIdentityLookups,
+) (bool, error) {
+	lookups.userByID = func(string) (*user.User, error) { return account, nil }
+	return prepareExecIdentityWithLookups(cmd, spec, lookups)
+}
+
 func prepareExecIdentityWithLookups(
 	cmd *exec.Cmd,
 	spec string,

@@ -18,6 +18,15 @@ import {
 import type { ProviderIconRequest } from "../shared/provider-icon.js"
 import type { LogRunExportResult } from "../shared/workspace-logs.js"
 import type { WorkspaceActivity } from "../shared/workspace-operation.js"
+import {
+  buildWorkspaceEditArgs,
+  buildWorkspaceUpPresentationArgs,
+  parseWorkspacePresentationResult,
+  presentationFailureFromCliError,
+  validateWorkspacePresentationRequest,
+  type WorkspacePresentationReply,
+  type WorkspacePresentationRequest,
+} from "../shared/workspace-presentation.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
@@ -256,6 +265,7 @@ interface IpcDependencies {
   providerJobs: ProviderJobs
   workspaceJobs: WorkspaceJobs
   workspaceSnapshot?: () => unknown
+  refreshWorkspaces?: () => Promise<void>
   onRendererReady?: (sender: Electron.WebContents) => void
   appNavigation?: AppNavigationController
   settingsService?: SettingsService
@@ -1170,6 +1180,66 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         args.workspaceId,
         args.newWorkspaceId,
       ])
+    },
+  )
+
+  ipcMain.handle(
+    "workspace_edit",
+    async (
+      _event,
+      request: WorkspacePresentationRequest,
+    ): Promise<WorkspacePresentationReply> => {
+      const invalid = validateWorkspacePresentationRequest(request)
+      if (invalid) return { ok: false, ...invalid }
+      trackEvent("workspace_edit", {
+        workspace_ref: hashWorkspaceRef(request.workspaceId),
+      })
+      const context =
+        request.context || state.workspaceContext(request.workspaceId)
+      try {
+        const raw = await cli.run<unknown>(
+          buildWorkspaceEditArgs(request, context),
+        )
+        const result = parseWorkspacePresentationResult(raw)
+        if (!result) {
+          await deps.refreshWorkspaces?.().catch((error) => {
+            mainLog.warn("[workspace-edit] workspace refresh failed", error)
+          })
+          return {
+            ok: false,
+            field: "workspace",
+            code: "failed",
+            message: "Workspace edit returned an unexpected result.",
+          }
+        }
+        const stale =
+          result.id !== request.workspaceId ||
+          result.uid !== request.expectedUid ||
+          result.context !== context
+        await deps.refreshWorkspaces?.().catch((error) => {
+          mainLog.warn("[workspace-edit] workspace refresh failed", error)
+        })
+        if (stale) {
+          return {
+            ok: false,
+            field: "workspace",
+            code: "stale",
+            message: "The workspace changed while saving. Reload and retry.",
+          }
+        }
+        return { ok: true, result }
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const failure = presentationFailureFromCliError(
+          cliError ? redactCLIError(cliError) : undefined,
+          redactSensitiveText(errorMessage(err)),
+        )
+        return {
+          ok: false,
+          ...failure,
+          message: redactSensitiveText(failure.message),
+        }
+      }
     },
   )
 
@@ -2147,6 +2217,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   const runWorkspaceUp = (args: {
     source: string
     workspaceId?: string
+    displayName?: string
+    sshHostAlias?: string
     provider?: string
     ide?: string
     ideLaunch?: "auto" | "headless" | "skip"
@@ -2163,6 +2235,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     })
     const cliArgs = ["workspace", "up", args.source]
     if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
+    cliArgs.push(...buildWorkspaceUpPresentationArgs(args))
     if (args.provider) cliArgs.push("--provider", args.provider)
     if (args.ide) cliArgs.push("--ide", args.ide)
     if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)

@@ -69,6 +69,12 @@ devsy workspace ssh my-workspace
 devsy workspace ssh my-workspace --command "echo Hello World"
 ```
 
+SFTP uses the SSH username for file operations inside the workspace. Files you upload belong to that user, and access follows that user's permissions:
+
+```sh
+sftp USER@WORKSPACE_NAME.devsy
+```
+
 If you are already inside a Devsy container and need the host and remote user for a manually configured IDE connection, run this from the container terminal:
 
 ```sh

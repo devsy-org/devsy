@@ -92,7 +92,7 @@ func sortWorkspacesByLastUsed(workspaces []*provider.Workspace) {
 
 func printJSONWorkspaces(workspaces []*provider.Workspace) error {
 	sortWorkspacesByLastUsed(workspaces)
-	out, err := json.Marshal(workspaces)
+	out, err := json.Marshal(provider.NewWorkspaceListEntries(workspaces))
 	if err != nil {
 		return err
 	}
@@ -100,15 +100,19 @@ func printJSONWorkspaces(workspaces []*provider.Workspace) error {
 	return nil
 }
 
+func workspaceListName(ws *provider.Workspace) string {
+	label := ws.EffectiveDisplayName()
+	if label == ws.ID {
+		return ws.ID
+	}
+	return fmt.Sprintf("%s (%s)", label, ws.ID)
+}
+
 func printPlainWorkspaces(workspaces []*provider.Workspace) {
 	sortWorkspacesByLastUsed(workspaces)
 	tableEntries := [][]string{}
 	for _, entry := range workspaces {
-		name := entry.ID
-		if entry.IsPlatform() && entry.Platform.DisplayName != "" &&
-			entry.ID != entry.Platform.DisplayName {
-			name = fmt.Sprintf("%s (%s)", entry.Platform.DisplayName, entry.ID)
-		}
+		name := workspaceListName(entry)
 		tableEntries = append(tableEntries, []string{
 			name,
 			entry.Source.String(),

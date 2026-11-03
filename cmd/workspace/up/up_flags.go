@@ -187,6 +187,19 @@ func (cmd *UpCmd) registerWorkspaceIdentityFlags(upCmd *cobra.Command) {
 		upCmd,
 		flags.String(&cmd.ID, names.ID, "", "ID for the workspace"),
 		flags.String(
+			&cmd.DisplayName,
+			names.DisplayName,
+			"",
+			"Local display label for a new workspace; no effect if the workspace already exists",
+		),
+		flags.String(
+			&cmd.SSHHostAlias,
+			names.SSHHostAlias,
+			"",
+			"Preferred SSH host alias (without .devsy) for a new workspace; "+
+				"no effect if the workspace already exists",
+		),
+		flags.String(
 			&cmd.Machine,
 			names.Machine,
 			"",

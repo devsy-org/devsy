@@ -7,7 +7,13 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devcontainerconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	testAliasShort = "short"
+	testUIDOne     = "uid-1"
 )
 
 func setupTestHome(t *testing.T) {
@@ -43,4 +49,89 @@ func TestSaveWorkspaceResult_WritesWhenConfigExists(t *testing.T) {
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(dir, WorkspaceResultFile))
 	require.NoError(t, err)
+}
+
+func TestPreferredSSHHostCommittedUsesStoredAlias(t *testing.T) {
+	setupTestHome(t)
+	stored := &Workspace{ID: "api", UID: testUIDOne, Context: config.DefaultContext}
+	require.NoError(t, SaveWorkspaceConfig(stored))
+	stale := *stored
+	assert.Equal(t, "api.devsy", stale.PreferredSSHHostCommitted())
+
+	stored.SSHHostAlias = testAliasShort
+	require.NoError(t, SaveWorkspacePresentation(stored))
+	assert.Equal(t, "short.devsy", stale.PreferredSSHHostCommitted())
+
+	other := Workspace{ID: "api", UID: "uid-2", Context: config.DefaultContext}
+	assert.Equal(t, "api.devsy", other.PreferredSSHHostCommitted())
+}
+
+func TestSaveWorkspacePresentationDoesNotRecreateDeletedWorkspace(t *testing.T) {
+	setupTestHome(t)
+	stored := &Workspace{ID: "gone", UID: testUIDOne, Context: config.DefaultContext}
+	require.NoError(t, SaveWorkspaceConfig(stored))
+
+	dir, err := GetWorkspaceDir(stored.Context, stored.ID)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dir))
+
+	stored.SSHHostAlias = testAliasShort
+	err = SaveWorkspacePresentation(stored)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "workspace gone no longer exists")
+	require.NoDirExists(t, dir)
+}
+
+func TestSaveWorkspacePresentationRefusesMissingConfigFile(t *testing.T) {
+	setupTestHome(t)
+	stored := &Workspace{ID: "halfgone", UID: testUIDOne, Context: config.DefaultContext}
+	require.NoError(t, SaveWorkspaceConfig(stored))
+
+	dir, err := GetWorkspaceDir(stored.Context, stored.ID)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(filepath.Join(dir, WorkspaceConfigFile)))
+
+	err = SaveWorkspacePresentation(stored)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no longer exists")
+	require.NoFileExists(t, filepath.Join(dir, WorkspaceConfigFile))
+}
+
+const effectiveNameTestID = "api"
+
+func TestEffectiveDisplayNameTrimsWhitespace(t *testing.T) {
+	tests := []struct {
+		name string
+		ws   Workspace
+		want string
+	}{
+		{
+			name: "platform name trimmed",
+			ws: Workspace{
+				ID:          effectiveNameTestID,
+				DisplayName: "local",
+				Platform:    &PlatformMetadata{DisplayName: "  Platform  "},
+			},
+			want: "Platform",
+		},
+		{
+			name: "blank platform name falls back to local",
+			ws: Workspace{
+				ID:          effectiveNameTestID,
+				DisplayName: " Local\t",
+				Platform:    &PlatformMetadata{DisplayName: "   "},
+			},
+			want: "Local",
+		},
+		{
+			name: "blank names fall back to id",
+			ws:   Workspace{ID: effectiveNameTestID, DisplayName: " \t "},
+			want: effectiveNameTestID,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.ws.EffectiveDisplayName())
+		})
+	}
 }
