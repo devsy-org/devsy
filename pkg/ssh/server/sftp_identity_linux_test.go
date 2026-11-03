@@ -25,7 +25,11 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-const sftpTestChildEnvironment = "DEVSY_SFTP_TEST_CHILD"
+const (
+	sftpTestChildEnvironment       = "DEVSY_SFTP_TEST_CHILD"
+	sftpExtraGroupChildEnvironment = "DEVSY_SFTP_EXTRA_GROUP_CHILD"
+	sftpTestExecutable             = "/proc/self/exe"
+)
 
 type sftpTestProcessIO struct {
 	io.Reader
@@ -65,8 +69,8 @@ func configureSFTPTestChild(t *testing.T) {
 	previous := newSFTPCommand
 	newSFTPCommand = func(_ context.Context, home string) (*exec.Cmd, error) {
 		return &exec.Cmd{
-			Path: "/proc/self/exe",
-			Args: []string{"/proc/self/exe", "-test.run=^TestSFTPChild$", "--", home},
+			Path: sftpTestExecutable,
+			Args: []string{sftpTestExecutable, "-test.run=^TestSFTPChild$", "--", home},
 		}, nil
 	}
 	t.Cleanup(func() { newSFTPCommand = previous })
@@ -215,4 +219,48 @@ func TestSFTPCurrentUserAndInvalidIdentity(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestSFTPCurrentUserWithExtraGroups(t *testing.T) {
+	if os.Getenv(sftpExtraGroupChildEnvironment) == "1" {
+		current, err := user.Current()
+		require.NoError(t, err)
+		accountGroups, err := current.GroupIds()
+		require.NoError(t, err)
+		require.NotContains(t, accountGroups, "0")
+		processGroups, err := os.Getgroups()
+		require.NoError(t, err)
+		require.Contains(t, processGroups, 0)
+		configureSFTPTestChild(t)
+		stdout, stdin := openSFTPTestSession(t, current.Username)
+		client := newSFTPTestClient(t, stdout, stdin)
+		assertSFTPFileIdentity(t, client, t.TempDir(), current)
+		require.NoError(t, client.Close())
+		return
+	}
+
+	if os.Geteuid() != 0 {
+		t.Skip("adding an extra group requires root")
+	}
+	nobody, err := user.Lookup("nobody")
+	if err != nil {
+		t.Skipf("nobody account unavailable: %v", err)
+	}
+	uid, err := strconv.ParseUint(nobody.Uid, 10, 32)
+	require.NoError(t, err)
+	gid, err := strconv.ParseUint(nobody.Gid, 10, 32)
+	require.NoError(t, err)
+	cmd := &exec.Cmd{
+		Path: sftpTestExecutable,
+		Args: []string{sftpTestExecutable, "-test.run=^TestSFTPCurrentUserWithExtraGroups$"},
+		Env:  append(os.Environ(), "TMPDIR=/tmp", sftpExtraGroupChildEnvironment+"=1"),
+		Dir:  "/",
+		SysProcAttr: &syscall.SysProcAttr{
+			Credential: &syscall.Credential{
+				Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{0},
+			},
+		},
+	}
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
 }

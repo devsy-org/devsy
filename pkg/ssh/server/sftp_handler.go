@@ -37,7 +37,7 @@ type sftpExecIdentity struct {
 func sftpHandler(sess ssh.Session) {
 	err := runSFTP(sess)
 	if err != nil {
-		log.Debugf("sftp session failed: %T (exit %d)", err, exitCode(err))
+		log.Debugf("sftp session failed: %v (exit %d)", err, exitCode(err))
 	}
 	if err := sess.Exit(exitCode(err)); err != nil {
 		log.Debugf("sftp session exit failed: %T", err)
@@ -118,15 +118,16 @@ func lookupSFTPAccount(requested requestedExecIdentity) (*user.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	account, _ := user.LookupId(strconv.FormatUint(uint64(uid), 10))
+	account, err := user.LookupId(strconv.FormatUint(uint64(uid), 10))
+	var unknown user.UnknownUserIdError
+	if err != nil && !errors.As(err, &unknown) {
+		return nil, err
+	}
 	return account, nil
 }
 
 func prepareSFTPCommand(cmd *exec.Cmd, identity sftpExecIdentity) error {
-	if runtime.GOOS == "windows" && identity.account != nil && !identity.hasGroupSpec {
-		return prepareCurrentSFTPUser(cmd, identity)
-	}
-	handled, err := prepareExecIdentity(cmd, identity.credential)
+	handled, err := applySFTPCredentials(cmd, identity)
 	if err != nil {
 		return err
 	}
@@ -139,20 +140,30 @@ func prepareSFTPCommand(cmd *exec.Cmd, identity sftpExecIdentity) error {
 	return nil
 }
 
-func prepareCurrentSFTPUser(cmd *exec.Cmd, identity sftpExecIdentity) error {
-	current, err := user.Current()
-	if err != nil {
-		return err
+func applySFTPCredentials(cmd *exec.Cmd, identity sftpExecIdentity) (bool, error) {
+	if identity.account != nil && !identity.hasGroupSpec {
+		current, err := user.Current()
+		if err != nil {
+			return true, err
+		}
+		if identity.account.Uid == current.Uid && identity.account.Username == current.Username {
+			prepareCurrentSFTPUser(cmd, identity)
+			return true, nil
+		}
+		if runtime.GOOS == "windows" {
+			return true, errors.New("SFTP user switching is not supported")
+		}
+		return prepareExecIdentityForAccount(cmd, identity.credential, identity.account)
 	}
-	if identity.account.Uid != current.Uid || identity.account.Username != current.Username {
-		return errors.New("SFTP user switching is not supported")
-	}
+	return prepareExecIdentity(cmd, identity.credential)
+}
+
+func prepareCurrentSFTPUser(cmd *exec.Cmd, identity sftpExecIdentity) {
 	cmd.Env = mergeSessionEnvironment(cmd.Environ(), []string{
 		"HOME=" + identity.home,
 		"USER=" + identity.account.Username,
 		"LOGNAME=" + identity.account.Username,
 	}, nil)
-	return nil
 }
 
 func ServeSFTP(input io.ReadWriteCloser, home string) error {
