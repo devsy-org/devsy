@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	enabledDockerDaemonPolicy  = "true"
-	disabledDockerDaemonPolicy = "false"
+	enabledDockerPolicy  = "true"
+	disabledDockerPolicy = "false"
 )
 
 func TestParseDockerConfigureDaemon(t *testing.T) {
@@ -17,8 +17,8 @@ func TestParseDockerConfigureDaemon(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "unset"},
-		{name: "enabled", value: enabledDockerDaemonPolicy},
-		{name: "disabled", value: disabledDockerDaemonPolicy},
+		{name: "enabled", value: enabledDockerPolicy},
+		{name: "disabled", value: disabledDockerPolicy},
 		{name: "template", value: "${CONFIGURE_DAEMON}"},
 		{name: "bare template", value: "$CONFIGURE_DAEMON"},
 		{name: "invalid", value: "sometimes", wantErr: true},

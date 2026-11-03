@@ -324,14 +324,13 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 		return nil, err
 	}
 
-	// Refresh the exec commands of built-in providers from embedded YAML: a CLI
-	// change (e.g. renaming the command wrapper) must not be shadowed by a stale
-	// provider.json. Only the exec blocks are overlaid so user customizations
-	// (custom --name, resolved options) survive.
 	if providerConfig.Source.Internal {
 		if embedded := embeddedProviderConfig(providerConfig.Source.Raw); embedded != nil {
 			providerConfig.Exec = embedded.Exec
 			providerConfig.Agent.Exec = embedded.Agent.Exec
+			if providerConfig.Source.Raw == DockerDriver {
+				providerConfig.Agent.Docker.Install = embedded.Agent.Docker.Install
+			}
 		}
 	}
 

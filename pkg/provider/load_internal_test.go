@@ -13,7 +13,10 @@ import (
 // stale provider.json files carry before a refresh rewrites them.
 const staleHelperShCommand = `"${DEVSY}" helper sh -c "${COMMAND}"`
 
-const staleVersion = "v0.0.0-stale"
+const (
+	staleVersion       = "v0.0.0-stale"
+	podmanProviderName = "podman"
+)
 
 // TestLoadProviderConfig_RefreshesInternalProvider verifies that a stored
 // built-in provider config with a stale exec.command (e.g. the removed
@@ -26,6 +29,9 @@ func TestLoadProviderConfig_RefreshesInternalProvider(t *testing.T) {
 		Name:    DockerDriver,
 		Version: staleVersion,
 		Source:  ProviderSource{Internal: true, Raw: DockerDriver},
+		Agent: ProviderAgentConfig{
+			Docker: ProviderDockerDriverConfig{Install: disabledDockerPolicy},
+		},
 		Exec: ProviderCommands{
 			Command: []string{staleHelperShCommand},
 		},
@@ -39,11 +45,9 @@ func TestLoadProviderConfig_RefreshesInternalProvider(t *testing.T) {
 		"internal provider must be refreshed from embedded yaml, not the stale stored config")
 	require.True(t, strings.Contains(loaded.Exec.Command[0], "internal sh"),
 		"refreshed command should use the current 'internal sh' wrapper")
+	require.Equal(t, types.StrBool(enabledDockerPolicy), loaded.Agent.Docker.Install)
 }
 
-// TestLoadProviderConfig_PreservesCustomizations verifies the exec refresh
-// overlays only the embedded exec block, leaving a user's custom Name and
-// resolved Options intact (a built-in added with `--name`/`--option`).
 func TestLoadProviderConfig_PreservesCustomizations(t *testing.T) {
 	setupTestHome(t)
 
@@ -51,8 +55,11 @@ func TestLoadProviderConfig_PreservesCustomizations(t *testing.T) {
 		Name:    "my-docker",
 		Version: staleVersion,
 		Source:  ProviderSource{Internal: true, Raw: DockerDriver},
+		Agent: ProviderAgentConfig{
+			Docker: ProviderDockerDriverConfig{Install: disabledDockerPolicy},
+		},
 		Options: map[string]*types.Option{
-			"DOCKER_PATH": {Default: "podman"},
+			"DOCKER_PATH": {Default: podmanProviderName},
 		},
 		Exec: ProviderCommands{
 			Command: []string{staleHelperShCommand},
@@ -64,10 +71,11 @@ func TestLoadProviderConfig_PreservesCustomizations(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "my-docker", loaded.Name, "custom provider name must survive refresh")
 	require.Equal(t, "v0.0.0-stale", loaded.Version, "stored version must survive refresh")
-	require.Equal(t, "podman", loaded.Options["DOCKER_PATH"].Default,
+	require.Equal(t, podmanProviderName, loaded.Options["DOCKER_PATH"].Default,
 		"resolved options must survive refresh")
 	require.NotContains(t, loaded.Exec.Command[0], "helper sh",
 		"exec block must still be refreshed from embedded yaml")
+	require.Equal(t, types.StrBool(enabledDockerPolicy), loaded.Agent.Docker.Install)
 }
 
 // TestLoadProviderConfig_RefreshesProBySourceID guards the case where a
@@ -123,6 +131,9 @@ func TestLoadProviderConfig_PreservesExternalProvider(t *testing.T) {
 		Name:    DockerDriver,
 		Version: "v0.0.1",
 		Source:  ProviderSource{Github: "some-org/some-provider"},
+		Agent: ProviderAgentConfig{
+			Docker: ProviderDockerDriverConfig{Install: disabledDockerPolicy},
+		},
 		Exec: ProviderCommands{
 			Command: []string{staleHelperShCommand},
 		},
@@ -132,4 +143,22 @@ func TestLoadProviderConfig_PreservesExternalProvider(t *testing.T) {
 	loaded, err := LoadProviderConfig(config.DefaultContext, DockerDriver)
 	require.NoError(t, err)
 	require.Equal(t, external.Exec.Command, loaded.Exec.Command)
+	require.Equal(t, types.StrBool(disabledDockerPolicy), loaded.Agent.Docker.Install)
+}
+
+func TestLoadProviderConfig_PreservesPodmanInstallProhibition(t *testing.T) {
+	setupTestHome(t)
+	stored := &ProviderConfig{
+		Name:   podmanProviderName,
+		Source: ProviderSource{Internal: true, Raw: podmanProviderName},
+		Agent: ProviderAgentConfig{
+			Docker: ProviderDockerDriverConfig{Install: disabledDockerPolicy},
+		},
+		Exec: ProviderCommands{Command: []string{staleHelperShCommand}},
+	}
+	require.NoError(t, SaveProviderConfig(config.DefaultContext, stored))
+
+	loaded, err := LoadProviderConfig(config.DefaultContext, stored.Name)
+	require.NoError(t, err)
+	require.Equal(t, types.StrBool(disabledDockerPolicy), loaded.Agent.Docker.Install)
 }
