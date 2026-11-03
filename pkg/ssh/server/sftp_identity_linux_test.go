@@ -51,44 +51,28 @@ func TestSFTPChild(t *testing.T) {
 	os.Exit(0)
 }
 
-func sftpRootAccessibleTempDir(t *testing.T) string {
+func sftpRootTempDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "devsy-sftp-")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
-	require.NoError(t, os.Chmod(dir, 0o755))
 	return dir
 }
 
-func configureSFTPTestChild(t *testing.T, accessibleToOtherUsers bool) {
+func configureSFTPTestChild(t *testing.T) {
 	t.Helper()
 	t.Setenv(sftpTestChildEnvironment, "1")
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	if accessibleToOtherUsers {
-		dir := sftpRootAccessibleTempDir(t)
-		original, err := os.Open(executable)
-		require.NoError(t, err)
-		defer original.Close()
-		executable = filepath.Join(dir, "sftp-test-child")
-		childFile, err := os.OpenFile(executable, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
-		require.NoError(t, err)
-		_, err = io.Copy(childFile, original)
-		require.NoError(t, err)
-		require.NoError(t, childFile.Close())
-		require.NoError(t, os.Chmod(executable, 0o755))
-	}
 	previous := newSFTPCommand
-	newSFTPCommand = func(ctx context.Context, home string) (*exec.Cmd, error) {
-		return exec.CommandContext(ctx, executable, "-test.run=^TestSFTPChild$", "--", home), nil
+	newSFTPCommand = func(_ context.Context, home string) (*exec.Cmd, error) {
+		return &exec.Cmd{
+			Path: "/proc/self/exe",
+			Args: []string{"/proc/self/exe", "-test.run=^TestSFTPChild$", "--", home},
+		}, nil
 	}
 	t.Cleanup(func() { newSFTPCommand = previous })
 }
 
-func openSFTPTestSession(
-	t *testing.T,
-	username string,
-) (*gossh.Session, io.Reader, io.WriteCloser) {
+func openSFTPTestSession(t *testing.T, username string) (io.Reader, io.WriteCloser) {
 	t.Helper()
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
@@ -125,7 +109,7 @@ func openSFTPTestSession(
 	stdout, err := session.StdoutPipe()
 	require.NoError(t, err)
 	require.NoError(t, session.RequestSubsystem("sftp"))
-	return session, stdout, stdin
+	return stdout, stdin
 }
 
 func newSFTPTestClient(t *testing.T, stdout io.Reader, stdin io.WriteCloser) *sftp.Client {
@@ -145,8 +129,11 @@ func assertSFTPFileIdentity(t *testing.T, client *sftp.Client, dir string, accou
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 	require.NoError(t, client.Chmod(path, 0o600))
-	contents, err := os.ReadFile(path)
+	uploaded, err := client.Open(path)
 	require.NoError(t, err)
+	contents, err := io.ReadAll(uploaded)
+	require.NoError(t, err)
+	require.NoError(t, uploaded.Close())
 	require.Equal(t, "sftp identity", string(contents))
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -172,17 +159,22 @@ func TestSFTPRequestedUserOwnsFilesAndCannotReadRootPrivatePath(t *testing.T) {
 	if nobody.Uid == "0" {
 		t.Skip("nobody account has root UID")
 	}
-	configureSFTPTestChild(t, true)
-	dir := sftpRootAccessibleTempDir(t)
+	configureSFTPTestChild(t)
+	dir := sftpRootTempDir(t)
+	uid, err := strconv.Atoi(nobody.Uid)
+	require.NoError(t, err)
+	gid, err := strconv.Atoi(nobody.Gid)
+	require.NoError(t, err)
+	require.NoError(t, os.Chown(dir, uid, gid))
 	writable := filepath.Join(dir, "writable")
-	require.NoError(t, os.Mkdir(writable, 0o777))
-	require.NoError(t, os.Chmod(writable, 0o777))
+	require.NoError(t, os.Mkdir(writable, 0o700))
+	require.NoError(t, os.Chown(writable, uid, gid))
 	private := filepath.Join(dir, "root-private")
 	require.NoError(t, os.Mkdir(private, 0o700))
 	secret := filepath.Join(private, "secret")
 	require.NoError(t, os.WriteFile(secret, []byte("root only"), 0o600))
 
-	_, stdout, stdin := openSFTPTestSession(t, nobody.Username)
+	stdout, stdin := openSFTPTestSession(t, nobody.Username)
 	client := newSFTPTestClient(t, stdout, stdin)
 	assertSFTPFileIdentity(t, client, writable, nobody)
 	_, err = client.Open(secret)
@@ -193,10 +185,10 @@ func TestSFTPRequestedUserOwnsFilesAndCannotReadRootPrivatePath(t *testing.T) {
 func TestSFTPCurrentUserAndInvalidIdentity(t *testing.T) {
 	current, err := user.Current()
 	require.NoError(t, err)
-	configureSFTPTestChild(t, false)
+	configureSFTPTestChild(t)
 
 	t.Run("current user", func(t *testing.T) {
-		_, stdout, stdin := openSFTPTestSession(t, current.Username)
+		stdout, stdin := openSFTPTestSession(t, current.Username)
 		client := newSFTPTestClient(t, stdout, stdin)
 		assertSFTPFileIdentity(t, client, t.TempDir(), current)
 		if info, err := os.Stat(current.HomeDir); err == nil && info.IsDir() {
@@ -211,14 +203,14 @@ func TestSFTPCurrentUserAndInvalidIdentity(t *testing.T) {
 		invalid := fmt.Sprintf("devsy-sftp-missing-%d", os.Getpid())
 		_, err := user.Lookup(invalid)
 		require.Error(t, err)
-		_, stdout, stdin := openSFTPTestSession(t, invalid)
+		stdout, stdin := openSFTPTestSession(t, invalid)
 		_, err = sftp.NewClientPipe(stdout, stdin)
 		require.Error(t, err)
 	})
 
 	if os.Geteuid() != 0 {
 		t.Run("non-switchable account", func(t *testing.T) {
-			_, stdout, stdin := openSFTPTestSession(t, "root")
+			stdout, stdin := openSFTPTestSession(t, "root")
 			_, err := sftp.NewClientPipe(stdout, stdin)
 			require.Error(t, err)
 		})
