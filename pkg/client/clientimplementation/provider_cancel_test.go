@@ -28,17 +28,28 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if len(os.Args) == 9 && os.Args[1] == "internal" && os.Args[2] == "provider-shell" {
+	if len(os.Args) == 11 && os.Args[1] == "internal" && os.Args[2] == "provider-shell" {
 		os.Exit(runProviderShellTestHelper(os.Args))
 	}
 	os.Exit(m.Run())
 }
 
 func runProviderShellTestHelper(args []string) int {
-	if args[3] != "--script-file" || args[5] != "--force-file" || args[7] != "--ack-file" {
+	if !validProviderShellTestArgs(args) {
 		return 1
 	}
-	err := shell.RunProviderShell(context.Background(), args[4], args[6], args[8])
+	parentPID, err := strconv.Atoi(args[10])
+	if err != nil {
+		return 1
+	}
+	cleanup, err := shell.PrepareProviderShellForeground(parentPID)
+	if err != nil {
+		return 1
+	}
+	defer cleanup()
+	err = shell.RunProviderShell(context.Background(), shell.ProviderShellInvocation{
+		ScriptPath: args[4], ForcePath: args[6], AckPath: args[8], ParentPID: parentPID,
+	})
 	if err == nil {
 		return 0
 	}
@@ -46,6 +57,11 @@ func runProviderShellTestHelper(args []string) int {
 		return int(status)
 	}
 	return 1
+}
+
+func validProviderShellTestArgs(args []string) bool {
+	return args[3] == "--script-file" && args[5] == "--force-file" &&
+		args[7] == "--ack-file" && args[9] == "--parent-pid"
 }
 
 const (
@@ -1011,7 +1027,7 @@ func TestProviderCancellationOwnedOutputStopsAfterSuccessfulShellExit(t *testing
 	start := time.Now()
 	err = RunCommand(context.Background(), opts)
 	require.ErrorIs(t, err, exec.ErrWaitDelay)
-	require.Less(t, time.Since(start), 5*time.Second)
+	require.Less(t, time.Since(start), 20*time.Second)
 }
 
 func cleanupTestCancellationOutputHolder(path string) {

@@ -27,8 +27,10 @@ func TestProviderShellProcess(t *testing.T) {
 	if os.Getenv("DEVSY_PROVIDER_SHELL_PROCESS") != "1" {
 		return
 	}
-	err := RunProviderShell(context.Background(), os.Getenv("DEVSY_PROVIDER_SCRIPT"),
-		os.Getenv("DEVSY_PROVIDER_FORCE"), os.Getenv("DEVSY_PROVIDER_ACK"))
+	err := RunProviderShell(context.Background(), providerShellTestInvocation(
+		os.Getenv("DEVSY_PROVIDER_SCRIPT"), os.Getenv("DEVSY_PROVIDER_FORCE"),
+		os.Getenv("DEVSY_PROVIDER_ACK"),
+	))
 	if err == nil {
 		os.Exit(0)
 	}
@@ -145,6 +147,12 @@ func providerTestWriteKey(t *testing.T, ackPath, token string) {
 	)
 }
 
+func providerShellTestInvocation(scriptPath, forcePath, ackPath string) ProviderShellInvocation {
+	return ProviderShellInvocation{
+		ScriptPath: scriptPath, ForcePath: forcePath, AckPath: ackPath, ParentPID: os.Getppid(),
+	}
+}
+
 func providerShellCommand(t *testing.T, scriptPath, forcePath, ackPath string) *exec.Cmd {
 	t.Helper()
 	providerTestWriteKey(t, ackPath, providerTestAckToken)
@@ -160,7 +168,10 @@ func providerShellCommand(t *testing.T, scriptPath, forcePath, ackPath string) *
 func runProviderShellWithToken(t *testing.T, scriptPath, forcePath, ackPath string) error {
 	t.Helper()
 	providerTestWriteKey(t, filepath.Join(filepath.Dir(scriptPath), "ack"), providerTestAckToken)
-	return RunProviderShell(context.Background(), scriptPath, forcePath, ackPath)
+	return RunProviderShell(
+		context.Background(),
+		providerShellTestInvocation(scriptPath, forcePath, ackPath),
+	)
 }
 
 func providerTestReadAck(ackPath string) ([]byte, error) {
@@ -190,7 +201,10 @@ func TestRunProviderShellRejectsInvalidAckTokens(t *testing.T) {
 			if test.name != "missing" {
 				providerTestWriteKey(t, ackPath, test.token)
 			}
-			err := RunProviderShell(context.Background(), scriptPath, forcePath, ackPath)
+			err := RunProviderShell(
+				context.Background(),
+				providerShellTestInvocation(scriptPath, forcePath, ackPath),
+			)
 			require.ErrorContains(t, err, "invalid provider shell acknowledgement token")
 			_, err = os.Lstat(ackPath)
 			require.ErrorIs(t, err, os.ErrNotExist)
@@ -204,7 +218,10 @@ func TestRunProviderShellRejectsUnsafeAckKey(t *testing.T) {
 		require.NoError(t, os.Mkdir(filepath.Join(filepath.Dir(ackPath), "ack-key"), 0o700))
 		require.ErrorContains(
 			t,
-			RunProviderShell(context.Background(), scriptPath, forcePath, ackPath),
+			RunProviderShell(
+				context.Background(),
+				providerShellTestInvocation(scriptPath, forcePath, ackPath),
+			),
 			"invalid provider shell acknowledgement token",
 		)
 		_, err := os.Lstat(ackPath)
@@ -218,7 +235,10 @@ func TestRunProviderShellRejectsUnsafeAckKey(t *testing.T) {
 		require.NoError(t, os.Symlink(scriptPath, filepath.Join(filepath.Dir(ackPath), "ack-key")))
 		require.ErrorContains(
 			t,
-			RunProviderShell(context.Background(), scriptPath, forcePath, ackPath),
+			RunProviderShell(
+				context.Background(),
+				providerShellTestInvocation(scriptPath, forcePath, ackPath),
+			),
 			"invalid provider shell acknowledgement token",
 		)
 		_, err := os.Lstat(ackPath)
@@ -230,7 +250,10 @@ func TestRunProviderShellRejectsUnsafeAckKey(t *testing.T) {
 		require.NoError(t, os.Chmod(filepath.Join(filepath.Dir(ackPath), "ack-key"), 0o400))
 		require.ErrorContains(
 			t,
-			RunProviderShell(context.Background(), scriptPath, forcePath, ackPath),
+			RunProviderShell(
+				context.Background(),
+				providerShellTestInvocation(scriptPath, forcePath, ackPath),
+			),
 			"invalid provider shell acknowledgement token",
 		)
 		_, err := os.Lstat(ackPath)

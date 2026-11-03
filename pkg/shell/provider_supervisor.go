@@ -254,16 +254,28 @@ type providerShellExecution struct {
 	result     <-chan error
 	supervisor *providerProcessSupervisor
 	cancel     context.CancelFunc
+	alive      func() bool
 }
 
-func RunProviderShell(ctx context.Context, scriptPath, forcePath, ackPath string) error {
+type ProviderShellInvocation struct {
+	ScriptPath string
+	ForcePath  string
+	AckPath    string
+	ParentPID  int
+}
+
+func RunProviderShell(ctx context.Context, invocation ProviderShellInvocation) error {
 	if ctx.Err() != nil {
 		return context.Cause(ctx)
 	}
-	if err := providerShellPaths(scriptPath, forcePath, ackPath); err != nil {
+	if err := providerShellPaths(
+		invocation.ScriptPath,
+		invocation.ForcePath,
+		invocation.AckPath,
+	); err != nil {
 		return err
 	}
-	dir := filepath.Dir(scriptPath)
+	dir := filepath.Dir(invocation.ScriptPath)
 	root, err := providerShellRoot(dir)
 	if err != nil {
 		return err
@@ -273,12 +285,17 @@ func RunProviderShell(ctx context.Context, scriptPath, forcePath, ackPath string
 	if err != nil {
 		return err
 	}
-	if err := providerShellFiles(root); err != nil {
+	content, err := readProviderShellContent(root)
+	if err != nil {
 		return err
 	}
-	content, err := root.ReadFile("script")
+	alive, cleanup, err := newProviderShellParentMonitor(invocation.ParentPID)
 	if err != nil {
-		return errors.New("read provider shell script: " + errStringKind(err))
+		return err
+	}
+	defer cleanup()
+	if !alive() {
+		return context.Canceled
 	}
 	executionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -297,16 +314,32 @@ func RunProviderShell(ctx context.Context, scriptPath, forcePath, ackPath string
 		result:     result,
 		supervisor: supervisor,
 		cancel:     cancel,
+		alive:      alive,
 	}
 	return execution.wait(ctx)
+}
+
+func readProviderShellContent(root *os.Root) ([]byte, error) {
+	if err := providerShellFiles(root); err != nil {
+		return nil, err
+	}
+	content, err := root.ReadFile("script")
+	if err != nil {
+		return nil, errors.New("read provider shell script: " + errStringKind(err))
+	}
+	return content, nil
 }
 
 func (p *providerShellExecution) wait(ctx context.Context) error {
 	poll := time.NewTicker(100 * time.Millisecond)
 	defer poll.Stop()
 	for {
+		if !p.alive() {
+			p.supervisor.force(p.cancel)
+			return errors.New("provider shell parent exited")
+		}
 		forced, pollErr := providerForcePresent(p.dir)
-		if forced || pollErr != nil || ctx.Err() != nil {
+		if providerShellForceRequired(ctx, forced, pollErr) {
 			return p.force(pollErr)
 		}
 		select {
@@ -318,8 +351,15 @@ func (p *providerShellExecution) wait(ctx context.Context) error {
 	}
 }
 
+func providerShellForceRequired(ctx context.Context, forced bool, pollErr error) bool {
+	return forced || pollErr != nil || ctx.Err() != nil
+}
+
 func (p *providerShellExecution) ackForced() error {
 	p.supervisor.force(p.cancel)
+	if !p.alive() {
+		return context.Canceled
+	}
 	return providerWriteAck(p.root, p.token)
 }
 
@@ -347,6 +387,9 @@ func (p *providerShellExecution) completed(err error) error {
 	p.supervisor.stop()
 	if earlyErr := providerShellEarlyError(err); earlyErr != nil {
 		return earlyErr
+	}
+	if !p.alive() {
+		return context.Canceled
 	}
 	if ackErr := providerWriteAck(p.root, p.token); ackErr != nil {
 		return ackErr

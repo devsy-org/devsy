@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -917,8 +918,17 @@ func runSupervisedProviderShell(
 	cmd := &exec.Cmd{
 		Path: binary,
 		Args: []string{
-			binary, "internal", "provider-shell",
-			"--script-file", files.script, "--force-file", files.force, "--ack-file", files.ack,
+			binary,
+			"internal",
+			"provider-shell",
+			"--script-file",
+			files.script,
+			"--force-file",
+			files.force,
+			"--ack-file",
+			files.ack,
+			"--parent-pid",
+			strconv.Itoa(os.Getpid()),
 		},
 		Env:       opts.Environ,
 		Stdin:     opts.Stdin,
@@ -1127,6 +1137,7 @@ func waitSupervisedProviderShellWithOwnedInput(
 
 	source, stdout, stderr := cmd.Stdin, cmd.Stdout, cmd.Stderr
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = pipes.stdinRead, pipes.stdoutWrite, pipes.stderrWrite
+	configureProviderShellProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start provider %s shell: %w", action, err)
 	}
@@ -1291,6 +1302,7 @@ func closeUndrainedProviderShellOutput(
 }
 
 func waitSupervisedProviderShell(ctx context.Context, cmd *exec.Cmd, action string) error {
+	configureProviderShellProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start provider %s shell: %w", action, err)
 	}

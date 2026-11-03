@@ -3,6 +3,7 @@ package cmdinternal
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestProviderShellCommandRegistration(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "ack-key"), []byte(token), 0o600))
 	command.SetArgs([]string{
 		"--script-file", script, "--force-file", filepath.Join(dir, "force"),
-		"--ack-file", filepath.Join(dir, "ack"),
+		"--ack-file", filepath.Join(dir, "ack"), "--parent-pid", strconv.Itoa(os.Getppid()),
 	})
 	require.NoError(t, command.Execute())
 	_, err := os.Lstat(filepath.Join(dir, "ack-key"))
@@ -43,7 +44,7 @@ func TestProviderShellCommandRejectsMissingToken(t *testing.T) {
 	command := NewProviderShellCmd()
 	command.SetArgs([]string{
 		"--script-file", script, "--force-file", filepath.Join(dir, "force"),
-		"--ack-file", filepath.Join(dir, "ack"),
+		"--ack-file", filepath.Join(dir, "ack"), "--parent-pid", strconv.Itoa(os.Getppid()),
 	})
 	require.ErrorContains(t, command.Execute(), "invalid provider shell acknowledgement token")
 	_, err = os.Lstat(filepath.Join(dir, "ack"))
