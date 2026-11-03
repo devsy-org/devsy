@@ -48,6 +48,7 @@ func TestSetSourceInitFailureKeepsCommittedReplacementAndWorkspace(t *testing.T)
 	cmd := &SetSourceCmd{GlobalFlags: &flags.GlobalFlags{}, Use: true}
 	err = cmd.Run(ctx, initial, []string{testProviderFoo, replacementSource})
 	require.Error(t, err)
+	require.NotErrorIs(t, err, context.DeadlineExceeded)
 
 	assertFailedSourceReplacement(
 		t,
