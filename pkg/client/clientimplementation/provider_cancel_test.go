@@ -63,6 +63,9 @@ func runTestCancellationExit(behavior, marker string) {
 		os.Exit(127)
 	case "bytes":
 		writeTestCancellationBytes()
+	case "inherited":
+		_, err := fmt.Fprint(os.Stdout, os.Getenv("DEVSY_CANCEL_INHERITED"))
+		exitTestHelperOnError(err)
 	case "environment":
 		_, err := fmt.Fprint(os.Stdout, marker)
 		exitTestHelperOnError(err)
@@ -332,6 +335,21 @@ func TestProviderCancellationPrivateEnvironment(t *testing.T) {
 	require.True(t, filepath.IsAbs(marker))
 	_, err = os.Stat(filepath.Dir(marker))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestProviderCancellationNilEnvironmentInheritsHost(t *testing.T) {
+	t.Setenv("DEVSY_CANCEL_HELPER", "1")
+	t.Setenv("DEVSY_CANCEL_BEHAVIOR", "inherited")
+	t.Setenv("DEVSY_CANCEL_INHERITED", "present")
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	var stdout bytes.Buffer
+	require.NoError(t, RunCommand(context.Background(), RunCommandOptions{
+		Command:      types.StrArray{binary, "-test.run=^TestProviderCancellationHelper$"},
+		Cancellation: provider.ProviderCancellationFile,
+		Stdout:       &stdout,
+	}))
+	require.Equal(t, "present", stdout.String())
 }
 
 func TestProviderCancellationTypedExits(t *testing.T) {

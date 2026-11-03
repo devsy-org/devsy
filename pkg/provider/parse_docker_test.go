@@ -10,6 +10,8 @@ const (
 	disabledDockerPolicy = "false"
 )
 
+const templatePolicyCase = "template"
+
 func TestParseDockerConfigureDaemon(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -19,7 +21,7 @@ func TestParseDockerConfigureDaemon(t *testing.T) {
 		{name: "unset"},
 		{name: "enabled", value: enabledDockerPolicy},
 		{name: "disabled", value: disabledDockerPolicy},
-		{name: "template", value: "${CONFIGURE_DAEMON}"},
+		{name: templatePolicyCase, value: "${CONFIGURE_DAEMON}"},
 		{name: "bare template", value: "$CONFIGURE_DAEMON"},
 		{name: "invalid", value: "sometimes", wantErr: true},
 	} {
@@ -45,6 +47,37 @@ func TestParseDockerConfigureDaemon(t *testing.T) {
 					parsed.Agent.Docker.ConfigureDaemon,
 					tc.value,
 				)
+			}
+		})
+	}
+}
+
+func TestParseDockerInstallPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{name: "disabled", value: disabledDockerPolicy},
+		{name: "enabled", value: enabledDockerPolicy},
+		{name: templatePolicyCase, value: "${INSTALL_DOCKER}"},
+		{name: "invalid", value: "sometimes", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest := "name: docker-policy\nagent:\n  driver: docker\n  docker:\n    install: " +
+				tc.value + "\nexec:\n  command: echo hi\n"
+			parsed, err := ParseProvider(strings.NewReader(manifest))
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "agent.docker.install") {
+					t.Fatalf("ParseProvider() error = %v, want Docker install policy error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(parsed.Agent.Docker.Install) != tc.value {
+				t.Errorf("Install = %q, want %q", parsed.Agent.Docker.Install, tc.value)
 			}
 		})
 	}

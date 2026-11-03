@@ -64,6 +64,9 @@ func runProviderWithCancellationUsingPublisher(
 }
 
 func providerCancellationEnvironment(original []string, marker string) []string {
+	if original == nil {
+		original = os.Environ()
+	}
 	environ := make([]string, 0, len(original)+1)
 	for _, kv := range original {
 		key, _, ok := strings.Cut(kv, "=")

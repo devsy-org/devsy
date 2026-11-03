@@ -205,6 +205,10 @@ func validateOptionCacheAndType(optionName string, optionValue *types.Option) er
 }
 
 func validateProviderType(config *ProviderConfig) error {
+	if config.Exec.Cancellation != ProviderCancellationDefault &&
+		config.Exec.Cancellation != ProviderCancellationFile {
+		return fmt.Errorf("exec.cancellation must be empty or file")
+	}
 	if config.IsProxyProvider() {
 		return validateProxyProvider(config)
 	}
@@ -281,11 +285,8 @@ func validateStandardProvider(config *ProviderConfig) error {
 	if err := validateAgentDriver(config); err != nil {
 		return err
 	}
-	if value := config.Agent.Docker.ConfigureDaemon; value != "" &&
-		!templatedValueRegex.MatchString(string(value)) {
-		if _, err := value.Bool(); err != nil {
-			return fmt.Errorf("agent.docker.configureDaemon: %w", err)
-		}
+	if err := validateAgentDockerPolicies(config.Agent.Docker); err != nil {
+		return err
 	}
 
 	if err := validateBinaries("agent.binaries", config.Agent.Binaries); err != nil {
@@ -293,6 +294,22 @@ func validateStandardProvider(config *ProviderConfig) error {
 	}
 
 	return validateExecCommands(config)
+}
+
+func validateAgentDockerPolicies(docker ProviderDockerDriverConfig) error {
+	if value := docker.ConfigureDaemon; value != "" &&
+		!templatedValueRegex.MatchString(string(value)) {
+		if _, err := value.Bool(); err != nil {
+			return fmt.Errorf("agent.docker.configureDaemon: %w", err)
+		}
+	}
+	if value := docker.Install; value != "" &&
+		!templatedValueRegex.MatchString(string(value)) {
+		if _, err := value.Bool(); err != nil {
+			return fmt.Errorf("agent.docker.install: %w", err)
+		}
+	}
+	return nil
 }
 
 var validAgentDrivers = map[string]bool{
@@ -348,8 +365,8 @@ func validateCustomDriver(config *ProviderConfig) error {
 }
 
 func validateExecCommands(config *ProviderConfig) error {
-	if err := validateExecCommandPolicy(config.Exec); err != nil {
-		return err
+	if len(config.Exec.Command) == 0 {
+		return fmt.Errorf("exec.command is required")
 	}
 	if err := validateExecPair(
 		"exec.create",
@@ -377,17 +394,6 @@ func validateExecCommands(config *ProviderConfig) error {
 		return fmt.Errorf("exec.create is required")
 	}
 
-	return nil
-}
-
-func validateExecCommandPolicy(exec ProviderCommands) error {
-	if exec.Cancellation != ProviderCancellationDefault &&
-		exec.Cancellation != ProviderCancellationFile {
-		return fmt.Errorf("exec.cancellation must be empty or file")
-	}
-	if len(exec.Command) == 0 {
-		return fmt.Errorf("exec.command is required")
-	}
 	return nil
 }
 
