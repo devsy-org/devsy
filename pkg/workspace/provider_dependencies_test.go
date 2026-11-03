@@ -120,7 +120,7 @@ func (s *providerDependencySurveySuite) TestEffectiveOptionIntent() {
 			name: "inherited-path", present: true, value: config.OptionValue{Value: path},
 			expected: dependencies.LookupExplicit,
 		},
-		{name: "empty", present: true},
+		{name: providerDependencyTestEmpty, present: true},
 		{name: "explicit-empty", present: true, value: config.OptionValue{UserProvided: true}},
 	} {
 		request := s.request(DefaultDockerCommand)
