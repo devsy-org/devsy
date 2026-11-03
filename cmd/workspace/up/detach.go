@@ -59,8 +59,10 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 	return cmd.renderDetachedTask(t, runID)
 }
 
-const detachedLookupTimeout = 30 * time.Second
-const detachedLaunchTimeout = 30 * time.Second
+const (
+	detachedLookupTimeout = 30 * time.Second
+	detachedLaunchTimeout = 30 * time.Second
+)
 
 func (cmd *UpCmd) checkDetachedPresentation(cfg *config.Config, workspaceID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), detachedLookupTimeout)
