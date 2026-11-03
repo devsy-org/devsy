@@ -15,6 +15,7 @@ func NewProviderShellCmd() *cobra.Command {
 	var parentPID int
 	command := &cobra.Command{
 		Use: "provider-shell", Hidden: true, Args: cobra.NoArgs,
+		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cleanup, err := shell.PrepareProviderShellForeground(parentPID)
 			if err != nil {
