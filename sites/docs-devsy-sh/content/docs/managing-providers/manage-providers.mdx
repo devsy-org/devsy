@@ -107,15 +107,13 @@ If a switch fails during initialization, the new source stays selected. Fix the 
 
 ### Docker Sandboxes
 
-Install Docker Sandboxes and sign in with `sbx login` before adding the provider:
+A published release qualified for your host is required. After it exists, install the standalone `sbx` CLI, sign in with `sbx login`, and add the provider:
 
 ```sh
 devsy provider add docker-sandbox
 ```
 
-The [Docker Sandboxes guide](./docker-sandbox.mdx) covers qualified hosts, resource options, guest Docker, source files, networking, data deletion, and scoped recovery. The provider needs a published release containing native qualification for your host.
-
-
+The [Docker Sandboxes guide](./docker-sandbox.mdx) covers qualified hosts, resource options, guest Docker, source files, networking, data deletion, and scoped recovery.
 
 ## Set provider options
 

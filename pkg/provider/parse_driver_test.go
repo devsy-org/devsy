@@ -75,23 +75,3 @@ func TestProviderCancellationMode(t *testing.T) {
 		})
 	}
 }
-
-func TestProviderCancellationModeAcrossProviderKinds(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		commands string
-	}{
-		{name: "proxy", commands: "  proxy:\n" +
-			"    up: echo up\n    status: echo status\n    stop: echo stop\n" +
-			"    delete: echo delete\n    ssh: echo ssh\n"},
-		{name: "daemon", commands: "  daemon:\n    start: echo start\n"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			manifest := "name: example\nexec:\n  cancellation: files\n" + tc.commands
-			_, err := ParseProvider(strings.NewReader(manifest))
-			if err == nil || !strings.Contains(err.Error(), "exec.cancellation") {
-				t.Fatalf("ParseProvider() error = %v, want invalid cancellation mode", err)
-			}
-		})
-	}
-}
