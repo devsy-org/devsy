@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/id"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/providers"
+	"github.com/gofrs/flock"
 )
 
 const (
@@ -191,10 +192,7 @@ func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
 
 	// Unlike saveJSON, this never creates the workspace dir: a result is only
 	// valid while the workspace config exists.
-	if _, err := os.Stat(filepath.Join(workspaceDir, WorkspaceConfigFile)); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("workspace %s no longer exists", workspace.ID)
-		}
+	if _, err := requireWorkspaceConfigFile(workspaceDir, workspace.ID); err != nil {
 		return err
 	}
 
@@ -207,7 +205,76 @@ func SaveWorkspaceConfig(workspace *Workspace) error {
 		return err
 	}
 
-	return saveJSON(workspaceDir, WorkspaceConfigFile, workspace, 0o644)
+	unlock, err := lockWorkspacePersistence(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	toSave := *workspace
+	committed, err := LoadWorkspaceConfig(workspace.Context, workspace.ID)
+	if err == nil && committed.UID == workspace.UID {
+		toSave.DisplayName = committed.DisplayName
+		toSave.SSHHostAlias = committed.SSHHostAlias
+	}
+
+	return saveJSON(workspaceDir, WorkspaceConfigFile, &toSave, 0o644)
+}
+
+func SaveWorkspacePresentation(workspace *Workspace) error {
+	unlock, err := lockWorkspacePersistence(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	workspaceDir, err := GetWorkspaceDir(workspace.Context, workspace.ID)
+	if err != nil {
+		return err
+	}
+	configPath, err := requireWorkspaceConfigFile(workspaceDir, workspace.ID)
+	if err != nil {
+		return err
+	}
+
+	committed, err := LoadWorkspaceConfig(workspace.Context, workspace.ID)
+	if err != nil {
+		return fmt.Errorf("load workspace %s: %w", workspace.ID, err)
+	}
+	if committed.UID != workspace.UID {
+		return fmt.Errorf("workspace %s was recreated with a different uid", workspace.ID)
+	}
+
+	committed.DisplayName = workspace.DisplayName
+	committed.SSHHostAlias = workspace.SSHHostAlias
+
+	return writeJSONFile(configPath, committed, 0o644)
+}
+
+func requireWorkspaceConfigFile(workspaceDir, workspaceID string) (string, error) {
+	configPath := filepath.Join(workspaceDir, WorkspaceConfigFile)
+	if _, err := os.Stat(configPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("workspace %s no longer exists", workspaceID)
+		}
+
+		return "", err
+	}
+
+	return configPath, nil
+}
+
+func lockWorkspacePersistence(contextName, workspaceID string) (func(), error) {
+	locksDir, err := ensureOperationLocksDir(contextName)
+	if err != nil {
+		return nil, err
+	}
+	lock := flock.New(filepath.Join(locksDir, workspaceID+".workspace-persist.lock"))
+	if err := lock.Lock(); err != nil {
+		return nil, fmt.Errorf("acquire workspace persistence lock: %w", err)
+	}
+
+	return func() { _ = lock.Unlock() }, nil
 }
 
 func SaveMachineConfig(machine *Machine) error {

@@ -19,6 +19,11 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
+const (
+	folderURIFlag   = "--folder-uri"
+	reuseWindowFlag = "--reuse-window"
+)
+
 type call struct {
 	path string
 	args []string
@@ -69,7 +74,38 @@ func (s *OpenSuite) SetupTest() {
 }
 
 func testParams() OpenParams {
-	return OpenParams{Workspace: "ws", Folder: "/workspaces/ws", Flavor: FlavorCodium}
+	return OpenParams{SSHHost: "ws.devsy", Folder: "/workspaces/ws", Flavor: FlavorCodium}
+}
+
+func (s *OpenSuite) TestCLIUsesPreferredHostNotWorkspaceID() {
+	params := testParams()
+	params.SSHHost = "friendly.devsy"
+	params.Folder = "/workspaces/ws"
+
+	s.Require().NoError(s.launcher.open(context.Background(), params))
+
+	s.Require().Len(s.calls, 2)
+	args := s.calls[1].args
+	s.Equal([]string{
+		reuseWindowFlag, folderURIFlag, "vscode-remote://ssh-remote+friendly.devsy/workspaces/ws",
+	}, args)
+	s.True(validFolderOpenArgs(args))
+}
+
+func (s *OpenSuite) TestURIFallbackUsesPreferredHostNotWorkspaceID() {
+	s.launcher.lookPath = func(string) (string, error) { return "", errors.New("not found") }
+	params := testParams()
+	params.SSHHost = "friendly.devsy"
+
+	s.Require().NoError(s.launcher.open(context.Background(), params))
+
+	s.Equal([]string{"codium://vscode-remote/ssh-remote+friendly.devsy/workspaces/ws"}, s.uris)
+}
+
+func (s *OpenSuite) TestRemoteFolderValidationAcceptsAliasHosts() {
+	s.True(validRemoteFolderURI("vscode-remote://ssh-remote+friendly.devsy/workspaces/ws"))
+	s.True(validRemoteFolderURI("vscode-remote://ssh-remote+ws.devsy/workspaces/ws"))
+	s.False(validRemoteFolderURI("vscode-remote://ssh-remote+friendly/workspaces/ws"))
 }
 
 func (s *OpenSuite) TestCLISuccessDispatchesOnceWithCorrelation() {
@@ -233,7 +269,7 @@ func (s *OpenSuite) TestLogsAndErrorsOmitEditorOutputPathsAndErrorText() {
 			}
 			s.uriErr = leaky
 			params := testParams()
-			params.Workspace = canaries[4]
+			params.SSHHost = canaries[4] + ".devsy"
 			params.Folder = canaries[1]
 			_, err := s.openInOperation(params)
 			s.Require().Error(err)
@@ -320,8 +356,8 @@ func (s *OpenSuite) TestHostCLIRejectsUntrustedCommands() {
 	for _, args := range [][]string{
 		{"--install-extension", "untrusted.extension"},
 		{"--user-data-dir", marker},
-		{"--reuse-window", "--folder-uri", "https://example.invalid/"},
-		{"--reuse-window", "--folder-uri", "vscode-remote://ssh-remote+ws.devsy/w", "--extra"},
+		{reuseWindowFlag, folderURIFlag, "https://example.invalid/"},
+		{reuseWindowFlag, folderURIFlag, "vscode-remote://ssh-remote+ws.devsy/w", "--extra"},
 	} {
 		_, err = runHostCLI(context.Background(), filepath.Join(s.T().TempDir(), "codium"), args...)
 		s.Require().Error(err)

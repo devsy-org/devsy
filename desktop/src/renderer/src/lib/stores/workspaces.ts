@@ -127,3 +127,14 @@ export function destroyWorkspaces() {
   unlisten?.()
   unlisten = null
 }
+
+export async function reloadWorkspaces() {
+  const epoch = lifecycle
+  try {
+    const snapshot = await workspaceSnapshot()
+    if (epoch === lifecycle)
+      apply(snapshot.workspaces, snapshot.jobs, snapshot.revision, false)
+  } catch {
+    return
+  }
+}

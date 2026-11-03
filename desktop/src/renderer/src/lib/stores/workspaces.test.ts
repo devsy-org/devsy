@@ -9,6 +9,7 @@ import { toasts } from "./toasts.js"
 import {
   destroyWorkspaces,
   initWorkspaces,
+  reloadWorkspaces,
   workspaceJobs,
   workspaces,
   workspacesLoading,
@@ -386,5 +387,45 @@ describe("workspace snapshot store", () => {
     await initWorkspaces()
     expect(get(workspaces)[0].status).toBe("Running")
     expect(get(workspacesLoading)).toBe(false)
+  })
+})
+
+describe("reloadWorkspaces", () => {
+  beforeEach(async () => {
+    await initWorkspaces()
+  })
+
+  it("replaces the store from the main-process snapshot", async () => {
+    mockInvoke.mockResolvedValue({
+      revision: 5,
+      workspaces: [{ id: "ws", uid: "u1", displayName: "Label" }],
+      jobs: {},
+    })
+    await reloadWorkspaces()
+    expect(mockInvoke).toHaveBeenCalledWith("workspace_snapshot")
+    expect(get(workspaces)[0].displayName).toBe("Label")
+  })
+
+  it("does not let an older snapshot overwrite a newer one", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      revision: 7,
+      workspaces: [{ id: "ws", displayName: "Newer" }],
+      jobs: {},
+    })
+    await reloadWorkspaces()
+    mockInvoke.mockResolvedValueOnce({
+      revision: 6,
+      workspaces: [{ id: "ws", displayName: "Older" }],
+      jobs: {},
+    })
+    await reloadWorkspaces()
+    expect(get(workspaces)[0].displayName).toBe("Newer")
+  })
+
+  it("keeps the current list when the snapshot cannot be loaded", async () => {
+    workspaces.set([{ id: "ws", displayName: "Kept" }])
+    mockInvoke.mockRejectedValue(new Error("offline"))
+    await expect(reloadWorkspaces()).resolves.toBeUndefined()
+    expect(get(workspaces)[0].displayName).toBe("Kept")
   })
 })
