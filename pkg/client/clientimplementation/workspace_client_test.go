@@ -167,7 +167,7 @@ func TestMachineCommandErrorsRedactOpaquePayloadAndArguments(t *testing.T) {
 			cfg := &provider.ProviderConfig{
 				Name: "redaction-test",
 				Exec: provider.ProviderCommands{
-					Create:  types.StrArray{"create"},
+					Create:  types.StrArray{testProviderCreateCommand},
 					Command: tc.command,
 				},
 			}

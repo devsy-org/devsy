@@ -70,7 +70,7 @@ func TestProviderExecHandlerExportsUnsetAndWorkingDirectory(t *testing.T) {
 		strconv.Quote(workdir),
 		strconv.Quote(binary),
 	)
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == providerWindowsOS {
 		command = strings.ReplaceAll(command, `\`, `/`)
 	}
 	var stdout, stderr bytes.Buffer
@@ -128,8 +128,8 @@ func TestProviderExecHandlerExitStatuses(t *testing.T) {
 			Environ:     os.Environ(),
 			Stderr:      &stderr,
 		})
-		var exitStatus interp.ExitStatus
-		if !errors.As(err, &exitStatus) || int(exitStatus) != tc.status {
+		exitStatus, ok := errors.AsType[interp.ExitStatus](err)
+		if !ok || int(exitStatus) != tc.status {
 			t.Errorf("%q: got %v, want exit %d", tc.command, err, tc.status)
 		}
 	}

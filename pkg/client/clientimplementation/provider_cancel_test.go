@@ -11,7 +11,9 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -19,40 +21,85 @@ import (
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/interp"
 )
 
+func TestMain(m *testing.M) {
+	if len(os.Args) == 9 && os.Args[1] == "internal" && os.Args[2] == "provider-shell" {
+		os.Exit(runProviderShellTestHelper(os.Args))
+	}
+	os.Exit(m.Run())
+}
+
+func runProviderShellTestHelper(args []string) int {
+	if args[3] != "--script-file" || args[5] != "--force-file" || args[7] != "--ack-file" {
+		return 1
+	}
+	err := shell.RunProviderShell(context.Background(), args[4], args[6], args[8])
+	if err == nil {
+		return 0
+	}
+	if status, ok := errors.AsType[interp.ExitStatus](err); ok {
+		return int(status)
+	}
+	return 1
+}
+
 const (
-	testTransportRead  = "transport-read"
-	testWindowsOS      = "windows"
-	testCancelProvider = "cancel-provider"
-	testOpaqueCommand  = "opaque"
+	testTransportRead         = "transport-read"
+	testWindowsOS             = "windows"
+	testCancelProvider        = "cancel-provider"
+	testOpaqueCommand         = "opaque"
+	testCancellationHelperArg = "-test.run=^TestProviderCancellationHelper$"
 )
 
 func TestProviderCancellationHelper(t *testing.T) {
 	if os.Getenv("DEVSY_CANCEL_HELPER") != "1" {
 		return
 	}
-	marker := os.Getenv(config.EnvProviderCancelFile)
+	runTestProviderCancellationBehavior(os.Getenv(config.EnvProviderCancelFile))
+	os.Exit(0)
+}
+
+func runTestProviderCancellationBehavior(marker string) {
+	if os.Getenv("DEVSY_CANCEL_HOLDER") == "1" {
+		time.Sleep(time.Minute)
+		return
+	}
 	switch behavior := os.Getenv("DEVSY_CANCEL_BEHAVIOR"); behavior {
 	case "acknowledge":
-		if _, err := fmt.Fprint(os.Stdout, "ready"); err != nil {
-			os.Exit(126)
-		}
-		awaitTestCancellationMarker(marker, os.Getenv("DEVSY_CANCEL_ACK_PATH"))
+		runAcknowledgingCancellationHelper(marker)
 	case "ignore":
-		if _, err := fmt.Fprint(os.Stdout, "ready"); err != nil {
-			os.Exit(126)
-		}
-		time.Sleep(time.Minute)
+		runIgnoringCancellationHelper()
 	case testTransportRead, "transport-write":
 		testTransportCancellationHelper(behavior, marker)
+	case "bulk-after-eof":
+		writeTestCancellationBulkAfterEOF()
+	case "orphan-output":
+		startTestCancellationOutputHolder()
 	default:
 		runTestCancellationExit(behavior, marker)
 	}
-	os.Exit(0)
+}
+
+func runAcknowledgingCancellationHelper(marker string) {
+	if _, err := fmt.Fprint(os.Stdout, "ready"); err != nil {
+		os.Exit(126)
+	}
+	awaitTestCancellationMarker(marker, os.Getenv("DEVSY_CANCEL_ACK_PATH"))
+}
+
+func runIgnoringCancellationHelper() {
+	if path := os.Getenv("DEVSY_CANCEL_CHILD_PID_PATH"); path != "" {
+		exitTestHelperOnError(testHelperWriteFile(path, strconv.Itoa(os.Getpid())))
+	}
+	if _, err := fmt.Fprint(os.Stdout, "ready"); err != nil {
+		os.Exit(126)
+	}
+	time.Sleep(time.Minute)
 }
 
 func runTestCancellationExit(behavior, marker string) {
@@ -69,8 +116,33 @@ func runTestCancellationExit(behavior, marker string) {
 	case "environment":
 		_, err := fmt.Fprint(os.Stdout, marker)
 		exitTestHelperOnError(err)
+	case "ack-private":
+		runTestCancellationAckPrivate(marker)
 	default:
 		os.Exit(125)
+	}
+}
+
+func runTestCancellationAckPrivate(marker string) {
+	root, err := os.OpenRoot(filepath.Dir(marker))
+	exitTestHelperOnError(err)
+	_, statErr := root.Lstat("ack-key")
+	exitTestHelperOnError(root.Close())
+	if !errors.Is(statErr, os.ErrNotExist) {
+		os.Exit(126)
+	}
+	_, err = os.Stdout.Write([]byte(strings.Join(os.Environ(), "\x00")))
+	exitTestHelperOnError(err)
+	if runtime.GOOS == "linux" {
+		proc, openErr := os.OpenRoot(fmt.Sprintf("/proc/%d", os.Getppid()))
+		exitTestHelperOnError(openErr)
+		for _, name := range []string{"environ", "cmdline"} {
+			data, readErr := proc.ReadFile(name)
+			exitTestHelperOnError(readErr)
+			_, err = os.Stdout.Write(data)
+			exitTestHelperOnError(err)
+		}
+		exitTestHelperOnError(proc.Close())
 	}
 }
 
@@ -78,6 +150,37 @@ func writeTestCancellationBytes() {
 	_, err := os.Stdout.Write([]byte{0, 0xff, 0x80, '\r', '\n'})
 	exitTestHelperOnError(err)
 	_, err = os.Stderr.Write([]byte(os.Getenv("DEVSY_CANCEL_SECRET")))
+	exitTestHelperOnError(err)
+}
+
+func writeTestCancellationBulkAfterEOF() {
+	_, err := io.Copy(io.Discard, os.Stdin)
+	exitTestHelperOnError(err)
+	block := make([]byte, 32<<10)
+	for i := range block {
+		block[i] = byte(i)
+	}
+	for range (12 << 20) / len(block) {
+		_, err := os.Stdout.Write(block)
+		exitTestHelperOnError(err)
+	}
+	_, err = os.Stderr.Write([]byte("separate stderr"))
+	exitTestHelperOnError(err)
+}
+
+func startTestCancellationOutputHolder() {
+	holder := &exec.Cmd{
+		Path: os.Args[0],
+		Args: []string{os.Args[0], testCancellationHelperArg},
+	}
+	holder.Env = append(os.Environ(), "DEVSY_CANCEL_HOLDER=1")
+	holder.Stdout, holder.Stderr = os.Stdout, os.Stderr
+	exitTestHelperOnError(holder.Start())
+	exitTestHelperOnError(testHelperWriteFile(
+		os.Getenv("DEVSY_CANCEL_HOLDER_PID_PATH"), strconv.Itoa(holder.Process.Pid),
+	))
+	exitTestHelperOnError(holder.Process.Release())
+	_, err := fmt.Fprint(os.Stdout, "ready")
 	exitTestHelperOnError(err)
 }
 
@@ -167,7 +270,7 @@ func cancelHelperOptions(behavior string) RunCommandOptions {
 		panic(err)
 	}
 	return RunCommandOptions{
-		Command: types.StrArray{binary, "-test.run=^TestProviderCancellationHelper$"},
+		Command: types.StrArray{binary, testCancellationHelperArg},
 		Environ: append(
 			os.Environ(),
 			"DEVSY_CANCEL_HELPER=1",
@@ -245,6 +348,224 @@ func TestProviderCancellationForcedAfterProductionGrace(t *testing.T) {
 		require.GreaterOrEqual(t, time.Since(start), providerCancellationGrace)
 	case <-time.After(providerCancellationGrace + 8*time.Second):
 		t.Fatal("owned provider process was not reaped")
+	}
+}
+
+type providerMarkerWriter struct {
+	mu     sync.Mutex
+	output bytes.Buffer
+	ready  chan struct{}
+}
+
+func (w *providerMarkerWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.output.Write(p)
+	if strings.HasSuffix(w.output.String(), string(filepath.Separator)+"cancel") {
+		select {
+		case <-w.ready:
+		default:
+			close(w.ready)
+		}
+	}
+	return n, err
+}
+
+func (w *providerMarkerWriter) marker() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.output.String()
+}
+
+func TestProviderCancellationBlockedShellStdin(t *testing.T) {
+	input, writer, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, errors.Join(input.Close(), writer.Close())) }()
+	_, err = os.Stdin.Stat()
+	require.NoError(t, err)
+
+	const privateCommand = "printf '%s' \"$DEVSY_PROVIDER_CANCEL_FILE\"; mapfile lines; printf 'private-command-846307'"
+	output := &providerMarkerWriter{ready: make(chan struct{})}
+	opts := RunCommandOptions{
+		Command:      types.StrArray{privateCommand},
+		Environ:      os.Environ(),
+		Stdin:        input,
+		Stdout:       output,
+		RawStdout:    true,
+		Cancellation: provider.ProviderCancellationFile,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() { finished <- RunCommand(ctx, opts) }()
+	select {
+	case <-output.ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("provider shell did not start")
+	}
+	marker := output.marker()
+	requirePrivateProviderScript(t, marker, privateCommand)
+
+	start := time.Now()
+	cancel()
+	select {
+	case err := <-finished:
+		require.ErrorIs(t, err, context.Canceled)
+		require.GreaterOrEqual(t, time.Since(start), providerCancellationGrace)
+		require.NotContains(t, err.Error(), privateCommand)
+		require.NotContains(t, err.Error(), marker)
+	case <-time.After(providerCancellationGrace + providerForceAckWait + 3*time.Second):
+		t.Fatal("provider shell remained blocked on stdin")
+	}
+	_, err = os.Stdin.Stat()
+	require.NoError(t, err)
+	_, err = writer.Stat()
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Dir(marker))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func requirePrivateProviderScript(t *testing.T, marker, command string) {
+	t.Helper()
+	require.True(t, filepath.IsAbs(marker))
+	script := filepath.Join(filepath.Dir(marker), "script")
+	info, err := os.Stat(script)
+	require.NoError(t, err)
+	if runtime.GOOS != testWindowsOS {
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+	root, err := os.OpenRoot(filepath.Dir(marker))
+	require.NoError(t, err)
+	contents, readErr := root.ReadFile("script")
+	closeErr := root.Close()
+	require.NoError(t, readErr)
+	require.NoError(t, closeErr)
+	require.Equal(t, command, string(contents))
+}
+
+func TestProviderCancellationMissingForceAck(t *testing.T) {
+	dir := t.TempDir()
+	completed := make(chan error, 1)
+	cancelled := make(chan struct{})
+	process := providerExecution{
+		cancel: func(error) {
+			close(cancelled)
+			completed <- nil
+		},
+		completed: completed,
+		shell: &providerShellInvocation{
+			force:    filepath.Join(dir, "force"),
+			ack:      filepath.Join(dir, "ack"),
+			ackToken: strings.Repeat("a", 64),
+		},
+	}
+	start := time.Now()
+	err := forceProviderExecution(context.Canceled, process)
+	require.ErrorContains(t, err, "provider force acknowledgement timed out")
+	require.GreaterOrEqual(t, time.Since(start), providerForceAckWait)
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("provider helper was not terminated")
+	}
+	info, err := os.Stat(process.shell.force)
+	require.NoError(t, err)
+	require.True(t, info.Mode().IsRegular())
+}
+
+func TestProviderCancellationEarlyExitWithoutForceAck(t *testing.T) {
+	dir := t.TempDir()
+	force := filepath.Join(dir, "force")
+	require.NoError(t, publishProviderMarker(force))
+	completed := make(chan error, 1)
+	completed <- errors.New("helper exited")
+	process := providerExecution{
+		cancel:    func(error) { t.Fatal("exited helper must not be terminated again") },
+		completed: completed,
+		shell: &providerShellInvocation{
+			force:    force,
+			ack:      filepath.Join(dir, "ack"),
+			ackToken: strings.Repeat("a", 64),
+		},
+	}
+	err := errors.Join(context.Canceled, waitForProviderForceAck(context.Canceled, process))
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "provider helper exited without authentic acknowledgement")
+	require.NotContains(t, err.Error(), dir)
+}
+
+func TestProviderCancellationForgedAckBeforeHelperExit(t *testing.T) {
+	dir := t.TempDir()
+	token := strings.Repeat("a", 64)
+	ack := filepath.Join(dir, "ack")
+	require.NoError(t, os.WriteFile(ack, []byte(strings.Repeat("b", 64)), 0o600))
+	completed := make(chan error, 1)
+	completed <- errors.New("helper died")
+	process := providerExecution{
+		completed: completed,
+		shell: &providerShellInvocation{
+			force:    filepath.Join(dir, "force"),
+			ack:      ack,
+			ackToken: token,
+		},
+	}
+	err := waitForProviderGrace(context.Canceled, process)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "without authentic acknowledgement")
+	require.NotContains(t, err.Error(), token)
+	require.NotContains(t, err.Error(), dir)
+}
+
+func TestProviderCancellationForgedAckAfterForce(t *testing.T) {
+	dir := t.TempDir()
+	token := strings.Repeat("a", 64)
+	ack := filepath.Join(dir, "ack")
+	require.NoError(t, os.WriteFile(ack, []byte(strings.Repeat("b", 64)), 0o600))
+	force := filepath.Join(dir, "force")
+	require.NoError(t, publishProviderMarker(force))
+	completed := make(chan error, 1)
+	completed <- errors.New("helper died")
+	process := providerExecution{
+		completed: completed,
+		shell: &providerShellInvocation{
+			force:    force,
+			ack:      ack,
+			ackToken: token,
+		},
+	}
+	err := errors.Join(context.Canceled, waitForProviderForceAck(context.Canceled, process))
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "without authentic acknowledgement")
+	require.NotContains(t, err.Error(), token)
+}
+
+func TestProviderForceAcknowledgedRequiresPrivateExactToken(t *testing.T) {
+	dir := t.TempDir()
+	files := &providerShellInvocation{
+		ack:      filepath.Join(dir, "ack"),
+		ackToken: strings.Repeat("a", 64),
+	}
+	for _, content := range []string{"", strings.Repeat("b", 64), strings.Repeat("a", 63), strings.Repeat("a", 65)} {
+		require.NoError(t, os.WriteFile(files.ack, []byte(content), 0o600))
+		acknowledged, err := providerForceAcknowledged(files)
+		require.NoError(t, err)
+		require.False(t, acknowledged)
+	}
+	require.NoError(t, os.WriteFile(files.ack, []byte(files.ackToken), 0o600))
+	acknowledged, err := providerForceAcknowledged(files)
+	require.NoError(t, err)
+	require.True(t, acknowledged)
+	if runtime.GOOS != testWindowsOS {
+		require.NoError(t, os.Chmod(files.ack, 0o400))
+		acknowledged, err = providerForceAcknowledged(files)
+		require.NoError(t, err)
+		require.False(t, acknowledged)
+	}
+	require.NoError(t, os.Remove(files.ack))
+	if err := os.Symlink(filepath.Join(dir, "missing"), files.ack); err == nil {
+		acknowledged, err = providerForceAcknowledged(files)
+		require.NoError(t, err)
+		require.False(t, acknowledged)
 	}
 }
 
@@ -337,6 +658,112 @@ func TestProviderCancellationPrivateEnvironment(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestProviderCancellationAckKeyIsPrivate(t *testing.T) {
+	dir, err := createProviderInvocationDir()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(dir)) })
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	command := fmt.Sprintf("'%s' %s", binary, testCancellationHelperArg)
+	files, err := prepareProviderShell(dir, command)
+	require.NoError(t, err)
+	root, err := os.OpenRoot(dir)
+	require.NoError(t, err)
+	info, statErr := root.Lstat("ack-key")
+	key, readErr := root.ReadFile("ack-key")
+	closeErr := root.Close()
+	require.NoError(t, statErr)
+	require.NoError(t, readErr)
+	require.NoError(t, closeErr)
+	require.True(t, info.Mode().IsRegular())
+	if runtime.GOOS != testWindowsOS {
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+	require.Regexp(t, `^[0-9a-f]{64}$`, string(key))
+	require.Equal(t, files.ackToken, string(key))
+	var stdout bytes.Buffer
+	opts := RunCommandOptions{
+		Command: types.StrArray{command},
+		Environ: providerCancellationEnvironment(
+			[]string{"DEVSY_CANCEL_HELPER=1", "DEVSY_CANCEL_BEHAVIOR=ack-private"},
+			filepath.Join(dir, "cancel"),
+		),
+		providerShell: files,
+	}
+	require.NoError(t, runSupervisedProviderShell(context.Background(), opts, &stdout, io.Discard))
+	require.NotContains(t, stdout.String(), files.ackToken)
+	require.NotContains(t, stdout.String(), "DEVSY_PROVIDER_SHELL_ACK=")
+	_, err = os.Lstat(filepath.Join(dir, "ack-key"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestProviderCancellationAckKeyWriteFailure(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "ack-key"), 0o700))
+	_, err := prepareProviderShell(dir, "printf should-not-run")
+	require.ErrorContains(t, err, "write provider acknowledgement key")
+	require.NotContains(t, err.Error(), dir)
+}
+
+func TestProviderCancellationShellCannotForgeAck(t *testing.T) {
+	if runtime.GOOS == testWindowsOS {
+		t.Skip("requires POSIX path expansion")
+	}
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	forged := strings.Repeat("b", 64)
+	command := fmt.Sprintf(
+		"printf '%%s' '%s' > \"${DEVSY_PROVIDER_CANCEL_FILE%%/*}/ack\"; "+
+			"DEVSY_CANCEL_HELPER=1 DEVSY_CANCEL_BEHAVIOR=ignore '%s' -test.run=^TestProviderCancellationHelper$",
+		forged,
+		binary,
+	)
+	pidPath := filepath.Join(t.TempDir(), "child-pid")
+	opts := RunCommandOptions{
+		Command:      types.StrArray{command},
+		Environ:      append(os.Environ(), "DEVSY_CANCEL_CHILD_PID_PATH="+pidPath),
+		Cancellation: provider.ProviderCancellationFile,
+		RawStdout:    true,
+	}
+	ready := make(chan struct{})
+	opts.Stdout = &readyWriter{ready: ready}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() { finished <- RunCommand(ctx, opts) }()
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("provider direct child did not start")
+	}
+	start := time.Now()
+	cancel()
+	select {
+	case err := <-finished:
+		require.ErrorIs(t, err, context.Canceled)
+		require.GreaterOrEqual(t, time.Since(start), providerCancellationGrace)
+		require.NotContains(t, err.Error(), command)
+		require.NotContains(t, err.Error(), forged)
+		if err.Error() != context.Canceled.Error() {
+			require.ErrorContains(t, err, "acknowledgement")
+		} else {
+			root, openErr := os.OpenRoot(filepath.Dir(pidPath))
+			require.NoError(t, openErr)
+			data, readErr := root.ReadFile("child-pid")
+			closeErr := root.Close()
+			require.NoError(t, readErr)
+			require.NoError(t, closeErr)
+			pid, parseErr := strconv.Atoi(string(data))
+			require.NoError(t, parseErr)
+			child, findErr := os.FindProcess(pid)
+			require.NoError(t, findErr)
+			require.Error(t, child.Signal(syscall.Signal(0)))
+		}
+	case <-time.After(providerCancellationGrace + providerForceAckWait + 3*time.Second):
+		t.Fatal("provider helper did not reap its direct child or report unclean shutdown")
+	}
+}
+
 func TestProviderCancellationNilEnvironmentInheritsHost(t *testing.T) {
 	t.Setenv("DEVSY_CANCEL_HELPER", "1")
 	t.Setenv("DEVSY_CANCEL_BEHAVIOR", "inherited")
@@ -345,7 +772,7 @@ func TestProviderCancellationNilEnvironmentInheritsHost(t *testing.T) {
 	require.NoError(t, err)
 	var stdout bytes.Buffer
 	require.NoError(t, RunCommand(context.Background(), RunCommandOptions{
-		Command:      types.StrArray{binary, "-test.run=^TestProviderCancellationHelper$"},
+		Command:      types.StrArray{binary, testCancellationHelperArg},
 		Cancellation: provider.ProviderCancellationFile,
 		Stdout:       &stdout,
 	}))
@@ -408,6 +835,163 @@ func TestProviderCancellationRawBytesAndStderrRedaction(t *testing.T) {
 	require.Contains(t, stderr.String(), "***")
 }
 
+func TestProviderCancellationOwnedInputPreservesShellExitStatus(t *testing.T) {
+	input := io.NopCloser(strings.NewReader(""))
+	err := RunCommand(context.Background(), RunCommandOptions{
+		Command:          types.StrArray{"exit 7"},
+		Environ:          os.Environ(),
+		Stdin:            input,
+		Cancellation:     provider.ProviderCancellationFile,
+		closeInputOnExit: input,
+	})
+	var status interp.ExitStatus
+	require.ErrorAs(t, err, &status)
+	require.Equal(t, 7, int(status))
+}
+
+func TestProviderCancellationOwnedInputSuccessfulExitIgnoresEPIPE(t *testing.T) {
+	input := io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("x"), 2<<20)))
+	err := RunCommand(context.Background(), RunCommandOptions{
+		Command:          types.StrArray{"exit 0"},
+		Environ:          os.Environ(),
+		Stdin:            input,
+		Cancellation:     provider.ProviderCancellationFile,
+		closeInputOnExit: input,
+	})
+	require.NoError(t, err)
+}
+
+func TestProviderCancellationOwnedInputDrainsBinaryOutputAfterEOF(t *testing.T) {
+	if runtime.GOOS == testWindowsOS {
+		t.Skip("requires POSIX shell")
+	}
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	opts := cancelHelperOptions("bulk-after-eof")
+	opts.Command = types.StrArray{
+		fmt.Sprintf("'%s' -test.run=^TestProviderCancellationHelper$", binary),
+	}
+	input := io.NopCloser(strings.NewReader(""))
+	opts.Stdin = input
+	opts.closeInputOnExit = input
+	opts.RawStdout = true
+	var stdout, stderr bytes.Buffer
+	opts.Stdout, opts.Stderr = &stdout, &stderr
+	require.NoError(t, RunCommand(context.Background(), opts))
+
+	block := make([]byte, 32<<10)
+	for i := range block {
+		block[i] = byte(i)
+	}
+	require.Equal(t, 12<<20, stdout.Len())
+	require.True(t, bytes.Equal(bytes.Repeat(block, (12<<20)/len(block)), stdout.Bytes()))
+	require.Equal(t, "separate stderr", stderr.String())
+}
+
+type slowProviderOutputWriter struct {
+	bytes.Buffer
+	once sync.Once
+}
+
+func (w *slowProviderOutputWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { time.Sleep(3 * time.Second) })
+	return w.Buffer.Write(p)
+}
+
+func TestProviderCancellationOwnedInputPreservesSlowOutput(t *testing.T) {
+	input := io.NopCloser(strings.NewReader(""))
+	var output slowProviderOutputWriter
+	err := RunCommand(context.Background(), RunCommandOptions{
+		Command:          types.StrArray{"printf ready"},
+		Environ:          os.Environ(),
+		Stdin:            input,
+		Stdout:           &output,
+		RawStdout:        true,
+		Cancellation:     provider.ProviderCancellationFile,
+		closeInputOnExit: input,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "ready", output.String())
+}
+
+func TestProviderCancellationOwnedOutputStopsAfterForcedCancellation(t *testing.T) {
+	if runtime.GOOS == testWindowsOS {
+		t.Skip("requires POSIX shell")
+	}
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	holderPath := filepath.Join(t.TempDir(), "holder-pid")
+	t.Setenv("DEVSY_CANCEL_HOLDER_PID_PATH", holderPath)
+	t.Cleanup(func() { cleanupTestCancellationOutputHolder(holderPath) })
+	opts := cancelHelperOptions("orphan-output")
+	opts.Command = types.StrArray{
+		fmt.Sprintf("'%s' -test.run=^TestProviderCancellationHelper$", binary),
+	}
+	input := io.NopCloser(strings.NewReader(""))
+	opts.Stdin, opts.closeInputOnExit = input, input
+	opts.RawStdout = true
+	ready := make(chan struct{})
+	opts.Stdout = &readyWriter{ready: ready}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() { finished <- RunCommand(ctx, opts) }()
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("provider output holder did not start")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(providerCancellationGrace + providerForceAckWait + 3*time.Second):
+		t.Fatal("forced provider completion waited for descendant output pipe")
+	}
+}
+
+func TestProviderCancellationOwnedOutputStopsAfterSuccessfulShellExit(t *testing.T) {
+	if runtime.GOOS == testWindowsOS {
+		t.Skip("requires POSIX shell")
+	}
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	holderPath := filepath.Join(t.TempDir(), "holder-pid")
+	t.Setenv("DEVSY_CANCEL_HOLDER_PID_PATH", holderPath)
+	t.Cleanup(func() { cleanupTestCancellationOutputHolder(holderPath) })
+	opts := cancelHelperOptions("orphan-output")
+	opts.Command = types.StrArray{
+		fmt.Sprintf("'%s' -test.run=^TestProviderCancellationHelper$", binary),
+	}
+	input := io.NopCloser(strings.NewReader(""))
+	opts.Stdin, opts.closeInputOnExit = input, input
+	opts.RawStdout = true
+	start := time.Now()
+	err = RunCommand(context.Background(), opts)
+	require.ErrorIs(t, err, exec.ErrWaitDelay)
+	require.Less(t, time.Since(start), 5*time.Second)
+}
+
+func cleanupTestCancellationOutputHolder(path string) {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return
+	}
+	data, readErr := root.ReadFile("holder-pid")
+	_ = root.Close()
+	if readErr != nil {
+		return
+	}
+	pid, err := strconv.Atoi(string(data))
+	if err != nil {
+		return
+	}
+	process, err := os.FindProcess(pid)
+	if err == nil {
+		_ = process.Kill()
+	}
+}
+
 func TestMachineCommandTransportCancellationJoinsCallback(t *testing.T) {
 	for _, behavior := range []string{testTransportRead, "transport-write"} {
 		t.Run(behavior, func(t *testing.T) {
@@ -422,7 +1006,7 @@ func TestMachineCommandTransportCancellationJoinsCallback(t *testing.T) {
 				Name: testCancelProvider,
 				Exec: provider.ProviderCommands{
 					Create: types.StrArray{
-						"create",
+						testProviderCreateCommand,
 					},
 					Command:      cancelHelperOptions(behavior).Command,
 					Cancellation: provider.ProviderCancellationFile,
@@ -483,6 +1067,29 @@ func TestWorkspaceCommandCancellationJoinsProviderCleanup(t *testing.T) {
 			}
 			requireTestAcknowledgement(t, ack)
 		})
+	}
+}
+
+func TestWorkspaceTransportCompletesWithoutClosingInput(t *testing.T) {
+	wc := workspaceCancellationTestClient()
+	wc.providerConfig.Exec.Command = types.StrArray{"printf ready"}
+	conn, err := wc.OpenCommandTransport(context.Background(), client.CommandTransportOptions{
+		Command: testOpaqueCommand,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	ready := make([]byte, 5)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	_, err = io.ReadFull(conn, ready)
+	require.NoError(t, err)
+	require.Equal(t, "ready", string(ready))
+	finished := make(chan error, 1)
+	go func() { finished <- conn.Wait() }()
+	select {
+	case err := <-finished:
+		require.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("provider completion waited for caller to close transport input")
 	}
 }
 
