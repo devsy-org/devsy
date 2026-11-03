@@ -500,4 +500,3 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		rootCmd.AddCommand(pro.NewPlatformCmd(globalFlags))
 	}
 }
-
