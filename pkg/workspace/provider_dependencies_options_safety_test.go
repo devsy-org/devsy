@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 
@@ -172,12 +173,12 @@ func providerDependencyPreparedSurveyCases(
 			origin: dependencies.LookupExplicit, availability: providerDependencyTestAvailable,
 		},
 		{
-			name: "missing",
+			name: dependencyMissingAvailability,
 			assignment: map[string]string{
 				binding.option: filepath.Join(root, providerDependencyTestAbsent),
 			},
 			origin:       dependencies.LookupExplicit,
-			availability: "missing",
+			availability: dependencyMissingAvailability,
 		},
 		{name: "explicit-empty", assignment: map[string]string{binding.option: ""}},
 		{name: "env-empty", environment: map[string]string{binding.option: ""}},
@@ -209,10 +210,38 @@ func (s *providerDependencySurveySuite) checkPreparedSurvey(
 		return
 	}
 	s.Equal(test.availability, item.Availability)
+	if test.name == dependencyMissingAvailability {
+		s.checkMissingPreparedCandidates(binding, test, item)
+		return
+	}
 	s.Require().Len(item.Candidates, 1)
 	s.Equal(test.origin, item.Candidates[0].Origin)
 	if strings.Contains(test.name, "chosen") {
-		s.Equal(chosen, item.Candidates[0].LexicalPath)
+		if runtime.GOOS == execTestWindowsOS {
+			s.True(strings.EqualFold(chosen, item.Candidates[0].LexicalPath))
+		} else {
+			s.Equal(chosen, item.Candidates[0].LexicalPath)
+		}
+	}
+}
+
+func (s *providerDependencySurveySuite) checkMissingPreparedCandidates(
+	binding providerDependencyBinding,
+	test providerDependencyPreparedSurveyCase,
+	item dependencies.RequirementSurvey,
+) {
+	s.Require().NotEmpty(item.Candidates)
+	if runtime.GOOS != execTestWindowsOS {
+		s.Require().Len(item.Candidates, 1)
+	}
+	missingPath := test.assignment[binding.option]
+	s.Equal(missingPath, item.Candidates[0].LexicalPath)
+	for index, candidate := range item.Candidates {
+		s.Equal(dependencies.LookupExplicit, candidate.Origin)
+		s.Equal(dependencies.FileMissing, candidate.State)
+		if index > 0 {
+			s.True(strings.HasPrefix(candidate.LexicalPath, missingPath+"."))
+		}
 	}
 }
 

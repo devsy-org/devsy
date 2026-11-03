@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -129,22 +130,58 @@ func (s *providerDependencySurveySuite) TestEmbeddedDriverMappingDriftIsBlocked(
 
 func (s *providerDependencySurveySuite) TestExplicitPathsUseSnapshotCWDAndNeverFallback() {
 	request := s.request(DefaultDockerCommand)
+	relativePath := filepath.Join("tools", DefaultDockerCommand)
 	request.Options[dependencyAdapterOption] = config.OptionValue{
-		Value: filepath.Join("tools", DefaultDockerCommand), UserProvided: true,
+		Value: relativePath, UserProvided: true,
 	}
 	item := s.survey(request).Requirements[0]
 	s.Equal("available", item.Availability)
-	s.Require().Len(item.Candidates, 1)
-	s.Equal(dependencies.LookupExplicit, item.Candidates[0].Origin)
-	s.True(filepath.IsAbs(item.Candidates[0].LexicalPath))
-	request.Options[dependencyAdapterOption] = config.OptionValue{
-		Value: filepath.Join(s.root, "missing-docker"), UserProvided: true,
+	s.Require().NotEmpty(item.Candidates)
+	if runtime.GOOS != execTestWindowsOS {
+		s.Require().Len(item.Candidates, 1)
 	}
-	item = s.survey(request).Requirements[0]
-	s.Equal("missing", item.Availability)
-	for _, candidate := range item.Candidates {
+	absolutePath := filepath.Join(s.root, relativePath)
+	s.Equal(absolutePath, item.Candidates[0].LexicalPath)
+	for index, candidate := range item.Candidates {
+		s.Equal(dependencies.LookupExplicit, candidate.Origin)
+		s.True(filepath.IsAbs(candidate.LexicalPath))
+		if index > 0 {
+			s.True(strings.HasPrefix(candidate.LexicalPath, absolutePath+"."))
+		}
+		if index < len(item.Candidates)-1 {
+			s.Equal(dependencies.FileMissing, candidate.State)
+		} else {
+			s.Equal(dependencies.FileExecutable, candidate.State)
+			executablePath := filepath.Join(s.bin, DefaultDockerCommand)
+			if runtime.GOOS == execTestWindowsOS {
+				executablePath += dependencyTestWindowsSuffix
+				s.True(strings.EqualFold(executablePath, candidate.LexicalPath))
+			} else {
+				s.Equal(executablePath, candidate.LexicalPath)
+			}
+		}
+	}
+}
+
+func (s *providerDependencySurveySuite) TestExplicitPathsNeverFallback() {
+	request := s.request(DefaultDockerCommand)
+	missingPath := filepath.Join(s.root, "missing-docker")
+	request.Options[dependencyAdapterOption] = config.OptionValue{
+		Value: missingPath, UserProvided: true,
+	}
+	item := s.survey(request).Requirements[0]
+	s.Equal(dependencyMissingAvailability, item.Availability)
+	s.Require().NotEmpty(item.Candidates)
+	if runtime.GOOS != execTestWindowsOS {
+		s.Require().Len(item.Candidates, 1)
+	}
+	s.Equal(missingPath, item.Candidates[0].LexicalPath)
+	for index, candidate := range item.Candidates {
+		s.Equal(dependencies.LookupExplicit, candidate.Origin)
 		s.Equal(dependencies.FileMissing, candidate.State)
-		s.NotEqual(filepath.Join(s.bin, DefaultDockerCommand), candidate.LexicalPath)
+		if index > 0 {
+			s.True(strings.HasPrefix(candidate.LexicalPath, missingPath+"."))
+		}
 	}
 }
 

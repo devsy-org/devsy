@@ -23,6 +23,8 @@ const (
 	dependencyAdapterMicrosandbox     = "microsandbox"
 	dependencyAdapterMicrosandboxRepo = "devsy-org/devsy-provider-microsandbox"
 	dependencyAdapterElevation        = "pkexec"
+	dependencyMissingAvailability     = "missing"
+	dependencyTestWindowsSuffix       = ".exe"
 )
 
 type providerDependencySurveySuite struct {
@@ -84,7 +86,7 @@ func (s *providerDependencySurveySuite) TestBuiltInsAndRenamedInstallation() {
 func (s *providerDependencySurveySuite) TestEffectiveOptionIntent() {
 	path := filepath.Join(s.bin, DefaultDockerCommand)
 	if runtime.GOOS == execTestWindowsOS {
-		path += ".exe"
+		path += dependencyTestWindowsSuffix
 	}
 	for _, test := range []struct {
 		name     string
@@ -136,7 +138,11 @@ func (s *providerDependencySurveySuite) TestEffectiveOptionIntent() {
 		}
 		s.Require().Len(item.Candidates, 1, test.name)
 		s.Equal(test.expected, item.Candidates[0].Origin, test.name)
-		s.Equal(path, item.Candidates[0].LexicalPath, test.name)
+		if runtime.GOOS == execTestWindowsOS {
+			s.True(strings.EqualFold(path, item.Candidates[0].LexicalPath), test.name)
+		} else {
+			s.Equal(path, item.Candidates[0].LexicalPath, test.name)
+		}
 	}
 }
 
@@ -169,7 +175,7 @@ func (s *providerDependencySurveySuite) TestNoAmbientPATHOrEndpointValues() {
 
 func (s *providerDependencySurveySuite) executable(name string) string {
 	if runtime.GOOS == execTestWindowsOS {
-		name += ".exe"
+		name += dependencyTestWindowsSuffix
 	}
 	path := filepath.Join(s.bin, name)
 	body := "#!/bin/sh\nprintf executed > '" + filepath.Join(s.root, "executed") + "'\nexit 97\n"
