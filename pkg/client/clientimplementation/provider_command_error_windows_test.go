@@ -11,8 +11,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Combining DETACHED_PROCESS with CREATE_NEW_CONSOLE makes the real CreateProcess
-// call fail with ERROR_INVALID_PARAMETER, the error reported in issue 1638.
 func (s *ProviderCommandErrorTestSuite) TestRealInvalidParameterStartFailureGetsHint() {
 	self, err := os.Executable()
 	s.Require().NoError(err)

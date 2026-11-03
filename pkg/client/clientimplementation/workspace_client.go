@@ -245,12 +245,13 @@ func (s *workspaceClient) Command(ctx context.Context, opt client.CommandOptions
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command:   s.providerConfig.Exec.Command,
-		Environ:   environ,
-		Stdin:     opt.Stdin,
-		Stdout:    opt.Stdout,
-		Stderr:    opt.Stderr,
-		RawStdout: opt.RawStdout,
+		Command:          s.providerConfig.Exec.Command,
+		Environ:          environ,
+		ProviderBinaries: s.providerConfig.Binaries,
+		Stdin:            opt.Stdin,
+		Stdout:           opt.Stdout,
+		Stderr:           opt.Stderr,
+		RawStdout:        opt.RawStdout,
 	})
 }
 
@@ -266,9 +267,10 @@ func (s *workspaceClient) OpenCommandTransport(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return RunCommand(ctx, RunCommandOptions{
-				Command: s.providerConfig.Exec.Command,
-				Environ: environ,
-				Stdin:   stdin, Stdout: stdout, Stderr: opt.Stderr,
+				Command:          s.providerConfig.Exec.Command,
+				Environ:          environ,
+				ProviderBinaries: s.providerConfig.Binaries,
+				Stdin:            stdin, Stdout: stdout, Stderr: opt.Stderr,
 				RawStdout: true,
 			})
 		},
@@ -810,22 +812,41 @@ func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) err
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command:   cfg.Command,
-		Environ:   environ,
-		Stdin:     cfg.Stdin,
-		Stdout:    cfg.Stdout,
-		Stderr:    cfg.Stderr,
-		RawStdout: cfg.RawStdout,
+		Command:          cfg.Command,
+		Environ:          environ,
+		ProviderBinaries: cfg.Config.Binaries,
+		Stdin:            cfg.Stdin,
+		Stdout:           cfg.Stdout,
+		Stderr:           cfg.Stderr,
+		RawStdout:        cfg.RawStdout,
 	})
 }
 
 type RunCommandOptions struct {
-	Command   types.StrArray
-	Environ   []string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
-	RawStdout bool
+	Command          types.StrArray
+	Environ          []string
+	ProviderBinaries map[string][]*provider.ProviderBinary
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Stderr           io.Writer
+	RawStdout        bool
+}
+
+func providerBinaryPaths(
+	environ []string,
+	binaries map[string][]*provider.ProviderBinary,
+) map[string]string {
+	if len(binaries) == 0 {
+		return nil
+	}
+	paths := make(map[string]string, len(binaries))
+	for _, entry := range environ {
+		name, value, ok := strings.Cut(entry, "=")
+		if _, exists := binaries[name]; ok && exists {
+			paths[name] = value
+		}
+	}
+	return paths
 }
 
 func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
@@ -857,11 +878,12 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
 
 	if len(opts.Command) == 1 {
 		if err := shell.RunEmulatedShell(ctx, &shell.CommandRunner{
-			Command: opts.Command[0],
-			Stdin:   opts.Stdin,
-			Stdout:  stdout,
-			Stderr:  stderr,
-			Environ: opts.Environ,
+			Command:         opts.Command[0],
+			Stdin:           opts.Stdin,
+			Stdout:          stdout,
+			Stderr:          stderr,
+			Environ:         opts.Environ,
+			ExecutablePaths: providerBinaryPaths(opts.Environ, opts.ProviderBinaries),
 		}); err != nil {
 			return providerCommandError(opts.Command[0], opts.Environ, err)
 		}

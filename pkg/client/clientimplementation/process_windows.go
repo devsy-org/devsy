@@ -9,8 +9,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// isInvalidProcessParameter reports only process-creation failures, which os/exec wraps as
-// "fork/exec"; the same errno from an output writer after the process started is not one.
 func isInvalidProcessParameter(err error) bool {
 	var pathErr *fs.PathError
 	return errors.As(err, &pathErr) &&
