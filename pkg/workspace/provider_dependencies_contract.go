@@ -109,7 +109,7 @@ func (b providerDependencyBinding) matchesEmbedded(manifest provider.ProviderCon
 }
 
 func sameProviderDependencyManifest(left, right provider.ProviderConfig) (bool, error) {
-	// Compare the full typed, unexpanded manifest. Only installation name and provenance may differ.
+	left.IconRevision, right.IconRevision = "", ""
 	left.Name, right.Name = "", ""
 	left.Source, right.Source = provider.ProviderSource{}, provider.ProviderSource{}
 	leftJSON, leftErr := json.Marshal(left)

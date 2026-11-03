@@ -128,6 +128,58 @@ func (s *providerDependencySurveySuite) TestEmbeddedDriverMappingDriftIsBlocked(
 	}
 }
 
+func (s *providerDependencySurveySuite) TestInstalledBuiltInsWithGeneratedIconsRemainInspectable() {
+	setupTestPathManager(s.T())
+	s.T().Setenv(config.EnvHome, filepath.Join(s.root, "installed-home"))
+	config.ResetPathManager()
+	initial := &config.Config{
+		DefaultContext: testDefaultContext,
+		Contexts:       map[string]*config.ContextConfig{testDefaultContext: {}},
+	}
+	s.Require().NoError(config.SaveConfig(initial))
+	icons := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		_, _ = w.Write([]byte(svgFill(iconRed)))
+	}))
+	defer icons.Close()
+	for _, test := range []struct {
+		source   string
+		embedded *string
+	}{
+		{DefaultDockerCommand, &providers.DockerProvider},
+		{providerDependencyPodman, &providers.PodmanProvider},
+		{providerDependencyApple, &providers.AppleProvider},
+		{providerDependencyKubernetes, &providers.KubernetesProvider},
+	} {
+		s.Run(test.source, func() {
+			canonical := s.request(test.source).Provider
+			canonical.Source = provider.ProviderSource{}
+			canonical.Icon = icons.URL + "/icon.svg"
+			if canonical.IconDark != "" {
+				canonical.IconDark = canonical.Icon
+			}
+			raw, err := json.Marshal(canonical)
+			s.Require().NoError(err)
+			original := *test.embedded
+			*test.embedded = string(raw)
+			s.T().Cleanup(func() { *test.embedded = original })
+			name := "installed-" + test.source
+			installed, err := AddProvider(context.Background(), initial, name, test.source)
+			s.Require().NoError(err)
+			s.Require().NotEmpty(installed.IconRevision)
+			saved, err := provider.LoadProviderConfig(testDefaultContext, name)
+			s.Require().NoError(err)
+			s.Equal(installed.IconRevision, saved.IconRevision)
+			request := s.request(test.source)
+			request.Provider = *saved
+			request.Target.ProviderName = name
+			result := s.survey(request)
+			s.True(result.ContractVerified)
+			s.Equal(test.source, result.BindingID)
+		})
+	}
+}
+
 func (s *providerDependencySurveySuite) TestExplicitPathsUseSnapshotCWDAndNeverFallback() {
 	request := s.request(DefaultDockerCommand)
 	relativePath := filepath.Join("tools", DefaultDockerCommand)
