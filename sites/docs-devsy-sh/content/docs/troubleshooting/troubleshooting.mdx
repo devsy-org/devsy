@@ -3,7 +3,7 @@ title: Troubleshooting
 sidebar_label: Troubleshooting
 ---
 
-Known issues and workarounds. For Linux-specific problems, see [Linux troubleshooting](./linux-troubleshooting.mdx).
+Known issues and workarounds. For Linux problems, see [Linux troubleshooting](./linux-troubleshooting.mdx).
 
 ### Utilities not found in PATH
 
@@ -40,14 +40,14 @@ Pass `--log-output json` to get errors as JSON with a stable `code` and a `messa
 | `secret_backend_unavailable` | The secrets backend could not be reached. |
 | `secret_store_corrupt` | The secrets store could not be read. |
 | `secret_not_found` | The requested secret does not exist. |
-| `PANIC` | Devsy hit an internal error. Please report it. |
+| `PANIC` | Devsy hit an internal error. Report it. |
 | `UNKNOWN` | The error was not classified. The original text is in `message`. |
 
 Run with `--debug` to see the full error chain.
 
 ### Find the right log
 
-Devsy keeps four kinds of logs. Pick by the question you have.
+Devsy keeps four kinds of logs. Pick one by the question you have.
 
 | Question | Source | Command |
 | --- | --- | --- |
@@ -56,7 +56,7 @@ Devsy keeps four kinds of logs. Pick by the question you have.
 | What state changes did the workspace go through? | Status events | `devsy workspace events` |
 | What did a background task print? | Task logs | `devsy workspace task logs` |
 
-Reading logs never reruns lifecycle commands. It never starts, unpauses, rebuilds or installs anything, and it does not need a running workspace to show history that is already stored locally.
+Reading logs never reruns lifecycle commands or starts, unpauses, rebuilds or installs anything. Stored history shows without a running workspace.
 
 ### Read setup history
 
@@ -72,7 +72,7 @@ Read the latest run, including output of hooks that succeeded:
 devsy workspace logs my-workspace --source setup --result-format=plain
 ```
 
-Read one hook in one run. `RUN_ID` is the run UUID from `--list` or from the result of the command that created the run. It is not the workspace name or an `op-N` ID:
+Read one hook in one run. `RUN_ID` is the run UUID from `--list` or from the command that created the run. It is not the workspace name or an `op-N` ID:
 
 ```sh
 devsy workspace logs my-workspace --source setup --run RUN_ID \
@@ -97,47 +97,27 @@ Read a run after a failed creation or CI cleanup removed the workspace. Without 
 devsy workspace logs --source setup --run RUN_ID --context CONTEXT
 ```
 
-Page through long output with `--limit` and `--after`. The default is 500 output records per page and the maximum is 2000. For `--list` the default is 20 runs and the maximum is 100. `--after` takes the opaque cursor from the previous page and must be used with the same selectors:
+Page through long output with `--limit` and `--after`. The default is 500 output records per page and the maximum is 2000. With `--list`, the default is 20 runs and the maximum is 100. `--after` takes the cursor from the previous page, with the same selectors:
 
 ```sh
 devsy workspace logs my-workspace --source setup --run RUN_ID --limit 200 --after CURSOR
 ```
 
-Use `--result-format=json` for a machine-readable response. Each invocation prints one bounded JSON response. With `--follow` it prints one JSON response per line.
+Use `--result-format=json` for machine-readable output. Each invocation prints one JSON response, and with `--follow` one response per line.
 
-A hook that failed in the past is still a successful read, so the command exits zero and returns the hook's exit status as data. Invalid selectors and cursors, and unreadable local storage, are command errors. See [Setup history](./setup-history.mdx) for limits, redaction and when history is unavailable.
+A failed hook is still a successful read. The command exits zero and returns the hook's exit status in the output. Invalid selectors, invalid cursors and unreadable local storage are command errors. See [Setup history](./setup-history.mdx) for limits, redaction and when history is unavailable.
 
 ### Hide live progress while keeping diagnostics
 
-Pass `--no-status` to hide Devsy's live progress messages. Diagnostics still
-follow `--quiet`, `--log-level`, and diagnostic format settings, and a command's
-stdout and stderr remain on their original streams. Existing event and task
-recording also continues when available. Hiding progress does not disable
-capture or history. The flag cannot recover lifecycle output that was not
-retained when the command ran. `--quiet` also leaves capture on, and setup
-history stays readable with both flags.
+Pass `--no-status` to hide live progress messages. Diagnostics still follow `--quiet`, `--log-level` and the diagnostic format settings. A command's stdout and stderr stay on their original streams, and event and task recording continue. The flag does not turn off capture or history. `--quiet` also leaves capture on, and setup history stays readable with both flags.
 
-### VS Code-family editor launch diagnostics
+### VS Code editor launch diagnostics
 
-For VS Code, VSCodium, and related editors, a failed CLI launch records the
-`flavor`, `operation`, `route`, failed `stage`, and failure `class` (for example,
-`exit status 1` or `permission denied`). A successful URI-handler fallback
-does not erase that CLI warning. With `--debug`, the logs also record executable
-resolution, extension enumeration/installation, and dispatch stages. Use the
-same `operation` value to correlate these records within the workspace task's
-logs; it comes from the active IDE-launch status operation.
+For VS Code, VSCodium and related editors, a failed CLI launch records the `flavor`, `operation`, `route`, failed `stage` and failure `class`, such as `exit status 1` or `permission denied`. A successful URI-handler fallback does not erase that CLI warning. With `--debug`, the logs also record executable resolution, extension enumeration and installation, and dispatch stages. Use the `operation` value to match records in the workspace task's logs.
 
-Executable paths, command arguments, folder URIs, editor output, and underlying
-error text are deliberately omitted from these diagnostics because they may
-contain private paths, host names, or credentials that cannot be reliably
-redacted. Failure classes and stage names remain available; callers can inspect
-the original errors programmatically. The resolved file's `cli_kind` identifies
-an executable or batch-wrapper filename, not proof that a Windows wrapper ran.
+Diagnostics omit executable paths, command arguments, folder URIs, editor output and error text, because these can contain private paths, host names or credentials. Failure classes and stage names remain. The `cli_kind` value names an executable or batch wrapper. It does not show that a Windows wrapper ran.
 
-"Launch request dispatched" means the editor CLI or OS URI handler accepted the
-request. It does not prove that the editor stayed running or connected over SSH.
-If the editor closes or does not connect, collect its own logs separately and
-review them for private data before sharing.
+A dispatched launch request means the editor CLI or OS URI handler accepted it. Devsy does not track whether the editor stayed running or connected over SSH. If the editor closes or does not connect, collect its own logs and check them for private data before you share them.
 
 ### Windows: `line 2: $'\r': command not found`
 

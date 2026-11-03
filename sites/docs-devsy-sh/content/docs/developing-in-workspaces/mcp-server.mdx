@@ -3,13 +3,13 @@ title: Agent Control via MCP
 sidebar_label: Agent Control (MCP)
 ---
 
-`devsy mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. AI clients that support MCP can use it to list, create, and run commands in workspaces.
+`devsy mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. MCP clients can use it to list, create, and run commands in workspaces.
 
 ```sh
 devsy mcp serve
 ```
 
-Configure your MCP client to launch that command. The exact config format depends on the client. A typical shape:
+Configure your MCP client to run that command. The config format depends on the client. Example:
 
 ```json
 {
@@ -40,18 +40,18 @@ Configure your MCP client to launch that command. The exact config format depend
 
 To check whether a workspace is running, use `devsy workspace status <name> --result-format json`.
 
-`workspace_exec` is limited by flags on `devsy mcp serve`: `--exec-timeout-default` (5m), `--exec-timeout-max` (30m), and `--exec-output-cap` (100 KiB per stream). `--mcp-max-concurrent-ops` (8) limits concurrent exec, create, and start calls.
+These flags on `devsy mcp serve` limit `workspace_exec`: `--exec-timeout-default` (5m), `--exec-timeout-max` (30m), and `--exec-output-cap` (100 KiB per stream). `--mcp-max-concurrent-ops` (8) limits concurrent exec, create, and start calls.
 
 ## Agent skill
 
-Devsy also publishes an agent skill that teaches an agent how to pick workspaces and providers, run commands, and recover from timeouts. It is separate from the MCP server, so install Devsy and configure MCP on their own. Installing the skill needs Node.js for `npx`.
+Devsy also publishes an agent skill that teaches an agent to pick workspaces and providers, run commands, and recover from timeouts. Install it separately from Devsy and the MCP configuration. It needs Node.js for `npx`.
 
 ```sh
 npx skills add devsy-org/devsy --skill devsy
 ```
 
-Add `-g` to install it for all projects, or `--agent` to target one agent.
+Add `-g` to install it for all projects. Add `--agent` to pick one agent.
 
 ## Security
 
-The MCP server has the same authority as your local Devsy CLI. A connected client can create and delete workspaces, run any command in them, and add or remove providers. Only use it with clients you trust.
+The MCP server has the same authority as your local Devsy CLI. A connected client can create and delete workspaces, run any command in them, and add or remove providers. Connect only clients you trust.

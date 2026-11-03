@@ -13,27 +13,27 @@ When you start a workspace from a local folder and `devcontainer.json` sets `rem
 sudo chown -R $(id -un):$(id -gn) .
 ```
 
-Local folders suit early work. Once the devcontainer works, push it to a Git repository and use that instead.
+Use a local folder for early work. After the devcontainer works, push it to a Git repository and use that instead.
 
 ### SSH host login shells
 
-The SSH provider supports Bash, Zsh, and Fish login shells on Linux. Agent installation runs through the host's executable `/bin/sh`; interactive terminals and environment probing continue to use the account's configured shell. The workspace container's shell is configured separately.
+The SSH provider supports Bash, Zsh and Fish login shells on Linux. Devsy installs the agent through the host's executable `/bin/sh`. Interactive terminals and environment probing use the account's configured shell. The workspace container's shell is configured separately.
 
-Dockerless containers are a separate bootstrap case: before their image filesystem is built, core can use the fixed `/.dockerless/bin/sh` bundle when `DOCKERLESS=true`, `/bin/sh` is not executable, and that bundled shell is executable. `/bin/sh` remains preferred when available. This does not change the SSH host prerequisite above.
+In Dockerless containers, Devsy installs the agent before the image filesystem exists. When `DOCKERLESS=true` and `/bin/sh` is not executable, Devsy uses the bundled `/.dockerless/bin/sh` if it is executable. `/bin/sh` is preferred when it exists. The SSH host still needs `/bin/sh`.
 
-The host needs standard bootstrap tools, including `mkdir`, `mktemp`, `head` with `-c`, `wc`, `chmod`, `mv`, and `rm`. A download uses `curl` or `wget`; when neither is available, Devsy can transfer the agent over the SSH connection. The agent directory must permit execution and either be writable by the account or allow noninteractive privilege escalation.
+The host needs standard bootstrap tools, including `mkdir`, `mktemp`, `head` with `-c`, `wc`, `chmod`, `mv` and `rm`. A download uses `curl` or `wget`. When neither is available, Devsy transfers the agent over the SSH connection. The agent directory must permit execution and either be writable by the account or allow noninteractive privilege escalation.
 
-Both the external OpenSSH client and the built-in SSH transport use the same bootstrap launcher; switching transports does not repair a missing `/bin/sh` or a restricted account.
+The external OpenSSH client and the built-in SSH transport use the same bootstrap launcher. Switching transports does not fix a missing `/bin/sh` or a restricted account.
 
-For locked-down accounts, ask the administrator to permit `/bin/sh` and the required tools, provide a writable executable agent directory, and check forced-command restrictions. Keep noninteractive shell startup output off stdout: it carries the bootstrap protocol and the live SSH tunnel. Send diagnostics to stderr and limit banners and prompts to interactive sessions.
+For locked-down accounts, ask the administrator to permit `/bin/sh` and the required tools, provide a writable executable agent directory, and check forced-command restrictions. Keep noninteractive shell startup output off stdout, because stdout carries the bootstrap protocol and the live SSH tunnel. Send diagnostics to stderr and limit banners and prompts to interactive sessions.
 
 ### VS Code SSH connection timeout
 
-If Remote - SSH reports `Connection timed out during banner exchange`, a slow provider connection can exceed its default timeout. Increase `remote.SSH.connectTimeout` in VS Code user settings, for example to `60` seconds, and reconnect. This applies to all Remote - SSH hosts.
+If Remote - SSH reports `Connection timed out during banner exchange`, a slow provider connection can exceed the default timeout. Increase `remote.SSH.connectTimeout` in VS Code user settings, for example to `60` seconds, and reconnect. The setting applies to all Remote - SSH hosts.
 
 ### Workspace waits for the Devsy agent
 
-If container logs repeatedly report `waiting for devsy agent to be available`, check whether the container's `DEVSY_AGENT_PATH` exists and whether its agent volume is mounted. A container created without the agent mount must be recreated after updating Devsy; restarting it cannot change its mounts.
+If container logs repeatedly report `waiting for devsy agent to be available`, check whether the container's `DEVSY_AGENT_PATH` exists and whether its agent volume is mounted. A container created without the agent mount must be recreated after you update Devsy. Restarting it cannot change its mounts.
 
 If a configured mount uses `/opt/devsy` or a path inside it, Devsy preserves that mount and installs the agent after the container starts. Docker mount flags in `runArgs` also use post-start installation.
 
@@ -66,23 +66,23 @@ With SELinux, a mounted volume can fail with "Permission denied" even when owner
 
 ### Generic application icon on GNOME
 
-GNOME on Wayland associates a running application with an installed desktop entry. Devsy uses the desktop filename `sh.devsy.app.desktop` and window identity `sh.devsy.app`. Flatpak exports a theme icon named `sh.devsy.app`; electron-builder's DEB/RPM packages retain the icon name `devsy-desktop`. The icon name must match the package's desktop entry, not necessarily its application ID.
+GNOME on Wayland links a running app to its installed desktop entry. Devsy uses the desktop file name `sh.devsy.app.desktop` and the window identity `sh.devsy.app`. The Flatpak package exports a theme icon named `sh.devsy.app`. The DEB and RPM packages use the icon name `devsy-desktop`. The icon name must match the package's desktop entry.
 
-Directly executing an AppImage does not install its embedded desktop entry. Choose **Add to applications** in the first-launch prompt, or open **Settings > Applications menu**. Devsy writes `$XDG_DATA_HOME/applications/sh.devsy.app.desktop` and copies the 128-pixel icon to `$XDG_DATA_HOME/icons/hicolor/128x128/apps/sh.devsy.app.png` (default data home: `~/.local/share`). The launcher uses the permanent AppImage path, never its temporary mount.
+Running an AppImage directly does not install its desktop entry. Choose **Add to applications** in the first-launch prompt, or open **Settings > Applications menu**. Devsy writes `$XDG_DATA_HOME/applications/sh.devsy.app.desktop` and copies the 128-pixel icon to `$XDG_DATA_HOME/icons/hicolor/128x128/apps/sh.devsy.app.png` (default data home: `~/.local/share`). The launcher uses the permanent AppImage path, not its temporary mount.
 
-Declining leaves the AppImage usable, but a generic or ungrouped GNOME Wayland icon can remain until desktop integration is installed. If a third-party integrator already manages this AppImage, keep using that integration; Devsy reports the existing launcher rather than creating a duplicate. An existing system or Flatpak Devsy launcher also blocks installation. Remove the conflicting installation or manage its launcher yourself before retrying.
+If you decline, the AppImage still works, but GNOME Wayland can show a generic icon. Devsy does not create a launcher when a third-party integrator already manages the AppImage, or when a system or Flatpak Devsy launcher exists. Remove the conflicting installation or manage its launcher yourself, then retry.
 
-If you move the AppImage, launch it once from its new path to update Devsy's owned launcher automatically. Settings also offers **Update launcher** and **Remove**. Paths containing `=` cannot be represented in a desktop launcher; move the AppImage to another path. Read-only data directories and other integration failures are reported without preventing normal Devsy use.
+If you move the AppImage, launch it once from the new path to update the launcher. Settings also offers **Update launcher** and **Remove**. A path containing `=` cannot be used in a desktop launcher, so move the AppImage elsewhere.
 
-If you edit a launcher created by Devsy, Devsy leaves the entire edited file unchanged, including during updates or removal. Settings reports the conflict; manage that launcher manually or move it aside before using **Add to applications** again. A customized, shared or pre-existing icon is preserved when repairing or re-adding a launcher and is not claimed for later deletion.
+If you edit a launcher that Devsy created, Devsy leaves the file unchanged, including during updates and removal, and Settings reports the conflict. Manage that launcher yourself, or move it aside, before you use **Add to applications** again. Devsy never deletes a customized, shared or existing icon.
 
-For manual integration, both the desktop entry and a persistent icon file must be installed. Do not reference an icon inside `/tmp/.mount_*`: it disappears when the AppImage exits. Use the package-specific icon name described above, or copy an icon to the user's icon-theme directory and reference that name. Refreshing the icon cache alone cannot repair a missing desktop entry or asset.
+For manual setup, install both the desktop entry and a persistent icon file. Do not reference an icon in `/tmp/.mount_*`, which disappears when the AppImage exits. Use the package icon name above, or copy an icon to the user's icon-theme directory and reference that name.
 
-After upgrading from v1.24.0, an old pinned launcher may still reference a previous desktop filename. Unpin that launcher and pin Devsy again. Check the applications directories for older `devsy-desktop.desktop` entries before creating another launcher; do not delete entries owned by another package.
+After you upgrade from v1.24.0, an old pinned launcher can still reference a previous desktop file name. Unpin that launcher and pin Devsy again. Check the applications directories for older `devsy-desktop.desktop` entries before you create another launcher, and do not delete entries owned by another package.
 
 ### `ENAMETOOLONG` when opening a workspace in VS Code
 
-Some distributions have a very long `PATH`, which makes the SSH connection string too long. Set the SSH binary explicitly in VS Code. See [issue #1045](https://github.com/devsy-org/devsy/issues/1045).
+On some distributions the `PATH` is long enough to make the SSH connection string too long. Set the SSH binary explicitly in VS Code. See [issue #1045](https://github.com/devsy-org/devsy/issues/1045).
 
 ### Docker permission denied or daemon unreachable
 

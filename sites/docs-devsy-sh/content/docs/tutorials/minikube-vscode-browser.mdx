@@ -9,7 +9,7 @@ import VirtualboxUbuntu2204 from '../fragments/virtualbox-ubuntu-22.04.mdx'
 
 ## Purpose
 
-The purpose of this quickstart is to provide a small scale representation of on-premise Kubernetes and guide a new user through the configuration of a Kubernetes provider.
+This quickstart sets up a small Kubernetes cluster that stands in for an on-premise one, then configures a Kubernetes provider.
 
 <SetupVirtualbox />
 
@@ -17,7 +17,7 @@ The purpose of this quickstart is to provide a small scale representation of on-
 
 ## Install Minikube on Ubuntu 22.04
 
-Install dependencies for installing minikube and vscode
+Install the packages for Minikube and VS Code:
 ```sh
 sudo apt update
 sudo apt install git vim gpg wget -y
@@ -25,11 +25,11 @@ sudo apt install git vim gpg wget -y
 
 ### Install VSCODE
 
-Follow instructions from VSCODE Docs > [Linux Setup](https://code.visualstudio.com/docs/setup/linux)
+Follow the [VS Code Linux setup guide](https://code.visualstudio.com/docs/setup/linux).
 
 ### Install Minikube
 
-Clone Sander van Vugt's Ubuntu CKAD repository for his CKAD course [Certified Kubernetes Application Developer (CKAD), 2nd Edition, 4.3 Installing Minikube on Ubuntu. O'Reilly Course](https://learning.oreilly.com/videos/certified-kubernetes-application/9780137841509/9780137841509-CKAD_01_04_03/)
+Clone Sander van Vugt's CKAD repository from the [Installing Minikube on Ubuntu](https://learning.oreilly.com/videos/certified-kubernetes-application/9780137841509/9780137841509-CKAD_01_04_03/) lesson:
 
 ```sh
 git clone https://github.com/sandervanvugt/ckad.git
@@ -53,22 +53,22 @@ Add the following contents to minikube-start.sh:
 minikube start --driver=docker --cni=calico
 ```
 
-Now to start minikube from home:
+Start Minikube from your home directory:
 
 ```sh
 ~/minikube-start.sh
 ```
 
-Start minikube again after every VM shutdown or reboot.
+Run the script again after each VM shutdown or reboot.
 
 #### Test your install
 
-Test your install with the following command
+Check the install:
 ```sh
 kubectl get all
 ```
 
-Example Result:
+Expected output:
 ```sh
 kubectl get all
 NAME                 TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
@@ -77,9 +77,7 @@ service/kubernetes   ClusterIP   10.96.0.1        <none>        443/TCP   4d14h
 
 ## Install Devsy
 
-Install Devsy from the Linux DEB package, as described in [Install Devsy](../getting-started/install.mdx).
-
-Download and install the DEB package:
+Download and install the Linux DEB package, as described in [Install Devsy](../getting-started/install.mdx):
 
 ```sh
 cd ~/
@@ -97,11 +95,11 @@ devsy
 
 ## Configure Minikube for the provider
 
-Before configuring the kubernetes provider we need to create a persistent volume for the devcontainer and ensure we have a kubeconfig for the provider.
+Before you configure the Kubernetes provider, create a persistent volume for the devcontainer and find a kubeconfig.
 
-### Create Kubernetes Persistent Volume for devcontainers
+### Create a Kubernetes persistent volume for devcontainers
 
-Kubernetes persistent volume [docs](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
+See the [Kubernetes persistent volume docs](https://kubernetes.io/docs/concepts/storage/persistent-volumes/).
 
 ```
 mkdir ~/devsys
@@ -110,7 +108,7 @@ touch devsy-pv.yml
 vim devsy-pv.yml # or your preferred text editor
 ```
 
-Edit devsy-pv.yml and save
+Edit `devsy-pv.yml` and save it:
 ```yaml
 kind: PersistentVolume
 apiVersion: v1
@@ -127,19 +125,19 @@ spec:
     path: "/mnt/data/devsy"
 ```
 
-A `hostPath` volume must exist inside the Minikube node itself (the VM or container that runs Kubernetes), not on your tutorial host machine. Create the directory inside the node using `minikube ssh`:
+The `hostPath` directory must exist inside the Minikube node, not on your host machine. Create it with `minikube ssh`:
 
 ```sh
 minikube ssh -- sudo mkdir -p /mnt/data/devsy
 ```
 
-Create the persistent volume for the Kubernetes Provider.
+Create the persistent volume:
 
 ```sh
 kubectl create -f ~/devsys/devsy-pv.yml
 ```
 
-Confirm the persistent volume has been created.
+Confirm that the volume exists:
 
 ```sh
 kubectl get pv
@@ -149,27 +147,24 @@ devsy-pv                                  1Gi        RWO            Retain      
 
 ### Locate your kubeconfig
 
-List `~/.kube`
+List the `~/.kube` directory:
 
 ```sh
 ls ~/.kube
 cache  completion.bash.inc  config
 ```
 
-The `config` file in `~/.kube` is the kubeconfig that can be used by Devsy kubernetes provider.
-
-In the Kubernetes provider, the kubeconfig path is
+The `config` file in `~/.kube` is the kubeconfig for the Kubernetes provider. Set the kubeconfig path in the provider to:
 
 ```
 /home/dev/.kube/config
 ```
 
-**Note**
-This is a simplification for a production setup where a kubeconfig should be provided for a kubernetes context, namespace and users. You will also need kubectl installed where your Devsy client is running from. The kubernetes provider uses the underlying kubectl providing the locally stored kubeconfig to access a remote cluster. This setup requires kubernetes administration support.
+In production, give the kubeconfig a specific context, namespace, and user. Install kubectl on the machine where the Devsy client runs, because the Kubernetes provider runs kubectl with the local kubeconfig to reach a remote cluster.
 
 ### Identify your namespaces
 
-The kubernetes provider requires a namespace and this example will use the 'default' namespace
+The Kubernetes provider needs a namespace. This example uses `default`.
 
 ```sh
 kubectl get ns
@@ -182,7 +177,7 @@ kube-system       Active   12d
 
 ## Add Provider
 
-Add a provider via 'Providers' > '+ Add'. Select the kubernetes provider.
+Go to **Providers** > **+ Add** and select the Kubernetes provider.
 
 <figure>
   <img src="/docs/media/add-provider-1.png" alt="Devsy Flow" />
@@ -202,10 +197,10 @@ Select **Add Provider**
 
 ### Add a Workspace
 
-#### Start a Workspace with VS Code Browser
+#### Start a workspace with VS Code Browser
 
-Navigate to 'Workspaces' > '+ Create'. Enter your project url or choose one of the quickstart examples. Make sure to select 'VS Code Browser' under 'Default IDE'
+Go to **Workspaces** > **+ Create**. Enter your project URL or pick one of the quickstart examples. Under **Default IDE**, select **VS Code Browser**.
 
-Then press 'Create Workspace'.
+Click **Create Workspace**.
 
-A new window appears showing Devsy starting the workspace. After the workspace was created, VS Code should open automatically connected to the DevContainer.
+Devsy shows the workspace starting in a new window. When the workspace is ready, VS Code opens connected to the devcontainer.

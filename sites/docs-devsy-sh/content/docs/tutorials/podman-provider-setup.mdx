@@ -3,9 +3,7 @@ title: Podman Provider Setup
 sidebar_label: Podman Provider Setup
 ---
 
-Podman is a built-in Devsy provider. It runs containers without a background daemon and is OCI-compatible, so most `devcontainer.json` files work unchanged. See [known differences](#known-differences) for the exceptions.
-
-This page covers installing Podman, adding it as a provider, and starting a workspace.
+Podman is a built-in Devsy provider. It runs containers without a background daemon, and most `devcontainer.json` files work unchanged. See [known differences](#known-differences) for exceptions.
 
 ## Install Podman
 
@@ -31,9 +29,9 @@ podman machine start
 
 ### Windows
 
-Install the [Windows Podman client](https://podman.io/docs/installation) and its WSL2-backed machine. Run Podman and Devsy from Windows, not from an executable installed only inside a WSL distribution.
+Install the [Windows Podman client](https://podman.io/docs/installation) and create a WSL2-backed machine. Run Podman and Devsy from Windows, not from an executable installed only inside a WSL distribution.
 
-In PowerShell, initialize and start the machine if it does not already exist:
+In PowerShell, create and start the machine if it does not exist:
 
 ```powershell
 podman machine init
@@ -41,7 +39,7 @@ podman machine start
 podman info
 ```
 
-Use the Windows named pipe from `podman machine inspect` for `PODMAN_HOST`, as described below. A Unix socket inside WSL is not a Windows endpoint. Check `podman system connection list` and make the connection for this machine the default: Devsy uses the native Podman client as well as the Docker-compatible API.
+Set `PODMAN_HOST` to the Windows named pipe from `podman machine inspect`, as described below. A Unix socket inside WSL does not work. Run `podman system connection list` and make this machine's connection the default, because Devsy uses the native Podman client and the Docker-compatible API.
 
 ## Add the provider
 
@@ -58,14 +56,14 @@ devsy provider add podman
 | `PODMAN_ELEVATION` | `none` | Run `podman` through `pkexec`, `sudo` or `doas` to reach a rootful socket the current user cannot access. Leave it as `none` for rootless Podman. `pkexec` needs a desktop session with a polkit agent, so use `sudo` or `doas` on headless hosts. |
 | `INACTIVITY_TIMEOUT` | unset | Stop the container after this idle time, for example `10m` or `1h`. |
 
-For a provider you already added, update its options:
+To update an existing provider:
 
 ```bash
 devsy provider set podman --option PODMAN_PATH=/usr/local/bin/podman
 devsy provider get podman
 ```
 
-Alternatively, set the option during the initial add instead of running the plain add command above:
+Or set the option when you add the provider:
 
 ```bash
 devsy provider add podman -o PODMAN_PATH=/usr/local/bin/podman
@@ -73,7 +71,7 @@ devsy provider add podman -o PODMAN_PATH=/usr/local/bin/podman
 
 ## Rootless and rootful
 
-Rootless is the default and the recommended setup. Containers run as your user. Use rootful only when a container must bind-mount root-owned paths or needs network setups such as macvlan.
+Rootless is the default. Containers run as your user. Use rootful only when a container must bind-mount root-owned paths or needs a network setup such as macvlan.
 
 On macOS and Windows, switch the Podman machine mode:
 
@@ -92,7 +90,7 @@ podman machine set --rootful
 podman machine start
 ```
 
-Switching mode does not delete images, containers or volumes. They are hidden while the other mode is active and return when you switch back.
+Switching mode keeps images, containers, and volumes. They are hidden while the other mode is active.
 
 On Linux, to reach a rootful socket without running everything as root, set `PODMAN_ELEVATION` to `sudo` or `doas`.
 
@@ -102,7 +100,7 @@ After switching modes, run `podman machine inspect <machine-name>` for the machi
 - **macOS:** use `unix://` followed by `.ConnectionInfo.PodmanSocket.Path`.
 - **Windows:** read `.ConnectionInfo.PodmanPipe.Path` and use `npipe:////./pipe/<pipe-name>`, replacing `<pipe-name>` with the name after `\\.\pipe\` in that path.
 
-Check `podman system connection list` and select the connection for the same machine and rootful/rootless mode with `podman system connection default <connection-name>`. `PODMAN_HOST` selects the Docker-compatible API; the native Podman CLI uses its own default connection. Keep `PODMAN_ELEVATION` as `none`, because the machine connection is already authenticated.
+Run `podman system connection list`, then select the connection for the same machine and mode with `podman system connection default <connection-name>`. `PODMAN_HOST` selects the Docker-compatible API, and the native Podman CLI uses its own default connection. Keep `PODMAN_ELEVATION` as `none`: the machine connection is already authenticated.
 </Callout>
 
 ## Start a workspace
@@ -116,7 +114,7 @@ devsy workspace ssh my-workspace
 
 ### Socket not found or permission denied
 
-Devsy cannot reach the Podman socket. On macOS and Windows, check that the machine is running with `podman machine list`, and start it with `podman machine start`. On Linux, check the user socket:
+Devsy cannot reach the Podman socket. On macOS and Windows, check `podman machine list` and start the machine with `podman machine start`. On Linux, check the user socket:
 
 ```bash
 systemctl --user status podman.socket
@@ -130,9 +128,9 @@ devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/
 
 ### Bind mounts from the Podman machine
 
-On macOS and Windows with remote Podman, additional bind mount sources are paths in the selected engine's filesystem. A host directory shared into the machine is valid when that share is configured and accessible there. Devsy passes these mounts to the engine for source validation; a path existing on your desktop alone does not establish that it exists in the machine. See [Podman's volume documentation](https://docs.podman.io/en/stable/markdown/podman-run.1.html#volume-v-source-volume-host-dir-container-dir-options).
+On macOS and Windows with remote Podman, bind mount sources are paths inside the machine. A host directory works only if it is shared into the machine. A path that exists on your desktop can be missing in the machine. See [Podman's volume documentation](https://docs.podman.io/en/stable/markdown/podman-run.1.html#volume-v-source-volume-host-dir-container-dir-options).
 
-Check the connection, machine, and actual guest source, replacing `my-machine` and `/path/in/machine`:
+Check the connection, the machine, and the source in the guest, replacing `my-machine` and `/path/in/machine`:
 
 ```bash
 podman system connection list
@@ -141,30 +139,30 @@ podman machine ssh my-machine id -u
 podman machine ssh my-machine stat /path/in/machine
 ```
 
-The machine's rootless UID need not match your macOS or Windows host identity. For a rootless socket source, use the guest UID to check `/run/user/<guest-uid>/podman/podman.sock`; the rootful socket is normally `/run/podman/podman.sock`.
+The machine's rootless UID can differ from your host user. The rootless socket is `/run/user/<guest-uid>/podman/podman.sock`. The rootful socket is normally `/run/podman/podman.sock`.
 
 - **Source missing in the guest:** correct the source path or configure the intended host share into the machine.
-- **Wrong connection or mode:** ensure the native Podman connection and Devsy's `PODMAN_HOST` select the same machine and rootless/rootful service.
-- **Source exists but access fails:** check filesystem permissions for the engine user and applicable SELinux policy. Avoid broad permission changes or relabeling shared system paths.
-- **Socket absent inside the workspace container:** connecting Devsy to the engine does not mount its socket into the container. If the workspace needs engine access, explicitly configure a bind mount from the verified guest socket to the path its tools expect.
+- **Wrong connection or mode:** make the native Podman connection and `PODMAN_HOST` select the same machine and mode.
+- **Source exists but access fails:** check file permissions for the engine user and the SELinux policy. Do not relabel shared system paths.
+- **Socket absent inside the workspace container:** Devsy does not mount the engine socket into the container. If the workspace needs engine access, bind mount the guest socket to the path its tools expect.
 
-Sharing the socket grants the container [control of the engine as the service user](https://docs.podman.io/en/stable/markdown/podman-system-service.1.html#security). Devsy does not add this mount by default; configure it only for a workspace you trust.
+A shared socket gives the container [control of the engine as the service user](https://docs.podman.io/en/stable/markdown/podman-system-service.1.html#security). Add it only for a workspace you trust.
 
 ## Known differences
 
 ### Dockerfile builds
 
-Podman builds with Buildah, not BuildKit. BuildKit-only syntax, such as `RUN --mount=type=cache` under the `buildkit` frontend, can fail. Remove the `# syntax=docker/dockerfile:1` line or rewrite those steps.
+Devsy builds with `podman buildx build`, which uses Buildah, not BuildKit. Dockerfile features that only BuildKit supports can fail. Rewrite those steps.
 
 ### Compose
 
-`podman compose` hands off to an external provider: the `podman-compose` package or a standalone `docker-compose` binary. Install one:
+`podman compose` runs an external provider: the `podman-compose` package or a standalone `docker-compose` binary. Install one:
 
 ```bash
 sudo apt-get install -y podman-compose
 ```
 
-The `docker-compose-plugin` package does not work here. It adds the `docker compose` subcommand to the Docker CLI and pulls in Docker. Check what is available:
+Do not install `docker-compose-plugin`. It adds `docker compose` to the Docker CLI and pulls in Docker. Check which provider is active:
 
 ```bash
 podman compose version

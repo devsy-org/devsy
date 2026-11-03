@@ -3,7 +3,7 @@ title: How Devsy Deploys Workspaces
 sidebar_label: Deploying workspaces
 ---
 
-`devsy workspace up` builds the devcontainer if needed and uses the provider to start it.
+`devsy workspace up` builds the devcontainer if needed, then starts it with the provider.
 
 <figure>
   <img src="/docs/media/up_sequence.png" alt="Devsy Up Sequence" />
@@ -12,23 +12,23 @@ sidebar_label: Deploying workspaces
 
 1. If the provider uses a machine, Devsy creates or starts it.
 2. Devsy pulls the source and the `devcontainer.json` from Git or a local folder.
-3. The agent builds the workspace image (see [Building](#building)).
-4. The agent starts the devcontainer through the driver, for example the Docker daemon or the Kubernetes API.
-5. Devsy starts a daemon that stops the machine or container when it is idle, sets up credentials, and opens your IDE.
+3. The agent builds the workspace image. See [Building](#building).
+4. The agent starts the devcontainer through the driver, such as the Docker daemon or the Kubernetes API.
+5. Devsy starts a daemon that stops the machine or container when it is idle. It also sets up credentials and opens your IDE.
 
 With `devsy workspace up --from-snapshot <ref>`, Devsy restores a [snapshot](../developing-in-workspaces/workspace-snapshots.mdx) and skips the build.
 
 ## Machines
 
-Machine providers, such as AWS, GCP, and DigitalOcean, create a VM to host the container. Devsy uses the CLI tool and credentials on your computer, such as `aws` or `az`, to create it, then connects through the cloud's own tunnel:
+Machine providers, such as AWS, GCP, and DigitalOcean, create a VM to host the container. Devsy creates the VM with the CLI tool and credentials on your computer, such as `aws` or `az`, then connects through the cloud's own tunnel:
 
 - AWS: [Instance Connect](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-connect-set-up.html)
 - Google Cloud: [Cloud IAP](https://cloud.google.com/security/products/iap)
 - Azure: [Azure Bastion](https://learn.microsoft.com/en-us/azure/bastion/bastion-overview)
 
-You can use [SSH tunneling](https://www.ssh.com/academy/ssh/tunneling-example) instead, if your setup supports it.
+If your setup supports it, you can use [SSH tunneling](https://www.ssh.com/academy/ssh/tunneling-example) instead.
 
-The agent runs an SSH server over the tunnel, so the client can forward ports and connect your IDE.
+The agent runs an SSH server over the tunnel, which the client uses to forward ports and connect your IDE.
 
 <figure>
   <img src="/docs/media/c4_machines.png" alt="Devsy Architecture" />
@@ -37,7 +37,7 @@ The agent runs an SSH server over the tunnel, so the client can forward ports an
 
 ## Kubernetes
 
-Kubernetes works the same way, but the tunnel is the Kubernetes API (pod exec and attach), so nothing extra runs on the node.
+Kubernetes works the same way, but the tunnel is the Kubernetes API (pod exec and attach). Nothing extra runs on the node.
 
 <figure>
   <img src="/docs/media/c4_k8s.png" alt="Devsy Architecture" />
@@ -46,9 +46,9 @@ Kubernetes works the same way, but the tunnel is the Kubernetes API (pod exec an
 
 ## Building
 
-Devsy reads `devcontainer.json`, adds any features as build stages on the base Dockerfile, and builds an OCI image. Features mean a build is often needed even when the file only names an image.
+Devsy reads `devcontainer.json`, adds any features as build stages on the base Dockerfile, and builds an OCI image. Features add build stages, so a build is often needed even when the file only names an image.
 
-Where there is a local container daemon, Devsy builds with `docker buildx` or its built-in BuildKit client. Where there is none, as with Kubernetes, it uses the dockerless builder, which builds in the workspace pod without a daemon. You can push the image to a registry to cache it. See [Reduce build times with a cache](../tutorials/reduce-build-times-with-cache.mdx).
+With a local container daemon, Devsy builds with `docker buildx` or its built-in BuildKit client. Without one, as with Kubernetes, Devsy uses the dockerless builder, which builds in the workspace pod. You can push the image to a registry to cache it. See [Reduce build times with a cache](../tutorials/reduce-build-times-with-cache.mdx).
 
 <figure>
   <img src="/docs/media/c4_build.png" alt="Devsy Architecture" />

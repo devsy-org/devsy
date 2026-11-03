@@ -3,7 +3,7 @@ title: Quickstart Guide
 sidebar_label: Quickstart
 ---
 
-A provider is a small program described by a `provider.yaml`. Devsy reads the manifest and calls the commands it defines to create and reach an environment.
+A provider is a program described by a `provider.yaml` file. Devsy reads the manifest and calls the commands it defines to create and reach an environment.
 
 <Callout title="Recommended reading">
 Read [What are providers](../managing-providers/what-are-providers.mdx) and [Add a Devsy Provider](../managing-providers/manage-providers.mdx) first.
@@ -37,23 +37,23 @@ devsy workspace up github.com/microsoft/vscode-remote-try-go
 - [`exec`](#exec): the commands Devsy runs to reach and manage the environment.
 - [`options`](./options.mdx): settings the user can configure. Devsy passes them to commands as environment variables.
 - [`binaries`](./binaries.mdx): helper binaries Devsy downloads for the provider.
-- [`agent`](./agent.mdx): how the agent runs in the environment, including the driver, inactivity timeout and credentials.
+- [`agent`](./agent.mdx): how the agent runs in the environment: the driver, inactivity timeout, and credentials.
 - [`icon` and `iconDark`](#icons): optional images the Desktop app shows for the provider.
 
 ## exec
 
 Each entry is a POSIX shell script. Only `command` is required.
 
-- **command**: runs a command in the environment. Devsy uses it to inject itself and sends all traffic through its standard input and output. `${COMMAND}` is a placeholder Devsy fills in.
+- **command**: runs a command in the environment. Devsy uses it to inject itself, and sends all traffic through its standard input and output. Devsy fills in the `${COMMAND}` placeholder.
 - **init**: checks that the options are valid and the provider is ready. Devsy runs it when options change.
-- **create**, **delete**: create and delete a machine. Defining `create` makes the provider a machine provider, and `delete` is then expected too.
+- **create**, **delete**: create and delete a machine. Defining `create` makes the provider a machine provider, so `delete` is expected too.
 - **start**, **stop**: start and stop a machine. Machine providers only.
 - **status**: prints one of `Running`, `Busy` (wait and check again), `Stopped` or `NotFound`.
 - **describe**: prints a text description of the machine.
 
 A provider without `create` is a non-machine provider and uses only `command` and `init`.
 
-On Windows, Devsy runs these scripts in an [emulated shell](https://github.com/mvdan/sh), where tools such as `grep` and `sed` are not available. Move that logic into a helper binary.
+On Windows, Devsy runs these scripts in an [emulated shell](https://github.com/mvdan/sh). The emulated shell has no `grep` or `sed`. Move that logic into a helper binary.
 
 Example from the [SSH provider](https://github.com/devsy-org/devsy-provider-ssh):
 
@@ -80,13 +80,13 @@ icon: assets/logo.svg
 iconDark: assets/logo-dark.svg
 ```
 
-Devsy downloads the images once, when the provider is added or updated, and stores them in a `provider-assets/` directory alongside that installed provider's configuration. Each configuration selects a complete immutable image revision. The Desktop app reads it from disk; listing providers never downloads images, so cached logos also work offline. Cloning copies available cached bytes and revision metadata into the destination installation, independently of the original provider. If the source cache is missing or corrupt, the clone remains usable with the bundled logo or placeholder instead.
+Devsy downloads the images when the provider is added or updated and stores them in a `provider-assets/` directory next to the provider's configuration. The Desktop app reads them from disk, so cached logos work offline. Cloning copies the cached files into the new installation. If the source cache is missing or corrupt, the clone uses the bundled logo or a placeholder.
 
-Devsy does not guess a logo. It does not look for `logo.svg` and does not read a repository homepage. Only the two fields above count.
+Devsy does not look for `logo.svg` or read the repository homepage. Only the two fields above count.
 
 ### Where a relative path points
 
-A relative path is resolved against the source the provider was installed from, not against the provider's install directory.
+Devsy resolves a relative path against the source the provider was installed from, not the provider's install directory.
 
 | Installed from | `assets/logo.svg` means |
 | --- | --- |
@@ -97,47 +97,45 @@ A relative path is resolved against the source the provider was installed from, 
 | Local `provider.yaml` | The file next to the manifest. Symlinks and `..` may not leave the manifest directory. |
 | Built-in provider | No repository lookup. Absolute icon URLs or the bundled logo. |
 
-An absolute `http://` or `https://` URL is also accepted. Devsy downloads it with the other images, so the Desktop app never needs network access to show it.
+Devsy also accepts absolute `http://` and `https://` URLs and downloads them with the other images, so the Desktop app needs no network access to show them.
 
-A relative path must not contain a backslash, a NUL byte, a leading `/`, a `//` authority, or a `..` segment that leaves the manifest root. Encoded forms such as `%2e%2e` are rejected too. Subdirectories and Unicode file names are fine. `javascript:`, `file:` and `data:` references are rejected.
+A relative path must not contain a backslash, a NUL byte, a leading `/`, a `//` authority, or a `..` segment that leaves the manifest root. Devsy also rejects encoded forms such as `%2e%2e`. Subdirectories and Unicode file names work. Devsy rejects `javascript:`, `file:`, and `data:` references.
 
 <Callout title="GitHub release manifests">
-For a GitHub source, Devsy installs the `provider.yaml` attached to the release. Treat that release as the root of your repository at its tag. Commit the image files to the repository before you tag the release, so the same tag contains the manifest and the images.
+For a GitHub source, Devsy installs the `provider.yaml` attached to the release and treats the release as the repository root at its tag. Commit the image files before you tag the release, so the tag contains both the manifest and the images.
 </Callout>
 
 ### Formats and limits
 
-- PNG, JPEG, WebP and SVG. Devsy checks the file content, not only the extension, and rejects HTML error or login pages.
-- Local artwork must be a regular file. Directories, FIFOs and device files are unavailable artwork.
+- PNG, JPEG, WebP, and SVG. Devsy checks the file content, not only the extension. It rejects HTML error and login pages.
+- Local images must be regular files, not directories, FIFOs, or device files.
 - At most 1 MiB per image.
 - Raster images may be at most 4096 pixels on each side.
-- SVG must be well formed. DTDs, entities, scripts, `foreignObject`, embedded documents and external references are rejected. Shapes, paths, gradients and references to elements in the same file are fine.
-- Each download has five seconds and at most five redirects. Devsy sends credentials only to the origin they were issued for.
+- SVG files must be well formed. Devsy rejects DTDs, entities, scripts, `foreignObject`, embedded documents, and external references. Shapes, paths, gradients, and references to elements in the same file are allowed.
+- Each download gets five seconds and at most five redirects. Devsy sends credentials only to the origin that issued them.
 
 ### Icons are optional
 
-A missing, invalid or unreachable image never blocks installing or updating the provider. Devsy records that variant as missing and the Desktop app falls back. It logs at most one short warning per failed asset revision, combining both variants and removing the query string and credentials.
+A missing, invalid, or unreachable image never blocks installing or updating a provider. Devsy records that variant as missing and the Desktop app falls back. Devsy logs at most one short warning per failed asset revision, without the query string or credentials.
 
-Caller cancellation is propagated as an operation error; it is not treated as an optional artwork failure.
+If an update cannot fetch the new icon, the Desktop app stops showing the previous logo for that variant. Run `devsy provider set-source <name>` later to fetch it again.
 
-If you update a provider and its new icon cannot be fetched, the Desktop app does not keep showing the previous provider's logo for that variant. A later `devsy provider set-source <name>` fetches it again.
-
-Providers installed before this feature have no cached icon until you update them or run `devsy provider set-source <name>`.
+Providers installed before icon caching have no cached icon until you update them or run `devsy provider set-source <name>`.
 
 ### Fallback order
 
-The Desktop app picks the first image that loads:
+The Desktop app uses the first image that loads:
 
 | App theme | Order |
 | --- | --- |
 | Light | Provider `icon`, bundled logo for a known provider name, generic placeholder |
 | Dark | Provider `iconDark`, provider `icon`, bundled logo, placeholder |
 
-"App theme" is the theme the app is showing. It follows the system setting when the app theme is set to System, and the explicit choice otherwise. A provider image always wins over a bundled logo, even if the provider name contains a built-in name such as `docker`. If an image fails to load, the app moves to the next entry once and does not retry it.
+"App theme" is the theme the app shows: the system setting when the app theme is System, otherwise the chosen theme. A provider image wins over a bundled logo, even when the provider name matches a built-in name such as `docker`. If an image fails to load, the app moves to the next entry without retrying.
 
 ### Test icons across versions
 
-You can check the whole path with a provider repository that has two tags with visibly different logos.
+Use a provider repository with two tags and different logos to test the full path.
 
 1. Create a repository with `provider.yaml` that sets `icon: assets/logo.svg`. Commit a red logo as `assets/logo.svg` and tag it `v0.0.1`. Publish a release for that tag with `provider.yaml` attached.
 2. Replace `assets/logo.svg` with a blue logo, change `version` to `v0.0.2`, commit, tag `v0.0.2` and publish that release.
@@ -159,4 +157,4 @@ You can check the whole path with a provider repository that has two tags with v
    devsy provider set-source <name> --version v0.0.1
    ```
 
-Each step must show the logo of the tag you selected and never a mix of one version's provider with the other version's image.
+Each step shows the logo for the selected tag, never a mix of one version's provider with the other version's image.

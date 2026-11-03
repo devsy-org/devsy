@@ -3,14 +3,14 @@ title: Continuous Integration
 sidebar_label: Continuous Integration
 ---
 
-`devsy ci` builds an ephemeral devcontainer, runs a command in it, and deletes the workspace afterwards. Use it to check that your `devcontainer.json` still builds and your tests pass inside it.
+`devsy ci` builds a temporary devcontainer, runs a command in it, and deletes the workspace afterward. Use it to check that your `devcontainer.json` builds and your tests pass inside it.
 
 ## How it works
 
-1. Resolves a workspace from the current directory (or a given source).
-2. Builds and starts the devcontainer, like `devsy workspace up` without an IDE or SSH config changes.
-3. Runs the command inside the container.
-4. Deletes the workspace, even when the command fails, unless you pass `--keep`.
+1. Devsy resolves a workspace from the current directory or a given source.
+2. Devsy builds and starts the devcontainer like `devsy workspace up`, without IDE or SSH config changes.
+3. Devsy runs the command inside the container.
+4. Devsy deletes the workspace, even when the command fails, unless you pass `--keep`. Devsy never deletes a workspace that existed before the run.
 
 The command's exit code becomes the exit code of `devsy ci`, so a failing test fails the CI job.
 
@@ -33,13 +33,13 @@ devsy ci ./service -- npm test
 devsy ci --remote-env CI=true --remote-env NODE_ENV=test -- npm test
 ```
 
-Select a specific devcontainer config (e.g. a named `.devcontainer/<name>` profile):
+Select a named config, such as a `.devcontainer/<name>` profile:
 
 ```sh
 devsy ci --devcontainer id:ci -- make test
 ```
 
-Keep the workspace around for debugging when the command fails:
+Keep the workspace after the run, for debugging:
 
 ```sh
 devsy ci --keep -- ./run-integration-tests.sh
@@ -47,9 +47,9 @@ devsy ci --keep -- ./run-integration-tests.sh
 
 ### Common flags
 
-Run `devsy ci --help` for the full list. The most used:
+Run `devsy ci --help` for the full list. Common flags:
 
-- `--keep` keeps the workspace instead of deleting it.
+- `--keep` keeps the workspace after the run, whether the command succeeds or fails.
 - `--remote-env KEY=VALUE` sets an environment variable in the container at run time. Repeatable.
 - `--devcontainer` picks the config: `none`, `image:<ref>`, `id:<name>`, or a path to a `devcontainer.json`.
 - `--cache-from` and `--no-cache` control the image build cache.
@@ -58,7 +58,7 @@ Run `devsy ci --help` for the full list. The most used:
 
 ### Control progress output
 
-Use `--no-status` to hide Devsy's live progress messages. It does not filter
+`--no-status` hides Devsy's live progress messages. It does not filter
 diagnostics or the command's own output.
 
 | Output | Effect of `--no-status` |
@@ -74,42 +74,41 @@ For example, keep warnings and errors while hiding progress:
 devsy ci --no-status --result-format=plain --log-level=warn . -- bash .tools/test.sh
 ```
 
-To show errors while hiding warnings, use `--quiet` instead. Quiet mode takes
-precedence over `--log-level=warn` and suppresses warnings too:
+To show only errors, use `--quiet` instead. It takes precedence over
+`--log-level=warn` and suppresses warnings too:
 
 ```sh
 devsy ci --no-status --result-format=plain --quiet . -- bash .tools/test.sh
 ```
 
-When stdout is redirected, use `--result-format=plain` to keep the nested
-workspace command's success result JSON off stderr. Use
-`--result-format=json` when the caller needs the structured result; child
-stdout and stderr remain separate from Devsy diagnostics.
+When stdout is redirected, use `--result-format=plain` to keep the success
+result JSON off stderr. Use `--result-format=json` when the caller needs the
+structured result.
 
 ## Setup history after cleanup
 
-`devsy ci` deletes the workspace, but the history of its build and lifecycle hooks stays in the local store. Read it by run ID after the job ends, or from an artifact step that runs on the same machine:
+`devsy ci` deletes the workspace, but Devsy keeps the build and lifecycle hook history in the local store. Read it by run ID after the job ends, or from an artifact step on the same machine:
 
 ```sh
 devsy workspace logs --source setup --list
 devsy workspace logs --source setup --run RUN_ID --context CONTEXT --result-format=plain
 ```
 
-Retention is bounded. See [Setup history](../troubleshooting/setup-history.mdx). The history covers the build and the lifecycle hooks. The stdout and stderr of your own command after `--` stay on their normal streams and are not archived. Hooks still running when the command ends are not waited for.
+Retention is limited. See [Setup history](../troubleshooting/setup-history.mdx). The history covers the build and lifecycle hooks. The stdout and stderr of your command after `--` stay on their normal streams. Devsy does not wait for hooks still running when the command ends.
 
-## Pre-building and pushing images
+## Build and push images
 
-To pre-build and publish a devcontainer image for reuse as a build cache, use `devsy workspace build`:
+To build and publish a devcontainer image for reuse as a build cache, run `devsy workspace build`:
 
 ```sh
 devsy workspace build --repository ghcr.io/my-org/my-devcontainer --tag latest --push
 ```
 
-Later CI jobs can pass that image to `--cache-from` to speed up builds.
+Later CI jobs can pass that image to `--cache-from`.
 
 ## GitHub Actions
 
-Install the CLI, configure the docker provider, then run `devsy ci`:
+The workflow installs the CLI, sets up the Docker provider, and runs `devsy ci`:
 
 ```yaml
 name: Devcontainer CI
