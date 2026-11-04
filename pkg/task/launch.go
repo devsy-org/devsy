@@ -224,16 +224,17 @@ func (s *State) markLaunchCleanupPending() {
 
 func (t *Task) commitLaunchStep() (bool, error) {
 	committed, rejected := false, false
-	err := t.store.update(t.id, func(s *State) {
+	err := t.store.updateIf(t.id, func(s *State) bool {
 		if !s.acceptsLaunch() || s.Process == nil {
 			rejected = true
-			return
+			return false
 		}
 		if !s.WorkerReady {
-			return
+			return false
 		}
 		s.LaunchPending = false
 		committed = true
+		return true
 	})
 	if err != nil {
 		return false, err

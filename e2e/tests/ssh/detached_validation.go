@@ -232,7 +232,7 @@ func (cli detachedValidationCLI) launchWorker(
 			if err := tk.PublishProcess(started); err != nil {
 				return err
 			}
-			commitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			commitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 			return tk.CommitLaunch(commitCtx)
 		},
