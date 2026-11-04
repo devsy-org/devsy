@@ -769,12 +769,12 @@ func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
 func comparableOptions(
 	options *provider2.ProviderKubernetesDriverConfig,
 ) provider2.ProviderKubernetesDriverConfig {
-	comparable := withoutLocalOptions(options)
-	comparable.KubernetesContext = ""
-	comparable.KubernetesConfig = ""
-	comparable.KubernetesNamespace = ""
-	comparable.PodTimeout = ""
-	return comparable
+	normalized := withoutLocalOptions(options)
+	normalized.KubernetesContext = ""
+	normalized.KubernetesConfig = ""
+	normalized.KubernetesNamespace = ""
+	normalized.PodTimeout = ""
+	return normalized
 }
 
 func withoutLocalOptions(
