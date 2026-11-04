@@ -31,8 +31,10 @@ func NewWorkspaceRuntime(
 		if err != nil {
 			return nil, err
 		}
-		switch info.Agent.Driver {
-		case provider.ExternalDriver, provider.MicrosandboxDriver:
+		switch {
+		case info.Agent.Driver == provider.ExternalDriver,
+			info.Agent.Driver == provider.MicrosandboxDriver,
+			info.Agent.Driver == provider.DockerDriver && info.Agent.Local == "false":
 			if override != "" {
 				return nil, errors.New("--docker-path cannot override an agent-side runtime")
 			}

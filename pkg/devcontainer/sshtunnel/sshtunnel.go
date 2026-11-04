@@ -62,7 +62,10 @@ func ExecuteCommand(ctx context.Context, opts ExecuteCommandOptions) (*config2.R
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = conn.Close() }()
+	defer func() {
+		_ = conn.Close()
+		_ = conn.Wait()
+	}()
 	if opts.AddPrivateKeys {
 		addPrivateKeys(ctx)
 	}
