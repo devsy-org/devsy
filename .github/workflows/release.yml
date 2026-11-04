@@ -246,6 +246,9 @@ jobs:
             [ -n "$pkg" ] || { echo "::error::missing Linux package in desktop/release"; exit 1; }
           done
 
+          rpm_size=$(rpm -qp --qf '%{SIZE}' "$rpm")
+          [ "$rpm_size" -gt 0 ] 2>/dev/null || { echo "::error::rpm header has no SIZE tag: $rpm_size"; exit 1; }
+
           mkdir "$work/appimage" && (cd "$work/appimage" && chmod +x "$GITHUB_WORKSPACE/$appimage" && "$GITHUB_WORKSPACE/$appimage" --appimage-extract >/dev/null)
           mkdir "$work/deb" && dpkg-deb -x "$deb" "$work/deb"
           mkdir "$work/rpm" && (cd "$work/rpm" && rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idm --quiet)

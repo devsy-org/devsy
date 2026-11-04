@@ -93,6 +93,8 @@ rpm:
     - xdg-utils
     - at-spi2-core
     - libuuid
+  fpm:
+    - --rpm-rpmbuild-define=_rpmformat 4
 
 protocols:
   - name: Devsy
