@@ -258,6 +258,10 @@ type spawnHelperOpts struct {
 	OpenBrowser  bool
 }
 
+var openDevNull = func() (*os.File, error) {
+	return os.OpenFile(os.DevNull, os.O_RDWR, 0)
+}
+
 // spawnTunnelHelper locates the current executable, builds the helper
 // argument list, pre-binds host listeners (where supported), spawns the
 // detached helper process, and records its PID in the tunnel state file.
@@ -286,7 +290,7 @@ func spawnTunnelHelper(opts spawnHelperOpts) (int, string, error) {
 	setDetachedProcAttrs(cmd)
 	cmd.ExtraFiles = setup.Files
 
-	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	devNull, err := openDevNull()
 	if err != nil {
 		setup.Cleanup()
 		return 0, "", fmt.Errorf("open %s: %w", os.DevNull, err)
