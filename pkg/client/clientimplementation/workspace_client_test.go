@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/interp"
 )
 
 const (
@@ -139,6 +141,69 @@ func TestRunCommand(t *testing.T) {
 		assert.Contains(t, stdout.String(), "***")
 		assert.Contains(t, stderr.String(), "***")
 	})
+}
+
+func TestMachineCommandErrorsRedactOpaquePayloadAndArguments(t *testing.T) {
+	requirePOSIXShell(t)
+	const payload = "private-command-payload-796412"
+	const argument = "private-configured-argument-796412"
+	for _, tc := range []struct {
+		name    string
+		command types.StrArray
+	}{
+		{
+			name: "emulated shell",
+			command: types.StrArray{
+				`: '` + argument + `'; printf '%s' "$DEVSY_RUN_COMMAND_SECRET" >&2; exit 7`,
+			},
+		},
+		{
+			name:    "argv",
+			command: types.StrArray{binSh, "-c", `printf '%s' "$DEVSY_RUN_COMMAND_SECRET" >&2; exit 7`, argument},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DEVSY_RUN_COMMAND_SECRET", "credential-sentinel-61395")
+			cfg := &provider.ProviderConfig{
+				Name: "redaction-test",
+				Exec: provider.ProviderCommands{
+					Create:  types.StrArray{testProviderCreateCommand},
+					Command: tc.command,
+				},
+			}
+			devsy := &config.Config{
+				DefaultContext: testLocksContext,
+				Contexts:       map[string]*config.ContextConfig{testLocksContext: {}},
+			}
+			mc, err := NewMachineClient(
+				devsy,
+				cfg,
+				&provider.Machine{ID: "machine", Context: testLocksContext},
+			)
+			require.NoError(t, err)
+			var stderr bytes.Buffer
+			err = mc.Command(
+				context.Background(),
+				client.CommandOptions{Command: payload, Stderr: &stderr},
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "run provider command:")
+			assert.NotContains(t, err.Error(), payload)
+			assert.NotContains(t, err.Error(), argument)
+			assert.NotContains(t, stderr.String(), payload)
+			assert.NotContains(t, stderr.String(), argument)
+			assert.Contains(t, stderr.String(), "***")
+			if tc.name == "emulated shell" {
+				var status interp.ExitStatus
+				require.ErrorAs(t, err, &status)
+				assert.Equal(t, 7, int(status))
+			} else {
+				var status *exec.ExitError
+				require.ErrorAs(t, err, &status)
+				assert.Equal(t, 7, status.ExitCode())
+			}
+		})
+	}
 }
 
 func TestRunCommand_RawStdoutDoesNotHoldProtocolBytes(t *testing.T) {

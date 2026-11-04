@@ -55,16 +55,17 @@ type machineExecutor struct {
 
 // execConfig defines how to execute a machine command.
 type execConfig struct {
-	name         string
-	command      types.StrArray
-	stdout       io.Writer
-	stderr       io.Writer
-	extraEnv     map[string]string
-	stdin        io.Reader
-	rawStdout    bool
-	withProgress bool
-	startMsg     string
-	doneMsg      string
+	name             string
+	command          types.StrArray
+	stdout           io.Writer
+	stderr           io.Writer
+	extraEnv         map[string]string
+	stdin            io.Reader
+	closeInputOnExit io.Closer
+	rawStdout        bool
+	withProgress     bool
+	startMsg         string
+	doneMsg          string
 }
 
 func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
@@ -88,6 +89,7 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 		Stderr:               cfg.stderr,
 		ExtraEnv:             cfg.extraEnv,
 		Stdin:                cfg.stdin,
+		closeInputOnExit:     cfg.closeInputOnExit,
 		RawStdout:            cfg.rawStdout,
 	})
 	if err != nil {
@@ -222,7 +224,7 @@ func (s *machineClient) Stop(ctx context.Context, options client.StopOptions) er
 
 func (s *machineClient) Command(ctx context.Context, commandOptions client.CommandOptions) error {
 	return s.executor.execute(ctx, execConfig{
-		name:      "command",
+		name:      providerCommandAction,
 		command:   s.config.Exec.Command,
 		stdout:    commandOptions.Stdout,
 		stderr:    commandOptions.Stderr,
@@ -241,9 +243,17 @@ func (s *machineClient) OpenCommandTransport(
 	return transport.OpenCallbackConn(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-			return s.Command(ctx, client.CommandOptions{
-				Command: opt.Command, Stdin: stdin, Stdout: stdout, Stderr: opt.Stderr,
-				RawStdout: true,
+			return s.executor.execute(ctx, execConfig{
+				name:             providerCommandAction,
+				command:          s.config.Exec.Command,
+				stdout:           stdout,
+				stderr:           opt.Stderr,
+				stdin:            stdin,
+				closeInputOnExit: stdin.(io.Closer),
+				rawStdout:        true,
+				extraEnv: map[string]string{
+					provider.CommandEnv: opt.Command,
+				},
 			})
 		},
 		transport.CallbackConnOptions{

@@ -7,10 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
@@ -31,6 +35,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
+	"mvdan.cc/sh/v3/interp"
 )
 
 func NewWorkspaceClient(
@@ -245,12 +250,13 @@ func (s *workspaceClient) Command(ctx context.Context, opt client.CommandOptions
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command:   s.providerConfig.Exec.Command,
-		Environ:   environ,
-		Stdin:     opt.Stdin,
-		Stdout:    opt.Stdout,
-		Stderr:    opt.Stderr,
-		RawStdout: opt.RawStdout,
+		Command:      s.providerConfig.Exec.Command,
+		Environ:      environ,
+		Stdin:        opt.Stdin,
+		Stdout:       opt.Stdout,
+		Stderr:       opt.Stderr,
+		RawStdout:    opt.RawStdout,
+		Cancellation: s.providerConfig.Exec.Cancellation,
 	})
 }
 
@@ -266,10 +272,14 @@ func (s *workspaceClient) OpenCommandTransport(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return RunCommand(ctx, RunCommandOptions{
-				Command: s.providerConfig.Exec.Command,
-				Environ: environ,
-				Stdin:   stdin, Stdout: stdout, Stderr: opt.Stderr,
-				RawStdout: true,
+				Command:          s.providerConfig.Exec.Command,
+				Environ:          environ,
+				Stdin:            stdin,
+				Stdout:           stdout,
+				Stderr:           opt.Stderr,
+				RawStdout:        true,
+				Cancellation:     s.providerConfig.Exec.Cancellation,
+				closeInputOnExit: stdin.(io.Closer),
 			})
 		},
 		transport.CallbackConnOptions{
@@ -794,6 +804,7 @@ type WorkspaceCommandConfig struct {
 	Workspace            *provider.Workspace
 	Machine              *provider.Machine
 	Config               *provider.ProviderConfig
+	closeInputOnExit     io.Closer
 }
 
 func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) error {
@@ -810,25 +821,37 @@ func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) err
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command:   cfg.Command,
-		Environ:   environ,
-		Stdin:     cfg.Stdin,
-		Stdout:    cfg.Stdout,
-		Stderr:    cfg.Stderr,
-		RawStdout: cfg.RawStdout,
+		Command:          cfg.Command,
+		Environ:          environ,
+		Stdin:            cfg.Stdin,
+		Stdout:           cfg.Stdout,
+		Stderr:           cfg.Stderr,
+		RawStdout:        cfg.RawStdout,
+		Cancellation:     cfg.Config.Exec.Cancellation,
+		closeInputOnExit: cfg.closeInputOnExit,
 	})
 }
 
 type RunCommandOptions struct {
-	Command   types.StrArray
-	Environ   []string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
-	RawStdout bool
+	Command          types.StrArray
+	Environ          []string
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Stderr           io.Writer
+	RawStdout        bool
+	Cancellation     provider.ProviderCancellationMode
+	providerShell    *providerShellInvocation
+	closeInputOnExit io.Closer
 }
 
-func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
+func RunCommand(ctx context.Context, opts RunCommandOptions) error {
+	if opts.Cancellation == provider.ProviderCancellationFile {
+		return runProviderWithCancellation(ctx, opts)
+	}
+	return runCommandExecution(ctx, opts)
+}
+
+func runCommandExecution(ctx context.Context, opts RunCommandOptions) (retErr error) {
 	if len(opts.Command) == 0 {
 		return nil
 	}
@@ -856,35 +879,521 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
 	}()
 
 	if len(opts.Command) == 1 {
-		if err := shell.RunEmulatedShell(ctx, &shell.CommandRunner{
-			Command: opts.Command[0],
-			Stdin:   opts.Stdin,
-			Stdout:  stdout,
-			Stderr:  stderr,
-			Environ: opts.Environ,
-		}); err != nil {
-			return fmt.Errorf(
-				"run provider command %q (%s): %w",
-				opts.Command[0],
-				providerAction(opts.Environ),
-				err,
-			)
+		return runProviderShellCommand(ctx, opts, stdout, stderr)
+	}
+	return runProviderArgvCommand(ctx, opts, stdout, stderr)
+}
+
+func runProviderShellCommand(
+	ctx context.Context,
+	opts RunCommandOptions,
+	stdout, stderr io.Writer,
+) error {
+	if opts.providerShell != nil {
+		return runSupervisedProviderShell(ctx, opts, stdout, stderr)
+	}
+	runner := &shell.CommandRunner{
+		Command: opts.Command[0],
+		Stdin:   opts.Stdin,
+		Stdout:  stdout,
+		Stderr:  stderr,
+		Environ: opts.Environ,
+	}
+	if err := shell.RunEmulatedShell(ctx, runner); err != nil {
+		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
+	}
+	return nil
+}
+
+func runSupervisedProviderShell(
+	ctx context.Context,
+	opts RunCommandOptions,
+	stdout, stderr io.Writer,
+) error {
+	binary, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find provider shell executable: %w", err)
+	}
+	files := opts.providerShell
+	cmd := &exec.Cmd{
+		Path: binary,
+		Args: []string{
+			binary,
+			"internal",
+			"provider-shell",
+			"--script-file",
+			files.script,
+			"--force-file",
+			files.force,
+			"--ack-file",
+			files.ack,
+			"--parent-pid",
+			strconv.Itoa(os.Getpid()),
+		},
+		Env:       opts.Environ,
+		Stdin:     opts.Stdin,
+		Stdout:    stdout,
+		Stderr:    stderr,
+		WaitDelay: 2 * time.Second,
+	}
+	if opts.closeInputOnExit != nil {
+		return waitSupervisedProviderShellWithOwnedInput(
+			ctx,
+			cmd,
+			opts.closeInputOnExit,
+			providerAction(opts.Environ),
+		)
+	}
+	return waitSupervisedProviderShell(ctx, cmd, providerAction(opts.Environ))
+}
+
+type providerShellPipes struct {
+	stdinRead   *os.File
+	stdinWrite  *os.File
+	stdoutRead  *os.File
+	stdoutWrite *os.File
+	stderrRead  *os.File
+	stderrWrite *os.File
+}
+
+func openProviderShellPipes() (pipes *providerShellPipes, retErr error) {
+	pipes = &providerShellPipes{}
+	defer func() {
+		if retErr != nil {
+			retErr = errors.Join(retErr, pipes.close())
 		}
+	}()
+	pipes.stdinRead, pipes.stdinWrite, retErr = os.Pipe()
+	if retErr != nil {
+		return
+	}
+	pipes.stdoutRead, pipes.stdoutWrite, retErr = os.Pipe()
+	if retErr != nil {
+		return
+	}
+	pipes.stderrRead, pipes.stderrWrite, retErr = os.Pipe()
+	if retErr != nil {
+		return
+	}
+	return
+}
+
+func closeProviderShellPipe(pipe *os.File) error {
+	if pipe == nil {
 		return nil
 	}
+	err := pipe.Close()
+	if errors.Is(err, os.ErrClosed) {
+		return nil
+	}
+	return err
+}
 
+func (p *providerShellPipes) close() error {
+	return errors.Join(
+		closeProviderShellPipe(p.stdinRead),
+		closeProviderShellPipe(p.stdinWrite),
+		closeProviderShellPipe(p.stdoutRead),
+		closeProviderShellPipe(p.stdoutWrite),
+		closeProviderShellPipe(p.stderrRead),
+		closeProviderShellPipe(p.stderrWrite),
+	)
+}
+
+func (p *providerShellPipes) closeChildEnds() error {
+	err := errors.Join(
+		closeProviderShellPipe(p.stdinRead),
+		closeProviderShellPipe(p.stdoutWrite),
+		closeProviderShellPipe(p.stderrWrite),
+	)
+	p.stdinRead, p.stdoutWrite, p.stderrWrite = nil, nil, nil
+	return err
+}
+
+func monitorSupervisedProviderShell(
+	ctx context.Context,
+	cmd *exec.Cmd,
+	stdoutRead, stderrRead *os.File,
+) (chan struct{}, <-chan struct{}) {
+	stopped := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-ctx.Done():
+			_ = cmd.Process.Kill()
+			_ = closeProviderShellPipe(stdoutRead)
+			_ = closeProviderShellPipe(stderrRead)
+		case <-stopped:
+		}
+	}()
+	return stopped, done
+}
+
+type providerShellInputResult struct {
+	copyErr  error
+	closeErr error
+}
+
+func pumpProviderShellInput(writer *os.File, source io.Reader) <-chan providerShellInputResult {
+	done := make(chan providerShellInputResult, 1)
+	go func() {
+		if source == nil {
+			source = strings.NewReader("")
+		}
+		_, copyErr := io.Copy(writer, source)
+		done <- providerShellInputResult{copyErr, closeProviderShellPipe(writer)}
+	}()
+	return done
+}
+
+type providerShellOutputPump struct {
+	reader  *os.File
+	done    chan error
+	changed chan struct{}
+	reading atomic.Bool
+}
+
+func (p *providerShellOutputPump) Read(buf []byte) (int, error) {
+	p.reading.Store(true)
+	p.signal()
+	n, err := p.reader.Read(buf)
+	p.reading.Store(false)
+	p.signal()
+	return n, err
+}
+
+func (p *providerShellOutputPump) signal() {
+	select {
+	case p.changed <- struct{}{}:
+	default:
+	}
+}
+
+func pumpProviderShellOutput(reader *os.File, writer io.Writer) *providerShellOutputPump {
+	pump := &providerShellOutputPump{
+		reader: reader, done: make(chan error, 1), changed: make(chan struct{}, 1),
+	}
+	go func() {
+		if writer == nil {
+			writer = io.Discard
+		}
+		_, copyErr := io.Copy(writer, pump)
+		if copyErr != nil {
+			_, _ = io.Copy(io.Discard, pump)
+		}
+		pump.done <- copyErr
+	}()
+	return pump
+}
+
+func providerShellInputCopyError(copyErr, waitErr, closeErr error) error {
+	if waitErr == nil && closeErr == nil &&
+		(errors.Is(copyErr, io.ErrClosedPipe) || errors.Is(copyErr, net.ErrClosed) ||
+			errors.Is(copyErr, os.ErrClosed) || errors.Is(copyErr, syscall.EPIPE)) {
+		return nil
+	}
+	return copyErr
+}
+
+func providerShellCopyError(action, stream string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("copy provider %s %s: %w", action, stream, err)
+}
+
+func providerShellCloseError(action, target string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("close provider %s %s: %w", action, target, err)
+}
+
+func providerShellWaitError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		code := exitErr.ExitCode()
+		if code >= 0 && code <= 255 {
+			err = interp.ExitStatus(uint8(code))
+		}
+	}
+	return fmt.Errorf("run provider %s: %w", action, err)
+}
+
+func waitSupervisedProviderShellWithOwnedInput(
+	ctx context.Context,
+	cmd *exec.Cmd,
+	input io.Closer,
+	action string,
+) (retErr error) {
+	pipes, err := openProviderShellPipes()
+	if err != nil {
+		return fmt.Errorf("create provider %s stdio pipes: %w", action, err)
+	}
+	defer func() { retErr = errors.Join(retErr, pipes.close()) }()
+
+	source, stdout, stderr := cmd.Stdin, cmd.Stdout, cmd.Stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = pipes.stdinRead, pipes.stdoutWrite, pipes.stderrWrite
+	configureProviderShellProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start provider %s shell: %w", action, err)
+	}
+	pipeCloseErr := pipes.closeChildEnds()
+	stopped, monitorDone := monitorSupervisedProviderShell(
+		ctx, cmd, pipes.stdoutRead, pipes.stderrRead,
+	)
+	stdinDone := pumpProviderShellInput(pipes.stdinWrite, source)
+	stdoutPump := pumpProviderShellOutput(pipes.stdoutRead, stdout)
+	stderrPump := pumpProviderShellOutput(pipes.stderrRead, stderr)
+	waitErr := cmd.Wait()
+	stdoutErr, stderrErr, drainErr := drainProviderShellOutput(
+		pipes, stdoutPump, stderrPump, action,
+	)
+	close(stopped)
+	<-monitorDone
+	closeErr := input.Close()
+	stdinCloseErr := closeProviderShellPipe(pipes.stdinWrite)
+	stdinResult := <-stdinDone
+	stdinErr := providerShellInputCopyError(stdinResult.copyErr, waitErr, closeErr)
+	return errors.Join(
+		drainErr,
+		providerShellWaitError(action, waitErr),
+		providerShellCopyError(action, "stdout", stdoutErr),
+		providerShellCopyError(action, "stderr", stderrErr),
+		providerShellCopyError(action, "stdin", stdinErr),
+		providerShellCloseError(
+			action,
+			"stdin pipe",
+			errors.Join(stdinCloseErr, stdinResult.closeErr),
+		),
+		providerShellCloseError(action, "stdio pipes", pipeCloseErr),
+		providerShellCloseError(action, "input", closeErr),
+	)
+}
+
+type providerShellOutputDrain struct {
+	pipes      *providerShellPipes
+	stdoutPump *providerShellOutputPump
+	stderrPump *providerShellOutputPump
+	stdoutDone <-chan error
+	stderrDone <-chan error
+	timer      *time.Timer
+	timeout    <-chan time.Time
+	action     string
+	stdoutErr  error
+	stderrErr  error
+	drainErr   error
+}
+
+func drainProviderShellOutput(
+	pipes *providerShellPipes,
+	stdoutPump, stderrPump *providerShellOutputPump,
+	action string,
+) (stdoutErr, stderrErr, drainErr error) {
+	timer := time.NewTimer(2 * time.Second)
+	timer.Stop()
+	defer timer.Stop()
+	drain := providerShellOutputDrain{
+		pipes: pipes, stdoutPump: stdoutPump, stderrPump: stderrPump,
+		stdoutDone: stdoutPump.done, stderrDone: stderrPump.done,
+		timer: timer, action: action,
+	}
+	for drain.stdoutDone != nil || drain.stderrDone != nil {
+		drain.updateTimeout()
+		select {
+		case drain.stdoutErr = <-drain.stdoutDone:
+			drain.stdoutDone = nil
+		case drain.stderrErr = <-drain.stderrDone:
+			drain.stderrDone = nil
+		case <-stdoutPump.changed:
+			drain.resetTimeout()
+		case <-stderrPump.changed:
+			drain.resetTimeout()
+		case <-drain.timeout:
+			drain.handleTimeout()
+		}
+	}
+	return drain.stdoutErr, drain.stderrErr, drain.drainErr
+}
+
+func (d *providerShellOutputDrain) idle() bool {
+	return providerShellOutputIdle(d.stdoutPump, d.stdoutDone) &&
+		providerShellOutputIdle(d.stderrPump, d.stderrDone)
+}
+
+func (d *providerShellOutputDrain) updateTimeout() {
+	if d.idle() {
+		if d.timeout == nil {
+			d.timer.Reset(2 * time.Second)
+			d.timeout = d.timer.C
+		}
+	} else if d.timeout != nil {
+		d.timer.Stop()
+		d.timeout = nil
+	}
+}
+
+func (d *providerShellOutputDrain) resetTimeout() {
+	if d.timeout != nil {
+		d.timer.Reset(2 * time.Second)
+	}
+}
+
+func (d *providerShellOutputDrain) handleTimeout() {
+	d.timeout = nil
+	if !d.idle() || d.recentOutput() {
+		return
+	}
+	d.stdoutDone, d.stdoutErr = readyProviderShellOutput(d.stdoutDone, d.stdoutErr)
+	d.stderrDone, d.stderrErr = readyProviderShellOutput(d.stderrDone, d.stderrErr)
+	d.drainErr = closeUndrainedProviderShellOutput(
+		d.pipes, d.stdoutDone, d.stderrDone, d.action,
+	)
+}
+
+func (d *providerShellOutputDrain) recentOutput() bool {
+	select {
+	case <-d.stdoutPump.changed:
+		return true
+	default:
+	}
+	select {
+	case <-d.stderrPump.changed:
+		return true
+	default:
+	}
+	return false
+}
+
+func providerShellOutputIdle(pump *providerShellOutputPump, done <-chan error) bool {
+	return done == nil || pump.reading.Load()
+}
+
+func readyProviderShellOutput(done <-chan error, current error) (<-chan error, error) {
+	if done == nil {
+		return nil, current
+	}
+	select {
+	case err := <-done:
+		return nil, err
+	default:
+		return done, current
+	}
+}
+
+func closeUndrainedProviderShellOutput(
+	pipes *providerShellPipes,
+	stdoutDone, stderrDone <-chan error,
+	action string,
+) error {
+	if stdoutDone == nil && stderrDone == nil {
+		return nil
+	}
+	if stdoutDone != nil {
+		_ = closeProviderShellPipe(pipes.stdoutRead)
+	}
+	if stderrDone != nil {
+		_ = closeProviderShellPipe(pipes.stderrRead)
+	}
+	return fmt.Errorf("drain provider %s output after shell exit: %w", action, exec.ErrWaitDelay)
+}
+
+func waitSupervisedProviderShell(ctx context.Context, cmd *exec.Cmd, action string) error {
+	configureProviderShellProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start provider %s shell: %w", action, err)
+	}
+	stopped, monitorDone := monitorSupervisedProviderShell(ctx, cmd, nil, nil)
+	err := cmd.Wait()
+	close(stopped)
+	<-monitorDone
+	if err != nil {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			code := exitErr.ExitCode()
+			if code >= 0 && code <= 255 {
+				err = interp.ExitStatus(uint8(code))
+			}
+		}
+		return fmt.Errorf("run provider %s: %w", action, err)
+	}
+	return nil
+}
+
+func runProviderArgvCommand(
+	ctx context.Context,
+	opts RunCommandOptions,
+	stdout, stderr io.Writer,
+) error {
 	cmd := exec.CommandContext(ctx, opts.Command[0], opts.Command[1:]...) // #nosec G204
 	cmd.Stdin = opts.Stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Env = opts.Environ
+	if opts.Cancellation == provider.ProviderCancellationFile {
+		cmd.WaitDelay = 2 * time.Second
+		if opts.closeInputOnExit != nil {
+			return runProviderArgvWithOwnedInput(
+				cmd, opts.Stdin, opts.closeInputOnExit, providerAction(opts.Environ),
+			)
+		}
+	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf(
-			"run provider command %q (%s): %w",
-			strings.Join(opts.Command, " "), providerAction(opts.Environ), err,
-		)
+		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
 	}
 	return nil
+}
+
+func runProviderArgvWithOwnedInput(
+	cmd *exec.Cmd,
+	source io.Reader,
+	input io.Closer,
+	action string,
+) (retErr error) {
+	stdinRead, stdinWrite, err := os.Pipe()
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("create provider %s stdin pipe: %w", action, err),
+			providerShellCloseError(action, "input", input.Close()),
+		)
+	}
+	defer func() {
+		retErr = errors.Join(
+			retErr, closeProviderShellPipe(stdinRead), closeProviderShellPipe(stdinWrite),
+		)
+	}()
+	cmd.Stdin = stdinRead
+	if err := cmd.Start(); err != nil {
+		return errors.Join(
+			fmt.Errorf("run provider %s: %w", action, err),
+			providerShellCloseError(action, "input", input.Close()),
+		)
+	}
+	childPipeCloseErr := closeProviderShellPipe(stdinRead)
+	stdinDone := pumpProviderShellInput(stdinWrite, source)
+	waitErr := cmd.Wait()
+	inputCloseErr := input.Close()
+	stdinPipeCloseErr := closeProviderShellPipe(stdinWrite)
+	stdinResult := <-stdinDone
+	stdinErr := providerShellInputCopyError(stdinResult.copyErr, waitErr, inputCloseErr)
+	return errors.Join(
+		providerArgvWaitError(action, waitErr),
+		providerShellCopyError(action, "stdin", stdinErr),
+		providerShellCloseError(
+			action, "stdin pipe",
+			errors.Join(childPipeCloseErr, stdinPipeCloseErr, stdinResult.closeErr),
+		),
+		providerShellCloseError(action, "input", inputCloseErr),
+	)
+}
+
+func providerArgvWaitError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("run provider %s: %w", action, err)
 }
 
 func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) error {
@@ -901,14 +1410,15 @@ func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) err
 	return errors.Join(stdoutErr, stderrErr)
 }
 
-// providerAction extracts the provider action from the environment variables.
+const providerCommandAction = "command"
+
 func providerAction(environ []string) string {
 	for _, kv := range environ {
-		if rest, ok := strings.CutPrefix(kv, provider.CommandEnv+"="); ok {
-			return rest
+		if strings.HasPrefix(kv, provider.CommandEnv+"=") {
+			return providerCommandAction
 		}
 	}
-	return ""
+	return "lifecycle"
 }
 
 func DeleteMachineFolder(context, machineID string) error {

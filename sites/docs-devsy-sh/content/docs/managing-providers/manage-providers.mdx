@@ -19,6 +19,8 @@ Providers you can add:
 - [Azure (azure)](https://github.com/devsy-org/devsy-provider-azure)
 - [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
+Docker Sandboxes is not available yet. See its [qualification guide](./docker-sandbox.mdx) for the requirements of a future release.
+
 List the available providers:
 
 ```sh
@@ -102,6 +104,16 @@ devsy provider add builtin:microsandbox --name legacy-microsandbox --use=false
 ```
 
 If a switch fails during initialization, the new source stays selected. Fix the cause and run `devsy provider init <name>`, or set the previous source again. Add `--version <tag>` to `set-source` to pin a release.
+
+### Docker Sandboxes
+
+A published release qualified for your host is required. After it exists, install the standalone `sbx` CLI, sign in with `sbx login`, and add the provider:
+
+```sh
+devsy provider add docker-sandbox
+```
+
+The [Docker Sandboxes guide](./docker-sandbox.mdx) covers qualified hosts, resource options, guest Docker, source files, networking, data deletion, and scoped recovery.
 
 ## Set provider options
 

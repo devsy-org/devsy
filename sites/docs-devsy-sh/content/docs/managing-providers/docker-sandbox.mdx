@@ -1,0 +1,66 @@
+---
+title: Docker Sandboxes
+sidebar_label: Docker Sandboxes
+---
+
+The planned Docker Sandboxes provider runs each Devsy machine in a local `sbx` microVM. The Devsy agent uses the private Docker Engine inside that VM to build and run ordinary devcontainers. A host Docker Engine is not required.
+
+No provider release exists yet. The installation and machine instructions below apply only after native qualification and publication. The short name cannot be installed before a release.
+
+## Requirements
+
+Install the [standalone `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/) and sign in with `sbx login` outside Devsy. Keep the version listed in the provider release compatibility profile. The provider rejects versions and host systems that have not passed its native qualification.
+
+Local Docker Sandboxes require Apple silicon with macOS 14 or later, Windows 11 on amd64 with Windows Hypervisor Platform, or Ubuntu 24.04 or later on amd64 or arm64 with accessible KVM. A VM running the provider also needs nested virtualization. A host system is supported only if the provider release lists that system as qualified. Docker Desktop and a host Docker Engine are not required.
+
+After a qualified provider release is published, install it with:
+
+```sh
+devsy provider add docker-sandbox
+devsy workspace up https://github.com/devcontainers/samples --provider docker-sandbox
+```
+
+The Devsy Desktop setup wizard does not list this provider before a qualified release. The provider does not install `sbx`, sign in, open a login browser, or change Docker Sandboxes settings.
+
+## Machine resources
+
+Set machine options when creating the machine. `SBX_CPUS` sets virtual CPUs, `SBX_MEMORY` sets memory, `SBX_ROOT_DISK` sets space for the guest system and sources, and `SBX_DOCKER_DISK` sets space for Docker images, containers, and volumes. Sizes use integer binary `m` or `g` units. The defaults are two CPUs, `4g` of memory, and `40g` for each disk. `SBX_PATH` can select a different `sbx` executable. The provider validates these values before creating a VM.
+
+Resources cannot be resized in place. Create another machine and deliberately move the data you need before deleting the original. Changing a saved machine option does not destroy and recreate its VM.
+
+## Sources and development containers
+
+Git sources are cloned into the guest. Local folder sources are uploaded to the guest, not mounted live from the workstation. A local folder rebuild uploads host files again and can overwrite matching guest edits. Push work to Git or transfer it out of the VM if you need it after machine deletion.
+
+The existing Devsy Docker driver handles Dockerfiles, Features, Compose, image sources, lifecycle commands, named volumes, and ordinary guest Docker mounts. An absolute bind source refers to a path in the guest VM, not a path on your workstation. Devsy runs `initializeCommand` in the VM. Your devcontainer chooses its own user and shell.
+
+Devsy's SSH tunnel connects to the final devcontainer for terminal, editor, and application forwarding. A port published by the guest Docker Engine is not automatically a workstation port. Use Devsy port forwarding to reach an application from your host.
+
+## Network and credentials
+
+Docker Sandboxes network policy still applies to the VM and its containers. The provider does not open blocked destinations or disable TLS verification. Container builds and applications may need project specific proxy variables and CA installation. A project using a forward proxy should add the proxy's public CA to its own build context outside version controlled source, install it in the image trust store before HTTPS commands, and pass the proxy build arguments and runtime variables deliberately. Rebuild after CA rotation. Other base images and applications can use different trust stores.
+
+The guest Docker Engine does not share the host Docker Engine or its socket. Devsy credential forwarding and Docker Sandboxes host integrations are separate authority paths. Check your Devsy context and Docker Sandboxes settings for Git and registry credentials, SSH agent forwarding, MCP integrations, and network access. A mountless VM does not disable those integrations. Private image pulls from the guest Engine and sandbox template pulls use separate credential paths.
+
+## Stop, delete, and recovery
+
+Stopping a machine preserves its guest sources, images, containers, and volumes. Starting resumes the same VM. Rebuilding a workspace changes the inner devcontainer without replacing the VM. Deleting a default workspace machine removes the VM and all its guest data, including named volumes. Deleting a workspace on an explicitly shared machine leaves that machine and its other workspaces intact. Uninstalling the provider does not delete its VMs.
+
+With `--single-machine`, deleting its last workspace deletes the shared VM and all guest data. Back up anything you need before deleting that workspace.
+
+Provider state is stored under your user configuration directory at `devsy-provider-docker-sandbox/state-v1`. If creation fails, do not remove that directory or manually reuse a sandbox name. The provider reports the exact machine key and any unresolved child attempt or backend operation. A lost VM is never silently recreated in the same machine generation.
+
+A pending context deletion blocks normal commands but does not stop a provider cleanup helper that Devsy already started. Let that helper finish its scoped cleanup before retrying deletion.
+
+After installation, run `devsy provider list --result-format=json`. If you installed with `devsy --home <path>`, use `devsy --home <path> provider list --result-format=json` and treat that path as Devsy's data directory. In `config.binaries.DOCKER_SANDBOX_PROVIDER`, select the record whose `os` and `arch` match your host. An absolute `path` is the executable. For a remote archive, use `archivePath` under the data directory at `contexts/<context>/providers/<alias>/binaries/docker_sandbox_provider/`. Otherwise, use the record's `name` in that directory. If `name` is empty, use the base name of `path` instead. Without a `--home` override, `DEVSY_HOME` names the data directory when set. Otherwise Devsy uses `~/.devsy` on macOS and Linux, or `%LOCALAPPDATA%\devsy` on Windows. Use the resolved local executable, not the asset URL.
+
+The provider executable installed with the provider accepts:
+
+```text
+<provider-executable> doctor --machine-key <full-key> --json
+<provider-executable> recover --machine-key <full-key> --attempt <id> --acknowledge-client-terminated
+<provider-executable> recover --machine-key <full-key> --operation <id> --acknowledge-backend-settled
+<provider-executable> delete --machine-key <full-key>
+```
+
+Use `doctor` to inspect the saved identity and backend observation without starting a stopped VM. An attempt acknowledgement is appropriate only after its orphaned client has terminated or the host has restarted. A backend acknowledgement is appropriate only after the Docker side operation has settled. Neither acknowledgement starts, stops, or removes a VM. `devsy provider delete` removes the installed executable. Reinstall the same compatible release or preserve its executable before removal if you need scoped recovery afterward. Use scoped deletion only for a machine you intend to destroy. Never use global `sbx` reset or prune to recover one machine.

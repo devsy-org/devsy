@@ -57,12 +57,13 @@ type proxyExecutor struct {
 }
 
 type execParams struct {
-	command   types.StrArray
-	extraEnv  map[string]string
-	stdin     io.Reader
-	stdout    io.Writer
-	stderr    io.Writer
-	rawStdout bool
+	command          types.StrArray
+	extraEnv         map[string]string
+	stdin            io.Reader
+	closeInputOnExit io.Closer
+	stdout           io.Writer
+	stderr           io.Writer
+	rawStdout        bool
 }
 
 // execute runs a proxy command with common settings.
@@ -75,6 +76,7 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 		Config:               e.client.config,
 		ExtraEnv:             params.extraEnv,
 		Stdin:                params.stdin,
+		closeInputOnExit:     params.closeInputOnExit,
 		Stdout:               params.stdout,
 		Stderr:               params.stderr,
 		RawStdout:            params.rawStdout,
@@ -221,11 +223,15 @@ func (s *proxyClient) OpenSSHTransport(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return s.executor.executeWithJSONLog(ctx, execParams{
-				command:   s.config.Exec.Proxy.Ssh,
-				extraEnv:  EncodeOptions(client.SshOptions{User: opt.User}, config.EnvFlagsSSH),
-				stdin:     stdin,
-				stdout:    stdout,
-				rawStdout: true,
+				command: s.config.Exec.Proxy.Ssh,
+				extraEnv: EncodeOptions(
+					client.SshOptions{User: opt.User},
+					config.EnvFlagsSSH,
+				),
+				stdin:            stdin,
+				closeInputOnExit: stdin.(io.Closer),
+				stdout:           stdout,
+				rawStdout:        true,
 			})
 		},
 		transport.CallbackConnOptions{

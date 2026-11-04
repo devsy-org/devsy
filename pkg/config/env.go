@@ -13,6 +13,8 @@ const (
 	// EnvBinaryPath is set to the path of the Devsy binary.
 	EnvBinaryPath = "DEVSY"
 
+	EnvProviderCancelFile = "DEVSY_PROVIDER_CANCEL_FILE"
+
 	// EnvHome overrides the default Devsy home directory.
 	EnvHome = "DEVSY_HOME"
 

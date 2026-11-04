@@ -385,6 +385,9 @@ type workspaceInitializer struct {
 	logger               tunnelserver.Logger
 	dockerCredentialsDir string
 	gitCredentialsHelper string
+	installDocker        func(context.Context) (string, error)
+	findDarwinDocker     func() (string, error)
+	configureDocker      func(context.Context) error
 }
 
 type initWorkspaceParams struct {
@@ -411,6 +414,10 @@ func initWorkspace(
 }
 
 func (w *workspaceInitializer) initialize(ctx context.Context) error {
+	if err := w.validateDockerManagement(); err != nil {
+		return err
+	}
+
 	if err := w.initializeTunnel(ctx); err != nil {
 		return err
 	}
@@ -448,7 +455,11 @@ func (w *workspaceInitializer) tryConfigureDockerDaemon(ctx context.Context) {
 		log.Debug("skipping configuring docker daemon")
 		return
 	}
-	if err := configureDockerDaemon(ctx); err != nil {
+	configure := w.configureDocker
+	if configure == nil {
+		configure = configureDockerDaemon
+	}
+	if err := configure(ctx); err != nil {
 		log.Warn(
 			"could not find docker daemon config file, if using the registry cache, " +
 				"ensure the daemon is configured with containerd-snapshotter=true, " +
@@ -514,25 +525,49 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 	}
 
 	if dockerCmd != docker {
-		path, err := exec.LookPath(dockerCmd)
-		if err != nil {
-			return "", fmt.Errorf("custom docker path %q not found: %w", dockerCmd, err)
-		}
-		return path, nil
+		return findCustomDockerCLI(dockerCmd)
 	}
 
-	if dockerCmd == docker && runtime.GOOS == "darwin" {
-		return findDarwinDockerCLI()
+	if runtime.GOOS == "darwin" {
+		path, err := w.discoverDarwinDockerCLI()
+		if err == nil || !w.isDockerInstallDisabled() {
+			return path, err
+		}
 	}
 
 	if w.isDockerInstallDisabled() {
-		log.Debug(
-			"docker not found but installation was disabled, installing anyway as it is required",
+		return "", fmt.Errorf(
+			"docker CLI is unavailable and agent.docker.install is false (executable %q)",
+			dockerCmd,
 		)
 	}
 
+	return w.installMissingDocker(ctx)
+}
+
+func findCustomDockerCLI(dockerCmd string) (string, error) {
+	path, err := exec.LookPath(dockerCmd)
+	if err != nil {
+		return "", fmt.Errorf("custom docker path %q not found: %w", dockerCmd, err)
+	}
+	return path, nil
+}
+
+func (w *workspaceInitializer) discoverDarwinDockerCLI() (string, error) {
+	find := w.findDarwinDocker
+	if find == nil {
+		find = findDarwinDockerCLI
+	}
+	return find()
+}
+
+func (w *workspaceInitializer) installMissingDocker(ctx context.Context) (string, error) {
 	log.Debug("attempting to install docker")
-	dockerPath, err := installDocker(ctx)
+	install := w.installDocker
+	if install == nil {
+		install = installDocker
+	}
+	dockerPath, err := install(ctx)
 	log.Debugf("docker installation path=%q, err=%v", dockerPath, err)
 	return dockerPath, err
 }
@@ -579,6 +614,9 @@ func (w *workspaceInitializer) getDockerCommand() string {
 }
 
 func (w *workspaceInitializer) isDockerInstallDisabled() bool {
+	if w.workspaceInfo.Agent.Docker.Install == "" {
+		return false
+	}
 	install, err := w.workspaceInfo.Agent.Docker.Install.Bool()
 	return err == nil && !install
 }
@@ -612,9 +650,25 @@ func (w *workspaceInitializer) waitForDocker(resultChan <-chan dockerInstallResu
 	return nil
 }
 
+func (w *workspaceInitializer) validateDockerManagement() error {
+	if _, err := w.workspaceInfo.Agent.Docker.Install.Bool(); err != nil {
+		return fmt.Errorf("agent.docker.install: %w", err)
+	}
+	if _, err := w.workspaceInfo.Agent.Docker.ConfigureDaemon.Bool(); err != nil {
+		return fmt.Errorf("agent.docker.configureDaemon: %w", err)
+	}
+	return nil
+}
+
 func (w *workspaceInitializer) shouldConfigureDockerDaemon() bool {
 	if !w.workspaceInfo.Agent.IsDockerDriver() {
 		return false
+	}
+	if w.workspaceInfo.Agent.Docker.ConfigureDaemon != "" {
+		configure, err := w.workspaceInfo.Agent.Docker.ConfigureDaemon.Bool()
+		if err != nil || !configure {
+			return false
+		}
 	}
 
 	local, err := w.workspaceInfo.Agent.Local.Bool()

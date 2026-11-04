@@ -205,6 +205,10 @@ func validateOptionCacheAndType(optionName string, optionValue *types.Option) er
 }
 
 func validateProviderType(config *ProviderConfig) error {
+	if config.Exec.Cancellation != ProviderCancellationDefault &&
+		config.Exec.Cancellation != ProviderCancellationFile {
+		return fmt.Errorf("exec.cancellation must be empty or file")
+	}
 	if config.IsProxyProvider() {
 		return validateProxyProvider(config)
 	}
@@ -281,12 +285,31 @@ func validateStandardProvider(config *ProviderConfig) error {
 	if err := validateAgentDriver(config); err != nil {
 		return err
 	}
+	if err := validateAgentDockerPolicies(config.Agent.Docker); err != nil {
+		return err
+	}
 
 	if err := validateBinaries("agent.binaries", config.Agent.Binaries); err != nil {
 		return err
 	}
 
 	return validateExecCommands(config)
+}
+
+func validateAgentDockerPolicies(docker ProviderDockerDriverConfig) error {
+	if value := docker.ConfigureDaemon; value != "" &&
+		!templatedValueRegex.MatchString(string(value)) {
+		if _, err := value.Bool(); err != nil {
+			return fmt.Errorf("agent.docker.configureDaemon: %w", err)
+		}
+	}
+	if value := docker.Install; value != "" &&
+		!templatedValueRegex.MatchString(string(value)) {
+		if _, err := value.Bool(); err != nil {
+			return fmt.Errorf("agent.docker.install: %w", err)
+		}
+	}
+	return nil
 }
 
 var validAgentDrivers = map[string]bool{
@@ -345,7 +368,6 @@ func validateExecCommands(config *ProviderConfig) error {
 	if len(config.Exec.Command) == 0 {
 		return fmt.Errorf("exec.command is required")
 	}
-
 	if err := validateExecPair(
 		"exec.create",
 		"exec.delete",

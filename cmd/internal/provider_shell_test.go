@@ -1,0 +1,62 @@
+package cmdinternal
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
+)
+
+func TestProviderShellCommandRegistration(t *testing.T) {
+	command := NewProviderShellCmd()
+	require.Equal(t, "provider-shell", command.Name())
+	require.True(t, command.Hidden)
+	dir := providerShellCLITestDir(t)
+	script := filepath.Join(dir, "script")
+	require.NoError(t, os.WriteFile(script, []byte("exit 0"), 0o600))
+	token := strings.Repeat("0123456789abcdef", 4)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ack-key"), []byte(token), 0o600))
+	parent := &cobra.Command{
+		Use: "devsy",
+		PersistentPreRunE: func(*cobra.Command, []string) error {
+			return config.ErrContextDeletionPending
+		},
+	}
+	parent.AddCommand(command)
+	parent.SetArgs([]string{
+		"provider-shell",
+		"--script-file", script, "--force-file", filepath.Join(dir, "force"),
+		"--ack-file", filepath.Join(dir, "ack"), "--parent-pid", strconv.Itoa(os.Getppid()),
+	})
+	require.NoError(t, parent.Execute())
+	_, err := os.Lstat(filepath.Join(dir, "ack-key"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	root, err := os.OpenRoot(dir)
+	require.NoError(t, err)
+	ack, readErr := root.ReadFile("ack")
+	closeErr := root.Close()
+	require.NoError(t, readErr)
+	require.NoError(t, closeErr)
+	require.Equal(t, token, string(ack))
+}
+
+func TestProviderShellCommandRejectsMissingToken(t *testing.T) {
+	dir := providerShellCLITestDir(t)
+	script := filepath.Join(dir, "script")
+	require.NoError(t, os.WriteFile(script, []byte("printf should-not-run"), 0o600))
+	_, err := os.Lstat(filepath.Join(dir, "ack-key"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	command := NewProviderShellCmd()
+	command.SetArgs([]string{
+		"--script-file", script, "--force-file", filepath.Join(dir, "force"),
+		"--ack-file", filepath.Join(dir, "ack"), "--parent-pid", strconv.Itoa(os.Getppid()),
+	})
+	require.ErrorContains(t, command.Execute(), "invalid provider shell acknowledgement token")
+	_, err = os.Lstat(filepath.Join(dir, "ack"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
