@@ -614,12 +614,21 @@ func (s *Store) launcherLockPath(id string) (string, error) {
 }
 
 func (s *Store) update(id string, mutate func(*State)) error {
+	return s.updateIf(id, func(state *State) bool {
+		mutate(state)
+		return true
+	})
+}
+
+func (s *Store) updateIf(id string, mutate func(*State) bool) error {
 	return s.withLock(id, func() error {
 		state, err := s.readState(id)
 		if err != nil {
 			return err
 		}
-		mutate(state)
+		if !mutate(state) {
+			return nil
+		}
 		state.touch()
 		return s.write(state)
 	})

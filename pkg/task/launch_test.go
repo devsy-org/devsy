@@ -62,6 +62,33 @@ func TestLaunchCommitRequiresReadinessAndPreservesCancellation(t *testing.T) {
 	require.True(t, state.ProcessCleanupComplete)
 }
 
+func TestLaunchCommitPollDoesNotRewriteStateWhileWorkerIsNotReady(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.CreateLaunch(CreateOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, releaseLauncherLock(tk)) })
+	identity, err := command.ProcessTreeIdentity(os.Getpid())
+	require.NoError(t, err)
+	require.NoError(t, tk.PublishProcess(command.ProcessRef{PID: os.Getpid(), Identity: identity}))
+	before, err := store.Get(tk.ID())
+	require.NoError(t, err)
+
+	for range 5 {
+		committed, err := tk.commitLaunchStep()
+		require.NoError(t, err)
+		require.False(t, committed)
+	}
+
+	after, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.True(t, before.UpdatedAt.Equal(after.UpdatedAt))
+
+	require.NoError(t, tk.WorkerLaunchReady(os.Getpid()))
+	committed, err := tk.commitLaunchStep()
+	require.NoError(t, err)
+	require.True(t, committed)
+}
+
 func TestLegacyPendingLaunchCannotClaimCleanup(t *testing.T) {
 	store := newTestStore(t)
 	tk, err := store.Create(CreateOptions{})
