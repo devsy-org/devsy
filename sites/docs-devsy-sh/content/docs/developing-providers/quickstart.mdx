@@ -44,6 +44,8 @@ devsy workspace up github.com/microsoft/vscode-remote-try-go
 
 The `command`, `init`, `create`, `delete`, `start`, `stop`, `status` and `describe` entries are POSIX shell scripts or command arrays. Only `command` is required. `cancellation` is an execution policy, not a script.
 
+An array with one element is parsed as a shell script, not as an executable path. For example, `["/opt/provider tool"]` runs `/opt/provider` with the argument `tool`. Quote the path inside that script or provide a multi-element array to run a path that contains spaces.
+
 - **command**: runs a command in the environment. Devsy uses it to inject itself, and sends all traffic through its standard input and output. Devsy fills in the `${COMMAND}` placeholder.
 - **init**: checks that the options are valid and the provider is ready. Devsy runs it when options change.
 - **create**, **delete**: create and delete a machine. Defining `create` makes the provider a machine provider, so `delete` is expected too.
@@ -56,7 +58,7 @@ A provider without `create` is a non-machine provider and uses only `command` an
 
 With `exec.cancellation: file`, Devsy sets the reserved `DEVSY_PROVIDER_CANCEL_FILE` environment variable to a private, initially nonexistent marker path for each invocation. The provider must watch for the marker, stop admitting work, cancel its owned processes, finish cleanup, and exit. On caller cancellation, Devsy creates the marker and allows up to 10 seconds for cleanup. For single-string shell commands that remain blocked, Devsy then asks its supervised shell to stop and reap its direct children before terminating the shell; it waits up to another 5 seconds for an authenticated acknowledgement before killing an unresponsive helper. A provider-writable acknowledgement file does not establish that cleanup finished: a missing or forged acknowledgement, including when the helper exits abruptly during the cleanup window, is reported as an unclean shutdown alongside the caller's cancellation error. Devsy never kills the provider's process group or unrelated daemon processes. It waits for the invocation to finish and still returns the caller's cancellation error even if cleanup exits successfully. A provider must not set or override the reserved variable.
 
-For single-string commands, the supervisor also stops and reaps direct children still running when the shell script completes normally. A background command started with `&` cannot outlive its invocation. Start durable services through the backend's explicit detached operation, not a shell background job.
+For shell commands, the supervisor also stops and reaps direct children still running when the script completes normally. A direct background child started with `&` cannot outlive its invocation. A detached descendant can outlive it, so the provider must manage those processes explicitly. Start durable services through the backend's explicit detached operation, not a shell background job.
 
 File mode requires finite or nonblocking standard streams, direct file handles, or blocking streams whose owner unblocks them on cancellation of the original calling context. Devsy does not close caller-owned input or global standard input, and process cancellation cannot interrupt an arbitrary blocked reader or writer. Machine command transports close their pipe endpoints on cancellation of the original context. Standard input can close independently of standard output, so providers must continue draining output after input reaches EOF.
 
