@@ -48,7 +48,7 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.8.0
 	github.com/joho/godotenv v1.5.1
-	github.com/moby/buildkit v0.33.0
+	github.com/moby/buildkit v0.33.1
 	github.com/moby/patternmatcher v0.6.1
 	github.com/moby/sys/mountinfo v0.7.2
 	github.com/moby/term v0.5.2
@@ -209,7 +209,7 @@ require (
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.11.1 // indirect
-	github.com/containerd/containerd/v2 v2.3.4 // indirect
+	github.com/containerd/containerd/v2 v2.3.6 // indirect
 	github.com/containerd/continuity v0.5.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
