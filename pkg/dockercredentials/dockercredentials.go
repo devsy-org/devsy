@@ -172,39 +172,14 @@ func buildHelperContent(binaryPath, shebang string, port int) []byte {
 }
 
 func ConfigureCredentialsDockerless(targetFolder string, port int) (string, error) {
-	dockerConfigDir := newDockerCredentialsDir(targetFolder)
-
-	if err := preserveDockerConfig(dockerConfigDir); err != nil {
-		_ = os.RemoveAll(dockerConfigDir)
-		return "", err
-	}
-
-	err := configureCredentials("", port, credentialLayout{
-		shebang:   "#!/.dockerless/bin/sh",
-		targetDir: dockerConfigDir,
-		configDir: dockerConfigDir,
-	})
-	if err != nil {
-		_ = os.RemoveAll(dockerConfigDir)
-		return "", err
-	}
-
-	err = os.Setenv("DOCKER_CONFIG", dockerConfigDir)
-	if err != nil {
-		_ = os.RemoveAll(dockerConfigDir)
-		return "", err
-	}
-
-	err = appendToPath(dockerConfigDir)
-	if err != nil {
-		_ = os.RemoveAll(dockerConfigDir)
-		return "", err
-	}
-
-	return dockerConfigDir, nil
+	return configureCredentialsInDir(targetFolder, port, "#!/.dockerless/bin/sh")
 }
 
 func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) {
+	return configureCredentialsInDir(targetFolder, port, "#!/bin/sh")
+}
+
+func configureCredentialsInDir(targetFolder string, port int, shebang string) (string, error) {
 	dockerConfigDir := newDockerCredentialsDir(targetFolder)
 
 	if err := preserveDockerConfig(dockerConfigDir); err != nil {
@@ -213,7 +188,7 @@ func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) 
 	}
 
 	err := configureCredentials("", port, credentialLayout{
-		shebang:   "#!/bin/sh",
+		shebang:   shebang,
 		targetDir: dockerConfigDir,
 		configDir: dockerConfigDir,
 	})

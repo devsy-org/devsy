@@ -71,6 +71,13 @@ unit:
       require_tests: [TestTaskQueriesRejectUncertainRecords, TestGetWaitsForWriterHoldingExclusiveFileHandle]
       args: [-race, -count=1, -timeout=10m]
 
+    - name: windows-pty
+      description: native Windows pseudoconsole and PTY test helpers
+      os: [windows]
+      packages: [./pkg/pty, ./pkg/pty/ptytest]
+      require_tests: [TestStartWindowsSuite, TestPtytestSuite]
+      args: [-race, -short, -count=1, -timeout=5m]
+
     - name: windows-detached-workspace-lifecycle
       description: native Windows detached workers, followers, and task results
       os: [windows]

@@ -241,28 +241,25 @@ func desktopGPGDiagnosticPath(path string) (string, error) {
 }
 
 func gpgForwardFailureCode(err error) string {
-	switch {
-	case strings.Contains(err.Error(), "start gpg-agent reverse forward"):
-		return "reverse_forward_failed"
-	case strings.Contains(err.Error(), "detect gpg-agent socket path"):
-		return "host_agent_socket_unavailable"
-	case strings.Contains(err.Error(), "export local ownertrust from GPG"):
-		return "host_gpg_configuration_unavailable"
-	default:
-		return "setup_failed"
-	}
+	code, _ := classifyGPGForwardFailure(err)
+	return code
 }
 
 func gpgForwardFailureReason(err error) string {
+	_, reason := classifyGPGForwardFailure(err)
+	return reason
+}
+
+func classifyGPGForwardFailure(err error) (string, string) {
 	switch {
 	case strings.Contains(err.Error(), "start gpg-agent reverse forward"):
-		return "GPG reverse forwarding failed"
+		return "reverse_forward_failed", "GPG reverse forwarding failed"
 	case strings.Contains(err.Error(), "detect gpg-agent socket path"):
-		return "Host GPG agent socket unavailable"
+		return "host_agent_socket_unavailable", "Host GPG agent socket unavailable"
 	case strings.Contains(err.Error(), "export local ownertrust from GPG"):
-		return "Unable to read host GPG configuration"
+		return "host_gpg_configuration_unavailable", "Unable to read host GPG configuration"
 	default:
-		return "GPG agent setup failed"
+		return "setup_failed", "GPG agent setup failed"
 	}
 }
 

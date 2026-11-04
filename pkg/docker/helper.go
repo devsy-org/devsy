@@ -36,6 +36,7 @@ var (
 	containerRunningPollInterval = 500 * time.Millisecond
 	containerRunningTimeout      = 30 * time.Second
 	containerExitGrace           = 2 * time.Second
+	inspectDiagnosticGrace       = 250 * time.Millisecond
 
 	// podmanMachineStartTimeout is the maximum time to wait for a Podman machine to start.
 	podmanMachineStartTimeout = 90 * time.Second
@@ -537,7 +538,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 				// daemon error can still be captured for the final diagnostic.
 				diagnosticCtx, diagnosticCancel := context.WithTimeout(
 					context.WithoutCancel(ctx),
-					250*time.Millisecond,
+					inspectDiagnosticGrace,
 				)
 				details, err = r.InspectContainers(diagnosticCtx, []string{containerID})
 				diagnosticCancel()
@@ -575,7 +576,7 @@ func inspectionDiagnosticContext(ctx context.Context) (context.Context, context.
 	if !ok || time.Until(deadline) > 100*time.Millisecond {
 		return ctx, func() {}
 	}
-	return context.WithTimeout(context.WithoutCancel(ctx), 250*time.Millisecond)
+	return context.WithTimeout(context.WithoutCancel(ctx), inspectDiagnosticGrace)
 }
 
 func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string, error) {

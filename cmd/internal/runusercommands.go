@@ -487,15 +487,17 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 	})
 }
 
+type lifecycleHook struct {
+	name string
+	cmds []types.LifecycleHook
+	skip bool
+}
+
 func (cmd *RunUserCommandsCmd) runLifecycleHooksUnscoped(
 	params *workspace.LifecycleExecParams,
 	result *devcconfig.Result,
 ) error {
-	hooks := []struct {
-		name string
-		cmds []types.LifecycleHook
-		skip bool
-	}{
+	hooks := []lifecycleHook{
 		{"onCreateCommand", result.MergedConfig.OnCreateCommands, cmd.SkipOnCreate},
 		{updateContentCommand, result.MergedConfig.UpdateContentCommands, cmd.SkipUpdateContent},
 		{"postCreateCommand", result.MergedConfig.PostCreateCommands, cmd.SkipPostCreate},
@@ -503,11 +505,15 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooksUnscoped(
 		{"postAttachCommand", result.MergedConfig.PostAttachCommands, cmd.SkipPostAttach},
 	}
 
-	waitForBoundary := resolveWaitForBoundary(result)
+	waitForBoundary := resolveWaitForBoundary(hooks, result)
+	prebuildBoundary := 0
+	if cmd.Prebuild {
+		prebuildBoundary = resolveWaitForBoundary(hooks, nil)
+	}
 	boundaryName := hooks[waitForBoundary].name
 
 	for i, hook := range hooks {
-		if cmd.shouldStopLifecycle(i, waitForBoundary, boundaryName) {
+		if cmd.shouldStopLifecycle(i, prebuildBoundary, waitForBoundary, boundaryName) {
 			return nil
 		}
 		if hook.skip {
@@ -522,10 +528,10 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooksUnscoped(
 }
 
 func (cmd *RunUserCommandsCmd) shouldStopLifecycle(
-	i, waitForBoundary int,
+	i, prebuildBoundary, waitForBoundary int,
 	boundaryName string,
 ) bool {
-	if cmd.Prebuild && i >= 2 {
+	if cmd.Prebuild && i > prebuildBoundary {
 		log.Debugf(
 			"stopping lifecycle execution (%s: after %s)",
 			names.Flag(names.Prebuild),
@@ -558,27 +564,21 @@ func execLifecycleHooks(
 	return nil
 }
 
-func resolveWaitForBoundary(result *devcconfig.Result) int {
-	if result == nil || result.MergedConfig == nil {
-		return 1
+func resolveWaitForBoundary(hooks []lifecycleHook, result *devcconfig.Result) int {
+	waitFor := updateContentCommand
+	if result != nil && result.MergedConfig != nil && result.MergedConfig.WaitFor != "" {
+		waitFor = result.MergedConfig.WaitFor
 	}
-	hookNames := []string{
-		"onCreateCommand",
-		updateContentCommand,
-		"postCreateCommand",
-		"postStartCommand",
-		"postAttachCommand",
-	}
-	waitFor := result.MergedConfig.WaitFor
-	if waitFor == "" {
-		waitFor = updateContentCommand
-	}
-	for i, name := range hookNames {
-		if name == waitFor {
+	fallback := 0
+	for i, hook := range hooks {
+		if hook.name == updateContentCommand {
+			fallback = i
+		}
+		if hook.name == waitFor {
 			return i
 		}
 	}
-	return 1
+	return fallback
 }
 
 // runRecording is the fresh run opened for one run-user-commands invocation.

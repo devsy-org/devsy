@@ -336,26 +336,37 @@ func (l *localServer) updateUserProfile(
 	return writeJSON(w, updatedProfile)
 }
 
-func (l *localServer) projects(w http.ResponseWriter, r *http.Request) error {
+func (l *localServer) accessibleProjects(
+	ctx context.Context,
+) (kube.Interface, []managementv1.Project, error) {
 	managementClient, err := l.pc.Management()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	projectList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
-		List(r.Context(), metav1.ListOptions{})
+		List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("list projects: %w", err)
+		return nil, nil, fmt.Errorf("list projects: %w", err)
 	} else if len(projectList.Items) == 0 {
 		err := fmt.Errorf(
 			"you don't have access to any projects, make sure you have at least access to 1 project",
 		)
-		return forbidden(err)
+		return nil, nil, forbidden(err)
 	}
 
-	return writeJSON(w, projectList.Items)
+	return managementClient, projectList.Items, nil
+}
+
+func (l *localServer) projects(w http.ResponseWriter, r *http.Request) error {
+	_, projects, err := l.accessibleProjects(r.Context())
+	if err != nil {
+		return err
+	}
+
+	return writeJSON(w, projects)
 }
 
 func (l *localServer) projectTemplates(
@@ -460,26 +471,13 @@ func (l *localServer) listWorkspace(
 		ownerFilter.filter = platform.OwnerFilter(ownerParam)
 	}
 
-	managementClient, err := l.pc.Management()
+	managementClient, projects, err := l.accessibleProjects(r.Context())
 	if err != nil {
 		return err
 	}
 
-	projectList, err := managementClient.Devsy().
-		ManagementV1().
-		Projects().
-		List(r.Context(), metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("list projects: %w", err)
-	} else if len(projectList.Items) == 0 {
-		err := fmt.Errorf(
-			"you don't have access to any projects, make sure you have at least access to 1 project",
-		)
-		return forbidden(err)
-	}
-
 	instances := []managementv1.DevsyWorkspaceInstance{}
-	for _, p := range projectList.Items {
+	for _, p := range projects {
 		projectInstances, err := collectProjectWorkspaces(
 			r.Context(), managementClient, p, ownerFilter,
 		)

@@ -29,6 +29,12 @@ const (
 	projectNameFlag = "--project-name"
 )
 
+var (
+	legacyProjectNamePattern = regexp.MustCompile("[^a-z0-9]")
+	projectNamePattern       = regexp.MustCompile("[^-_a-z0-9]")
+	composeVersionPattern    = regexp.MustCompile(`(\d+\.\d+\.\d+)`)
+)
+
 func LoadDockerComposeProject(
 	ctx context.Context,
 	paths []string,
@@ -299,19 +305,8 @@ func (h *ComposeHelper) Stop(ctx context.Context, projectName string, args []str
 	buildArgs = append(buildArgs, args...)
 	buildArgs = append(buildArgs, "stop")
 
-	out, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 {
-		log.Warnf(
-			"%s: %s",
-			strings.TrimSpace(string(stderr)),
-			strings.TrimSpace(string(out)),
-		)
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(stderr)), err)
-	}
-
-	return nil
+	_, err := runComposeCmd(h.buildCmd(ctx, buildArgs...))
+	return err
 }
 
 func (h *ComposeHelper) Remove(
@@ -327,19 +322,8 @@ func (h *ComposeHelper) Remove(
 		buildArgs = append(buildArgs, "--volumes")
 	}
 
-	out, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 {
-		log.Warnf(
-			"%s: %s",
-			strings.TrimSpace(string(stderr)),
-			strings.TrimSpace(string(out)),
-		)
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(stderr)), err)
-	}
-
-	return nil
+	_, err := runComposeCmd(h.buildCmd(ctx, buildArgs...))
+	return err
 }
 
 func (h *ComposeHelper) GetDefaultImage(projectName, serviceName string) (string, error) {
@@ -367,16 +351,9 @@ func (h *ComposeHelper) FindProjectFiles(
 	buildArgs := []string{projectNameFlag, projectName}
 	buildArgs = append(buildArgs, "ls", "-a", "--filter", "name="+projectName, "--format", "json")
 
-	rawOut, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 {
-		log.Warnf(
-			"%s: %s",
-			strings.TrimSpace(string(stderr)),
-			strings.TrimSpace(string(rawOut)),
-		)
-	}
+	rawOut, err := runComposeCmd(h.buildCmd(ctx, buildArgs...))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", strings.TrimSpace(string(stderr)), err)
+		return nil, err
 	}
 
 	type composeOutput struct {
@@ -417,10 +394,21 @@ func (h *ComposeHelper) SanitizeProjectName(name string) string {
 func (h *ComposeHelper) toProjectName(projectName string) string {
 	useNewProjectNameFormat, _ := h.useNewProjectName()
 	if !useNewProjectNameFormat {
-		return regexp.MustCompile("[^a-z0-9]").ReplaceAllString(strings.ToLower(projectName), "")
+		return legacyProjectNamePattern.ReplaceAllString(strings.ToLower(projectName), "")
 	}
 
-	return regexp.MustCompile("[^-_a-z0-9]").ReplaceAllString(strings.ToLower(projectName), "")
+	return projectNamePattern.ReplaceAllString(strings.ToLower(projectName), "")
+}
+
+func runComposeCmd(cmd *exec.Cmd) ([]byte, error) {
+	out, stderr, err := runCmdCapture(cmd)
+	if len(stderr) > 0 {
+		log.Warnf("%s: %s", strings.TrimSpace(string(stderr)), strings.TrimSpace(string(out)))
+	}
+	if err != nil {
+		return out, fmt.Errorf("%s: %w", strings.TrimSpace(string(stderr)), err)
+	}
+	return out, nil
 }
 
 func (h *ComposeHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
@@ -454,8 +442,7 @@ func runCmdCapture(cmd *exec.Cmd) ([]byte, []byte, error) {
 // and desktop versions (2.40.3-desktop.1) by extracting only major.minor.patch.
 func parseVersion(version string) (semver.Version, error) {
 	version = strings.TrimPrefix(version, "v")
-	re := regexp.MustCompile(`(\d+\.\d+\.\d+)`)
-	matches := re.FindStringSubmatch(strings.TrimSpace(version))
+	matches := composeVersionPattern.FindStringSubmatch(strings.TrimSpace(version))
 	if len(matches) < 2 {
 		return semver.Version{}, fmt.Errorf("invalid version format: %s", version)
 	}

@@ -288,6 +288,7 @@ func spawnTunnelHelper(opts spawnHelperOpts) (int, string, error) {
 
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
+		setup.Cleanup()
 		return 0, "", fmt.Errorf("open %s: %w", os.DevNull, err)
 	}
 	defer func() { _ = devNull.Close() }()

@@ -62,15 +62,7 @@ func (d *appleDriver) BuildDevContainer(
 		return nil, fmt.Errorf("get image details: %w", err)
 	}
 
-	return &config.BuildInfo{
-		ImageDetails:  imageDetails,
-		ImageMetadata: req.ExtendedBuildInfo.MetadataConfig,
-		ImageName:     imageName,
-		PrebuildHash:  req.PrebuildHash,
-		RegistryCache: req.Options.RegistryCache,
-		Tags:          req.Options.Tag,
-		BuiltLocally:  true,
-	}, nil
+	return newBuildInfo(imageDetails, imageName, &req), nil
 }
 
 func (d *appleDriver) resolveExistingImage(
@@ -89,6 +81,14 @@ func (d *appleDriver) resolveExistingImage(
 
 	log.Debugf("found existing local image %s", imageName)
 	recordImageReused(ctx)
+	return newBuildInfo(imageDetails, imageName, &req), true
+}
+
+func newBuildInfo(
+	imageDetails *config.ImageDetails,
+	imageName string,
+	req *driver.BuildRequest,
+) *config.BuildInfo {
 	return &config.BuildInfo{
 		ImageDetails:  imageDetails,
 		ImageMetadata: req.ExtendedBuildInfo.MetadataConfig,
@@ -97,7 +97,7 @@ func (d *appleDriver) resolveExistingImage(
 		RegistryCache: req.Options.RegistryCache,
 		Tags:          req.Options.Tag,
 		BuiltLocally:  true,
-	}, true
+	}
 }
 
 func (d *appleDriver) executeBuild(

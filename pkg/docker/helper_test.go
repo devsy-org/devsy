@@ -552,6 +552,9 @@ func TestWaitContainerRunning_PreservesDeadlineExceededWithInspectError(t *testi
 	original := containerRunningTimeout
 	containerRunningTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { containerRunningTimeout = original })
+	originalGrace := inspectDiagnosticGrace
+	inspectDiagnosticGrace = 10 * time.Second
+	t.Cleanup(func() { inspectDiagnosticGrace = originalGrace })
 
 	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
 case "$1" in

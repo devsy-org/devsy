@@ -159,28 +159,10 @@ func GetImageMetadataFromContainer(
 		return &config.ImageMetadataConfig{}, nil
 	}
 
-	imageMetadataConfig := &config.ImageMetadataConfig{}
-	multiple := []*config.ImageMetadata{}
-	err := json.Unmarshal([]byte(containerDetails.Config.Labels[ImageMetadataLabel]), &multiple)
-	if err != nil {
-		single := &config.ImageMetadata{}
-		err = json.Unmarshal([]byte(containerDetails.Config.Labels[ImageMetadataLabel]), single)
-		if err != nil {
-			log.Warnf("Error parsing image metadata: %v", err)
-			return &config.ImageMetadataConfig{}, nil
-		}
-
-		imageMetadataConfig.Raw = []*config.ImageMetadata{single}
-	} else {
-		imageMetadataConfig.Raw = multiple
-	}
-
-	err = substituteConfig(imageMetadataConfig, substituteContext)
-	if err != nil {
-		return nil, err
-	}
-
-	return imageMetadataConfig, nil
+	return decodeImageMetadata(
+		containerDetails.Config.Labels[ImageMetadataLabel],
+		substituteContext,
+	)
 }
 
 func GetImageMetadata(
@@ -195,12 +177,19 @@ func GetImageMetadata(
 		return &config.ImageMetadataConfig{}, nil
 	}
 
+	return decodeImageMetadata(imageDetails.Config.Labels[ImageMetadataLabel], substituteContext)
+}
+
+func decodeImageMetadata(
+	label string,
+	substituteContext *config.SubstitutionContext,
+) (*config.ImageMetadataConfig, error) {
 	imageMetadataConfig := &config.ImageMetadataConfig{}
 	multiple := []*config.ImageMetadata{}
-	err := json.Unmarshal([]byte(imageDetails.Config.Labels[ImageMetadataLabel]), &multiple)
+	err := json.Unmarshal([]byte(label), &multiple)
 	if err != nil {
 		single := &config.ImageMetadata{}
-		err = json.Unmarshal([]byte(imageDetails.Config.Labels[ImageMetadataLabel]), single)
+		err = json.Unmarshal([]byte(label), single)
 		if err != nil {
 			log.Warnf("Error parsing image metadata: %v", err)
 			return &config.ImageMetadataConfig{}, nil

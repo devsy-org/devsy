@@ -250,6 +250,31 @@ func TestReconcileReusesPodWhenOnlyImageConfigFileChanged(t *testing.T) {
 	assert.Zero(t, c.deleteCalls())
 }
 
+func TestReconcileReusesPodWhenOnlyConnectionOptionsChanged(t *testing.T) {
+	c := newFakeCluster(t)
+	c.putPod(t, c.pod(t, podSpec{
+		uid:   "u1",
+		phase: corev1.PodRunning,
+		options: &provider2.ProviderKubernetesDriverConfig{
+			DiskSize:            testDiskSize,
+			KubernetesContext:   "previous-context",
+			KubernetesConfig:    "/previous/config",
+			KubernetesNamespace: "previous-namespace",
+			PodTimeout:          "1m",
+		},
+		devsy: &corev1.ContainerStatus{
+			State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		},
+	}))
+
+	reused, err := c.reconcile(context.Background())
+
+	require.NoError(t, err)
+	assert.True(t, reused)
+	assert.Zero(t, c.deleteCalls())
+	assert.Equal(t, "2s", c.k.options.PodTimeout)
+}
+
 func TestWithoutLocalOptionsDropsImageConfigFile(t *testing.T) {
 	options := &provider2.ProviderKubernetesDriverConfig{
 		DiskSize:        testDiskSize,

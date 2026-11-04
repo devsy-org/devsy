@@ -24,27 +24,21 @@ func Run(url string) error {
 
 // Open opens the given url in the default application, retrying every second until the context is done.
 func Open(ctx context.Context, url string) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(time.Second):
-			err := tryOpen(ctx, url, Run)
-			if err == nil {
-				return nil
-			}
-		}
-	}
+	return openWithRetry(ctx, url, Run)
 }
 
 // JLabDesktop opens the given url in the JLab desktop application, retrying every second until the context is done.
 func JLabDesktop(ctx context.Context, url string) error {
+	return openWithRetry(ctx, url, jlabOpen)
+}
+
+func openWithRetry(ctx context.Context, url string, fn func(string) error) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(time.Second):
-			err := tryOpen(ctx, url, jlabOpen)
+			err := tryOpen(ctx, url, fn)
 			if err == nil {
 				return nil
 			}

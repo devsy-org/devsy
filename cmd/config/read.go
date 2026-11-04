@@ -196,31 +196,7 @@ func (cmd *ReadCmd) resolveConfigFromContainer(ctx context.Context) (
 		return nil, "", fmt.Errorf("container %s not found", cmd.ContainerID)
 	}
 
-	containerDetails := &details[0]
-	subCtx := &devcconfig.SubstitutionContext{}
-
-	imageMetadata, err := metadata.GetImageMetadataFromContainer(
-		containerDetails,
-		subCtx,
-	)
-	if err != nil {
-		return nil, "", fmt.Errorf("get image metadata from container: %w", err)
-	}
-
-	parsedConfig := &devcconfig.DevContainerConfig{}
-	if len(imageMetadata.Config) > 0 {
-		last := imageMetadata.Config[len(imageMetadata.Config)-1]
-		parsedConfig.DevContainerConfigBase = last.DevContainerConfigBase
-		parsedConfig.DevContainerActions = last.DevContainerActions
-		parsedConfig.NonComposeBase = last.NonComposeBase
-	}
-
-	workspaceFolder := containerDetails.Config.WorkingDir
-	if workspaceFolder == "" {
-		workspaceFolder = "/"
-	}
-
-	return parsedConfig, workspaceFolder, nil
+	return configFromContainerDetails(&details[0])
 }
 
 func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
@@ -234,7 +210,16 @@ func (cmd *ReadCmd) resolveConfigFromIDLabels(ctx context.Context) (
 		return nil, "", err
 	}
 
+	return configFromContainerDetails(containerDetails)
+}
+
+func configFromContainerDetails(containerDetails *devcconfig.ContainerDetails) (
+	*devcconfig.DevContainerConfig,
+	string,
+	error,
+) {
 	subCtx := &devcconfig.SubstitutionContext{}
+
 	imageMetadata, err := metadata.GetImageMetadataFromContainer(
 		containerDetails,
 		subCtx,

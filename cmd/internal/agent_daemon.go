@@ -499,13 +499,20 @@ func (cmd *DaemonCmd) shutdownWorkspace(
 func (cmd *DaemonCmd) effectiveShutdownAction(
 	workspace *provider2.AgentWorkspaceInfo,
 ) string {
+	if action, ok := workspaceShutdownAction(workspace); ok {
+		return action
+	}
+	return cmd.ShutdownAction
+}
+
+func workspaceShutdownAction(workspace *provider2.AgentWorkspaceInfo) (string, bool) {
 	if workspace != nil &&
 		workspace.LastDevContainerConfig != nil &&
 		workspace.LastDevContainerConfig.Config != nil &&
 		workspace.LastDevContainerConfig.Config.ShutdownAction != "" {
-		return workspace.LastDevContainerConfig.Config.ShutdownAction
+		return workspace.LastDevContainerConfig.Config.ShutdownAction, true
 	}
-	return cmd.ShutdownAction
+	return "", false
 }
 
 func (cmd *DaemonCmd) runShutdownCommand(
@@ -772,10 +779,9 @@ func blockedWorkspaceResult(
 }
 
 func shutdownActionEnabled(workspace *provider2.AgentWorkspaceInfo, fallback string) bool {
-	action := fallback
-	if workspace.LastDevContainerConfig != nil && workspace.LastDevContainerConfig.Config != nil &&
-		workspace.LastDevContainerConfig.Config.ShutdownAction != "" {
-		action = workspace.LastDevContainerConfig.Config.ShutdownAction
+	action, ok := workspaceShutdownAction(workspace)
+	if !ok {
+		action = fallback
 	}
 	return len(workspace.Agent.Exec.Shutdown) > 0 && action != config.ShutdownActionNone
 }

@@ -165,6 +165,20 @@ mise installs the pinned `protoc`. The task installs the Go protobuf plugins.
 
 ## Test your changes
 
+### Go resource lifecycle checks
+
+Run affected packages with `go test -race -short -count=1`, then run
+`mise run cli:lint:ci`. Resource cleanup changes need coverage of failure paths
+as well as successful calls.
+
+The browser tunnel regression in `pkg/ide/opener` exhausts file descriptors in
+an isolated subprocess on Linux and macOS. It checks that a failed helper launch
+releases its reserved port. Platform reachability tests in `cmd/pro` use local
+HTTP servers to check connection cleanup between probes.
+
+Cross-compilation checks platform buildability, not runtime behavior. Windows
+PTY tests run through the `windows-pty` step in `hack/ci/suites.yaml`.
+
 ### Quick start
 
 1. Build Devsy:

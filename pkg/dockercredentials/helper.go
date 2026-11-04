@@ -99,29 +99,8 @@ func (h *Helper) List() (map[string]string, error) {
 }
 
 func (h *Helper) getFromCredentialsServer(serverURL string) (string, string, error) {
-	requestBody, err := json.Marshal(&Request{ServerURL: serverURL})
-	if err != nil {
-		return "", "", err
-	}
-
-	client := &http.Client{Timeout: credentialsTimeout}
 	endpoint := fmt.Sprintf("http://localhost:%d/docker-credentials", h.port)
-	resp, err := client.Post(endpoint, "application/json", bytes.NewReader(requestBody))
-	if err != nil {
-		return "", "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	var creds Credentials
-	if err := json.NewDecoder(resp.Body).Decode(&creds); err != nil {
-		return "", "", err
-	}
-
-	return creds.Username, creds.Secret, nil
+	return getFromEndpoint(endpoint, serverURL)
 }
 
 func (h *Helper) getFromWorkspaceServer(serverURL string) (string, string, error) {
@@ -129,14 +108,17 @@ func (h *Helper) getFromWorkspaceServer(serverURL string) (string, string, error
 	if workspacePort == "" {
 		return "", "", fmt.Errorf("no workspace port")
 	}
+	endpoint := fmt.Sprintf("http://localhost:%s/docker-credentials", workspacePort)
+	return getFromEndpoint(endpoint, serverURL)
+}
 
+func getFromEndpoint(endpoint, serverURL string) (string, string, error) {
 	requestBody, err := json.Marshal(&Request{ServerURL: serverURL})
 	if err != nil {
 		return "", "", err
 	}
 
 	client := &http.Client{Timeout: credentialsTimeout}
-	endpoint := fmt.Sprintf("http://localhost:%s/docker-credentials", workspacePort)
 	//nolint:gosec // endpoint is always loopback; only the port comes from the agent environment
 	resp, err := client.Post(endpoint, "application/json", bytes.NewReader(requestBody))
 	if err != nil {

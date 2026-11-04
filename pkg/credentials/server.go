@@ -87,7 +87,8 @@ func runCredentialsServer(
 	status Readiness,
 ) error {
 	srv := &http.Server{
-		Handler:           newPreparedHandler(ctx, client, status.Owner, status),
+		Handler:           newPreparedHandler(client, status.Owner, status),
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -126,15 +127,13 @@ const ownerPath = "/owner"
 // Root is a readiness probe (see waitForServer); it must return 200 so the
 // server is detected as up. Unknown paths still 404 below.
 func newCredentialsHandler(
-	ctx context.Context,
 	client CredentialsClient,
 	owner string,
 ) http.Handler {
-	return newPreparedHandler(ctx, client, owner, Readiness{})
+	return newPreparedHandler(client, owner, Readiness{})
 }
 
 func newPreparedHandler(
-	ctx context.Context,
 	client CredentialsClient,
 	owner string,
 	status Readiness,
@@ -186,7 +185,7 @@ func newPreparedHandler(
 			http.NotFound(writer, request)
 			return
 		}
-		if err := handler(ctx, writer, request, client); err != nil {
+		if err := handler(request.Context(), writer, request, client); err != nil {
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 		}
 	})

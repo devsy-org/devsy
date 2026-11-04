@@ -245,18 +245,11 @@ func extractLevelPrefix(line string) (bool, zapcore.Level) {
 		return false, 0
 	}
 
-	switch strings.ToLower(parts[1]) {
-	case "trace", "debug":
-		return true, zapcore.DebugLevel
-	case infoLevelName:
-		return true, zapcore.InfoLevel
-	case "warning", "warn":
-		return true, zapcore.WarnLevel
-	case "error", "panic", "fatal":
-		return true, zapcore.ErrorLevel
-	default:
+	level, recognized := normalizeZapLevel(parts[1])
+	if !recognized {
 		return false, 0
 	}
+	return true, level
 }
 
 func logAtZapLevel(level zapcore.Level, message string) {

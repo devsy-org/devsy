@@ -175,18 +175,9 @@ type directClusterEndpointForSpaceParams struct {
 func directClusterEndpointKubeConfigForSpace(
 	p directClusterEndpointForSpaceParams,
 ) (*clientcmdapi.Config, error) {
-	tok := &managementv1.DirectClusterEndpointToken{
-		Spec: managementv1.DirectClusterEndpointTokenSpec{
-			Scope: p.scope,
-			TTL:   p.ttl,
-		},
-	}
-	directClusterEndpointToken, err := p.managementClient.Devsy().
-		ManagementV1().
-		DirectClusterEndpointTokens().
-		Create(p.ctx, tok, metav1.CreateOptions{})
+	token, err := createDirectClusterEndpointToken(p.ctx, p.managementClient, p.scope, p.ttl)
 	if err != nil {
-		return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
+		return nil, err
 	}
 
 	directClusterEndpoint := p.hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint]
@@ -199,7 +190,7 @@ func directClusterEndpointKubeConfigForSpace(
 
 	return newKubeConfig(
 		host,
-		directClusterEndpointToken.Status.Token,
+		token,
 		p.spaceInstance.Spec.ClusterRef.Namespace,
 	), nil
 }
@@ -419,18 +410,14 @@ func directClusterEndpointKubeConfig(
 	req vClusterKubeConfigRequest,
 	hostCluster managementv1.Cluster,
 ) (*clientcmdapi.Config, error) {
-	tok := &managementv1.DirectClusterEndpointToken{
-		Spec: managementv1.DirectClusterEndpointTokenSpec{
-			Scope: req.scope,
-			TTL:   req.ttl,
-		},
-	}
-	directClusterEndpointToken, err := req.managementClient.Devsy().
-		ManagementV1().
-		DirectClusterEndpointTokens().
-		Create(req.ctx, tok, metav1.CreateOptions{})
+	token, err := createDirectClusterEndpointToken(
+		req.ctx,
+		req.managementClient,
+		req.scope,
+		req.ttl,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
+		return nil, err
 	}
 
 	directClusterEndpoint := hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint]
@@ -443,9 +430,31 @@ func directClusterEndpointKubeConfig(
 
 	return newKubeConfig(
 		host,
-		directClusterEndpointToken.Status.Token,
+		token,
 		req.instance.Spec.ClusterRef.Namespace,
 	), nil
+}
+
+func createDirectClusterEndpointToken(
+	ctx context.Context,
+	managementClient kube.Interface,
+	scope *storagev1.AccessKeyScope,
+	ttl int64,
+) (string, error) {
+	tok := &managementv1.DirectClusterEndpointToken{
+		Spec: managementv1.DirectClusterEndpointTokenSpec{
+			Scope: scope,
+			TTL:   ttl,
+		},
+	}
+	created, err := managementClient.Devsy().
+		ManagementV1().
+		DirectClusterEndpointTokens().
+		Create(ctx, tok, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("create direct cluster endpoint token: %w", err)
+	}
+	return created.Status.Token, nil
 }
 
 func findHostCluster(

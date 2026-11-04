@@ -250,43 +250,23 @@ func openJetBrains(
 	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
 	sshHost := resolveSSHHost(params.Client)
 	user := params.User
-	type jetbrainsFactory func() interface{ OpenGateway(string, string) error }
+	type jetbrainsFactory func(string, map[string]config.OptionValue) *jetbrains.GenericJetBrainsServer
 
 	jetbrainsMap := map[string]jetbrainsFactory{
-		string(config.IDERustRover): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRustRoverServer(user, ideOptions)
-		},
-		string(config.IDEGoland): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewGolandServer(user, ideOptions)
-		},
-		string(config.IDEPyCharm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewPyCharmServer(user, ideOptions)
-		},
-		string(config.IDEPhpStorm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewPhpStorm(user, ideOptions)
-		},
-		string(config.IDEIntellij): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewIntellij(user, ideOptions)
-		},
-		string(config.IDECLion): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewCLionServer(user, ideOptions)
-		},
-		string(config.IDERider): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRiderServer(user, ideOptions)
-		},
-		string(config.IDERubyMine): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRubyMineServer(user, ideOptions)
-		},
-		string(config.IDEWebStorm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewWebStormServer(user, ideOptions)
-		},
-		string(config.IDEDataSpell): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewDataSpellServer(user, ideOptions)
-		},
+		string(config.IDERustRover): jetbrains.NewRustRoverServer,
+		string(config.IDEGoland):    jetbrains.NewGolandServer,
+		string(config.IDEPyCharm):   jetbrains.NewPyCharmServer,
+		string(config.IDEPhpStorm):  jetbrains.NewPhpStorm,
+		string(config.IDEIntellij):  jetbrains.NewIntellij,
+		string(config.IDECLion):     jetbrains.NewCLionServer,
+		string(config.IDERider):     jetbrains.NewRiderServer,
+		string(config.IDERubyMine):  jetbrains.NewRubyMineServer,
+		string(config.IDEWebStorm):  jetbrains.NewWebStormServer,
+		string(config.IDEDataSpell): jetbrains.NewDataSpellServer,
 	}
 
 	if factory, ok := jetbrainsMap[ideName]; ok {
-		return factory().OpenGateway(folder, sshHost)
+		return factory(user, ideOptions).OpenGateway(folder, sshHost)
 	}
 	return fmt.Errorf("unknown JetBrains IDE: %s", ideName)
 }

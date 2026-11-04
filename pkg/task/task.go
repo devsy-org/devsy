@@ -602,12 +602,12 @@ func (r taskReporter) Report(e status.Event) {
 		if s.Status.Terminal() || s.CancelRequested {
 			return
 		}
+		s.Phase = redactor.Redact(string(e.Phase))
+		s.Step = redactor.Redact(e.Step)
+		s.OperationID = redactor.Redact(e.OperationID)
+		s.ParentOperationID = redactor.Redact(e.ParentOperationID)
 		if e.State == status.StateFailed {
 			s.Status = StatusFailed
-			s.Phase = redactor.Redact(string(e.Phase))
-			s.Step = redactor.Redact(e.Step)
-			s.OperationID = redactor.Redact(e.OperationID)
-			s.ParentOperationID = redactor.Redact(e.ParentOperationID)
 			s.DurationMs = e.Duration.Milliseconds()
 			if e.Error != nil {
 				s.Error = redactor.Redact(e.Error.Message)
@@ -626,10 +626,6 @@ func (r taskReporter) Report(e status.Event) {
 		if s.Status == StatusPending {
 			s.Status = StatusRunning
 		}
-		s.Phase = redactor.Redact(string(e.Phase))
-		s.Step = redactor.Redact(e.Step)
-		s.OperationID = redactor.Redact(e.OperationID)
-		s.ParentOperationID = redactor.Redact(e.ParentOperationID)
 	})
 }
 
