@@ -473,6 +473,29 @@ func (suite *GraphTestSuite) TestIsReachable() {
 	suite.True(suite.graph.IsReachable("A", "A"))
 }
 
+func (suite *GraphTestSuite) TestReachabilityWithHardEdgesAndCycles() {
+	for _, id := range []string{"A", "B", "C", "D", "E"} {
+		suite.Require().NoError(suite.graph.AddNode(id, id))
+	}
+	for _, edge := range [][2]string{{"A", "B"}, {"B", "C"}, {"C", "A"}, {"C", "D"}} {
+		suite.Require().NoError(suite.graph.AddEdge(edge[0], edge[1]))
+	}
+	for _, edge := range [][2]string{{"A", "B"}, {"B", "C"}, {"C", "A"}} {
+		suite.graph.MarkEdgeHard(edge[0], edge[1])
+	}
+
+	suite.True(suite.graph.IsReachableViaHardEdges("A", "C"))
+	suite.True(suite.graph.IsReachableViaHardEdges("C", "B"))
+	suite.True(suite.graph.IsReachable("A", "D"))
+	suite.False(suite.graph.IsReachableViaHardEdges("A", "D"))
+	suite.False(suite.graph.IsReachable("A", "E"))
+	suite.False(suite.graph.IsReachableViaHardEdges("A", "E"))
+	suite.True(suite.graph.IsReachable("missing", "missing"))
+	suite.True(suite.graph.IsReachableViaHardEdges("missing", "missing"))
+	suite.False(suite.graph.IsReachable("missing", "A"))
+	suite.False(suite.graph.IsReachableViaHardEdges("A", "missing"))
+}
+
 func (suite *GraphTestSuite) TestLargeGraph() {
 	nodeCount := 100
 

@@ -841,6 +841,35 @@ func TestStore_DeleteUnownedFailsWhenBackendUnprobeable(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestStore_UnownedRemovalFailsWhenSecondBackendUnprobeable(t *testing.T) {
+	key := backendKey(testContext, "LEGACY")
+	for _, remove := range []struct {
+		name string
+		run  func(*localStore) error
+	}{
+		{"delete", func(s *localStore) error { return s.Delete(testContext, "LEGACY") }},
+		{"remove sensitive", func(s *localStore) error { return s.removeFromProbeableBackends(nil, key) }},
+	} {
+		t.Run(remove.name, func(t *testing.T) {
+			keyring := newMapBackend()
+			keyring.values[key] = "sensitive"
+			s := newLocalStoreWithRegistry(
+				BackendKeyring,
+				writeLegacyIndex(
+					t,
+					"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+				),
+				mapBackendRegistry{backends: map[Backend]*mapBackend{BackendKeyring: keyring}},
+			)
+
+			err := remove.run(s)
+			require.ErrorContains(t, err, `backend "file" could not be probed`)
+			require.Equal(t, 0, keyring.removeCalls)
+			require.Equal(t, "sensitive", keyring.values[key])
+		})
+	}
+}
+
 // legacyIndexData models the catalog schema used by older installed CLIs.
 type legacyIndexData struct {
 	SchemaVersion int                              `json:"schemaVersion,omitempty"`

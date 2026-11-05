@@ -51,12 +51,7 @@ func (lis *StdioListener) Accept() (net.Conn, error) {
 
 // Close closes the listener and its stdio connection.
 func (lis *StdioListener) Close() error {
-	lis.once.Do(func() {
-		lis.mu.Lock()
-		lis.closed = true
-		close(lis.closedCh)
-		lis.mu.Unlock()
-	})
+	lis.markClosed()
 
 	if lis.conn != nil {
 		_ = lis.conn.Close()

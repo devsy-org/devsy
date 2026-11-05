@@ -104,8 +104,8 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	if cmd.Dry {
-		if err := cmd.saveOrPrintConfig(devsyConfig, providerWithOptions); err != nil {
-			return err
+		if err := printOptions(devsyConfig, providerWithOptions, "json", true); err != nil {
+			return fmt.Errorf("print options: %w", err)
 		}
 	}
 
@@ -144,20 +144,4 @@ func (cmd *SetCmd) loadProviderInContext(
 		return nil, nil, err
 	}
 	return devsyConfig, providerWithOptions, nil
-}
-
-func (cmd *SetCmd) saveOrPrintConfig(
-	devsyConfig *config.Config,
-	providerWithOptions *workspace.ProviderWithOptions,
-) error {
-	if cmd.Dry {
-		if err := printOptions(devsyConfig, providerWithOptions, "json", true); err != nil {
-			return fmt.Errorf("print options: %w", err)
-		}
-		return nil
-	}
-	if err := config.SaveConfig(devsyConfig); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-	return nil
 }

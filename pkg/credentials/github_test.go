@@ -34,7 +34,7 @@ func (c *githubCredentialsClient) Ping(
 
 func TestReadinessRejectsDeadTransportWithoutCredentialLookup(t *testing.T) {
 	client := &githubCredentialsClient{code: codes.Unavailable}
-	h := newPreparedHandler(context.Background(), client, "vscode", readyFixture())
+	h := newPreparedHandler(client, "vscode", readyFixture())
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://localhost/ready", nil))
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -44,7 +44,7 @@ func TestReadinessRejectsDeadTransportWithoutCredentialLookup(t *testing.T) {
 func TestCredentialPostPinsVerifiedHostAndInstanceBeforeRPC(t *testing.T) {
 	client := &githubCredentialsClient{}
 	identity := readyFixture()
-	h := newPreparedHandler(context.Background(), client, identity.Owner, identity)
+	h := newPreparedHandler(client, identity.Owner, identity)
 	for _, pair := range [][2]string{{"", ""}, {"old-instance", identity.HostOwner}, {identity.Instance, "other-host"}} {
 		r := httptest.NewRequest(http.MethodPost, "http://localhost/github-credentials", nil)
 		r.Header.Set(HeaderCredentialsInstance, pair[0])
@@ -91,7 +91,7 @@ func TestGitHubHTTPBoundaryMethodsStatusesAndHeaders(t *testing.T) {
 	} {
 		t.Run(tc.want, func(t *testing.T) {
 			client := &githubCredentialsClient{code: tc.code}
-			h := newCredentialsHandler(context.Background(), client, "guest")
+			h := newCredentialsHandler(client, "guest")
 			get := httptest.NewRecorder()
 			h.ServeHTTP(
 				get,
@@ -116,7 +116,7 @@ func TestGitHubHTTPBoundaryMethodsStatusesAndHeaders(t *testing.T) {
 }
 
 func TestGitHubHTTPMissingOptionalMethod(t *testing.T) {
-	h := newCredentialsHandler(context.Background(), &mockCredentialsClient{}, "guest")
+	h := newCredentialsHandler(&mockCredentialsClient{}, "guest")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "http://localhost/github-credentials", nil))
 	require.JSONEq(t, `{"status":"rpc_unavailable"}`, w.Body.String())

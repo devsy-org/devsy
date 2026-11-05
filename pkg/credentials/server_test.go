@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/stretchr/testify/assert"
@@ -105,7 +106,7 @@ func TestHandleGitSSHSignature_GRPCSuccess_ReturnsJSON200(t *testing.T) {
 
 func TestOwnerEndpoint_ReturnsConfiguredOwner(t *testing.T) {
 	mock := &mockCredentialsClient{}
-	handler := newCredentialsHandler(context.Background(), mock, "alice")
+	handler := newCredentialsHandler(mock, "alice")
 
 	req := httptest.NewRequest(http.MethodGet, "http://localhost"+ownerPath, nil)
 	w := httptest.NewRecorder()
@@ -183,4 +184,80 @@ func TestFetchOwner_CapsResponseSize(t *testing.T) {
 	owner, err := FetchOwner(context.Background(), port)
 	require.NoError(t, err)
 	assert.LessOrEqual(t, len(owner), maxOwnerResponseSize)
+}
+
+func TestCredentialsServerCancelsBackendContext(t *testing.T) {
+	type contextKey struct{}
+	for _, trigger := range []string{"disconnect", "server shutdown"} {
+		t.Run(trigger, func(t *testing.T) {
+			started := make(chan context.Context, 1)
+			release := make(chan struct{})
+			finished := make(chan struct{})
+			client := &mockCredentialsClient{
+				gitSSHSignatureFunc: func(ctx context.Context, _ *tunnel.Message) (*tunnel.Message, error) {
+					started <- ctx
+					defer close(finished)
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-release:
+						return nil, fmt.Errorf("test cleanup")
+					}
+				},
+			}
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			ctx, cancel := context.WithCancel(
+				context.WithValue(context.Background(), contextKey{}, "value"),
+			)
+			done := make(chan error, 1)
+			go func() { done <- RunCredentialsServerWithListener(ctx, ln, client, "owner") }()
+			t.Cleanup(func() {
+				close(release)
+				cancel()
+				select {
+				case <-done:
+				case <-time.After(2 * time.Second):
+					t.Error("server did not stop")
+				}
+			})
+			conn, err := net.Dial("tcp", ln.Addr().String())
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
+			_, err = fmt.Fprint(
+				conn,
+				"POST /git-ssh-signature HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n",
+			)
+			require.NoError(t, err)
+			backendCtx := awaitCredentialBackend(t, started)
+			require.Equal(t, "value", backendCtx.Value(contextKey{}))
+			if trigger == "disconnect" {
+				require.NoError(t, conn.Close())
+			} else {
+				cancel()
+			}
+			awaitCredentialBackendCanceled(t, finished, backendCtx)
+		})
+	}
+}
+
+func awaitCredentialBackend(t *testing.T, started <-chan context.Context) context.Context {
+	t.Helper()
+	select {
+	case ctx := <-started:
+		return ctx
+	case <-time.After(2 * time.Second):
+		t.Fatal("backend was not called")
+		return nil
+	}
+}
+
+func awaitCredentialBackendCanceled(t *testing.T, finished <-chan struct{}, ctx context.Context) {
+	t.Helper()
+	select {
+	case <-finished:
+		require.ErrorIs(t, ctx.Err(), context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("backend context was not canceled")
+	}
 }

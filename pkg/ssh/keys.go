@@ -128,14 +128,11 @@ func GetHostKey(context, workspaceID string) (string, error) {
 	return GetHostKeyBase(workspaceDir)
 }
 
-func GetPrivateKeyRawBase(dir string) ([]byte, error) {
-	keyLock.Lock()
-	defer keyLock.Unlock()
-
+func prepareSSHKeyPair(dir string) (string, string, error) {
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
 	err := os.MkdirAll(dir, 0o755)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 
 	// check if key pair exists
@@ -145,19 +142,31 @@ func GetPrivateKeyRawBase(dir string) ([]byte, error) {
 	if err != nil {
 		pubKey, privateKey, err := makeSSHKeyPair()
 		if err != nil {
-			return nil, fmt.Errorf("generate key pair: %w", err)
+			return "", "", fmt.Errorf("generate key pair: %w", err)
 		}
 
 		// #nosec G306 -- TODO Consider using a more secure permission setting and ownership if needed.
 		err = os.WriteFile(publicKeyFile, []byte(pubKey), 0o644)
 		if err != nil {
-			return nil, fmt.Errorf("write public ssh key: %w", err)
+			return "", "", fmt.Errorf("write public ssh key: %w", err)
 		}
 
 		err = os.WriteFile(privateKeyFile, []byte(privateKey), 0o600)
 		if err != nil {
-			return nil, fmt.Errorf("write private ssh key: %w", err)
+			return "", "", fmt.Errorf("write private ssh key: %w", err)
 		}
+	}
+
+	return privateKeyFile, publicKeyFile, nil
+}
+
+func GetPrivateKeyRawBase(dir string) ([]byte, error) {
+	keyLock.Lock()
+	defer keyLock.Unlock()
+
+	privateKeyFile, _, err := prepareSSHKeyPair(dir)
+	if err != nil {
+		return nil, err
 	}
 
 	// read private key
@@ -209,32 +218,9 @@ func GetPublicKeyBase(dir string) (string, error) {
 	keyLock.Lock()
 	defer keyLock.Unlock()
 
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err := os.MkdirAll(dir, 0o755)
+	_, publicKeyFile, err := prepareSSHKeyPair(dir)
 	if err != nil {
 		return "", err
-	}
-
-	// check if key pair exists
-	privateKeyFile := filepath.Join(dir, DevsySSHPrivateKeyFile)
-	publicKeyFile := filepath.Join(dir, DevsySSHPublicKeyFile)
-	_, err = os.Stat(privateKeyFile)
-	if err != nil {
-		pubKey, privateKey, err := makeSSHKeyPair()
-		if err != nil {
-			return "", fmt.Errorf("generate key pair: %w", err)
-		}
-
-		// #nosec G306 -- TODO Consider using a more secure permission setting and ownership if needed.
-		err = os.WriteFile(publicKeyFile, []byte(pubKey), 0o644)
-		if err != nil {
-			return "", fmt.Errorf("write public ssh key: %w", err)
-		}
-
-		err = os.WriteFile(privateKeyFile, []byte(privateKey), 0o600)
-		if err != nil {
-			return "", fmt.Errorf("write private ssh key: %w", err)
-		}
 	}
 
 	// read public key

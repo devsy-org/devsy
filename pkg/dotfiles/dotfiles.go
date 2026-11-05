@@ -193,9 +193,9 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 func extractKeysFromEnvKeyValuePairs(envKeyValuePairs []string) []string {
 	keys := []string{}
 	for _, env := range envKeyValuePairs {
-		keyValue := strings.SplitN(env, "=", 2)
-		if len(keyValue) == 2 {
-			keys = append(keys, keyValue[0])
+		key, _, found := strings.Cut(env, "=")
+		if found {
+			keys = append(keys, key)
 		}
 	}
 	return keys

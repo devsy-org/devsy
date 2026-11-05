@@ -763,19 +763,18 @@ func getDaemonSecretName(workspaceID string) string {
 }
 
 func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
-	// copy a and b and the compare them without the context, config, namespace and podTimeout
-	aCopy := withoutLocalOptions(a)
-	aCopy.KubernetesContext = ""
-	aCopy.KubernetesConfig = ""
-	aCopy.KubernetesNamespace = ""
-	aCopy.PodTimeout = ""
+	return comparableOptions(a) == comparableOptions(b)
+}
 
-	bCopy := withoutLocalOptions(b)
-	bCopy.KubernetesContext = ""
-	bCopy.KubernetesConfig = ""
-	bCopy.KubernetesNamespace = ""
-	bCopy.PodTimeout = ""
-	return aCopy == bCopy
+func comparableOptions(
+	options *provider2.ProviderKubernetesDriverConfig,
+) provider2.ProviderKubernetesDriverConfig {
+	normalized := withoutLocalOptions(options)
+	normalized.KubernetesContext = ""
+	normalized.KubernetesConfig = ""
+	normalized.KubernetesNamespace = ""
+	normalized.PodTimeout = ""
+	return normalized
 }
 
 func withoutLocalOptions(

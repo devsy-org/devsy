@@ -1,12 +1,83 @@
 package platform
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+type versionRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f versionRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type versionBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *versionBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+type versionFailReader struct{}
+
+func (versionFailReader) Read([]byte) (int, error) {
+	return 0, errors.New("body read failed")
+}
+
+func TestGetPlatformVersionClosesBody(t *testing.T) {
+	client := devsyhttp.GetHTTPClient()
+	originalTransport := client.Transport
+	t.Cleanup(func() { client.Transport = originalTransport })
+
+	tests := []struct {
+		name    string
+		status  int
+		reader  io.Reader
+		wantErr bool
+	}{
+		{name: "success", status: http.StatusOK, reader: strings.NewReader(`{"version":"1.2.3"}`)},
+		{
+			name:    "status",
+			status:  http.StatusForbidden,
+			reader:  strings.NewReader("nope"),
+			wantErr: true,
+		},
+		{name: "read", status: http.StatusOK, reader: versionFailReader{}, wantErr: true},
+		{name: "parse", status: http.StatusOK, reader: strings.NewReader("invalid"), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := &versionBody{Reader: tt.reader}
+			client.Transport = versionRoundTripper(
+				func(*http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: tt.status,
+						Body:       body,
+						Header:     make(http.Header),
+					}, nil
+				},
+			)
+			_, err := GetPlatformVersion("http://example.test")
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.True(t, body.closed, "response body was not closed")
+		})
+	}
+}
 
 type versionSuite struct {
 	suite.Suite

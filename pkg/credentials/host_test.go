@@ -34,7 +34,7 @@ func TestCredentialsRejectNonLoopbackHostBeforeDispatch(t *testing.T) {
 		t.Run(host, func(t *testing.T) {
 			client := &hostGuardClient{}
 			identity := readyFixture()
-			handler := newPreparedHandler(t.Context(), client, identity.Owner, identity)
+			handler := newPreparedHandler(client, identity.Owner, identity)
 			for _, path := range []string{"/ready", ownerPath, "/github-credentials", "/git-credentials"} {
 				request := httptest.NewRequest(http.MethodPost, "http://localhost"+path, nil)
 				if path == "/ready" || path == ownerPath {
@@ -60,7 +60,7 @@ func TestCredentialsAcceptLoopbackHosts(t *testing.T) {
 	} {
 		t.Run(host, func(t *testing.T) {
 			client := &hostGuardClient{}
-			handler := newPreparedHandler(t.Context(), client, "guest", readyFixture())
+			handler := newPreparedHandler(client, "guest", readyFixture())
 			request := httptest.NewRequest(http.MethodGet, "http://localhost/ready", nil)
 			request.Host = host
 			response := httptest.NewRecorder()

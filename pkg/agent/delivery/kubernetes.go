@@ -509,7 +509,8 @@ type execStreamProgressMonitor struct {
 
 func (m *execStreamProgressMonitor) run() {
 	defer close(m.done)
-	ticker := time.NewTicker(max(m.idleTimeout/2, time.Nanosecond))
+	interval := min(m.idleTimeout, m.completionTimeout) / 2
+	ticker := time.NewTicker(max(interval, time.Nanosecond))
 	defer ticker.Stop()
 	for {
 		select {

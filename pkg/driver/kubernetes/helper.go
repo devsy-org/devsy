@@ -25,29 +25,24 @@ func parseResources(resourceString string) corev1.ResourceRequirements {
 	for _, resourceName := range resourcesSplitted {
 		resourceName = strings.TrimSpace(resourceName)
 
-		// requests
+		var destination corev1.ResourceList
+		var strippedResource string
 		if after, ok := strings.CutPrefix(resourceName, requestsPrefix); ok {
-			strippedResource := after
-			name, quantity, err := parseResource(strippedResource)
-			if err != nil {
-				log.Error(err.Error())
-				continue
-			}
-
-			requests[corev1.ResourceName(name)] = quantity
+			destination = requests
+			strippedResource = after
+		} else if after, ok := strings.CutPrefix(resourceName, limitsPrefix); ok {
+			destination = limits
+			strippedResource = after
+		} else {
+			continue
 		}
 
-		// limits
-		if after, ok := strings.CutPrefix(resourceName, limitsPrefix); ok {
-			strippedResource := after
-			name, quantity, err := parseResource(strippedResource)
-			if err != nil {
-				log.Error(err.Error())
-				continue
-			}
-
-			limits[corev1.ResourceName(name)] = quantity
+		name, quantity, err := parseResource(strippedResource)
+		if err != nil {
+			log.Error(err.Error())
+			continue
 		}
+		destination[corev1.ResourceName(name)] = quantity
 	}
 
 	return corev1.ResourceRequirements{
@@ -103,27 +98,27 @@ func parseLabels(str string) (map[string]string, error) {
 	retMap := map[string]string{}
 	for _, label := range labels {
 		label = strings.TrimSpace(label)
-		splitted := strings.SplitN(label, "=", 2)
-		if len(splitted) != 2 {
+		key, value, ok := strings.Cut(label, "=")
+		if !ok {
 			return nil, fmt.Errorf("invalid label %q, expected format label=value", label)
 		}
 
-		retMap[splitted[0]] = splitted[1]
+		retMap[key] = value
 	}
 
 	return retMap, nil
 }
 
 func parseResource(resourceName string) (string, resource.Quantity, error) {
-	splittedResource := strings.SplitN(resourceName, "=", 2)
-	if len(splittedResource) != 2 {
+	name, value, ok := strings.Cut(resourceName, "=")
+	if !ok {
 		return "", resource.Quantity{}, fmt.Errorf(
 			"error parsing resource %s: expected form resource=quantity",
 			resourceName,
 		)
 	}
 
-	quantity, err := resource.ParseQuantity(splittedResource[1])
+	quantity, err := resource.ParseQuantity(value)
 	if err != nil {
 		return "", resource.Quantity{}, fmt.Errorf(
 			"error parsing resource %s: %w",
@@ -132,7 +127,7 @@ func parseResource(resourceName string) (string, resource.Quantity, error) {
 		)
 	}
 
-	return splittedResource[0], quantity, nil
+	return name, quantity, nil
 }
 
 func parseSecurityContext(raw string) (*corev1.SecurityContext, error) {

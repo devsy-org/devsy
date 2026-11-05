@@ -276,22 +276,7 @@ func deletionBackendKinds(
 	if meta.Backend != "" {
 		return []Backend{meta.Backend}, nil
 	}
-
-	var kinds []Backend
-	for _, kind := range []Backend{BackendKeyring, BackendFile} {
-		present, conclusive := s.backends.Probe(kind, idx, key)
-		if !conclusive {
-			return nil, fmt.Errorf(
-				"cannot safely delete unowned secret because secrets backend %q could not be probed; "+
-					"restore access to that backend or set the secret again",
-				kind,
-			)
-		}
-		if present {
-			kinds = append(kinds, kind)
-		}
-	}
-	return kinds, nil
+	return s.probeDeletionBackends(idx, key)
 }
 
 func removeSnapshots(snapshots []backendValueSnapshot) error {
@@ -466,20 +451,28 @@ func (s *localStore) provenOwner(idx *index, key string) (Backend, bool) {
 	return found[0], true
 }
 
-func (s *localStore) removeFromProbeableBackends(idx *index, key string) error {
-	var present []Backend
+func (s *localStore) probeDeletionBackends(idx *index, key string) ([]Backend, error) {
+	var kinds []Backend
 	for _, kind := range []Backend{BackendKeyring, BackendFile} {
-		found, conclusive := s.backends.Probe(kind, idx, key)
+		present, conclusive := s.backends.Probe(kind, idx, key)
 		if !conclusive {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"cannot safely delete unowned secret because secrets backend %q could not be probed; "+
 					"restore access to that backend or set the secret again",
 				kind,
 			)
 		}
-		if found {
-			present = append(present, kind)
+		if present {
+			kinds = append(kinds, kind)
 		}
+	}
+	return kinds, nil
+}
+
+func (s *localStore) removeFromProbeableBackends(idx *index, key string) error {
+	present, err := s.probeDeletionBackends(idx, key)
+	if err != nil {
+		return err
 	}
 	for _, kind := range present {
 		b, err := s.backends.Open(kind, idx, BackendOpenExisting)

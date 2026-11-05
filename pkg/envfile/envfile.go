@@ -16,19 +16,8 @@ type EnvFile struct {
 }
 
 func Apply() {
-	out, err := os.ReadFile(location)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Debugf("Error reading envfile: %v", err)
-		}
-
-		return
-	}
-
-	envFile := &EnvFile{}
-	err = json.Unmarshal(out, envFile)
-	if err != nil {
-		log.Debugf("Error parsing envfile: %v", err)
+	envFile, ok := readEnvFile()
+	if !ok {
 		return
 	}
 
@@ -37,24 +26,22 @@ func Apply() {
 	}
 }
 
-// readEnvFile reads and parses the envfile from disk.
-// Returns an empty EnvFile if the file does not exist, or nil on read/parse errors.
-func readEnvFile() *EnvFile {
+func readEnvFile() (EnvFile, bool) {
 	out, err := os.ReadFile(location)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Debugf("Error reading envfile: %v", err)
-			return nil
+			return EnvFile{}, false
 		}
-		return &EnvFile{}
+		return EnvFile{}, true
 	}
 
-	envFile := &EnvFile{}
-	if err := json.Unmarshal(out, envFile); err != nil {
+	var envFile EnvFile
+	if err := json.Unmarshal(out, &envFile); err != nil {
 		log.Debugf("Error parsing envfile: %v", err)
-		return nil
+		return EnvFile{}, false
 	}
-	return envFile
+	return envFile, true
 }
 
 func MergeAndApply(env map[string]string) {
@@ -62,8 +49,8 @@ func MergeAndApply(env map[string]string) {
 		return
 	}
 
-	envFile := readEnvFile()
-	if envFile == nil {
+	envFile, ok := readEnvFile()
+	if !ok {
 		return
 	}
 

@@ -58,6 +58,7 @@ func (cmd *HealthCmd) Run(
 	if err != nil {
 		return err
 	}
+	defer func() { _ = res.Body.Close() }()
 	healthCheck := HealthCheck{
 		Healthy: res.StatusCode == http.StatusOK,
 	}

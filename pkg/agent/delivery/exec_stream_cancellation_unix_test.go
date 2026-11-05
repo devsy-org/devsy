@@ -171,11 +171,31 @@ func startCancellationDelivery(
 			outer,
 			"/tmp/owned-delivery-never-written",
 			PostStartOptions{
-				Arch: "amd64", SkipVersionCheck: true, BinarySource: sources.acquire,
+				Arch: "amd64", SkipVersionCheck: true,
+				BinarySource: func(ctx context.Context, arch string) (io.ReadCloser, error) {
+					return acquireCancellationSource(ctx, arch, delivery, sources)
+				},
 			},
 		)
 	}()
 	return outer, call
+}
+
+func acquireCancellationSource(
+	ctx context.Context,
+	arch string,
+	delivery *KubernetesDelivery,
+	sources *cancellationBinarySource,
+) (io.ReadCloser, error) {
+	binary, err := sources.acquire(ctx, arch)
+	if err != nil {
+		return nil, err
+	}
+	delivery.execStreamIdleTimeout = 0
+	if binary.(*cancellationBinary).closer != nil {
+		delivery.execStreamIdleTimeout = 300 * time.Millisecond
+	}
+	return binary, nil
 }
 
 func awaitDeliveryRead(t *testing.T, sources *cancellationBinarySource) {
@@ -238,9 +258,10 @@ func TestExecStreamAttemptCancellationOwnsSource(t *testing.T) {
 			}
 			canceled := make(chan error, execStreamMaxAttempts)
 			delivery := &KubernetesDelivery{
-				execStreamIdleTimeout:       300 * time.Millisecond,
-				execStreamCompletionTimeout: 300 * time.Millisecond,
-				Exec:                        cancellationDeliveryExecutor(t, runtime, canceled),
+				Exec: cancellationDeliveryExecutor(t, runtime, canceled),
+			}
+			if testCase.blockCompletion {
+				delivery.execStreamCompletionTimeout = 300 * time.Millisecond
 			}
 			outer, call := startCancellationDelivery(t, delivery, sources)
 			awaitDeliveryRead(t, sources)

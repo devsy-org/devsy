@@ -907,6 +907,7 @@ func (cmd *StartCmd) pingDevsyRouter(ctx context.Context, devsyPod *corev1.Pod) 
 			},
 		},
 	}
+	defer httpClient.CloseIdleConnections()
 	log.Infof("Waiting until Devsy Platform is reachable at https://%s", devsyRouterDomain)
 	err = wait.PollUntilContextTimeout(
 		ctx,
@@ -928,6 +929,7 @@ func (cmd *StartCmd) pingDevsyRouter(ctx context.Context, devsyPod *corev1.Pod) 
 			if err != nil {
 				return false, nil
 			}
+			defer func() { _ = resp.Body.Close() }()
 
 			return resp.StatusCode == http.StatusOK, nil
 		},
@@ -1025,6 +1027,7 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 			InsecureSkipVerify: true, //nolint:gosec // existing behaviour for self-signed platform endpoints
 		}, //nolint:gosec // self-signed platform cert
 	}
+	defer tr.CloseIdleConnections()
 	httpClient := &http.Client{Transport: tr}
 
 	resp, err := httpClient.Post(fmt.Sprintf(loginPath, url), "application/json", loginRequestBuf)
@@ -1430,6 +1433,7 @@ type version struct {
 
 func isHostReachable(ctx context.Context, host string) (bool, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defer transport.CloseIdleConnections()
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
 	transport.TLSClientConfig = &tls.Config{
@@ -1443,7 +1447,11 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 		return false, fmt.Errorf("error creating request with context: %w", err)
 	}
 	resp, err := client.Do(req)
-	if err == nil && resp.StatusCode == http.StatusOK {
+	if err != nil {
+		return false, nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusOK {
 		out, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return false, nil
@@ -1481,28 +1489,48 @@ type helmTarget struct {
 	namespace   string
 }
 
+func helmArgs(args []string, target helmTarget, extraArgs []string) []string {
+	args = append(
+		args,
+		helmRepositoryConfig,
+		kubeContextValue,
+		target.kubeContext,
+		namespaceValue,
+		target.namespace,
+	)
+	if target.chartRepo != "" {
+		args = append(args, "--repo", target.chartRepo)
+	}
+	return append(args, extraArgs...)
+}
+
+func setHelmWorkdir(cmd *exec.Cmd, target helmTarget) error {
+	if target.chartRepo == "" {
+		return nil
+	}
+	workdir, err := getHelmWorkdir(target.chartName)
+	if err != nil {
+		return err
+	}
+	cmd.Dir = workdir
+	return nil
+}
+
 func upgradeRelease(
 	ctx context.Context,
 	target helmTarget,
 	extraArgs []string,
 ) error {
 	// now we install devsy
-	args := []string{
+	args := make([]string, 0, 12+len(extraArgs))
+	args = append(args,
 		"upgrade",
 		defaultReleaseName,
 		target.chartName,
 		"--install",
 		"--create-namespace",
-		helmRepositoryConfig,
-		kubeContextValue,
-		target.kubeContext,
-		namespaceValue,
-		target.namespace,
-	}
-	if target.chartRepo != "" {
-		args = append(args, "--repo", target.chartRepo)
-	}
-	args = append(args, extraArgs...)
+	)
+	args = helmArgs(args, target, extraArgs)
 
 	fmt.Fprint(os.Stderr, "\n")
 	log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
@@ -1511,13 +1539,8 @@ func upgradeRelease(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
-	if target.chartRepo != "" {
-		helmWorkDir, err := getHelmWorkdir(target.chartName)
-		if err != nil {
-			return err
-		}
-
-		helmCmd.Dir = helmWorkDir
+	if err := setHelmWorkdir(helmCmd, target); err != nil {
+		return err
 	}
 	output, err := helmCmd.CombinedOutput()
 	if err != nil {
@@ -1533,32 +1556,20 @@ func getReleaseManifests(
 	target helmTarget,
 	extraArgs []string,
 ) (string, error) {
-	args := []string{
+	args := make([]string, 0, 10+len(extraArgs))
+	args = append(args,
 		"template",
 		defaultReleaseName,
 		target.chartName,
-		helmRepositoryConfig,
-		kubeContextValue,
-		target.kubeContext,
-		namespaceValue,
-		target.namespace,
-	}
-	if target.chartRepo != "" {
-		args = append(args, "--repo", target.chartRepo)
-	}
-	args = append(args, extraArgs...)
+	)
+	args = helmArgs(args, target, extraArgs)
 
 	helmCmd := exec.CommandContext(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
-	if target.chartRepo != "" {
-		helmWorkDir, err := getHelmWorkdir(target.chartName)
-		if err != nil {
-			return "", err
-		}
-
-		helmCmd.Dir = helmWorkDir
+	if err := setHelmWorkdir(helmCmd, target); err != nil {
+		return "", err
 	}
 	output, err := helmCmd.CombinedOutput()
 	if err != nil {

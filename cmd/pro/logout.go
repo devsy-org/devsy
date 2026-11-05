@@ -54,7 +54,6 @@ func NewLogoutCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	return logoutCmd
 }
 
-//nolint:cyclop,funlen // logout sequences provider/daemon teardown; complexity reflects domain workflow
 func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("specify a platform instance to log out of")
@@ -67,16 +66,12 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 
 	// load platform instance config
 	platformInstanceName := args[0]
-	platformInstanceConfig, err := provider.LoadPlatformInstanceConfig(
+	platformInstanceConfig, ignored, err := cmd.loadLogoutInstance(
 		devsyConfig.DefaultContext,
 		platformInstanceName,
 	)
-	if err != nil {
-		if os.IsNotExist(err) && cmd.IgnoreNotFound {
-			return nil
-		}
-
-		return fmt.Errorf("load platform instance %s: %w", platformInstanceName, err)
+	if err != nil || ignored {
+		return err
 	}
 
 	providerConfig, err := provider.LoadProviderConfig(
@@ -89,30 +84,7 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 
 	// stop daemon and clean up local workspaces
 	if providerConfig.IsDaemonProvider() {
-		// clean up local workspaces
-		workspaces, err := workspace.ListLocalWorkspaces(
-			devsyConfig.DefaultContext,
-			false,
-		)
-		if err != nil {
-			log.Warnf("failed to list workspaces: %v", err)
-		} else {
-			cleanupLocalWorkspaces(ctx, devsyConfig, workspaces, workspaceCleanup{
-				providerName: providerConfig.Name,
-				owner:        cmd.Owner,
-			})
-		}
-
-		daemonClient := daemon.NewLocalClient(platformInstanceConfig.Provider)
-		err = daemonClient.Shutdown(ctx)
-		if err != nil {
-			log.Warnf("failed to shut down daemon: %v", err)
-		}
-		log.Debug("waiting for daemon to shut down")
-		err = waitDaemonStopped(ctx, providerConfig.Name)
-		if err != nil {
-			log.Warnf("failed to wait for daemon to be stopped: %v", err)
-		}
+		cmd.cleanupLogoutDaemon(ctx, devsyConfig, platformInstanceConfig, providerConfig)
 	}
 
 	if err := deletePlatformInstanceFiles(
@@ -124,6 +96,50 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 
 	log.Infof("logged out of platform instance: platformInstanceName=%s", platformInstanceName)
 	return nil
+}
+
+func (cmd *LogoutCmd) loadLogoutInstance(
+	contextName, name string,
+) (*provider.PlatformInstance, bool, error) {
+	instance, err := provider.LoadPlatformInstanceConfig(contextName, name)
+	if err != nil {
+		if os.IsNotExist(err) && cmd.IgnoreNotFound {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("load platform instance %s: %w", name, err)
+	}
+	return instance, false, nil
+}
+
+func (cmd *LogoutCmd) cleanupLogoutDaemon(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	platformInstanceConfig *provider.PlatformInstance,
+	providerConfig *provider.ProviderConfig,
+) {
+	workspaces, err := workspace.ListLocalWorkspaces(
+		devsyConfig.DefaultContext,
+		false,
+	)
+	if err != nil {
+		log.Warnf("failed to list workspaces: %v", err)
+	} else {
+		cleanupLocalWorkspaces(ctx, devsyConfig, workspaces, workspaceCleanup{
+			providerName: providerConfig.Name,
+			owner:        cmd.Owner,
+		})
+	}
+
+	daemonClient := daemon.NewLocalClient(platformInstanceConfig.Provider)
+	err = daemonClient.Shutdown(ctx)
+	if err != nil {
+		log.Warnf("failed to shut down daemon: %v", err)
+	}
+	log.Debug("waiting for daemon to shut down")
+	err = waitDaemonStopped(ctx, providerConfig.Name)
+	if err != nil {
+		log.Warnf("failed to wait for daemon to be stopped: %v", err)
+	}
 }
 
 func deletePlatformInstanceFiles(contextName string, instance *provider.PlatformInstance) error {

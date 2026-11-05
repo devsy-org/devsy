@@ -673,7 +673,7 @@ func (r *featureDependencyResolver) findByConfigID(configID string) (string, *co
 	return "", nil
 }
 
-func (r *featureDependencyResolver) resolveFeatureDependency( //nolint:cyclop
+func (r *featureDependencyResolver) resolveFeatureDependency(
 	featureID string,
 	featureSet *config.FeatureSet,
 ) error {
@@ -689,27 +689,12 @@ func (r *featureDependencyResolver) resolveFeatureDependency( //nolint:cyclop
 	defer func() { r.visiting[featureID] = false }()
 
 	for depID, depOptions := range featureSet.Config.DependsOn {
-		normalizedDepID := normalizeFeatureID(depID)
-		resolvedKey, depFeatureSet := r.findByConfigID(normalizedDepID)
-		if depFeatureSet == nil {
-			if currentID, legacyMatch := r.legacyMap[normalizedDepID]; legacyMatch {
-				log.Debugf("resolved legacy ID %s to current feature %s", depID, currentID)
-				resolvedKey, depFeatureSet = r.findByConfigID(currentID)
-			}
-		}
-		if depFeatureSet == nil {
-			log.Debugf("installing dependency feature %s", depID)
-			var err error
-			depFeatureSet, err = r.processor.processFeature(r.processor.ctx, depID, depOptions)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dependency %s: %w", depID, err)
-			}
-			resolvedKey = featureDeduplicationKey(depFeatureSet.ConfigID, depFeatureSet.Version)
-			r.features[resolvedKey] = depFeatureSet
-			r.rebuildLegacyMap()
+		resolvedKey, depFeatureSet, err := r.findOrInstallDependency(depID, depOptions)
+		if err != nil {
+			return err
 		}
 
-		err := r.resolveFeatureDependency(resolvedKey, depFeatureSet)
+		err = r.resolveFeatureDependency(resolvedKey, depFeatureSet)
 		if err != nil {
 			return err
 		}
@@ -717,6 +702,32 @@ func (r *featureDependencyResolver) resolveFeatureDependency( //nolint:cyclop
 
 	r.resolved[featureID] = featureSet
 	return nil
+}
+
+func (r *featureDependencyResolver) findOrInstallDependency(
+	depID string,
+	depOptions any,
+) (string, *config.FeatureSet, error) {
+	normalizedDepID := normalizeFeatureID(depID)
+	resolvedKey, depFeatureSet := r.findByConfigID(normalizedDepID)
+	if depFeatureSet == nil {
+		if currentID, legacyMatch := r.legacyMap[normalizedDepID]; legacyMatch {
+			log.Debugf("resolved legacy ID %s to current feature %s", depID, currentID)
+			resolvedKey, depFeatureSet = r.findByConfigID(currentID)
+		}
+	}
+	if depFeatureSet == nil {
+		log.Debugf("installing dependency feature %s", depID)
+		var err error
+		depFeatureSet, err = r.processor.processFeature(r.processor.ctx, depID, depOptions)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to resolve dependency %s: %w", depID, err)
+		}
+		resolvedKey = featureDeduplicationKey(depFeatureSet.ConfigID, depFeatureSet.Version)
+		r.features[resolvedKey] = depFeatureSet
+		r.rebuildLegacyMap()
+	}
+	return resolvedKey, depFeatureSet, nil
 }
 
 func (r *featureDependencyResolver) rebuildLegacyMap() {

@@ -48,7 +48,7 @@ func TestReadinessLoopbackFamiliesPinIdentityWithoutProxy(t *testing.T) {
 				t,
 				family.network,
 				family.address,
-				newPreparedHandler(context.Background(), nil, "vscode", readyFixture()),
+				newPreparedHandler(nil, "vscode", readyFixture()),
 			)
 			port := s.Listener.Addr().(*net.TCPAddr).Port
 			got, err := ProbeReadiness(context.Background(), port, readyFixture())
@@ -90,7 +90,7 @@ func TestReadinessRejectsOldOccupiedMismatchedAndUnboundedListeners(t *testing.T
 			t,
 			"tcp4",
 			"127.0.0.1:0",
-			newPreparedHandler(context.Background(), nil, "vscode", other),
+			newPreparedHandler(nil, "vscode", other),
 		)
 		_, err := ProbeReadiness(
 			context.Background(),

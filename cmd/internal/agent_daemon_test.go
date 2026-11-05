@@ -157,6 +157,51 @@ func TestEffectiveShutdownAction(t *testing.T) {
 	})
 }
 
+func TestShutdownActionEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		action   string
+		fallback string
+		command  types.StrArray
+		want     bool
+	}{
+		{
+			name:     "workspace none overrides fallback",
+			action:   config.ShutdownActionNone,
+			fallback: config.ShutdownActionStopContainer,
+			command:  types.StrArray{testEcho},
+		},
+		{
+			name:     "workspace action overrides none",
+			action:   config.ShutdownActionStopContainer,
+			fallback: config.ShutdownActionNone,
+			command:  types.StrArray{testEcho},
+			want:     true,
+		},
+		{
+			name:     "empty action uses fallback",
+			fallback: config.ShutdownActionStopContainer,
+			command:  types.StrArray{testEcho},
+			want:     true,
+		},
+		{name: "empty fallback is enabled", command: types.StrArray{testEcho}, want: true},
+		{name: "command required", action: config.ShutdownActionStopContainer},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ws := workspaceWithShutdownAction(tt.action)
+			ws.Agent.Exec.Shutdown = tt.command
+			assert.Equal(t, tt.want, shutdownActionEnabled(ws, tt.fallback))
+		})
+	}
+	t.Run("empty configured action uses fallback", func(t *testing.T) {
+		ws := workspaceWithShutdownAction(config.ShutdownActionNone)
+		ws.LastDevContainerConfig.Config.ShutdownAction = ""
+		ws.Agent.Exec.Shutdown = types.StrArray{testEcho}
+		assert.True(t, shutdownActionEnabled(ws, config.ShutdownActionStopContainer))
+	})
+}
+
 func TestEffectiveActivity(t *testing.T) {
 	orig := activityFilePath
 	t.Cleanup(func() { activityFilePath = orig })
