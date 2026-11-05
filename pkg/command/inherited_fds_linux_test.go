@@ -12,7 +12,7 @@ import (
 const inheritedFDsHelperEnv = "DEVSY_TEST_INHERITED_FDS_MODE"
 
 func TestMarkInheritedFDsCloseOnExec(t *testing.T) {
-	for _, mode := range []string{"close_range", "proc_fallback"} {
+	for _, mode := range []string{"close_range", "proc_fallback", "close_range_fails"} {
 		t.Run(mode, func(t *testing.T) {
 			leaked, err := os.Open(os.DevNull)
 			require.NoError(t, err)
@@ -42,9 +42,13 @@ func TestInheritedFDsHelper(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, flags&unix.FD_CLOEXEC)
 
-	if mode == "proc_fallback" {
+	switch mode {
+	case "proc_fallback":
 		markProcFDsCloseOnExec()
-	} else {
+	case "close_range_fails":
+		closeRange = func(uint, uint, uint) error { return unix.EPERM }
+		MarkInheritedFDsCloseOnExec()
+	default:
 		MarkInheritedFDsCloseOnExec()
 	}
 

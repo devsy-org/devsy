@@ -10,8 +10,10 @@ import (
 
 const firstInheritedFD = 3
 
+var closeRange = unix.CloseRange
+
 func MarkInheritedFDsCloseOnExec() {
-	err := unix.CloseRange(firstInheritedFD, math.MaxUint32, unix.CLOSE_RANGE_CLOEXEC)
+	err := closeRange(firstInheritedFD, math.MaxUint32, unix.CLOSE_RANGE_CLOEXEC)
 	if err != nil {
 		markProcFDsCloseOnExec()
 	}
