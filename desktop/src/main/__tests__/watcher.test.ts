@@ -15,6 +15,7 @@ function makeWatcher(
   runProviderList: () => Promise<Record<string, unknown>>,
   workspaces: Array<{ id: string; status?: string }> = [],
   runRaw: (args: string[]) => Promise<unknown> = async () => ({}),
+  getMainWindow: () => unknown = () => null,
 ) {
   const state = {
     updateProviders: vi.fn().mockReturnValue(false),
@@ -43,7 +44,7 @@ function makeWatcher(
   const watcher = new Watcher({
     cli: cli as never,
     state: state as never,
-    getMainWindow: () => null,
+    getMainWindow: getMainWindow as never,
     providerJobs: providerJobs as never,
     workspaceJobs: workspaceJobs as never,
   })
@@ -529,5 +530,76 @@ describe("Watcher workspace list freshness", () => {
     ).pollWorkspaces()
 
     expect(daemonList).toHaveBeenCalledExactlyOnceWith({ fresh: false })
+  })
+})
+
+describe("Watcher scheduled status polling", () => {
+  const visibleWindow = {
+    isDestroyed: () => false,
+    isVisible: () => true,
+    isMinimized: () => false,
+  }
+  const trayWindow = { ...visibleWindow, isVisible: () => false }
+  const scheduled = (watcher: Watcher) =>
+    (
+      watcher as unknown as { scheduleWorkspaceStatusPoll: () => void }
+    ).scheduleWorkspaceStatusPoll()
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
+
+  it("skips scheduled status polls while the window is hidden", async () => {
+    const { watcher, cli } = makeWatcher(
+      async () => ({}),
+      [{ id: "ws-1" }],
+      async () => JSON.stringify({ state: "running" }),
+      () => trayWindow,
+    )
+
+    scheduled(watcher)
+    await settle()
+
+    expect(cli.runRaw).not.toHaveBeenCalled()
+  })
+
+  it("backs off a failing workspace on scheduled polls only", async () => {
+    const { watcher, cli } = makeWatcher(
+      async () => ({}),
+      [{ id: "ws-1" }],
+      async () => {
+        throw new Error("offline")
+      },
+      () => visibleWindow,
+    )
+
+    scheduled(watcher)
+    await settle()
+    scheduled(watcher)
+    await settle()
+    expect(cli.runRaw).toHaveBeenCalledTimes(1)
+
+    await watcher.refreshWorkspaceStatuses()
+    expect(cli.runRaw).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not rerun immediately when a tick overlaps a running sweep", async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { watcher, cli } = makeWatcher(
+      async () => ({}),
+      [{ id: "ws-1" }],
+      async () => {
+        await gate
+        return JSON.stringify({ state: "running" })
+      },
+      () => visibleWindow,
+    )
+
+    scheduled(watcher)
+    scheduled(watcher)
+    release()
+    await settle()
+
+    expect(cli.runRaw).toHaveBeenCalledTimes(1)
   })
 })

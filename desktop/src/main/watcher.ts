@@ -12,6 +12,9 @@ import type { DaemonState, Machine, Workspace } from "./state.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
+const WORKSPACE_POLL_INTERVAL_MS = 3000
+const WORKSPACE_STATUS_INTERVAL_MS = 10_000
+const STATUS_BACKOFF_MAX_MS = 300_000
 interface WatcherDeps {
   cli: CliRunner
   daemon?: DaemonClient
@@ -81,15 +84,17 @@ export class Watcher {
   private workspacePollChain: Promise<void> = Promise.resolve()
   private workspaceStatusChain: Promise<void> = Promise.resolve()
   private workspaceStatusPolling = false
-  private workspaceStatusQueued = false
+  private statusFailures = new Map<string, { count: number; retryAt: number }>()
 
   constructor(private deps: WatcherDeps) {}
 
   start(): Promise<void> {
-    this.pollTimer = setInterval(() => this.schedulePoll(), 3000)
+    this.pollTimer = setInterval(() => {
+      if (this.windowActive()) this.schedulePoll()
+    }, WORKSPACE_POLL_INTERVAL_MS)
     this.workspaceStatusTimer = setInterval(
       () => this.scheduleWorkspaceStatusPoll(),
-      10_000,
+      WORKSPACE_STATUS_INTERVAL_MS,
     )
 
     const devsyDir = join(homedir(), ".devsy")
@@ -116,7 +121,6 @@ export class Watcher {
       clearInterval(this.workspaceStatusTimer)
       this.workspaceStatusTimer = null
     }
-    this.workspaceStatusQueued = false
     if (this.fsWatcher) {
       this.fsWatcher.close()
       this.fsWatcher = null
@@ -182,34 +186,61 @@ export class Watcher {
     await this.queueWorkspaceStatusPoll()
   }
 
+  private windowActive(): boolean {
+    const win = this.deps.getMainWindow()
+    return (
+      win !== null &&
+      !win.isDestroyed() &&
+      win.isVisible() &&
+      !win.isMinimized()
+    )
+  }
+
   private scheduleWorkspaceStatusPoll(): void {
-    if (this.workspaceStatusPolling) {
-      this.workspaceStatusQueued = true
-      return
-    }
-    void this.refreshWorkspaceStatuses()
+    if (this.workspaceStatusPolling || !this.windowActive()) return
+    this.workspaceStatusPolling = true
+    void this.queueWorkspaceStatusPoll(undefined, false, true)
   }
 
   private queueWorkspaceStatusPoll(
     workspaceIds?: string[],
     strict = false,
+    scheduled = false,
   ): Promise<void> {
     const run = this.workspaceStatusChain.then(() =>
-      this.pollWorkspaceStatuses(workspaceIds, strict),
+      this.pollWorkspaceStatuses(workspaceIds, strict, scheduled),
     )
     this.workspaceStatusChain = run.catch(() => {})
     return run
   }
 
+  private statusBackoffElapsed(id: string): boolean {
+    const failure = this.statusFailures.get(id)
+    return !failure || Date.now() >= failure.retryAt
+  }
+
+  private recordStatusFailure(id: string): void {
+    const count = (this.statusFailures.get(id)?.count ?? 0) + 1
+    const delay = Math.min(
+      STATUS_BACKOFF_MAX_MS,
+      WORKSPACE_STATUS_INTERVAL_MS * 2 ** count,
+    )
+    this.statusFailures.set(id, { count, retryAt: Date.now() + delay })
+  }
+
   private async pollWorkspaceStatuses(
     workspaceIds?: string[],
     strict = false,
+    scheduled = false,
   ): Promise<void> {
     this.workspaceStatusPolling = true
     let changed = false
     try {
-      const ids =
+      const requested =
         workspaceIds ?? this.deps.state.workspaceList().map((ws) => ws.id)
+      const ids = scheduled
+        ? requested.filter((id) => this.statusBackoffElapsed(id))
+        : requested
       const concurrency = 6
       let next = 0
       const worker = async (): Promise<void> => {
@@ -234,12 +265,13 @@ export class Watcher {
             const status = normalizeWorkspaceStatus(raw)
             if (!status && strict)
               throw new Error("Workspace status unavailable")
+            if (status) this.statusFailures.delete(id)
             if (status && this.deps.state.updateWorkspaceStatus(id, status)) {
               changed = true
             }
           } catch (error) {
             if (strict) throw error
-            // Preserve the last known status and retry on the next sweep.
+            this.recordStatusFailure(id)
           }
         }
       }
@@ -249,10 +281,6 @@ export class Watcher {
       if (changed) this.broadcastWorkspaces()
     } finally {
       this.workspaceStatusPolling = false
-      if (this.workspaceStatusQueued) {
-        this.workspaceStatusQueued = false
-        void this.refreshWorkspaceStatuses()
-      }
     }
   }
 
