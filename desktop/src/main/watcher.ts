@@ -91,6 +91,7 @@ export class Watcher {
   start(): Promise<void> {
     this.pollTimer = setInterval(() => {
       if (this.windowActive()) this.schedulePoll()
+      else this.retryReconcilingJobs()
     }, WORKSPACE_POLL_INTERVAL_MS)
     this.workspaceStatusTimer = setInterval(
       () => this.scheduleWorkspaceStatusPoll(),
@@ -144,18 +145,22 @@ export class Watcher {
         this.pollMachines(),
         this.pollContexts(),
       ])
-      for (const [id, job] of Object.entries(
-        this.deps.workspaceJobs.snapshot(),
-      )) {
-        if (job.state === "reconciling" && job.refreshError)
-          void this.deps.workspaceJobs.retryRefresh(id)
-      }
+      this.retryReconcilingJobs()
     } finally {
       this.polling = false
       if (this.pollQueued) {
         this.pollQueued = false
         this.schedulePoll()
       }
+    }
+  }
+
+  private retryReconcilingJobs(): void {
+    for (const [id, job] of Object.entries(
+      this.deps.workspaceJobs.snapshot(),
+    )) {
+      if (job.state === "reconciling" && job.refreshError)
+        void this.deps.workspaceJobs.retryRefresh(id)
     }
   }
 
@@ -310,6 +315,7 @@ export class Watcher {
           throw new Error("Workspace operation changed during refresh")
         return
       }
+      this.pruneStatusFailures(workspaces)
       const changed = this.deps.state.updateWorkspaces(workspaces)
       if (changed) {
         this.broadcastWorkspaces()
@@ -319,6 +325,13 @@ export class Watcher {
       // daemon cannot make the desktop appear empty without explanation.
       mainLog.warn("[watcher] workspace poll failed", error)
       if (strict) throw error
+    }
+  }
+
+  private pruneStatusFailures(workspaces: Workspace[]): void {
+    const listed = new Set(workspaces.map((ws) => ws.id))
+    for (const id of this.statusFailures.keys()) {
+      if (!listed.has(id)) this.statusFailures.delete(id)
     }
   }
 

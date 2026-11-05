@@ -580,6 +580,48 @@ describe("Watcher scheduled status polling", () => {
     expect(cli.runRaw).toHaveBeenCalledTimes(2)
   })
 
+  it("resumes scheduled polls after the backoff expires", async () => {
+    const { watcher, cli } = makeWatcher(
+      async () => ({}),
+      [{ id: "ws-1" }],
+      async () => {
+        throw new Error("offline")
+      },
+      () => visibleWindow,
+    )
+
+    scheduled(watcher)
+    await settle()
+    expect(cli.runRaw).toHaveBeenCalledTimes(1)
+
+    const now = Date.now()
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now + 6 * 60_000)
+    scheduled(watcher)
+    await settle()
+    nowSpy.mockRestore()
+
+    expect(cli.runRaw).toHaveBeenCalledTimes(2)
+  })
+
+  it("drops backoff for workspaces that leave the list", async () => {
+    const { watcher, cli } = makeWatcher(
+      async () => ({}),
+      [{ id: "ws-1" }],
+      async () => {
+        throw new Error("offline")
+      },
+      () => visibleWindow,
+    )
+
+    scheduled(watcher)
+    await settle()
+    await watcher.refreshWorkspaces()
+    scheduled(watcher)
+    await settle()
+
+    expect(cli.runRaw).toHaveBeenCalledTimes(2)
+  })
+
   it("does not rerun immediately when a tick overlaps a running sweep", async () => {
     let release: () => void = () => {}
     const gate = new Promise<void>((resolve) => {
