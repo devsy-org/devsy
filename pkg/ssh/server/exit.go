@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"io"
 	"os/exec"
 	"strings"
 
@@ -23,6 +24,10 @@ func exitWithError(sess ssh.Session, err error) {
 	// always exit session
 	err = sess.Exit(exitCode(err))
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			log.Debugf("session closed before exit status: %v", err)
+			return
+		}
 		log.Errorf("session failed to exit: %v", err)
 	}
 }

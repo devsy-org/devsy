@@ -288,6 +288,7 @@ func initProvider(
 			WorkspaceContextName: contextName,
 			Options:              providerOptions,
 			Config:               provider,
+			ExtraEnv:             provider2.GetBaseEnvironment(contextName, provider.Name),
 			Stdout:               io2.stdout,
 			Stderr:               io2.stderr,
 		},

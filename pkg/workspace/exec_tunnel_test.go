@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/crypto/ssh"
@@ -54,7 +55,11 @@ func (c *tunnelWorkspaceClient) Status(
 }
 
 func (s *tunnelExecSuite) TestRoutesAgentRuntimesWithoutLocalExecutable() {
-	for _, driver := range []string{provider.ExternalDriver, provider.MicrosandboxDriver} {
+	for _, driver := range []string{
+		provider.ExternalDriver,
+		provider.MicrosandboxDriver,
+		provider.DockerDriver,
+	} {
 		s.Run(driver, func() {
 			c := &tunnelWorkspaceClient{
 				workspace: &provider.Workspace{ID: "remote"},
@@ -67,13 +72,15 @@ func (s *tunnelExecSuite) TestRoutesAgentRuntimesWithoutLocalExecutable() {
 			s.ErrorContains(err, "cannot override")
 		})
 	}
-	c := &tunnelWorkspaceClient{
-		workspace: &provider.Workspace{},
-		info:      provider.ProviderAgentConfig{},
+	for _, local := range []types.StrBool{"", types.StrBool(config.BoolTrue)} {
+		c := &tunnelWorkspaceClient{
+			workspace: &provider.Workspace{},
+			info:      provider.ProviderAgentConfig{Local: local},
+		}
+		resolved, err := NewWorkspaceRuntime(&config.Config{}, c, "")
+		s.Require().NoError(err)
+		s.IsType(&DockerRuntime{}, resolved)
 	}
-	resolved, err := NewWorkspaceRuntime(&config.Config{}, c, "")
-	s.Require().NoError(err)
-	s.IsType(&DockerRuntime{}, resolved)
 }
 
 func (s *tunnelExecSuite) TestFindRequiresRunningOwnedWorkspaceAndMetadata() {
