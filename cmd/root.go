@@ -31,6 +31,7 @@ import (
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/clihelp"
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
@@ -144,6 +145,7 @@ func isMachineConsumer(logOutput string, isInternal bool) bool {
 }
 
 func Execute() {
+	command.MarkInheritedFDsCloseOnExec()
 	os.Exit(run())
 }
 
