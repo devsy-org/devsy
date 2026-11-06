@@ -5,9 +5,11 @@ import (
 	"context"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -493,8 +495,7 @@ func (s *terminalSuite) TestInputCloseUnblocksRead() {
 		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
-	reader, ok := a.Input().(io.ReadCloser)
-	s.Require().True(ok)
+	reader := a.Input()
 	done := make(chan error, 1)
 	go func() { var b [1]byte; _, readErr := reader.Read(b[:]); done <- readErr }()
 	s.Require().NoError(reader.Close())
@@ -733,6 +734,16 @@ func (s *terminalSuite) TestForwarderReceiveExitsAfterUpstreamFailure() {
 	)
 	s.NoError(goleak.Find(opts...))
 	_ = session.Close(context.Background())
+}
+
+func (s *terminalSuite) TestDisplayKey() {
+	for _, key := range []string{"a\nb", strings.Repeat("x", 300), strings.Repeat("a", 255) + "\u00e9"} {
+		display := terminalDisplayKey(key)
+		s.True(validIdentity(display, false))
+		s.LessOrEqual(len(display), 256)
+		s.True(utf8.ValidString(display))
+	}
+	s.Equal("a b", terminalDisplayKey("a\nb"))
 }
 
 func (s *terminalSuite) client(opts ...Option) tunnel.TunnelClient {

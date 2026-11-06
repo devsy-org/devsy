@@ -31,16 +31,21 @@ type interactiveLaunch struct {
 
 type interactiveIdentity struct{ credentials server.ExecCredentials }
 
-func loginShell(name string) (string, error) {
+func loginShell(ctx context.Context, name string) (string, error) {
 	lookup, _, _ := strings.Cut(name, ":")
 	path, err := exec.LookPath("getent")
 	if err == nil {
-		cmd := &exec.Cmd{Path: path, Args: []string{"getent", "passwd", lookup}}
+		cmd := exec.CommandContext(ctx, "getent")
+		cmd.Path = path
+		cmd.Args = append(cmd.Args, "passwd", lookup)
 		if out, err := cmd.Output(); err == nil {
 			if shell := shellFromPasswd(string(out), lookup); shell != "" {
 				return shell, nil
 			}
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	data, err := os.ReadFile("/etc/passwd")
 	if err == nil {
@@ -61,8 +66,10 @@ func shellFromPasswd(data, name string) string {
 	return ""
 }
 
-func prepareInteractiveLaunch(command []string, user string) (interactiveLaunch, error) {
-	shell, err := loginShell(user)
+func prepareInteractiveLaunch(
+	ctx context.Context, command []string, user string,
+) (interactiveLaunch, error) {
+	shell, err := loginShell(ctx, user)
 	if err != nil {
 		return interactiveLaunch{}, err
 	}
@@ -91,10 +98,7 @@ func runInteractiveProcess(
 	a tunnel.TerminalAttachment,
 ) (subprocess.Result, error) {
 	result := subprocess.Result{ExitCode: -1}
-	input, ok := a.Input().(io.ReadCloser)
-	if !ok {
-		return result, errors.New("terminal input cannot be closed")
-	}
+	input := a.Input()
 	terminal, process, err := startInteractive(p, launch, a)
 	if err != nil {
 		return result, err
@@ -226,7 +230,7 @@ func startInteractive(
 		if err != nil {
 			return nil, nil, fmt.Errorf("lookup execution user: %w", err)
 		}
-		shell, err := loginShell(target.Username)
+		shell, err := loginShell(p.ctx, target.Username)
 		if err != nil {
 			return nil, nil, err
 		}

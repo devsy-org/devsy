@@ -3,8 +3,10 @@ package tunnelserver
 import (
 	"context"
 	"io"
+	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"google.golang.org/grpc/codes"
@@ -204,6 +206,25 @@ func validIdentity(s string, required bool) bool {
 		}
 	}
 	return true
+}
+
+func terminalDisplayKey(key string) string {
+	var b strings.Builder
+	for _, r := range key {
+		if unicode.IsControl(r) {
+			r = ' '
+		}
+		n := utf8.RuneLen(r)
+		if n < 0 {
+			r = utf8.RuneError
+			n = utf8.RuneLen(r)
+		}
+		if b.Len()+n > 256 {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func invalidTerminalRequest() error {

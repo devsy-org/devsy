@@ -41,3 +41,13 @@ func (s *LifecycleTerminalWiringSuite) TestUpClearsTerminalClientOnError() {
 	require.Error(t, err)
 	require.Nil(t, r.lifecycleTerminalClient)
 }
+
+func (s *LifecycleTerminalWiringSuite) TestUpRejectsMissingTerminalClientBeforeInitialization() {
+	t := s.T()
+	r := &runner{workspaceConfig: &provider.AgentWorkspaceInfo{
+		CLIOptions: provider.CLIOptions{LifecycleTerminal: &provider.LifecycleTerminalRequest{}},
+	}}
+	_, err := r.Up(context.Background(), UpOptions{}, 0, nil)
+	require.ErrorContains(t, err, "lifecycle terminal client")
+	require.Nil(t, r.lifecycleTerminalClient)
+}

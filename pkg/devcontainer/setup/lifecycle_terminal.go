@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
@@ -91,12 +92,18 @@ func executeInteractive(p hookRunParams, command hookCommand, launch interactive
 		context.Background(),
 		tunnel.LifecycleTerminalExitAckTimeout,
 	)
-	_ = attachment.Exit(exitCtx, exit)
+	logTerminalExit(attachment.Exit(exitCtx, exit))
 	cancel()
 	if runErr == nil {
 		return nil
 	}
 	return interactiveError(p, command, result, runErr)
+}
+
+func logTerminalExit(err error) {
+	if err != nil {
+		log.Warnf("lifecycle terminal exit: %v", err)
+	}
 }
 
 func prepareInteractiveHooks(p hookRunParams) (map[int]interactiveLaunch, error) {
@@ -106,7 +113,7 @@ func prepareInteractiveHooks(p hookRunParams) (map[int]interactiveLaunch, error)
 			if len(command) == 0 {
 				continue
 			}
-			launch, err := prepareInteractiveLaunch(command, p.env.remoteUser)
+			launch, err := prepareInteractiveLaunch(p.ctx, command, p.env.remoteUser)
 			if err != nil {
 				p.index = i
 				p.recordAll(workspacelogs.InvocationFailed, reasonStartFailed)

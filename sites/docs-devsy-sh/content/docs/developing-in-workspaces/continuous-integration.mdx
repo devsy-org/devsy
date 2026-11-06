@@ -104,7 +104,7 @@ Desktop launches, `--detach`, JSON output, and management or platform tasks also
 
 Pass values to the workspace in one of these ways:
 
-- Environment variables: `devsy ci --remote-env NAME=value -- make test`.
+- Environment variables: `devsy ci --workspace-env NAME=value -- make test`. Use `--workspace-env` for values that hooks need. The `--remote-env` flag applies only to the command that CI runs.
 - Secrets: `--secret` injects a stored Devsy secret. See [Secrets](./secrets.mdx).
 - Files: write the value to a file that the hook reads.
 - Arguments: put a value that is not secret in the hook command, such as `"postStartCommand": ["./start.sh", "example-name"]`.

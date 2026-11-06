@@ -11,7 +11,7 @@ import (
 
 var restores = struct {
 	sync.Mutex
-	items []func()
+	items []*restoreEntry
 }{}
 
 type Input interface {
@@ -33,17 +33,37 @@ func EnterRaw(stdin, stdout *os.File) (func(), error) {
 		_ = pty.RestoreTerminal(stdin.Fd(), inState)
 		return nil, err
 	}
-	var once sync.Once
+	restore := registerRestore(func() {
+		_ = pty.RestoreTerminal(stdout.Fd(), outState)
+		_ = pty.RestoreTerminal(stdin.Fd(), inState)
+	})
+	return restore, nil
+}
+
+type restoreEntry struct {
+	once sync.Once
+	fn   func()
+}
+
+func registerRestore(fn func()) func() {
+	entry := &restoreEntry{fn: fn}
 	restore := func() {
-		once.Do(func() {
-			_ = pty.RestoreTerminal(stdout.Fd(), outState)
-			_ = pty.RestoreTerminal(stdin.Fd(), inState)
+		entry.once.Do(func() {
+			restores.Lock()
+			for i, item := range restores.items {
+				if item == entry {
+					restores.items = slices.Delete(restores.items, i, i+1)
+					break
+				}
+			}
+			restores.Unlock()
+			entry.fn()
 		})
 	}
 	restores.Lock()
-	restores.items = append(restores.items, restore)
+	restores.items = append(restores.items, entry)
 	restores.Unlock()
-	return restore, nil
+	return restore
 }
 
 func RestoreAll() {
@@ -52,6 +72,6 @@ func RestoreAll() {
 	restores.items = nil
 	restores.Unlock()
 	for _, item := range slices.Backward(items) {
-		item()
+		item.once.Do(item.fn)
 	}
 }

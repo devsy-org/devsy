@@ -158,6 +158,10 @@ func (r *runner) Up(
 	timeout time.Duration,
 	reporter status.Reporter,
 ) (*config.Result, error) {
+	if r.workspaceConfig.CLIOptions.LifecycleTerminal != nil &&
+		options.LifecycleTerminalClient == nil {
+		return nil, fmt.Errorf("lifecycle terminal request requires a lifecycle terminal client")
+	}
 	r.lifecycleTerminalClient = options.LifecycleTerminalClient
 	defer func() { r.lifecycleTerminalClient = nil }()
 	r.imageDetails = nil

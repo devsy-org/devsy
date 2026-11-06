@@ -4,6 +4,7 @@ package agentcontainer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -36,19 +38,26 @@ func (s *AgentContainerLifecycleTerminalSuite) TestLifecycleTerminalGuard() {
 		NewSetupContainerCmd(&flags.GlobalFlags{}).Flags().Lookup("lifecycle-terminal-protocol"),
 	)
 	for _, tc := range []struct {
-		set, present bool
-		version      int
-		valid        bool
+		set, present   bool
+		version        int
+		requestVersion uint32
+		valid          bool
 	}{
-		{false, false, 0, true},
-		{true, true, 1, true},
-		{true, false, 1, false},
-		{false, true, 0, false},
-		{true, true, 0, false},
-		{true, true, 2, false},
+		{false, false, 0, 0, true},
+		{true, true, 1, 1, true},
+		{true, false, 1, 0, false},
+		{false, true, 0, 1, false},
+		{true, true, 0, 1, false},
+		{true, true, 2, 1, false},
+		{true, true, 1, 0, false},
+		{true, true, 1, 2, false},
 	} {
 		cmd := &SetupContainerCmd{protocolSet: tc.set, LifecycleTerminalProtocol: tc.version}
-		require.Equal(t, tc.valid, cmd.validateTerminal(tc.present) == nil)
+		var request *provider.LifecycleTerminalRequest
+		if tc.present {
+			request = &provider.LifecycleTerminalRequest{ProtocolVersion: tc.requestVersion}
+		}
+		require.Equal(t, tc.valid, cmd.validateTerminal(request) == nil)
 	}
 }
 
@@ -110,4 +119,30 @@ func (s *AgentContainerLifecycleTerminalSuite) TestSetupSignalContext() {
 	case <-time.After(5 * time.Second):
 		t.Fatal("context not canceled")
 	}
+}
+
+func (s *AgentContainerLifecycleTerminalSuite) TestRunRejectsRequestVersionBeforeInitialization() {
+	t := s.T()
+	info := provider.ContainerWorkspaceInfo{
+		CLIOptions: provider.CLIOptions{
+			LifecycleTerminal: &provider.LifecycleTerminalRequest{ProtocolVersion: 2},
+		},
+	}
+	data, err := json.Marshal(info)
+	require.NoError(t, err)
+	encoded, err := compress.Compress(string(data))
+	require.NoError(t, err)
+	command := &SetupContainerCmd{
+		ContainerWorkspaceInfo:    encoded,
+		protocolSet:               true,
+		LifecycleTerminalProtocol: 1,
+	}
+	setup, err := compress.Compress(`{}`)
+	require.NoError(t, err)
+	command.SetupInfo = setup
+	require.ErrorContains(
+		t,
+		command.Run(context.Background()),
+		"lifecycle terminal protocol and request mismatch",
+	)
 }

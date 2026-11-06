@@ -2,6 +2,7 @@ package up
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"al.essio.dev/pkg/shellescape"
@@ -104,6 +105,7 @@ func (s *InteractivePostStartCLISuite) TestInteractivePostStartTerminalDimension
 
 func (s *InteractivePostStartCLISuite) TestInteractivePostStartRejectsJSONAndUI() {
 	t := s.T()
+	t.Setenv("DEVSY_UI", "")
 	cmd := &UpCmd{InteractivePostStart: true, GlobalFlags: &flags.GlobalFlags{ResultFormat: "json"}}
 	require.ErrorContains(t, cmd.validateInteractivePostStart(), "requires plain output")
 	t.Setenv("DEVSY_UI", "true")
@@ -114,11 +116,21 @@ func (s *InteractivePostStartCLISuite) TestInteractivePostStartRejectsJSONAndUI(
 func (s *InteractivePostStartCLISuite) TestInteractivePostStartCIEnvironmentIsNotTerminalCheck() {
 	t := s.T()
 	t.Setenv("CI", "true")
+	t.Setenv("DEVSY_UI", "")
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	oldStdin, oldStdout := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = reader, writer
+	t.Cleanup(func() {
+		os.Stdin, os.Stdout = oldStdin, oldStdout
+		_ = reader.Close()
+		_ = writer.Close()
+	})
 	cmd := &UpCmd{
 		InteractivePostStart: true,
 		GlobalFlags:          &flags.GlobalFlags{ResultFormat: "plain"},
 	}
-	err := cmd.validateInteractivePostStart()
+	err = cmd.validateInteractivePostStart()
 	require.ErrorContains(t, err, "attached stdin and stdout")
 	require.NotContains(t, err.Error(), "CI")
 }
@@ -143,4 +155,12 @@ func (*lifecycleTerminalRequestClient) Context() string { return "context" }
 
 func (*lifecycleTerminalRequestClient) WorkspaceConfig() *provider.Workspace {
 	return &provider.Workspace{UID: "workspace-uid"}
+}
+
+func (s *InteractivePostStartCLISuite) TestMergedOptionsRejectInteractiveConflict() {
+	t := s.T()
+	t.Setenv("DEVSY_FLAGS_UP", `{"skipPostStart":true}`)
+	cmd := &UpCmd{InteractivePostStart: true}
+	err := cmd.prepareClientEnvironment(nil, nil, context.Background())
+	require.ErrorContains(t, err, "cannot be combined")
 }

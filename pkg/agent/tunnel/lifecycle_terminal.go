@@ -36,7 +36,7 @@ type TerminalSession interface {
 type TerminalAttachment interface {
 	Window() TerminalWindow
 	Output() io.Writer
-	Input() io.Reader
+	Input() io.ReadCloser
 	Resizes() <-chan TerminalWindow
 	Canceled() <-chan struct{}
 	Exit(ctx context.Context, exit TerminalExit) error

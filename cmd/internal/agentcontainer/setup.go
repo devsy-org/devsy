@@ -85,19 +85,19 @@ type containerState struct {
 
 // Run runs the command logic.
 func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
-	tunnelClient, err := cmd.initializeTunnelClient(ctx)
-	if err != nil {
-		return err
-	}
-
 	workspaceInfo, setupInfo, err := cmd.parseWorkspaceAndSetupInfo()
 	if err != nil {
 		return err
 	}
 
-	if err := cmd.validateTerminal(workspaceInfo.CLIOptions.LifecycleTerminal != nil); err != nil {
+	if err := cmd.validateTerminal(workspaceInfo.CLIOptions.LifecycleTerminal); err != nil {
 		return err
 	}
+	tunnelClient, err := cmd.initializeTunnelClient(ctx)
+	if err != nil {
+		return err
+	}
+
 	ctx, stop := setupSignalContext(ctx, cmd.protocolSet)
 	defer stop()
 
@@ -137,9 +137,11 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 	return err
 }
 
-func (cmd *SetupContainerCmd) validateTerminal(present bool) error {
-	if cmd.protocolSet != present ||
-		(cmd.protocolSet && cmd.LifecycleTerminalProtocol != int(tunnel.LifecycleTerminalProtocolVersion)) {
+func (cmd *SetupContainerCmd) validateTerminal(request *provider2.LifecycleTerminalRequest) error {
+	if cmd.protocolSet != (request != nil) ||
+		(cmd.protocolSet && (cmd.LifecycleTerminalProtocol != int(tunnel.LifecycleTerminalProtocolVersion) ||
+			request.ProtocolVersion != tunnel.LifecycleTerminalProtocolVersion ||
+			int(request.ProtocolVersion) != cmd.LifecycleTerminalProtocol)) {
 		return fmt.Errorf("lifecycle terminal protocol and request mismatch")
 	}
 	return nil

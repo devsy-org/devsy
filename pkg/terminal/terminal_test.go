@@ -69,3 +69,23 @@ func (s *TerminalSuite) TestInputCancelUnblocksRead() {
 	s.NoError(input.Close())
 	s.NoError(fresh.Close())
 }
+
+func (s *TerminalSuite) TestRestoreRegistry() {
+	for range 100 {
+		restore := registerRestore(func() {})
+		restore()
+		restore()
+	}
+	restores.Lock()
+	s.Empty(restores.items)
+	restores.Unlock()
+	var order []int
+	for i := range 3 {
+		registerRestore(func() { order = append(order, i) })
+	}
+	RestoreAll()
+	s.Equal([]int{2, 1, 0}, order)
+	restores.Lock()
+	s.Empty(restores.items)
+	restores.Unlock()
+}

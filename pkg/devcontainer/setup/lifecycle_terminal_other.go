@@ -16,7 +16,7 @@ var errInteractiveUnsupported = errors.New(
 
 type interactiveLaunch struct{}
 
-func prepareInteractiveLaunch(_ []string, _ string) (interactiveLaunch, error) {
+func prepareInteractiveLaunch(_ context.Context, _ []string, _ string) (interactiveLaunch, error) {
 	return interactiveLaunch{}, errInteractiveUnsupported
 }
 

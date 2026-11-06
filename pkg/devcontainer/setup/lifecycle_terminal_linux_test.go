@@ -17,10 +17,12 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/pty/ptytest"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -98,7 +100,7 @@ func (a *testTerminal) Begin(
 }
 func (*testTerminal) Close(context.Context) error     { return nil }
 func (a *testTerminal) Window() tunnel.TerminalWindow { return a.window }
-func (a *testTerminal) Input() io.Reader              { return a.input }
+func (a *testTerminal) Input() io.ReadCloser          { return a.input }
 func (a *testTerminal) Output() io.Writer {
 	if a.outputOverride != nil {
 		return a.outputOverride
@@ -415,6 +417,7 @@ func (s *terminalTestSuite) TestArgvAndLargeInput() {
 }
 
 func (s *terminalTestSuite) TestParentCancelAndExitAckSuccess() {
+	logs := log.InitTestObserved(s.T(), zapcore.WarnLevel)
 	a := newTestTerminal()
 	ctx, cancel := context.WithCancel(context.Background())
 	p := s.params(ctx, a, `printf 'ready:'; exec sleep 30`)
@@ -427,6 +430,7 @@ func (s *terminalTestSuite) TestParentCancelAndExitAckSuccess() {
 	p = s.params(context.Background(), a, `printf 'final-output'`)
 	s.NoError(s.result(s.run(p)))
 	s.Contains(a.exitOutput, "final-output")
+	s.Equal(1, logs.FilterMessage("lifecycle terminal exit: ack timeout").Len())
 	s.Equal(0, a.exit.ExitCode)
 }
 
@@ -443,6 +447,20 @@ func (s *terminalTestSuite) TestNoninteractivePostStartRemainsPipeBased() {
 	}
 	_, err := RunPreAttachHooks(context.Background(), result, PreAttachOptions{})
 	s.NoError(err)
+}
+
+func (s *terminalTestSuite) TestLoginShellCanceled() {
+	dir := s.T().TempDir()
+	s.Require().NoError(writeExecutableFile(
+		filepath.Join(dir, "getent"), []byte("#!/bin/sh\nexec /bin/sleep 30\n"),
+	))
+	s.T().Setenv("PATH", dir)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := loginShell(ctx, s.username)
+	s.ErrorIs(err, context.DeadlineExceeded)
+	s.Less(time.Since(start), time.Second)
 }
 
 func (s *terminalTestSuite) params(

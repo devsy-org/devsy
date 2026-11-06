@@ -293,6 +293,11 @@ func (cmd *UpCmd) prepareClientEnvironment(
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
 		return err
 	}
+	if cmd.InteractivePostStart {
+		if err := cmd.validateInteractiveFlagConflicts(); err != nil {
+			return err
+		}
+	}
 	if err := cmd.validateInteractiveRoute(nil); err != nil {
 		return err
 	}

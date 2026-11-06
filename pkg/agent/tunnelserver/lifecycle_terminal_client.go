@@ -133,6 +133,7 @@ func (s *terminalClient) Begin(
 	ctx context.Context,
 	inv tunnel.TerminalInvocation,
 ) (tunnel.TerminalAttachment, error) {
+	inv.Key = terminalDisplayKey(inv.Key)
 	if !validTerminalInvocation(inv) {
 		return nil, status.Error(codes.InvalidArgument, "invalid terminal invocation")
 	}
@@ -267,7 +268,7 @@ func (s *terminalClient) Close(ctx context.Context) error {
 }
 func (a *terminalAttachment) Window() tunnel.TerminalWindow         { return a.window }
 func (a *terminalAttachment) Output() io.Writer                     { return a }
-func (a *terminalAttachment) Input() io.Reader                      { return a.input }
+func (a *terminalAttachment) Input() io.ReadCloser                  { return a.input }
 func (a *terminalAttachment) Resizes() <-chan tunnel.TerminalWindow { return a.resizes }
 func (a *terminalAttachment) Canceled() <-chan struct{}             { return a.canceled }
 func (a *terminalAttachment) Write(p []byte) (int, error) {

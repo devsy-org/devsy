@@ -80,7 +80,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := cmd.validateTerminal(decoded.CLIOptions.LifecycleTerminal != nil); err != nil {
+	if err := cmd.validateTerminal(decoded.CLIOptions.LifecycleTerminal); err != nil {
 		return err
 	}
 	workspaceInfo, err := cmd.loadWorkspaceInfo(ctx)
@@ -116,9 +116,11 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	return nil
 }
 
-func (cmd *UpCmd) validateTerminal(present bool) error {
-	if cmd.protocolSet != present ||
-		(cmd.protocolSet && cmd.LifecycleTerminalProtocol != int(tunnel.LifecycleTerminalProtocolVersion)) {
+func (cmd *UpCmd) validateTerminal(request *provider.LifecycleTerminalRequest) error {
+	if cmd.protocolSet != (request != nil) ||
+		(cmd.protocolSet && (cmd.LifecycleTerminalProtocol != int(tunnel.LifecycleTerminalProtocolVersion) ||
+			request.ProtocolVersion != tunnel.LifecycleTerminalProtocolVersion ||
+			int(request.ProtocolVersion) != cmd.LifecycleTerminalProtocol)) {
 		return fmt.Errorf("lifecycle terminal protocol and request mismatch")
 	}
 	return nil
