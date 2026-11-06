@@ -545,6 +545,42 @@ func (s *terminalSuite) TestOutputBackpressurePreservesBytes() {
 	s.NoError(session.Close(context.Background()))
 }
 
+func (s *terminalSuite) TestAbortOutputThenExit() {
+	received := make(chan []byte, 1)
+	stalled := make(chan struct{})
+	release := make(chan struct{})
+	owner := testTerminalOwner{
+		serve: (&ownerOutputBackpressurePreservesBytes{received: received, stalled: stalled, release: release}).serve,
+	}
+	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
+	session, err := OpenLifecycleTerminal(context.Background(), client, s.req)
+	s.Require().NoError(err)
+	a, err := session.Begin(
+		context.Background(),
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
+	)
+	s.Require().NoError(err)
+	done := make(chan error, 1)
+	go func() { _, writeErr := a.Output().Write(bytes.Repeat([]byte("x"), 8<<20)); done <- writeErr }()
+	<-stalled
+	select {
+	case err = <-done:
+		s.FailNow("write did not apply backpressure", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	a.Abort()
+	select {
+	case err = <-done:
+		s.ErrorIs(err, context.Canceled)
+	case <-time.After(time.Second):
+		s.FailNow("write did not abort")
+	}
+	close(release)
+	s.NoError(a.Exit(context.Background(), tunnel.TerminalExit{ExitCode: 7}))
+	<-received
+	s.NoError(session.Close(context.Background()))
+}
+
 func (s *terminalSuite) TestInvalidResponseFrames() {
 	tests := []struct {
 		name  string

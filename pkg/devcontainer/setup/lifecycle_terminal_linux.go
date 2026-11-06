@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"os/user"
@@ -17,10 +18,17 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/pty"
 	"github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/ssh"
+	"golang.org/x/sys/unix"
+)
+
+const (
+	interactiveDrainGrace = 2 * time.Second
+	interactiveDrainLimit = 5 * time.Second
 )
 
 type interactiveLaunch struct {
@@ -109,28 +117,65 @@ func runInteractiveProcess(
 	waitDone := make(chan error, 1)
 	resizeDone := make(chan struct{})
 	stopResize := make(chan struct{})
+	progress := make(chan struct{}, 1)
+	stopOutput := make(chan struct{})
+	reader, err := newInteractiveReader(terminal, stopOutput)
+	if err != nil {
+		_ = process.Kill()
+		_ = terminal.Close()
+		_ = process.Wait()
+		_ = input.Close()
+		return result, err
+	}
 	go func() { defer close(inputDone); _, _ = io.Copy(terminal.InputWriter(), input) }()
-	go func() { _, copyErr := io.Copy(a.Output(), terminal.OutputReader()); outputDone <- copyErr }()
+	go func() {
+		_, copyErr := io.Copy(
+			&interactiveOutput{writer: a.Output(), progress: progress},
+			reader,
+		)
+		outputDone <- copyErr
+	}()
 	go func() { waitDone <- process.Wait() }()
 	go resizeInteractive(terminal, a, stopResize, resizeDone)
 	state := &interactiveWait{waitDone: waitDone, outputDone: outputDone}
-	state.wait(ctx, a)
+	state.wait(ctx, a, progress)
 	if state.sessionErr != nil {
 		state.stop(process)
 	}
 
-	close(stopResize)
-	<-resizeDone
+	finishInteractive(
+		terminal,
+		a,
+		state,
+		interactiveStops{stopResize, resizeDone, stopOutput, inputDone, input},
+	)
+	return interactiveResult(state.waitErr, state.sessionErr)
+}
+
+type interactiveStops struct {
+	resize, resized, output, input chan struct{}
+	reader                         io.ReadCloser
+}
+
+func finishInteractive(
+	terminal pty.PTYCmd,
+	a tunnel.TerminalAttachment,
+	state *interactiveWait,
+	stops interactiveStops,
+) {
+	close(stops.resize)
+	<-stops.resized
+	if !state.drained {
+		close(stops.output)
+		a.Abort()
+		<-state.outputDone
+	}
 	_ = terminal.Close()
 	if !state.waited {
 		state.waitErr = <-state.waitDone
 	}
-	if !state.drained {
-		<-state.outputDone
-	}
-	_ = input.Close()
-	<-inputDone
-	return interactiveResult(state.waitErr, state.sessionErr)
+	_ = stops.reader.Close()
+	<-stops.input
 }
 
 func interactiveResult(waitErr, sessionErr error) (subprocess.Result, error) {
@@ -177,25 +222,159 @@ func resizeInteractive(terminal pty.PTYCmd, a tunnel.TerminalAttachment, stop, d
 	}
 }
 
-func (s *interactiveWait) wait(ctx context.Context, a tunnel.TerminalAttachment) {
-	for !s.waited || !s.drained {
-		select {
-		case s.waitErr = <-s.waitDone:
-			s.waited = true
-			s.waitDone = nil
-		case err := <-s.outputDone:
-			s.drained = true
-			s.outputDone = nil
-			s.sessionErr = err
-		case <-ctx.Done():
-			s.sessionErr = ctx.Err()
-		case <-a.Canceled():
-			s.sessionErr = context.Canceled
+type interactiveReader struct {
+	fd   int32
+	stop <-chan struct{}
+}
+
+func newInteractiveReader(terminal pty.PTYCmd, stop <-chan struct{}) (*interactiveReader, error) {
+	master, ok := terminal.InputWriter().(*os.File)
+	if !ok {
+		return nil, errors.New("terminal master is not a file")
+	}
+	fd := master.Fd()
+	if fd > math.MaxInt32 {
+		return nil, errors.New("terminal master descriptor is too large")
+	}
+	return &interactiveReader{fd: int32(fd & math.MaxInt32), stop: stop}, nil
+}
+
+func (r *interactiveReader) Read(p []byte) (int, error) {
+	for {
+		ready, err := r.ready()
+		if err != nil {
+			return 0, err
 		}
-		if s.sessionErr != nil {
+		if !ready {
+			continue
+		}
+		n, err := unix.Read(int(r.fd), p)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if errors.Is(err, unix.EIO) {
+			return 0, io.EOF
+		}
+		if err != nil {
+			return 0, err
+		}
+		return n, nil
+	}
+}
+
+func (r *interactiveReader) ready() (bool, error) {
+	select {
+	case <-r.stop:
+		return false, io.EOF
+	default:
+	}
+	fds := []unix.PollFd{{Fd: r.fd, Events: unix.POLLIN}}
+	n, err := unix.Poll(fds, 100)
+	if errors.Is(err, unix.EINTR) {
+		return false, nil
+	}
+	return n > 0, err
+}
+
+type interactiveOutput struct {
+	writer   io.Writer
+	progress chan<- struct{}
+}
+
+func (o *interactiveOutput) Write(p []byte) (int, error) {
+	n, err := o.writer.Write(p)
+	if n > 0 {
+		select {
+		case o.progress <- struct{}{}:
+		default:
+		}
+	}
+	return n, err
+}
+
+type interactiveDrain struct {
+	grace, limit   *time.Timer
+	graceC, limitC <-chan time.Time
+}
+
+func (d *interactiveDrain) start() {
+	d.grace = time.NewTimer(interactiveDrainGrace)
+	d.limit = time.NewTimer(interactiveDrainLimit)
+	d.graceC, d.limitC = d.grace.C, d.limit.C
+}
+
+func (d *interactiveDrain) reset() {
+	if d.grace == nil {
+		return
+	}
+	if !d.grace.Stop() {
+		select {
+		case <-d.grace.C:
+		default:
+		}
+	}
+	d.grace.Reset(interactiveDrainGrace)
+}
+
+func (d *interactiveDrain) stop() {
+	if d.grace != nil {
+		d.grace.Stop()
+		d.limit.Stop()
+	}
+}
+
+func (s *interactiveWait) wait(
+	ctx context.Context,
+	a tunnel.TerminalAttachment,
+	progress <-chan struct{},
+) {
+	d := &interactiveDrain{}
+	defer d.stop()
+	for !s.waited || !s.drained {
+		if s.waitStep(ctx, a, progress, d) {
 			return
 		}
 	}
+}
+
+func (s *interactiveWait) waitStep(
+	ctx context.Context,
+	a tunnel.TerminalAttachment,
+	progress <-chan struct{},
+	d *interactiveDrain,
+) bool {
+	select {
+	case s.waitErr = <-s.waitDone:
+		s.processExited(d)
+	case err := <-s.outputDone:
+		s.drained = true
+		s.outputDone = nil
+		s.sessionErr = err
+	case <-progress:
+		d.reset()
+	case <-d.graceC:
+		return warnTruncatedOutput()
+	case <-d.limitC:
+		return warnTruncatedOutput()
+	case <-ctx.Done():
+		s.sessionErr = ctx.Err()
+	case <-a.Canceled():
+		s.sessionErr = context.Canceled
+	}
+	return s.sessionErr != nil
+}
+
+func (s *interactiveWait) processExited(d *interactiveDrain) {
+	s.waited = true
+	s.waitDone = nil
+	if !s.drained {
+		d.start()
+	}
+}
+
+func warnTruncatedOutput() bool {
+	log.Warnf("lifecycle terminal output was truncated after drain timeout")
+	return true
 }
 
 func (s *interactiveWait) stop(process pty.Process) {

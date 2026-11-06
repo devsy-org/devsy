@@ -465,9 +465,10 @@ func (s *InteractivePostStartSuite) TestBlockedJournalDoesNotBlockHandlers() {
 	gate.SetActive(false)
 }
 
-func (s *InteractivePostStartSuite) TestStatusFlushesAfterExitAck() {
+func (s *InteractivePostStartSuite) TestStatusFlushesBeforeExitAck() {
 	events := make(chan string, 2)
-	gate := newInteractiveStatusGate(&testReporter{events: events}, io.Discard, false)
+	block := make(chan struct{})
+	gate := newInteractiveStatusGate(&testReporter{events: events, block: block}, io.Discard, false)
 	f := s.fixture(func(o *interactivePostStartOptions) { o.status = gate })
 	s.begin(f)
 	gate.Report(status.Event{Step: testInvocationOne})
@@ -478,19 +479,16 @@ func (s *InteractivePostStartSuite) TestStatusFlushesAfterExitAck() {
 	default:
 	}
 	f.stream.in <- exitFrame()
+	select {
+	case <-f.stream.out:
+		close(block)
+		s.FailNow("acknowledgement before status flush")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(block)
 	s.Require().NotNil(s.response(f).GetExitAck())
-	select {
-	case event := <-events:
-		s.Equal(testInvocationOne, event)
-	case <-time.After(time.Second):
-		s.FailNow("flush timeout")
-	}
-	select {
-	case event := <-events:
-		s.Equal(testInvocationTwo, event)
-	case <-time.After(time.Second):
-		s.FailNow("flush timeout")
-	}
+	s.Equal(testInvocationOne, <-events)
+	s.Equal(testInvocationTwo, <-events)
 }
 
 func (s *InteractivePostStartSuite) TestNoninteractiveJournalIsSynchronousAndOrdered() {
@@ -547,6 +545,43 @@ func (s *InteractivePostStartSuite) TestCloseWaitsForJournalDrain() {
 	}
 	s.Equal(testInvocationOne, <-events)
 	s.Equal(testInvocationTwo, <-events)
+}
+
+func (s *InteractivePostStartSuite) TestSequentialBeginAfterJournalDrain() {
+	events := make(chan string, 1)
+	block := make(chan struct{})
+	gate := newInteractiveStatusGate(status.Nop(), io.Discard, true)
+	reporter := &journalStatusReporter{
+		presenter: gate,
+		journal:   &testReporter{events: events, block: block},
+		gate:      gate,
+	}
+	gate.journal = reporter
+	f := s.fixture(func(o *interactivePostStartOptions) { o.status = gate })
+	s.begin(f)
+	reporter.Report(status.Event{Step: testInvocationOne})
+	f.stream.in <- exitFrame()
+	select {
+	case <-f.stream.out:
+		close(block)
+		s.FailNow("acknowledgement before journal drain")
+	case <-time.After(2 * time.Second):
+	}
+	close(block)
+	s.Require().NotNil(s.response(f).GetExitAck())
+	s.Equal(testInvocationOne, <-events)
+	next := beginFrame()
+	next.GetBegin().InvocationId = testInvocationTwo
+	started := time.Now()
+	f.stream.in <- next
+	select {
+	case response := <-f.stream.out:
+		s.Require().NotNil(response.GetBeginAck())
+		s.Equal(testInvocationTwo, response.GetBeginAck().InvocationId)
+		s.Less(time.Since(started), 5*time.Second)
+	case <-time.After(5 * time.Second):
+		s.FailNow("second begin acknowledgement timed out")
+	}
 }
 
 func (s *InteractivePostStartSuite) TestJournalDrainTimeout() {

@@ -135,7 +135,7 @@ The prompt appears as soon as the hook asks for it. Type your answer in the term
 
 `postStartCommand` can be a string, an array of arguments, or an object with one named command. An object with two or more named commands fails before any post-start command runs. The error gives the object's position, for example `postStartCommand merged index 0 has multiple nonempty named commands`. Without the option, the named commands in one object still run in parallel.
 
-Running `devsy workspace up` on a workspace that has already started does not run `postStartCommand` again, with or without the option. Devsy reports that no command ran. Stopping and starting the workspace runs `postStartCommand` again. Start it with the option to answer the prompt:
+Running `devsy workspace up` on a workspace that has already started does not run `postStartCommand` again, with or without the option. No prompt appears and the start finishes normally. The skip reason is recorded in [Setup history](../troubleshooting/setup-history.mdx). Stopping and starting the workspace runs `postStartCommand` again. Start it with the option to answer the prompt:
 
 ```sh
 devsy workspace up my-workspace --interactive-post-start

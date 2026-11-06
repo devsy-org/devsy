@@ -46,16 +46,18 @@ type terminalClient struct {
 	phase     terminalClientPhase
 }
 type terminalAttachment struct {
-	session    *terminalClient
-	id         string
-	window     tunnel.TerminalWindow
-	input      *terminalInput
-	resizes    chan tunnel.TerminalWindow
-	canceled   chan struct{}
-	cancelOnce sync.Once
-	mu         sync.Mutex
-	sequence   uint64
-	exited     bool
+	session      *terminalClient
+	id           string
+	window       tunnel.TerminalWindow
+	input        *terminalInput
+	resizes      chan tunnel.TerminalWindow
+	canceled     chan struct{}
+	cancelOnce   sync.Once
+	outputCancel context.CancelFunc
+	outputCtx    context.Context
+	mu           sync.Mutex
+	sequence     uint64
+	exited       bool
 }
 
 func OpenLifecycleTerminal(
@@ -142,7 +144,9 @@ func (s *terminalClient) Begin(
 		s.mu.Unlock()
 		return nil, status.Error(codes.FailedPrecondition, "terminal session unavailable")
 	}
+	outputCtx, outputCancel := context.WithCancel(s.ctx)
 	a := &terminalAttachment{
+		outputCtx: outputCtx, outputCancel: outputCancel,
 		session:  s,
 		id:       inv.ID,
 		input:    newTerminalInput(),
@@ -271,6 +275,7 @@ func (a *terminalAttachment) Output() io.Writer                     { return a }
 func (a *terminalAttachment) Input() io.ReadCloser                  { return a.input }
 func (a *terminalAttachment) Resizes() <-chan tunnel.TerminalWindow { return a.resizes }
 func (a *terminalAttachment) Canceled() <-chan struct{}             { return a.canceled }
+func (a *terminalAttachment) Abort()                                { a.outputCancel() }
 func (a *terminalAttachment) Write(p []byte) (int, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -281,8 +286,8 @@ func (a *terminalAttachment) Write(p []byte) (int, error) {
 	for len(p) > 0 {
 		n := min(len(p), tunnel.LifecycleTerminalMaxFrame)
 		a.sequence++
-		err := a.session.send(
-			a.session.ctx,
+		err := a.session.sendOutput(
+			a.outputCtx,
 			&tunnel.LifecycleTerminalRequest{
 				Frame: &tunnel.LifecycleTerminalRequest_Output{
 					Output: &tunnel.LifecycleTerminalOutput{
@@ -303,6 +308,7 @@ func (a *terminalAttachment) Write(p []byte) (int, error) {
 }
 
 func (a *terminalAttachment) Exit(ctx context.Context, exit tunnel.TerminalExit) error {
+	a.Abort()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.exited {
@@ -617,6 +623,28 @@ func (s *terminalClient) sendItem(ctx context.Context, item terminalSend) error 
 		return err
 	case <-ctx.Done():
 		s.fail(ctx.Err())
+		return ctx.Err()
+	case <-s.ctx.Done():
+		return s.failure()
+	}
+}
+
+func (s *terminalClient) sendOutput(
+	ctx context.Context,
+	frame *tunnel.LifecycleTerminalRequest,
+) error {
+	item := terminalSend{frame: frame, done: make(chan error, 1)}
+	select {
+	case s.sends <- item:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.ctx.Done():
+		return s.failure()
+	}
+	select {
+	case err := <-item.done:
+		return err
+	case <-ctx.Done():
 		return ctx.Err()
 	case <-s.ctx.Done():
 		return s.failure()

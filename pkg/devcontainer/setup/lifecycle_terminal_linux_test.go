@@ -10,8 +10,10 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -45,6 +47,8 @@ type testTerminal struct {
 	exit           tunnel.TerminalExit
 	exitErr        error
 	exitOutput     string
+	abort          chan struct{}
+	abortOnce      sync.Once
 	outputOverride io.Writer
 	invocations    []tunnel.TerminalInvocation
 }
@@ -88,6 +92,7 @@ func newTestTerminal() *testTerminal {
 		window:   tunnel.TerminalWindow{Term: "xterm", Rows: 31, Columns: 91},
 		resizes:  make(chan tunnel.TerminalWindow, 1),
 		canceled: make(chan struct{}),
+		abort:    make(chan struct{}),
 	}
 }
 
@@ -107,6 +112,8 @@ func (a *testTerminal) Output() io.Writer {
 	}
 	return &a.output
 }
+
+func (a *testTerminal) Abort()                                { a.abortOnce.Do(func() { close(a.abort) }) }
 func (a *testTerminal) Resizes() <-chan tunnel.TerminalWindow { return a.resizes }
 func (a *testTerminal) Canceled() <-chan struct{}             { return a.canceled }
 func (a *testTerminal) Exit(_ context.Context, exit tunnel.TerminalExit) error {
@@ -461,6 +468,67 @@ func (s *terminalTestSuite) TestLoginShellCanceled() {
 	_, err := loginShell(ctx, s.username)
 	s.ErrorIs(err, context.DeadlineExceeded)
 	s.Less(time.Since(start), time.Second)
+}
+
+type blockedTerminalOutput struct {
+	started chan struct{}
+	abort   <-chan struct{}
+	once    sync.Once
+}
+
+func (b *blockedTerminalOutput) Write(p []byte) (int, error) {
+	b.once.Do(func() { close(b.started) })
+	<-b.abort
+	return 0, context.Canceled
+}
+
+func (s *terminalTestSuite) TestBackgroundOutputDrain() {
+	logs := log.InitTestObserved(s.T(), zapcore.WarnLevel)
+	a := newTestTerminal()
+	p := s.params(
+		context.Background(),
+		a,
+		`sh -c 'trap "" HUP; echo $$ > child.pid; exec sleep 30' & `+
+			`while [ ! -s child.pid ]; do :; done; printf finished`,
+	)
+	start := time.Now()
+	s.NoError(s.result(s.run(p)))
+	data, err := os.ReadFile(filepath.Join(p.env.workspaceFolder, "child.pid"))
+	s.Require().NoError(err)
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	s.Less(time.Since(start), 5*time.Second)
+	s.Contains(a.output.String(), "finished")
+	s.Equal(0, a.exit.ExitCode)
+	s.Equal(
+		1,
+		logs.FilterMessage("lifecycle terminal output was truncated after drain timeout").Len(),
+	)
+}
+
+func (s *terminalTestSuite) TestBlockedOutputDrain() {
+	a := newTestTerminal()
+	b := &blockedTerminalOutput{started: make(chan struct{}), abort: a.abort}
+	a.outputOverride = b
+	p := s.params(context.Background(), a, `printf blocked`)
+	start := time.Now()
+	done := s.run(p)
+	select {
+	case <-b.started:
+	case <-time.After(5 * time.Second):
+		s.T().Fatal("write did not start")
+	}
+	s.NoError(s.result(done))
+	s.Less(time.Since(start), 5*time.Second)
+	s.Equal(0, a.exit.ExitCode)
+}
+
+func (s *terminalTestSuite) TestFastOutputDrain() {
+	a := newTestTerminal()
+	p := s.params(context.Background(), a, `printf 'complete output'`)
+	s.NoError(s.result(s.run(p)))
+	s.Equal("complete output", a.output.String())
 }
 
 func (s *terminalTestSuite) params(

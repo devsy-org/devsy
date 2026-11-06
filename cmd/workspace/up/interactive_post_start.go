@@ -493,6 +493,10 @@ func (t *interactiveSession) exit(exit *tunnel.LifecycleTerminalExit) error {
 		return err
 	}
 	t.cleanup()
+	t.finishJournal()
+	if t.owner.opts.status != nil {
+		t.owner.opts.status.SetActive(false)
+	}
 	if err := t.stream.Send(
 		&tunnel.LifecycleTerminalResponse{Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
 			ExitAck: &tunnel.LifecycleTerminalExitAck{InvocationId: t.invocation},
@@ -501,10 +505,6 @@ func (t *interactiveSession) exit(exit *tunnel.LifecycleTerminalExit) error {
 		return err
 	}
 	t.invocation = ""
-	t.finishJournal()
-	if t.owner.opts.status != nil {
-		t.owner.opts.status.SetActive(false)
-	}
 	return nil
 }
 
