@@ -407,7 +407,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: download CI tool
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-ci-tool-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-ci-tool/
@@ -420,14 +420,14 @@ jobs:
           echo "CI_TOOL=$tool" >> "$GITHUB_ENV"
 
       - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: devsy-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
       - name: download e2e test binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: e2e-test-${{ matrix.os }}
           path: ./e2e/
@@ -462,7 +462,7 @@ jobs:
         run: sudo apt-get install -y gnupg2
 
       - name: download CI tool
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-ci-tool-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-ci-tool/
@@ -475,21 +475,21 @@ jobs:
           echo "CI_TOOL=$tool" >> "$GITHUB_ENV"
 
       - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: devsy-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
       - name: download e2e test binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: e2e-test-${{ matrix.os }}
           path: ./e2e/
 
       - name: download runtime performance tools
         if: matrix.performance_capture
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: runtime-performance-tools-linux
           path: ${{ runner.temp }}/runtime-performance-tools/
@@ -510,7 +510,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: download MicroSandbox CI helper
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-ci-microsandbox-linux
           path: ${{ runner.temp }}
@@ -588,7 +588,7 @@ jobs:
         run: sudo apt-get install -y gnupg2
 
       - name: download CI tool
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-ci-tool-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-ci-tool/
@@ -602,20 +602,20 @@ jobs:
 
       - name: download Podman CI helper
         if: matrix.needs_podman_helper
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-ci-podman-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-ci-podman/
 
       - name: download E2E runtime helper
         if: matrix.setup_docker_wsl
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-ci-e2e-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-ci-e2e/
 
       - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: devsy-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-bin/
@@ -623,21 +623,21 @@ jobs:
 
       - name: download Linux CLI artifacts for Windows
         if: matrix.os == 'windows'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: devsy-linux
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
       - name: download e2e test binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: e2e-test-${{ matrix.os }}
           path: ./e2e/
 
       - name: download GitHub credential fixture
         if: matrix.ghfixture_linux
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ghfixture-linux
           path: ./e2e/bin/

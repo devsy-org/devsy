@@ -110,7 +110,7 @@ jobs:
           echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
 
       - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: devsy-*
           path: ${{ runner.temp }}/devsy-bin/
@@ -349,7 +349,7 @@ jobs:
           go-version-file: go.mod
 
       - name: download update metadata artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: update-metadata-*
           path: metadata/
@@ -406,7 +406,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: download desktop linux artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-flatpak
           path: desktop/flatpak/
@@ -479,19 +479,19 @@ jobs:
           go-version-file: go.mod
 
       - name: download darwin CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-darwin
           path: ${{ runner.temp }}/devsy-bin/
 
       - name: download linux CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-linux
           path: ${{ runner.temp }}/devsy-bin/
 
       - name: download macOS dmg artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: desktop-dmg-*
           path: ${{ runner.temp }}/devsy-dmg/
