@@ -23,7 +23,7 @@ Open **Workspaces** and click **Create**. The wizard has five steps:
 4. **Review.** Check the workspace name and configuration. If the image has no build for your architecture, you can turn on **Run under emulation**.
 5. **Launch.** Devsy creates the workspace and streams progress, then opens your IDE if you selected one.
 
-The desktop app runs `devsy workspace up` for you.
+The desktop app runs `devsy workspace up` for you. Desktop launches run without a terminal, so if a `postStartCommand` needs input, create or start the workspace in an attached CLI terminal and open it from Desktop afterward.
 
 ### Workspace IDs
 
@@ -111,6 +111,37 @@ For a detached creation, Devsy waits up to 30 seconds for the background worker 
 - `postAttachCommand` runs on every attach. Each run is recorded separately.
 
 See [Troubleshooting](../troubleshooting/troubleshooting.mdx#find-the-right-log) for all options and [Setup history](../troubleshooting/setup-history.mdx) for limits and redaction.
+
+## Answer prompts in postStartCommand
+
+Some `postStartCommand` hooks ask for input, such as a name or a token. Add `--interactive-post-start` to connect your terminal to that hook:
+
+```sh
+devsy workspace up ./project --interactive-post-start --ide none
+```
+
+This `devcontainer.json` asks for a name when the workspace starts:
+
+```json
+{
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "postStartCommand": "read -r -p 'Name: ' NAME && echo \"Hello, $NAME\""
+}
+```
+
+`read -p` works only in Bash. If the hook runs under `sh`, use `printf 'Name: '` and then `read -r NAME`.
+
+The prompt appears as soon as the hook asks for it. Type your answer in the terminal. For that run, `devsy workspace up` waits for `postStartCommand` to finish before it returns, even if your project sets an earlier `waitFor`. Hooks before `postStartCommand` still run in their usual order. Devsy does not change `waitFor` in your project, and a later `waitFor` value still applies. The option gives input only to `postStartCommand`. `postAttachCommand` and the other hooks still run without input.
+
+`postStartCommand` can be a string, an array of arguments, or an object with one named command. An object with two or more named commands fails before any post-start command runs. The error gives the object's position, for example `postStartCommand merged index 0 has multiple nonempty named commands`. Without the option, the named commands in one object still run in parallel.
+
+Running `devsy workspace up` on a workspace that has already started does not run `postStartCommand` again, with or without the option. Devsy reports that no command ran. Stopping and starting the workspace runs `postStartCommand` again. Start it with the option to answer the prompt:
+
+```sh
+devsy workspace up my-workspace --interactive-post-start
+```
+
+The option needs an attached terminal for stdin and stdout, and plain output. Devsy rejects it before it starts the workspace when you combine it with `--detach`, `--prebuild`, `--recovery`, `--skip-post-start`, or `--skip-non-blocking-commands`. It also rejects it for JSON output, for a script or pipe without a terminal, and for Devsy Desktop launches. [Troubleshooting](../troubleshooting/troubleshooting.mdx#interactive-poststartcommand-errors) lists each error message.
 
 ## .devsyignore
 

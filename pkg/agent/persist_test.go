@@ -41,9 +41,17 @@ func TestPersistAgentWorkspaceInfo_RequiresOrigin(t *testing.T) {
 func TestPersistAgentWorkspaceInfo_DoesNotPersistCLIOptions(t *testing.T) {
 	dir := t.TempDir()
 	info := &provider2.AgentWorkspaceInfo{
-		Origin:     dir,
-		Workspace:  &provider2.Workspace{ID: "ws-test"},
-		CLIOptions: provider2.CLIOptions{DaemonInterval: "3s"},
+		Origin:    dir,
+		Workspace: &provider2.Workspace{ID: "ws-test"},
+		CLIOptions: provider2.CLIOptions{
+			DaemonInterval: "3s",
+			LifecycleTerminal: &provider2.LifecycleTerminalRequest{
+				ProtocolVersion: 1,
+				Nonce:           "ephemeral-nonce",
+				Context:         "ctx",
+				WorkspaceUID:    "uid",
+			},
+		},
 	}
 
 	require.NoError(t, PersistAgentWorkspaceInfo(info))
@@ -52,5 +60,15 @@ func TestPersistAgentWorkspaceInfo_DoesNotPersistCLIOptions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ws-test", got.Workspace.ID)
 	assert.Empty(t, got.CLIOptions.DaemonInterval, "CLIOptions must not be persisted")
+	assert.Nil(
+		t,
+		got.CLIOptions.LifecycleTerminal,
+		"lifecycle terminal requests must not be persisted",
+	)
+	assert.NotNil(
+		t,
+		info.CLIOptions.LifecycleTerminal,
+		"cloning must not mutate the caller's options",
+	)
 	assert.Equal(t, "3s", info.CLIOptions.DaemonInterval, "caller's struct must not be mutated")
 }

@@ -396,7 +396,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/morikuni/aec v1.1.0 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
-	github.com/muesli/cancelreader v0.2.2 // indirect
+	github.com/muesli/cancelreader v0.2.2
 	github.com/muesli/mango v0.2.0 // indirect
 	github.com/muesli/mango-cobra v1.3.0 // indirect
 	github.com/muesli/mango-pflag v0.1.0 // indirect

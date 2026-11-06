@@ -75,6 +75,8 @@ type Process interface {
 	// returned error is as for os.Process.Signal(), on Windows it's
 	// as for os.Process.Kill().
 	Signal(sig os.Signal) error
+
+	Pid() int
 }
 
 // Options represents a an option for a PTY.
@@ -84,6 +86,12 @@ type ptyOptions struct {
 	logger    *log.Logger
 	sshReq    *ssh.Pty
 	setGPGTTY bool
+	ttyOwner  *ttyOwner
+}
+
+type ttyOwner struct {
+	uid int
+	gid int
 }
 
 // WithSSHRequest applies the ssh.Pty request to the PTY.
@@ -107,6 +115,12 @@ func WithLogger(logger *log.Logger) Option {
 func WithGPGTTY() Option {
 	return func(opts *ptyOptions) {
 		opts.setGPGTTY = true
+	}
+}
+
+func WithTTYOwner(uid, gid int) Option {
+	return func(opts *ptyOptions) {
+		opts.ttyOwner = &ttyOwner{uid: uid, gid: gid}
 	}
 }
 

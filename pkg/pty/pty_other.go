@@ -38,6 +38,13 @@ func newPty(opt ...Option) (retPTY *otherPty, err error) {
 		}
 	}()
 
+	if opts.ttyOwner != nil {
+		err = opty.tty.Chown(opts.ttyOwner.uid, opts.ttyOwner.gid)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if opts.sshReq != nil {
 		err = opty.control(opty.tty, func(fd uintptr) error {
 			return applyTerminalModesToFd(opts.logger, fd, *opts.sshReq)
@@ -172,6 +179,10 @@ func (p *otherProcess) Kill() error {
 
 func (p *otherProcess) Signal(sig os.Signal) error {
 	return p.cmd.Process.Signal(sig)
+}
+
+func (p *otherProcess) Pid() int {
+	return p.cmd.Process.Pid
 }
 
 func (p *otherProcess) waitInternal() {

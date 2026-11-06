@@ -119,6 +119,25 @@ Diagnostics omit executable paths, command arguments, folder URIs, editor output
 
 A dispatched launch request means the editor CLI or OS URI handler accepted it. Devsy does not track whether the editor stayed running or connected over SSH. If the editor closes or does not connect, collect its own logs and check them for private data before you share them.
 
+### Interactive postStartCommand errors
+
+`devsy workspace up --interactive-post-start` checks the request before it starts work. It fails with one of these messages:
+
+| Message | Fix |
+| --- | --- |
+| `--interactive-post-start cannot be combined with --detach, --prebuild, --recovery, --skip-post-start, or --skip-non-blocking-commands` | Remove the conflicting flag, or drop `--interactive-post-start`. |
+| `--interactive-post-start requires plain output; JSON result output cannot share the terminal` | Remove the JSON result format. |
+| `--interactive-post-start requires an attached terminal and is unavailable in DEVSY_UI mode` | Run the command in a terminal. Devsy Desktop sets this mode. |
+| `--interactive-post-start requires attached stdin and stdout terminals: ...` | Run the command in a terminal, not in a script, a pipe, or with redirected output. |
+| `--interactive-post-start is unsupported with proxy workspaces`, `... with daemon workspaces`, or `... with platform-managed workspaces` | Run without the option. These routes do not support it yet. |
+| `postStartCommand merged index N has multiple nonempty named commands` | Keep one named command in object `N`, or run without the option so they run in parallel. |
+
+### Interactive postStartCommand limits
+
+- A background job started without `nohup` receives SIGHUP when the hook exits. Start it with `nohup` and redirect its output, for example `nohup ./server > server.log 2>&1 &`.
+- A host helper that reads `/dev/tty` while the hook runs, such as some credential helpers, can compete with the hook for input.
+- Hook output appears only in the terminal. See [Setup history](./setup-history.mdx#interactive-hooks).
+
 ### Windows: `line 2: $'\r': command not found`
 
 Windows line endings break shell scripts inside the container. Add this to `.gitattributes`:

@@ -127,6 +127,7 @@ const (
 	SkipHostRequirements    = "skip-host-requirements"
 	TerminalColumns         = "terminal-columns"
 	TerminalRows            = "terminal-rows"
+	InteractivePostStart    = "interactive-post-start"
 )
 
 // IDE.

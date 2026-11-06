@@ -2,7 +2,9 @@ package up
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -11,6 +13,8 @@ import (
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
+	"github.com/devsy-org/devsy/pkg/output"
+	"github.com/devsy-org/devsy/pkg/terminal"
 )
 
 const (
@@ -23,6 +27,9 @@ const (
 )
 
 func (cmd *UpCmd) validate() error {
+	if err := cmd.validateInteractivePostStart(); err != nil {
+		return err
+	}
 	cmd.applySkipLaunchIDEDefault()
 
 	if err := devcontainer.ResolveSourceSpec(&cmd.CLIOptions); err != nil {
@@ -48,6 +55,62 @@ func (cmd *UpCmd) validate() error {
 	}
 
 	return validateRemoteUserUID(cmd.UpdateRemoteUserUIDDefault)
+}
+
+func (cmd *UpCmd) validateInteractivePostStart() error {
+	if err := cmd.validateTerminalDimensions(); err != nil {
+		return err
+	}
+	if !cmd.InteractivePostStart {
+		return nil
+	}
+	if err := cmd.validateInteractiveFlagConflicts(); err != nil {
+		return err
+	}
+	return cmd.validateInteractiveTerminal()
+}
+
+func (cmd *UpCmd) validateTerminalDimensions() error {
+	if cmd.TerminalRows < 0 || cmd.TerminalRows > 65535 || cmd.TerminalColumns < 0 ||
+		cmd.TerminalColumns > 65535 {
+		return fmt.Errorf("--terminal-rows and --terminal-columns must be between 0 and 65535")
+	}
+	return nil
+}
+
+func (cmd *UpCmd) validateInteractiveFlagConflicts() error {
+	if cmd.Detach || cmd.Prebuild || cmd.Recovery || cmd.SkipPostStart ||
+		cmd.SkipNonBlockingCommands {
+		return fmt.Errorf(
+			"--interactive-post-start cannot be combined with --detach, --prebuild, " +
+				"--recovery, --skip-post-start, or --skip-non-blocking-commands",
+		)
+	}
+	return nil
+}
+
+func (cmd *UpCmd) validateInteractiveTerminal() error {
+	if slices.Contains(os.Environ(), "DEVSY_UI=true") {
+		return fmt.Errorf(
+			"--interactive-post-start requires an attached terminal and is unavailable in DEVSY_UI mode",
+		)
+	}
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	if mode == output.ModeJSON {
+		return fmt.Errorf(
+			"--interactive-post-start requires plain output; JSON result output cannot share the terminal",
+		)
+	}
+	if err := terminal.Attached(os.Stdin, os.Stdout); err != nil {
+		return fmt.Errorf(
+			"--interactive-post-start requires attached stdin and stdout terminals: %w",
+			err,
+		)
+	}
+	return nil
 }
 
 // installIDE gates the container-side IDE server download on IDE name alone,

@@ -95,6 +95,12 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 
 func (cmd *UpCmd) registerLifecycleFlags(upCmd *cobra.Command) {
 	flags.Add(upCmd,
+		flags.Bool(
+			&cmd.InteractivePostStart,
+			names.InteractivePostStart,
+			false,
+			"Attach the terminal to postStartCommand; requires an attached terminal and runs post-start in the foreground",
+		),
 		flags.Int(&cmd.TerminalColumns, names.TerminalColumns, 0,
 			"Terminal column count for lifecycle scripts"),
 		flags.Int(&cmd.TerminalRows, names.TerminalRows, 0,

@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -291,4 +292,42 @@ func (s *syncBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.buf.String()
+}
+
+func TestSuppressConsoleOutput(t *testing.T) {
+	previous := sugar.Load()
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = oldStderr; sugar.Store(previous); _ = r.Close(); _ = w.Close() })
+	Init(Config{})
+	var sink syncBuffer
+	remove := AddSink(&sink)
+	defer remove()
+	Error("before suppression")
+	restore := SuppressConsoleOutput()
+	Error("during suppression")
+	restore()
+	restore()
+	Error("after suppression")
+	_ = Sync()
+	if err = w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "before suppression") ||
+		strings.Contains(got, "during suppression") ||
+		!strings.Contains(got, "after suppression") {
+		t.Fatalf("unexpected console output %q", got)
+	}
+	if !strings.Contains(sink.String(), "during suppression") {
+		t.Fatal("suppressed sink output")
+	}
 }

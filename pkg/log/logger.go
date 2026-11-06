@@ -41,7 +41,7 @@ func Init(cfg Config) {
 	level := resolveLevel(cfg)
 	encoder := resolveEncoder(cfg.Format)
 	stderrWriter := zapcore.Lock(&redactingWriter{next: os.Stderr, redactor: cfg.Redactor})
-	stderrCore := zapcore.NewCore(encoder, stderrWriter, level)
+	stderrCore := zapcore.NewCore(encoder, consoleWriter{next: stderrWriter}, level)
 	// A separate core writes to the fanout sink with the same level/encoder
 	// so AddSink consumers see the same output stderr does.
 	sinkCore := zapcore.NewCore(
@@ -53,6 +53,39 @@ func Init(cfg Config) {
 
 	logger := zap.New(core, zap.AddStacktrace(zapcore.FatalLevel))
 	sugar.Store(logger.Sugar())
+}
+
+var consoleOutput = struct {
+	sync.RWMutex
+	suppressed int
+}{}
+
+type consoleWriter struct{ next zapcore.WriteSyncer }
+
+func (w consoleWriter) Write(p []byte) (int, error) {
+	consoleOutput.RLock()
+	defer consoleOutput.RUnlock()
+	if consoleOutput.suppressed > 0 {
+		return len(p), nil
+	}
+	return w.next.Write(p)
+}
+
+func (w consoleWriter) Sync() error {
+	consoleOutput.RLock()
+	defer consoleOutput.RUnlock()
+	if consoleOutput.suppressed > 0 {
+		return nil
+	}
+	return w.next.Sync()
+}
+
+func SuppressConsoleOutput() func() {
+	consoleOutput.Lock()
+	consoleOutput.suppressed++
+	consoleOutput.Unlock()
+	var once sync.Once
+	return func() { once.Do(func() { consoleOutput.Lock(); consoleOutput.suppressed--; consoleOutput.Unlock() }) }
 }
 
 type redactingWriter struct {

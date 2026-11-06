@@ -104,6 +104,12 @@ Devsy builds and validates the new image before stopping or replacing the existi
 Anything outside volumes is lost. The project folder and other mounted paths stay.
 </Callout>
 
+## postStartCommand and waitFor
+
+`waitFor` names the lifecycle hook that `devsy workspace up` waits for before it returns. The default is `updateContentCommand`, so `postStartCommand` can finish after `up` returns.
+
+A `postStartCommand` that asks for input needs an attached terminal. Add `--interactive-post-start` to that `devsy workspace up` run. The option does not change `waitFor` in this file. For the details and limits, see [Answer prompts in postStartCommand](./create-a-workspace.mdx#answer-prompts-in-poststartcommand).
+
 ## Environment variables in devcontainer.json
 
 With the SSH provider, the variable in `${localEnv:NAME}` must reach the remote machine.

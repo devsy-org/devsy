@@ -939,6 +939,918 @@ func (*Empty) Descriptor() ([]byte, []int) {
 	return file_tunnel_proto_rawDescGZIP(), []int{14}
 }
 
+type LifecycleTerminalRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Frame:
+	//
+	//	*LifecycleTerminalRequest_Open
+	//	*LifecycleTerminalRequest_Begin
+	//	*LifecycleTerminalRequest_Output
+	//	*LifecycleTerminalRequest_Exit
+	//	*LifecycleTerminalRequest_Complete
+	Frame         isLifecycleTerminalRequest_Frame `protobuf_oneof:"frame"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalRequest) Reset() {
+	*x = LifecycleTerminalRequest{}
+	mi := &file_tunnel_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalRequest) ProtoMessage() {}
+
+func (x *LifecycleTerminalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalRequest.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalRequest) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *LifecycleTerminalRequest) GetFrame() isLifecycleTerminalRequest_Frame {
+	if x != nil {
+		return x.Frame
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalRequest) GetOpen() *LifecycleTerminalOpen {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalRequest_Open); ok {
+			return x.Open
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalRequest) GetBegin() *LifecycleTerminalBegin {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalRequest_Begin); ok {
+			return x.Begin
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalRequest) GetOutput() *LifecycleTerminalOutput {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalRequest_Output); ok {
+			return x.Output
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalRequest) GetExit() *LifecycleTerminalExit {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalRequest_Exit); ok {
+			return x.Exit
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalRequest) GetComplete() *LifecycleTerminalComplete {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalRequest_Complete); ok {
+			return x.Complete
+		}
+	}
+	return nil
+}
+
+type isLifecycleTerminalRequest_Frame interface {
+	isLifecycleTerminalRequest_Frame()
+}
+
+type LifecycleTerminalRequest_Open struct {
+	Open *LifecycleTerminalOpen `protobuf:"bytes,1,opt,name=open,proto3,oneof"`
+}
+
+type LifecycleTerminalRequest_Begin struct {
+	Begin *LifecycleTerminalBegin `protobuf:"bytes,2,opt,name=begin,proto3,oneof"`
+}
+
+type LifecycleTerminalRequest_Output struct {
+	Output *LifecycleTerminalOutput `protobuf:"bytes,3,opt,name=output,proto3,oneof"`
+}
+
+type LifecycleTerminalRequest_Exit struct {
+	Exit *LifecycleTerminalExit `protobuf:"bytes,4,opt,name=exit,proto3,oneof"`
+}
+
+type LifecycleTerminalRequest_Complete struct {
+	Complete *LifecycleTerminalComplete `protobuf:"bytes,5,opt,name=complete,proto3,oneof"`
+}
+
+func (*LifecycleTerminalRequest_Open) isLifecycleTerminalRequest_Frame() {}
+
+func (*LifecycleTerminalRequest_Begin) isLifecycleTerminalRequest_Frame() {}
+
+func (*LifecycleTerminalRequest_Output) isLifecycleTerminalRequest_Frame() {}
+
+func (*LifecycleTerminalRequest_Exit) isLifecycleTerminalRequest_Frame() {}
+
+func (*LifecycleTerminalRequest_Complete) isLifecycleTerminalRequest_Frame() {}
+
+type LifecycleTerminalResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Frame:
+	//
+	//	*LifecycleTerminalResponse_Ready
+	//	*LifecycleTerminalResponse_BeginAck
+	//	*LifecycleTerminalResponse_Input
+	//	*LifecycleTerminalResponse_Resize
+	//	*LifecycleTerminalResponse_Cancel
+	//	*LifecycleTerminalResponse_ExitAck
+	Frame         isLifecycleTerminalResponse_Frame `protobuf_oneof:"frame"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalResponse) Reset() {
+	*x = LifecycleTerminalResponse{}
+	mi := &file_tunnel_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalResponse) ProtoMessage() {}
+
+func (x *LifecycleTerminalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalResponse.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalResponse) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *LifecycleTerminalResponse) GetFrame() isLifecycleTerminalResponse_Frame {
+	if x != nil {
+		return x.Frame
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalResponse) GetReady() *LifecycleTerminalReady {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalResponse_Ready); ok {
+			return x.Ready
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalResponse) GetBeginAck() *LifecycleTerminalBeginAck {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalResponse_BeginAck); ok {
+			return x.BeginAck
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalResponse) GetInput() *LifecycleTerminalInput {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalResponse_Input); ok {
+			return x.Input
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalResponse) GetResize() *LifecycleTerminalResize {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalResponse_Resize); ok {
+			return x.Resize
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalResponse) GetCancel() *LifecycleTerminalCancel {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalResponse_Cancel); ok {
+			return x.Cancel
+		}
+	}
+	return nil
+}
+
+func (x *LifecycleTerminalResponse) GetExitAck() *LifecycleTerminalExitAck {
+	if x != nil {
+		if x, ok := x.Frame.(*LifecycleTerminalResponse_ExitAck); ok {
+			return x.ExitAck
+		}
+	}
+	return nil
+}
+
+type isLifecycleTerminalResponse_Frame interface {
+	isLifecycleTerminalResponse_Frame()
+}
+
+type LifecycleTerminalResponse_Ready struct {
+	Ready *LifecycleTerminalReady `protobuf:"bytes,1,opt,name=ready,proto3,oneof"`
+}
+
+type LifecycleTerminalResponse_BeginAck struct {
+	BeginAck *LifecycleTerminalBeginAck `protobuf:"bytes,2,opt,name=begin_ack,json=beginAck,proto3,oneof"`
+}
+
+type LifecycleTerminalResponse_Input struct {
+	Input *LifecycleTerminalInput `protobuf:"bytes,3,opt,name=input,proto3,oneof"`
+}
+
+type LifecycleTerminalResponse_Resize struct {
+	Resize *LifecycleTerminalResize `protobuf:"bytes,4,opt,name=resize,proto3,oneof"`
+}
+
+type LifecycleTerminalResponse_Cancel struct {
+	Cancel *LifecycleTerminalCancel `protobuf:"bytes,5,opt,name=cancel,proto3,oneof"`
+}
+
+type LifecycleTerminalResponse_ExitAck struct {
+	ExitAck *LifecycleTerminalExitAck `protobuf:"bytes,6,opt,name=exit_ack,json=exitAck,proto3,oneof"`
+}
+
+func (*LifecycleTerminalResponse_Ready) isLifecycleTerminalResponse_Frame() {}
+
+func (*LifecycleTerminalResponse_BeginAck) isLifecycleTerminalResponse_Frame() {}
+
+func (*LifecycleTerminalResponse_Input) isLifecycleTerminalResponse_Frame() {}
+
+func (*LifecycleTerminalResponse_Resize) isLifecycleTerminalResponse_Frame() {}
+
+func (*LifecycleTerminalResponse_Cancel) isLifecycleTerminalResponse_Frame() {}
+
+func (*LifecycleTerminalResponse_ExitAck) isLifecycleTerminalResponse_Frame() {}
+
+type LifecycleTerminalOpen struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ProtocolVersion uint32                 `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
+	WorkspaceUid    string                 `protobuf:"bytes,2,opt,name=workspace_uid,json=workspaceUid,proto3" json:"workspace_uid,omitempty"`
+	Context         string                 `protobuf:"bytes,3,opt,name=context,proto3" json:"context,omitempty"`
+	Nonce           string                 `protobuf:"bytes,4,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalOpen) Reset() {
+	*x = LifecycleTerminalOpen{}
+	mi := &file_tunnel_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalOpen) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalOpen) ProtoMessage() {}
+
+func (x *LifecycleTerminalOpen) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalOpen.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalOpen) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *LifecycleTerminalOpen) GetProtocolVersion() uint32 {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalOpen) GetWorkspaceUid() string {
+	if x != nil {
+		return x.WorkspaceUid
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalOpen) GetContext() string {
+	if x != nil {
+		return x.Context
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalOpen) GetNonce() string {
+	if x != nil {
+		return x.Nonce
+	}
+	return ""
+}
+
+type LifecycleTerminalReady struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ProtocolVersion uint32                 `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
+	Term            string                 `protobuf:"bytes,2,opt,name=term,proto3" json:"term,omitempty"`
+	Rows            uint32                 `protobuf:"varint,3,opt,name=rows,proto3" json:"rows,omitempty"`
+	Columns         uint32                 `protobuf:"varint,4,opt,name=columns,proto3" json:"columns,omitempty"`
+	Input           bool                   `protobuf:"varint,5,opt,name=input,proto3" json:"input,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalReady) Reset() {
+	*x = LifecycleTerminalReady{}
+	mi := &file_tunnel_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalReady) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalReady) ProtoMessage() {}
+
+func (x *LifecycleTerminalReady) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalReady.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalReady) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *LifecycleTerminalReady) GetProtocolVersion() uint32 {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalReady) GetTerm() string {
+	if x != nil {
+		return x.Term
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalReady) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalReady) GetColumns() uint32 {
+	if x != nil {
+		return x.Columns
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalReady) GetInput() bool {
+	if x != nil {
+		return x.Input
+	}
+	return false
+}
+
+type LifecycleTerminalBegin struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvocationId  string                 `protobuf:"bytes,1,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
+	Phase         string                 `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
+	Index         uint32                 `protobuf:"varint,3,opt,name=index,proto3" json:"index,omitempty"`
+	Key           string                 `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalBegin) Reset() {
+	*x = LifecycleTerminalBegin{}
+	mi := &file_tunnel_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalBegin) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalBegin) ProtoMessage() {}
+
+func (x *LifecycleTerminalBegin) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalBegin.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalBegin) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *LifecycleTerminalBegin) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalBegin) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalBegin) GetIndex() uint32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalBegin) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type LifecycleTerminalBeginAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvocationId  string                 `protobuf:"bytes,1,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
+	Rows          uint32                 `protobuf:"varint,2,opt,name=rows,proto3" json:"rows,omitempty"`
+	Columns       uint32                 `protobuf:"varint,3,opt,name=columns,proto3" json:"columns,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalBeginAck) Reset() {
+	*x = LifecycleTerminalBeginAck{}
+	mi := &file_tunnel_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalBeginAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalBeginAck) ProtoMessage() {}
+
+func (x *LifecycleTerminalBeginAck) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalBeginAck.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalBeginAck) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *LifecycleTerminalBeginAck) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalBeginAck) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalBeginAck) GetColumns() uint32 {
+	if x != nil {
+		return x.Columns
+	}
+	return 0
+}
+
+type LifecycleTerminalOutput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvocationId  string                 `protobuf:"bytes,1,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
+	Sequence      uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalOutput) Reset() {
+	*x = LifecycleTerminalOutput{}
+	mi := &file_tunnel_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalOutput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalOutput) ProtoMessage() {}
+
+func (x *LifecycleTerminalOutput) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalOutput.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalOutput) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *LifecycleTerminalOutput) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalOutput) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalOutput) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type LifecycleTerminalInput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvocationId  string                 `protobuf:"bytes,1,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalInput) Reset() {
+	*x = LifecycleTerminalInput{}
+	mi := &file_tunnel_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalInput) ProtoMessage() {}
+
+func (x *LifecycleTerminalInput) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalInput.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalInput) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *LifecycleTerminalInput) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalInput) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type LifecycleTerminalResize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvocationId  string                 `protobuf:"bytes,1,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
+	Rows          uint32                 `protobuf:"varint,2,opt,name=rows,proto3" json:"rows,omitempty"`
+	Columns       uint32                 `protobuf:"varint,3,opt,name=columns,proto3" json:"columns,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalResize) Reset() {
+	*x = LifecycleTerminalResize{}
+	mi := &file_tunnel_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalResize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalResize) ProtoMessage() {}
+
+func (x *LifecycleTerminalResize) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalResize.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalResize) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *LifecycleTerminalResize) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalResize) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalResize) GetColumns() uint32 {
+	if x != nil {
+		return x.Columns
+	}
+	return 0
+}
+
+type LifecycleTerminalCancel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvocationId  string                 `protobuf:"bytes,1,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalCancel) Reset() {
+	*x = LifecycleTerminalCancel{}
+	mi := &file_tunnel_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalCancel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalCancel) ProtoMessage() {}
+
+func (x *LifecycleTerminalCancel) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalCancel.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalCancel) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *LifecycleTerminalCancel) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
+}
+
+type LifecycleTerminalExit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvocationId  string                 `protobuf:"bytes,1,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
+	ExitCode      int32                  `protobuf:"varint,2,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	Signal        string                 `protobuf:"bytes,3,opt,name=signal,proto3" json:"signal,omitempty"`
+	StartError    string                 `protobuf:"bytes,4,opt,name=start_error,json=startError,proto3" json:"start_error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalExit) Reset() {
+	*x = LifecycleTerminalExit{}
+	mi := &file_tunnel_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalExit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalExit) ProtoMessage() {}
+
+func (x *LifecycleTerminalExit) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalExit.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalExit) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *LifecycleTerminalExit) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalExit) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *LifecycleTerminalExit) GetSignal() string {
+	if x != nil {
+		return x.Signal
+	}
+	return ""
+}
+
+func (x *LifecycleTerminalExit) GetStartError() string {
+	if x != nil {
+		return x.StartError
+	}
+	return ""
+}
+
+type LifecycleTerminalExitAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvocationId  string                 `protobuf:"bytes,1,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalExitAck) Reset() {
+	*x = LifecycleTerminalExitAck{}
+	mi := &file_tunnel_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalExitAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalExitAck) ProtoMessage() {}
+
+func (x *LifecycleTerminalExitAck) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalExitAck.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalExitAck) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *LifecycleTerminalExitAck) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
+}
+
+type LifecycleTerminalComplete struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LifecycleTerminalComplete) Reset() {
+	*x = LifecycleTerminalComplete{}
+	mi := &file_tunnel_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LifecycleTerminalComplete) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LifecycleTerminalComplete) ProtoMessage() {}
+
+func (x *LifecycleTerminalComplete) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LifecycleTerminalComplete.ProtoReflect.Descriptor instead.
+func (*LifecycleTerminalComplete) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{27}
+}
+
 var File_tunnel_proto protoreflect.FileDescriptor
 
 const file_tunnel_proto_rawDesc = "" +
@@ -997,7 +1909,64 @@ const file_tunnel_proto_rawDesc = "" +
 	"\x12gap_first_sequence\x18\x03 \x01(\x04R\x10gapFirstSequence\x12*\n" +
 	"\x11gap_last_sequence\x18\x04 \x01(\x04R\x0fgapLastSequence\x12\x16\n" +
 	"\x06detail\x18\x05 \x01(\tR\x06detail\"\a\n" +
-	"\x05Empty*A\n" +
+	"\x05Empty\"\xc1\x02\n" +
+	"\x18LifecycleTerminalRequest\x123\n" +
+	"\x04open\x18\x01 \x01(\v2\x1d.tunnel.LifecycleTerminalOpenH\x00R\x04open\x126\n" +
+	"\x05begin\x18\x02 \x01(\v2\x1e.tunnel.LifecycleTerminalBeginH\x00R\x05begin\x129\n" +
+	"\x06output\x18\x03 \x01(\v2\x1f.tunnel.LifecycleTerminalOutputH\x00R\x06output\x123\n" +
+	"\x04exit\x18\x04 \x01(\v2\x1d.tunnel.LifecycleTerminalExitH\x00R\x04exit\x12?\n" +
+	"\bcomplete\x18\x05 \x01(\v2!.tunnel.LifecycleTerminalCompleteH\x00R\bcompleteB\a\n" +
+	"\x05frame\"\x8b\x03\n" +
+	"\x19LifecycleTerminalResponse\x126\n" +
+	"\x05ready\x18\x01 \x01(\v2\x1e.tunnel.LifecycleTerminalReadyH\x00R\x05ready\x12@\n" +
+	"\tbegin_ack\x18\x02 \x01(\v2!.tunnel.LifecycleTerminalBeginAckH\x00R\bbeginAck\x126\n" +
+	"\x05input\x18\x03 \x01(\v2\x1e.tunnel.LifecycleTerminalInputH\x00R\x05input\x129\n" +
+	"\x06resize\x18\x04 \x01(\v2\x1f.tunnel.LifecycleTerminalResizeH\x00R\x06resize\x129\n" +
+	"\x06cancel\x18\x05 \x01(\v2\x1f.tunnel.LifecycleTerminalCancelH\x00R\x06cancel\x12=\n" +
+	"\bexit_ack\x18\x06 \x01(\v2 .tunnel.LifecycleTerminalExitAckH\x00R\aexitAckB\a\n" +
+	"\x05frame\"\x97\x01\n" +
+	"\x15LifecycleTerminalOpen\x12)\n" +
+	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12#\n" +
+	"\rworkspace_uid\x18\x02 \x01(\tR\fworkspaceUid\x12\x18\n" +
+	"\acontext\x18\x03 \x01(\tR\acontext\x12\x14\n" +
+	"\x05nonce\x18\x04 \x01(\tR\x05nonce\"\x9b\x01\n" +
+	"\x16LifecycleTerminalReady\x12)\n" +
+	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x12\n" +
+	"\x04term\x18\x02 \x01(\tR\x04term\x12\x12\n" +
+	"\x04rows\x18\x03 \x01(\rR\x04rows\x12\x18\n" +
+	"\acolumns\x18\x04 \x01(\rR\acolumns\x12\x14\n" +
+	"\x05input\x18\x05 \x01(\bR\x05input\"{\n" +
+	"\x16LifecycleTerminalBegin\x12#\n" +
+	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\x12\x14\n" +
+	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x14\n" +
+	"\x05index\x18\x03 \x01(\rR\x05index\x12\x10\n" +
+	"\x03key\x18\x04 \x01(\tR\x03key\"n\n" +
+	"\x19LifecycleTerminalBeginAck\x12#\n" +
+	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\x12\x12\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\x12\x18\n" +
+	"\acolumns\x18\x03 \x01(\rR\acolumns\"n\n" +
+	"\x17LifecycleTerminalOutput\x12#\n" +
+	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\x12\x1a\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12\x12\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\"Q\n" +
+	"\x16LifecycleTerminalInput\x12#\n" +
+	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"l\n" +
+	"\x17LifecycleTerminalResize\x12#\n" +
+	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\x12\x12\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\x12\x18\n" +
+	"\acolumns\x18\x03 \x01(\rR\acolumns\">\n" +
+	"\x17LifecycleTerminalCancel\x12#\n" +
+	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\"\x92\x01\n" +
+	"\x15LifecycleTerminalExit\x12#\n" +
+	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\x12\x1b\n" +
+	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12\x16\n" +
+	"\x06signal\x18\x03 \x01(\tR\x06signal\x12\x1f\n" +
+	"\vstart_error\x18\x04 \x01(\tR\n" +
+	"startError\"?\n" +
+	"\x18LifecycleTerminalExitAck\x12#\n" +
+	"\rinvocation_id\x18\x01 \x01(\tR\finvocationId\"\x1b\n" +
+	"\x19LifecycleTerminalComplete*A\n" +
 	"\bLogLevel\x12\t\n" +
 	"\x05DEBUG\x10\x00\x12\b\n" +
 	"\x04INFO\x10\x01\x12\b\n" +
@@ -1008,7 +1977,7 @@ const file_tunnel_proto_rawDesc = "" +
 	"\x1cSETUP_LOG_RESULT_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19SETUP_LOG_RESULT_ACCEPTED\x10\x01\x12\"\n" +
 	"\x1eSETUP_LOG_RESULT_RETENTION_GAP\x10\x02\x12%\n" +
-	"!SETUP_LOG_RESULT_REJECTED_INVALID\x10\x032\xba\b\n" +
+	"!SETUP_LOG_RESULT_REJECTED_INVALID\x10\x032\x9a\t\n" +
 	"\x06Tunnel\x12&\n" +
 	"\x04Ping\x12\r.tunnel.Empty\x1a\r.tunnel.Empty\"\x00\x12*\n" +
 	"\x03Log\x12\x12.tunnel.LogMessage\x1a\r.tunnel.Empty\"\x00\x12/\n" +
@@ -1030,7 +1999,8 @@ const file_tunnel_proto_rawDesc = "" +
 	"\x0fStopForwardPort\x12\x1e.tunnel.StopForwardPortRequest\x1a\x1f.tunnel.StopForwardPortResponse\"\x00\x123\n" +
 	"\x0fStreamWorkspace\x12\r.tunnel.Empty\x1a\r.tunnel.Chunk\"\x000\x01\x12<\n" +
 	"\vStreamMount\x12\x1a.tunnel.StreamMountRequest\x1a\r.tunnel.Chunk\"\x000\x01\x129\n" +
-	"\x15StreamSnapshotVolumes\x12\r.tunnel.Empty\x1a\r.tunnel.Chunk\"\x000\x01B-Z+github.com/devsy-org/devsy/pkg/agent/tunnelb\x06proto3"
+	"\x15StreamSnapshotVolumes\x12\r.tunnel.Empty\x1a\r.tunnel.Chunk\"\x000\x01\x12^\n" +
+	"\x11LifecycleTerminal\x12 .tunnel.LifecycleTerminalRequest\x1a!.tunnel.LifecycleTerminalResponse\"\x00(\x010\x01B-Z+github.com/devsy-org/devsy/pkg/agent/tunnelb\x06proto3"
 
 var (
 	file_tunnel_proto_rawDescOnce sync.Once
@@ -1045,76 +2015,102 @@ func file_tunnel_proto_rawDescGZIP() []byte {
 }
 
 var file_tunnel_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_tunnel_proto_goTypes = []any{
-	(LogLevel)(0),                   // 0: tunnel.LogLevel
-	(SetupLogResult)(0),             // 1: tunnel.SetupLogResult
-	(*StreamMountRequest)(nil),      // 2: tunnel.StreamMountRequest
-	(*StopForwardPortRequest)(nil),  // 3: tunnel.StopForwardPortRequest
-	(*StopForwardPortResponse)(nil), // 4: tunnel.StopForwardPortResponse
-	(*ForwardPortRequest)(nil),      // 5: tunnel.ForwardPortRequest
-	(*ForwardPortResponse)(nil),     // 6: tunnel.ForwardPortResponse
-	(*Message)(nil),                 // 7: tunnel.Message
-	(*Secret)(nil),                  // 8: tunnel.Secret
-	(*SecretsResponse)(nil),         // 9: tunnel.SecretsResponse
-	(*Chunk)(nil),                   // 10: tunnel.Chunk
-	(*LogMessage)(nil),              // 11: tunnel.LogMessage
-	(*StatusUpdate)(nil),            // 12: tunnel.StatusUpdate
-	(*StatusError)(nil),             // 13: tunnel.StatusError
-	(*AppendSetupLogsRequest)(nil),  // 14: tunnel.AppendSetupLogsRequest
-	(*AppendSetupLogsResponse)(nil), // 15: tunnel.AppendSetupLogsResponse
-	(*Empty)(nil),                   // 16: tunnel.Empty
-	nil,                             // 17: tunnel.StatusError.ContextEntry
+	(LogLevel)(0),                     // 0: tunnel.LogLevel
+	(SetupLogResult)(0),               // 1: tunnel.SetupLogResult
+	(*StreamMountRequest)(nil),        // 2: tunnel.StreamMountRequest
+	(*StopForwardPortRequest)(nil),    // 3: tunnel.StopForwardPortRequest
+	(*StopForwardPortResponse)(nil),   // 4: tunnel.StopForwardPortResponse
+	(*ForwardPortRequest)(nil),        // 5: tunnel.ForwardPortRequest
+	(*ForwardPortResponse)(nil),       // 6: tunnel.ForwardPortResponse
+	(*Message)(nil),                   // 7: tunnel.Message
+	(*Secret)(nil),                    // 8: tunnel.Secret
+	(*SecretsResponse)(nil),           // 9: tunnel.SecretsResponse
+	(*Chunk)(nil),                     // 10: tunnel.Chunk
+	(*LogMessage)(nil),                // 11: tunnel.LogMessage
+	(*StatusUpdate)(nil),              // 12: tunnel.StatusUpdate
+	(*StatusError)(nil),               // 13: tunnel.StatusError
+	(*AppendSetupLogsRequest)(nil),    // 14: tunnel.AppendSetupLogsRequest
+	(*AppendSetupLogsResponse)(nil),   // 15: tunnel.AppendSetupLogsResponse
+	(*Empty)(nil),                     // 16: tunnel.Empty
+	(*LifecycleTerminalRequest)(nil),  // 17: tunnel.LifecycleTerminalRequest
+	(*LifecycleTerminalResponse)(nil), // 18: tunnel.LifecycleTerminalResponse
+	(*LifecycleTerminalOpen)(nil),     // 19: tunnel.LifecycleTerminalOpen
+	(*LifecycleTerminalReady)(nil),    // 20: tunnel.LifecycleTerminalReady
+	(*LifecycleTerminalBegin)(nil),    // 21: tunnel.LifecycleTerminalBegin
+	(*LifecycleTerminalBeginAck)(nil), // 22: tunnel.LifecycleTerminalBeginAck
+	(*LifecycleTerminalOutput)(nil),   // 23: tunnel.LifecycleTerminalOutput
+	(*LifecycleTerminalInput)(nil),    // 24: tunnel.LifecycleTerminalInput
+	(*LifecycleTerminalResize)(nil),   // 25: tunnel.LifecycleTerminalResize
+	(*LifecycleTerminalCancel)(nil),   // 26: tunnel.LifecycleTerminalCancel
+	(*LifecycleTerminalExit)(nil),     // 27: tunnel.LifecycleTerminalExit
+	(*LifecycleTerminalExitAck)(nil),  // 28: tunnel.LifecycleTerminalExitAck
+	(*LifecycleTerminalComplete)(nil), // 29: tunnel.LifecycleTerminalComplete
+	nil,                               // 30: tunnel.StatusError.ContextEntry
 }
 var file_tunnel_proto_depIdxs = []int32{
 	8,  // 0: tunnel.SecretsResponse.secrets:type_name -> tunnel.Secret
 	0,  // 1: tunnel.LogMessage.logLevel:type_name -> tunnel.LogLevel
 	13, // 2: tunnel.StatusUpdate.error:type_name -> tunnel.StatusError
-	17, // 3: tunnel.StatusError.context:type_name -> tunnel.StatusError.ContextEntry
+	30, // 3: tunnel.StatusError.context:type_name -> tunnel.StatusError.ContextEntry
 	1,  // 4: tunnel.AppendSetupLogsResponse.result:type_name -> tunnel.SetupLogResult
-	16, // 5: tunnel.Tunnel.Ping:input_type -> tunnel.Empty
-	11, // 6: tunnel.Tunnel.Log:input_type -> tunnel.LogMessage
-	12, // 7: tunnel.Tunnel.Status:input_type -> tunnel.StatusUpdate
-	14, // 8: tunnel.Tunnel.AppendSetupLogs:input_type -> tunnel.AppendSetupLogsRequest
-	7,  // 9: tunnel.Tunnel.SendResult:input_type -> tunnel.Message
-	7,  // 10: tunnel.Tunnel.DockerCredentials:input_type -> tunnel.Message
-	7,  // 11: tunnel.Tunnel.GitCredentials:input_type -> tunnel.Message
-	16, // 12: tunnel.Tunnel.GitHubCredentials:input_type -> tunnel.Empty
-	7,  // 13: tunnel.Tunnel.GitSSHSignature:input_type -> tunnel.Message
-	16, // 14: tunnel.Tunnel.GitUser:input_type -> tunnel.Empty
-	7,  // 15: tunnel.Tunnel.DevsyConfig:input_type -> tunnel.Message
-	7,  // 16: tunnel.Tunnel.GPGPublicKeys:input_type -> tunnel.Message
-	7,  // 17: tunnel.Tunnel.KubeConfig:input_type -> tunnel.Message
-	16, // 18: tunnel.Tunnel.Secrets:input_type -> tunnel.Empty
-	5,  // 19: tunnel.Tunnel.ForwardPort:input_type -> tunnel.ForwardPortRequest
-	3,  // 20: tunnel.Tunnel.StopForwardPort:input_type -> tunnel.StopForwardPortRequest
-	16, // 21: tunnel.Tunnel.StreamWorkspace:input_type -> tunnel.Empty
-	2,  // 22: tunnel.Tunnel.StreamMount:input_type -> tunnel.StreamMountRequest
-	16, // 23: tunnel.Tunnel.StreamSnapshotVolumes:input_type -> tunnel.Empty
-	16, // 24: tunnel.Tunnel.Ping:output_type -> tunnel.Empty
-	16, // 25: tunnel.Tunnel.Log:output_type -> tunnel.Empty
-	16, // 26: tunnel.Tunnel.Status:output_type -> tunnel.Empty
-	15, // 27: tunnel.Tunnel.AppendSetupLogs:output_type -> tunnel.AppendSetupLogsResponse
-	16, // 28: tunnel.Tunnel.SendResult:output_type -> tunnel.Empty
-	7,  // 29: tunnel.Tunnel.DockerCredentials:output_type -> tunnel.Message
-	7,  // 30: tunnel.Tunnel.GitCredentials:output_type -> tunnel.Message
-	7,  // 31: tunnel.Tunnel.GitHubCredentials:output_type -> tunnel.Message
-	7,  // 32: tunnel.Tunnel.GitSSHSignature:output_type -> tunnel.Message
-	7,  // 33: tunnel.Tunnel.GitUser:output_type -> tunnel.Message
-	7,  // 34: tunnel.Tunnel.DevsyConfig:output_type -> tunnel.Message
-	7,  // 35: tunnel.Tunnel.GPGPublicKeys:output_type -> tunnel.Message
-	7,  // 36: tunnel.Tunnel.KubeConfig:output_type -> tunnel.Message
-	9,  // 37: tunnel.Tunnel.Secrets:output_type -> tunnel.SecretsResponse
-	6,  // 38: tunnel.Tunnel.ForwardPort:output_type -> tunnel.ForwardPortResponse
-	4,  // 39: tunnel.Tunnel.StopForwardPort:output_type -> tunnel.StopForwardPortResponse
-	10, // 40: tunnel.Tunnel.StreamWorkspace:output_type -> tunnel.Chunk
-	10, // 41: tunnel.Tunnel.StreamMount:output_type -> tunnel.Chunk
-	10, // 42: tunnel.Tunnel.StreamSnapshotVolumes:output_type -> tunnel.Chunk
-	24, // [24:43] is the sub-list for method output_type
-	5,  // [5:24] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	19, // 5: tunnel.LifecycleTerminalRequest.open:type_name -> tunnel.LifecycleTerminalOpen
+	21, // 6: tunnel.LifecycleTerminalRequest.begin:type_name -> tunnel.LifecycleTerminalBegin
+	23, // 7: tunnel.LifecycleTerminalRequest.output:type_name -> tunnel.LifecycleTerminalOutput
+	27, // 8: tunnel.LifecycleTerminalRequest.exit:type_name -> tunnel.LifecycleTerminalExit
+	29, // 9: tunnel.LifecycleTerminalRequest.complete:type_name -> tunnel.LifecycleTerminalComplete
+	20, // 10: tunnel.LifecycleTerminalResponse.ready:type_name -> tunnel.LifecycleTerminalReady
+	22, // 11: tunnel.LifecycleTerminalResponse.begin_ack:type_name -> tunnel.LifecycleTerminalBeginAck
+	24, // 12: tunnel.LifecycleTerminalResponse.input:type_name -> tunnel.LifecycleTerminalInput
+	25, // 13: tunnel.LifecycleTerminalResponse.resize:type_name -> tunnel.LifecycleTerminalResize
+	26, // 14: tunnel.LifecycleTerminalResponse.cancel:type_name -> tunnel.LifecycleTerminalCancel
+	28, // 15: tunnel.LifecycleTerminalResponse.exit_ack:type_name -> tunnel.LifecycleTerminalExitAck
+	16, // 16: tunnel.Tunnel.Ping:input_type -> tunnel.Empty
+	11, // 17: tunnel.Tunnel.Log:input_type -> tunnel.LogMessage
+	12, // 18: tunnel.Tunnel.Status:input_type -> tunnel.StatusUpdate
+	14, // 19: tunnel.Tunnel.AppendSetupLogs:input_type -> tunnel.AppendSetupLogsRequest
+	7,  // 20: tunnel.Tunnel.SendResult:input_type -> tunnel.Message
+	7,  // 21: tunnel.Tunnel.DockerCredentials:input_type -> tunnel.Message
+	7,  // 22: tunnel.Tunnel.GitCredentials:input_type -> tunnel.Message
+	16, // 23: tunnel.Tunnel.GitHubCredentials:input_type -> tunnel.Empty
+	7,  // 24: tunnel.Tunnel.GitSSHSignature:input_type -> tunnel.Message
+	16, // 25: tunnel.Tunnel.GitUser:input_type -> tunnel.Empty
+	7,  // 26: tunnel.Tunnel.DevsyConfig:input_type -> tunnel.Message
+	7,  // 27: tunnel.Tunnel.GPGPublicKeys:input_type -> tunnel.Message
+	7,  // 28: tunnel.Tunnel.KubeConfig:input_type -> tunnel.Message
+	16, // 29: tunnel.Tunnel.Secrets:input_type -> tunnel.Empty
+	5,  // 30: tunnel.Tunnel.ForwardPort:input_type -> tunnel.ForwardPortRequest
+	3,  // 31: tunnel.Tunnel.StopForwardPort:input_type -> tunnel.StopForwardPortRequest
+	16, // 32: tunnel.Tunnel.StreamWorkspace:input_type -> tunnel.Empty
+	2,  // 33: tunnel.Tunnel.StreamMount:input_type -> tunnel.StreamMountRequest
+	16, // 34: tunnel.Tunnel.StreamSnapshotVolumes:input_type -> tunnel.Empty
+	17, // 35: tunnel.Tunnel.LifecycleTerminal:input_type -> tunnel.LifecycleTerminalRequest
+	16, // 36: tunnel.Tunnel.Ping:output_type -> tunnel.Empty
+	16, // 37: tunnel.Tunnel.Log:output_type -> tunnel.Empty
+	16, // 38: tunnel.Tunnel.Status:output_type -> tunnel.Empty
+	15, // 39: tunnel.Tunnel.AppendSetupLogs:output_type -> tunnel.AppendSetupLogsResponse
+	16, // 40: tunnel.Tunnel.SendResult:output_type -> tunnel.Empty
+	7,  // 41: tunnel.Tunnel.DockerCredentials:output_type -> tunnel.Message
+	7,  // 42: tunnel.Tunnel.GitCredentials:output_type -> tunnel.Message
+	7,  // 43: tunnel.Tunnel.GitHubCredentials:output_type -> tunnel.Message
+	7,  // 44: tunnel.Tunnel.GitSSHSignature:output_type -> tunnel.Message
+	7,  // 45: tunnel.Tunnel.GitUser:output_type -> tunnel.Message
+	7,  // 46: tunnel.Tunnel.DevsyConfig:output_type -> tunnel.Message
+	7,  // 47: tunnel.Tunnel.GPGPublicKeys:output_type -> tunnel.Message
+	7,  // 48: tunnel.Tunnel.KubeConfig:output_type -> tunnel.Message
+	9,  // 49: tunnel.Tunnel.Secrets:output_type -> tunnel.SecretsResponse
+	6,  // 50: tunnel.Tunnel.ForwardPort:output_type -> tunnel.ForwardPortResponse
+	4,  // 51: tunnel.Tunnel.StopForwardPort:output_type -> tunnel.StopForwardPortResponse
+	10, // 52: tunnel.Tunnel.StreamWorkspace:output_type -> tunnel.Chunk
+	10, // 53: tunnel.Tunnel.StreamMount:output_type -> tunnel.Chunk
+	10, // 54: tunnel.Tunnel.StreamSnapshotVolumes:output_type -> tunnel.Chunk
+	18, // 55: tunnel.Tunnel.LifecycleTerminal:output_type -> tunnel.LifecycleTerminalResponse
+	36, // [36:56] is the sub-list for method output_type
+	16, // [16:36] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_tunnel_proto_init() }
@@ -1122,13 +2118,28 @@ func file_tunnel_proto_init() {
 	if File_tunnel_proto != nil {
 		return
 	}
+	file_tunnel_proto_msgTypes[15].OneofWrappers = []any{
+		(*LifecycleTerminalRequest_Open)(nil),
+		(*LifecycleTerminalRequest_Begin)(nil),
+		(*LifecycleTerminalRequest_Output)(nil),
+		(*LifecycleTerminalRequest_Exit)(nil),
+		(*LifecycleTerminalRequest_Complete)(nil),
+	}
+	file_tunnel_proto_msgTypes[16].OneofWrappers = []any{
+		(*LifecycleTerminalResponse_Ready)(nil),
+		(*LifecycleTerminalResponse_BeginAck)(nil),
+		(*LifecycleTerminalResponse_Input)(nil),
+		(*LifecycleTerminalResponse_Resize)(nil),
+		(*LifecycleTerminalResponse_Cancel)(nil),
+		(*LifecycleTerminalResponse_ExitAck)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tunnel_proto_rawDesc), len(file_tunnel_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   16,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

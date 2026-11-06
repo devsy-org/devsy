@@ -96,6 +96,21 @@ devsy workspace logs --source setup --run RUN_ID --context CONTEXT --result-form
 
 Retention is limited. See [Setup history](../troubleshooting/setup-history.mdx). The history covers the build and lifecycle hooks. The stdout and stderr of your command after `--` stay on their normal streams. Devsy does not wait for hooks still running when the command ends.
 
+## Hooks cannot ask for input
+
+CI jobs have no terminal to answer a prompt. `devsy ci` has no `--interactive-post-start` option. Write hooks that take their values from the job instead.
+
+Desktop launches, `--detach`, JSON output, and management or platform tasks also stay noninteractive. If you pass `--interactive-post-start` to `devsy workspace up` in one of these runs, Devsy rejects it with an error. It does not wait for input that nobody can see.
+
+Pass values to the workspace in one of these ways:
+
+- Environment variables: `devsy ci --remote-env NAME=value -- make test`.
+- Secrets: `--secret` injects a stored Devsy secret. See [Secrets](./secrets.mdx).
+- Files: write the value to a file that the hook reads.
+- Arguments: put a value that is not secret in the hook command, such as `"postStartCommand": ["./start.sh", "example-name"]`.
+
+Moving the prompt to `postAttachCommand` does not provide input. `postAttachCommand` runs without input in every mode.
+
 ## Build and push images
 
 To build and publish a devcontainer image for reuse as a build cache, run `devsy workspace build`:

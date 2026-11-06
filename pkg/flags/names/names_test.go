@@ -63,6 +63,7 @@ var wireNames = []struct {
 	{names.SkipHostRequirements, "skip-host-requirements"},
 	{names.TerminalColumns, "terminal-columns"},
 	{names.TerminalRows, "terminal-rows"},
+	{names.InteractivePostStart, "interactive-post-start"},
 	{names.ID, "id"},
 	{names.Machine, "machine"},
 	{names.Source, "source"},

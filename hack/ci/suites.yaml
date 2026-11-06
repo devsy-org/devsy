@@ -74,7 +74,7 @@ unit:
     - name: windows-pty
       description: native Windows pseudoconsole and PTY test helpers
       os: [windows]
-      packages: [./pkg/pty, ./pkg/pty/ptytest]
+      packages: [./pkg/pty, ./pkg/pty/ptytest, ./pkg/terminal]
       require_tests: [TestStartWindowsSuite, TestPtytestSuite]
       args: [-race, -short, -count=1, -timeout=5m]
 

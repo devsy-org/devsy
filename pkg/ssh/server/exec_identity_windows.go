@@ -19,3 +19,13 @@ func prepareExecIdentity(_ *exec.Cmd, spec string) (bool, error) {
 func prepareExecIdentityForAccount(cmd *exec.Cmd, spec string, _ *user.User) (bool, error) {
 	return prepareExecIdentity(cmd, spec)
 }
+
+type ExecCredentials struct {
+	UID, GID     uint32
+	Groups       []uint32
+	MatchCurrent bool
+}
+
+func ResolveExecCredentials(_ string) (ExecCredentials, error) {
+	return ExecCredentials{}, errors.New("execution identities are not supported on Windows")
+}

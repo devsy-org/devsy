@@ -173,7 +173,15 @@ type tunnelServer struct {
 	gitToken         *provider2.GitToken
 	gitSSHSigningKey string
 
+	lifecycleTerminalOwner    LifecycleTerminalOwner
+	lifecycleTerminalUpstream tunnel.TunnelClient
+	lifecycleTerminalRequest  provider2.LifecycleTerminalRequest
+
 	statusReporter status.Reporter
+}
+
+func (t *tunnelServer) LifecycleTerminal(stream tunnel.Tunnel_LifecycleTerminalServer) error {
+	return t.serveLifecycleTerminal(stream)
 }
 
 func (t *tunnelServer) RunWithResult(

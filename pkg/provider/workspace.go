@@ -257,6 +257,13 @@ type GitToken struct {
 	Token    string `json:"token,omitempty"`
 }
 
+type LifecycleTerminalRequest struct {
+	ProtocolVersion uint32 `json:"protocolVersion"`
+	Nonce           string `json:"nonce"`
+	Context         string `json:"context"`
+	WorkspaceUID    string `json:"workspaceUid"`
+}
+
 type CLIOptions struct {
 	// Platform are the platform options
 	Platform devsy.PlatformOptions `json:"platformOptions"`
@@ -266,7 +273,8 @@ type CLIOptions struct {
 	// persisted state.
 	SetupRunID string `json:"setupRunId,omitempty"`
 	// SetupParentProducerID is the producer in the previous process hop.
-	SetupParentProducerID string `json:"setupParentProducerId,omitempty"`
+	SetupParentProducerID string                    `json:"setupParentProducerId,omitempty"`
+	LifecycleTerminal     *LifecycleTerminalRequest `json:"lifecycleTerminal,omitempty"`
 
 	// up options
 	ID                          string            `json:"id,omitempty"`

@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
@@ -61,6 +62,7 @@ var ErrRequireRunningUnsupported = errors.New("runtime does not support exec-onl
 // UpOptions configures a single Up invocation.
 type UpOptions struct {
 	provider.CLIOptions
+	LifecycleTerminalClient tunnel.TunnelClient `json:"-"`
 
 	// NoBuild is set by the container tunnel to force pre-built images; it is
 	// distinct from the embedded CLIOptions.NoBuild used by the build command.
@@ -108,8 +110,9 @@ type runner struct {
 	imageDetails      *config.ImageDetails
 	imageDetailsImage string
 
-	reporter     status.Reporter
-	wslgSnapshot *wslg.Snapshot
+	lifecycleTerminalClient tunnel.TunnelClient
+	reporter                status.Reporter
+	wslgSnapshot            *wslg.Snapshot
 }
 
 func NewRunner(
@@ -155,6 +158,8 @@ func (r *runner) Up(
 	timeout time.Duration,
 	reporter status.Reporter,
 ) (*config.Result, error) {
+	r.lifecycleTerminalClient = options.LifecycleTerminalClient
+	defer func() { r.lifecycleTerminalClient = nil }()
 	r.imageDetails = nil
 	r.imageDetailsImage = ""
 	if reporter == nil {

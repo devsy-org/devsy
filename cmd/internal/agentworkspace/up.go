@@ -46,7 +46,9 @@ const (
 type UpCmd struct {
 	*flags.GlobalFlags
 
-	WorkspaceInfo string
+	WorkspaceInfo             string
+	LifecycleTerminalProtocol int
+	protocolSet               bool
 }
 
 // NewUpCmd creates a new command.
@@ -59,6 +61,7 @@ func NewUpCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Starts a new devcontainer",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
+			cmd.protocolSet = cobraCmd.Flags().Changed("lifecycle-terminal-protocol")
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
@@ -66,11 +69,20 @@ func NewUpCmd(flags *flags.GlobalFlags) *cobra.Command {
 		upCmd,
 		cliflags.String(&cmd.WorkspaceInfo, names.WorkspaceInfo, "", "The workspace info"),
 	)
+	upCmd.Flags().
+		IntVar(&cmd.LifecycleTerminalProtocol, "lifecycle-terminal-protocol", 0, "Lifecycle terminal protocol version")
 	_ = upCmd.MarkFlagRequired(names.WorkspaceInfo)
 	return upCmd
 }
 
 func (cmd *UpCmd) Run(ctx context.Context) error {
+	decoded, _, err := agent.DecodeWorkspaceInfo(cmd.WorkspaceInfo)
+	if err != nil {
+		return err
+	}
+	if err := cmd.validateTerminal(decoded.CLIOptions.LifecycleTerminal != nil); err != nil {
+		return err
+	}
 	workspaceInfo, err := cmd.loadWorkspaceInfo(ctx)
 	if err != nil {
 		return err
@@ -101,6 +113,14 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("devcontainer up: %w", err)
 	}
 
+	return nil
+}
+
+func (cmd *UpCmd) validateTerminal(present bool) error {
+	if cmd.protocolSet != present ||
+		(cmd.protocolSet && cmd.LifecycleTerminalProtocol != int(tunnel.LifecycleTerminalProtocolVersion)) {
+		return fmt.Errorf("lifecycle terminal protocol and request mismatch")
+	}
 	return nil
 }
 
@@ -230,8 +250,9 @@ func (cmd *UpCmd) devsyUp(
 
 	reporter := tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient)
 	result, err := runner.Up(ctx, devcontainer.UpOptions{
-		CLIOptions:    cliOptions,
-		RegistryCache: workspaceInfo.RegistryCache,
+		CLIOptions:              cliOptions,
+		LifecycleTerminalClient: tunnelClient,
+		RegistryCache:           workspaceInfo.RegistryCache,
 	}, workspaceInfo.InjectTimeout, reporter)
 	run.Finish(err, false)
 	if !hop.Flush(ctx) {

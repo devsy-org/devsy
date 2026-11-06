@@ -40,6 +40,7 @@ const (
 	Tunnel_StreamWorkspace_FullMethodName       = "/tunnel.Tunnel/StreamWorkspace"
 	Tunnel_StreamMount_FullMethodName           = "/tunnel.Tunnel/StreamMount"
 	Tunnel_StreamSnapshotVolumes_FullMethodName = "/tunnel.Tunnel/StreamSnapshotVolumes"
+	Tunnel_LifecycleTerminal_FullMethodName     = "/tunnel.Tunnel/LifecycleTerminal"
 )
 
 // TunnelClient is the client API for Tunnel service.
@@ -65,6 +66,7 @@ type TunnelClient interface {
 	StreamWorkspace(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Chunk], error)
 	StreamMount(ctx context.Context, in *StreamMountRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Chunk], error)
 	StreamSnapshotVolumes(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Chunk], error)
+	LifecycleTerminal(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[LifecycleTerminalRequest, LifecycleTerminalResponse], error)
 }
 
 type tunnelClient struct {
@@ -292,6 +294,19 @@ func (c *tunnelClient) StreamSnapshotVolumes(ctx context.Context, in *Empty, opt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Tunnel_StreamSnapshotVolumesClient = grpc.ServerStreamingClient[Chunk]
 
+func (c *tunnelClient) LifecycleTerminal(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[LifecycleTerminalRequest, LifecycleTerminalResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Tunnel_ServiceDesc.Streams[3], Tunnel_LifecycleTerminal_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[LifecycleTerminalRequest, LifecycleTerminalResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Tunnel_LifecycleTerminalClient = grpc.BidiStreamingClient[LifecycleTerminalRequest, LifecycleTerminalResponse]
+
 // TunnelServer is the server API for Tunnel service.
 // All implementations must embed UnimplementedTunnelServer
 // for forward compatibility.
@@ -315,6 +330,7 @@ type TunnelServer interface {
 	StreamWorkspace(*Empty, grpc.ServerStreamingServer[Chunk]) error
 	StreamMount(*StreamMountRequest, grpc.ServerStreamingServer[Chunk]) error
 	StreamSnapshotVolumes(*Empty, grpc.ServerStreamingServer[Chunk]) error
+	LifecycleTerminal(grpc.BidiStreamingServer[LifecycleTerminalRequest, LifecycleTerminalResponse]) error
 	mustEmbedUnimplementedTunnelServer()
 }
 
@@ -381,6 +397,9 @@ func (UnimplementedTunnelServer) StreamMount(*StreamMountRequest, grpc.ServerStr
 }
 func (UnimplementedTunnelServer) StreamSnapshotVolumes(*Empty, grpc.ServerStreamingServer[Chunk]) error {
 	return status.Error(codes.Unimplemented, "method StreamSnapshotVolumes not implemented")
+}
+func (UnimplementedTunnelServer) LifecycleTerminal(grpc.BidiStreamingServer[LifecycleTerminalRequest, LifecycleTerminalResponse]) error {
+	return status.Error(codes.Unimplemented, "method LifecycleTerminal not implemented")
 }
 func (UnimplementedTunnelServer) mustEmbedUnimplementedTunnelServer() {}
 func (UnimplementedTunnelServer) testEmbeddedByValue()                {}
@@ -724,6 +743,13 @@ func _Tunnel_StreamSnapshotVolumes_Handler(srv interface{}, stream grpc.ServerSt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Tunnel_StreamSnapshotVolumesServer = grpc.ServerStreamingServer[Chunk]
 
+func _Tunnel_LifecycleTerminal_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(TunnelServer).LifecycleTerminal(&grpc.GenericServerStream[LifecycleTerminalRequest, LifecycleTerminalResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Tunnel_LifecycleTerminalServer = grpc.BidiStreamingServer[LifecycleTerminalRequest, LifecycleTerminalResponse]
+
 // Tunnel_ServiceDesc is the grpc.ServiceDesc for Tunnel service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -811,6 +837,12 @@ var Tunnel_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "StreamSnapshotVolumes",
 			Handler:       _Tunnel_StreamSnapshotVolumes_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "LifecycleTerminal",
+			Handler:       _Tunnel_LifecycleTerminal_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "tunnel.proto",
