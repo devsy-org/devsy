@@ -363,10 +363,21 @@ func validateComposeInvocationHeader(invocation composeInvocation) error {
 		len(invocation.Args)%2 != 0 {
 		return fmt.Errorf("invalid persisted Compose invocation")
 	}
-	if !utf8.ValidString(invocation.Directory) ||
-		strings.ContainsAny(invocation.Directory, "\x00\r\n") {
+	if err := validateInvocationDirectory(invocation.Directory); err != nil {
+		return err
+	}
+	return validateInvocationWSLg(invocation)
+}
+
+func validateInvocationDirectory(dir string) error {
+	if !utf8.ValidString(dir) ||
+		strings.ContainsAny(dir, "\x00\r\n") {
 		return fmt.Errorf("invalid persisted Compose directory")
 	}
+	return nil
+}
+
+func validateInvocationWSLg(invocation composeInvocation) error {
 	if invocation.Version == 2 {
 		return validateWSLgReplay(invocation.WSLg)
 	}

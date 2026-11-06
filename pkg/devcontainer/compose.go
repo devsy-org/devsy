@@ -363,15 +363,12 @@ func (r *runner) ensureComposeContainer(
 	if err := r.checkWSLgReuse(containerDetails, options.Recreate); err != nil {
 		return nil, err
 	}
-	effectiveOptions, forceSecretRuntimeRefresh, err := r.composeSecretRuntimeOptions(
+	effectiveOptions, forceSecretRuntimeRefresh, err := r.effectiveComposeRuntimeOptions(
 		containerDetails,
 		options,
 	)
 	if err != nil {
 		return nil, err
-	}
-	if forceSecretRuntimeRefresh {
-		log.Info("workspace secrets require secure runtime mounts")
 	}
 
 	if existing, ok := r.reuseExistingCompose(ctx, params, containerDetails, effectiveOptions); ok {
@@ -420,6 +417,23 @@ func (r *runner) reuseExistingCompose(
 		container:     containerDetails,
 		recreate:      options.Recreate,
 	})
+}
+
+func (r *runner) effectiveComposeRuntimeOptions(
+	containerDetails *config.ContainerDetails,
+	options UpOptions,
+) (UpOptions, bool, error) {
+	effectiveOptions, forceSecretRuntimeRefresh, err := r.composeSecretRuntimeOptions(
+		containerDetails,
+		options,
+	)
+	if err != nil {
+		return UpOptions{}, false, err
+	}
+	if forceSecretRuntimeRefresh {
+		log.Info("workspace secrets require secure runtime mounts")
+	}
+	return effectiveOptions, forceSecretRuntimeRefresh, nil
 }
 
 func (r *runner) composeSecretRuntimeOptions(
@@ -1112,25 +1126,37 @@ func (r *runner) buildComposeOverrideArgs(
 
 	if override.path != "" {
 		composeGlobalArgs = append(composeGlobalArgs, "-f", override.path)
-		invocation := composeInvocation{
-			Version:   1,
-			Directory: start.project.WorkingDir,
-			Args:      composeGlobalArgs,
-		}
-		if replay := r.wslgReplay(); replay != nil {
-			invocation.Version = 2
-			invocation.WSLg = replay
-		}
-		if err := recordComposeInvocation(composeInvocationRecord{
-			Path:       override.path,
-			Service:    start.parsedConfig.Config.Service,
-			Invocation: invocation,
-		}); err != nil {
+		if err := r.recordComposeOverrideInvocation(
+			start,
+			override.path,
+			composeGlobalArgs,
+		); err != nil {
 			return composeOverrideArgs{}, err
 		}
 	}
 
 	return composeOverrideArgs{args: composeGlobalArgs, contract: override.contract}, nil
+}
+
+func (r *runner) recordComposeOverrideInvocation(
+	start *startContainerParams,
+	overridePath string,
+	args []string,
+) error {
+	invocation := composeInvocation{
+		Version:   1,
+		Directory: start.project.WorkingDir,
+		Args:      args,
+	}
+	if replay := r.wslgReplay(); replay != nil {
+		invocation.Version = 2
+		invocation.WSLg = replay
+	}
+	return recordComposeInvocation(composeInvocationRecord{
+		Path:       overridePath,
+		Service:    start.parsedConfig.Config.Service,
+		Invocation: invocation,
+	})
 }
 
 func resolveComposeRuntimeImage(
@@ -1188,6 +1214,43 @@ func (r *runner) marshalComposeContract(
 	})
 }
 
+type composeOverrideMetadata struct {
+	mergedConfig  *config.MergedDevContainerConfig
+	metadataValue []byte
+	hasOverlay    bool
+}
+
+func resolveComposeOverrideMetadata(
+	ctx context.Context,
+	start *startContainerParams,
+	extendResult composeExtendResult,
+) (composeOverrideMetadata, error) {
+	overlay, err := overlayForParsedConfig(
+		ctx,
+		start.parsedConfig,
+		start.options.ExtraDevContainerPath,
+	)
+	if err != nil {
+		return composeOverrideMetadata{}, err
+	}
+	parsed := *start.parsedConfig
+	parsed.Overlay = overlay
+	mergedConfig, err := mergeImageMetadataConfig(ctx, &parsed, extendResult.imageMetadata, "")
+	if err != nil {
+		return composeOverrideMetadata{}, err
+	}
+	rawMetadata := overlayRawMetadata(extendResult.imageMetadata.Raw, overlay)
+	metadataValue, err := metadata.MarshalImageMetadata(rawMetadata)
+	if err != nil {
+		return composeOverrideMetadata{}, err
+	}
+	return composeOverrideMetadata{
+		mergedConfig:  mergedConfig,
+		metadataValue: metadataValue,
+		hasOverlay:    overlay != nil,
+	}, nil
+}
+
 func (r *runner) generateComposeUpOverride(
 	ctx context.Context,
 	params *composeOverrideParams,
@@ -1195,23 +1258,7 @@ func (r *runner) generateComposeUpOverride(
 	imageDetails *config.ImageDetails,
 ) (composeOverrideFile, error) {
 	start := params.startParams
-
-	overlay, err := overlayForParsedConfig(
-		ctx,
-		start.parsedConfig,
-		start.options.ExtraDevContainerPath,
-	)
-	if err != nil {
-		return composeOverrideFile{}, err
-	}
-	parsed := *start.parsedConfig
-	parsed.Overlay = overlay
-	mergedConfig, err := mergeImageMetadataConfig(ctx, &parsed, extendResult.imageMetadata, "")
-	if err != nil {
-		return composeOverrideFile{}, err
-	}
-	rawMetadata := overlayRawMetadata(extendResult.imageMetadata.Raw, overlay)
-	metadataValue, err := metadata.MarshalImageMetadata(rawMetadata)
+	meta, err := resolveComposeOverrideMetadata(ctx, start, extendResult)
 	if err != nil {
 		return composeOverrideFile{}, err
 	}
@@ -1222,26 +1269,25 @@ func (r *runner) generateComposeUpOverride(
 
 	contract, err := r.marshalComposeContract(
 		imageDetails,
-		string(metadataValue),
+		string(meta.metadataValue),
 		featureSignature,
-		overlay != nil,
+		meta.hasOverlay,
 	)
 	if err != nil {
 		return composeOverrideFile{}, err
 	}
-	additionalLabels, err := r.wslgLabels()
+	additionalLabels, err := r.resolveComposeOverrideLabels(
+		imageDetails,
+		meta.metadataValue,
+		contract,
+		structuralSignature(start.parsedConfig.Config),
+	)
 	if err != nil {
 		return composeOverrideFile{}, err
 	}
-	if additionalLabels == nil {
-		additionalLabels = map[string]string{}
-	}
-	maps.Copy(additionalLabels, composeOverrideLabels(
-		imageDetails, metadataValue, contract, structuralSignature(start.parsedConfig.Config),
-	))
 	overrideComposeUpFilePath, err := r.extendedDockerComposeUp(&composeUpParams{
 		parsedConfig:         start.parsedConfig,
-		mergedConfig:         mergedConfig,
+		mergedConfig:         meta.mergedConfig,
 		composeHelper:        start.composeHelper,
 		composeService:       params.composeService,
 		originalImageName:    params.originalImageName,
@@ -1256,6 +1302,24 @@ func (r *runner) generateComposeUpOverride(
 	}
 
 	return composeOverrideFile{path: overrideComposeUpFilePath, contract: string(contract)}, nil
+}
+
+func (r *runner) resolveComposeOverrideLabels(
+	imageDetails *config.ImageDetails,
+	metadataValue, contract []byte,
+	structure string,
+) (map[string]string, error) {
+	additionalLabels, err := r.wslgLabels()
+	if err != nil {
+		return nil, err
+	}
+	if additionalLabels == nil {
+		additionalLabels = map[string]string{}
+	}
+	maps.Copy(additionalLabels, composeOverrideLabels(
+		imageDetails, metadataValue, contract, structure,
+	))
+	return additionalLabels, nil
 }
 
 // overlayRawMetadata persists only the established runtime metadata fields of

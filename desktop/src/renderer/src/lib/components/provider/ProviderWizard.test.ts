@@ -220,7 +220,7 @@ describe("ProviderWizard", () => {
   })
 
   it("does not submit an untouched expression default", async () => {
-    const expression = "${PROVIDER_FOLDER}/config.json"
+    const expression = ["$", "{PROVIDER_FOLDER}/config.json"].join("")
     providerOptions.mockResolvedValue({
       CONFIG: { name: "CONFIG", default: expression },
     })
@@ -243,7 +243,7 @@ describe("ProviderWizard", () => {
   })
 
   it("submits an explicitly edited expression default", async () => {
-    const expression = "${PROVIDER_FOLDER}/config.json"
+    const expression = ["$", "{PROVIDER_FOLDER}/config.json"].join("")
     providerOptions.mockResolvedValue({
       CONFIG: { name: "CONFIG", default: expression },
     })

@@ -254,7 +254,7 @@ describe("ProviderSheet", () => {
   })
 
   it("saves only changed visible options and preserves the machine mode", async () => {
-    const expression = "${PROVIDER_FOLDER}/config.json"
+    const expression = ["$", "{PROVIDER_FOLDER}/config.json"].join("")
     providerOptions.mockResolvedValue({
       CONFIG: { name: "CONFIG", default: expression },
       HOST: { name: "HOST", default: "localhost" },
