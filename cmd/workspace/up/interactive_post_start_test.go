@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/goleak"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
 )
@@ -173,6 +175,67 @@ func (s *InteractivePostStartSuite) TestCancelRestores() {
 type testReporter struct {
 	events chan string
 	block  <-chan struct{}
+}
+
+type stalledReporter struct {
+	started chan struct{}
+	release chan struct{}
+	events  chan string
+	once    sync.Once
+}
+
+func (r *stalledReporter) Report(e status.Event) {
+	r.once.Do(func() {
+		close(r.started)
+		<-r.release
+	})
+	r.events <- e.Step
+}
+
+func (s *InteractivePostStartSuite) TestSequentialBeginDuringStalledStatusRender() {
+	ignore := goleak.IgnoreCurrent()
+	s.T().Cleanup(func() { goleak.VerifyNone(s.T(), ignore) })
+	r := &stalledReporter{
+		started: make(chan struct{}), release: make(chan struct{}), events: make(chan string, 3),
+	}
+	var release sync.Once
+	unblock := func() { release.Do(func() { close(r.release) }) }
+	s.T().Cleanup(unblock)
+	gate := newInteractiveStatusGate(r, io.Discard, false)
+	f := s.fixture(func(o *interactivePostStartOptions) { o.status = gate })
+	s.begin(f)
+	gate.Report(status.Event{Step: testInvocationOne})
+	gate.Report(status.Event{Step: testInvocationTwo})
+	f.stream.in <- exitFrame()
+	s.waitStatusSignal(r.started)
+	s.Require().NotNil(s.timedResponse(f, 6*time.Second).GetExitAck())
+	next := beginFrame()
+	next.GetBegin().InvocationId = testInvocationTwo
+	started := time.Now()
+	f.stream.in <- next
+	response := s.timedResponse(f, interactiveRenderWait+time.Second)
+	s.Require().NotNil(response.GetBeginAck())
+	s.Equal(testInvocationTwo, response.GetBeginAck().InvocationId)
+	s.Less(time.Since(started), interactiveRenderWait+time.Second)
+	gate.Report(status.Event{Step: "third"})
+	unblock()
+	select {
+	case event := <-r.events:
+		s.Equal(testInvocationOne, event)
+	case <-time.After(time.Second):
+		s.FailNow("stalled render did not finish")
+	}
+	gate.mu.Lock()
+	idle := gate.idle
+	gate.mu.Unlock()
+	s.waitStatusSignal(idle)
+	s.Empty(r.events)
+	exit := exitFrame()
+	exit.GetExit().InvocationId = testInvocationTwo
+	f.stream.in <- exit
+	s.Require().NotNil(s.response(f).GetExitAck())
+	s.Equal(testInvocationTwo, <-r.events)
+	s.Equal("third", <-r.events)
 }
 
 func (r *testReporter) Report(e status.Event) {
@@ -741,4 +804,27 @@ func (s *InteractivePostStartSuite) begin(f *interactiveFixture) {
 	s.Require().NotNil(s.response(f).GetReady())
 	f.stream.in <- beginFrame()
 	s.Require().NotNil(s.response(f).GetBeginAck())
+}
+
+func (s *InteractivePostStartSuite) waitStatusSignal(ch <-chan struct{}) {
+	s.T().Helper()
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		s.FailNow("status signal timed out")
+	}
+}
+
+func (s *InteractivePostStartSuite) timedResponse(
+	f *interactiveFixture,
+	timeout time.Duration,
+) *tunnel.LifecycleTerminalResponse {
+	s.T().Helper()
+	select {
+	case response := <-f.stream.out:
+		return response
+	case <-time.After(timeout):
+		s.FailNow("response timed out")
+		return nil
+	}
 }

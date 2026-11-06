@@ -67,6 +67,8 @@ type interactiveStatusGate struct {
 	journal  *journalStatusReporter
 }
 
+const interactiveRenderWait = 500 * time.Millisecond
+
 func newInteractiveStatusGate(
 	reporter status.Reporter,
 	out io.Writer,
@@ -131,8 +133,16 @@ func (g *interactiveStatusGate) startLocked() {
 }
 
 func (g *interactiveStatusGate) waitForRender() {
-	g.renderMu.Lock()
-	defer g.renderMu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		g.renderMu.Lock()
+		defer g.renderMu.Unlock()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(interactiveRenderWait):
+	}
 }
 
 func (g *interactiveStatusGate) run() {
