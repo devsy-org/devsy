@@ -1,0 +1,52 @@
+---
+title: MicroSandbox
+sidebar_label: MicroSandbox
+---
+
+The external MicroSandbox provider runs Devsy workspaces in microVMs using the MicroSandbox runtime.
+
+## Requirements and installation
+
+Install Devsy and the [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli), version 0.7.13 or later. Check `msb --version` in the environment running Devsy. Docker is required for image builds. Provider releases contain binaries for Linux amd64 and arm64, macOS arm64, and Windows amd64. Linux requires KVM and Windows requires Windows Hypervisor Platform.
+
+```sh
+devsy provider add --name microsandbox-external https://github.com/devsy-org/devsy-provider-microsandbox/releases/latest/download/provider.yaml
+devsy workspace up . --provider microsandbox-external
+```
+
+A successful add initializes the provider and makes it the default for the current context. Workspaces that do not specify a provider use the default. To keep the current default, add `--use=false` to the add command, then run `devsy provider init microsandbox-external` before creating a workspace.
+
+Choose another name if `microsandbox-external` already exists. Existing built-in configurations are not migrated automatically. The built-in provider is deprecated and is selected explicitly with `builtin:microsandbox` in current Devsy versions.
+
+The provider's SDK upgrades the `MSB_HOME` database, by default `~/.microsandbox`, when a workspace first starts. Older `msb` versions refuse the upgraded database. Older provider SDKs cannot run commands after the database is upgraded either. Update the provider and `msb` together.
+
+## Configuration
+
+Set options in Desktop or with `devsy provider set microsandbox-external -o KEY=value`. Empty resource options use the runtime default unless otherwise noted.
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `MSB_PATH` | Empty | Runtime executable path. Set with `MSB_LIBKRUNFW_PATH`. |
+| `MSB_LIBKRUNFW_PATH` | Empty | Matching firmware library path. Set with `MSB_PATH`. |
+| `MICROSANDBOX_MEMORY` | `2048` | Guest memory in MiB. |
+| `MICROSANDBOX_CPUS` | Runtime default | Virtual CPUs. |
+| `MICROSANDBOX_MAX_MEMORY` | Runtime default | Hotplug memory ceiling in MiB. |
+| `MICROSANDBOX_MAX_CPUS` | Runtime default | Hotplug CPU ceiling. |
+| `MICROSANDBOX_STORAGE` | Runtime default | Root disk in GiB. Falls back to `hostRequirements.storage` when set. |
+| `MICROSANDBOX_BLOCK_EGRESS` | `false` | Deny outbound public network access. |
+| `MICROSANDBOX_EPHEMERAL` | `false` | Discard root disk state when the VM stops. |
+| `MICROSANDBOX_WORKSPACE_HOST_PERMISSIONS` | `mirror` | Use `mirror` or `private` for host permissions. |
+| `MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION` | `strict` | Use `strict`, `relaxed`, or `off`. `off` requires `private` permissions. |
+| `INACTIVITY_TIMEOUT` | Empty | Stop after a duration such as `10m` or `1h`. |
+
+## Diagnostics and limits
+
+If the runtime version cannot be recognized, update it with `msb self update`. If inspect output cannot be parsed, the provider reports the runtime version and an incompatibility reporting link. For a relocated runtime, set both executable and firmware paths. A partial pair fails instead of selecting another installation. The installed adapter's `runtime-check` command checks the pair and version without starting a VM, although it can initialize the native library cache.
+
+The external runtime driver does not support Compose devcontainers. Use a Docker driver provider when your workspace requires Compose.
+
+For a relocated runtime, `runtime-check` reads its process environment rather than saved provider options. Pass the same paths configured with `devsy provider set` to the installed adapter. For example, in a shell:
+
+```sh
+MSB_PATH=/opt/microsandbox/msb MSB_LIBKRUNFW_PATH=/opt/microsandbox/libkrunfw.so.5.6.1 /path/to/installed/adapter runtime-check
+```

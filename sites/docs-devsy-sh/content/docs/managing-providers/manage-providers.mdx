@@ -10,7 +10,8 @@ Providers you can add:
 - [Kubernetes (kubernetes)](https://github.com/devsy-org/devsy/tree/main/providers/kubernetes)
 - [Harvester (harvester)](https://github.com/devsy-org/devsy-provider-harvester)
 - [Apple (apple)](https://github.com/devsy-org/devsy/tree/main/providers/apple)
-- [MicroSandbox (microsandbox)](https://github.com/devsy-org/devsy-provider-microsandbox)
+- [MicroSandbox (microsandbox)](./microsandbox.mdx)
+- [Docker Sandboxes (docker-sandbox)](./docker-sandbox.mdx)
 - [Lima (lima)](https://github.com/devsy-org/devsy-provider-lima)
 - [OrbStack (orbstack)](https://github.com/devsy-org/devsy-provider-orbstack)
 - [SSH (ssh)](https://github.com/devsy-org/devsy-provider-ssh)
@@ -19,7 +20,7 @@ Providers you can add:
 - [Azure (azure)](https://github.com/devsy-org/devsy-provider-azure)
 - [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
-Docker Sandboxes is not available yet. See its [qualification guide](./docker-sandbox.mdx) for the requirements of a future release.
+
 
 List the available providers:
 
@@ -79,41 +80,33 @@ provider repository for cloud-init and image selection setup.
 
 ### MicroSandbox
 
-```sh
-devsy provider add microsandbox
-```
-
-This installs the latest external provider from `github.com/devsy-org/devsy-provider-microsandbox`. The Desktop preset uses the same source. To pin a release, append a tag:
+Install the external provider from its release manifest:
 
 ```sh
-devsy provider add github.com/devsy-org/devsy-provider-microsandbox@v0.1.8
+devsy provider add --name microsandbox-external https://github.com/devsy-org/devsy-provider-microsandbox/releases/latest/download/provider.yaml
 ```
 
-The provider needs the `msb` CLI on the machine that runs the workspace. Install it with the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli) and check it with `msb --version`. `devsy workspace up <name> --recreate` requires MicroSandbox v0.7.7 or newer. The provider runs on Apple Silicon macOS, Linux with KVM and Windows with Windows Hypervisor Platform.
+A successful add initializes the provider and makes it the default. To install it without initialization or changing the default, add `--use=false` and then run `devsy provider init microsandbox-external` before creating a workspace.
 
-**Existing built-in installations.** The built-in MicroSandbox provider is deprecated. Existing providers and workspaces keep working. To switch one to the external provider, run:
+The [MicroSandbox guide](./microsandbox.mdx) covers requirements, configuration and runtime compatibility. Choose another name if `microsandbox-external` already exists.
+
+**Existing built-in installations.** The built-in MicroSandbox provider is deprecated. Existing configurations are not migrated automatically. To switch one to the external provider, run:
 
 ```sh
-devsy provider set-source <name> github.com/devsy-org/devsy-provider-microsandbox
+devsy provider set-source <name> https://github.com/devsy-org/devsy-provider-microsandbox/releases/latest/download/provider.yaml
 ```
 
-To keep using the built-in provider, add it explicitly:
+Current Devsy versions also accept `builtin:microsandbox` to select the deprecated built-in provider explicitly:
 
 ```sh
 devsy provider add builtin:microsandbox --name legacy-microsandbox --use=false
 ```
 
-If a switch fails during initialization, the new source stays selected. Fix the cause and run `devsy provider init <name>`, or set the previous source again. Add `--version <tag>` to `set-source` to pin a release.
+After initialization, the switched provider becomes the default. To restore the previous default, run `devsy provider use <previous-name>`. If initialization fails, the new source stays selected. Fix the cause and run `devsy provider init <name>`, or set the previous source again.
 
 ### Docker Sandboxes
 
-A published release qualified for your host is required. After it exists, install the standalone `sbx` CLI, sign in with `sbx login`, and add the provider:
-
-```sh
-devsy provider add docker-sandbox
-```
-
-The [Docker Sandboxes guide](./docker-sandbox.mdx) covers qualified hosts, resource options, guest Docker, source files, networking, data deletion, and scoped recovery.
+Install the standalone `sbx` CLI and sign in. See the [Docker Sandboxes guide](./docker-sandbox.mdx) for the prerelease manifest, host availability, and recovery instructions.
 
 ## Set provider options
 

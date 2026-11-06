@@ -1,4 +1,4 @@
 {
   "title": "Managing your Providers",
-  "pages": ["what-are-providers", "manage-providers", "docker-sandbox", "kubernetes-registry-access"]
+  "pages": ["what-are-providers", "manage-providers", "docker-sandbox", "microsandbox", "kubernetes-registry-access"]
 }
