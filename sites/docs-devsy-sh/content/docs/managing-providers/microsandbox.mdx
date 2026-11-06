@@ -14,6 +14,8 @@ devsy provider add --name microsandbox-external https://github.com/devsy-org/dev
 devsy workspace up . --provider microsandbox-external
 ```
 
+A successful add initializes the provider and makes it the default for the current context. Workspaces that do not specify a provider use the default. To keep the current default, add `--use=false` to the add command, then run `devsy provider init microsandbox-external` before creating a workspace.
+
 Choose another name if `microsandbox-external` already exists. Existing built-in configurations are not migrated automatically. The built-in provider is deprecated and is selected explicitly with `builtin:microsandbox` in current Devsy versions.
 
 The provider's SDK upgrades the `MSB_HOME` database, by default `~/.microsandbox`, when a workspace first starts. Older `msb` versions refuse the upgraded database. Older provider SDKs cannot run commands after the database is upgraded either. Update the provider and `msb` together.
@@ -42,3 +44,9 @@ Set options in Desktop or with `devsy provider set microsandbox-external -o KEY=
 If the runtime version cannot be recognized, update it with `msb self update`. If inspect output cannot be parsed, the provider reports the runtime version and an incompatibility reporting link. For a relocated runtime, set both executable and firmware paths. A partial pair fails instead of selecting another installation. The installed adapter's `runtime-check` command checks the pair and version without starting a VM, although it can initialize the native library cache.
 
 The external runtime driver does not support Compose devcontainers. Use a Docker driver provider when your workspace requires Compose.
+
+For a relocated runtime, `runtime-check` reads its process environment rather than saved provider options. Pass the same paths configured with `devsy provider set` to the installed adapter. For example, in a shell:
+
+```sh
+MSB_PATH=/opt/microsandbox/msb MSB_LIBKRUNFW_PATH=/opt/microsandbox/libkrunfw.so.5.6.1 /path/to/installed/adapter runtime-check
+```

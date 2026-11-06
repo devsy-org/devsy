@@ -16,6 +16,8 @@ devsy provider add https://github.com/devsy-org/devsy-provider-docker-sandbox/re
 devsy workspace up https://github.com/microsoft/vscode-remote-try-node --provider docker-sandbox
 ```
 
+A successful add makes Docker Sandboxes the default for the current context. To restore the previous default, run `devsy provider use <previous-name>`.
+
 Once a stable provider release is available, use `devsy provider add docker-sandbox` to install the latest stable release. Check its manifest for available hosts.
 
 The current provider source builds for macOS arm64, Linux amd64 and arm64, and Windows amd64. Only macOS arm64 has native VM qualification. The other hosts are built and unit tested only and run with a warning when published. macOS requires Apple silicon and macOS 14 or later. Linux requires Ubuntu 24.04 or later and accessible KVM. Windows requires Windows 11 and Windows Hypervisor Platform. A VM host needs nested virtualization.

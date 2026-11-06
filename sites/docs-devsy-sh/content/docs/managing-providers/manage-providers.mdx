@@ -86,6 +86,8 @@ Install the external provider from its release manifest:
 devsy provider add --name microsandbox-external https://github.com/devsy-org/devsy-provider-microsandbox/releases/latest/download/provider.yaml
 ```
 
+A successful add initializes the provider and makes it the default. To install it without initialization or changing the default, add `--use=false` and then run `devsy provider init microsandbox-external` before creating a workspace.
+
 The [MicroSandbox guide](./microsandbox.mdx) covers requirements, configuration and runtime compatibility. Choose another name if `microsandbox-external` already exists.
 
 **Existing built-in installations.** The built-in MicroSandbox provider is deprecated. Existing configurations are not migrated automatically. To switch one to the external provider, run:
