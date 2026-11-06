@@ -3,28 +3,36 @@ title: Docker Sandboxes
 sidebar_label: Docker Sandboxes
 ---
 
-The planned Docker Sandboxes provider runs each Devsy machine in a local `sbx` microVM. The Devsy agent uses the private Docker Engine inside that VM to build and run ordinary devcontainers. A host Docker Engine is not required.
+The Docker Sandboxes provider runs each Devsy machine in a local `sbx` microVM. Devsy uses the private Docker Engine inside the VM for devcontainers, including Compose. A host Docker Engine is not required.
 
-No qualified provider release exists yet. A source-only preview, if published, has no installable manifest or supported-host claim. The installation and machine instructions below apply only after native qualification and publication of an installable release. The short name cannot be installed before that release.
+## Requirements and installation
 
-## Requirements
+Install the [standalone `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/) and sign in using Docker's instructions. Configure Docker Sandboxes network policy separately. Install a compatible Devsy core release.
 
-Install the [standalone `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/) and sign in with `sbx login` outside Devsy. Keep the version listed in the provider release compatibility profile. The provider rejects versions and host systems that have not passed its native qualification.
-
-Local Docker Sandboxes require Apple silicon with macOS 14 or later, Windows 11 on amd64 with Windows Hypervisor Platform, or Ubuntu 24.04 or later on amd64 or arm64 with accessible KVM. A VM running the provider also needs nested virtualization. A host system is supported only if the provider release lists that system as qualified. Docker Desktop and a host Docker Engine are not required.
-
-After a qualified provider release is published, install it with:
+The v0.1.1 prerelease requires Devsy v1.27.0-beta.4 and contains a macOS arm64 binary. Install it explicitly while there is no stable provider release:
 
 ```sh
-devsy provider add docker-sandbox
-devsy workspace up https://github.com/devcontainers/samples --provider docker-sandbox
+devsy provider add https://github.com/devsy-org/devsy-provider-docker-sandbox/releases/download/v0.1.1/provider.yaml
+devsy workspace up https://github.com/microsoft/vscode-remote-try-node --provider docker-sandbox
 ```
 
-The Devsy Desktop setup wizard does not list this provider before a qualified release. The provider does not install `sbx`, sign in, open a login browser, or change Docker Sandboxes settings.
+Once a stable provider release is available, use `devsy provider add docker-sandbox` to install the latest stable release. Check its manifest for available hosts.
+
+The current provider source builds for macOS arm64, Linux amd64 and arm64, and Windows amd64. Only macOS arm64 has native VM qualification. The other hosts are built and unit tested only and run with a warning when published. macOS requires Apple silicon and macOS 14 or later. Linux requires Ubuntu 24.04 or later and accessible KVM. Windows requires Windows 11 and Windows Hypervisor Platform. A VM host needs nested virtualization.
+
+The current provider source warns for an unqualified `sbx` version and proceeds on a best effort basis. Doctor reports the warning too. Check the release documentation for the behavior of the version you install. Undecodable output, an identity mismatch, or a failed guest capacity probe still stops the operation.
 
 ## Machine resources
 
 Set machine options when creating the machine. `SBX_CPUS` sets virtual CPUs, `SBX_MEMORY` sets memory, `SBX_ROOT_DISK` sets space for the guest system and sources, and `SBX_DOCKER_DISK` sets space for Docker images, containers, and volumes. Sizes use integer binary `m` or `g` units. The defaults are two CPUs, `4g` of memory, and `40g` for each disk. `SBX_PATH` can select a different `sbx` executable. The provider validates these values before creating a VM.
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `SBX_PATH` | `sbx` | Executable name or absolute path. |
+| `SBX_CPUS` | `2` | CPUs, from one to the host logical CPU count. |
+| `SBX_MEMORY` | `4g` | Guest memory, at least `512m`. |
+| `SBX_ROOT_DISK` | `40g` | Guest root disk, at least `8g`. |
+| `SBX_DOCKER_DISK` | `40g` | Docker data disk, at least `512m`. |
 
 Resources cannot be resized in place. Create another machine and deliberately move the data you need before deleting the original. Changing a saved machine option does not destroy and recreate its VM.
 

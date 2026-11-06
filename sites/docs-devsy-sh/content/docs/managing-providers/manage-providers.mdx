@@ -10,7 +10,8 @@ Providers you can add:
 - [Kubernetes (kubernetes)](https://github.com/devsy-org/devsy/tree/main/providers/kubernetes)
 - [Harvester (harvester)](https://github.com/devsy-org/devsy-provider-harvester)
 - [Apple (apple)](https://github.com/devsy-org/devsy/tree/main/providers/apple)
-- [MicroSandbox (microsandbox)](https://github.com/devsy-org/devsy-provider-microsandbox)
+- [MicroSandbox (microsandbox)](./microsandbox.mdx)
+- [Docker Sandboxes (docker-sandbox)](./docker-sandbox.mdx)
 - [Lima (lima)](https://github.com/devsy-org/devsy-provider-lima)
 - [OrbStack (orbstack)](https://github.com/devsy-org/devsy-provider-orbstack)
 - [SSH (ssh)](https://github.com/devsy-org/devsy-provider-ssh)
@@ -19,7 +20,7 @@ Providers you can add:
 - [Azure (azure)](https://github.com/devsy-org/devsy-provider-azure)
 - [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
-Docker Sandboxes is not available yet. See its [qualification guide](./docker-sandbox.mdx) for the requirements of a future release.
+
 
 List the available providers:
 
@@ -89,7 +90,7 @@ This installs the latest external provider from `github.com/devsy-org/devsy-prov
 devsy provider add github.com/devsy-org/devsy-provider-microsandbox@v0.1.8
 ```
 
-The provider needs the `msb` CLI on the machine that runs the workspace. Install it with the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli) and check it with `msb --version`. `devsy workspace up <name> --recreate` requires MicroSandbox v0.7.7 or newer. The provider runs on Apple Silicon macOS, Linux with KVM and Windows with Windows Hypervisor Platform.
+The provider needs the `msb` CLI on the machine that runs the workspace. Install it with the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli) and check it with `msb --version`. The current provider requires MicroSandbox v0.7.13 or newer. The provider runs on Apple Silicon macOS, Linux with KVM and Windows with Windows Hypervisor Platform.
 
 **Existing built-in installations.** The built-in MicroSandbox provider is deprecated. Existing providers and workspaces keep working. To switch one to the external provider, run:
 
@@ -107,13 +108,7 @@ If a switch fails during initialization, the new source stays selected. Fix the 
 
 ### Docker Sandboxes
 
-A published release qualified for your host is required. After it exists, install the standalone `sbx` CLI, sign in with `sbx login`, and add the provider:
-
-```sh
-devsy provider add docker-sandbox
-```
-
-The [Docker Sandboxes guide](./docker-sandbox.mdx) covers qualified hosts, resource options, guest Docker, source files, networking, data deletion, and scoped recovery.
+Install the standalone `sbx` CLI and sign in. See the [Docker Sandboxes guide](./docker-sandbox.mdx) for the prerelease manifest, host availability, and recovery instructions.
 
 ## Set provider options
 
