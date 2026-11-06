@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -19,20 +20,23 @@ func TestTerminalSuite(t *testing.T) {
 func (s *TerminalSuite) TestAttachedRejectsPipes() {
 	inR, inW, err := os.Pipe()
 	s.Require().NoError(err)
-	defer inR.Close()
-	defer inW.Close()
+	defer func() { s.NoError(inR.Close()) }()
+	defer func() { s.NoError(inW.Close()) }()
 	outR, outW, err := os.Pipe()
 	s.Require().NoError(err)
-	defer outR.Close()
-	defer outW.Close()
+	defer func() { s.NoError(outR.Close()) }()
+	defer func() { s.NoError(outW.Close()) }()
 	s.ErrorIs(Attached(inR, outW), ErrNotAttached)
 }
 
 func (s *TerminalSuite) TestInputCancelUnblocksRead() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("pipe reads are not cancellable on Windows")
+	}
 	r, w, err := os.Pipe()
 	s.Require().NoError(err)
-	defer r.Close()
-	defer w.Close()
+	defer func() { s.NoError(r.Close()) }()
+	defer func() { s.NoError(w.Close()) }()
 	input, err := NewInput(r)
 	s.Require().NoError(err)
 	done := make(chan error, 1)

@@ -28,7 +28,7 @@ func (cmd *SetupContainerCmd) preAttach(
 		if err != nil {
 			return setup.DeferredHooks{}, err
 		}
-		defer session.Close(ctx)
+		defer func() { _ = session.Close(ctx) }()
 		if err := setup.ValidateInteractivePostStart(
 			state.setupInfo.MergedConfig.PostStartCommands,
 		); err != nil {

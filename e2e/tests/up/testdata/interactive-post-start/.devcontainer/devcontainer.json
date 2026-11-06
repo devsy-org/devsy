@@ -1,4 +1,8 @@
 {
   "image": "mcr.microsoft.com/devcontainers/base:debian",
-  "postStartCommand": ["bash", "-c", "read -r -p 'Name: ' name && echo \"Hello, $name\" > /tmp/interactive-post-start-result"]
+  "postStartCommand": [
+    "bash",
+    "-c",
+    "read -r -p 'Name: ' name && echo \"Hello, $name\" > /tmp/interactive-post-start-result"
+  ]
 }

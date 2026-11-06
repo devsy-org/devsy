@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
@@ -31,12 +32,6 @@ func ValidateInteractivePostStart(hooks []types.LifecycleHook) error {
 	return nil
 }
 
-type interactiveLaunch struct {
-	binary   string
-	args     []string
-	identity interactiveIdentity
-}
-
 func runInteractiveHook(p hookRunParams) error {
 	if p.content != "" {
 		skipped, err := markerExists(p.name, p.content)
@@ -49,20 +44,9 @@ func runInteractiveHook(p hookRunParams) error {
 			return nil
 		}
 	}
-	launches := make(map[int]interactiveLaunch)
-	for i, hook := range p.commands {
-		for _, command := range hook {
-			if len(command) == 0 {
-				continue
-			}
-			launch, err := prepareInteractiveLaunch(command, p.env.remoteUser)
-			if err != nil {
-				p.index = i
-				p.recordAll(workspacelogs.InvocationFailed, reasonStartFailed)
-				return fmt.Errorf("%s: %w", p.name, err)
-			}
-			launches[i] = launch
-		}
+	launches, err := prepareInteractiveHooks(p)
+	if err != nil {
+		return err
 	}
 	if p.content != "" {
 		if err := writeMarker(p.name, p.content); err != nil {
@@ -70,24 +54,7 @@ func runInteractiveHook(p hookRunParams) error {
 			return err
 		}
 	}
-	for i, hook := range p.commands {
-		p.index = i
-		for key, command := range hook {
-			if len(command) == 0 {
-				p.invocation(p.ctx, key).record(workspacelogs.InvocationSkipped, reasonNoCommand)
-				continue
-			}
-			if err := executeInteractive(
-				p,
-				hookCommand{key: key, c: command},
-				launches[i],
-			); err != nil {
-				p.recordFrom(i+1, workspacelogs.InvocationSkipped, reasonNotReached)
-				return err
-			}
-		}
-	}
-	return nil
+	return executeInteractiveHooks(p, launches)
 }
 
 func executeInteractive(p hookRunParams, command hookCommand, launch interactiveLaunch) error {
@@ -129,6 +96,34 @@ func executeInteractive(p hookRunParams, command hookCommand, launch interactive
 	if runErr == nil {
 		return nil
 	}
+	return interactiveError(p, command, result, runErr)
+}
+
+func prepareInteractiveHooks(p hookRunParams) (map[int]interactiveLaunch, error) {
+	launches := make(map[int]interactiveLaunch)
+	for i, hook := range p.commands {
+		for _, command := range hook {
+			if len(command) == 0 {
+				continue
+			}
+			launch, err := prepareInteractiveLaunch(command, p.env.remoteUser)
+			if err != nil {
+				p.index = i
+				p.recordAll(workspacelogs.InvocationFailed, reasonStartFailed)
+				return nil, fmt.Errorf("%s: %w", p.name, err)
+			}
+			launches[i] = launch
+		}
+	}
+	return launches, nil
+}
+
+func interactiveError(
+	p hookRunParams,
+	command hookCommand,
+	result subprocess.Result,
+	runErr error,
+) error {
 	display := strings.Join(command.c, " ")
 	if p.redactor != nil {
 		display = p.redactor.Redact(display)
@@ -143,4 +138,25 @@ func executeInteractive(p hookRunParams, command hookCommand, launch interactive
 		return fmt.Errorf("%s: command %q failed: exit code %d", p.name, display, result.ExitCode)
 	}
 	return fmt.Errorf("%s: command %q failed to start", p.name, display)
+}
+
+func executeInteractiveHooks(p hookRunParams, launches map[int]interactiveLaunch) error {
+	for i, hook := range p.commands {
+		p.index = i
+		for key, command := range hook {
+			if len(command) == 0 {
+				p.invocation(p.ctx, key).record(workspacelogs.InvocationSkipped, reasonNoCommand)
+				continue
+			}
+			if err := executeInteractive(
+				p,
+				hookCommand{key: key, c: command},
+				launches[i],
+			); err != nil {
+				p.recordFrom(i+1, workspacelogs.InvocationSkipped, reasonNotReached)
+				return err
+			}
+		}
+	}
+	return nil
 }

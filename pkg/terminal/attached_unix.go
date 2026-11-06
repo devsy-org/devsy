@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"syscall"
-	"unsafe"
 
 	dockerterm "github.com/moby/term"
 	"golang.org/x/sys/unix"
@@ -24,15 +22,9 @@ func Attached(stdin, stdout *os.File) error {
 		!dockerterm.IsTerminal(stdout.Fd()) {
 		return ErrNotAttached
 	}
-	var foreground int32
-	_, _, errno := syscall.Syscall(
-		syscall.SYS_IOCTL,
-		stdin.Fd(),
-		uintptr(unix.TIOCGPGRP),
-		uintptr(unsafe.Pointer(&foreground)),
-	)
-	if errno != 0 {
-		return fmt.Errorf("get terminal foreground process group: %w", errno)
+	foreground, err := unix.IoctlGetInt(int(stdin.Fd()), unix.TIOCGPGRP)
+	if err != nil {
+		return fmt.Errorf("get terminal foreground process group: %w", err)
 	}
 	if !isForegroundProcessGroup(int(foreground), unix.Getpgrp()) {
 		return ErrNotAttached

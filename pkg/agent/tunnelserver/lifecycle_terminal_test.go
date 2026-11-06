@@ -20,6 +20,14 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
+const (
+	testUID              = "uid"
+	testNonce            = "nonce"
+	testContext          = "context"
+	testBad              = "bad"
+	testPostStartCommand = "postStartCommand"
+)
+
 type terminalSuite struct {
 	suite.Suite
 	req provider2.LifecycleTerminalRequest
@@ -38,27 +46,10 @@ func TestLifecycleTerminalSuite(t *testing.T) { suite.Run(t, new(terminalSuite))
 func (s *terminalSuite) SetupTest() {
 	s.req = provider2.LifecycleTerminalRequest{
 		ProtocolVersion: 1,
-		WorkspaceUID:    "uid",
+		WorkspaceUID:    testUID,
 		Context:         "ctx",
-		Nonce:           "nonce",
+		Nonce:           testNonce,
 	}
-}
-
-func (s *terminalSuite) client(opts ...Option) tunnel.TunnelClient {
-	listener := bufconn.Listen(1 << 20)
-	server := grpc.NewServer()
-	tunnel.RegisterTunnelServer(server, New(opts...))
-	go func() { _ = server.Serve(listener) }()
-	conn, err := grpc.NewClient(
-		"passthrough:///terminal",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(
-			func(context.Context, string) (net.Conn, error) { return listener.Dial() },
-		),
-	)
-	s.Require().NoError(err)
-	s.T().Cleanup(func() { _ = conn.Close(); server.Stop(); _ = listener.Close() })
-	return tunnel.NewTunnelClient(conn)
 }
 
 func ready(stream tunnel.Tunnel_LifecycleTerminalServer) error {
@@ -109,16 +100,16 @@ func (s *terminalSuite) TestIdentityAndMissingOwner() {
 		serve: func(_ context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error { return ready(st) },
 	}
 	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
-	for _, field := range []string{"nonce", "uid", "context"} {
+	for _, field := range []string{testNonce, testUID, testContext} {
 		s.Run(field, func() {
 			req := s.req
 			switch field {
-			case "nonce":
-				req.Nonce = "bad"
-			case "uid":
-				req.WorkspaceUID = "bad"
-			case "context":
-				req.Context = "bad"
+			case testNonce:
+				req.Nonce = testBad
+			case testUID:
+				req.WorkspaceUID = testBad
+			case testContext:
+				req.Context = testBad
 			}
 			st, err := client.LifecycleTerminal(context.Background())
 			s.Require().NoError(err)
@@ -166,59 +157,20 @@ func (s *terminalSuite) TestDuplicateOwner() {
 func (s *terminalSuite) TestSessionOutputAndUseAfterExit() {
 	received := make(chan []byte, 1)
 	owner := testTerminalOwner{
-		serve: func(_ context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {
-			if err := ready(st); err != nil {
-				return err
-			}
-			f, err := st.Recv()
-			if err != nil {
-				return err
-			}
-			if err = ack(st, f.GetBegin().InvocationId); err != nil {
-				return err
-			}
-			var data []byte
-			for {
-				f, err = st.Recv()
-				if err != nil {
-					return err
-				}
-				if out := f.GetOutput(); out != nil {
-					data = append(data, out.Data...)
-					continue
-				}
-				if ex := f.GetExit(); ex != nil {
-					received <- data
-					if err = st.Send(
-						&tunnel.LifecycleTerminalResponse{
-							Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
-								ExitAck: &tunnel.LifecycleTerminalExitAck{
-									InvocationId: ex.InvocationId,
-								},
-							},
-						},
-					); err != nil {
-						return err
-					}
-					break
-				}
-			}
-			_, err = st.Recv()
-			return err
-		},
+		serve: (&ownerSessionOutputAndUseAfterExit{received: received}).serve,
 	}
 	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
 	session, err := OpenLifecycleTerminal(context.Background(), client, s.req)
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "one", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "one", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	s.Equal(uint16(25), a.Window().Rows)
 	_, err = session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "two", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "two", Phase: testPostStartCommand},
 	)
 	s.Equal(codes.FailedPrecondition, status.Code(err))
 	data := bytes.Repeat([]byte("abcdef"), 100000)
@@ -274,7 +226,7 @@ func (s *terminalSuite) TestInputOverflow() {
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	close(proceed)
@@ -295,55 +247,7 @@ func (s *terminalSuite) TestInputOverflow() {
 var _ io.Reader = (*terminalInput)(nil)
 
 func (s *terminalSuite) TestInvalidRequestFrames() {
-	tests := []struct {
-		name  string
-		frame *tunnel.LifecycleTerminalRequest
-		code  codes.Code
-	}{
-		{
-			"out_of_order",
-			&tunnel.LifecycleTerminalRequest{
-				Frame: &tunnel.LifecycleTerminalRequest_Output{
-					Output: &tunnel.LifecycleTerminalOutput{InvocationId: "id", Sequence: 2},
-				},
-			},
-			codes.FailedPrecondition,
-		},
-		{
-			"wrong_invocation",
-			&tunnel.LifecycleTerminalRequest{
-				Frame: &tunnel.LifecycleTerminalRequest_Output{
-					Output: &tunnel.LifecycleTerminalOutput{InvocationId: "other", Sequence: 1},
-				},
-			},
-			codes.FailedPrecondition,
-		},
-		{
-			"oversized",
-			&tunnel.LifecycleTerminalRequest{
-				Frame: &tunnel.LifecycleTerminalRequest_Output{
-					Output: &tunnel.LifecycleTerminalOutput{
-						InvocationId: "id",
-						Sequence:     1,
-						Data:         make([]byte, (32<<10)+1),
-					},
-				},
-			},
-			codes.ResourceExhausted,
-		},
-		{
-			"second_begin",
-			&tunnel.LifecycleTerminalRequest{
-				Frame: &tunnel.LifecycleTerminalRequest_Begin{
-					Begin: &tunnel.LifecycleTerminalBegin{
-						InvocationId: "two",
-						Phase:        "postStartCommand",
-					},
-				},
-			},
-			codes.FailedPrecondition,
-		},
-	}
+	tests := invalidRequestCases()
 	for _, tc := range tests {
 		s.Run(tc.name, func() {
 			owner := testTerminalOwner{
@@ -369,7 +273,13 @@ func (s *terminalSuite) TestInvalidRequestFrames() {
 			_, err = st.Recv()
 			s.Require().NoError(err)
 			s.Require().
-				NoError(st.Send(&tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Begin{Begin: &tunnel.LifecycleTerminalBegin{InvocationId: "id", Phase: "postStartCommand"}}}))
+				NoError(st.Send(&tunnel.LifecycleTerminalRequest{
+					Frame: &tunnel.LifecycleTerminalRequest_Begin{
+						Begin: &tunnel.LifecycleTerminalBegin{
+							InvocationId: "id", Phase: testPostStartCommand,
+						},
+					},
+				}))
 			_, err = st.Recv()
 			s.Require().NoError(err)
 			s.Require().NoError(st.Send(tc.frame))
@@ -458,7 +368,7 @@ func (s *terminalSuite) TestExitAckTimeoutClosesSession() {
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	started := time.Now()
@@ -467,7 +377,7 @@ func (s *terminalSuite) TestExitAckTimeoutClosesSession() {
 	s.ErrorIs(err, context.DeadlineExceeded)
 	_, err = session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "next", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "next", Phase: testPostStartCommand},
 	)
 	s.Error(err)
 }
@@ -475,56 +385,7 @@ func (s *terminalSuite) TestExitAckTimeoutClosesSession() {
 func (s *terminalSuite) TestTwoHopFrameExchange() {
 	data := []byte("prompt without newline")
 	owner := testTerminalOwner{
-		serve: func(_ context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {
-			if err := ready(st); err != nil {
-				return err
-			}
-			f, err := st.Recv()
-			if err != nil {
-				return err
-			}
-			id := f.GetBegin().InvocationId
-			if err = ack(st, id); err != nil {
-				return err
-			}
-			f, err = st.Recv()
-			if err != nil {
-				return err
-			}
-			if !bytes.Equal(f.GetOutput().Data, data) {
-				return status.Error(codes.DataLoss, "wrong data")
-			}
-			if err = st.Send(
-				&tunnel.LifecycleTerminalResponse{
-					Frame: &tunnel.LifecycleTerminalResponse_Input{
-						Input: &tunnel.LifecycleTerminalInput{
-							InvocationId: id,
-							Data:         []byte("reply"),
-						},
-					},
-				},
-			); err != nil {
-				return err
-			}
-			f, err = st.Recv()
-			if err != nil {
-				return err
-			}
-			if f.GetExit() == nil {
-				return status.Error(codes.FailedPrecondition, "missing exit")
-			}
-			if err = st.Send(
-				&tunnel.LifecycleTerminalResponse{
-					Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
-						ExitAck: &tunnel.LifecycleTerminalExitAck{InvocationId: id},
-					},
-				},
-			); err != nil {
-				return err
-			}
-			_, err = st.Recv()
-			return err
-		},
+		serve: (&ownerTwoHopFrameExchange{data: data}).serve,
 	}
 	cli := s.client(WithLifecycleTerminalOwner(owner, s.req))
 	host := s.client(WithLifecycleTerminalUpstream(cli, s.req))
@@ -532,7 +393,7 @@ func (s *terminalSuite) TestTwoHopFrameExchange() {
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	_, err = a.Output().Write(data)
@@ -547,54 +408,14 @@ func (s *terminalSuite) TestTwoHopFrameExchange() {
 
 func (s *terminalSuite) TestConcurrentOwnerSendsSerialize() {
 	owner := testTerminalOwner{
-		serve: func(_ context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {
-			if err := ready(st); err != nil {
-				return err
-			}
-			f, err := st.Recv()
-			if err != nil {
-				return err
-			}
-			id := f.GetBegin().InvocationId
-			if err = ack(st, id); err != nil {
-				return err
-			}
-			errs := make(chan error, 2)
-			for _, b := range []byte{'a', 'b'} {
-				go func(c byte) {
-					errs <- st.Send(&tunnel.LifecycleTerminalResponse{Frame: &tunnel.LifecycleTerminalResponse_Input{Input: &tunnel.LifecycleTerminalInput{InvocationId: id, Data: []byte{c}}}})
-				}(b)
-			}
-			for range 2 {
-				if err = <-errs; err != nil {
-					return err
-				}
-			}
-			f, err = st.Recv()
-			if err != nil {
-				return err
-			}
-			if err = st.Send(
-				&tunnel.LifecycleTerminalResponse{
-					Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
-						ExitAck: &tunnel.LifecycleTerminalExitAck{
-							InvocationId: f.GetExit().InvocationId,
-						},
-					},
-				},
-			); err != nil {
-				return err
-			}
-			_, err = st.Recv()
-			return err
-		},
+		serve: ownerConcurrentOwnerSendsSerialize,
 	}
 	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
 	session, err := OpenLifecycleTerminal(context.Background(), client, s.req)
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	buf := make([]byte, 2)
@@ -647,7 +468,7 @@ func (s *terminalSuite) TestInputCloseUnblocksRead() {
 			if err = ack(st, id); err != nil {
 				return err
 			}
-			f, err = st.Recv()
+			_, err = st.Recv()
 			if err != nil {
 				return err
 			}
@@ -669,7 +490,7 @@ func (s *terminalSuite) TestInputCloseUnblocksRead() {
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	reader, ok := a.Input().(io.ReadCloser)
@@ -692,58 +513,14 @@ func (s *terminalSuite) TestOutputBackpressurePreservesBytes() {
 	stalled := make(chan struct{})
 	release := make(chan struct{})
 	owner := testTerminalOwner{
-		serve: func(ctx context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {
-			if err := ready(st); err != nil {
-				return err
-			}
-			f, err := st.Recv()
-			if err != nil {
-				return err
-			}
-			id := f.GetBegin().InvocationId
-			if err = ack(st, id); err != nil {
-				return err
-			}
-			close(stalled)
-			select {
-			case <-release:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-			var data []byte
-			for {
-				f, err = st.Recv()
-				if err != nil {
-					return err
-				}
-				if out := f.GetOutput(); out != nil {
-					data = append(data, out.Data...)
-					continue
-				}
-				if f.GetExit() != nil {
-					received <- data
-					if err = st.Send(
-						&tunnel.LifecycleTerminalResponse{
-							Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
-								ExitAck: &tunnel.LifecycleTerminalExitAck{InvocationId: id},
-							},
-						},
-					); err != nil {
-						return err
-					}
-					break
-				}
-			}
-			_, err = st.Recv()
-			return err
-		},
+		serve: (&ownerOutputBackpressurePreservesBytes{received: received, stalled: stalled, release: release}).serve,
 	}
 	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
 	session, err := OpenLifecycleTerminal(context.Background(), client, s.req)
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	payload := bytes.Repeat([]byte("12345678"), 1<<20)
@@ -814,7 +591,7 @@ func (s *terminalSuite) TestInvalidResponseFrames() {
 			s.Require().NoError(err)
 			_, err = session.Begin(
 				context.Background(),
-				tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+				tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 			)
 			s.Equal(tc.code, status.Code(err))
 		})
@@ -825,53 +602,14 @@ func (s *terminalSuite) TestCancelWithFullInputBuffer() {
 	proceed := make(chan struct{})
 	sent := make(chan struct{})
 	owner := testTerminalOwner{
-		serve: func(ctx context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {
-			if err := ready(st); err != nil {
-				return err
-			}
-			f, err := st.Recv()
-			if err != nil {
-				return err
-			}
-			id := f.GetBegin().InvocationId
-			if err = ack(st, id); err != nil {
-				return err
-			}
-			<-proceed
-			for range 8 {
-				if err = st.Send(
-					&tunnel.LifecycleTerminalResponse{
-						Frame: &tunnel.LifecycleTerminalResponse_Input{
-							Input: &tunnel.LifecycleTerminalInput{
-								InvocationId: id,
-								Data:         make([]byte, 32<<10),
-							},
-						},
-					},
-				); err != nil {
-					return err
-				}
-			}
-			if err = st.Send(
-				&tunnel.LifecycleTerminalResponse{
-					Frame: &tunnel.LifecycleTerminalResponse_Cancel{
-						Cancel: &tunnel.LifecycleTerminalCancel{InvocationId: id},
-					},
-				},
-			); err != nil {
-				return err
-			}
-			close(sent)
-			<-ctx.Done()
-			return ctx.Err()
-		},
+		serve: (&ownerCancelWithFullInputBuffer{proceed: proceed, sent: sent}).serve,
 	}
 	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
 	session, err := OpenLifecycleTerminal(context.Background(), client, s.req)
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	close(proceed)
@@ -890,40 +628,9 @@ func (s *terminalSuite) TestBlockedServerSendExitsAfterHandlerReturn() {
 	senderDone := make(chan struct{})
 	sending := make(chan struct{})
 	owner := testTerminalOwner{
-		serve: func(_ context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {
-			if err := ready(st); err != nil {
-				return err
-			}
-			f, err := st.Recv()
-			if err != nil {
-				return err
-			}
-			id := f.GetBegin().InvocationId
-			if err = ack(st, id); err != nil {
-				return err
-			}
-			go func() {
-				defer close(senderDone)
-				close(sending)
-				for {
-					err = st.Send(
-						&tunnel.LifecycleTerminalResponse{
-							Frame: &tunnel.LifecycleTerminalResponse_Input{
-								Input: &tunnel.LifecycleTerminalInput{
-									InvocationId: id,
-									Data:         make([]byte, 32<<10),
-								},
-							},
-						},
-					)
-					if err != nil {
-						return
-					}
-				}
-			}()
-			<-release
-			return nil
-		},
+		serve: (&ownerBlockedServerSendExitsAfterHandlerReturn{
+			release: release, senderDone: senderDone, sending: sending,
+		}).serve,
 	}
 	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
 	st, err := client.LifecycleTerminal(context.Background())
@@ -932,7 +639,11 @@ func (s *terminalSuite) TestBlockedServerSendExitsAfterHandlerReturn() {
 	_, err = st.Recv()
 	s.Require().NoError(err)
 	s.Require().
-		NoError(st.Send(&tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Begin{Begin: &tunnel.LifecycleTerminalBegin{InvocationId: "id", Phase: "postStartCommand"}}}))
+		NoError(st.Send(&tunnel.LifecycleTerminalRequest{
+			Frame: &tunnel.LifecycleTerminalRequest_Begin{Begin: &tunnel.LifecycleTerminalBegin{
+				InvocationId: "id", Phase: testPostStartCommand,
+			}},
+		}))
 	_, err = st.Recv()
 	s.Require().NoError(err)
 	<-sending
@@ -981,7 +692,7 @@ func (s *terminalSuite) TestOversizedInputFrame() {
 	s.Require().NoError(err)
 	a, err := session.Begin(
 		context.Background(),
-		tunnel.TerminalInvocation{ID: "id", Phase: "postStartCommand"},
+		tunnel.TerminalInvocation{ID: "id", Phase: testPostStartCommand},
 	)
 	s.Require().NoError(err)
 	close(proceed)
@@ -1022,4 +733,408 @@ func (s *terminalSuite) TestForwarderReceiveExitsAfterUpstreamFailure() {
 	)
 	s.NoError(goleak.Find(opts...))
 	_ = session.Close(context.Background())
+}
+
+func (s *terminalSuite) client(opts ...Option) tunnel.TunnelClient {
+	listener := bufconn.Listen(1 << 20)
+	server := grpc.NewServer()
+	tunnel.RegisterTunnelServer(server, New(opts...))
+	go func() { _ = server.Serve(listener) }()
+	conn, err := grpc.NewClient(
+		"passthrough:///terminal",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(
+			func(context.Context, string) (net.Conn, error) { return listener.Dial() },
+		),
+	)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = conn.Close(); server.Stop(); _ = listener.Close() })
+	return tunnel.NewTunnelClient(conn)
+}
+
+type ownerSessionOutputAndUseAfterExit struct {
+	received chan []byte
+}
+
+func (o *ownerSessionOutputAndUseAfterExit) serve(
+	_ context.Context,
+	st tunnel.Tunnel_LifecycleTerminalServer,
+) error {
+	if err := ready(st); err != nil {
+		return err
+	}
+	f, err := st.Recv()
+	if err != nil {
+		return err
+	}
+	if err = ack(st, f.GetBegin().InvocationId); err != nil {
+		return err
+	}
+	return o.receiveOutput(st)
+}
+
+type ownerTwoHopFrameExchange struct {
+	data []byte
+}
+
+func (o *ownerTwoHopFrameExchange) serve(
+	_ context.Context,
+	st tunnel.Tunnel_LifecycleTerminalServer,
+) error {
+	if err := ready(st); err != nil {
+		return err
+	}
+	f, err := st.Recv()
+	if err != nil {
+		return err
+	}
+	id := f.GetBegin().InvocationId
+	if err = ack(st, id); err != nil {
+		return err
+	}
+	return o.exchange(st, id)
+}
+
+func ownerConcurrentOwnerSendsSerialize(
+	_ context.Context,
+	st tunnel.Tunnel_LifecycleTerminalServer,
+) error {
+	if err := ready(st); err != nil {
+		return err
+	}
+	f, err := st.Recv()
+	if err != nil {
+		return err
+	}
+	id := f.GetBegin().InvocationId
+	if err = ack(st, id); err != nil {
+		return err
+	}
+	return concurrentOwnerExchange(st, id)
+}
+
+type ownerOutputBackpressurePreservesBytes struct {
+	received chan []byte
+	stalled  chan struct{}
+	release  chan struct{}
+}
+
+func (o *ownerOutputBackpressurePreservesBytes) serve(
+	ctx context.Context,
+	st tunnel.Tunnel_LifecycleTerminalServer,
+) error {
+	if err := ready(st); err != nil {
+		return err
+	}
+	f, err := st.Recv()
+	if err != nil {
+		return err
+	}
+	id := f.GetBegin().InvocationId
+	if err = ack(st, id); err != nil {
+		return err
+	}
+	close(o.stalled)
+	select {
+	case <-o.release:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return o.receiveOutput(st, id)
+}
+
+type ownerCancelWithFullInputBuffer struct {
+	proceed chan struct{}
+	sent    chan struct{}
+}
+
+func (o *ownerCancelWithFullInputBuffer) serve(
+	ctx context.Context,
+	st tunnel.Tunnel_LifecycleTerminalServer,
+) error {
+	if err := ready(st); err != nil {
+		return err
+	}
+	f, err := st.Recv()
+	if err != nil {
+		return err
+	}
+	id := f.GetBegin().InvocationId
+	if err = ack(st, id); err != nil {
+		return err
+	}
+	<-o.proceed
+	for range 8 {
+		if err = st.Send(
+			&tunnel.LifecycleTerminalResponse{
+				Frame: &tunnel.LifecycleTerminalResponse_Input{
+					Input: &tunnel.LifecycleTerminalInput{
+						InvocationId: id,
+						Data:         make([]byte, 32<<10),
+					},
+				},
+			},
+		); err != nil {
+			return err
+		}
+	}
+	if err = st.Send(
+		&tunnel.LifecycleTerminalResponse{
+			Frame: &tunnel.LifecycleTerminalResponse_Cancel{
+				Cancel: &tunnel.LifecycleTerminalCancel{InvocationId: id},
+			},
+		},
+	); err != nil {
+		return err
+	}
+	close(o.sent)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+type ownerBlockedServerSendExitsAfterHandlerReturn struct {
+	release    chan struct{}
+	senderDone chan struct{}
+	sending    chan struct{}
+}
+
+func (o *ownerBlockedServerSendExitsAfterHandlerReturn) serve(
+	_ context.Context,
+	st tunnel.Tunnel_LifecycleTerminalServer,
+) error {
+	if err := ready(st); err != nil {
+		return err
+	}
+	f, err := st.Recv()
+	if err != nil {
+		return err
+	}
+	id := f.GetBegin().InvocationId
+	if err = ack(st, id); err != nil {
+		return err
+	}
+	go func() {
+		defer close(o.senderDone)
+		close(o.sending)
+		for {
+			err = st.Send(
+				&tunnel.LifecycleTerminalResponse{
+					Frame: &tunnel.LifecycleTerminalResponse_Input{
+						Input: &tunnel.LifecycleTerminalInput{
+							InvocationId: id,
+							Data:         make([]byte, 32<<10),
+						},
+					},
+				},
+			)
+			if err != nil {
+				return
+			}
+		}
+	}()
+	<-o.release
+	return nil
+}
+
+func invalidRequestCases() []struct {
+	name  string
+	frame *tunnel.LifecycleTerminalRequest
+	code  codes.Code
+} {
+	return []struct {
+		name  string
+		frame *tunnel.LifecycleTerminalRequest
+		code  codes.Code
+	}{
+		{
+			"out_of_order",
+			&tunnel.LifecycleTerminalRequest{
+				Frame: &tunnel.LifecycleTerminalRequest_Output{
+					Output: &tunnel.LifecycleTerminalOutput{InvocationId: "id", Sequence: 2},
+				},
+			},
+			codes.FailedPrecondition,
+		},
+		{
+			"wrong_invocation",
+			&tunnel.LifecycleTerminalRequest{
+				Frame: &tunnel.LifecycleTerminalRequest_Output{
+					Output: &tunnel.LifecycleTerminalOutput{InvocationId: "other", Sequence: 1},
+				},
+			},
+			codes.FailedPrecondition,
+		},
+		{
+			"oversized",
+			&tunnel.LifecycleTerminalRequest{
+				Frame: &tunnel.LifecycleTerminalRequest_Output{
+					Output: &tunnel.LifecycleTerminalOutput{
+						InvocationId: "id",
+						Sequence:     1,
+						Data:         make([]byte, (32<<10)+1),
+					},
+				},
+			},
+			codes.ResourceExhausted,
+		},
+		{
+			"second_begin",
+			&tunnel.LifecycleTerminalRequest{
+				Frame: &tunnel.LifecycleTerminalRequest_Begin{
+					Begin: &tunnel.LifecycleTerminalBegin{
+						InvocationId: "two",
+						Phase:        testPostStartCommand,
+					},
+				},
+			},
+			codes.FailedPrecondition,
+		},
+	}
+}
+
+func (o *ownerSessionOutputAndUseAfterExit) receiveOutput(
+	st tunnel.Tunnel_LifecycleTerminalServer,
+) error {
+	var data []byte
+	var f *tunnel.LifecycleTerminalRequest
+	var err error
+	for {
+		f, err = st.Recv()
+		if err != nil {
+			return err
+		}
+		if out := f.GetOutput(); out != nil {
+			data = append(data, out.Data...)
+			continue
+		}
+		if ex := f.GetExit(); ex != nil {
+			o.received <- data
+			if err = st.Send(
+				&tunnel.LifecycleTerminalResponse{
+					Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
+						ExitAck: &tunnel.LifecycleTerminalExitAck{
+							InvocationId: ex.InvocationId,
+						},
+					},
+				},
+			); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	_, err = st.Recv()
+	return err
+}
+
+func (o *ownerTwoHopFrameExchange) exchange(
+	st tunnel.Tunnel_LifecycleTerminalServer,
+	id string,
+) error {
+	f, err := st.Recv()
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(f.GetOutput().Data, o.data) {
+		return status.Error(codes.DataLoss, "wrong o.data")
+	}
+	if err = st.Send(
+		&tunnel.LifecycleTerminalResponse{
+			Frame: &tunnel.LifecycleTerminalResponse_Input{
+				Input: &tunnel.LifecycleTerminalInput{
+					InvocationId: id,
+					Data:         []byte("reply"),
+				},
+			},
+		},
+	); err != nil {
+		return err
+	}
+	f, err = st.Recv()
+	if err != nil {
+		return err
+	}
+	if f.GetExit() == nil {
+		return status.Error(codes.FailedPrecondition, "missing exit")
+	}
+	if err = st.Send(
+		&tunnel.LifecycleTerminalResponse{
+			Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
+				ExitAck: &tunnel.LifecycleTerminalExitAck{InvocationId: id},
+			},
+		},
+	); err != nil {
+		return err
+	}
+	_, err = st.Recv()
+	return err
+}
+
+func concurrentOwnerExchange(st tunnel.Tunnel_LifecycleTerminalServer, id string) error {
+	errs := make(chan error, 2)
+	for _, b := range []byte{'a', 'b'} {
+		go func(c byte) {
+			errs <- st.Send(&tunnel.LifecycleTerminalResponse{
+				Frame: &tunnel.LifecycleTerminalResponse_Input{Input: &tunnel.LifecycleTerminalInput{
+					InvocationId: id, Data: []byte{c},
+				}},
+			})
+		}(b)
+	}
+	for range 2 {
+		if err := <-errs; err != nil {
+			return err
+		}
+	}
+	f, err := st.Recv()
+	if err != nil {
+		return err
+	}
+	if err = st.Send(
+		&tunnel.LifecycleTerminalResponse{
+			Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
+				ExitAck: &tunnel.LifecycleTerminalExitAck{
+					InvocationId: f.GetExit().InvocationId,
+				},
+			},
+		},
+	); err != nil {
+		return err
+	}
+	_, err = st.Recv()
+	return err
+}
+
+func (o *ownerOutputBackpressurePreservesBytes) receiveOutput(
+	st tunnel.Tunnel_LifecycleTerminalServer,
+	id string,
+) error {
+	var data []byte
+	var f *tunnel.LifecycleTerminalRequest
+	var err error
+	for {
+		f, err = st.Recv()
+		if err != nil {
+			return err
+		}
+		if out := f.GetOutput(); out != nil {
+			data = append(data, out.Data...)
+			continue
+		}
+		if f.GetExit() != nil {
+			o.received <- data
+			if err = st.Send(
+				&tunnel.LifecycleTerminalResponse{
+					Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
+						ExitAck: &tunnel.LifecycleTerminalExitAck{InvocationId: id},
+					},
+				},
+			); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	_, err = st.Recv()
+	return err
 }

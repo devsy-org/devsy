@@ -1,4 +1,4 @@
-//go:build unix
+//go:build linux
 
 package setup
 
@@ -22,6 +22,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/suite"
 )
+
+const testTempDir = "/tmp"
 
 type terminalTestSuite struct {
 	suite.Suite
@@ -122,41 +124,9 @@ func (s *terminalTestSuite) SetupTest() {
 		u.Gid,
 		u.HomeDir,
 	)
-	s.Require().NoError(os.WriteFile(filepath.Join(dir, "getent"), []byte(script), 0o700))
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, "getent"), []byte(script), 0o600))
+	s.Require().NoError(os.Chmod(filepath.Join(dir, "getent"), executableTestMode()))
 	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
-func (s *terminalTestSuite) params(
-	ctx context.Context,
-	a *testTerminal,
-	command string,
-) hookRunParams {
-	return hookRunParams{
-		ctx:      ctx,
-		commands: []types.LifecycleHook{{"": {command}}},
-		env:      lifecycleEnv{remoteUser: s.username, workspaceFolder: s.T().TempDir()},
-		name:     "postStartCommands",
-		hook:     string(PhasePostStart),
-		plan:     &hookPlan{},
-		terminal: a,
-	}
-}
-
-func (s *terminalTestSuite) run(p hookRunParams) <-chan error {
-	done := make(chan error, 1)
-	go func() { done <- runHook(p) }()
-	return done
-}
-
-func (s *terminalTestSuite) result(done <-chan error) error {
-	s.T().Helper()
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(12 * time.Second):
-		s.T().Fatal("executor did not complete")
-		return nil
-	}
 }
 
 func (s *terminalTestSuite) TestPromptTTYAndMarker() {
@@ -169,7 +139,7 @@ func (s *terminalTestSuite) TestPromptTTYAndMarker() {
 	outer := ptytest.New(s.T())
 	a.outputOverride = outer.Output().Writer
 	done := s.run(p)
-	outer.ExpectMatch("Name:")
+	outer.ExpectMatchContext(s.T().Context(), "Name:")
 	_, err := a.writer.Write([]byte("alice\n"))
 	s.Require().NoError(err)
 	s.Require().NoError(s.result(done))
@@ -281,7 +251,7 @@ func (s *terminalTestSuite) TestRemoteUserTTYReopen() {
 	a := newTestTerminal()
 	p := s.params(context.Background(), a, `test -w "$(tty)" && (echo reopened > "$(tty)")`)
 	p.env.remoteUser = target.Username
-	p.env.workspaceFolder = "/tmp"
+	p.env.workspaceFolder = testTempDir
 	dir := s.T().TempDir()
 	script := fmt.Sprintf(
 		"#!/bin/sh\nprintf '%%s\\n' '%s:x:%s:%s::%s:/bin/sh'\n",
@@ -290,7 +260,8 @@ func (s *terminalTestSuite) TestRemoteUserTTYReopen() {
 		target.Gid,
 		target.HomeDir,
 	)
-	s.Require().NoError(os.WriteFile(filepath.Join(dir, "getent"), []byte(script), 0o700))
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, "getent"), []byte(script), 0o600))
+	s.Require().NoError(os.Chmod(filepath.Join(dir, "getent"), executableTestMode()))
 	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	s.Require().NoError(s.result(s.run(p)))
 	s.Contains(a.output.String(), "reopened")
@@ -307,7 +278,9 @@ func (s *terminalTestSuite) TestValidationBeforeExecution() {
 	result.MergedConfig.OnCreateCommands = []types.LifecycleHook{
 		{"": {fmt.Sprintf("touch %s", filepath.Join(dir, "ran"))}},
 	}
-	result.MergedConfig.PostStartCommands = []types.LifecycleHook{{"a": {"true"}, "b": {"true"}}}
+	result.MergedConfig.PostStartCommands = []types.LifecycleHook{
+		{"a": {trueCommand}, "b": {trueCommand}},
+	}
 	_, err := RunPreAttachHooks(context.Background(), result, PreAttachOptions{Terminal: a})
 	s.ErrorContains(err, "postStartCommand")
 	_, err = os.Stat(filepath.Join(dir, "ran"))
@@ -330,7 +303,7 @@ func (s *terminalTestSuite) TestFloorAndStoredWaitFor() {
 				SubstitutionContext: &config.SubstitutionContext{ContainerWorkspaceFolder: dir},
 			}
 			result.MergedConfig.WaitFor = configured
-			result.MergedConfig.PostStartCommands = []types.LifecycleHook{{"": {"true"}}}
+			result.MergedConfig.PostStartCommands = []types.LifecycleHook{{"": {trueCommand}}}
 			result.MergedConfig.RemoteUser = s.username
 			deferred, err := RunPreAttachHooks(
 				context.Background(),
@@ -374,7 +347,8 @@ func (s *terminalTestSuite) TestArgvAndLargeInput() {
 			"argv": {
 				"sh",
 				"-c",
-				`stty raw -echo; printf 'ready:'; head -c 65536 /dev/zero | tr '\000' x; dd bs=1024 count=128 of=/dev/null 2>/dev/null; printf done`,
+				`stty raw -echo; printf 'ready:'; head -c 65536 /dev/zero | tr '\000' x; ` +
+					`dd bs=1024 count=128 of=/dev/null 2>/dev/null; printf done`,
 			},
 		},
 	}
@@ -419,4 +393,41 @@ func (s *terminalTestSuite) TestNoninteractivePostStartRemainsPipeBased() {
 	}
 	_, err := RunPreAttachHooks(context.Background(), result, PreAttachOptions{})
 	s.NoError(err)
+}
+
+func (s *terminalTestSuite) params(
+	ctx context.Context,
+	a *testTerminal,
+	command string,
+) hookRunParams {
+	return hookRunParams{
+		ctx:      ctx,
+		commands: []types.LifecycleHook{{"": {command}}},
+		env:      lifecycleEnv{remoteUser: s.username, workspaceFolder: s.T().TempDir()},
+		name:     "postStartCommands",
+		hook:     string(PhasePostStart),
+		plan:     &hookPlan{},
+		terminal: a,
+	}
+}
+
+func (s *terminalTestSuite) run(p hookRunParams) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- runHook(p) }()
+	return done
+}
+
+func (s *terminalTestSuite) result(done <-chan error) error {
+	s.T().Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(12 * time.Second):
+		s.T().Fatal("executor did not complete")
+		return nil
+	}
+}
+
+func executableTestMode() os.FileMode {
+	return 0o600 | 0o100
 }

@@ -24,7 +24,7 @@ func (s *UnixTerminalSuite) TestAttachedForegroundAndBackgroundPTY() {
 	device := ptytest.New(s.T())
 	f, err := os.OpenFile(device.Name(), os.O_RDWR, 0)
 	s.Require().NoError(err)
-	defer f.Close()
+	defer func() { s.NoError(f.Close()) }()
 	s.Error(Attached(f, f))
 }
 
@@ -32,7 +32,7 @@ func (s *UnixTerminalSuite) TestRawModeRestoreAndRegistryOnPTY() {
 	device := ptytest.New(s.T())
 	f, err := os.OpenFile(device.Name(), os.O_RDWR, 0)
 	s.Require().NoError(err)
-	defer f.Close()
+	defer func() { s.NoError(f.Close()) }()
 	restore, err := EnterRaw(f, f)
 	s.Require().NoError(err)
 	second, err := EnterRaw(f, f)

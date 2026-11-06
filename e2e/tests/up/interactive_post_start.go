@@ -18,6 +18,8 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const interactivePostStartFlag = "--interactive-post-start"
+
 type terminalOutputBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -35,19 +37,28 @@ func (b *terminalOutputBuffer) String() string {
 	return b.buf.String()
 }
 
+type interactiveUpOptions struct {
+	prompt bool
+	args   []string
+}
+
 func interactiveUp(
 	ctx context.Context,
 	f *framework.Framework,
 	dir string,
-	prompt bool,
-	args ...string,
+	opts interactiveUpOptions,
 ) string {
-	argv := append([]string{"workspace", "up", dir, "--ide", "none"}, args...)
-	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), argv...)
+	argv := append(
+		[]string{cmdWorkspace, "up", dir, flagIDEOption, kubernetesIgnoreIDE},
+		opts.args...)
+	path := filepath.Clean(filepath.Join(f.DevsyBinDir, f.DevsyBinName))
+	cmd := exec.CommandContext(ctx, "/dev/null")
+	cmd.Path = path
+	cmd.Args = append([]string{path}, argv...)
 	terminal, err := pty.Start(cmd)
 	framework.ExpectNoError(err)
-	defer terminal.Close()
-	defer cmd.Process.Kill()
+	defer func() { _ = terminal.Close() }()
+	defer func() { _ = cmd.Process.Kill() }()
 	var output terminalOutputBuffer
 	done := make(chan struct{})
 	go func() {
@@ -56,7 +67,7 @@ func interactiveUp(
 	}()
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	if prompt {
+	if opts.prompt {
 		gomega.Eventually(func() bool {
 			select {
 			case err := <-waited:
@@ -91,22 +102,34 @@ var _ = ginkgo.Describe("interactive post start", ginkgo.Label("up-provider-dock
 	ginkgo.It("accepts input and prompts once per start", func(ctx context.Context) {
 		dir, err := setupWorkspace("tests/up/testdata/interactive-post-start", initialDir, f)
 		framework.ExpectNoError(err)
-		out := interactiveUp(ctx, f, dir, true, "--interactive-post-start")
+		out := interactiveUp(
+			ctx,
+			f,
+			dir,
+			interactiveUpOptions{prompt: true, args: []string{interactivePostStartFlag}},
+		)
 		gomega.Expect(strings.Count(out, "Name:")).To(gomega.Equal(1))
 		result, err := f.DevsySSH(ctx, dir, "cat /tmp/interactive-post-start-result")
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(result)).To(gomega.Equal("Hello, Devsy"))
-		out = interactiveUp(ctx, f, dir, false)
+		out = interactiveUp(ctx, f, dir, interactiveUpOptions{})
 		gomega.Expect(out).NotTo(gomega.ContainSubstring("Name:"))
 		framework.ExpectNoError(f.DevsyWorkspaceStop(ctx, dir))
-		out = interactiveUp(ctx, f, dir, true, "--interactive-post-start")
+		out = interactiveUp(
+			ctx,
+			f,
+			dir,
+			interactiveUpOptions{prompt: true, args: []string{interactivePostStartFlag}},
+		)
 		gomega.Expect(strings.Count(out, "Name:")).To(gomega.Equal(1))
 	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 	ginkgo.It("provides terminal stdin and stdout", func(ctx context.Context) {
 		dir, err := setupWorkspace("tests/up/testdata/interactive-post-start", initialDir, f)
 		framework.ExpectNoError(err)
-		config := `{"image":"mcr.microsoft.com/devcontainers/base:debian","postStartCommand":["bash","-c","if test -t 0 && test -t 1; then echo yes > /tmp/interactive-tty; else echo no > /tmp/interactive-tty; fi"]}`
+		config := `{"image":"mcr.microsoft.com/devcontainers/base:debian",` +
+			`"postStartCommand":["bash","-c",` +
+			`"if test -t 0 && test -t 1; then echo yes > /tmp/interactive-tty; else echo no > /tmp/interactive-tty; fi"]}`
 		framework.ExpectNoError(
 			os.WriteFile(
 				filepath.Join(dir, ".devcontainer", "devcontainer.json"),
@@ -114,7 +137,7 @@ var _ = ginkgo.Describe("interactive post start", ginkgo.Label("up-provider-dock
 				0o600,
 			),
 		)
-		interactiveUp(ctx, f, dir, false, "--interactive-post-start")
+		interactiveUp(ctx, f, dir, interactiveUpOptions{args: []string{interactivePostStartFlag}})
 		result, err := f.DevsySSH(ctx, dir, "cat /tmp/interactive-tty")
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(result)).To(gomega.Equal("yes"))
@@ -128,11 +151,19 @@ var _ = ginkgo.Describe("interactive post start", ginkgo.Label("up-provider-dock
 				args    []string
 				message string
 			}{
-				{[]string{"--interactive-post-start", "--detach"}, "--interactive-post-start cannot be combined with --detach"},
-				{[]string{"--interactive-post-start"}, "--interactive-post-start requires attached stdin and stdout terminals"},
+				{[]string{interactivePostStartFlag, "--detach"}, "--interactive-post-start cannot be combined with --detach"},
+				{[]string{interactivePostStartFlag}, "--interactive-post-start requires attached stdin and stdout terminals"},
 			} {
 				args := append(
-					[]string{"workspace", "up", dir, "--ide", "none", "--result-format", "plain"},
+					[]string{
+						cmdWorkspace,
+						"up",
+						dir,
+						flagIDEOption,
+						kubernetesIgnoreIDE,
+						"--result-format",
+						"plain",
+					},
 					tc.args...)
 				stdout, stderr, err := f.ExecCommandCapture(ctx, args)
 				gomega.Expect(err).To(gomega.HaveOccurred())

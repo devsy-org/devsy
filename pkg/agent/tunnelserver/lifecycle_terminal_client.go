@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"strings"
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -94,15 +96,7 @@ func OpenLifecycleTerminal(
 		var response *tunnel.LifecycleTerminalResponse
 		response, err = s.wait(hctx)
 		if err == nil {
-			ready := response.GetReady()
-			if ready == nil || ready.ProtocolVersion != tunnel.LifecycleTerminalProtocolVersion ||
-				!ready.Input ||
-				!validSize(ready.Rows, ready.Columns) ||
-				len(ready.Term) > 256 {
-				err = errors.New("invalid lifecycle terminal ready")
-			} else {
-				s.term = ready.Term
-			}
+			err = s.acceptReady(response.GetReady())
 		}
 	}
 	if err != nil {
@@ -118,219 +112,32 @@ func validSize(
 	return rows > 0 && rows <= 65535 && cols > 0 && cols <= 65535
 }
 
-func (s *terminalClient) sendLoop() {
-	defer s.wg.Done()
-	for {
-		select {
-		case item := <-s.sends:
-			err := s.stream.Send(item.frame)
-			item.done <- err
-			if err != nil {
-				s.fail(err)
-				return
-			}
-		case <-s.ctx.Done():
-			return
-		}
-	}
-}
-
-func (s *terminalClient) receiveLoop() {
-	defer s.wg.Done()
-	defer close(s.recvDone)
-	for {
-		frame, err := s.stream.Recv()
-		if err != nil {
-			s.fail(err)
-			return
-		}
-		if err = s.handleResponse(frame); err != nil {
-			s.fail(err)
-			return
-		}
-	}
-}
-
-func (s *terminalClient) handleResponse(frame *tunnel.LifecycleTerminalResponse) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	a := s.active
-	invalid := func() error { return status.Error(codes.FailedPrecondition, "unexpected lifecycle terminal response") }
-	if frame == nil {
-		return invalid()
-	}
-	switch f := frame.Frame.(type) {
-	case *tunnel.LifecycleTerminalResponse_Ready:
-		v := f.Ready
-		if s.phase != clientReady || v == nil {
-			return invalid()
-		}
-		if v.ProtocolVersion != tunnel.LifecycleTerminalProtocolVersion || !v.Input ||
-			!validSize(v.Rows, v.Columns) ||
-			!validTerm(v.Term) {
-			return status.Error(codes.InvalidArgument, "invalid terminal ready")
-		}
-		s.term = v.Term
-		s.phase = clientIdle
-	case *tunnel.LifecycleTerminalResponse_BeginAck:
-		v := f.BeginAck
-		if s.phase != clientBeginAck || a == nil || v == nil || v.InvocationId != a.id {
-			return invalid()
-		}
-		if !validSize(v.Rows, v.Columns) {
-			return status.Error(codes.InvalidArgument, "invalid terminal size")
-		}
-		s.phase = clientActive
-	case *tunnel.LifecycleTerminalResponse_ExitAck:
-		v := f.ExitAck
-		if s.phase != clientExitAck || a == nil || v == nil || v.InvocationId != a.id {
-			return invalid()
-		}
-		s.phase = clientIdle
-	case *tunnel.LifecycleTerminalResponse_Input:
-		v := f.Input
-		if (s.phase != clientActive && s.phase != clientExitAck) || a == nil || v == nil ||
-			v.InvocationId != a.id {
-			return invalid()
-		}
-		if len(v.Data) > tunnel.LifecycleTerminalMaxFrame {
-			return status.Error(codes.ResourceExhausted, "terminal input frame too large")
-		}
-		if s.phase == clientExitAck {
-			return nil
-		}
-		return a.input.append(v.Data)
-	case *tunnel.LifecycleTerminalResponse_Resize:
-		v := f.Resize
-		if (s.phase != clientActive && s.phase != clientExitAck) || a == nil || v == nil ||
-			v.InvocationId != a.id {
-			return invalid()
-		}
-		if !validSize(v.Rows, v.Columns) {
-			return status.Error(codes.InvalidArgument, "invalid terminal size")
-		}
-		size := tunnel.TerminalWindow{
-			Term:    s.term,
-			Rows:    uint16(v.Rows),
-			Columns: uint16(v.Columns),
-		}
-		select {
-		case a.resizes <- size:
-		default:
-			select {
-			case <-a.resizes:
-			default:
-			}
-			select {
-			case a.resizes <- size:
-			default:
-			}
-		}
-		return nil
-	case *tunnel.LifecycleTerminalResponse_Cancel:
-		if s.phase != clientActive || a == nil || f.Cancel == nil || f.Cancel.InvocationId != a.id {
-			return invalid()
-		}
-		return status.Error(codes.Canceled, "lifecycle terminal canceled")
-	default:
-		return invalid()
-	}
-	select {
-	case s.responses <- frame:
-		return nil
-	case <-s.ctx.Done():
-		return s.ctx.Err()
-	}
-}
-
 func validTerm(term string) bool {
 	if term == "" || len(term) > 128 {
 		return false
 	}
 	for _, c := range term {
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' &&
-			c != '_' &&
-			c != '.' &&
-			c != '+' {
+		if !validTermCharacter(c) {
 			return false
 		}
 	}
 	return true
 }
 
-func (s *terminalClient) fail(err error) {
-	s.mu.Lock()
-	if s.err == nil {
-		s.err = err
-	}
-	a := s.active
-	s.mu.Unlock()
-	if a != nil {
-		a.input.close(err)
-		a.cancelOnce.Do(func() { close(a.canceled) })
-	}
-	s.cancel()
-}
-
-func (s *terminalClient) send(ctx context.Context, frame *tunnel.LifecycleTerminalRequest) error {
-	return s.sendItem(ctx, terminalSend{frame: frame, done: make(chan error, 1)})
-}
-
-func (s *terminalClient) sendItem(ctx context.Context, item terminalSend) error {
-	select {
-	case s.sends <- item:
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-s.ctx.Done():
-		return s.failure()
-	}
-	select {
-	case err := <-item.done:
-		return err
-	case <-ctx.Done():
-		s.fail(ctx.Err())
-		return ctx.Err()
-	case <-s.ctx.Done():
-		return s.failure()
-	}
-}
-
-func (s *terminalClient) failure() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.err != nil {
-		return s.err
-	}
-	return s.ctx.Err()
-}
-
-func (s *terminalClient) wait(ctx context.Context) (*tunnel.LifecycleTerminalResponse, error) {
-	select {
-	case frame := <-s.responses:
-		return frame, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-s.ctx.Done():
-		return nil, s.failure()
-	}
-}
-
-func (s *terminalClient) shutdown(err error) {
-	s.fail(err)
-	s.wg.Wait()
+func validTermCharacter(c rune) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' ||
+		strings.ContainsRune("-_.+", c)
 }
 
 func (s *terminalClient) Begin(
 	ctx context.Context,
 	inv tunnel.TerminalInvocation,
 ) (tunnel.TerminalAttachment, error) {
-	if inv.ID == "" || len(inv.ID) > 256 || len(inv.Key) > 256 || inv.Phase != "postStartCommand" ||
-		inv.Index < 0 ||
-		uint64(inv.Index) > uint64(^uint32(0)) {
+	if !validTerminalInvocation(inv) {
 		return nil, status.Error(codes.InvalidArgument, "invalid terminal invocation")
 	}
 	s.mu.Lock()
-	if s.closed || s.active != nil || s.err != nil || s.phase != clientIdle {
+	if !s.available() {
 		s.mu.Unlock()
 		return nil, status.Error(codes.FailedPrecondition, "terminal session unavailable")
 	}
@@ -353,7 +160,7 @@ func (s *terminalClient) Begin(
 				Begin: &tunnel.LifecycleTerminalBegin{
 					InvocationId: inv.ID,
 					Phase:        inv.Phase,
-					Index:        uint32(inv.Index),
+					Index:        terminalIndex(inv.Index),
 					Key:          inv.Key,
 				},
 			},
@@ -363,16 +170,7 @@ func (s *terminalClient) Begin(
 		var response *tunnel.LifecycleTerminalResponse
 		response, err = s.wait(hctx)
 		if err == nil {
-			ack := response.GetBeginAck()
-			if ack == nil || ack.InvocationId != inv.ID || !validSize(ack.Rows, ack.Columns) {
-				err = errors.New("invalid terminal begin acknowledgement")
-			} else {
-				a.window = tunnel.TerminalWindow{
-					Term:    s.term,
-					Rows:    uint16(ack.Rows),
-					Columns: uint16(ack.Columns),
-				}
-			}
+			err = s.acceptBeginAck(a, inv.ID, response.GetBeginAck())
 		}
 	}
 	if err != nil {
@@ -380,6 +178,53 @@ func (s *terminalClient) Begin(
 		return nil, err
 	}
 	return a, nil
+}
+
+func terminalWindow(term string, rows, columns uint32) tunnel.TerminalWindow {
+	r, ok := terminalUint16(rows)
+	if !ok {
+		panic("invalid terminal rows")
+	}
+	c, ok := terminalUint16(columns)
+	if !ok {
+		panic("invalid terminal columns")
+	}
+	return tunnel.TerminalWindow{Term: term, Rows: r, Columns: c}
+}
+
+func terminalUint16(v uint32) (uint16, bool) {
+	if v > math.MaxUint16 {
+		return 0, false
+	}
+	return uint16(v), true
+}
+
+func terminalIndex(v int) uint32 {
+	if v < 0 || uint64(v) > math.MaxUint32 {
+		panic("invalid terminal index")
+	}
+	return uint32(v)
+}
+
+func terminalExitCode(v int) int32 {
+	n := int64(v) % (int64(math.MaxUint32) + 1)
+	if n > math.MaxInt32 {
+		n -= int64(math.MaxUint32) + 1
+	}
+	if n < math.MinInt32 {
+		n += int64(math.MaxUint32) + 1
+	}
+	if n < math.MinInt32 || n > math.MaxInt32 {
+		panic("unreachable exit code")
+	}
+	return int32(n)
+}
+
+func validTerminalInvocation(inv tunnel.TerminalInvocation) bool {
+	return inv.ID != "" && len(inv.ID) <= 256 && len(inv.Key) <= 256 &&
+		inv.Phase == "postStartCommand" &&
+		inv.Index >= 0 &&
+		uint64(inv.Index) <= uint64(^uint32(0))
 }
 
 func (s *terminalClient) Close(ctx context.Context) error {
@@ -479,7 +324,7 @@ func (a *terminalAttachment) Exit(ctx context.Context, exit tunnel.TerminalExit)
 			Frame: &tunnel.LifecycleTerminalRequest_Exit{
 				Exit: &tunnel.LifecycleTerminalExit{
 					InvocationId: a.id,
-					ExitCode:     int32(exit.ExitCode),
+					ExitCode:     terminalExitCode(exit.ExitCode),
 					Signal:       exit.Signal,
 					StartError:   exit.StartError,
 				},
@@ -512,6 +357,296 @@ type terminalInput struct {
 
 func newTerminalInput() *terminalInput { return &terminalInput{wake: make(chan struct{}, 1)} }
 
+func (b *terminalInput) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	for {
+		b.mu.Lock()
+		if len(b.data) > 0 {
+			n := copy(p, b.data)
+			b.data = b.data[n:]
+			b.mu.Unlock()
+			return n, nil
+		}
+		err := b.err
+		b.mu.Unlock()
+		if err != nil {
+			return 0, err
+		}
+		<-b.wake
+	}
+}
+
+func (b *terminalInput) Close() error { b.close(io.EOF); return nil }
+
+func queueTerminalResize(resizes chan tunnel.TerminalWindow, size tunnel.TerminalWindow) {
+	select {
+	case resizes <- size:
+	default:
+		select {
+		case <-resizes:
+		default:
+		}
+		select {
+		case resizes <- size:
+		default:
+		}
+	}
+}
+
+func (s *terminalClient) acceptReady(ready *tunnel.LifecycleTerminalReady) error {
+	if ready == nil || ready.ProtocolVersion != tunnel.LifecycleTerminalProtocolVersion ||
+		!ready.Input ||
+		!validSize(ready.Rows, ready.Columns) ||
+		len(ready.Term) > 256 {
+		return errors.New("invalid lifecycle terminal ready")
+	}
+	s.term = ready.Term
+	return nil
+}
+
+func (s *terminalClient) available() bool {
+	return !s.closed && s.active == nil && s.err == nil && s.phase == clientIdle
+}
+
+func (s *terminalClient) acceptBeginAck(
+	a *terminalAttachment,
+	id string,
+	ack *tunnel.LifecycleTerminalBeginAck,
+) error {
+	if ack == nil || ack.InvocationId != id || !validSize(ack.Rows, ack.Columns) {
+		return errors.New("invalid terminal begin acknowledgement")
+	}
+	a.window = terminalWindow(s.term, ack.Rows, ack.Columns)
+	return nil
+}
+
+func (s *terminalClient) sendLoop() {
+	defer s.wg.Done()
+	for {
+		select {
+		case item := <-s.sends:
+			err := s.stream.Send(item.frame)
+			item.done <- err
+			if err != nil {
+				s.fail(err)
+				return
+			}
+		case <-s.ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *terminalClient) receiveLoop() {
+	defer s.wg.Done()
+	defer close(s.recvDone)
+	for {
+		frame, err := s.stream.Recv()
+		if err != nil {
+			s.fail(err)
+			return
+		}
+		if err = s.handleResponse(frame); err != nil {
+			s.fail(err)
+			return
+		}
+	}
+}
+
+func (s *terminalClient) handleResponse(frame *tunnel.LifecycleTerminalResponse) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if frame == nil {
+		return invalidTerminalResponse()
+	}
+	enqueue, err := s.dispatchClientResponse(frame)
+	if err != nil || !enqueue {
+		return err
+	}
+	select {
+	case s.responses <- frame:
+		return nil
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
+}
+
+func (s *terminalClient) dispatchClientResponse(
+	frame *tunnel.LifecycleTerminalResponse,
+) (bool, error) {
+	switch f := frame.Frame.(type) {
+	case *tunnel.LifecycleTerminalResponse_Ready,
+		*tunnel.LifecycleTerminalResponse_BeginAck,
+		*tunnel.LifecycleTerminalResponse_ExitAck:
+		if err := s.handleControlResponse(frame); err != nil {
+			return false, err
+		}
+	case *tunnel.LifecycleTerminalResponse_Input:
+		return false, s.handleInput(f)
+	case *tunnel.LifecycleTerminalResponse_Resize:
+		return false, s.handleResize(f)
+	case *tunnel.LifecycleTerminalResponse_Cancel:
+		return false, s.handleCancel(f)
+	default:
+		return false, invalidTerminalResponse()
+	}
+	return true, nil
+}
+
+func (s *terminalClient) handleControlResponse(frame *tunnel.LifecycleTerminalResponse) error {
+	switch f := frame.Frame.(type) {
+	case *tunnel.LifecycleTerminalResponse_Ready:
+		return s.handleReady(f)
+	case *tunnel.LifecycleTerminalResponse_BeginAck:
+		return s.handleBeginAck(f)
+	case *tunnel.LifecycleTerminalResponse_ExitAck:
+		return s.handleExitAck(f)
+	default:
+		return invalidTerminalResponse()
+	}
+}
+
+func (s *terminalClient) handleReady(f *tunnel.LifecycleTerminalResponse_Ready) error {
+	v := f.Ready
+	if s.phase != clientReady || v == nil {
+		return invalidTerminalResponse()
+	}
+	if v.ProtocolVersion != tunnel.LifecycleTerminalProtocolVersion || !v.Input ||
+		!validSize(v.Rows, v.Columns) ||
+		!validTerm(v.Term) {
+		return status.Error(codes.InvalidArgument, "invalid terminal ready")
+	}
+	s.term = v.Term
+	s.phase = clientIdle
+	return nil
+}
+
+func (s *terminalClient) handleBeginAck(f *tunnel.LifecycleTerminalResponse_BeginAck) error {
+	a := s.active
+	v := f.BeginAck
+	if s.phase != clientBeginAck || a == nil || v == nil || v.InvocationId != a.id {
+		return invalidTerminalResponse()
+	}
+	if !validSize(v.Rows, v.Columns) {
+		return status.Error(codes.InvalidArgument, "invalid terminal size")
+	}
+	s.phase = clientActive
+	return nil
+}
+
+func (s *terminalClient) handleExitAck(f *tunnel.LifecycleTerminalResponse_ExitAck) error {
+	a := s.active
+	v := f.ExitAck
+	if s.phase != clientExitAck || a == nil || v == nil || v.InvocationId != a.id {
+		return invalidTerminalResponse()
+	}
+	s.phase = clientIdle
+	return nil
+}
+
+func (s *terminalClient) handleInput(f *tunnel.LifecycleTerminalResponse_Input) error {
+	a := s.active
+	v := f.Input
+	if (s.phase != clientActive && s.phase != clientExitAck) || a == nil || v == nil ||
+		v.InvocationId != a.id {
+		return invalidTerminalResponse()
+	}
+	if len(v.Data) > tunnel.LifecycleTerminalMaxFrame {
+		return status.Error(codes.ResourceExhausted, "terminal input frame too large")
+	}
+	if s.phase == clientExitAck {
+		return nil
+	}
+	return a.input.append(v.Data)
+}
+
+func (s *terminalClient) handleResize(f *tunnel.LifecycleTerminalResponse_Resize) error {
+	a := s.active
+	v := f.Resize
+	if (s.phase != clientActive && s.phase != clientExitAck) || a == nil || v == nil ||
+		v.InvocationId != a.id {
+		return invalidTerminalResponse()
+	}
+	if !validSize(v.Rows, v.Columns) {
+		return status.Error(codes.InvalidArgument, "invalid terminal size")
+	}
+	size := terminalWindow(s.term, v.Rows, v.Columns)
+	queueTerminalResize(a.resizes, size)
+	return nil
+}
+
+func (s *terminalClient) handleCancel(f *tunnel.LifecycleTerminalResponse_Cancel) error {
+	a := s.active
+	if s.phase != clientActive || a == nil || f.Cancel == nil || f.Cancel.InvocationId != a.id {
+		return invalidTerminalResponse()
+	}
+	return status.Error(codes.Canceled, "lifecycle terminal canceled")
+}
+
+func (s *terminalClient) fail(err error) {
+	s.mu.Lock()
+	if s.err == nil {
+		s.err = err
+	}
+	a := s.active
+	s.mu.Unlock()
+	if a != nil {
+		a.input.close(err)
+		a.cancelOnce.Do(func() { close(a.canceled) })
+	}
+	s.cancel()
+}
+
+func (s *terminalClient) send(ctx context.Context, frame *tunnel.LifecycleTerminalRequest) error {
+	return s.sendItem(ctx, terminalSend{frame: frame, done: make(chan error, 1)})
+}
+
+func (s *terminalClient) sendItem(ctx context.Context, item terminalSend) error {
+	select {
+	case s.sends <- item:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.ctx.Done():
+		return s.failure()
+	}
+	select {
+	case err := <-item.done:
+		return err
+	case <-ctx.Done():
+		s.fail(ctx.Err())
+		return ctx.Err()
+	case <-s.ctx.Done():
+		return s.failure()
+	}
+}
+
+func (s *terminalClient) failure() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	return s.ctx.Err()
+}
+
+func (s *terminalClient) wait(ctx context.Context) (*tunnel.LifecycleTerminalResponse, error) {
+	select {
+	case frame := <-s.responses:
+		return frame, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-s.ctx.Done():
+		return nil, s.failure()
+	}
+}
+
+func (s *terminalClient) shutdown(err error) {
+	s.fail(err)
+	s.wg.Wait()
+}
+
 func (b *terminalInput) append(p []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -543,26 +678,3 @@ func (b *terminalInput) close(err error) {
 	default:
 	}
 }
-
-func (b *terminalInput) Read(p []byte) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	for {
-		b.mu.Lock()
-		if len(b.data) > 0 {
-			n := copy(p, b.data)
-			b.data = b.data[n:]
-			b.mu.Unlock()
-			return n, nil
-		}
-		err := b.err
-		b.mu.Unlock()
-		if err != nil {
-			return 0, err
-		}
-		<-b.wake
-	}
-}
-
-func (b *terminalInput) Close() error { b.close(io.EOF); return nil }

@@ -65,27 +65,6 @@ func (s *interactivePostStart) Close() {
 	}
 }
 
-func (s *interactivePostStart) size() (uint32, uint32, error) {
-	if s.opts.rows < 0 || s.opts.rows > 65535 || s.opts.columns < 0 || s.opts.columns > 65535 ||
-		s.opts.stdout == nil {
-		return 0, 0, fmt.Errorf("invalid terminal dimensions")
-	}
-	c, r, err := term.GetSize(int(s.opts.stdout.Fd()))
-	if err != nil || c < 1 || r < 1 {
-		c, r = 80, 24
-	}
-	if s.opts.rows != 0 {
-		r = s.opts.rows
-	}
-	if s.opts.columns != 0 {
-		c = s.opts.columns
-	}
-	if r > 65535 || c > 65535 {
-		return 0, 0, fmt.Errorf("invalid terminal dimensions")
-	}
-	return uint32(r), uint32(c), nil
-}
-
 type terminalReceived struct {
 	frame *tunnel.LifecycleTerminalRequest
 	err   error
@@ -93,6 +72,23 @@ type terminalReceived struct {
 type terminalRead struct {
 	data []byte
 	err  error
+}
+
+type interactiveSession struct {
+	owner               *interactivePostStart
+	ctx                 context.Context
+	stream              tunnel.Tunnel_LifecycleTerminalServer
+	rows, cols          uint32
+	input               terminal.Input
+	restore, restoreLog func()
+	journalActive       bool
+	inputCancel         context.CancelFunc
+	done                chan struct{}
+	reads               <-chan terminalRead
+	invocation          string
+	sequence            uint64
+	output              chan []byte
+	outputDone          chan error
 }
 
 func (s *interactivePostStart) Serve(
@@ -119,322 +115,411 @@ func (s *interactivePostStart) Serve(
 		close(doneSession)
 		s.mu.Unlock()
 	}()
-	rows, cols, err := s.size()
+	session := &interactiveSession{owner: s, ctx: ctx, stream: stream}
+	return session.serve()
+}
+
+func (s *interactivePostStart) size() (uint32, uint32, error) {
+	if !validTerminalDimension(s.opts.rows) || !validTerminalDimension(s.opts.columns) ||
+		s.opts.stdout == nil {
+		return 0, 0, fmt.Errorf("invalid terminal dimensions")
+	}
+	c, r := terminalSize(s.opts.stdout)
+	if s.opts.rows != 0 {
+		r = s.opts.rows
+	}
+	if s.opts.columns != 0 {
+		c = s.opts.columns
+	}
+	return checkedTerminalSize(r, c)
+}
+
+func checkedTerminalSize(r, c int) (uint32, uint32, error) {
+	if r < 0 || r > 65535 || c < 0 || c > 65535 {
+		return 0, 0, fmt.Errorf("invalid terminal dimensions")
+	}
+	return uint32(r), uint32(c), nil
+}
+
+func terminalSize(stdout *os.File) (int, int) {
+	c, r, err := term.GetSize(int(stdout.Fd()))
+	if err != nil || c < 1 || r < 1 {
+		return 80, 24
+	}
+	return c, r
+}
+
+func validTerminalDimension(value int) bool {
+	return value >= 0 && value <= 65535
+}
+
+func (t *interactiveSession) serve() error {
+	if err := t.ready(); err != nil {
+		return err
+	}
+	received := make(chan terminalReceived, 1)
+	go t.receive(received)
+	resize := ssh.WatchWindowSize(t.ctx)
+	defer t.stopOutput()
+	defer t.finish()
+	for {
+		complete, err := t.step(resize, received)
+		if err != nil || complete {
+			return err
+		}
+	}
+}
+
+func (t *interactiveSession) finish() {
+	t.cleanup()
+	t.finishJournal()
+	if t.owner.opts.status != nil {
+		t.owner.opts.status.SetActive(false)
+	}
+}
+
+func (t *interactiveSession) step(
+	resize <-chan os.Signal,
+	received <-chan terminalReceived,
+) (bool, error) {
+	select {
+	case <-t.ctx.Done():
+		t.sendCancel()
+		return true, t.ctx.Err()
+	case <-resize:
+		return false, t.handleResize()
+	case v := <-t.reads:
+		return false, t.handleRead(v)
+	case v := <-received:
+		return t.handleFrame(v)
+	}
+}
+
+func (t *interactiveSession) ready() error {
+	var err error
+	t.rows, t.cols, err = t.owner.size()
 	if err != nil {
 		return err
 	}
-	name := s.opts.term
+	name := t.owner.opts.term
 	if name == "" {
 		name = "xterm-256color"
 	}
 	if !validInteractiveTerm(name) {
 		return fmt.Errorf("invalid TERM")
 	}
-	if err = stream.Send(
-		&tunnel.LifecycleTerminalResponse{
-			Frame: &tunnel.LifecycleTerminalResponse_Ready{
-				Ready: &tunnel.LifecycleTerminalReady{
-					ProtocolVersion: tunnel.LifecycleTerminalProtocolVersion,
-					Term:            name,
-					Rows:            rows,
-					Columns:         cols,
-					Input:           true,
-				},
+	return t.stream.Send(
+		&tunnel.LifecycleTerminalResponse{Frame: &tunnel.LifecycleTerminalResponse_Ready{
+			Ready: &tunnel.LifecycleTerminalReady{
+				ProtocolVersion: tunnel.LifecycleTerminalProtocolVersion,
+				Term:            name, Rows: t.rows, Columns: t.cols, Input: true,
 			},
-		},
+		}},
+	)
+}
+
+func (t *interactiveSession) receive(received chan<- terminalReceived) {
+	for {
+		f, e := t.stream.Recv()
+		select {
+		case received <- terminalReceived{f, e}:
+		case <-t.ctx.Done():
+			return
+		}
+		if e != nil {
+			return
+		}
+	}
+}
+
+func (t *interactiveSession) stopOutput() {
+	if t.output != nil {
+		close(t.output)
+		t.output = nil
+	}
+}
+
+func (t *interactiveSession) cleanup() {
+	if t.restore != nil {
+		t.restore()
+		t.restore = nil
+	}
+	if t.restoreLog != nil {
+		t.restoreLog()
+		t.restoreLog = nil
+	}
+	if t.inputCancel != nil {
+		t.inputCancel()
+		t.inputCancel = nil
+	}
+	if t.input != nil {
+		t.input.Cancel()
+		if t.done != nil {
+			<-t.done
+		}
+		_ = t.input.Close()
+		t.input = nil
+	}
+	t.reads = nil
+}
+
+func (t *interactiveSession) finishJournal() {
+	if !t.journalActive {
+		return
+	}
+	t.journalActive = false
+	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	_ = t.owner.opts.status.journal.end(ctx)
+}
+
+func (t *interactiveSession) sendCancel() {
+	if t.invocation == "" {
+		return
+	}
+	done := make(chan struct{})
+	id := t.invocation
+	go func() {
+		_ = t.stream.Send(
+			&tunnel.LifecycleTerminalResponse{Frame: &tunnel.LifecycleTerminalResponse_Cancel{
+				Cancel: &tunnel.LifecycleTerminalCancel{InvocationId: id},
+			}},
+		)
+		close(done)
+	}()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+	}
+}
+
+func (t *interactiveSession) handleResize() error {
+	if t.invocation == "" {
+		return nil
+	}
+	r, c, err := t.owner.size()
+	if err != nil {
+		return err
+	}
+	if r == t.rows && c == t.cols {
+		return nil
+	}
+	t.rows, t.cols = r, c
+	return t.stream.Send(
+		&tunnel.LifecycleTerminalResponse{Frame: &tunnel.LifecycleTerminalResponse_Resize{
+			Resize: &tunnel.LifecycleTerminalResize{
+				InvocationId: t.invocation,
+				Rows:         r,
+				Columns:      c,
+			},
+		}},
+	)
+}
+
+func (t *interactiveSession) handleRead(v terminalRead) error {
+	if len(v.data) > 0 {
+		if err := t.stream.Send(
+			&tunnel.LifecycleTerminalResponse{Frame: &tunnel.LifecycleTerminalResponse_Input{
+				Input: &tunnel.LifecycleTerminalInput{InvocationId: t.invocation, Data: v.data},
+			}},
+		); err != nil {
+			return err
+		}
+	}
+	if v.err != nil {
+		t.sendCancel()
+		return v.err
+	}
+	return nil
+}
+
+func (t *interactiveSession) handleFrame(v terminalReceived) (bool, error) {
+	if v.err != nil {
+		t.sendCancel()
+		return false, v.err
+	}
+	if v.frame == nil {
+		return false, io.ErrUnexpectedEOF
+	}
+	return t.dispatchFrame(v.frame)
+}
+
+func (t *interactiveSession) dispatchFrame(frame *tunnel.LifecycleTerminalRequest) (bool, error) {
+	switch f := frame.Frame.(type) {
+	case *tunnel.LifecycleTerminalRequest_Begin:
+		return false, t.begin(f.Begin)
+	case *tunnel.LifecycleTerminalRequest_Output:
+		return t.writeOutput(f.Output)
+	case *tunnel.LifecycleTerminalRequest_Exit:
+		return false, t.exit(f.Exit)
+	case *tunnel.LifecycleTerminalRequest_Complete:
+		return t.complete(f.Complete)
+	default:
+		return false, fmt.Errorf("unexpected terminal frame")
+	}
+}
+
+func (t *interactiveSession) complete(frame *tunnel.LifecycleTerminalComplete) (bool, error) {
+	if t.invocation != "" || frame == nil {
+		return false, fmt.Errorf("invalid complete")
+	}
+	return true, nil
+}
+
+func (t *interactiveSession) begin(begin *tunnel.LifecycleTerminalBegin) error {
+	if t.invocation != "" || begin == nil || begin.InvocationId == "" ||
+		begin.Phase != "postStartCommand" {
+		return fmt.Errorf("invalid begin")
+	}
+	if err := t.prepareInput(); err != nil {
+		return err
+	}
+	t.invocation = begin.InvocationId
+	t.sequence = 0
+	t.output = make(chan []byte, 6)
+	t.outputDone = make(chan error, 1)
+	writer := t.owner.opts.output
+	if writer == nil {
+		writer = t.owner.opts.stdout
+	}
+	go terminalOutput(writer, t.output, t.outputDone)
+	if err := t.stream.Send(
+		&tunnel.LifecycleTerminalResponse{Frame: &tunnel.LifecycleTerminalResponse_BeginAck{
+			BeginAck: &tunnel.LifecycleTerminalBeginAck{
+				InvocationId: t.invocation,
+				Rows:         t.rows,
+				Columns:      t.cols,
+			},
+		}},
 	); err != nil {
 		return err
 	}
-	received := make(chan terminalReceived, 1)
-	go func() {
-		for {
-			f, e := stream.Recv()
-			select {
-			case received <- terminalReceived{f, e}:
-			case <-ctx.Done():
-				return
-			}
-			if e != nil {
-				return
-			}
-		}
-	}()
-	resize := ssh.WatchWindowSize(ctx)
-	var input terminal.Input
-	var restore func()
-	var restoreLog func()
-	var journalActive bool
-	var inputCancel context.CancelFunc
-	var done chan struct{}
-	var reads <-chan terminalRead
-	var invocation string
-	var sequence uint64
-	var output chan []byte
-	var outputDone chan error
-	stopOutput := func() {
-		if output != nil {
-			close(output)
-			output = nil
-		}
-	}
-	defer stopOutput()
-	cleanup := func() {
-		if restore != nil {
-			restore()
-			restore = nil
-		}
-		if restoreLog != nil {
-			restoreLog()
-			restoreLog = nil
-		}
-		if inputCancel != nil {
-			inputCancel()
-			inputCancel = nil
-		}
-		if input != nil {
-			input.Cancel()
-			if done != nil {
-				<-done
-			}
-			_ = input.Close()
-			input = nil
-		}
-		reads = nil
-	}
-	finishJournal := func() {
-		if !journalActive {
-			return
-		}
-		journalActive = false
-		flushCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
-		defer stop()
-		_ = s.opts.status.journal.end(flushCtx)
-	}
-	defer func() {
-		cleanup()
-		finishJournal()
-		if s.opts.status != nil {
-			s.opts.status.SetActive(false)
-		}
-	}()
-	sendCancel := func() {
-		if invocation == "" {
-			return
-		}
-		done := make(chan struct{})
-		id := invocation
-		go func() {
-			_ = stream.Send(
-				&tunnel.LifecycleTerminalResponse{
-					Frame: &tunnel.LifecycleTerminalResponse_Cancel{
-						Cancel: &tunnel.LifecycleTerminalCancel{InvocationId: id},
-					},
-				},
-			)
-			close(done)
-		}()
-		timer := time.NewTimer(time.Second)
-		defer timer.Stop()
-		select {
-		case <-done:
-		case <-timer.C:
-		}
-	}
+	t.startInput()
+	return nil
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			sendCancel()
-			return ctx.Err()
-		case <-resize:
-			if invocation == "" {
-				continue
+func (t *interactiveSession) prepareInput() error {
+	var err error
+	t.rows, t.cols, err = t.owner.size()
+	if err != nil {
+		return err
+	}
+	factory := t.owner.opts.inputFactory
+	if factory == nil {
+		factory = terminal.NewInput
+	}
+	t.input, err = factory(t.owner.opts.stdin)
+	if err != nil {
+		return err
+	}
+	t.activateStatus()
+	if !log.DebugEnabled() {
+		t.restoreLog = log.SuppressConsoleOutput()
+	}
+	t.restore, err = terminal.EnterRaw(t.owner.opts.stdin, t.owner.opts.stdout)
+	if err != nil {
+		t.cleanup()
+		return err
+	}
+	return nil
+}
+
+func (t *interactiveSession) activateStatus() {
+	if t.owner.opts.status != nil {
+		if t.owner.opts.status.journal != nil {
+			t.owner.opts.status.journal.begin()
+			t.journalActive = true
+		}
+		t.owner.opts.status.SetActive(true)
+	}
+}
+
+func (t *interactiveSession) startInput() {
+	readCtx, cancel := terminalInputContext(t.ctx)
+	t.inputCancel = cancel
+	ch := make(chan terminalRead, 1)
+	t.reads = ch
+	t.done = make(chan struct{})
+	done := t.done
+	go func(in terminal.Input) {
+		defer close(done)
+		for {
+			b := make([]byte, tunnel.LifecycleTerminalMaxFrame)
+			n, e := in.Read(b)
+			select {
+			case ch <- terminalRead{b[:n], e}:
+			case <-readCtx.Done():
+				return
 			}
-			r, c, e := s.size()
 			if e != nil {
-				return e
-			}
-			if r == rows && c == cols {
-				continue
-			}
-			rows, cols = r, c
-			if e = stream.Send(
-				&tunnel.LifecycleTerminalResponse{
-					Frame: &tunnel.LifecycleTerminalResponse_Resize{
-						Resize: &tunnel.LifecycleTerminalResize{
-							InvocationId: invocation,
-							Rows:         r,
-							Columns:      c,
-						},
-					},
-				},
-			); e != nil {
-				return e
-			}
-		case v := <-reads:
-			if len(v.data) > 0 {
-				if err = stream.Send(
-					&tunnel.LifecycleTerminalResponse{
-						Frame: &tunnel.LifecycleTerminalResponse_Input{
-							Input: &tunnel.LifecycleTerminalInput{
-								InvocationId: invocation,
-								Data:         v.data,
-							},
-						},
-					},
-				); err != nil {
-					return err
-				}
-			}
-			if v.err != nil {
-				sendCancel()
-				return v.err
-			}
-		case v := <-received:
-			if v.err != nil {
-				sendCancel()
-				return v.err
-			}
-			if v.frame == nil {
-				return io.ErrUnexpectedEOF
-			}
-			switch f := v.frame.Frame.(type) {
-			case *tunnel.LifecycleTerminalRequest_Begin:
-				if invocation != "" || f.Begin == nil || f.Begin.InvocationId == "" ||
-					f.Begin.Phase != "postStartCommand" {
-					return fmt.Errorf("invalid begin")
-				}
-				rows, cols, err = s.size()
-				if err != nil {
-					return err
-				}
-				factory := s.opts.inputFactory
-				if factory == nil {
-					factory = terminal.NewInput
-				}
-				input, err = factory(s.opts.stdin)
-				if err != nil {
-					return err
-				}
-				if s.opts.status != nil {
-					if s.opts.status.journal != nil {
-						s.opts.status.journal.begin()
-						journalActive = true
-					}
-					s.opts.status.SetActive(true)
-				}
-				if !log.DebugEnabled() {
-					restoreLog = log.SuppressConsoleOutput()
-				}
-				restore, err = terminal.EnterRaw(s.opts.stdin, s.opts.stdout)
-				if err != nil {
-					cleanup()
-					return err
-				}
-				invocation = f.Begin.InvocationId
-				sequence = 0
-				output = make(chan []byte, 6)
-				outputDone = make(chan error, 1)
-				writer := s.opts.output
-				if writer == nil {
-					writer = s.opts.stdout
-				}
-				go terminalOutput(writer, output, outputDone)
-				if err = stream.Send(
-					&tunnel.LifecycleTerminalResponse{
-						Frame: &tunnel.LifecycleTerminalResponse_BeginAck{
-							BeginAck: &tunnel.LifecycleTerminalBeginAck{
-								InvocationId: invocation,
-								Rows:         rows,
-								Columns:      cols,
-							},
-						},
-					},
-				); err != nil {
-					return err
-				}
-				var readCtx context.Context
-				readCtx, inputCancel = terminalInputContext(ctx)
-				ch := make(chan terminalRead, 1)
-				reads = ch
-				done = make(chan struct{})
-				go func(in terminal.Input) {
-					defer close(done)
-					for {
-						b := make([]byte, tunnel.LifecycleTerminalMaxFrame)
-						n, e := in.Read(b)
-						select {
-						case ch <- terminalRead{b[:n], e}:
-						case <-readCtx.Done():
-							return
-						}
-						if e != nil {
-							return
-						}
-					}
-				}(input)
-			case *tunnel.LifecycleTerminalRequest_Output:
-				if f.Output == nil || invocation == "" || f.Output.InvocationId != invocation ||
-					len(f.Output.Data) > tunnel.LifecycleTerminalMaxFrame ||
-					f.Output.Sequence != sequence+1 {
-					return fmt.Errorf("invalid output")
-				}
-				sequence++
-				data := append([]byte(nil), f.Output.Data...)
-				select {
-				case output <- data:
-				case e := <-outputDone:
-					outputDone = nil
-					return e
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			case *tunnel.LifecycleTerminalRequest_Exit:
-				if f.Exit == nil || invocation == "" || f.Exit.InvocationId != invocation {
-					return fmt.Errorf("invalid exit")
-				}
-				stopOutput()
-				timeout := s.opts.exitAckTimeout
-				if timeout <= 0 {
-					timeout = tunnel.LifecycleTerminalExitAckTimeout
-				}
-				timer := time.NewTimer(timeout)
-				select {
-				case err = <-outputDone:
-					timer.Stop()
-					if err != nil {
-						return err
-					}
-				case <-timer.C:
-					return fmt.Errorf("terminal output drain timed out")
-				case <-ctx.Done():
-					timer.Stop()
-					return ctx.Err()
-				}
-				cleanup()
-				if err = stream.Send(
-					&tunnel.LifecycleTerminalResponse{
-						Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
-							ExitAck: &tunnel.LifecycleTerminalExitAck{InvocationId: invocation},
-						},
-					},
-				); err != nil {
-					return err
-				}
-				invocation = ""
-				finishJournal()
-				if s.opts.status != nil {
-					s.opts.status.SetActive(false)
-				}
-			case *tunnel.LifecycleTerminalRequest_Complete:
-				if invocation != "" || f.Complete == nil {
-					return fmt.Errorf("invalid complete")
-				}
-				return nil
-			default:
-				return fmt.Errorf("unexpected terminal frame")
+				return
 			}
 		}
+	}(t.input)
+}
+
+func (t *interactiveSession) writeOutput(output *tunnel.LifecycleTerminalOutput) (bool, error) {
+	if !t.validOutput(output) {
+		return false, fmt.Errorf("invalid output")
+	}
+	t.sequence++
+	data := append([]byte(nil), output.Data...)
+	select {
+	case t.output <- data:
+		return false, nil
+	case e := <-t.outputDone:
+		return true, e
+	case <-t.ctx.Done():
+		return true, t.ctx.Err()
+	}
+}
+
+func (t *interactiveSession) validOutput(output *tunnel.LifecycleTerminalOutput) bool {
+	return output != nil && t.invocation != "" && output.InvocationId == t.invocation &&
+		len(output.Data) <= tunnel.LifecycleTerminalMaxFrame && output.Sequence == t.sequence+1
+}
+
+func (t *interactiveSession) exit(exit *tunnel.LifecycleTerminalExit) error {
+	if exit == nil || t.invocation == "" || exit.InvocationId != t.invocation {
+		return fmt.Errorf("invalid exit")
+	}
+	t.stopOutput()
+	if err := t.drainOutput(); err != nil {
+		return err
+	}
+	t.cleanup()
+	if err := t.stream.Send(
+		&tunnel.LifecycleTerminalResponse{Frame: &tunnel.LifecycleTerminalResponse_ExitAck{
+			ExitAck: &tunnel.LifecycleTerminalExitAck{InvocationId: t.invocation},
+		}},
+	); err != nil {
+		return err
+	}
+	t.invocation = ""
+	t.finishJournal()
+	if t.owner.opts.status != nil {
+		t.owner.opts.status.SetActive(false)
+	}
+	return nil
+}
+
+func (t *interactiveSession) drainOutput() error {
+	timeout := t.owner.opts.exitAckTimeout
+	if timeout <= 0 {
+		timeout = tunnel.LifecycleTerminalExitAckTimeout
+	}
+	timer := time.NewTimer(timeout)
+	select {
+	case err := <-t.outputDone:
+		timer.Stop()
+		return err
+	case <-timer.C:
+		return fmt.Errorf("terminal output drain timed out")
+	case <-t.ctx.Done():
+		timer.Stop()
+		return t.ctx.Err()
 	}
 }
 
@@ -465,12 +550,23 @@ func validInteractiveTerm(value string) bool {
 		return false
 	}
 	for _, c := range value {
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' &&
-			c != '_' &&
-			c != '.' &&
-			c != '+' {
+		if !validInteractiveTermChar(c) {
 			return false
 		}
 	}
 	return true
 }
+
+func validInteractiveTermChar(c rune) bool {
+	if asciiRange(c, 'a', 'z') || asciiRange(c, 'A', 'Z') || asciiRange(c, '0', '9') {
+		return true
+	}
+	switch c {
+	case '-', '_', '.', '+':
+		return true
+	default:
+		return false
+	}
+}
+
+func asciiRange(c, first, last rune) bool { return c >= first && c <= last }

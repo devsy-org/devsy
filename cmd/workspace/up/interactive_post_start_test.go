@@ -21,6 +21,11 @@ import (
 	"google.golang.org/grpc"
 )
 
+const (
+	testInvocationOne = "one"
+	testInvocationTwo = "two"
+)
+
 type interactiveStream struct {
 	grpc.ServerStream
 	ctx        context.Context
@@ -67,67 +72,13 @@ type interactiveFixture struct {
 	cancel context.CancelFunc
 }
 
-func (s *InteractivePostStartSuite) fixture(
-	opts ...func(*interactivePostStartOptions),
-) *interactiveFixture {
-	device := ptytest.New(s.T())
-	file, err := os.OpenFile(device.Name(), os.O_RDWR, 0)
-	s.Require().NoError(err)
-	ctx, cancel := context.WithCancel(context.Background())
-	stream := &interactiveStream{
-		ctx: ctx,
-		in:  make(chan *tunnel.LifecycleTerminalRequest, 16),
-		out: make(chan *tunnel.LifecycleTerminalResponse, 16),
-	}
-	options := interactivePostStartOptions{stdin: file, stdout: file}
-	for _, apply := range opts {
-		apply(&options)
-	}
-	f := &interactiveFixture{
-		device: device,
-		file:   file,
-		stream: stream,
-		owner:  newInteractivePostStart(options),
-		done:   make(chan error, 1),
-		cancel: cancel,
-	}
-	go func() {
-		defer func() {
-			if p := recover(); p != nil {
-				f.done <- fmt.Errorf("panic: %v", p)
-			}
-		}()
-		f.done <- f.owner.Serve(ctx, stream)
-	}()
-	s.T().Cleanup(func() {
-		cancel()
-		select {
-		case <-f.done:
-		case <-time.After(3 * time.Second):
-			s.T().Error("owner did not stop")
-		}
-		_ = file.Close()
-	})
-	return f
-}
-
-func (s *InteractivePostStartSuite) response(
-	f *interactiveFixture,
-) *tunnel.LifecycleTerminalResponse {
-	s.T().Helper()
-	select {
-	case v := <-f.stream.out:
-		return v
-	case <-time.After(3 * time.Second):
-		s.FailNow("response timeout")
-		return nil
-	}
-}
-
 func beginFrame() *tunnel.LifecycleTerminalRequest {
 	return &tunnel.LifecycleTerminalRequest{
 		Frame: &tunnel.LifecycleTerminalRequest_Begin{
-			Begin: &tunnel.LifecycleTerminalBegin{InvocationId: "one", Phase: "postStartCommand"},
+			Begin: &tunnel.LifecycleTerminalBegin{
+				InvocationId: testInvocationOne,
+				Phase:        "postStartCommand",
+			},
 		},
 	}
 }
@@ -135,15 +86,9 @@ func beginFrame() *tunnel.LifecycleTerminalRequest {
 func exitFrame() *tunnel.LifecycleTerminalRequest {
 	return &tunnel.LifecycleTerminalRequest{
 		Frame: &tunnel.LifecycleTerminalRequest_Exit{
-			Exit: &tunnel.LifecycleTerminalExit{InvocationId: "one", ExitCode: 7},
+			Exit: &tunnel.LifecycleTerminalExit{InvocationId: testInvocationOne, ExitCode: 7},
 		},
 	}
-}
-
-func (s *InteractivePostStartSuite) begin(f *interactiveFixture) {
-	s.Require().NotNil(s.response(f).GetReady())
-	f.stream.in <- beginFrame()
-	s.Require().NotNil(s.response(f).GetBeginAck())
 }
 
 func (s *InteractivePostStartSuite) TestReadyBeforeRawAndCurrentBeginSize() {
@@ -165,7 +110,9 @@ func (s *InteractivePostStartSuite) TestReadyBeforeRawAndCurrentBeginSize() {
 func (s *InteractivePostStartSuite) TestOutputWithoutNewlineAndInput() {
 	f := s.fixture()
 	s.begin(f)
-	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{Output: &tunnel.LifecycleTerminalOutput{InvocationId: "one", Sequence: 1, Data: []byte("prompt: ")}}}
+	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{
+		Output: &tunnel.LifecycleTerminalOutput{InvocationId: testInvocationOne, Sequence: 1, Data: []byte("prompt: ")},
+	}}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	f.device.ExpectMatchContext(ctx, "prompt: ")
@@ -286,7 +233,9 @@ func (s *InteractivePostStartSuite) TestPausedOutputLongerThanFiveSeconds() {
 	w := &pausedWriter{release: make(chan struct{}), started: make(chan struct{}, 1)}
 	f := s.fixture(func(o *interactivePostStartOptions) { o.output = w })
 	s.begin(f)
-	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{Output: &tunnel.LifecycleTerminalOutput{InvocationId: "one", Sequence: 1, Data: []byte("prompt")}}}
+	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{
+		Output: &tunnel.LifecycleTerminalOutput{InvocationId: testInvocationOne, Sequence: 1, Data: []byte("prompt")},
+	}}
 	<-w.started
 	f.stream.in <- exitFrame()
 	select {
@@ -322,7 +271,9 @@ func (s *InteractivePostStartSuite) TestNoStatusDoesNotSuppressTerminal() {
 		o.status = newInteractiveStatusGate(status.Nop(), io.Discard, true)
 	})
 	s.begin(f)
-	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{Output: &tunnel.LifecycleTerminalOutput{InvocationId: "one", Sequence: 1, Data: []byte("visible")}}}
+	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{
+		Output: &tunnel.LifecycleTerminalOutput{InvocationId: testInvocationOne, Sequence: 1, Data: []byte("visible")},
+	}}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	f.device.ExpectMatchContext(ctx, "visible")
@@ -361,7 +312,9 @@ func (s *InteractivePostStartSuite) TestOutputTimeoutRestores() {
 	before, err := term.GetState(int(f.file.Fd()))
 	s.Require().NoError(err)
 	s.begin(f)
-	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{Output: &tunnel.LifecycleTerminalOutput{InvocationId: "one", Sequence: 1, Data: []byte("x")}}}
+	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{
+		Output: &tunnel.LifecycleTerminalOutput{InvocationId: testInvocationOne, Sequence: 1, Data: []byte("x")},
+	}}
 	<-w.started
 	f.stream.in <- exitFrame()
 	select {
@@ -386,18 +339,18 @@ func (s *InteractivePostStartSuite) TestJournalContinuesWhilePresenterHeld() {
 	reporter.begin()
 	gate.enabled = true
 	gate.SetActive(true)
-	reporter.Report(status.Event{Step: "one"})
-	reporter.Report(status.Event{Step: "two"})
-	s.Equal("one", <-events)
-	s.Equal("two", <-events)
+	reporter.Report(status.Event{Step: testInvocationOne})
+	reporter.Report(status.Event{Step: testInvocationTwo})
+	s.Equal(testInvocationOne, <-events)
+	s.Equal(testInvocationTwo, <-events)
 	select {
 	case <-held:
 		s.FailNow("rendered early")
 	default:
 	}
 	gate.SetActive(false)
-	s.Equal("one", <-held)
-	s.Equal("two", <-held)
+	s.Equal(testInvocationOne, <-held)
+	s.Equal(testInvocationTwo, <-held)
 }
 
 func (s *InteractivePostStartSuite) TestPanicRestores() {
@@ -424,7 +377,9 @@ func (s *InteractivePostStartSuite) TestInvalidOutputRestores() {
 	before, err := term.GetState(int(f.file.Fd()))
 	s.Require().NoError(err)
 	s.begin(f)
-	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{Output: &tunnel.LifecycleTerminalOutput{InvocationId: "one", Sequence: 2, Data: []byte("bad")}}}
+	f.stream.in <- &tunnel.LifecycleTerminalRequest{Frame: &tunnel.LifecycleTerminalRequest_Output{
+		Output: &tunnel.LifecycleTerminalOutput{InvocationId: testInvocationOne, Sequence: 2, Data: []byte("bad")},
+	}}
 	select {
 	case err = <-f.done:
 		s.ErrorContains(err, "invalid output")
@@ -511,8 +466,8 @@ func (s *InteractivePostStartSuite) TestStatusFlushesAfterExitAck() {
 	gate := newInteractiveStatusGate(&testReporter{events: events}, io.Discard, false)
 	f := s.fixture(func(o *interactivePostStartOptions) { o.status = gate })
 	s.begin(f)
-	gate.Report(status.Event{Step: "one"})
-	gate.Report(status.Event{Step: "two"})
+	gate.Report(status.Event{Step: testInvocationOne})
+	gate.Report(status.Event{Step: testInvocationTwo})
 	select {
 	case <-events:
 		s.FailNow("rendered while terminal owned")
@@ -522,13 +477,13 @@ func (s *InteractivePostStartSuite) TestStatusFlushesAfterExitAck() {
 	s.Require().NotNil(s.response(f).GetExitAck())
 	select {
 	case event := <-events:
-		s.Equal("one", event)
+		s.Equal(testInvocationOne, event)
 	case <-time.After(time.Second):
 		s.FailNow("flush timeout")
 	}
 	select {
 	case event := <-events:
-		s.Equal("two", event)
+		s.Equal(testInvocationTwo, event)
 	case <-time.After(time.Second):
 		s.FailNow("flush timeout")
 	}
@@ -571,8 +526,8 @@ func (s *InteractivePostStartSuite) TestCloseWaitsForJournalDrain() {
 	gate.journal = reporter
 	f := s.fixture(func(o *interactivePostStartOptions) { o.status = gate })
 	s.begin(f)
-	reporter.Report(status.Event{Step: "one"})
-	reporter.Report(status.Event{Step: "two"})
+	reporter.Report(status.Event{Step: testInvocationOne})
+	reporter.Report(status.Event{Step: testInvocationTwo})
 	closed := make(chan struct{})
 	go func() { f.owner.Close(); close(closed) }()
 	select {
@@ -586,8 +541,8 @@ func (s *InteractivePostStartSuite) TestCloseWaitsForJournalDrain() {
 	case <-time.After(time.Second):
 		s.FailNow("close did not drain")
 	}
-	s.Equal("one", <-events)
-	s.Equal("two", <-events)
+	s.Equal(testInvocationOne, <-events)
+	s.Equal(testInvocationTwo, <-events)
 }
 
 func (s *InteractivePostStartSuite) TestJournalDrainTimeout() {
@@ -598,12 +553,12 @@ func (s *InteractivePostStartSuite) TestJournalDrainTimeout() {
 		journal:   &testReporter{events: events, block: block},
 	}
 	reporter.begin()
-	reporter.Report(status.Event{Step: "one"})
+	reporter.Report(status.Event{Step: testInvocationOne})
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	s.ErrorIs(reporter.end(ctx), context.DeadlineExceeded)
 	close(block)
-	s.Equal("one", <-events)
+	s.Equal(testInvocationOne, <-events)
 }
 
 func (s *InteractivePostStartSuite) TestDefaultLoggerSilentDuringOwnership() {
@@ -624,4 +579,67 @@ func (s *InteractivePostStartSuite) TestDefaultLoggerSilentDuringOwnership() {
 	s.Require().NoError(err)
 	s.NotContains(string(data), "must be hidden during ownership")
 	s.Contains(string(data), "visible after ownership")
+}
+
+func (s *InteractivePostStartSuite) fixture(
+	opts ...func(*interactivePostStartOptions),
+) *interactiveFixture {
+	device := ptytest.New(s.T())
+	file, err := os.OpenFile(device.Name(), os.O_RDWR, 0)
+	s.Require().NoError(err)
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &interactiveStream{
+		ctx: ctx,
+		in:  make(chan *tunnel.LifecycleTerminalRequest, 16),
+		out: make(chan *tunnel.LifecycleTerminalResponse, 16),
+	}
+	options := interactivePostStartOptions{stdin: file, stdout: file}
+	for _, apply := range opts {
+		apply(&options)
+	}
+	f := &interactiveFixture{
+		device: device,
+		file:   file,
+		stream: stream,
+		owner:  newInteractivePostStart(options),
+		done:   make(chan error, 1),
+		cancel: cancel,
+	}
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				f.done <- fmt.Errorf("panic: %v", p)
+			}
+		}()
+		f.done <- f.owner.Serve(ctx, stream)
+	}()
+	s.T().Cleanup(func() {
+		cancel()
+		select {
+		case <-f.done:
+		case <-time.After(3 * time.Second):
+			s.T().Error("owner did not stop")
+		}
+		_ = file.Close()
+	})
+	return f
+}
+
+func (s *InteractivePostStartSuite) response(
+	f *interactiveFixture,
+) *tunnel.LifecycleTerminalResponse {
+	s.T().Helper()
+	select {
+	case v := <-f.stream.out:
+		return v
+	case <-time.After(3 * time.Second):
+		s.FailNow("response timeout")
+		return nil
+	}
+}
+
+func (s *InteractivePostStartSuite) begin(f *interactiveFixture) {
+	s.Require().NotNil(s.response(f).GetReady())
+	f.stream.in <- beginFrame()
+	s.Require().NotNil(s.response(f).GetBeginAck())
 }
