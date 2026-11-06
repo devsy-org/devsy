@@ -10,17 +10,17 @@ The external MicroSandbox provider runs Devsy workspaces in microVMs using the M
 Install Devsy and the [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli), version 0.7.13 or later. Check `msb --version` in the environment running Devsy. Docker is required for image builds. Provider releases contain binaries for Linux amd64 and arm64, macOS arm64, and Windows amd64. Linux requires KVM and Windows requires Windows Hypervisor Platform.
 
 ```sh
-devsy provider add github.com/devsy-org/devsy-provider-microsandbox
-devsy workspace up . --provider microsandbox
+devsy provider add --name microsandbox-external https://github.com/devsy-org/devsy-provider-microsandbox/releases/latest/download/provider.yaml
+devsy workspace up . --provider microsandbox-external
 ```
 
-If the name already exists, add `--name microsandbox-external` and use that name in later commands. Existing built-in configurations are not migrated automatically.
+Choose another name if `microsandbox-external` already exists. Existing built-in configurations are not migrated automatically. The built-in provider is deprecated and is selected explicitly with `builtin:microsandbox` in current Devsy versions.
 
 The provider's SDK upgrades the `MSB_HOME` database, by default `~/.microsandbox`, when a workspace first starts. Older `msb` versions refuse the upgraded database. Older provider SDKs cannot run commands after the database is upgraded either. Update the provider and `msb` together.
 
 ## Configuration
 
-Set options in Desktop or with `devsy provider set microsandbox -o KEY=value`. Empty resource options use the runtime default unless otherwise noted.
+Set options in Desktop or with `devsy provider set microsandbox-external -o KEY=value`. Empty resource options use the runtime default unless otherwise noted.
 
 | Option | Default | Purpose |
 | --- | --- | --- |
