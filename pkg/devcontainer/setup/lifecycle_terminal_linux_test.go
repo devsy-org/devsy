@@ -23,7 +23,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const testTempDir = "/tmp"
+const (
+	testTempDir = "/tmp"
+	pathEnv     = "PATH"
+)
 
 type terminalTestSuite struct {
 	suite.Suite
@@ -126,7 +129,7 @@ func (s *terminalTestSuite) SetupTest() {
 	)
 	s.Require().NoError(os.WriteFile(filepath.Join(dir, "getent"), []byte(script), 0o600))
 	s.Require().NoError(os.Chmod(filepath.Join(dir, "getent"), executableTestMode()))
-	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s.T().Setenv(pathEnv, dir+string(os.PathListSeparator)+os.Getenv(pathEnv))
 }
 
 func (s *terminalTestSuite) TestPromptTTYAndMarker() {
@@ -262,7 +265,7 @@ func (s *terminalTestSuite) TestRemoteUserTTYReopen() {
 	)
 	s.Require().NoError(os.WriteFile(filepath.Join(dir, "getent"), []byte(script), 0o600))
 	s.Require().NoError(os.Chmod(filepath.Join(dir, "getent"), executableTestMode()))
-	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s.T().Setenv(pathEnv, dir+string(os.PathListSeparator)+os.Getenv(pathEnv))
 	s.Require().NoError(s.result(s.run(p)))
 	s.Contains(a.output.String(), "reopened")
 }
@@ -272,10 +275,11 @@ func (s *terminalTestSuite) TestExecutableResolution() {
 		s.Run(name, func() {
 			a := newTestTerminal()
 			p := s.params(context.Background(), a, "")
-			s.Require().NoError(os.WriteFile(filepath.Join(p.env.workspaceFolder, "script.sh"),
-				[]byte("#!/bin/sh\nprintf 'resolved'\n"), 0o755))
+			scriptPath := filepath.Join(p.env.workspaceFolder, "script.sh")
+			s.Require().
+				NoError(writeExecutableFile(scriptPath, []byte("#!/bin/sh\nprintf 'resolved'\n")))
 			p.commands = []types.LifecycleHook{{"": {name, "argument"}}}
-			p.env.remoteEnv = map[string]string{"PATH": p.env.workspaceFolder}
+			p.env.remoteEnv = map[string]string{pathEnv: p.env.workspaceFolder}
 			s.Require().NoError(s.result(s.run(p)))
 			s.Contains(a.output.String(), "resolved")
 		})
@@ -292,8 +296,8 @@ func (s *terminalTestSuite) TestSwitchedUserEnvironment() {
 	dir := s.T().TempDir()
 	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\n' '%s:x:%s:%s::%s:/bin/sh'\n",
 		target.Username, target.Uid, target.Gid, target.HomeDir)
-	s.Require().NoError(os.WriteFile(filepath.Join(dir, "getent"), []byte(script), 0o700))
-	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s.Require().NoError(writeExecutableFile(filepath.Join(dir, "getent"), []byte(script)))
+	s.T().Setenv(pathEnv, dir+string(os.PathListSeparator)+os.Getenv(pathEnv))
 	for _, override := range []bool{false, true} {
 		a := newTestTerminal()
 		p := s.params(
@@ -476,4 +480,11 @@ func (s *terminalTestSuite) result(done <-chan error) error {
 
 func executableTestMode() os.FileMode {
 	return 0o600 | 0o100
+}
+
+func writeExecutableFile(path string, content []byte) error {
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, executableTestMode())
 }

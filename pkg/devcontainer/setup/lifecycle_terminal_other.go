@@ -10,20 +10,18 @@ import (
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
+var errInteractiveUnsupported = errors.New(
+	"interactive lifecycle commands are only supported in Linux containers",
+)
+
 type interactiveLaunch struct{}
 
 func prepareInteractiveLaunch(_ []string, _ string) (interactiveLaunch, error) {
-	return interactiveLaunch{}, errors.New(
-		"interactive lifecycle commands are unsupported on Windows",
-	)
+	return interactiveLaunch{}, errInteractiveUnsupported
 }
 
 func runInteractiveProcess(
 	_ context.Context, _ hookRunParams, _ interactiveLaunch, _ tunnel.TerminalAttachment,
 ) (subprocess.Result, error) {
-	return subprocess.Result{
-			ExitCode: -1,
-		}, errors.New(
-			"interactive lifecycle commands are unsupported on Windows",
-		)
+	return subprocess.Result{ExitCode: -1}, errInteractiveUnsupported
 }
