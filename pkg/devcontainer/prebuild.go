@@ -38,34 +38,18 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 
 	prebuildImage := r.determinePrebuildImage(options, prebuildRepo, buildInfo)
 
-	if buildInfo.ImageName == prebuildImage {
-		return buildInfo.ImageName, nil
+	if shouldPushPrebuild(options, buildInfo, prebuildImage) {
+		if err := r.pushPrebuildImage(ctx, pushPrebuildImageParams{
+			imagePublisher:    r.imageBackend,
+			substitutedConfig: substitutedConfig,
+			buildInfo:         buildInfo,
+			prebuildImage:     prebuildImage,
+			options:           options,
+			prebuildRepo:      prebuildRepo,
+		}); err != nil {
+			return "", err
+		}
 	}
-
-	// should we push?
-	if options.SkipPush {
-		return prebuildImage, nil
-	}
-
-	// if push happened during build, skip the separate push workflow
-	// When PushDuringBuild is enabled, BuildKit already pushed the image directly to the
-	// registry during the build process. Skip the tag/push workflow below to avoid
-	// redundant operations. The image is already in the registry.
-	if options.PushDuringBuild {
-		return prebuildImage, nil
-	}
-
-	if err := r.pushPrebuildImage(ctx, pushPrebuildImageParams{
-		imagePublisher:    r.imageBackend,
-		substitutedConfig: substitutedConfig,
-		buildInfo:         buildInfo,
-		prebuildImage:     prebuildImage,
-		options:           options,
-		prebuildRepo:      prebuildRepo,
-	}); err != nil {
-		return "", err
-	}
-
 	return prebuildImage, nil
 }
 
@@ -104,6 +88,14 @@ func (r *runner) determinePrebuildImage(
 	default:
 		return build.GetImageName(r.localWorkspaceFolder, buildInfo.PrebuildHash)
 	}
+}
+
+func shouldPushPrebuild(
+	options provider.BuildOptions,
+	buildInfo *config.BuildInfo,
+	prebuildImage string,
+) bool {
+	return buildInfo.ImageName != prebuildImage && !options.SkipPush && !options.PushDuringBuild
 }
 
 type pushPrebuildImageParams struct {

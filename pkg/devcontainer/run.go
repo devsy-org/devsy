@@ -181,19 +181,13 @@ func (r *runner) Up(
 	}
 	defer cleanupBuildInformation(substitutedConfig.Config)
 	defaultSelection := overlayConfigKind(substitutedConfig.Config) == overlayDefaultSelection
-	if !defaultSelection {
-		if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
-			return nil, err
-		}
-	}
-
-	if defaultSelection {
-		// The full overlay check runs after initializeCommand; fail a stale
-		// WSLg container first so the host hook does not run twice.
-		err = r.checkWSLgReuseBeforeInitialize(ctx, substitutedConfig.Config, options)
-		if err != nil {
-			return nil, err
-		}
+	if err := r.checkSelectionBeforeInitialize(
+		ctx,
+		substitutedConfig,
+		options,
+		defaultSelection,
+	); err != nil {
+		return nil, err
 	}
 	if err := r.runInitializePhase(ctx, reporter, substitutedConfig, options); err != nil {
 		return nil, err
@@ -207,20 +201,7 @@ func (r *runner) Up(
 		options:             options,
 		timeout:             timeout,
 	}
-
-	var result *config.Result
-	err = status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhasePreparingDevContainer},
-		func(ctx context.Context) error {
-			var dispatchErr error
-			result, dispatchErr = r.dispatchByConfigKind(ctx, substitutedConfig, params)
-			return dispatchErr
-		},
-	)
-	r.annotateUpResult(result, selectionWarning)
-	return result, err
+	return r.runContainerWithStatus(ctx, params, selectionWarning)
 }
 
 func (r *runner) Command(ctx context.Context, params CommandParams) error {
@@ -252,6 +233,26 @@ func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
 	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
 }
 
+func (r *runner) runContainerWithStatus(
+	ctx context.Context,
+	params *runContainerParams,
+	selectionWarning string,
+) (*config.Result, error) {
+	var result *config.Result
+	err := status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhasePreparingDevContainer},
+		func(ctx context.Context) error {
+			var dispatchErr error
+			result, dispatchErr = r.dispatchByConfigKind(ctx, params.parsedConfig, params)
+			return dispatchErr
+		},
+	)
+	r.annotateUpResult(result, selectionWarning)
+	return result, err
+}
+
 func (r *runner) annotateUpResult(result *config.Result, selectionWarning string) {
 	if result == nil {
 		return
@@ -260,6 +261,18 @@ func (r *runner) annotateUpResult(result *config.Result, selectionWarning string
 	if selectionWarning != "" {
 		result.HostWarnings = append(result.HostWarnings, selectionWarning)
 	}
+}
+
+func (r *runner) checkSelectionBeforeInitialize(
+	ctx context.Context,
+	substitutedConfig *config.SubstitutedConfig,
+	options UpOptions,
+	defaultSelection bool,
+) error {
+	if !defaultSelection {
+		return r.checkOverlayRecreation(ctx, substitutedConfig, options)
+	}
+	return r.checkWSLgReuseBeforeInitialize(ctx, substitutedConfig.Config, options)
 }
 
 func (r *runner) afterInitialize(

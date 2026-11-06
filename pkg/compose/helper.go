@@ -89,6 +89,37 @@ type ComposeHelper struct {
 	invocationEnvironment map[string]string
 }
 
+func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error) {
+	dockerCmd := dockerHelper.DockerCommand
+	if dockerCmd == "" {
+		dockerCmd = "docker"
+	}
+
+	type tryFunc func() (*ComposeHelper, error)
+
+	var detectors []tryFunc
+	if dockerHelper.GetRuntime().Name() == docker.RuntimePodman {
+		detectors = []tryFunc{
+			func() (*ComposeHelper, error) { return tryComposeSubcommand(dockerCmd) },
+			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
+		}
+	} else {
+		detectors = []tryFunc{
+			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
+			func() (*ComposeHelper, error) { return tryComposeSubcommand("podman") },
+		}
+	}
+
+	for _, detect := range detectors {
+		if helper, err := detect(); err == nil {
+			helper.Docker = dockerHelper
+			return helper, nil
+		}
+	}
+
+	return nil, fmt.Errorf("docker compose or podman compose not installed")
+}
+
 // WithInvocationEnvironment leaves the shared provider helper unchanged.
 func (h *ComposeHelper) WithInvocationEnvironment(env map[string]string) *ComposeHelper {
 	clone := *h
@@ -119,42 +150,6 @@ func checkWSLgEnvFiles(candidates map[string]string) composecli.ProjectOptionsFn
 		}
 		return nil
 	}
-}
-
-// NewComposeHelper creates a new ComposeHelper instance after detecting whether
-// Docker Compose V2 or Podman Compose is installed. The detection order depends
-// on the container runtime: Podman runtimes try podman compose first, while
-// Docker/nerdctl runtimes try docker compose V2 first. It returns an error if
-// none are found.
-func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error) {
-	dockerCmd := dockerHelper.DockerCommand
-	if dockerCmd == "" {
-		dockerCmd = "docker"
-	}
-
-	type tryFunc func() (*ComposeHelper, error)
-
-	var detectors []tryFunc
-	if dockerHelper.GetRuntime().Name() == docker.RuntimePodman {
-		detectors = []tryFunc{
-			func() (*ComposeHelper, error) { return tryComposeSubcommand(dockerCmd) },
-			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
-		}
-	} else {
-		detectors = []tryFunc{
-			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
-			func() (*ComposeHelper, error) { return tryComposeSubcommand("podman") },
-		}
-	}
-
-	for _, detect := range detectors {
-		if helper, err := detect(); err == nil {
-			helper.Docker = dockerHelper
-			return helper, nil
-		}
-	}
-
-	return nil, fmt.Errorf("docker compose or podman compose not installed")
 }
 
 // tryDockerComposeV2 checks if Docker Compose V2 is available and returns a ComposeHelper if so.
