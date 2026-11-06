@@ -18,9 +18,19 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestLifecycleTerminalGuard(t *testing.T) {
+type AgentContainerLifecycleTerminalSuite struct {
+	suite.Suite
+}
+
+func TestAgentContainerLifecycleTerminalSuite(t *testing.T) {
+	suite.Run(t, new(AgentContainerLifecycleTerminalSuite))
+}
+
+func (s *AgentContainerLifecycleTerminalSuite) TestLifecycleTerminalGuard() {
+	t := s.T()
 	require.NotNil(
 		t,
 		NewSetupContainerCmd(&flags.GlobalFlags{}).Flags().Lookup("lifecycle-terminal-protocol"),
@@ -52,7 +62,8 @@ func (s *testTerminalSession) Begin(
 }
 func (s *testTerminalSession) Close(context.Context) error { s.closed = true; return nil }
 
-func TestPreAttachClosesSessionOnInvalidHooks(t *testing.T) {
+func (s *AgentContainerLifecycleTerminalSuite) TestPreAttachClosesSessionOnInvalidHooks() {
+	t := s.T()
 	session := &testTerminalSession{}
 	info := &config.Result{MergedConfig: &config.MergedDevContainerConfig{}}
 	info.MergedConfig.PostStartCommands = []types.LifecycleHook{{"a": {"true"}, "b": {"true"}}}
@@ -77,7 +88,8 @@ func TestPreAttachClosesSessionOnInvalidHooks(t *testing.T) {
 	require.True(t, session.closed)
 }
 
-func TestSetupSignalContext(t *testing.T) {
+func (s *AgentContainerLifecycleTerminalSuite) TestSetupSignalContext() {
+	t := s.T()
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
 	defer signal.Stop(signals)

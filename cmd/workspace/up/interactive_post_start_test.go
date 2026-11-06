@@ -11,11 +11,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/pty/ptytest"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/terminal"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
@@ -194,25 +198,25 @@ func (s *InteractivePostStartSuite) TestStatusHeldAndFlushedWithoutBlocking() {
 		s.FailNow("rendered during ownership")
 	default:
 	}
-	gate.SetActive(false)
 	gate.Report(status.Event{Step: "third"})
 	done := make(chan struct{})
-	go func() {
-		for range 400 {
-			gate.Report(status.Event{Step: "extra"})
-		}
-		close(done)
-	}()
+	go func() { gate.SetActive(false); close(done) }()
+	select {
+	case <-done:
+		s.FailNow("drain returned before rendering")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(block)
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		s.FailNow("report blocked")
+		s.FailNow("drain timed out")
 	}
-	close(block)
 	s.Equal("first", <-events)
 	s.Equal("second", <-events)
 	s.Equal("third", <-events)
-	s.Eventually(func() bool { return len(events) >= 253 }, time.Second, time.Millisecond)
+	gate.Report(status.Event{Step: "ready"})
+	s.Equal("ready", <-events)
 }
 
 type pausedWriter struct {
@@ -579,6 +583,66 @@ func (s *InteractivePostStartSuite) TestDefaultLoggerSilentDuringOwnership() {
 	s.Require().NoError(err)
 	s.NotContains(string(data), "must be hidden during ownership")
 	s.Contains(string(data), "visible after ownership")
+}
+
+func (s *InteractivePostStartSuite) TestUnsupportedRoutesBeforePreparation() {
+	for _, tc := range []struct {
+		name     string
+		client   client2.BaseWorkspaceClient
+		platform bool
+	}{
+		{name: "platform", platform: true},
+		{name: "proxy", client: interactiveProxyClient{}},
+		{name: "daemon", client: interactiveDaemonClient{}},
+	} {
+		s.Run(tc.name, func() {
+			calls := 0
+			cmd := &UpCmd{
+				GlobalFlags:          &flags.GlobalFlags{},
+				InteractivePostStart: true,
+				SecretsFile:          "/missing/secrets",
+				resolveWorkspace: func(
+					context.Context, *config.Config, workspace.ResolveParams,
+				) (client2.BaseWorkspaceClient, error) {
+					calls++
+					return tc.client, nil
+				},
+			}
+			cmd.Platform.Enabled = tc.platform
+			_, err := cmd.prepareClient(context.Background(), testConfig(), nil)
+			s.Require().ErrorContains(err, "unsupported")
+			if tc.platform {
+				s.Zero(calls)
+			} else {
+				s.Equal(1, calls)
+			}
+		})
+	}
+}
+
+func (s *InteractivePostStartSuite) TestCloseDrainsStatus() {
+	events := make(chan string, 2)
+	block := make(chan struct{})
+	gate := newInteractiveStatusGate(&testReporter{events: events, block: block}, io.Discard, false)
+	owner := newInteractivePostStart(interactivePostStartOptions{status: gate})
+	gate.SetActive(true)
+	gate.Report(status.Event{Step: "held"})
+	done := make(chan struct{})
+	go func() { owner.Close(); close(done) }()
+	select {
+	case <-done:
+		s.FailNow("close returned before drain")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(block)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		s.FailNow("close timed out")
+	}
+	s.Equal("held", <-events)
+	gate.Report(status.Event{Step: "ready"})
+	s.Equal("ready", <-events)
 }
 
 func (s *InteractivePostStartSuite) fixture(

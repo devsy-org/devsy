@@ -8,17 +8,28 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
 type wiringClient struct{ tunnel.TunnelClient }
 
-func TestUpOptionsTerminalClientNotSerialized(t *testing.T) {
+type LifecycleTerminalWiringSuite struct {
+	suite.Suite
+}
+
+func TestLifecycleTerminalWiringSuite(t *testing.T) {
+	suite.Run(t, new(LifecycleTerminalWiringSuite))
+}
+
+func (s *LifecycleTerminalWiringSuite) TestUpOptionsTerminalClientNotSerialized() {
+	t := s.T()
 	data, err := json.Marshal(UpOptions{LifecycleTerminalClient: &wiringClient{}})
 	require.NoError(t, err)
 	require.NotContains(t, string(data), "LifecycleTerminalClient")
 }
 
-func TestUpClearsTerminalClientOnError(t *testing.T) {
+func (s *LifecycleTerminalWiringSuite) TestUpClearsTerminalClientOnError() {
+	t := s.T()
 	t.Setenv("DEVSY_CONFIG", t.TempDir())
 	r := &runner{workspaceConfig: &provider.AgentWorkspaceInfo{Workspace: &provider.Workspace{}}}
 	_, err := r.Up(

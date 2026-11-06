@@ -60,6 +60,9 @@ func (s *interactivePostStart) Close() {
 			return
 		}
 	}
+	if s.opts.status != nil {
+		s.opts.status.SetActive(false)
+	}
 	if s.opts.status != nil && s.opts.status.journal != nil {
 		_ = s.opts.status.journal.end(ctx)
 	}

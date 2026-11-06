@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/status"
@@ -62,6 +63,7 @@ type interactiveStatusGate struct {
 	out      io.Writer
 	quiet    bool
 	running  bool
+	idle     chan struct{}
 	journal  *journalStatusReporter
 }
 
@@ -99,16 +101,31 @@ func (g *interactiveStatusGate) Report(event status.Event) {
 func (g *interactiveStatusGate) SetActive(active bool) {
 	g.mu.Lock()
 	g.active = active
-	g.startLocked()
+	if active {
+		g.enabled = true
+	} else {
+		g.startLocked()
+		if !g.running {
+			g.enabled = false
+		}
+	}
+	idle := g.idle
+	running := g.running
 	g.mu.Unlock()
 	if active {
 		g.waitForRender()
+	} else if running {
+		select {
+		case <-idle:
+		case <-time.After(5 * time.Second):
+		}
 	}
 }
 
 func (g *interactiveStatusGate) startLocked() {
 	if !g.active && !g.running && (len(g.events) > 0 || g.omitted > 0) {
 		g.running = true
+		g.idle = make(chan struct{})
 		go g.run()
 	}
 }
@@ -124,6 +141,10 @@ func (g *interactiveStatusGate) run() {
 		g.mu.Lock()
 		if g.active || (len(g.events) == 0 && g.omitted == 0) {
 			g.running = false
+			if !g.active {
+				g.enabled = false
+			}
+			close(g.idle)
 			g.mu.Unlock()
 			g.renderMu.Unlock()
 			return

@@ -267,6 +267,52 @@ func (s *terminalTestSuite) TestRemoteUserTTYReopen() {
 	s.Contains(a.output.String(), "reopened")
 }
 
+func (s *terminalTestSuite) TestExecutableResolution() {
+	for _, name := range []string{"./script.sh", "script.sh"} {
+		s.Run(name, func() {
+			a := newTestTerminal()
+			p := s.params(context.Background(), a, "")
+			s.Require().NoError(os.WriteFile(filepath.Join(p.env.workspaceFolder, "script.sh"),
+				[]byte("#!/bin/sh\nprintf 'resolved'\n"), 0o755))
+			p.commands = []types.LifecycleHook{{"": {name, "argument"}}}
+			p.env.remoteEnv = map[string]string{"PATH": p.env.workspaceFolder}
+			s.Require().NoError(s.result(s.run(p)))
+			s.Contains(a.output.String(), "resolved")
+		})
+	}
+}
+
+func (s *terminalTestSuite) TestSwitchedUserEnvironment() {
+	if os.Geteuid() != 0 {
+		s.T().Skip("requires root")
+	}
+	target, err := user.Lookup("nobody")
+	s.Require().NoError(err)
+	s.Require().NotEqual("0", target.Uid)
+	dir := s.T().TempDir()
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\n' '%s:x:%s:%s::%s:/bin/sh'\n",
+		target.Username, target.Uid, target.Gid, target.HomeDir)
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, "getent"), []byte(script), 0o700))
+	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, override := range []bool{false, true} {
+		a := newTestTerminal()
+		p := s.params(
+			context.Background(),
+			a,
+			`printf '%s|%s|%s|%s' "$HOME" "$USER" "$LOGNAME" "$SHELL"`,
+		)
+		p.env.remoteUser = target.Username
+		p.env.workspaceFolder = testTempDir
+		home := target.HomeDir
+		if override {
+			home = "/custom-home"
+			p.env.remoteEnv = map[string]string{"HOME": home}
+		}
+		s.Require().NoError(s.result(s.run(p)))
+		s.Contains(a.output.String(), home+"|"+target.Username+"|"+target.Username+"|/bin/sh")
+	}
+}
+
 func (s *terminalTestSuite) TestValidationBeforeExecution() {
 	a := newTestTerminal()
 	dir := s.T().TempDir()

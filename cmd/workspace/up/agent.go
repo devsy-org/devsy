@@ -50,6 +50,26 @@ func (cmd *UpCmd) devsyUp(
 	return result, nil
 }
 
+func (cmd *UpCmd) validateInteractiveRoute(client client2.BaseWorkspaceClient) error {
+	if !cmd.InteractivePostStart {
+		return nil
+	}
+	if cmd.Platform.Enabled {
+		return fmt.Errorf(
+			"--interactive-post-start is unsupported with platform-managed workspaces",
+		)
+	}
+	switch client.(type) {
+	case client2.WorkspaceClient:
+		return nil
+	case client2.ProxyClient:
+		return fmt.Errorf("--interactive-post-start is unsupported with proxy workspaces")
+	case client2.DaemonClient:
+		return fmt.Errorf("--interactive-post-start is unsupported with daemon workspaces")
+	}
+	return nil
+}
+
 func (cmd *UpCmd) dispatchClient(
 	ctx context.Context,
 	devsyConfig *config.Config,

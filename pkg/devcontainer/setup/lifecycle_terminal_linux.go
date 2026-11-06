@@ -9,6 +9,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -216,13 +219,27 @@ func startInteractive(
 	a tunnel.TerminalAttachment,
 ) (pty.PTYCmd, pty.Process, error) {
 	window := a.Window()
-	path, err := exec.LookPath(launch.binary)
+	cred := launch.identity.credentials
+	env := os.Environ()
+	if !cred.MatchCurrent {
+		target, err := user.LookupId(strconv.FormatUint(uint64(cred.UID), 10))
+		if err != nil {
+			return nil, nil, fmt.Errorf("lookup execution user: %w", err)
+		}
+		shell, err := loginShell(target.Username)
+		if err != nil {
+			return nil, nil, err
+		}
+		env = append(env, "HOME="+target.HomeDir, "USER="+target.Username,
+			"LOGNAME="+target.Username, "SHELL="+shell)
+	}
+	path, err := interactiveLookPath(launch.binary, p.env.workspaceFolder, p.env.remoteEnv)
 	if err != nil {
 		return nil, nil, err
 	}
 	cmd := pty.CommandContext(context.Background(), path, launch.args[1:]...)
 	cmd.Dir = p.env.workspaceFolder
-	cmd.Env = append(append(os.Environ(), buildEnvArr(p.env.remoteEnv)...), "TERM="+window.Term)
+	cmd.Env = append(append(env, buildEnvArr(p.env.remoteEnv)...), "TERM="+window.Term)
 	opts := []pty.Option{
 		pty.WithSSHRequest(
 			ssh.Pty{
@@ -231,7 +248,6 @@ func startInteractive(
 			},
 		),
 	}
-	cred := launch.identity.credentials
 	if !cred.MatchCurrent {
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			Credential: &syscall.Credential{Uid: cred.UID, Gid: cred.GID, Groups: cred.Groups},
@@ -243,4 +259,27 @@ func startInteractive(
 		return nil, nil, fmt.Errorf("start terminal command: %w", err)
 	}
 	return terminal, process, nil
+}
+
+func interactiveLookPath(binary, dir string, env map[string]string) (string, error) {
+	if strings.Contains(binary, "/") {
+		if !filepath.IsAbs(binary) {
+			binary = filepath.Join(dir, binary)
+		}
+		return exec.LookPath(binary)
+	}
+	path, ok := env["PATH"]
+	if !ok {
+		path = os.Getenv("PATH")
+	}
+	for _, entry := range filepath.SplitList(path) {
+		if !filepath.IsAbs(entry) {
+			entry = filepath.Join(dir, entry)
+		}
+		candidate := filepath.Join(entry, binary)
+		if found, err := exec.LookPath(candidate); err == nil {
+			return found, nil
+		}
+	}
+	return "", &exec.Error{Name: binary, Err: exec.ErrNotFound}
 }

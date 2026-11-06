@@ -11,9 +11,18 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestValidateInteractivePostStartRejectsConflicts(t *testing.T) {
+type InteractivePostStartCLISuite struct {
+	suite.Suite
+}
+
+func TestInteractivePostStartCLISuite(t *testing.T) {
+	suite.Run(t, new(InteractivePostStartCLISuite))
+}
+
+func (s *InteractivePostStartCLISuite) TestValidateInteractivePostStartRejectsConflicts() {
 	tests := []struct {
 		name string
 		set  func(*UpCmd)
@@ -25,7 +34,8 @@ func TestValidateInteractivePostStartRejectsConflicts(t *testing.T) {
 		{name: "skip nonblocking", set: func(cmd *UpCmd) { cmd.SkipNonBlockingCommands = true }},
 	}
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+		s.Run(test.name, func() {
+			t := s.T()
 			cmd := &UpCmd{InteractivePostStart: true}
 			test.set(cmd)
 			require.ErrorContains(t, cmd.validateInteractivePostStart(), "cannot be combined")
@@ -33,7 +43,8 @@ func TestValidateInteractivePostStartRejectsConflicts(t *testing.T) {
 	}
 }
 
-func TestInteractivePostStartFlagDefaultsFalse(t *testing.T) {
+func (s *InteractivePostStartCLISuite) TestInteractivePostStartFlagDefaultsFalse() {
+	t := s.T()
 	root := NewUpCmd(&flags.GlobalFlags{})
 	flag := root.Flags().Lookup(names.InteractivePostStart)
 	require.NotNil(t, flag)
@@ -43,7 +54,8 @@ func TestInteractivePostStartFlagDefaultsFalse(t *testing.T) {
 	require.False(t, value)
 }
 
-func TestWorkspaceAgentCommandLifecycleGuard(t *testing.T) {
+func (s *InteractivePostStartCLISuite) TestWorkspaceAgentCommandLifecycleGuard() {
+	t := s.T()
 	base := workspaceAgentCommand("/agent", "workspace", false, false)
 	require.NotContains(t, base, "lifecycle-terminal-protocol")
 	interactive := workspaceAgentCommand("/agent", "workspace", false, true)
@@ -51,13 +63,15 @@ func TestWorkspaceAgentCommandLifecycleGuard(t *testing.T) {
 	require.Equal(t, base+" "+shellescape.Quote("--lifecycle-terminal-protocol=1"), interactive)
 }
 
-func TestDefaultInvocationHasNoLifecycleTerminalRequest(t *testing.T) {
+func (s *InteractivePostStartCLISuite) TestDefaultInvocationHasNoLifecycleTerminalRequest() {
+	t := s.T()
 	cmd := &UpCmd{}
 	require.False(t, cmd.InteractivePostStart)
 	require.Nil(t, cmd.LifecycleTerminal)
 }
 
-func TestDispatchRejectsInteractiveUnsupportedRoutes(t *testing.T) {
+func (s *InteractivePostStartCLISuite) TestDispatchRejectsInteractiveUnsupportedRoutes() {
+	t := s.T()
 	cmd := &UpCmd{InteractivePostStart: true}
 	cmd.Platform.Enabled = true
 	_, err := cmd.dispatchClient(context.Background(), &config.Config{}, nil)
@@ -77,7 +91,8 @@ type (
 	interactiveDaemonClient struct{ client2.DaemonClient }
 )
 
-func TestInteractivePostStartTerminalDimensions(t *testing.T) {
+func (s *InteractivePostStartCLISuite) TestInteractivePostStartTerminalDimensions() {
+	t := s.T()
 	for _, value := range []int{-1, 65536} {
 		cmd := &UpCmd{CLIOptions: provider.CLIOptions{TerminalRows: value}}
 		require.ErrorContains(t, cmd.validateInteractivePostStart(), "between 0 and 65535")
@@ -87,7 +102,8 @@ func TestInteractivePostStartTerminalDimensions(t *testing.T) {
 	require.NoError(t, (&UpCmd{}).validateInteractivePostStart())
 }
 
-func TestInteractivePostStartRejectsJSONAndUI(t *testing.T) {
+func (s *InteractivePostStartCLISuite) TestInteractivePostStartRejectsJSONAndUI() {
+	t := s.T()
 	cmd := &UpCmd{InteractivePostStart: true, GlobalFlags: &flags.GlobalFlags{ResultFormat: "json"}}
 	require.ErrorContains(t, cmd.validateInteractivePostStart(), "requires plain output")
 	t.Setenv("DEVSY_UI", "true")
@@ -95,7 +111,8 @@ func TestInteractivePostStartRejectsJSONAndUI(t *testing.T) {
 	require.ErrorContains(t, cmd.validateInteractivePostStart(), "DEVSY_UI")
 }
 
-func TestInteractivePostStartCIEnvironmentIsNotTerminalCheck(t *testing.T) {
+func (s *InteractivePostStartCLISuite) TestInteractivePostStartCIEnvironmentIsNotTerminalCheck() {
+	t := s.T()
 	t.Setenv("CI", "true")
 	cmd := &UpCmd{
 		InteractivePostStart: true,
@@ -106,7 +123,8 @@ func TestInteractivePostStartCIEnvironmentIsNotTerminalCheck(t *testing.T) {
 	require.NotContains(t, err.Error(), "CI")
 }
 
-func TestCreateLifecycleTerminalRequest(t *testing.T) {
+func (s *InteractivePostStartCLISuite) TestCreateLifecycleTerminalRequest() {
+	t := s.T()
 	cmd := &UpCmd{}
 	client := &lifecycleTerminalRequestClient{}
 	require.NoError(t, cmd.createLifecycleTerminalRequest(client))

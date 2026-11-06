@@ -64,6 +64,9 @@ func (cmd *UpCmd) validateInteractivePostStart() error {
 	if !cmd.InteractivePostStart {
 		return nil
 	}
+	if err := cmd.validateInteractiveRoute(nil); err != nil {
+		return err
+	}
 	if err := cmd.validateInteractiveFlagConflicts(); err != nil {
 		return err
 	}

@@ -300,6 +300,9 @@ func (cmd *UpCmd) runWorkspace(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) error {
+	if err := cmd.validateInteractiveRoute(client); err != nil {
+		return err
+	}
 	cmd.LifecycleTerminal = nil
 	cmd.prepareWorkspace(client)
 

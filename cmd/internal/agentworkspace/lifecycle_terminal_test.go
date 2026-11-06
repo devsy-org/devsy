@@ -5,9 +5,19 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestLifecycleTerminalGuard(t *testing.T) {
+type AgentWorkspaceLifecycleTerminalSuite struct {
+	suite.Suite
+}
+
+func TestAgentWorkspaceLifecycleTerminalSuite(t *testing.T) {
+	suite.Run(t, new(AgentWorkspaceLifecycleTerminalSuite))
+}
+
+func (s *AgentWorkspaceLifecycleTerminalSuite) TestLifecycleTerminalGuard() {
+	t := s.T()
 	require.NotNil(t, NewUpCmd(&flags.GlobalFlags{}).Flags().Lookup("lifecycle-terminal-protocol"))
 	for _, tc := range []struct {
 		set, present bool

@@ -66,6 +66,9 @@ func (cmd *UpCmd) prepareClient(
 	devsyConfig *config.Config,
 	args []string,
 ) (client2.BaseWorkspaceClient, error) {
+	if err := cmd.validateInteractiveRoute(nil); err != nil {
+		return nil, err
+	}
 	if err := cmd.prepareClientEnvironment(devsyConfig, args, ctx); err != nil {
 		return nil, err
 	}
@@ -101,6 +104,9 @@ func (cmd *UpCmd) prepareClient(
 		return nil, err
 	}
 
+	if err := cmd.validateInteractiveRoute(client); err != nil {
+		return nil, err
+	}
 	if err := cmd.postResolveWorkspace(ctx, devsyConfig, client, existed); err != nil {
 		return nil, err
 	}
@@ -285,6 +291,9 @@ func (cmd *UpCmd) prepareClientEnvironment(
 	ctx context.Context,
 ) error {
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
+		return err
+	}
+	if err := cmd.validateInteractiveRoute(nil); err != nil {
 		return err
 	}
 	if err := workspace2.ValidateID(cmd.ID); err != nil {
