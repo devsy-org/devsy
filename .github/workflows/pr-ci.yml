@@ -211,7 +211,7 @@ jobs:
 
       - name: upload provider update test JSON on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: provider-update-windows-test-json
           path: |
@@ -271,21 +271,21 @@ jobs:
 
       - name: upload Podman CI helper
         if: runner.os == 'Linux' || runner.os == 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-ci-podman-${{ steps.os.outputs.runner_os }}
           path: ${{ runner.temp }}/devsy-ci-podman*
 
       - name: upload E2E runtime helper
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-ci-e2e-${{ steps.os.outputs.runner_os }}
           path: ${{ runner.temp }}/devsy-ci-e2e*
 
       - name: upload CI tool
         if: runner.os == 'Linux' || runner.os == 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-ci-tool-${{ steps.os.outputs.runner_os }}
           path: ${{ runner.temp }}/devsy-ci-tool*
@@ -312,7 +312,7 @@ jobs:
           df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
           du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
@@ -329,14 +329,14 @@ jobs:
 
       - name: upload runtime performance tools
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: runtime-performance-tools-linux
           path: ${{ runner.temp }}/runtime-performance-tools/
 
       - name: upload MicroSandbox CI helper
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-ci-microsandbox-linux
           path: ${{ runner.temp }}/devsy-ci-microsandbox
@@ -353,7 +353,7 @@ jobs:
 
       - name: upload Linux GitHub credential fixtures
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ghfixture-linux
           path: ${{ runner.temp }}/ghfixture-linux-*
@@ -373,7 +373,7 @@ jobs:
 
       - name: upload e2e test binary
         if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-test-${{ steps.os.outputs.runner_os }}
           path: ./e2e/e2e.test*
@@ -544,7 +544,7 @@ jobs:
 
       - name: upload MicroSandbox test evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: microsandbox-${{ matrix.name }}-evidence
           path: |
@@ -555,7 +555,7 @@ jobs:
 
       - name: upload runtime performance evidence
         if: always() && matrix.performance_capture
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: microsandbox-runtime-performance
           path: ${{ runner.temp }}/microsandbox-performance/provider-performance.json
@@ -843,7 +843,7 @@ jobs:
 
       - name: upload report and setup or teardown diagnostics
         if: always() && matrix.setup_docker_wsl
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-diagnostics-${{ matrix.name }}
           path: |
