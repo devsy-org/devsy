@@ -428,6 +428,19 @@ func (s *terminalSuite) TestConcurrentOwnerSendsSerialize() {
 	s.NoError(session.Close(context.Background()))
 }
 
+func (s *terminalSuite) TestCloseAfterServerStreamClosed() {
+	owner := testTerminalOwner{
+		serve: func(_ context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {
+			return ready(st)
+		},
+	}
+	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
+	session, err := OpenLifecycleTerminal(context.Background(), client, s.req)
+	s.Require().NoError(err)
+	time.Sleep(50 * time.Millisecond)
+	s.NoError(session.Close(context.Background()))
+}
+
 func (s *terminalSuite) TestGoroutinesExitAfterClose() {
 	owner := testTerminalOwner{
 		serve: func(_ context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {

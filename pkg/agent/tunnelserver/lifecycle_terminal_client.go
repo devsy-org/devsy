@@ -257,6 +257,9 @@ func (s *terminalClient) Close(ctx context.Context) error {
 			},
 		},
 	)
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
 	if err == nil {
 		select {
 		case <-s.recvDone:
@@ -621,6 +624,11 @@ func (s *terminalClient) sendItem(ctx context.Context, item terminalSend) error 
 	select {
 	case err := <-item.done:
 		return err
+	default:
+	}
+	select {
+	case err := <-item.done:
+		return err
 	case <-ctx.Done():
 		s.fail(ctx.Err())
 		return ctx.Err()
@@ -640,6 +648,11 @@ func (s *terminalClient) sendOutput(
 		return ctx.Err()
 	case <-s.ctx.Done():
 		return s.failure()
+	}
+	select {
+	case err := <-item.done:
+		return err
+	default:
 	}
 	select {
 	case err := <-item.done:
