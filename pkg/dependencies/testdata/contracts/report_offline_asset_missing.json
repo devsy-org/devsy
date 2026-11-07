@@ -1,0 +1,95 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "passive",
+  "executed": false,
+  "target": {
+    "contextName": "default",
+    "providerName": "msb-linux",
+    "providerType": "external",
+    "providerSourceId": "github.com/devsy-org/devsy-provider-microsandbox@v0.1.11",
+    "providerSourceKind": "canonical_external_release",
+    "adapterVersion": "v0.1.11",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-110",
+    "providerConfigRevision": "prov-rev-msb-10",
+    "evaluatedAt": "2026-10-19T05:09:00Z"
+  },
+  "host": {
+    "goos": "linux",
+    "goarch": "amd64",
+    "osVersion": "ubuntu-24.04",
+    "virtualizationCapability": "kvm_available"
+  },
+  "availability": "missing",
+  "compatibility": "unknown",
+  "reachability": "not_checked",
+  "policy": "managed_allowed",
+  "reasonCode": "dependency_offline_asset_missing",
+  "message": "Illustrative cached-artifact check for renamed canonical MicroSandbox provider 'msb-linux': pinned archive sha256:b3cc4a5e3f52dfdd938a6f67ac4a9a959ddfe304bab56de4964044b8613f01bb is absent from the local verified cache and managed installation remains disabled prior to G01, G02, G04, G06, G07, and G09 qualification.",
+  "hint": "Provide an external msb and libkrunfw installation; broad offline mode is deferred and managed installation is disabled until adapter G01 and Linux amd64 qualification gates pass.",
+  "managedRecipe": {
+    "recipeId": "microsandbox-runtime-linux-amd64",
+    "tuple": "linux/amd64",
+    "candidateVersion": "v0.7.7",
+    "illustrativeBundleRoot": "/var/lib/devsy/bin/store/microsandbox/v0.7.7-linux-amd64",
+    "enabled": false,
+    "qualificationState": "not_run",
+    "blockingGates": ["G01", "G02", "G04", "G06", "G07", "G09"],
+    "archiveLayout": "flat_verbatim_no_links",
+    "expectedFiles": ["msb", "libkrunfw.so.5.6.1"]
+  },
+  "items": [
+    {
+      "id": "microsandbox-runtime-pair",
+      "displayName": "MicroSandbox Runtime Pair (msb + libkrunfw)",
+      "required": true,
+      "executed": false,
+      "availability": "missing",
+      "compatibility": "unknown",
+      "reachability": "not_checked",
+      "policy": "managed_allowed",
+      "reasonCode": "dependency_offline_asset_missing",
+      "candidates": [
+        {
+          "component": "msb",
+          "sourceKind": "managed_store",
+          "optionName": "MICROSANDBOX_PATH",
+          "lexicalPath": "/var/lib/devsy/bin/store/microsandbox/v0.7.7-linux-amd64/msb",
+          "resolvedPath": "",
+          "isSymlink": false,
+          "executed": false,
+          "selected": false,
+          "availability": "missing",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_offline_asset_missing",
+          "detail": "Illustrative prospective store entry under DEVSY_HOME ancestor containing /lib/ and /bin/; pinned archive sha256:b3cc4a5e3f52dfdd938a6f67ac4a9a959ddfe304bab56de4964044b8613f01bb is not present in CacheDir()/dependencies/sha256."
+        },
+        {
+          "component": "libkrunfw",
+          "sourceKind": "managed_store",
+          "optionName": "MICROSANDBOX_LIBKRUNFW_PATH",
+          "lexicalPath": "/var/lib/devsy/bin/store/microsandbox/v0.7.7-linux-amd64/libkrunfw.so.5.6.1",
+          "resolvedPath": "",
+          "isSymlink": false,
+          "executed": false,
+          "selected": false,
+          "availability": "missing",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_offline_asset_missing",
+          "detail": "Illustrative prospective flat firmware entry missing because pinned cached archive is absent and recipe microsandbox-runtime-linux-amd64 is disabled."
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "kind": "install",
+      "label": "Install managed MicroSandbox runtime from verified cache",
+      "enabled": false,
+      "disabledReasonCode": "dependency_offline_asset_missing",
+      "requiresEffectAuthorization": true,
+      "requiresConfirmation": true
+    }
+  ]
+}

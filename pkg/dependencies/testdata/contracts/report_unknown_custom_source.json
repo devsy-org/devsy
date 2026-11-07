@@ -1,0 +1,46 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "passive",
+  "executed": false,
+  "target": {
+    "contextName": "default",
+    "providerName": "docker",
+    "providerType": "external",
+    "providerSourceId": "github.com/example-corp/custom-docker-provider@v0.4.0",
+    "providerSourceKind": "custom_github",
+    "adapterVersion": "v0.4.0",
+    "trustedBuiltinIdentity": false,
+    "configRevision": "cfg-rev-108",
+    "providerConfigRevision": "prov-rev-custom-08",
+    "evaluatedAt": "2026-10-19T05:07:00Z"
+  },
+  "host": {
+    "goos": "linux",
+    "goarch": "amd64",
+    "osVersion": "ubuntu-24.04",
+    "virtualizationCapability": "not_required"
+  },
+  "availability": "unknown",
+  "compatibility": "unknown",
+  "reachability": "not_checked",
+  "policy": "unmanaged_custom_source",
+  "reasonCode": "dependency_policy_blocked",
+  "message": "Provider 'docker' was installed from custom source github.com/example-corp/custom-docker-provider@v0.4.0 and does not inherit built-in Docker or managed dependency trust.",
+  "hint": "Manage any required runtime binaries according to the custom provider documentation.",
+  "items": [
+    {
+      "id": "custom-provider-dependencies",
+      "displayName": "Custom Provider Dependencies",
+      "required": false,
+      "executed": false,
+      "availability": "unknown",
+      "compatibility": "unknown",
+      "reachability": "not_checked",
+      "policy": "unmanaged_custom_source",
+      "reasonCode": "dependency_policy_blocked",
+      "candidates": []
+    }
+  ],
+  "actions": []
+}
