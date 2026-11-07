@@ -10,19 +10,28 @@ The external MicroSandbox provider runs Devsy workspaces in microVMs using the M
 Install Devsy and the [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli), version 0.7.13 or later. Check `msb --version` in the environment running Devsy. Docker is required for image builds. Provider releases contain binaries for Linux amd64 and arm64, macOS arm64, and Windows amd64. Linux requires KVM and Windows requires Windows Hypervisor Platform.
 
 ```sh
+devsy provider add microsandbox
+devsy workspace up . --provider microsandbox
+```
+
+A successful add initializes the provider and makes it the default for the current context. Workspaces that do not specify a provider use the default. To keep the current default, add `--use=false` to the add command, then run `devsy provider init microsandbox` before creating a workspace.
+
+## Existing built-in installations
+
+If the built-in provider is already configured as `microsandbox`, adding the external provider with that name fails. Add it under another name:
+
+```sh
 devsy provider add --name microsandbox-external https://github.com/devsy-org/devsy-provider-microsandbox/releases/latest/download/provider.yaml
 devsy workspace up . --provider microsandbox-external
 ```
 
-A successful add initializes the provider and makes it the default for the current context. Workspaces that do not specify a provider use the default. To keep the current default, add `--use=false` to the add command, then run `devsy provider init microsandbox-external` before creating a workspace.
-
-Choose another name if `microsandbox-external` already exists. Existing built-in configurations are not migrated automatically. The built-in provider is deprecated and is selected explicitly with `builtin:microsandbox` in current Devsy versions.
+If you add with `--use=false`, run `devsy provider init microsandbox-external` before creating a workspace. Existing built-in configurations are not migrated automatically. The built-in provider is deprecated. Use `builtin:microsandbox` as the source in `devsy provider add` to select it explicitly.
 
 The provider's SDK upgrades the `MSB_HOME` database, by default `~/.microsandbox`, when a workspace first starts. Older `msb` versions refuse the upgraded database. Older provider SDKs cannot run commands after the database is upgraded either. Update the provider and `msb` together.
 
 ## Configuration
 
-Set options in Desktop or with `devsy provider set microsandbox-external -o KEY=value`. Empty resource options use the runtime default unless otherwise noted.
+Set options in Desktop or with `devsy provider set microsandbox -o KEY=value`. If you installed the external provider as `microsandbox-external`, use that name instead. Empty resource options use the runtime default unless otherwise noted.
 
 | Option | Default | Purpose |
 | --- | --- | --- |
