@@ -712,8 +712,10 @@ func (r *runner) createComposeService(params *composeServiceParams) *composetype
 	build.Context = params.buildContext
 
 	service := &composetypes.ServiceConfig{
-		Name:  composeService.Name,
-		Build: &build,
+		Name: composeService.Name,
+		WorkloadSpec: composetypes.WorkloadSpec{
+			Build: &build,
+		},
 	}
 	if params.buildImageName != "" {
 		service.Image = stripDigestFromImageRef(params.buildImageName)

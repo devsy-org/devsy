@@ -19,11 +19,15 @@ func recreateTestProject(buildContext string) *composetypes.Project {
 		Name: "recreate-test",
 		Services: composetypes.Services{
 			composeSecretTestServiceName: {
-				Name:  composeSecretTestServiceName,
-				Image: "test:latest",
-				Build: &composetypes.BuildConfig{
-					Context:    buildContext,
-					Dockerfile: structuralDockerfile,
+				Name: composeSecretTestServiceName,
+				ContainerSpec: composetypes.ContainerSpec{
+					Image: "test:latest",
+				},
+				WorkloadSpec: composetypes.WorkloadSpec{
+					Build: &composetypes.BuildConfig{
+						Context:    buildContext,
+						Dockerfile: structuralDockerfile,
+					},
 				},
 			},
 		},

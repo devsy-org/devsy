@@ -69,13 +69,15 @@ func (r *runner) generateDockerComposeUpProject(params *composeUpParams) *compos
 	r.addWorkspaceEnvVars(containerEnv)
 
 	overrideService := &composetypes.ServiceConfig{
-		Name:        composeService.Name,
-		Entrypoint:  buildOverrideEntrypoint(mergedConfig, userEntrypoint),
-		Environment: r.composeContainerEnvironment(containerEnv),
-		Init:        mergedConfig.Init,
-		CapAdd:      mergedConfig.CapAdd,
-		SecurityOpt: mergedConfig.SecurityOpt,
-		Labels:      r.buildServiceLabels(params.additionalLabels),
+		Name: composeService.Name,
+		ContainerSpec: composetypes.ContainerSpec{
+			Entrypoint:  buildOverrideEntrypoint(mergedConfig, userEntrypoint),
+			Environment: r.composeContainerEnvironment(containerEnv),
+			Init:        mergedConfig.Init,
+			CapAdd:      mergedConfig.CapAdd,
+			SecurityOpt: mergedConfig.SecurityOpt,
+			Labels:      r.buildServiceLabels(params.additionalLabels),
+		},
 	}
 
 	if params.originalImageName != params.overrideImageName {

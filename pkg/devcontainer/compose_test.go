@@ -49,8 +49,10 @@ var composeBuildImageNameTests = []composeBuildImageNameTestCase{
 		composeHelper: &compose.ComposeHelper{Version: value2300},
 		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  app,
-			Image: ghcrIoExampleSharedBaseLatest,
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
 		},
 		want: ghcrIoExampleSharedBaseLatest,
 	},
@@ -59,8 +61,10 @@ var composeBuildImageNameTests = []composeBuildImageNameTestCase{
 		composeHelper: &compose.ComposeHelper{Version: value2300},
 		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  app,
-			Image: ghcrIoExampleSharedBaseLatest,
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
 		},
 		hasFeatures: true,
 		want:        "workspace-app",
@@ -70,8 +74,10 @@ var composeBuildImageNameTests = []composeBuildImageNameTestCase{
 		composeHelper: &compose.ComposeHelper{Version: "2.7.0"},
 		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  app,
-			Image: ghcrIoExampleSharedBaseLatest,
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
 		},
 		hasFeatures: true,
 		want:        "workspace_app",
@@ -84,9 +90,13 @@ var composeBuildImageNameTests = []composeBuildImageNameTestCase{
 		composeHelper: &compose.ComposeHelper{Version: value2300},
 		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  app,
-			Image: ghcrIoExampleSharedBaseLatest,
-			Build: &composetypes.BuildConfig{Context: "."},
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: "."},
+			},
 		},
 		hasFeatures: true,
 		want:        ghcrIoExampleSharedBaseLatest,
@@ -96,9 +106,13 @@ var composeBuildImageNameTests = []composeBuildImageNameTestCase{
 		composeHelper: &compose.ComposeHelper{Version: value2300},
 		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  app,
-			Image: ghcrIoExampleSharedBaseLatest,
-			Build: &composetypes.BuildConfig{Context: "."},
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: "."},
+			},
 		},
 		hasFeatures: false,
 		want:        ghcrIoExampleSharedBaseLatest,
@@ -169,9 +183,13 @@ func (s *ComposeSuite) TestCreateComposeServiceUsesBuildImageName() {
 	r := &runner{}
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
-			Name:  app,
-			Image: ghcrIoExampleSharedBaseLatest,
-			Build: &composetypes.BuildConfig{Target: "original-target"},
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Target: "original-target"},
+			},
 		},
 		buildImageName:          workspaceAppLatest,
 		dockerfilePathInContext: dockerfileWithFeatures,
@@ -198,9 +216,11 @@ func (s *ComposeSuite) TestCreateComposeServiceCarriesPlatform() {
 	r := &runner{}
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
-			Name:     app,
-			Image:    ghcrIoExampleSharedBaseLatest,
-			Platform: platformLinuxAMD64,
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image:    ghcrIoExampleSharedBaseLatest,
+				Platform: platformLinuxAMD64,
+			},
 		},
 		buildImageName:          workspaceAppLatest,
 		dockerfilePathInContext: dockerfileWithFeatures,
@@ -218,8 +238,10 @@ func (s *ComposeSuite) TestCreateComposeServiceOmitsPlatformWhenUnset() {
 	r := &runner{}
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
-			Name:  app,
-			Image: ghcrIoExampleSharedBaseLatest,
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
 		},
 		buildImageName:          workspaceAppLatest,
 		dockerfilePathInContext: dockerfileWithFeatures,
@@ -238,8 +260,10 @@ func (s *ComposeSuite) TestCreateComposeServiceClonesBuildPlatforms() {
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
 			Name: app,
-			Build: &composetypes.BuildConfig{
-				Platforms: composetypes.StringList{platformLinuxAMD64, platformLinuxARM64},
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{
+					Platforms: composetypes.StringList{platformLinuxAMD64, platformLinuxARM64},
+				},
 			},
 		},
 		dockerfilePathInContext: dockerfileWithFeatures,
@@ -259,9 +283,11 @@ func (s *ComposeSuite) TestCreateComposeServiceClonesUnrelatedBuildFields() {
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
 			Name: app,
-			Build: &composetypes.BuildConfig{
-				ShmSize:   64 * 1024 * 1024,
-				CacheFrom: composetypes.StringList{"type=registry,ref=example.com/cache"},
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{
+					ShmSize:   64 * 1024 * 1024,
+					CacheFrom: composetypes.StringList{"type=registry,ref=example.com/cache"},
+				},
 			},
 		},
 		dockerfilePathInContext: dockerfileWithFeatures,
@@ -319,7 +345,10 @@ func (s *PrepareBuildContextSuite) TestNoContextRelativePath() {
 
 func (s *PrepareBuildContextSuite) TestNilBuildRelativePath() {
 	result, err := s.runner.prepareBuildContext(
-		&composetypes.ServiceConfig{Name: testService, Build: nil},
+		&composetypes.ServiceConfig{
+			Name:         testService,
+			WorkloadSpec: composetypes.WorkloadSpec{Build: nil},
+		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		"FROM alpine",
 		&feature.BuildInfo{FeaturesFolder: workspaceDevcontainerFeaturesFolder},
@@ -340,8 +369,10 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContext() {
 	result, err := s.runner.prepareBuildContext(
 		&composetypes.ServiceConfig{
 			Name: testService,
-			Build: &composetypes.BuildConfig{
-				Context: workspaceValueValue,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{
+					Context: workspaceValueValue,
+				},
 			},
 		},
 		"/workspace/.devcontainer/features/Dockerfile",
@@ -366,8 +397,10 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContextPreservesWhitespace() {
 
 	result, err := s.runner.prepareBuildContext(
 		&composetypes.ServiceConfig{
-			Name:  testService,
-			Build: &composetypes.BuildConfig{Context: workspaceValueValue},
+			Name: testService,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: workspaceValueValue},
+			},
 		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		dockerfileContent,
@@ -384,8 +417,10 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContextNoReplacementNeeded() {
 
 	result, err := s.runner.prepareBuildContext(
 		&composetypes.ServiceConfig{
-			Name:  testService,
-			Build: &composetypes.BuildConfig{Context: workspaceValueValue},
+			Name: testService,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: workspaceValueValue},
+			},
 		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		dockerfileContent,
@@ -399,8 +434,10 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContextNoReplacementNeeded() {
 func (s *PrepareBuildContextSuite) TestCustomBuildContextEmptyContext() {
 	result, err := s.runner.prepareBuildContext(
 		&composetypes.ServiceConfig{
-			Name:  testService,
-			Build: &composetypes.BuildConfig{Context: ""},
+			Name: testService,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: ""},
+			},
 		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		"FROM alpine",
@@ -716,7 +753,12 @@ func TestResolveServiceEntrypoint(t *testing.T) {
 			&config.MergedDevContainerConfig{
 				DevContainerConfigBase: config.DevContainerConfigBase{OverrideCommand: &override},
 			},
-			&composetypes.ServiceConfig{Entrypoint: []string{"a"}, Command: []string{"b"}},
+			&composetypes.ServiceConfig{
+				ContainerSpec: composetypes.ContainerSpec{
+					Entrypoint: []string{"a"},
+					Command:    []string{"b"},
+				},
+			},
 			&config.ImageDetails{},
 		)
 		if len(entry) != 0 || len(cmd) != 0 {
