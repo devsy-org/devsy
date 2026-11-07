@@ -4,6 +4,10 @@ pipeline:
   stages:
     - name: Build and Test
       id: build_test
+      env:
+        GOPATH: /harness/.cache/go
+        GOMODCACHE: /harness/.cache/go/pkg/mod
+        GOCACHE: /harness/.cache/go-build
       clone:
         enabled: true
       cache:
@@ -22,15 +26,9 @@ pipeline:
               command -v go || { echo "Go not found, installing..."; exit 1; }
               go version
 
-              # Set up Go cache directories outside the workspace to avoid recursive discovery
-              mkdir -p /harness/.cache/go/pkg/mod
-              mkdir -p /harness/.cache/go-build
-              export GOPATH=/harness/.cache/go
-              export GOMODCACHE=/harness/.cache/go/pkg/mod
-              export GOCACHE=/harness/.cache/go-build
-              echo "GOPATH=$GOPATH" >> $HARNESS_ENV
-              echo "GOMODCACHE=$GOMODCACHE" >> $HARNESS_ENV
-              echo "GOCACHE=$GOCACHE" >> $HARNESS_ENV
+              # Create Go cache directories outside the workspace to avoid recursive discovery
+              mkdir -p "$GOMODCACHE"
+              mkdir -p "$GOCACHE"
         - name: Install Dependencies
           id: install_deps
           run:
