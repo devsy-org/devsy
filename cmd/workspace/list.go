@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"time"
 
@@ -24,6 +26,9 @@ type ListCmd struct {
 	*flags.GlobalFlags
 
 	SkipPlatform bool
+
+	// Out receives platform gateway output. Nil selects stdout.
+	Out io.Writer
 }
 
 // NewListCmd creates a new destroy command.
@@ -38,6 +43,7 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Args:        cobra.NoArgs,
 		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
+			cmd.Out = cobraCmd.OutOrStdout()
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
@@ -63,24 +69,45 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	workspaces, err := workspace.List(ctx, devsyConfig, cmd.SkipPlatform, cmd.Owner)
-	if err != nil {
-		return err
-	}
-
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
 		return err
 	}
+
+	if creds := cmd.gatewayLogin(devsyConfig); creds != nil {
+		return listPlatformWorkspaces(ctx, cmd.writer(), creds, mode)
+	}
+
+	workspaces, err := workspace.List(ctx, devsyConfig, cmd.SkipPlatform, cmd.Owner)
+	if err != nil {
+		return err
+	}
+	return printWorkspaces(workspaces, mode)
+}
+
+// gatewayLogin returns the platform gateway login to list from. --skip-platform
+// keeps a logged-in user able to list local workspaces.
+func (cmd *ListCmd) gatewayLogin(devsyConfig *config.Config) *config.GatewayCredentials {
+	if cmd.SkipPlatform {
+		return nil
+	}
+	return platformCredentials(devsyConfig)
+}
+
+func (cmd *ListCmd) writer() io.Writer {
+	if cmd.Out == nil {
+		return os.Stdout
+	}
+	return cmd.Out
+}
+
+func printWorkspaces(workspaces []*provider.Workspace, mode string) error {
 	switch mode {
 	case output.ModeJSON:
-		if err := printJSONWorkspaces(workspaces); err != nil {
-			return err
-		}
+		return printJSONWorkspaces(workspaces)
 	case output.ModePlain:
 		printPlainWorkspaces(workspaces)
 	}
-
 	return nil
 }
 
