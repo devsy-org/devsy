@@ -48,7 +48,7 @@ jobs:
           DEVSY_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
           DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
@@ -292,7 +292,7 @@ jobs:
 
       - name: upload macOS dmg for homebrew cask
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-dmg-${{ matrix.name }}
           path: desktop/release/*.dmg
@@ -308,7 +308,7 @@ jobs:
           go run hack/rewrite_manifest_urls/main.go desktop/release/ "$REPO" "$TAG"
 
       - name: upload update metadata artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: update-metadata-${{ matrix.name }}
           path: |
@@ -327,7 +327,7 @@ jobs:
 
       - name: upload desktop linux artifact for flatpak
         if: matrix.name == 'linux-x64'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-flatpak
           path: desktop/release/*.deb
