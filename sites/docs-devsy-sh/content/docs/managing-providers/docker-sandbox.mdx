@@ -9,24 +9,26 @@ The Docker Sandboxes provider runs each Devsy machine in a local `sbx` microVM. 
 
 Install the [standalone `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/) and sign in using Docker's instructions. Configure Docker Sandboxes network policy separately. Install a compatible Devsy core release.
 
-The v0.1.1 prerelease requires Devsy v1.27.0-beta.4 and contains a macOS arm64 binary. Install it explicitly while there is no stable provider release:
+The v0.1.1 prerelease is the only installable release. It requires Devsy v1.27.0-beta.4 and contains a macOS arm64 binary. Install it by URL while there is no stable provider release:
 
 ```sh
-devsy provider add https://github.com/devsy-org/devsy-provider-docker-sandbox/releases/download/v0.1.1/provider.yaml
+devsy provider add --use=false --name docker-sandbox https://github.com/devsy-org/devsy-provider-docker-sandbox/releases/download/v0.1.1/provider.yaml
 devsy workspace up https://github.com/microsoft/vscode-remote-try-node --provider docker-sandbox
 ```
 
-A successful add makes Docker Sandboxes the default for the current context. To restore the previous default, run `devsy provider use <previous-name>`.
+Without `--use=false`, a successful add makes Docker Sandboxes the default provider for the current context. With it, your default provider stays the same, and you select Docker Sandboxes with `--provider docker-sandbox` or `devsy provider use docker-sandbox`.
 
-Once a stable provider release is available, use `devsy provider add docker-sandbox` to install the latest stable release. Check its manifest for available hosts.
+The short form `devsy provider add docker-sandbox` expands to the `devsy-org/devsy-provider-docker-sandbox` repository and installs its latest release. GitHub does not count a prerelease as the latest release, so use the URL form until a stable release is published. Check the manifest for available hosts.
 
 The current provider source builds for macOS arm64, Linux amd64 and arm64, and Windows amd64. Only macOS arm64 has native VM qualification. The other hosts are built and unit tested only and run with a warning when published. macOS requires Apple silicon and macOS 14 or later. Linux requires Ubuntu 24.04 or later and accessible KVM. Windows requires Windows 11 and Windows Hypervisor Platform. A VM host needs nested virtualization.
 
-The current provider source warns for an unqualified `sbx` version and proceeds on a best effort basis. Doctor reports the warning too. Check the release documentation for the behavior of the version you install. Undecodable output, an identity mismatch, or a failed guest capacity probe still stops the operation.
+The v0.1.1 release accepts only `sbx` v0.50.1 exactly. With any other `sbx` version it fails closed, and that includes `delete`. Builds from the `main` branch of the provider warn once for an unqualified `sbx` version and proceed on a best effort basis. `doctor` reports the same warning. No release with that behavior has been published yet. Undecodable output, an identity mismatch, or a failed guest capacity probe still stops the operation in every build.
+
+If `sbx` has been updated, its daemon must be restarted before it accepts commands. The provider then fails with `E_SBX_DAEMON_RESTART`. The provider never restarts the daemon itself, because a restart stops all running sandboxes. Save your work, run `sbx daemon restart` in an interactive terminal, and retry the command.
 
 ## Machine resources
 
-Set machine options when creating the machine. `SBX_CPUS` sets virtual CPUs, `SBX_MEMORY` sets memory, `SBX_ROOT_DISK` sets space for the guest system and sources, and `SBX_DOCKER_DISK` sets space for Docker images, containers, and volumes. Sizes use integer binary `m` or `g` units. The defaults are two CPUs, `4g` of memory, and `40g` for each disk. `SBX_PATH` can select a different `sbx` executable. The provider validates these values before creating a VM.
+Set machine options when creating the machine. `SBX_CPUS` sets virtual CPUs, `SBX_MEMORY` sets memory, `SBX_ROOT_DISK` sets space for the guest system and sources, and `SBX_DOCKER_DISK` sets space for Docker images, containers, and volumes. Sizes are whole numbers followed by a lowercase `m` or `g` for binary megabytes or gigabytes, for example `8g` or `7680m`. Values such as `8G`, `8GB` or `8192` are rejected with `invalid size`. The defaults are two CPUs, `4g` of memory, and `40g` for each disk. `SBX_PATH` can select a different `sbx` executable. The provider checks the minimums below when a machine is created, before it creates a VM. They do not apply when you stop or delete an existing machine.
 
 | Option | Default | Purpose |
 | --- | --- | --- |
@@ -34,9 +36,9 @@ Set machine options when creating the machine. `SBX_CPUS` sets virtual CPUs, `SB
 | `SBX_CPUS` | `2` | CPUs, from one to the host logical CPU count. |
 | `SBX_MEMORY` | `4g` | Guest memory, at least `512m`. |
 | `SBX_ROOT_DISK` | `40g` | Guest root disk, at least `8g`. |
-| `SBX_DOCKER_DISK` | `40g` | Docker data disk, at least `512m`. |
+| `SBX_DOCKER_DISK` | `40g` | Docker data disk, at least `7g`. |
 
-Resources cannot be resized in place. Create another machine and deliberately move the data you need before deleting the original. Changing a saved machine option does not destroy and recreate its VM.
+A value below a minimum fails with an error such as `size "6g" is below the minimum of 7g`. Resources cannot be resized in place. Create another machine and deliberately move the data you need before deleting the original. Changing a saved machine option does not destroy and recreate its VM.
 
 ## Sources and development containers
 
@@ -73,4 +75,4 @@ The provider executable installed with the provider accepts:
 <provider-executable> delete --machine-key <full-key>
 ```
 
-Use `doctor` to inspect the saved identity and backend observation without starting a stopped VM. An attempt acknowledgement is appropriate only after its orphaned client has terminated or the host has restarted. A backend acknowledgement is appropriate only after the Docker side operation has settled. Neither acknowledgement starts, stops, or removes a VM. `devsy provider delete` removes the installed executable. Reinstall the same compatible release or preserve its executable before removal if you need scoped recovery afterward. Use scoped deletion only for a machine you intend to destroy. Never use global `sbx` reset or prune to recover one machine.
+Use `doctor` to inspect the saved identity and backend observation without starting a stopped VM. An attempt acknowledgement is appropriate only after its orphaned client has terminated or the host has restarted. A backend acknowledgement is appropriate only after the Docker side operation has settled. Neither acknowledgement starts, stops, or removes a VM. `devsy provider delete` removes the installed executable. Reinstall the same compatible release or preserve its executable before removal if you need scoped recovery afterward. Use scoped deletion only for a machine you intend to destroy. It is also the way out of a configuration error (`E_CONFIG_DRIFT`) on an existing machine that you no longer want. Run `delete --machine-key <full-key>` with the provider executable. It does not read the machine option values, so it works even when they no longer pass validation. Find the full key with `<provider-executable> doctor --list`. Never use global `sbx` reset or prune to recover one machine.
