@@ -176,8 +176,10 @@ func TestComposeUpOverridePreservesEffectiveLifecycleMetadata(t *testing.T) {
 			composeHelper: &compose.ComposeHelper{},
 		},
 		composeService: &composetypes.ServiceConfig{
-			Name:  composeSecretTestServiceName,
-			Image: "test:base",
+			Name: composeSecretTestServiceName,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: "test:base",
+			},
 		},
 	}, composeExtendResult{imageMetadata: imageMetadata}, &config.ImageDetails{ID: composeTestImageID})
 	require.NoError(t, err)

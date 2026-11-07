@@ -274,8 +274,10 @@ func (s *WSLgSuite) TestContainerEnvSurvivesComposeInterpolation() {
 	project := &composetypes.Project{
 		Services: composetypes.Services{
 			"dev": composetypes.ServiceConfig{
-				Image:       exampleBaseImage,
-				Environment: r.composeContainerEnvironment(env),
+				ContainerSpec: composetypes.ContainerSpec{
+					Image:       exampleBaseImage,
+					Environment: r.composeContainerEnvironment(env),
+				},
 			},
 		},
 	}

@@ -47,7 +47,11 @@ func TestComposeImagePullPolicy(t *testing.T) {
 				}
 			}
 			pull, err := composeImageNeedsPull(
-				&composetypes.ServiceConfig{Image: test.image, PullPolicy: test.policy},
+				&composetypes.ServiceConfig{
+					ContainerSpec: composetypes.ContainerSpec{
+						Image: test.image, PullPolicy: test.policy,
+					},
+				},
 				details,
 				now,
 			)
@@ -97,7 +101,9 @@ esac
 					Docker: &docker.DockerHelper{DockerCommand: command},
 				},
 				composeService: &composetypes.ServiceConfig{
-					Image: test.image, PullPolicy: test.policy,
+					ContainerSpec: composetypes.ContainerSpec{
+						Image: test.image, PullPolicy: test.policy,
+					},
 				},
 				parsedConfig: &config.SubstitutedConfig{Config: devcontainer},
 				pull:         test.pull,
@@ -131,7 +137,9 @@ func TestComposeServicePlatform(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, test.want, composeServicePlatform(
-				&composetypes.ServiceConfig{Platform: test.service}, test.environment,
+				&composetypes.ServiceConfig{
+					ContainerSpec: composetypes.ContainerSpec{Platform: test.service},
+				}, test.environment,
 			))
 		})
 	}
@@ -168,7 +176,9 @@ esac
 					Docker: &docker.DockerHelper{DockerCommand: command},
 				},
 				composeService: &composetypes.ServiceConfig{
-					Image: exampleBaseImage, Platform: test.platform, PullPolicy: test.policy,
+					ContainerSpec: composetypes.ContainerSpec{
+						Image: exampleBaseImage, Platform: test.platform, PullPolicy: test.policy,
+					},
 				},
 				parsedConfig: &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
 			}
@@ -216,7 +226,9 @@ esac
 					},
 				}},
 				composeService: &composetypes.ServiceConfig{
-					Image: exampleBaseImage, Platform: platformLinuxARM64,
+					ContainerSpec: composetypes.ContainerSpec{
+						Image: exampleBaseImage, Platform: platformLinuxARM64,
+					},
 				},
 				parsedConfig: &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
 			}
@@ -247,7 +259,9 @@ func TestComposeMetadataUsesResolvedPlatform(t *testing.T) {
 	info, err := r.prepareComposeBuildInfo(
 		context.Background(), &config.SubstitutionContext{},
 		composeBuildSource{
-			service:     &composetypes.ServiceConfig{Image: exampleBaseImage},
+			service: &composetypes.ServiceConfig{
+				ContainerSpec: composetypes.ContainerSpec{Image: exampleBaseImage},
+			},
 			buildTarget: "selected-stage",
 			resolved:    details,
 		},
