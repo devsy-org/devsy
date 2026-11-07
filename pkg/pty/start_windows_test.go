@@ -3,11 +3,13 @@
 package pty_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/pty"
 	"github.com/devsy-org/devsy/pkg/pty/ptytest"
@@ -25,6 +27,16 @@ func TestStartWindowsSuite(t *testing.T) {
 func (s *StartWindowsSuite) TestEcho() {
 	p, ps := ptytest.Start(s.T(), pty.Command("cmd.exe", "/c", "echo", "test"))
 	p.ExpectMatch("test")
+	s.Require().NoError(ps.Wait())
+	s.Require().NoError(p.Close())
+}
+
+func (s *StartWindowsSuite) TestPid() {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	p, ps := ptytest.Start(s.T(), pty.Command("cmd.exe", "/c", "echo", "test"))
+	s.Positive(ps.Pid())
+	p.ExpectMatchContext(ctx, "test")
 	s.Require().NoError(ps.Wait())
 	s.Require().NoError(p.Close())
 }

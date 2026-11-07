@@ -233,3 +233,32 @@ func supplementaryExecGroups(account *user.User, lookups execIdentityLookups) ([
 	}
 	return groups, nil
 }
+
+type ExecCredentials struct {
+	UID, GID     uint32
+	Groups       []uint32
+	MatchCurrent bool
+}
+
+func ResolveExecCredentials(spec string) (ExecCredentials, error) {
+	identity, handled, err := parseRequestedExecIdentity(spec)
+	if err != nil {
+		return ExecCredentials{}, err
+	}
+	if !handled {
+		if spec == "" {
+			return ExecCredentials{}, fmt.Errorf("empty execution identity")
+		}
+		identity = requestedExecIdentity{user: spec}
+	}
+	credentials, err := resolveExecCredentials(identity, systemExecIdentityLookups())
+	if err != nil {
+		return ExecCredentials{}, err
+	}
+	return ExecCredentials{
+		UID:          credentials.uid,
+		GID:          credentials.gid,
+		Groups:       credentials.groups,
+		MatchCurrent: execCredentialsMatchCurrentProcess(credentials),
+	}, nil
+}

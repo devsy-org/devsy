@@ -1,7 +1,10 @@
 package up
 
 import (
+	"fmt"
 	"io"
+	"sync"
+	"time"
 
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/status"
@@ -14,7 +17,7 @@ func newStatusReporter(
 	verbose bool,
 	noStatus bool,
 ) (status.Reporter, error) {
-	return status.NewCLIReporter(status.CLIOptions{
+	reporter, err := status.NewCLIReporter(status.CLIOptions{
 		Format:   resultFormat,
 		Out:      out,
 		Prefix:   "up",
@@ -26,6 +29,10 @@ func newStatusReporter(
 			return config2.WriteStatusJSON(out, e)
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return newInteractiveStatusGate(reporter, out, noStatus), nil
 }
 
 var phaseLabels = map[status.Phase]string{
@@ -43,4 +50,128 @@ var phaseLabels = map[status.Phase]string{
 	status.PhaseStartingSSHTunnel:     "starting SSH tunnel",
 	status.PhaseLaunchingIDE:          "launching IDE",
 	status.PhaseReady:                 "ready",
+}
+
+type interactiveStatusGate struct {
+	mu       sync.Mutex
+	renderMu sync.Mutex
+	active   bool
+	enabled  bool
+	events   []status.Event
+	omitted  int
+	reporter status.Reporter
+	out      io.Writer
+	quiet    bool
+	running  bool
+	idle     chan struct{}
+	journal  *journalStatusReporter
+}
+
+const interactiveRenderWait = 500 * time.Millisecond
+
+func newInteractiveStatusGate(
+	reporter status.Reporter,
+	out io.Writer,
+	quiet bool,
+) *interactiveStatusGate {
+	return &interactiveStatusGate{reporter: reporter, out: out, quiet: quiet}
+}
+
+func (g *interactiveStatusGate) Report(event status.Event) {
+	g.mu.Lock()
+	if !g.enabled {
+		g.mu.Unlock()
+		g.renderMu.Lock()
+		g.mu.Lock()
+		if !g.enabled {
+			g.mu.Unlock()
+			g.reporter.Report(event)
+			g.renderMu.Unlock()
+			return
+		}
+		g.renderMu.Unlock()
+	}
+	if len(g.events) < 256 && g.omitted == 0 {
+		g.events = append(g.events, event)
+	} else {
+		g.omitted++
+	}
+	g.startLocked()
+	g.mu.Unlock()
+}
+
+func (g *interactiveStatusGate) SetActive(active bool) {
+	g.mu.Lock()
+	g.active = active
+	if active {
+		g.enabled = true
+	} else {
+		g.startLocked()
+		if !g.running {
+			g.enabled = false
+		}
+	}
+	idle := g.idle
+	running := g.running
+	g.mu.Unlock()
+	if active {
+		g.waitForRender()
+	} else if running {
+		select {
+		case <-idle:
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+func (g *interactiveStatusGate) startLocked() {
+	if !g.active && !g.running && (len(g.events) > 0 || g.omitted > 0) {
+		g.running = true
+		g.idle = make(chan struct{})
+		go g.run()
+	}
+}
+
+func (g *interactiveStatusGate) waitForRender() {
+	done := make(chan struct{})
+	go func() {
+		g.renderMu.Lock()
+		defer g.renderMu.Unlock()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(interactiveRenderWait):
+	}
+}
+
+func (g *interactiveStatusGate) run() {
+	for {
+		g.renderMu.Lock()
+		g.mu.Lock()
+		if g.active || (len(g.events) == 0 && g.omitted == 0) {
+			g.running = false
+			if !g.active {
+				g.enabled = false
+			}
+			close(g.idle)
+			g.mu.Unlock()
+			g.renderMu.Unlock()
+			return
+		}
+		if len(g.events) > 0 {
+			event := g.events[0]
+			g.events = g.events[1:]
+			g.mu.Unlock()
+			g.reporter.Report(event)
+		} else {
+			count := g.omitted
+			g.omitted = 0
+			g.mu.Unlock()
+			if !g.quiet {
+				_, _ = fmt.Fprintf(g.out, "%d progress updates omitted\n", count)
+			}
+		}
+		g.renderMu.Unlock()
+	}
 }

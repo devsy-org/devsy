@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
@@ -137,7 +138,8 @@ type hookRunParams struct {
 	// index is the merged-config position of the command being run.
 	index int
 	// plan shares invocation IDs between planning and execution.
-	plan *hookPlan
+	plan     *hookPlan
+	terminal tunnel.TerminalSession
 }
 
 // lifecycleEnv holds the resolved environment for running lifecycle hooks.
@@ -308,6 +310,7 @@ type PreAttachOptions struct {
 	SecretsMount []string
 	Skip         SkipPhases
 	WaitFor      LifecyclePhase
+	Terminal     tunnel.TerminalSession
 }
 
 // RunPreAttachHooks runs lifecycle hooks up to and including the waitFor phase
@@ -322,11 +325,21 @@ func RunPreAttachHooks(
 	setupInfo *config.Result,
 	opts PreAttachOptions,
 ) (DeferredHooks, error) {
+	if opts.Terminal != nil {
+		if err := ValidateInteractivePostStart(
+			setupInfo.MergedConfig.PostStartCommands,
+		); err != nil {
+			return DeferredHooks{}, err
+		}
+	}
 	env := resolveLifecycleEnv(ctx, setupInfo)
 	redactor := mergeSecretsEnv(env.remoteEnv, opts.SecretsEnv, opts.SecretsMount)
 	all := preAttachPhaseParams(ctx, setupInfo, env, opts.Prebuild)
 	for i := range all {
 		all[i].params.redactor = redactor
+		if all[i].phase == PhasePostStart {
+			all[i].params.terminal = opts.Terminal
+		}
 	}
 
 	// Insert the dotfiles phase between postCreate and postStart.
@@ -343,7 +356,11 @@ func RunPreAttachHooks(
 		return DeferredHooks{}, runPrebuildHooks(all)
 	}
 
-	waitFor := resolveWaitFor(setupInfo.MergedConfig.WaitFor, opts.WaitFor)
+	floor := opts.WaitFor
+	if opts.Terminal != nil {
+		floor = resolveWaitFor(string(floor), PhasePostStart)
+	}
+	waitFor := resolveWaitFor(setupInfo.MergedConfig.WaitFor, floor)
 	waitFor = promoteDotfilesWaitFor(waitFor, opts.Dotfiles)
 
 	if !phaseHasCommands(all, waitFor) {
@@ -551,6 +568,9 @@ func runHook(p hookRunParams) error {
 		return nil
 	}
 
+	if p.terminal != nil {
+		return runInteractiveHook(p)
+	}
 	skip, err := shouldSkipHook(p.name, p.content)
 	if err != nil {
 		p.recordAll(workspacelogs.InvocationFailed, reasonMarkerCheckFailed)

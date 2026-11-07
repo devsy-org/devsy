@@ -1,6 +1,7 @@
 package tunnelserver
 
 import (
+	"context"
 	"strings"
 
 	"github.com/devsy-org/api/pkg/devsy"
@@ -121,6 +122,32 @@ func WithStatusReporter(reporter status.Reporter) Option {
 func WithSetupLogSink(sink *workspacelogs.Sink) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.setupLogSink = sink
+		return s
+	}
+}
+
+type LifecycleTerminalOwner interface {
+	Serve(ctx context.Context, stream tunnel.Tunnel_LifecycleTerminalServer) error
+}
+
+func WithLifecycleTerminalOwner(
+	owner LifecycleTerminalOwner,
+	req provider2.LifecycleTerminalRequest,
+) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.lifecycleTerminalOwner = owner
+		s.lifecycleTerminalRequest = req
+		return s
+	}
+}
+
+func WithLifecycleTerminalUpstream(
+	client tunnel.TunnelClient,
+	req provider2.LifecycleTerminalRequest,
+) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.lifecycleTerminalUpstream = client
+		s.lifecycleTerminalRequest = req
 		return s
 	}
 }

@@ -50,17 +50,48 @@ func (cmd *UpCmd) devsyUp(
 	return result, nil
 }
 
+func (cmd *UpCmd) validateInteractiveRoute(client client2.BaseWorkspaceClient) error {
+	if !cmd.InteractivePostStart {
+		return nil
+	}
+	if cmd.Platform.Enabled {
+		return fmt.Errorf(
+			"--interactive-post-start is unsupported with platform-managed workspaces",
+		)
+	}
+	switch client.(type) {
+	case client2.WorkspaceClient:
+		return nil
+	case client2.ProxyClient:
+		return fmt.Errorf("--interactive-post-start is unsupported with proxy workspaces")
+	case client2.DaemonClient:
+		return fmt.Errorf("--interactive-post-start is unsupported with daemon workspaces")
+	}
+	return nil
+}
+
 func (cmd *UpCmd) dispatchClient(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) (*config2.Result, error) {
+	if cmd.InteractivePostStart && cmd.Platform.Enabled {
+		return nil, fmt.Errorf(
+			"--interactive-post-start is unsupported with platform-managed workspaces",
+		)
+	}
 	switch client := client.(type) {
 	case client2.WorkspaceClient:
 		return cmd.devsyUpMachine(ctx, devsyConfig, client)
 	case client2.ProxyClient:
+		if cmd.InteractivePostStart {
+			return nil, fmt.Errorf("--interactive-post-start is unsupported with proxy workspaces")
+		}
 		return cmd.devsyUpProxy(ctx, client)
 	case client2.DaemonClient:
+		if cmd.InteractivePostStart {
+			return nil, fmt.Errorf("--interactive-post-start is unsupported with daemon workspaces")
+		}
 		return cmd.devsyUpDaemon(ctx, client)
 	default:
 		return nil, fmt.Errorf("unsupported client type: %T", client)
@@ -204,6 +235,18 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 	devsyConfig *config.Config,
 	client client2.WorkspaceClient,
 ) (*config2.Result, error) {
+	var owner *interactivePostStart
+	var lifecycleOption tunnelserver.Option
+	if request := cmd.LifecycleTerminal; request != nil {
+		gate := terminalStatusGate(cmd.reporter())
+		owner = newInteractivePostStart(interactivePostStartOptions{
+			stdin: os.Stdin, stdout: os.Stdout, rows: cmd.TerminalRows,
+			columns: cmd.TerminalColumns, term: os.Getenv("TERM"),
+			status: gate, output: cmd.stdout(),
+		})
+		defer owner.Close()
+		lifecycleOption = tunnelserver.WithLifecycleTerminalOwner(owner, *request)
+	}
 	workspaceInfo, wInfo, err := client.AgentInfo(withoutSecretValues(cmd.CLIOptions))
 	if err != nil {
 		return nil, fmt.Errorf("get agent info: %w", err)
@@ -214,15 +257,21 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		sshTunnelCmd += " --debug" //nolint:goconst
 	}
 
-	agentCommand := fmt.Sprintf(
-		"%s internal agent workspace up --workspace-info %s",
-		shellescape.Quote(client.AgentPath()),
-		shellescape.Quote(workspaceInfo),
+	agentCommand := workspaceAgentCommand(
+		client.AgentPath(),
+		workspaceInfo,
+		log.DebugEnabled(),
+		cmd.LifecycleTerminal != nil,
 	)
-	if log.DebugEnabled() {
-		agentCommand += " --debug"
-	}
 
+	options := append([]tunnelserver.Option{
+		tunnelserver.WithSecrets(cmd.SecretsEnv, cmd.SecretsMount),
+		tunnelserver.WithGitToken(cmd.GitToken),
+		tunnelserver.WithStatusReporter(cmd.reporter()),
+	}, cmd.setupHop.Options()...)
+	if lifecycleOption != nil {
+		options = append(options, lifecycleOption)
+	}
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
 		Client: client,
 		AddPrivateKeys: devsyConfig.ContextOption(
@@ -238,14 +287,25 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 				AllowGitCredentials:    client.AgentInjectGitCredentials(cmd.CLIOptions),
 				AllowDockerCredentials: client.AgentInjectDockerCredentials(cmd.CLIOptions),
 				Workspace:              client.WorkspaceConfig(),
-				Options: append([]tunnelserver.Option{
-					tunnelserver.WithSecrets(cmd.SecretsEnv, cmd.SecretsMount),
-					tunnelserver.WithGitToken(cmd.GitToken),
-					tunnelserver.WithStatusReporter(cmd.reporter()),
-				}, cmd.setupHop.Options()...),
+				Options:                options,
 			})
 		},
 	})
+}
+
+func workspaceAgentCommand(agentPath, workspaceInfo string, debug, lifecycleTerminal bool) string {
+	command := fmt.Sprintf(
+		"%s internal agent workspace up --workspace-info %s",
+		shellescape.Quote(agentPath),
+		shellescape.Quote(workspaceInfo),
+	)
+	if debug {
+		command += " --debug"
+	}
+	if lifecycleTerminal {
+		command += " " + shellescape.Quote("--lifecycle-terminal-protocol=1")
+	}
+	return command
 }
 
 func withoutSecretValues(options provider2.CLIOptions) provider2.CLIOptions {

@@ -52,6 +52,10 @@ An unavailable history source returns a typed status in the response. The comman
 
 To fetch missing remote records, Devsy makes one read-only attempt with a five-second limit. It does not start, unpause, rebuild or install anything. If the workspace is stopped, you get the cached records and an availability note.
 
+## Interactive hooks
+
+Output from a `postStartCommand` run with `--interactive-post-start` appears live in your terminal. Devsy does not store it in setup history, so `devsy workspace logs --source setup` does not show it. Devsy does not redact that live output, so a secret that the hook prints is visible on the terminal.
+
 ## Desktop
 
 Open the workspace and choose **Logs**.

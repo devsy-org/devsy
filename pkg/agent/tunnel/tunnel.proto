@@ -28,6 +28,8 @@ service Tunnel {
   rpc StreamWorkspace(Empty) returns (stream Chunk) {}
   rpc StreamMount(StreamMountRequest) returns (stream Chunk) {}
   rpc StreamSnapshotVolumes(Empty) returns (stream Chunk) {}
+
+  rpc LifecycleTerminal(stream LifecycleTerminalRequest) returns (stream LifecycleTerminalResponse) {}
 }
 
 message StreamMountRequest {
@@ -130,3 +132,82 @@ message AppendSetupLogsResponse {
 message Empty {
 
 }
+
+message LifecycleTerminalRequest {
+  oneof frame {
+    LifecycleTerminalOpen open = 1;
+    LifecycleTerminalBegin begin = 2;
+    LifecycleTerminalOutput output = 3;
+    LifecycleTerminalExit exit = 4;
+    LifecycleTerminalComplete complete = 5;
+  }
+}
+
+message LifecycleTerminalResponse {
+  oneof frame {
+    LifecycleTerminalReady ready = 1;
+    LifecycleTerminalBeginAck begin_ack = 2;
+    LifecycleTerminalInput input = 3;
+    LifecycleTerminalResize resize = 4;
+    LifecycleTerminalCancel cancel = 5;
+    LifecycleTerminalExitAck exit_ack = 6;
+  }
+}
+
+message LifecycleTerminalOpen {
+  uint32 protocol_version = 1;
+  string workspace_uid = 2;
+  string context = 3;
+  string nonce = 4;
+}
+
+message LifecycleTerminalReady {
+  uint32 protocol_version = 1;
+  string term = 2;
+  uint32 rows = 3;
+  uint32 columns = 4;
+  bool input = 5;
+}
+
+message LifecycleTerminalBegin {
+  string invocation_id = 1;
+  string phase = 2;
+  uint32 index = 3;
+  string key = 4;
+}
+
+message LifecycleTerminalBeginAck {
+  string invocation_id = 1;
+  uint32 rows = 2;
+  uint32 columns = 3;
+}
+
+message LifecycleTerminalOutput {
+  string invocation_id = 1;
+  uint64 sequence = 2;
+  bytes data = 3;
+}
+
+message LifecycleTerminalInput {
+  string invocation_id = 1;
+  bytes data = 2;
+}
+
+message LifecycleTerminalResize {
+  string invocation_id = 1;
+  uint32 rows = 2;
+  uint32 columns = 3;
+}
+
+message LifecycleTerminalCancel { string invocation_id = 1; }
+
+message LifecycleTerminalExit {
+  string invocation_id = 1;
+  int32 exit_code = 2;
+  string signal = 3;
+  string start_error = 4;
+}
+
+message LifecycleTerminalExitAck { string invocation_id = 1; }
+
+message LifecycleTerminalComplete {}

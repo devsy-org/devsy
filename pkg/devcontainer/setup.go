@@ -453,6 +453,9 @@ func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string)
 		shellescape.Quote(workspaceConfigCompressed),
 	}
 
+	if r.workspaceConfig.CLIOptions.LifecycleTerminal != nil {
+		args = append(args, "--lifecycle-terminal-protocol=1")
+	}
 	r.addSetupFlags(&args)
 	return strings.Join(args, " ")
 }
@@ -576,6 +579,13 @@ func (r *runner) executeSetup(
 	secretsEnv, secretsMount := secretOpts.env, secretOpts.mount
 	setupLogOptions := tunnelserver.SetupLogOptionsFrom(ctx)
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
+		options := setupLogOptions
+		if req := r.workspaceConfig.CLIOptions.LifecycleTerminal; req != nil {
+			options = append(
+				options,
+				tunnelserver.WithLifecycleTerminalUpstream(r.lifecycleTerminalClient, *req),
+			)
+		}
 		return tunnelserver.RunSetupServer(ctx, tunnelserver.SetupSpec{
 			Reader:                 stdout,
 			Writer:                 stdin,
@@ -590,7 +600,7 @@ func (r *runner) executeSetup(
 				),
 				tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
 				tunnelserver.WithStatusReporter(r.reporter),
-			}, setupLogOptions...),
+			}, options...),
 		})
 	}
 

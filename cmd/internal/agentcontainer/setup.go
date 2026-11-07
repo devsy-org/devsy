@@ -38,17 +38,19 @@ import (
 type SetupContainerCmd struct {
 	*flags.GlobalFlags
 
-	ChownWorkspace         bool
-	StreamMounts           bool
-	InjectGitCredentials   bool
-	Prebuild               bool
-	ContainerWorkspaceInfo string
-	SetupInfo              string
-	AccessKey              string
-	PlatformHost           string
-	WorkspaceHost          string
-	DotfilesRepo           string
-	DotfilesScript         string
+	LifecycleTerminalProtocol int
+	protocolSet               bool
+	ChownWorkspace            bool
+	StreamMounts              bool
+	InjectGitCredentials      bool
+	Prebuild                  bool
+	ContainerWorkspaceInfo    string
+	SetupInfo                 string
+	AccessKey                 string
+	PlatformHost              string
+	WorkspaceHost             string
+	DotfilesRepo              string
+	DotfilesScript            string
 }
 
 // NewSetupContainerCmd creates a new command.
@@ -61,6 +63,7 @@ func NewSetupContainerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short: "Sets up a container",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			cmd.protocolSet = cobraCmd.Flags().Changed("lifecycle-terminal-protocol")
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
@@ -82,15 +85,21 @@ type containerState struct {
 
 // Run runs the command logic.
 func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
+	workspaceInfo, setupInfo, err := cmd.parseWorkspaceAndSetupInfo()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.validateTerminal(workspaceInfo.CLIOptions.LifecycleTerminal); err != nil {
+		return err
+	}
 	tunnelClient, err := cmd.initializeTunnelClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	workspaceInfo, setupInfo, err := cmd.parseWorkspaceAndSetupInfo()
-	if err != nil {
-		return err
-	}
+	ctx, stop := setupSignalContext(ctx, cmd.protocolSet)
+	defer stop()
 
 	state := &containerState{
 		workspaceInfo: workspaceInfo,
@@ -126,6 +135,16 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		return state.lifecycle.finish(err)
 	}
 	return err
+}
+
+func (cmd *SetupContainerCmd) validateTerminal(request *provider2.LifecycleTerminalRequest) error {
+	if cmd.protocolSet != (request != nil) ||
+		(cmd.protocolSet && (cmd.LifecycleTerminalProtocol != int(tunnel.LifecycleTerminalProtocolVersion) ||
+			request.ProtocolVersion != tunnel.LifecycleTerminalProtocolVersion ||
+			int(request.ProtocolVersion) != cmd.LifecycleTerminalProtocol)) {
+		return fmt.Errorf("lifecycle terminal protocol and request mismatch")
+	}
+	return nil
 }
 
 func (cmd *SetupContainerCmd) reportSetup(
@@ -176,6 +195,8 @@ func (cmd *SetupContainerCmd) runSetup(ctx context.Context, state *containerStat
 }
 
 func (cmd *SetupContainerCmd) registerFlags(setupContainerCmd *cobra.Command) {
+	setupContainerCmd.Flags().
+		IntVar(&cmd.LifecycleTerminalProtocol, "lifecycle-terminal-protocol", 0, "Lifecycle terminal protocol version")
 	cmd.registerBehaviorFlags(setupContainerCmd)
 	cmd.registerWorkspaceInfoFlags(setupContainerCmd)
 	cmd.registerDotfilesFlags(setupContainerCmd)
@@ -345,7 +366,7 @@ func (cmd *SetupContainerCmd) finalizeSetup(ctx context.Context, state *containe
 		},
 	}
 
-	deferred, err := setup.SetupContainerPreAttach(ctx, cfg)
+	deferred, err := cmd.preAttach(ctx, state, cfg, tunnelserver.OpenLifecycleTerminal)
 	if err != nil {
 		return err
 	}

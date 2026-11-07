@@ -49,6 +49,7 @@ type ContainerSetupConfig struct {
 	Prebuild               bool
 	PlatformOptions        *devsy.PlatformOptions
 	TunnelClient           tunnel.TunnelClient
+	Terminal               tunnel.TerminalSession
 	Dotfiles               DotfilesConfig
 	SkipPostCreate         bool
 	SkipPostStart          bool
@@ -65,6 +66,14 @@ func SetupContainerPreAttach(
 ) (DeferredHooks, error) {
 	if err := validateContainerSetupConfig(cfg); err != nil {
 		return DeferredHooks{}, err
+	}
+
+	if cfg.Terminal != nil {
+		if err := ValidateInteractivePostStart(
+			cfg.SetupInfo.MergedConfig.PostStartCommands,
+		); err != nil {
+			return DeferredHooks{}, err
+		}
 	}
 
 	if err := writeResultFileWithContext(ctx, cfg); err != nil {
@@ -100,7 +109,8 @@ func SetupContainerPreAttach(
 			PostStart:  cfg.SkipPostStart,
 			PostAttach: cfg.SkipPostAttach,
 		},
-		WaitFor: cfg.WaitFor,
+		WaitFor:  cfg.WaitFor,
+		Terminal: cfg.Terminal,
 	})
 	if err != nil {
 		return DeferredHooks{}, fmt.Errorf("lifecycle hooks pre-attach: %w", err)

@@ -2,6 +2,8 @@ package up
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/clierr"
@@ -26,6 +29,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/telemetry"
+	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -67,7 +71,8 @@ type UpCmd struct {
 	// Read via Changed() so unset is distinguishable from explicit false.
 	pullFromInsideContainerFlag bool
 	// See cmd.runDetached.
-	Detach bool
+	Detach               bool
+	InteractivePostStart bool
 	// Set only on the detached child re-exec.
 	taskID     string
 	workerTask *task.Task
@@ -125,6 +130,11 @@ func RunHeadless(
 	client client2.BaseWorkspaceClient,
 	opts HeadlessOptions,
 ) (*config2.Result, error) {
+	if opts.CLIOptions.LifecycleTerminal != nil {
+		return nil, fmt.Errorf(
+			"interactive lifecycle terminals are not supported by headless execution",
+		)
+	}
 	gCopy := *opts.GlobalFlags
 	cmd := &UpCmd{
 		GlobalFlags:        &gCopy,
@@ -290,6 +300,10 @@ func (cmd *UpCmd) runWorkspace(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) error {
+	if err := cmd.validateInteractiveRoute(client); err != nil {
+		return err
+	}
+	cmd.LifecycleTerminal = nil
 	cmd.prepareWorkspace(client)
 
 	emitJSON, out, err := cmd.configureRun(client.Workspace())
@@ -297,6 +311,11 @@ func (cmd *UpCmd) runWorkspace(
 		return err
 	}
 
+	if cmd.InteractivePostStart {
+		if err := cmd.createLifecycleTerminalRequest(client); err != nil {
+			return err
+		}
+	}
 	t, err := cmd.setUpTask(client, emitJSON, out)
 	if err != nil {
 		return err
@@ -321,6 +340,24 @@ func (cmd *UpCmd) runWorkspace(
 		return err
 	}
 	return succeedTask(t, wctx.result)
+}
+
+func (cmd *UpCmd) createLifecycleTerminalRequest(client client2.BaseWorkspaceClient) error {
+	workspace := client.WorkspaceConfig()
+	if workspace == nil || workspace.UID == "" {
+		return fmt.Errorf("--interactive-post-start requires a resolved workspace UID")
+	}
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("create lifecycle terminal nonce: %w", err)
+	}
+	cmd.LifecycleTerminal = &provider2.LifecycleTerminalRequest{
+		ProtocolVersion: tunnel.LifecycleTerminalProtocolVersion,
+		Nonce:           hex.EncodeToString(nonce),
+		Context:         client.Context(),
+		WorkspaceUID:    workspace.UID,
+	}
+	return nil
 }
 
 func (cmd *UpCmd) configureRun(workspaceID string) (bool, io.Writer, error) {
@@ -807,6 +844,7 @@ func watchForForceShutdown(ctx context.Context, done <-chan struct{}) {
 	signal.Notify(signals, shutdownSignals...)
 	select {
 	case <-signals:
+		terminal.RestoreAll()
 		os.Exit(1) // second signal - force shutdown
 	case <-done:
 		signal.Stop(signals)
