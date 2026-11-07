@@ -429,15 +429,36 @@ func (s *terminalSuite) TestConcurrentOwnerSendsSerialize() {
 }
 
 func (s *terminalSuite) TestCloseAfterServerStreamClosed() {
+	release := make(chan struct{})
 	owner := testTerminalOwner{
 		serve: func(_ context.Context, st tunnel.Tunnel_LifecycleTerminalServer) error {
-			return ready(st)
+			if err := ready(st); err != nil {
+				return err
+			}
+			<-release
+			return nil
 		},
 	}
 	client := s.client(WithLifecycleTerminalOwner(owner, s.req))
 	session, err := OpenLifecycleTerminal(context.Background(), client, s.req)
 	s.Require().NoError(err)
-	time.Sleep(50 * time.Millisecond)
+	close(release)
+	s.Eventually(
+		func() bool {
+			tc, ok := session.(*terminalClient)
+			if !ok {
+				return false
+			}
+			select {
+			case <-tc.recvDone:
+				return true
+			default:
+				return false
+			}
+		},
+		5*time.Second,
+		10*time.Millisecond,
+	)
 	s.NoError(session.Close(context.Background()))
 }
 

@@ -42,6 +42,7 @@ type terminalClient struct {
 	active    *terminalAttachment
 	closed    bool
 	err       error
+	recvErr   error
 	term      string
 	phase     terminalClientPhase
 }
@@ -263,7 +264,12 @@ func (s *terminalClient) Close(ctx context.Context) error {
 	if err == nil {
 		select {
 		case <-s.recvDone:
-			if !errors.Is(s.failure(), io.EOF) {
+			s.mu.Lock()
+			rerr := s.recvErr
+			s.mu.Unlock()
+			if rerr != nil && !errors.Is(rerr, io.EOF) {
+				err = rerr
+			} else if !errors.Is(s.failure(), io.EOF) {
 				err = s.failure()
 			}
 		case <-ctx.Done():
@@ -455,10 +461,16 @@ func (s *terminalClient) receiveLoop() {
 	for {
 		frame, err := s.stream.Recv()
 		if err != nil {
+			s.mu.Lock()
+			s.recvErr = err
+			s.mu.Unlock()
 			s.fail(err)
 			return
 		}
 		if err = s.handleResponse(frame); err != nil {
+			s.mu.Lock()
+			s.recvErr = err
+			s.mu.Unlock()
 			s.fail(err)
 			return
 		}
@@ -597,7 +609,7 @@ func (s *terminalClient) handleCancel(f *tunnel.LifecycleTerminalResponse_Cancel
 
 func (s *terminalClient) fail(err error) {
 	s.mu.Lock()
-	if s.err == nil {
+	if s.err == nil || (errors.Is(s.err, io.EOF) && !errors.Is(err, io.EOF)) {
 		s.err = err
 	}
 	a := s.active
@@ -624,16 +636,21 @@ func (s *terminalClient) sendItem(ctx context.Context, item terminalSend) error 
 	select {
 	case err := <-item.done:
 		return err
-	default:
-	}
-	select {
-	case err := <-item.done:
-		return err
 	case <-ctx.Done():
-		s.fail(ctx.Err())
-		return ctx.Err()
+		select {
+		case err := <-item.done:
+			return err
+		default:
+			s.fail(ctx.Err())
+			return ctx.Err()
+		}
 	case <-s.ctx.Done():
-		return s.failure()
+		select {
+		case err := <-item.done:
+			return err
+		default:
+			return s.failure()
+		}
 	}
 }
 
@@ -652,15 +669,20 @@ func (s *terminalClient) sendOutput(
 	select {
 	case err := <-item.done:
 		return err
-	default:
-	}
-	select {
-	case err := <-item.done:
-		return err
 	case <-ctx.Done():
-		return ctx.Err()
+		select {
+		case err := <-item.done:
+			return err
+		default:
+			return ctx.Err()
+		}
 	case <-s.ctx.Done():
-		return s.failure()
+		select {
+		case err := <-item.done:
+			return err
+		default:
+			return s.failure()
+		}
 	}
 }
 
