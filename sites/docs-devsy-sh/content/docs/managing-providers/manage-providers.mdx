@@ -80,29 +80,23 @@ provider repository for cloud-init and image selection setup.
 
 ### MicroSandbox
 
-Install the external provider from its release manifest:
+Install the external provider and create a workspace:
+
+```sh
+devsy provider add microsandbox
+devsy workspace up . --provider microsandbox
+```
+
+A successful add initializes the provider and makes it the default for the current context. To keep the current default, add `--use=false` and run `devsy provider init microsandbox` before creating a workspace.
+
+If the built-in provider is already configured as `microsandbox`, adding the external provider with that name fails. Add it under another name:
 
 ```sh
 devsy provider add --name microsandbox-external https://github.com/devsy-org/devsy-provider-microsandbox/releases/latest/download/provider.yaml
+devsy workspace up . --provider microsandbox-external
 ```
 
-A successful add initializes the provider and makes it the default. To install it without initialization or changing the default, add `--use=false` and then run `devsy provider init microsandbox-external` before creating a workspace.
-
-The [MicroSandbox guide](./microsandbox.mdx) covers requirements, configuration and runtime compatibility. Choose another name if `microsandbox-external` already exists.
-
-**Existing built-in installations.** The built-in MicroSandbox provider is deprecated. Existing configurations are not migrated automatically. To switch one to the external provider, run:
-
-```sh
-devsy provider set-source <name> https://github.com/devsy-org/devsy-provider-microsandbox/releases/latest/download/provider.yaml
-```
-
-Current Devsy versions also accept `builtin:microsandbox` to select the deprecated built-in provider explicitly:
-
-```sh
-devsy provider add builtin:microsandbox --name legacy-microsandbox --use=false
-```
-
-After initialization, the switched provider becomes the default. To restore the previous default, run `devsy provider use <previous-name>`. If initialization fails, the new source stays selected. Fix the cause and run `devsy provider init <name>`, or set the previous source again.
+If you add with `--use=false`, run `devsy provider init microsandbox-external` before creating a workspace. Existing built-in configurations are not migrated automatically. The built-in provider is deprecated. Use `builtin:microsandbox` as the source in `devsy provider add` to select it explicitly. The [MicroSandbox guide](./microsandbox.mdx) covers requirements, configuration and runtime compatibility.
 
 ### Docker Sandboxes
 
