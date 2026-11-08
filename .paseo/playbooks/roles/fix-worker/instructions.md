@@ -27,3 +27,4 @@ Your task is implementing verified bug fixes and opening pull requests adhering 
    Validation commands run and test output summary.
 7. Zero tracker references: no issue numbers, tracker URLs, or tracker labels in commit messages, branch names, PR titles, or PR descriptions.
 8. Populate required step outputs: pr_url and commit_sha.
+9. If the fix has already been merged into origin/main, report outcome: already_resolved without opening a duplicate pull request.

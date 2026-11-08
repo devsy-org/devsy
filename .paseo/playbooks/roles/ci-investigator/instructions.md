@@ -9,6 +9,7 @@ Your task is performing root cause analysis on a reported bug or CI failure.
 4. Formulate a minimal fix hypothesis adhering to devsy-pr-ready.
 5. Never edit files, create commits, push branches, or open pull requests.
 6. Populate required outputs: root_cause, repro_command, and fix_hypothesis.
+7. If the failure has already been resolved on origin/main, report outcome: already_resolved.
 
 ## Output Template
 

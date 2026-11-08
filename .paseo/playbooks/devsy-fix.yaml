@@ -33,6 +33,9 @@ steps:
       root_cause: { type: string }
       repro_command: { type: string }
       fix_hypothesis: { type: string }
+    outcomes: [success, failure, already_resolved]
+    on:
+      already_resolved: complete
 
   - id: approve_plan
     needs: [investigate]
@@ -55,6 +58,9 @@ steps:
     outputs:
       pr_url: { type: string }
       commit_sha: { type: string }
+    outcomes: [success, failure, already_resolved]
+    on:
+      already_resolved: complete
 
   - id: approve_pr
     needs: [implement]
