@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,16 +22,9 @@ import (
 func TestProviderUpdateFailedDownloadPreservesExisting(t *testing.T) {
 	f := newFailedDownloadFixture(t)
 	var requests atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := ownedProviderUpdateServer(t, func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		http.Error(w, "owned replacement artifact deliberately unavailable", http.StatusNotFound)
-	}))
-	t.Cleanup(func() {
-		server.CloseClientConnections()
-		server.Close()
-		t.Log(
-			"owned HTTP server closed and handlers joined; t.TempDir cleanup removes isolated provider/config/workspace state",
-		)
 	})
 	digest := sha256.Sum256([]byte(f.directory + " never served replacement"))
 	replacement := &provider.ProviderConfig{

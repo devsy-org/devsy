@@ -232,9 +232,10 @@ func (f *preservationFixture) assertFailedPreservation() {
 
 func ownedProviderUpdateServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(handler)
+	server := httptest.NewUnstartedServer(handler)
+	server.Config.SetKeepAlivesEnabled(false)
+	server.Start()
 	t.Cleanup(func() {
-		server.CloseClientConnections()
 		server.Close()
 		t.Log("owned HTTP server closed and joined")
 	})
