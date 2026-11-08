@@ -28,6 +28,12 @@ func NewStallTransport(base http.RoundTripper, timeout time.Duration) http.Round
 	return &StallTransport{base: base, timeout: timeout}
 }
 
+func (t *StallTransport) CloseIdleConnections() {
+	if c, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
+}
+
 func (t *StallTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancel(req.Context())
 	wd := newStallWatchdog(t.timeout, cancel)

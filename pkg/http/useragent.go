@@ -26,3 +26,9 @@ func (t *userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 	return t.base.RoundTrip(req)
 }
+
+func (t *userAgentTransport) CloseIdleConnections() {
+	if c, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
+}

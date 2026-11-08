@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
@@ -236,6 +237,7 @@ func ownedProviderUpdateServer(t *testing.T, handler http.HandlerFunc) *httptest
 	server.Config.SetKeepAlivesEnabled(false)
 	server.Start()
 	t.Cleanup(func() {
+		devsyhttp.CloseIdleConnections()
 		server.Close()
 		t.Log("owned HTTP server closed and joined")
 	})
