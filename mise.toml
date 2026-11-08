@@ -170,14 +170,14 @@ dir = "e2e"
 run = 'go tool ginkgo --focus "$usage_pattern"'
 
 [tasks."cli:test:e2e:platform"]
-description = "run the tuistory platform e2e scenarios (VAL-CROSS-001, VAL-CROSS-002); needs a live gateway, controller and KUBECONFIG_FILE"
+description = "run the tuistory platform e2e scenarios (VAL-CROSS-001 to VAL-CROSS-004); needs a live gateway, controller and KUBECONFIG_FILE"
 shell = "bash -c"
 run = '''
 set -euo pipefail
 : "${KUBECONFIG_FILE:?set KUBECONFIG_FILE to the k3d kubeconfig}"
 mkdir -p dist
 go build -o dist/devsy-e2e .
-for script in cross-lifecycle cross-org-delete; do
+for script in cross-lifecycle cross-org-delete access-revocation; do
   "hack/platform-e2e/${script}.sh"
 done
 '''

@@ -83,15 +83,23 @@ list_pairs() {
 	awk 'NF == 2 && $1 != "NAME" && $1 !~ /^EXIT=/ {print $1, $2}' "$1" | sort
 }
 
-# signup_user EMAIL PASSWORD ORG_NAME: sign up, log in through the gateway, create
-# an org, and set SESSION_TOKEN and ORG_ID.
-signup_user() {
-	local email="$1" password="$2" org_name="$3"
-	api -X POST "$GATEWAY/v1/auth/signup" \
-		-d "$(jq -n --arg e "$email" --arg p "$password" '{email: $e, password: $p}')" >/dev/null
+# register_user EMAIL PASSWORD: sign up and log in through the gateway, and set
+# USER_ID and SESSION_TOKEN. The user belongs to no org yet.
+register_user() {
+	local email="$1" password="$2"
+	USER_ID="$(api -X POST "$GATEWAY/v1/auth/signup" \
+		-d "$(jq -n --arg e "$email" --arg p "$password" '{email: $e, password: $p}')" | jq -r .id)"
+	[ -n "$USER_ID" ] && [ "$USER_ID" != null ] || fail "could not sign up $email"
 	SESSION_TOKEN="$(api -X POST "$GATEWAY/v1/auth/login" \
 		-d "$(jq -n --arg e "$email" --arg p "$password" '{email: $e, password: $p}')" | jq -r .token)"
 	[ -n "$SESSION_TOKEN" ] && [ "$SESSION_TOKEN" != null ] || fail "could not log in $email through the gateway"
+}
+
+# signup_user EMAIL PASSWORD ORG_NAME: register a user, create an org, and set
+# USER_ID, SESSION_TOKEN and ORG_ID.
+signup_user() {
+	local email="$1" password="$2" org_name="$3"
+	register_user "$email" "$password"
 	ORG_ID="$(api -X POST "$GATEWAY/v1/orgs" -H "Authorization: Bearer $SESSION_TOKEN" \
 		-d "$(jq -n --arg n "$org_name" '{name: $n}')" | jq -r .id)"
 	[ -n "$ORG_ID" ] && [ "$ORG_ID" != null ] || fail "could not create org $org_name"
