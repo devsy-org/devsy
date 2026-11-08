@@ -48,6 +48,16 @@ func (e *localError) Error() string { return e.err.Error() }
 
 func (e *localError) Unwrap() error { return e.err }
 
+type localWriter struct{ io.Writer }
+
+func (w localWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if err != nil {
+		err = &localError{err}
+	}
+	return n, err
+}
+
 type providerAssets struct {
 	baseURL    string
 	repository string
@@ -258,7 +268,7 @@ func saveBody(body io.Reader, target string) (err error) {
 		return &localError{err}
 	}
 	defer func() { err = errors.Join(err, removeIfPresent(partial.Name())) }()
-	if _, err := io.Copy(partial, body); err != nil {
+	if _, err := io.Copy(localWriter{partial}, body); err != nil {
 		return errors.Join(err, partial.Close())
 	}
 	if err := partial.Close(); err != nil {

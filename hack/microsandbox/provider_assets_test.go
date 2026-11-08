@@ -5,12 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -342,4 +345,15 @@ func TestPreparedCacheSatisfiesProviderDownloader(t *testing.T) {
 	got, err := os.ReadFile(paths[runtimeDriverBinary])
 	require.NoError(t, err)
 	require.Equal(t, binary, got)
+}
+
+type diskFullWriter struct{}
+
+func (diskFullWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestLocalWriterMarksWriteFailuresNonRetryable(t *testing.T) {
+	_, err := io.Copy(localWriter{diskFullWriter{}}, strings.NewReader("data"))
+	require.Error(t, err)
+	require.False(t, retryableFetch(context.Background(), err))
+	require.True(t, retryableFetch(context.Background(), io.ErrUnexpectedEOF))
 }
