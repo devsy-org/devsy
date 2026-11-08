@@ -51,6 +51,7 @@ var retryableProviderNetworkPatterns = []string{
 	"i/o timeout",
 	"connection reset by peer",
 	"unexpected EOF",
+	"stalled: no progress within timeout",
 }
 
 // retryableDockerPatterns are stderr substrings indicating a transient Docker

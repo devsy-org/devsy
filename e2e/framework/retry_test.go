@@ -710,6 +710,7 @@ func TestIsRetryableProviderDownloadError(t *testing.T) {
 		"download failed with status 502",
 		"Get \"https://github.com\": net/http: TLS handshake timeout",
 		"read tcp: connection reset by peer",
+		"download file: stalled: no progress within timeout",
 	}
 	for _, stderr := range retryable {
 		assert.True(t, isRetryableProviderDownloadError(errExitOne, stderr), stderr)
@@ -821,4 +822,18 @@ func TestSeedProviderDownloadCacheIsOptional(t *testing.T) {
 
 	t.Setenv(providerDownloadCacheEnv, filepath.Join(t.TempDir(), "missing"))
 	require.Error(t, seedProviderDownloadCache())
+}
+
+func TestSeedProviderDownloadCacheCreatesHome(t *testing.T) {
+	source := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "abc"), []byte("binary"), 0o600))
+	home := filepath.Join(t.TempDir(), "new-home")
+	t.Setenv(providerDownloadCacheEnv, source)
+	t.Setenv("DEVSY_HOME", home)
+
+	require.NoError(t, seedProviderDownloadCache())
+	assert.FileExists(t, filepath.Join(home, "cache", "providers", "abc"))
+	entries, err := os.ReadDir(filepath.Join(home, "cache", "providers"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
 }

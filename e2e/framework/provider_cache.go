@@ -6,12 +6,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 )
 
 const (
 	providerDownloadCacheEnv = "DEVSY_E2E_PROVIDER_DOWNLOAD_CACHE"
+	providerCacheHomePerm    = 0o700
 	providerCacheDirPerm     = 0o750
 	providerCacheFilePerm    = 0o755
 )
@@ -29,7 +31,7 @@ func seedProviderDownloadCache() error {
 		return fmt.Errorf("open %s: %w", providerDownloadCacheEnv, err)
 	}
 	defer func() { _ = sourceRoot.Close() }()
-	homeRoot, err := os.OpenRoot(home)
+	homeRoot, err := openHomeRoot(home)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", config.EnvHome, err)
 	}
@@ -38,6 +40,23 @@ func seedProviderDownloadCache() error {
 		return fmt.Errorf("create provider download cache: %w", err)
 	}
 	return copyMissingFiles(source, sourceRoot, homeRoot)
+}
+
+func openHomeRoot(home string) (*os.Root, error) {
+	parent, err := os.OpenRoot(filepath.Dir(home))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = parent.Close() }()
+	name := filepath.Base(home)
+	if err := parent.Mkdir(
+		name,
+		providerCacheHomePerm,
+	); err != nil &&
+		!errors.Is(err, os.ErrExist) {
+		return nil, err
+	}
+	return parent.OpenRoot(name)
 }
 
 func copyMissingFiles(source string, sourceRoot, homeRoot *os.Root) error {
@@ -68,13 +87,22 @@ func copyIfMissing(
 		return err
 	}
 	defer func() { err = errors.Join(err, in.Close()) }()
+	partial := fmt.Sprintf("%s.%d.%d.partial", destination, os.Getpid(), time.Now().UnixNano())
 	out, err := destinationRoot.OpenFile(
-		destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, providerCacheFilePerm,
+		partial, os.O_WRONLY|os.O_CREATE|os.O_EXCL, providerCacheFilePerm,
 	)
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, out.Close()) }()
 	_, err = io.Copy(out, in)
-	return err
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return errors.Join(err, destinationRoot.Remove(partial))
+	}
+	if err := destinationRoot.Rename(partial, destination); err != nil {
+		return errors.Join(err, destinationRoot.Remove(partial))
+	}
+	return nil
 }

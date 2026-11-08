@@ -490,7 +490,6 @@ jobs:
           name: microsandbox-provider-assets
           path: ${{ runner.temp }}/microsandbox-provider/
           if-no-files-found: error
-          retention-days: 1
 
   # E2E tier, group "microsandbox": the MicroSandbox CI helper owns the run and
   # its report checks.

@@ -42,6 +42,12 @@ func (e *statusError) Error() string {
 	return fmt.Sprintf("received status code %d when trying to download %s", e.code, e.url)
 }
 
+type localError struct{ err error }
+
+func (e *localError) Error() string { return e.err.Error() }
+
+func (e *localError) Unwrap() error { return e.err }
+
 type providerAssets struct {
 	baseURL    string
 	repository string
@@ -123,7 +129,7 @@ func (a *providerAssets) loadManifest(
 	path string,
 ) (*provider.ProviderConfig, error) {
 	config, err := parseManifestFile(path)
-	if err == nil && config.Version == a.version {
+	if err == nil && config.Version == a.version && a.boundToRelease(config) {
 		return config, nil
 	}
 	manifestURL := fmt.Sprintf(
@@ -137,11 +143,28 @@ func (a *providerAssets) loadManifest(
 	if err != nil {
 		return nil, errors.Join(err, removeIfPresent(path))
 	}
-	if config.Version != a.version {
-		mismatch := fmt.Errorf("provider manifest version %q, want %q", config.Version, a.version)
+	if config.Version != a.version || !a.boundToRelease(config) {
+		mismatch := fmt.Errorf(
+			"provider manifest version %q does not match release %s%s",
+			config.Version, a.releasePrefix(), providerManifestName,
+		)
 		return nil, errors.Join(mismatch, removeIfPresent(path))
 	}
 	return config, nil
+}
+
+func (a *providerAssets) releasePrefix() string {
+	return fmt.Sprintf(
+		"%s/%s/releases/download/%s/",
+		a.baseURL,
+		a.repository,
+		url.PathEscape(a.version),
+	)
+}
+
+func (a *providerAssets) boundToRelease(config *provider.ProviderConfig) bool {
+	binary, err := a.runtimeBinary(config)
+	return err == nil && strings.HasPrefix(binary.Path, a.releasePrefix())
 }
 
 func parseManifestFile(path string) (_ *provider.ProviderConfig, err error) {
@@ -201,6 +224,9 @@ func retryableFetch(ctx context.Context, err error) bool {
 	if ctx.Err() != nil {
 		return false
 	}
+	if _, ok := errors.AsType[*localError](err); ok {
+		return false
+	}
 	if status, ok := errors.AsType[*statusError](err); ok {
 		return status.code >= http.StatusInternalServerError
 	}
@@ -220,21 +246,28 @@ func (a *providerAssets) fetchOnce(ctx context.Context, rawURL, target string) (
 	if resp.StatusCode != http.StatusOK {
 		return &statusError{code: resp.StatusCode, url: rawURL}
 	}
+	return saveBody(resp.Body, target)
+}
+
+func saveBody(body io.Reader, target string) (err error) {
 	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
-		return err
+		return &localError{err}
 	}
 	partial, err := os.CreateTemp(filepath.Dir(target), ".download-*")
 	if err != nil {
-		return err
+		return &localError{err}
 	}
 	defer func() { err = errors.Join(err, removeIfPresent(partial.Name())) }()
-	if _, err := io.Copy(partial, resp.Body); err != nil {
+	if _, err := io.Copy(partial, body); err != nil {
 		return errors.Join(err, partial.Close())
 	}
 	if err := partial.Close(); err != nil {
-		return err
+		return &localError{err}
 	}
-	return os.Rename(partial.Name(), target)
+	if err := os.Rename(partial.Name(), target); err != nil {
+		return &localError{err}
+	}
+	return nil
 }
 
 func verifyFileSHA256(path, want string) (err error) {

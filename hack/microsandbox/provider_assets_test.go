@@ -10,17 +10,21 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/hash"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/require"
 )
 
 const (
 	assetsRepository = "devsy-org/devsy-provider-microsandbox"
 	assetsVersion    = "v9.9.9"
+	osLinux          = "linux"
+	archAmd64        = "amd64"
 	assetsBinaryName = "devsy-runtime-microsandbox-linux-amd64"
 )
 
@@ -31,6 +35,8 @@ type assetsServer struct {
 	failures map[string]int
 	status   int
 	version  string
+	goos     string
+	goarch   string
 	binary   []byte
 	checksum string
 }
@@ -42,6 +48,8 @@ func newAssetsServer(t *testing.T, binary []byte, checksum string) *assetsServer
 		failures: map[string]int{},
 		status:   http.StatusGatewayTimeout,
 		version:  assetsVersion,
+		goos:     osLinux,
+		goarch:   archAmd64,
 		binary:   binary,
 		checksum: checksum,
 	}
@@ -62,12 +70,12 @@ agent:
     args: [serve]
   binaries:
     DEVSY_RUNTIME_DRIVER:
-      - os: linux
-        arch: amd64
+      - os: %s
+        arch: %s
         path: %s/%s/releases/download/%s/%s
         name: %s
         checksum: %s
-`, s.version, s.URL, assetsRepository, assetsVersion, assetsBinaryName, assetsBinaryName, s.checksum)
+`, s.version, s.goos, s.goarch, s.URL, assetsRepository, assetsVersion, assetsBinaryName, assetsBinaryName, s.checksum)
 }
 
 func (s *assetsServer) serve(w http.ResponseWriter, r *http.Request) {
@@ -113,8 +121,8 @@ func (s *assetsServer) assets(t *testing.T, delays *[]time.Duration) providerAss
 		repository: assetsRepository,
 		version:    assetsVersion,
 		outputDir:  t.TempDir(),
-		goos:       "linux",
-		goarch:     "amd64",
+		goos:       s.goos,
+		goarch:     s.goarch,
 		attempts:   4,
 		baseDelay:  time.Second,
 		client:     s.Client(),
@@ -219,7 +227,7 @@ func TestPrepareProviderRejectsVersionMismatch(t *testing.T) {
 	assets := server.assets(t, &delays)
 
 	err := assets.prepare(context.Background(), &bytes.Buffer{})
-	require.ErrorContains(t, err, `provider manifest version "v9.9.8", want "v9.9.9"`)
+	require.ErrorContains(t, err, `provider manifest version "v9.9.8" does not match release`)
 	require.Zero(t, server.count(assetsBinaryName))
 	require.NoFileExists(t, filepath.Join(assets.outputDir, providerManifestName))
 }
@@ -259,4 +267,79 @@ func TestPrepareProviderCLIRequiresArguments(t *testing.T) {
 	var stderr bytes.Buffer
 	require.Equal(t, 2, prepareProviderCLI(nil, &bytes.Buffer{}, &stderr))
 	require.Contains(t, stderr.String(), "--version and --output-dir")
+}
+
+func TestPrepareProviderDoesNotRetryLocalFileErrors(t *testing.T) {
+	binary, checksum := binaryFixture()
+	server := newAssetsServer(t, binary, checksum)
+	var delays []time.Duration
+	assets := server.assets(t, &delays)
+	blocker := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(blocker, nil, 0o600))
+	assets.outputDir = filepath.Join(blocker, "nested")
+
+	require.Error(t, assets.prepare(context.Background(), &bytes.Buffer{}))
+	require.Equal(t, 1, server.count(providerManifestName))
+	require.Empty(t, delays)
+}
+
+func TestPrepareProviderRefetchesManifestFromAnotherRepository(t *testing.T) {
+	binary, checksum := binaryFixture()
+	server := newAssetsServer(t, binary, checksum)
+	var delays []time.Duration
+	assets := server.assets(t, &delays)
+	other := fmt.Sprintf(
+		"name: microsandbox\nversion: %s\nexec:\n  command: \"true\"\nagent:\n  driver: external\n"+
+			"  external:\n    binary: DEVSY_RUNTIME_DRIVER\n  binaries:\n    DEVSY_RUNTIME_DRIVER:\n"+
+			"      - os: linux\n        arch: amd64\n        checksum: %s\n"+
+			"        path: https://github.com/other/repo/releases/download/%s/runtime\n",
+		assetsVersion, checksum, assetsVersion,
+	)
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(assets.outputDir, providerManifestName), []byte(other), 0o600),
+	)
+
+	require.NoError(t, assets.prepare(context.Background(), &bytes.Buffer{}))
+	require.Equal(t, 1, server.count(providerManifestName))
+	require.FileExists(t, server.cachedBinary(assets))
+}
+
+func TestPreparedCacheSatisfiesProviderDownloader(t *testing.T) {
+	binary, checksum := binaryFixture()
+	server := newAssetsServer(t, binary, checksum)
+	var delays []time.Duration
+	server.goos, server.goarch = runtime.GOOS, runtime.GOARCH
+	assets := server.assets(t, &delays)
+	config, err := assets.loadManifest(
+		context.Background(),
+		filepath.Join(assets.outputDir, providerManifestName),
+	)
+	require.NoError(t, err)
+	require.NoError(t, assets.prepare(context.Background(), &bytes.Buffer{}))
+
+	home := t.TempDir()
+	cache := filepath.Join(home, "cache", "providers")
+	require.NoError(t, os.MkdirAll(cache, 0o750))
+	entries, err := os.ReadDir(filepath.Join(assets.outputDir, providerCacheDirName))
+	require.NoError(t, err)
+	for _, entry := range entries {
+		data, err := os.ReadFile(
+			filepath.Join(assets.outputDir, providerCacheDirName, entry.Name()),
+		)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(cache, entry.Name()), data, 0o600))
+	}
+	t.Setenv("DEVSY_HOME", home)
+	server.Close()
+
+	paths, err := provider.DownloadBinaries(
+		context.Background(),
+		config.Agent.Binaries,
+		t.TempDir(),
+	)
+	require.NoError(t, err)
+	got, err := os.ReadFile(paths[runtimeDriverBinary])
+	require.NoError(t, err)
+	require.Equal(t, binary, got)
 }
