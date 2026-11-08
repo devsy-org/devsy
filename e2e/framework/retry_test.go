@@ -696,3 +696,144 @@ func TestRetryFixed_ContextCanceledOnFinalAttempt(t *testing.T) {
 		"after 2 attempts: context canceled (last error: final attempt failed)",
 	)
 }
+
+const (
+	providerServerFailure = "received status code 504 when trying to download x"
+	providerClientFailure = "received status code 404 when trying to download x"
+)
+
+var errExitOne = errors.New("exit status 1")
+
+func TestIsRetryableProviderDownloadError(t *testing.T) {
+	retryable := []string{
+		"download: received status code 504 when trying to download https://github.com/o/r/provider.yaml",
+		"download failed with status 502",
+		"Get \"https://github.com\": net/http: TLS handshake timeout",
+		"read tcp: connection reset by peer",
+		"download file: stalled: no progress within timeout",
+	}
+	for _, stderr := range retryable {
+		assert.True(t, isRetryableProviderDownloadError(errExitOne, stderr), stderr)
+	}
+	permanent := []string{
+		"download: received status code 404 when trying to download https://github.com/o/r/provider.yaml",
+		"download failed with status 403",
+		"provider microsandbox already exists",
+		"validate: exec.command is required",
+	}
+	for _, stderr := range permanent {
+		assert.False(t, isRetryableProviderDownloadError(errExitOne, stderr), stderr)
+	}
+}
+
+func TestExecWithProviderAddRetryRecoversFromServerErrors(t *testing.T) {
+	original := providerAddBackoff
+	providerAddBackoff = wait.Backoff{Steps: 4, Duration: time.Millisecond, Factor: 1}
+	t.Cleanup(func() { providerAddBackoff = original })
+	attempts := 0
+	_, err := execWithProviderAddRetry(
+		context.Background(),
+		func(context.Context) (string, string, error) {
+			attempts++
+			if attempts < 3 {
+				return "", providerServerFailure, errExitOne
+			}
+			return "", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 3, attempts)
+}
+
+func TestExecWithProviderAddRetrySkipsClientErrors(t *testing.T) {
+	original := providerAddBackoff
+	providerAddBackoff = wait.Backoff{Steps: 4, Duration: time.Millisecond, Factor: 1}
+	t.Cleanup(func() { providerAddBackoff = original })
+	attempts := 0
+	stderr, err := execWithProviderAddRetry(
+		context.Background(),
+		func(context.Context) (string, string, error) {
+			attempts++
+			return "", providerClientFailure, errExitOne
+		},
+	)
+	require.Error(t, err)
+	assert.Equal(t, 1, attempts)
+	assert.Contains(t, stderr, "404")
+}
+
+func TestExecWithProviderAddRetryStopsAtBudget(t *testing.T) {
+	original := providerAddBackoff
+	providerAddBackoff = wait.Backoff{Steps: 3, Duration: time.Millisecond, Factor: 1}
+	t.Cleanup(func() { providerAddBackoff = original })
+	attempts := 0
+	_, err := execWithProviderAddRetry(
+		context.Background(),
+		func(context.Context) (string, string, error) {
+			attempts++
+			return "", providerServerFailure, errExitOne
+		},
+	)
+	require.ErrorContains(t, err, "after 3 attempts")
+	assert.Equal(t, 3, attempts)
+}
+
+func TestSeedProviderDownloadCache(t *testing.T) {
+	source := t.TempDir()
+	home := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "abc"), []byte("binary"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(source, "nested"), 0o750))
+	t.Setenv(providerDownloadCacheEnv, source)
+	t.Setenv("DEVSY_HOME", home)
+
+	require.NoError(t, seedProviderDownloadCache())
+	root, err := os.OpenRoot(home)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = root.Close() })
+	got, err := root.ReadFile(filepath.Join("cache", "providers", "abc"))
+	require.NoError(t, err)
+	assert.Equal(t, "binary", string(got))
+	assert.NoDirExists(t, filepath.Join(home, "cache", "providers", "nested"))
+}
+
+func TestSeedProviderDownloadCacheKeepsExistingFiles(t *testing.T) {
+	source := t.TempDir()
+	home := t.TempDir()
+	cache := filepath.Join(home, "cache", "providers")
+	require.NoError(t, os.MkdirAll(cache, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(source, "abc"), []byte("new"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(cache, "abc"), []byte("old"), 0o600))
+	t.Setenv(providerDownloadCacheEnv, source)
+	t.Setenv("DEVSY_HOME", home)
+
+	require.NoError(t, seedProviderDownloadCache())
+	root, err := os.OpenRoot(cache)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = root.Close() })
+	got, err := root.ReadFile("abc")
+	require.NoError(t, err)
+	assert.Equal(t, "old", string(got))
+}
+
+func TestSeedProviderDownloadCacheIsOptional(t *testing.T) {
+	t.Setenv(providerDownloadCacheEnv, "")
+	t.Setenv("DEVSY_HOME", t.TempDir())
+	require.NoError(t, seedProviderDownloadCache())
+
+	t.Setenv(providerDownloadCacheEnv, filepath.Join(t.TempDir(), "missing"))
+	require.Error(t, seedProviderDownloadCache())
+}
+
+func TestSeedProviderDownloadCacheCreatesHome(t *testing.T) {
+	source := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "abc"), []byte("binary"), 0o600))
+	home := filepath.Join(t.TempDir(), "new-home")
+	t.Setenv(providerDownloadCacheEnv, source)
+	t.Setenv("DEVSY_HOME", home)
+
+	require.NoError(t, seedProviderDownloadCache())
+	assert.FileExists(t, filepath.Join(home, "cache", "providers", "abc"))
+	entries, err := os.ReadDir(filepath.Join(home, "cache", "providers"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+}

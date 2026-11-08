@@ -27,16 +27,18 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(
 			stderr,
-			"usage: devsy-ci-microsandbox <install-linux|run|verify-report|build-performance-tools|managed-policy-e2e>",
+			"usage: devsy-ci-microsandbox <install-linux|prepare-provider|run|verify-report|"+
+				"build-performance-tools|managed-policy-e2e>",
 		)
 		return 2
 	}
 	if code, ok := runManagedPolicyCommand(args, stderr); ok {
 		return code
 	}
+	if code, ok := runProvisionCommand(args, stdout, stderr); ok {
+		return code
+	}
 	switch args[0] {
-	case installLinuxCommand:
-		return installLinuxCLI(args[1:], stdout, stderr)
 	case runSuiteCommand:
 		return runSuiteCLI(args[1:], stdout, stderr)
 	case verifyReportCommand:
@@ -46,6 +48,17 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	default:
 		_, _ = fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		return 2
+	}
+}
+
+func runProvisionCommand(args []string, stdout, stderr io.Writer) (int, bool) {
+	switch args[0] {
+	case installLinuxCommand:
+		return installLinuxCLI(args[1:], stdout, stderr), true
+	case prepareProviderCommand:
+		return prepareProviderCLI(args[1:], stdout, stderr), true
+	default:
+		return 0, false
 	}
 }
 
