@@ -1,0 +1,12 @@
+agent:
+  provider: claude
+  model: claude-sonnet-5-5
+  mode: auto
+manager:
+  provider: codex
+  model: gpt-6.1-terra
+  mode: auto
+timeout: 2h
+role:
+  silence: 30m
+  archive_agents: true

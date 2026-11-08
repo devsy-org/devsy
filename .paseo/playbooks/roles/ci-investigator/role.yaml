@@ -1,0 +1,6 @@
+title: CI Investigator
+readonly: true
+agent:
+  provider: claude
+  model: claude-sonnet-5-5
+  mode: auto

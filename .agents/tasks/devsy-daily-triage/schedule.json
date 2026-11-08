@@ -1,0 +1,18 @@
+{
+  "id": "sch_devsy_daily_triage",
+  "name": "devsy-daily-triage",
+  "cron": "0 10 * * *",
+  "timezone": "UTC",
+  "provider": "omp/anthropic/claude-sonnet-5-5",
+  "cwd": "/Users/ocean_trader/Documents/devsy/devsy",
+  "isolation": "worktree",
+  "task": ".agents/tasks/devsy-daily-triage/task.md",
+  "models_allowed": [
+    "claude/claude-haiku-5-5",
+    "codex/gpt-6-luna",
+    "codex/gpt-6.1-terra",
+    "claude/claude-sonnet-5-5",
+    "codex/gpt-6.1-sol"
+  ],
+  "fast_mode_allowed": false
+}

@@ -1,0 +1,20 @@
+{
+  "id": "fix-worker",
+  "name": "fix-worker",
+  "description": "Fix implementation and PR creation subagent adhering to devsy-pr-ready.",
+  "mode": "normal",
+  "fast_mode_allowed": false,
+  "models_allowed": [
+    "claude/claude-sonnet-5-5",
+    "codex/gpt-6.1-sol",
+    "codex/gpt-6.1-terra"
+  ],
+  "use_host_git_config": true,
+  "pr_rules": {
+    "max_words": 100,
+    "required_sections": ["Cause", "Fix", "Test evidence"],
+    "signed_commits": true,
+    "zero_tracker_references": true
+  },
+  "tools": ["read", "edit", "write", "glob", "grep", "find", "bash"]
+}
