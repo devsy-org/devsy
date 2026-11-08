@@ -79,7 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
       - run: prek run --all-files
 
@@ -575,11 +575,11 @@ jobs:
     timeout-minutes: ${{ matrix.job_timeout_minutes }}
     steps:
       - uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
-        background: true
         if: matrix.free_disk_space && matrix.os == 'linux'
         with:
           docker-images: false
           swap-storage: false
+          large-packages: false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
