@@ -171,6 +171,8 @@ type request struct {
 	path   string
 	bearer string
 	body   any
+	// wantStatus, when set, makes any other 2xx answer an error.
+	wantStatus int
 }
 
 func (c *Client) do(ctx context.Context, r request, out any) error {
@@ -185,6 +187,14 @@ func (c *Client) do(ctx context.Context, r request, out any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if r.wantStatus != 0 && resp.StatusCode/100 == 2 && resp.StatusCode != r.wantStatus {
+		return &APIError{
+			Status: resp.StatusCode,
+			Message: fmt.Sprintf(
+				"gateway answered %d, expected %d", resp.StatusCode, r.wantStatus,
+			),
+		}
+	}
 	return decodeResponse(resp, out)
 }
 

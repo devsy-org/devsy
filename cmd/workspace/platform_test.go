@@ -23,10 +23,11 @@ const (
 	platName     = "ws-one"
 	platWsA      = "ws-a"
 
-	fieldName    = "name"
-	fieldPhase   = "phase"
-	phaseRunning = "Running"
-	phasePending = "Pending"
+	fieldName     = "name"
+	fieldPhase    = "phase"
+	phaseRunning  = "Running"
+	phasePending  = "Pending"
+	phaseSleeping = "Sleeping"
 )
 
 type platformCall struct {
@@ -41,6 +42,25 @@ type fakePlatformGateway struct {
 	calls      []platformCall
 	workspaces []map[string]string
 	status     int
+	message    string
+}
+
+// lifecycleRoute recognises the sleep, wake and delete routes and returns the
+// workspace name with the phase the real gateway answers with.
+func lifecycleRoute(call platformCall) (name, phase string, ok bool) {
+	rest, found := strings.CutPrefix(call.Path, "/v1/workspaces/")
+	if !found {
+		return "", "", false
+	}
+	switch {
+	case call.Method == http.MethodDelete && !strings.Contains(rest, "/"):
+		return rest, "Deleting", true
+	case call.Method == http.MethodPost && strings.HasSuffix(rest, "/sleep"):
+		return strings.TrimSuffix(rest, "/sleep"), phaseRunning, true
+	case call.Method == http.MethodPost && strings.HasSuffix(rest, "/wake"):
+		return strings.TrimSuffix(rest, "/wake"), phaseSleeping, true
+	}
+	return "", "", false
 }
 
 func newFakePlatformGateway() *fakePlatformGateway {
@@ -56,13 +76,23 @@ func (g *fakePlatformGateway) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	g.mu.Lock()
 	g.calls = append(g.calls, call)
-	status := g.status
+	status, message := g.status, g.message
 	g.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	if status != 0 {
+		if message == "" {
+			message = "invalid api key"
+		}
 		w.WriteHeader(status)
-		_, _ = w.Write([]byte(`{"error":{"code":"unauthorized","message":"invalid api key"}}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]string{"code": "error", "message": message},
+		})
+		return
+	}
+	if name, phase, ok := lifecycleRoute(call); ok {
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]string{fieldName: name, fieldPhase: phase})
 		return
 	}
 	switch call.Method + " " + call.Path {
@@ -112,7 +142,7 @@ func (s *PlatformSuite) TestListPrintsOneRowPerWorkspaceWithNameAndPhase() {
 	s.login()
 	s.gateway.workspaces = []map[string]string{
 		{fieldName: platWsA, fieldPhase: phaseRunning},
-		{fieldName: "ws-b", fieldPhase: "Sleeping"},
+		{fieldName: "ws-b", fieldPhase: phaseSleeping},
 		{fieldName: "ws-c", fieldPhase: "Failed"},
 	}
 
@@ -122,7 +152,7 @@ func (s *PlatformSuite) TestListPrintsOneRowPerWorkspaceWithNameAndPhase() {
 	s.Require().Len(lines, 4, s.out.String())
 	s.Equal([]string{"NAME", "PHASE"}, strings.Fields(lines[0]))
 	s.Equal([]string{platWsA, phaseRunning}, strings.Fields(lines[1]))
-	s.Equal([]string{"ws-b", "Sleeping"}, strings.Fields(lines[2]))
+	s.Equal([]string{"ws-b", phaseSleeping}, strings.Fields(lines[2]))
 	s.Equal([]string{"ws-c", "Failed"}, strings.Fields(lines[3]))
 }
 

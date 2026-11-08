@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 )
 
 // Workspace is one workspace as the gateway reports it. Phase is read from the
@@ -71,6 +72,51 @@ func (c *Client) CreateWorkspace(
 		body:   map[string]string{"name": name, "template": template},
 	}, &out)
 	if err != nil {
+		return Workspace{}, err
+	}
+	return out, nil
+}
+
+// SleepWorkspace asks the gateway to put a workspace to sleep. The gateway
+// answers 202 once the request is recorded; the phase changes later.
+func (c *Client) SleepWorkspace(ctx context.Context, apiKey, name string) (Workspace, error) {
+	return c.lifecycle(ctx, request{
+		method: http.MethodPost,
+		path:   workspacePath(name) + "/sleep",
+		bearer: apiKey,
+	})
+}
+
+// WakeWorkspace asks the gateway to wake a sleeping workspace. The gateway
+// answers 202 once the request is recorded; the phase changes later.
+func (c *Client) WakeWorkspace(ctx context.Context, apiKey, name string) (Workspace, error) {
+	return c.lifecycle(ctx, request{
+		method: http.MethodPost,
+		path:   workspacePath(name) + "/wake",
+		bearer: apiKey,
+	})
+}
+
+// DeleteWorkspace asks the gateway to delete a workspace. The gateway answers
+// 202 once the request is recorded; the workspace disappears later.
+func (c *Client) DeleteWorkspace(ctx context.Context, apiKey, name string) (Workspace, error) {
+	return c.lifecycle(ctx, request{
+		method: http.MethodDelete,
+		path:   workspacePath(name),
+		bearer: apiKey,
+	})
+}
+
+func workspacePath(name string) string {
+	return "/v1/workspaces/" + url.PathEscape(name)
+}
+
+// lifecycle sends a request that the gateway only accepts: anything but a 202
+// is an error.
+func (c *Client) lifecycle(ctx context.Context, r request) (Workspace, error) {
+	r.wantStatus = http.StatusAccepted
+	var out Workspace
+	if err := c.doWithKey(ctx, r, &out); err != nil {
 		return Workspace{}, err
 	}
 	return out, nil
