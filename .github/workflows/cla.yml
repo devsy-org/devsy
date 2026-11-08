@@ -31,7 +31,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }},cla-signatures
 
-      - uses: devsy-org/cla-assistant-action@5a9bf84d6e172245eccdb0362e13e705c9078eea # v2.6.6
+      - uses: devsy-org/cla-assistant-action@6fad3b885507882678a7103701857bfe5d8d82fc # v2.6.7
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           PERSONAL_ACCESS_TOKEN: ${{ steps.app-token.outputs.token }}
