@@ -7,7 +7,7 @@ The external MicroSandbox provider runs Devsy workspaces in microVMs using the M
 
 ## Requirements and installation
 
-Install Devsy v1.24.0 or later, which adds the `microsandbox` short name, and the [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli), version 0.7.13 or later. Check `msb --version` in the environment running Devsy. An older `msb` fails with `MicroSandbox v0.7.13 or newer is required`. Docker is required for image builds.
+Install Devsy v1.24.0 or later, which adds the `microsandbox` short name, and the [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli), version 0.7.13 or later. Check `msb --version` in the environment running Devsy. Docker is required for image builds.
 
 Provider releases contain binaries for Linux amd64 and arm64, macOS arm64, and Windows amd64. Microsandbox VM tests have run only on macOS arm64. The Linux and Windows binaries are built and unit tested in CI, but have not been tested with a running VM. Linux needs accessible KVM.
 
@@ -15,6 +15,8 @@ Provider releases contain binaries for Linux amd64 and arm64, macOS arm64, and W
 devsy provider add microsandbox
 devsy workspace up . --provider microsandbox
 ```
+
+`devsy provider add` installs the latest provider release but does not download the provider's runtime binary. Devsy downloads it from the provider's GitHub release at the first `devsy workspace up`, so that first run needs access to GitHub release downloads.
 
 A successful add initializes the provider and makes it the default for the current context. Workspaces that do not specify a provider use the default. To keep the current default, add `--use=false` to the add command, then run `devsy provider init microsandbox` before creating a workspace.
 
@@ -56,9 +58,13 @@ Set options in Desktop or with `devsy provider set microsandbox -o KEY=value`. I
 
 If the runtime version cannot be recognized, update it with `msb self update`. If inspect output cannot be parsed, the provider reports the runtime version and an incompatibility reporting link. For a relocated runtime, set both executable and firmware paths. A partial pair fails instead of selecting another installation. The installed adapter's `runtime-check` command checks the pair and version without starting a VM, although it can initialize the native library cache.
 
-An invalid option value, such as `MICROSANDBOX_MEMORY=abc`, stops the provider before it starts. In provider release v1.0.4, Devsy then shows only `Unrecognized remote plugin message` and `runtime supervisor failed`. Run the command again with `--debug` to see the cause, for example `invalid MICROSANDBOX_MEMORY`. A later provider release reports the option error in the normal output.
+An invalid option value stops the workspace from starting and Devsy shows the cause in its normal output, for example `invalid MICROSANDBOX_MEMORY: ...` for `MICROSANDBOX_MEMORY=abc`, or `host-perms=mirror requires workspace stat virtualization` when `MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION` is `off` with `mirror` permissions. Before provider v1.0.5, Devsy showed only `Unrecognized remote plugin message` and `runtime supervisor failed`, and `--debug` was needed to see the cause.
 
-`msb` rejects a bind mount host path that goes through a symbolic link, such as `/tmp` on macOS. In provider release v1.0.4, starting a workspace from a folder under `/tmp`, or with a `DEVSY_HOME` under `/tmp`, fails with `bind mount host path ... goes through symlink /tmp`. Use the resolved path, for example `/private/tmp/project`. A later provider release resolves these paths itself.
+`msb` rejects a bind mount host path that goes through a symbolic link, such as `/tmp` or `/var` on macOS. The provider resolves symbolic links in bind mount host paths, so a project folder under `/tmp` works. Before provider v1.0.5, this failed with `bind mount host path ... goes through symlink /tmp`, and the workaround was the resolved path, for example `/private/tmp/project`.
+
+An `msb` older than 0.7.13 is rejected in two ways. When the provider creates a workspace, it fails with `MicroSandbox v0.7.13 or newer is required`. If a newer `msb` already upgraded the `MSB_HOME` database, the older `msb` refuses it first, and the error includes the `msb inspect` output, for example `database schema is newer than this msb binary`. In both cases, update `msb` with `msb self update`.
+
+Devsy does not put devcontainer environment and label values on the `msb` command line, where other local users could read them with `ps`. The provider passes them through a private runtime configuration file that refers to host variables. The values remain visible in `msb inspect` output, because `msb` stores them with the VM.
 
 The external runtime driver does not support Compose devcontainers. Use a Docker driver provider when your workspace requires Compose.
 
@@ -67,3 +73,5 @@ For a relocated runtime, `runtime-check` reads its process environment rather th
 ```sh
 MSB_PATH=/opt/microsandbox/msb MSB_LIBKRUNFW_PATH=/opt/microsandbox/libkrunfw.so.5.6.1 /path/to/installed/adapter runtime-check
 ```
+
+The firmware library file name depends on the platform and release. On Linux it looks like `libkrunfw.so.5.6.1`, and on macOS it is `libkrunfw.5.dylib`. Use the file that ships next to the `msb` you configured.
