@@ -209,3 +209,44 @@ Every workspace starts from the same definition.
 </td>
 </tr>
 </table>
+
+<h2 align="center">Platform commands</h2>
+
+Log in to a managed platform gateway and manage its workspaces from the CLI.
+
+```sh
+devsy login https://gateway.example.com
+devsy login https://gateway.example.com --org "Acme Labs"
+devsy logout
+```
+
+`devsy login GATEWAY_URL` asks for your email and password, signs in, and creates an API key named `devsy-cli` with read and write scopes for one organization. Pass `--org` with an organization ID or name to choose it. Without `--org`, Devsy uses your only organization or asks you to pick one.
+
+The key is stored in the devsy config file under `gateway` (`url`, `apiKey`, `orgId`, `orgName`, `keyId`, `keyRecordId`). The file is written with mode 0600. Your password and session token are never stored. API keys have the form `dvsy_<key_id>_<secret>`.
+
+`devsy logout` revokes the stored key at the gateway and removes the key and organization from the config. It keeps the gateway URL. If the gateway cannot revoke the key, the key stays in the config so you can run `devsy logout` again.
+
+While logged in, these workspace commands run against the platform:
+
+```sh
+devsy workspace list
+devsy workspace create my-workspace --template my-template
+devsy workspace sleep my-workspace
+devsy workspace wake my-workspace
+devsy workspace delete my-workspace
+```
+
+- `create` requires `--template`. `create`, `sleep`, `wake` and `delete` return once the gateway accepts the request and the change happens in the background. Run `devsy workspace list` to follow the workspace phase.
+- Read-only API keys can list workspaces but are denied on `create`, `sleep`, `wake` and `delete`.
+- After `devsy logout`, these commands fail with an authentication error that tells you to run `devsy login`.
+- Pass `--skip-platform` to `list` or `delete` to keep the local behavior and work with local workspaces.
+
+### Platform e2e tests
+
+The scripts in `hack/platform-e2e` drive the platform commands through real terminal sessions with tuistory. They cover workspace list and create, sleep, wake and delete, read-only key denial, logout, and cross-org and access-revocation scenarios. Run the cross-lifecycle, cross-org-delete and access-revocation scenarios with:
+
+```sh
+KUBECONFIG_FILE=/path/to/kubeconfig mise run cli:test:e2e:platform
+```
+
+They need a live gateway and controller. `lib.sh` documents the optional settings, such as `GATEWAY`, `TEMPLATE` and `DEVSY_BIN`.
