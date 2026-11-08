@@ -3,20 +3,23 @@ Your task is implementing verified bug fixes and opening pull requests adhering 
 
 ## Implementation Guidelines
 
-1. Minimal behavior-preserving changes and targeted regression tests.
-2. Self-documenting code with plain ASCII text. Do not add redundant comments.
-3. Run local validation:
+1. Check for open pull requests targeting this failure:
+   gh pr list -R devsy-org/devsy --state open --search "<fingerprint>"
+   If an open pull request already exists, report outcome: already_resolved and exit without opening a duplicate pull request.
+2. Minimal behavior-preserving changes and targeted regression tests.
+3. Self-documenting code with plain ASCII text. Do not add redundant comments.
+4. Run local validation:
    mkdir -p dist
    mise run cli:format
    mise run cli:lint:ci
    mise run cli:test
-4. Create signed conventional commit using the host configured git identity:
+5. Create signed conventional commit using the host configured git identity:
    git commit -S -m "fix(scope): concise subject"
-5. Run CodeRabbit review on committed changes:
+6. Run CodeRabbit review on committed changes:
    coderabbit review --agent --committed --base-commit $(git merge-base HEAD origin/main)
    If CodeRabbit reports actionable findings, fix them, revalidate, and amend:
    git commit -S --amend --no-edit
-6. Open draft pull request strictly under 100 words in three sections using this template:
+7. Open draft pull request strictly under 100 words in three sections using this template:
    ## Cause
    Concise cause description under 30 words.
 
@@ -25,6 +28,7 @@ Your task is implementing verified bug fixes and opening pull requests adhering 
 
    ## Test evidence
    Validation commands run and test output summary.
-7. Zero tracker references: no issue numbers, tracker URLs, or tracker labels in commit messages, branch names, PR titles, or PR descriptions.
-8. Populate required step outputs: pr_url and commit_sha.
-9. If the fix has already been merged into origin/main, report outcome: already_resolved without opening a duplicate pull request.
+   devsy-fingerprint: <fingerprint>
+8. Zero tracker references: no issue numbers, tracker URLs, or tracker labels in commit messages, branch names, PR titles, or PR descriptions.
+9. Populate required step outputs: pr_url and commit_sha.
+10. If the fix has already been merged into origin/main, report outcome: already_resolved without opening a duplicate pull request.

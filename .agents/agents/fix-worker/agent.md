@@ -31,23 +31,29 @@ Execution must run strictly in normal mode across these authorized models:
 
 ## Implementation and Validation Workflow
 
-1. Minimal fix:
+1. Open PR Deduplication:
+   Check if an open pull request already targets this failure:
+```bash
+gh pr list -R devsy-org/devsy --state open --search "<fingerprint>"
+```
+   If an open PR exists, report outcome: already_resolved and exit without opening a duplicate pull request.
+2. Minimal fix:
    Apply behavior preserving fix and targeted regression test.
    Write self-documenting code in plain ASCII without redundant comments.
-2. Local validation:
+3. Local validation:
 ```bash
 mkdir -p dist
 mise run cli:format
 mise run cli:lint:ci
 mise run cli:test
 ```
-3. Commit requirements:
+4. Commit requirements:
    Use the git author identity configured on the host. Do not override or hardcode author name or email.
    Execute signed conventional commit:
 ```bash
 git commit -S -m "fix(scope): concise subject"
 ```
-4. CodeRabbit CLI review on committed change:
+5. CodeRabbit CLI review on committed change:
 ```bash
 coderabbit review --agent --committed --base-commit $(git merge-base HEAD origin/main)
 ```
@@ -55,7 +61,7 @@ coderabbit review --agent --committed --base-commit $(git merge-base HEAD origin
 ```bash
 git commit -S --amend --no-edit
 ```
-5. Create draft pull request using the required template:
+6. Create draft pull request using the required template:
 ```bash
 gh pr create -R devsy-org/devsy --draft \
   --title "fix(scope): concise subject" \
@@ -68,6 +74,7 @@ Concise fix description under 30 words.
 
 ## Test evidence
 Validation commands run and test output summary.
+devsy-fingerprint: <fingerprint>
 EOF
 )"
 ```

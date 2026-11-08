@@ -34,15 +34,21 @@ Execution must run strictly in normal mode across these authorized models:
 
 ## Investigation Workflow
 
-1. Locate failure signature:
+1. Check for open pull requests:
+   Verify whether an open pull request already addresses this failure:
+```bash
+gh pr list -R devsy-org/devsy --state open --search "<fingerprint>"
+```
+   If an open PR exists, report outcome as already_resolved with the active PR URL and exit.
+2. Locate failure signature:
    Inspect failing step logs, workflow YAML definitions, and Go or TypeScript source files.
-2. Identify root cause:
+3. Identify root cause:
    Trace exact file paths and line numbers causing the failure.
-3. Formulate minimal reproduction:
+4. Formulate minimal reproduction:
    Construct minimal test command or standalone reproduction case.
-4. Formulate minimal fix hypothesis:
+5. Formulate minimal fix hypothesis:
    Propose targeted fix hypothesis adhering to devsy-pr-ready guidelines.
-5. Report findings using this template:
+6. Report findings using this template:
 ```markdown
 ### Root Cause
 Exact file paths and line numbers causing the failure.

@@ -254,19 +254,26 @@ gh issue list -R devsy-org/devsy --state open --limit 20 --json number,title,lab
 
 Execute only if slots_fix > 0 and a verified investigation exists.
 
-1. Authoritative Execution Path:
+1. Open PR Deduplication:
+Before setting up a fix workspace or starting the playbook, verify no pull request already targets this failure:
+```bash
+gh pr list -R devsy-org/devsy --state open --search "<fingerprint>"
+```
+If an open pull request already exists, do not launch a duplicate fix. Record the active PR in the daily digest and skip to Phase 4.
+
+2. Authoritative Execution Path:
 The authoritative path for executing code fixes is the validated Paseo Playbook at `.paseo/playbooks/devsy-fix.yaml`. This ensures that human review gates (`approve_plan`, `approve_pr`) and project-wide concurrency (`concurrency: 1`) are strictly enforced by the playbook engine.
 
-2. Setup Fix Workspace:
+3. Setup Fix Workspace:
 `paseo workspace create --isolation worktree --mode branch-off --base origin/main --new-branch fix/<short_topic> --json`
 
-3. Start Playbook Run:
+4. Start Playbook Run:
 Initiate `.paseo/playbooks/devsy-fix.yaml` in the newly created fix workspace with inputs:
 * `fingerprint`: `<fingerprint>`
 * `description`: `<root_cause_summary>`
 * `failing_step`: `<step_name>`
 
-4. Alternative Direct Worker Subagent (Normal Mode Only):
+5. Alternative Direct Worker Subagent (Normal Mode Only):
 If executing via direct subagent profile:
 * Delegate to `.agents/agents/fix-worker/agent.md` using `.agents/agents/fix-worker/config.json`.
 * Provider: codex/gpt-6.1-sol, codex/gpt-6.1-terra, or claude/claude-sonnet-5-5.
@@ -301,6 +308,7 @@ Follow devsy-pr-ready strictly:
 
 ## Test evidence
 <validation commands run and test output summary>
+devsy-fingerprint: <fingerprint>
 EOF
 )"
 (PR body must be strictly under 100 words total with no other sections).
