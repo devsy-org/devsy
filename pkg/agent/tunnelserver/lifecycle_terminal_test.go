@@ -776,6 +776,44 @@ func (s *terminalSuite) TestOversizedInputFrame() {
 	s.Equal(codes.ResourceExhausted, status.Code(err))
 }
 
+func (s *terminalSuite) TestExitPreservesSessionFailure() {
+	ctx, cancel := context.WithCancel(context.Background())
+	failure := status.Error(codes.ResourceExhausted, "terminal input frame too large")
+	client := &terminalClient{
+		ctx: ctx, cancel: cancel, sends: make(chan terminalSend),
+		phase: clientActive, err: failure,
+	}
+	a := &terminalAttachment{
+		session: client, id: "id", input: newTerminalInput(),
+		outputCancel: func() {}, canceled: make(chan struct{}),
+	}
+	client.active = a
+	sent := make(chan struct{})
+	senderDone := make(chan struct{})
+	go func() {
+		defer close(senderDone)
+		select {
+		case item := <-client.sends:
+			close(sent)
+			item.done <- io.EOF
+		case <-ctx.Done():
+		}
+	}()
+	defer func() {
+		cancel()
+		<-senderDone
+	}()
+
+	err := a.Exit(context.Background(), tunnel.TerminalExit{})
+	s.Same(failure, err)
+	s.Equal(codes.ResourceExhausted, status.Code(err))
+	select {
+	case <-sent:
+		s.Fail("exit sent after session failure")
+	default:
+	}
+}
+
 func (s *terminalSuite) TestForwarderReceiveExitsAfterUpstreamFailure() {
 	release := make(chan struct{})
 	owner := testTerminalOwner{

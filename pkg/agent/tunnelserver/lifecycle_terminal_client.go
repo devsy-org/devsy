@@ -325,6 +325,10 @@ func (a *terminalAttachment) Exit(ctx context.Context, exit tunnel.TerminalExit)
 	}
 	a.exited = true
 	a.session.mu.Lock()
+	if err := a.session.err; err != nil {
+		a.session.mu.Unlock()
+		return err
+	}
 	if a.session.phase != clientActive {
 		a.session.mu.Unlock()
 		return status.Error(codes.FailedPrecondition, "terminal invocation inactive")
