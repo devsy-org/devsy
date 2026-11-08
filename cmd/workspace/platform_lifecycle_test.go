@@ -91,12 +91,13 @@ func (s *PlatformSuite) TestLifecycleCommandsShowThePermissionMessage() {
 			s.SetupTest()
 			s.login()
 			s.gateway.status = http.StatusForbidden
-			s.gateway.message = "key lacks write scope"
+			s.gateway.message = "insufficient scope"
 
 			err := s.run(tc, platName)
 
 			s.Require().Error(err)
-			s.Contains(err.Error(), "permission denied: key lacks write scope")
+			s.Contains(err.Error(), "permission denied")
+			s.Contains(err.Error(), "stored API key lacks write scope")
 		})
 	}
 }

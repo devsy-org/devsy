@@ -27,16 +27,21 @@ func (e *AuthError) Error() string {
 
 func (e *AuthError) Unwrap() error { return e.Cause }
 
-// PermissionError is a 403 on a call made with a stored API key.
+// PermissionError is a 403 on a call made with a stored API key. The gateway
+// only answers 403 on these routes when the key lacks the scope the route
+// needs, and its own message ("insufficient scope") does not say which one.
 type PermissionError struct {
+	// Scope is the scope the call needed: "read" or "write".
+	Scope string
 	Cause *APIError
 }
 
 func (e *PermissionError) Error() string {
-	if e.Cause.Message == "" {
-		return "permission denied"
+	msg := "permission denied: the stored API key lacks " + e.Scope + " scope"
+	if e.Cause != nil && e.Cause.Message != "" {
+		msg += " (gateway: " + e.Cause.Message + ")"
 	}
-	return "permission denied: " + e.Cause.Message
+	return msg
 }
 
 func (e *PermissionError) Unwrap() error { return e.Cause }
@@ -137,8 +142,17 @@ func (c *Client) doWithKey(ctx context.Context, r request, out any) error {
 	case http.StatusUnauthorized:
 		return &AuthError{Cause: apiErr}
 	case http.StatusForbidden:
-		return &PermissionError{Cause: apiErr}
+		return &PermissionError{Scope: scopeFor(r.method), Cause: apiErr}
 	default:
 		return err
 	}
+}
+
+// scopeFor returns the scope the gateway requires for an HTTP method: reads
+// need read, everything that changes a workspace needs write.
+func scopeFor(method string) string {
+	if method == http.MethodGet || method == http.MethodHead {
+		return "read"
+	}
+	return "write"
 }

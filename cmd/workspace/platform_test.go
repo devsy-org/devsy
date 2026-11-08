@@ -253,6 +253,21 @@ func (s *PlatformSuite) TestCreateUnauthorizedSuggestsLogin() {
 	s.NotContains(err.Error(), platTestKey)
 }
 
+func (s *PlatformSuite) TestCreateForbiddenStatesTheKeyLacksWriteScope() {
+	s.login()
+	s.gateway.status = http.StatusForbidden
+	s.gateway.message = "insufficient scope"
+
+	err := s.create(platName, "--template", platTemplate)
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "permission denied")
+	s.Contains(err.Error(), "stored API key lacks write scope")
+	s.Contains(err.Error(), "creating workspace")
+	s.NotContains(err.Error(), platTestKey)
+	s.NotContains(s.out.String(), "accepted", "a refused create prints no success line")
+}
+
 func (s *PlatformSuite) TestPlatformCredentialsOnlyForACompleteLogin() {
 	s.Nil(platformCredentials(nil))
 	s.Nil(platformCredentials(&config.Config{}))

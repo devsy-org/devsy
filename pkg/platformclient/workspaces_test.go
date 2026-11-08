@@ -112,7 +112,7 @@ func (s *WorkspacesSuite) TestUnauthorizedSuggestsLogin() {
 func (s *WorkspacesSuite) TestForbiddenIsAPermissionError() {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"key lacks write scope"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"insufficient scope"}}`))
 	}))
 	defer srv.Close()
 
@@ -120,9 +120,27 @@ func (s *WorkspacesSuite) TestForbiddenIsAPermissionError() {
 
 	s.Require().Error(err)
 	s.Contains(err.Error(), "permission denied")
-	s.Contains(err.Error(), "key lacks write scope")
+	s.Contains(err.Error(), "stored API key lacks write scope")
+	s.Contains(err.Error(), "insufficient scope")
+	s.NotContains(err.Error(), wsTestKey)
+	var permErr *PermissionError
+	s.Require().ErrorAs(err, &permErr)
+	s.Equal("write", permErr.Scope)
 	var authErr *AuthError
 	s.False(errors.As(err, &authErr), "a 403 is not an authentication failure")
+}
+
+func (s *WorkspacesSuite) TestForbiddenListNamesTheReadScope() {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"insufficient scope"}}`))
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, nil).ListWorkspaces(context.Background(), wsTestKey)
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "stored API key lacks read scope")
 }
 
 func (s *WorkspacesSuite) TestOtherErrorsKeepTheGatewayMessage() {
@@ -230,7 +248,7 @@ func (s *WorkspacesSuite) TestLifecycleCallsKeepTheGatewayErrorMessage() {
 		want    string
 	}{
 		{http.StatusNotFound, "workspace not found", "workspace not found"},
-		{http.StatusForbidden, "key lacks write scope", "permission denied: key lacks write scope"},
+		{http.StatusForbidden, "insufficient scope", "stored API key lacks write scope"},
 		{http.StatusUnauthorized, "invalid api key", "devsy login"},
 	}
 	for name, tc := range lifecycleCalls() {
