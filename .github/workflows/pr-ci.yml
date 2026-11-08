@@ -444,11 +444,59 @@ jobs:
           GH_CREDENTIAL_USERNAME: x-access-token
         run: '"$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e'
 
+  prepare-microsandbox-provider:
+    name: Prepare MicroSandbox provider assets
+    needs: [changes, build-cli]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: read pinned provider version
+        id: pin
+        shell: bash
+        run: |
+          versions="$(sed -nE 's#.*devsy-provider-microsandbox@(v[0-9]+\.[0-9]+\.[0-9]+)".*#\1#p' e2e/tests/up/microsandbox_session.go)"
+          if [ "$(printf '%s\n' "$versions" | grep -c .)" != 1 ]; then
+            echo "::error::expected exactly one pinned microsandbox provider version, got: $versions"
+            exit 1
+          fi
+          echo "version=$versions" >> "$GITHUB_OUTPUT"
+
+      - name: download MicroSandbox CI helper
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: devsy-ci-microsandbox-linux
+          path: ${{ runner.temp }}
+
+      - name: cache provider assets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/microsandbox-provider
+          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-provider-${{ steps.pin.outputs.version }}
+
+      - name: download and verify provider assets
+        shell: bash
+        run: |
+          chmod +x "${RUNNER_TEMP}/devsy-ci-microsandbox"
+          "${RUNNER_TEMP}/devsy-ci-microsandbox" prepare-provider \
+            --version "${{ steps.pin.outputs.version }}" \
+            --output-dir "${RUNNER_TEMP}/microsandbox-provider"
+
+      - name: upload provider assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: microsandbox-provider-assets
+          path: ${{ runner.temp }}/microsandbox-provider/
+          if-no-files-found: error
+          retention-days: 1
+
   # E2E tier, group "microsandbox": the MicroSandbox CI helper owns the run and
   # its report checks.
   integration-tests-microsandbox:
     name: ${{ matrix.title }}
-    needs: [changes, plan, build-cli]
+    needs: [changes, plan, build-cli, prepare-microsandbox-provider]
     if: needs.changes.outputs.go == 'true'
     strategy:
       fail-fast: false
@@ -522,6 +570,12 @@ jobs:
         shell: bash
         run: '"$CI_TOOL" e2e prepare --bin-src "$RUNNER_TEMP/devsy-bin" --e2e-dir ./e2e'
 
+      - name: download provider assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: microsandbox-provider-assets
+          path: ${{ runner.temp }}/microsandbox-provider/
+
       - name: cache microsandbox release bundle (Linux)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -540,6 +594,7 @@ jobs:
           GH_CREDENTIAL_USERNAME: x-access-token
           TEST_TIMEOUT: ${{ matrix.test_timeout }}
           DEVSY_REQUIRE_MICROSANDBOX: "true"
+          DEVSY_E2E_PROVIDER_DOWNLOAD_CACHE: ${{ runner.temp }}/microsandbox-provider/cache
         run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" run --label "${{ matrix.name }}" --expected-count "${{ matrix.expected_spec_count }}" --provider-mode "${{ matrix.provider_mode }}"'
 
       - name: upload MicroSandbox test evidence
@@ -870,6 +925,7 @@ jobs:
       - build-cli
       - integration-tests-unprivileged
       - integration-tests
+      - prepare-microsandbox-provider
       - integration-tests-microsandbox
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -584,3 +584,31 @@ func exitWithStatus(status int) error {
 	}
 	return exec.Command("sh", "-c", "exit "+strconv.Itoa(status)).Run()
 }
+
+func TestProviderDownloadCacheIsForwardedToEverySuite(t *testing.T) {
+	for _, label := range []string{"up-provider-microsandbox-images", performanceSuiteLabel} {
+		cfg, _ := newSuiteRunFixture(t, label)
+		t.Setenv(providerDownloadCacheEnv, "/prepared/cache")
+		args, err := suiteSudoArguments(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(args, providerDownloadCacheEnv+"=/prepared/cache") {
+			t.Errorf("%s was not forwarded to %s", providerDownloadCacheEnv, label)
+		}
+	}
+}
+
+func TestProviderDownloadCacheIsOmittedWhenUnset(t *testing.T) {
+	cfg, _ := newSuiteRunFixture(t, "up-provider-microsandbox-images")
+	t.Setenv(providerDownloadCacheEnv, "")
+	args, err := suiteSudoArguments(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, providerDownloadCacheEnv) {
+			t.Errorf("unexpected argument %q", arg)
+		}
+	}
+}

@@ -33,6 +33,8 @@ var requiredSuiteEnvironmentNames = []string{
 	"PATH",
 }
 
+const providerDownloadCacheEnv = "DEVSY_E2E_PROVIDER_DOWNLOAD_CACHE"
+
 var suiteLabelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*$`)
 
 func runSuite(
@@ -243,6 +245,9 @@ func configuredKubeconfig() (string, error) {
 
 func suiteSpecificEnvironment(cfg suiteConfig) []string {
 	var values []string
+	if value := os.Getenv(providerDownloadCacheEnv); value != "" {
+		values = append(values, providerDownloadCacheEnv+"="+value)
+	}
 	if cfg.label == managedPolicyLabel {
 		values = append(values,
 			"DEVSY_REQUIRE_MSB_MANAGED_POLICY_FIXTURE=true",

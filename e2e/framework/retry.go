@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,6 +31,26 @@ var sshBackoff = wait.Backoff{
 	Duration: 5 * time.Second,
 	Factor:   2.0,
 	Jitter:   0.1,
+}
+
+// providerAddBackoff defines retry timing for provider manifest downloads.
+// 5 total attempts with waits of ~5s, ~10s, ~20s, ~40s.
+var providerAddBackoff = wait.Backoff{
+	Steps:    5,
+	Duration: 5 * time.Second,
+	Factor:   2.0,
+	Jitter:   0.1,
+}
+
+var providerServerErrorPattern = regexp.MustCompile(
+	`(?i)(received status code|download failed with status|status) 5\d\d`,
+)
+
+var retryableProviderNetworkPatterns = []string{
+	"TLS handshake timeout",
+	"i/o timeout",
+	"connection reset by peer",
+	"unexpected EOF",
 }
 
 // retryableDockerPatterns are stderr substrings indicating a transient Docker
@@ -86,6 +107,22 @@ func isRetryableSSHError(err error, stderr string) bool {
 func isRetryableDockerError(stderr string) bool {
 	lower := strings.ToLower(stderr)
 	for _, pattern := range retryableDockerPatterns {
+		if strings.Contains(lower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isRetryableProviderDownloadError returns true when a provider download
+// failed on a server error or a network error. Client errors such as 404 and
+// provider validation failures are never retried.
+func isRetryableProviderDownloadError(_ error, stderr string) bool {
+	if providerServerErrorPattern.MatchString(stderr) {
+		return true
+	}
+	lower := strings.ToLower(stderr)
+	for _, pattern := range retryableProviderNetworkPatterns {
 		if strings.Contains(lower, strings.ToLower(pattern)) {
 			return true
 		}
@@ -166,6 +203,21 @@ func execWithDockerRetry(ctx context.Context, fn execFunc) (string, string, erro
 		return res.stdout, res.stderr, fmt.Errorf("after %d attempts: %w", res.attempts, res.err)
 	}
 	return res.stdout, res.stderr, res.err
+}
+
+// execWithProviderAddRetry runs fn and retries when the provider manifest
+// download failed with a server or network error.
+func execWithProviderAddRetry(ctx context.Context, fn execFunc) (string, error) {
+	res := runWithRetry(ctx, retryPolicy{
+		backoff:   providerAddBackoff,
+		retryable: isRetryableProviderDownloadError,
+		label:     "[retry] provider add:",
+		kind:      "retryable provider download error",
+	}, fn)
+	if res.gaveUp {
+		return res.stderr, fmt.Errorf("after %d attempts: %w", res.attempts, res.err)
+	}
+	return res.stderr, res.err
 }
 
 // execWithSSHRetry runs fn and retries if the error indicates a transient SSH

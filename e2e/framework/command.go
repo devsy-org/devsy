@@ -343,7 +343,13 @@ func (f *Framework) DevsyStop(ctx context.Context, workspace string) error {
 func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, "add"}
 	baseArgs = append(baseArgs, args...)
-	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
+	if err := seedProviderDownloadCache(); err != nil {
+		return fmt.Errorf("devsy provider add failed: %w", err)
+	}
+	capture := func(ctx context.Context) (string, string, error) {
+		return f.ExecCommandCapture(ctx, baseArgs)
+	}
+	stderr, err := execWithProviderAddRetry(ctx, capture)
 	if err != nil {
 		if strings.Contains(stderr, "already exists") {
 			providerName := providerNameFromAddArgs(args)
@@ -355,7 +361,7 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 				)
 			}
 
-			_, stderr, err = f.ExecCommandCapture(ctx, baseArgs)
+			stderr, err = execWithProviderAddRetry(ctx, capture)
 		}
 	}
 	if err != nil {
