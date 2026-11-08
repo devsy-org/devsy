@@ -30,11 +30,22 @@ def handle_diff(config: dict, schedule_name: str, loader_prompt: str) -> None:
     inspect_output = run_command(["paseo", "schedule", "inspect", existing_id, "--json"])
     daemon_data = json.loads(inspect_output)
 
+    cadence = daemon_data.get("cadence", {})
+    target_config = daemon_data.get("target", {}).get("config", {})
+
+    daemon_provider = target_config.get("provider", "")
+    daemon_model = target_config.get("model")
+    if daemon_model:
+        actual_provider = f"{daemon_provider}/{daemon_model}"
+    else:
+        actual_provider = daemon_provider
+
     comparisons = [
-        ("cron", config.get("cron"), daemon_data.get("cron")),
-        ("timezone", config.get("timezone"), daemon_data.get("timezone")),
-        ("provider", config.get("provider"), daemon_data.get("provider")),
-        ("cwd", config.get("cwd"), daemon_data.get("cwd")),
+        ("cron", config.get("cron"), cadence.get("expression")),
+        ("timezone", config.get("timezone"), cadence.get("timezone")),
+        ("provider", config.get("provider"), actual_provider),
+        ("mode", config.get("mode", "auto"), target_config.get("modeId")),
+        ("cwd", config.get("cwd"), target_config.get("cwd")),
         ("prompt", loader_prompt.strip(), daemon_data.get("prompt", "").strip()),
     ]
 
@@ -53,7 +64,7 @@ def handle_diff(config: dict, schedule_name: str, loader_prompt: str) -> None:
         print("\nDrift detected. Run with --apply to synchronize Paseo daemon with Git.")
         sys.exit(2)
     else:
-        print("\nConfiguration is in sync.")
+        print("\nConfiguration is in sync. Zero drift.")
 
 
 def handle_apply(config: dict, schedule_name: str, loader_prompt: str) -> None:
@@ -73,6 +84,8 @@ def handle_apply(config: dict, schedule_name: str, loader_prompt: str) -> None:
         config["timezone"],
         "--provider",
         config["provider"],
+        "--mode",
+        config.get("mode", "auto"),
         "--cwd",
         config["cwd"],
         "--prompt",
@@ -82,8 +95,9 @@ def handle_apply(config: dict, schedule_name: str, loader_prompt: str) -> None:
 
     inspect_output = run_command(["paseo", "schedule", "inspect", existing_id, "--json"])
     updated_data = json.loads(inspect_output)
+    cadence = updated_data.get("cadence", {})
     print(f"Updated schedule {existing_id} successfully.")
-    print(f"Verified daemon cron: {updated_data.get('cron')} ({updated_data.get('timezone')})")
+    print(f"Verified daemon cron: {cadence.get('expression')} ({cadence.get('timezone')})")
 
 
 def handle_create(config: dict, schedule_name: str, loader_prompt: str) -> None:
@@ -104,10 +118,10 @@ def handle_create(config: dict, schedule_name: str, loader_prompt: str) -> None:
         config["timezone"],
         "--provider",
         config["provider"],
+        "--mode",
+        config.get("mode", "auto"),
         "--cwd",
         config["cwd"],
-        "--isolation",
-        "worktree",
         loader_prompt,
     ]
     output = run_command(cmd)
