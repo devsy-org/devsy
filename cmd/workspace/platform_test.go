@@ -22,6 +22,7 @@ const (
 	platTemplate = "smoke-template"
 	platName     = "ws-one"
 	platWsA      = "ws-a"
+	urlX         = "http://x"
 
 	fieldName     = "name"
 	fieldPhase    = "phase"
@@ -271,11 +272,63 @@ func (s *PlatformSuite) TestCreateForbiddenStatesTheKeyLacksWriteScope() {
 func (s *PlatformSuite) TestPlatformCredentialsOnlyForACompleteLogin() {
 	s.Nil(platformCredentials(nil))
 	s.Nil(platformCredentials(&config.Config{}))
-	s.Nil(platformCredentials(&config.Config{Gateway: &config.GatewayCredentials{URL: "http://x"}}))
+	s.Nil(platformCredentials(&config.Config{Gateway: &config.GatewayCredentials{URL: urlX}}))
 	s.Nil(platformCredentials(&config.Config{Gateway: &config.GatewayCredentials{APIKey: "k"}}))
 
-	creds := &config.GatewayCredentials{URL: "http://x", APIKey: "k"}
+	creds := &config.GatewayCredentials{URL: urlX, APIKey: "k"}
 	s.Same(creds, platformCredentials(&config.Config{Gateway: creds}))
+}
+
+func (s *PlatformSuite) TestListAfterLogoutFailsWithAnAuthenticationError() {
+	s.loggedOut()
+
+	err := s.list(output.ModePlain)
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "authentication")
+	s.Contains(err.Error(), "devsy login")
+	s.Empty(s.gateway.recorded(), "a logged-out list must not call the gateway")
+}
+
+func (s *PlatformSuite) TestListAfterLogoutWithSkipPlatformStaysLocal() {
+	s.loggedOut()
+
+	s.Require().NoError(s.execute(
+		NewListCmd(&flags.GlobalFlags{ResultFormat: output.ModeJSON}), "--skip-platform",
+	))
+	s.Empty(s.gateway.recorded())
+}
+
+func (s *PlatformSuite) TestListWithoutAnyGatewayConfigStaysLocal() {
+	s.Require().NoError(s.list(output.ModeJSON))
+	s.Empty(s.gateway.recorded())
+}
+
+func (s *PlatformSuite) TestCreateAfterLogoutSuggestsLogin() {
+	s.loggedOut()
+
+	err := s.create(platName, "--template", platTemplate)
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "devsy login")
+	s.Empty(s.gateway.recorded())
+}
+
+func (s *PlatformSuite) TestLoggedOutIsAGatewayURLWithoutAKey() {
+	s.False(loggedOut(nil))
+	s.False(loggedOut(&config.Config{}))
+	s.False(loggedOut(&config.Config{Gateway: &config.GatewayCredentials{APIKey: "k"}}))
+	s.False(loggedOut(&config.Config{
+		Gateway: &config.GatewayCredentials{URL: urlX, APIKey: "k"},
+	}))
+	s.True(loggedOut(&config.Config{Gateway: &config.GatewayCredentials{URL: urlX}}))
+}
+
+func (s *PlatformSuite) loggedOut() {
+	s.Require().NoError(config.UpdateConfig("", "", func(cfg *config.Config) error {
+		cfg.Gateway = &config.GatewayCredentials{URL: s.gateway.server.URL}
+		return nil
+	}))
 }
 
 func (s *PlatformSuite) login() {

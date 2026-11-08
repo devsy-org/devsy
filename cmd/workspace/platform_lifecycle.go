@@ -46,6 +46,12 @@ var errNotLoggedIn = errors.New(
 	"not logged in to a platform gateway: run 'devsy login <gateway-url>' first",
 )
 
+var errLoggedOut = errors.New(
+	"authentication required: you are logged out of the platform gateway; " +
+		"run 'devsy login <gateway-url>' to sign in again " +
+		"(use --skip-platform to list local workspaces)",
+)
+
 // lifecycleTarget is what a lifecycle request needs: the gateway login, where
 // to print, and how.
 type lifecycleTarget struct {

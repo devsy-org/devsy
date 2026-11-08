@@ -74,6 +74,9 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
+	if !cmd.SkipPlatform && loggedOut(devsyConfig) {
+		return errLoggedOut
+	}
 	if creds := cmd.gatewayLogin(devsyConfig); creds != nil {
 		return listPlatformWorkspaces(ctx, cmd.writer(), creds, mode)
 	}

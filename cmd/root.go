@@ -21,6 +21,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/ide"
 	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/login"
+	"github.com/devsy-org/devsy/cmd/logout"
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/mcp"
 	"github.com/devsy-org/devsy/cmd/pro"
@@ -394,6 +395,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		feature.NewFeatureCmd(globalFlags),
 		ide.NewIDECmd(globalFlags),
 		login.NewLoginCmd(),
+		logout.NewLogoutCmd(),
 		machine.NewMachineCmd(globalFlags),
 		mcp.NewMCPCmd(globalFlags),
 		provider.NewProviderCmd(globalFlags),

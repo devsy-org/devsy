@@ -14,13 +14,20 @@ import (
 )
 
 // platformCredentials returns the gateway login when the active config is a
-// platform login, and nil otherwise. A login missing its URL or key is treated
-// as no login, so a half-written config falls back to local workspaces.
+// platform login, and nil otherwise. Callers that fall back to local
+// workspaces on nil must check loggedOut first.
 func platformCredentials(cfg *config.Config) *config.GatewayCredentials {
 	if cfg == nil || cfg.Gateway == nil || cfg.Gateway.URL == "" || cfg.Gateway.APIKey == "" {
 		return nil
 	}
 	return cfg.Gateway
+}
+
+// loggedOut reports whether the config holds a gateway URL but no key, which is
+// what `devsy logout` leaves behind. Platform commands must refuse in that
+// state instead of quietly falling back to local workspaces.
+func loggedOut(cfg *config.Config) bool {
+	return cfg != nil && cfg.Gateway != nil && cfg.Gateway.URL != "" && cfg.Gateway.APIKey == ""
 }
 
 func newPlatformClient(creds *config.GatewayCredentials) *platformclient.Client {
