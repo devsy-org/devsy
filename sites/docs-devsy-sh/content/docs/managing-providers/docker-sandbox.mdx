@@ -13,22 +13,31 @@ The v0.1.1 prerelease is the only installable release. It requires Devsy v1.27.0
 
 ```sh
 devsy provider add --use=false --name docker-sandbox https://github.com/devsy-org/devsy-provider-docker-sandbox/releases/download/v0.1.1/provider.yaml
+devsy provider init docker-sandbox
 devsy workspace up https://github.com/microsoft/vscode-remote-try-node --provider docker-sandbox
 ```
 
-Without `--use=false`, a successful add makes Docker Sandboxes the default provider for the current context. With it, your default provider stays the same, and you select Docker Sandboxes with `--provider docker-sandbox` or `devsy provider use docker-sandbox`.
+With `--use=false`, the add command only installs the provider and keeps your default provider. You must run `devsy provider init docker-sandbox` before the first workspace, or the workspace command fails because the provider is not initialized. Without `--use=false`, the add command also initializes the provider and makes it the default for the current context. To restore the previous default, run `devsy provider use <previous-name>`.
 
-The short form `devsy provider add docker-sandbox` expands to the `devsy-org/devsy-provider-docker-sandbox` repository and installs its latest release. GitHub does not count a prerelease as the latest release, so use the URL form until a stable release is published. Check the manifest for available hosts.
+The short form `devsy provider add docker-sandbox` expands to the `devsy-org/devsy-provider-docker-sandbox` repository and installs its latest release. GitHub does not count a prerelease as the latest release, so use the URL form until a stable release is published.
 
-The current provider source builds for macOS arm64, Linux amd64 and arm64, and Windows amd64. Only macOS arm64 has native VM qualification. The other hosts are built and unit tested only and run with a warning when published. macOS requires Apple silicon and macOS 14 or later. Linux requires Ubuntu 24.04 or later and accessible KVM. Windows requires Windows 11 and Windows Hypervisor Platform. A VM host needs nested virtualization.
+### Hosts
 
-The v0.1.1 release accepts only `sbx` v0.50.1 exactly. With any other `sbx` version it fails closed, and that includes `delete`. Builds from the `main` branch of the provider warn once for an unqualified `sbx` version and proceed on a best effort basis. `doctor` reports the same warning. No release with that behavior has been published yet. Undecodable output, an identity mismatch, or a failed guest capacity probe still stops the operation in every build.
+The v0.1.1 manifest contains only a macOS arm64 binary. v0.1.1 accepts only macOS arm64 and fails with `E_HOST_UNSUPPORTED` on any other host. Builds from the `main` branch of the provider also build for Linux amd64 and arm64 and Windows amd64. Only macOS arm64 has native VM qualification. On the other hosts a `main` build runs with a warning, and `doctor` reports the same warning. No release containing those binaries has been published yet.
 
-If `sbx` has been updated, its daemon must be restarted before it accepts commands. The provider then fails with `E_SBX_DAEMON_RESTART`. The provider never restarts the daemon itself, because a restart stops all running sandboxes. Save your work, run `sbx daemon restart` in an interactive terminal, and retry the command.
+macOS requires Apple silicon and macOS 14 or later. Linux requires Ubuntu 24.04 or later and accessible KVM. Windows requires Windows 11 and Windows Hypervisor Platform. A VM host needs nested virtualization.
+
+### sbx versions
+
+v0.1.1 accepts only `sbx` v0.50.1, client and daemon, and fails closed on any other version. A failed check reports `E_SBX_VERSION`, and if `sbx` cannot be reached it reports `E_SBX_UNAVAILABLE`. Stop and delete run the same check, so they also fail. If you use v0.1.1, do not update `sbx`. The `sbx` release notes list its versions. This guide does not cover installing an older `sbx`, so keep v0.50.1 installed instead of updating.
+
+Builds from `main` warn once for an unqualified `sbx` version and proceed on a best effort basis. `doctor` reports the same warning. Undecodable output, an identity mismatch, or a failed guest capacity probe still stops the operation in every build.
+
+Builds from `main` also report `E_SBX_DAEMON_RESTART` when `sbx` has been updated and its daemon must be restarted. v0.1.1 has no such error. The provider never restarts the daemon, because a restart stops all running sandboxes. Save your work, run `sbx daemon restart` in an interactive terminal, and retry. Do not use a daemon restart to fix a v0.1.1 version error.
 
 ## Machine resources
 
-Set machine options when creating the machine. `SBX_CPUS` sets virtual CPUs, `SBX_MEMORY` sets memory, `SBX_ROOT_DISK` sets space for the guest system and sources, and `SBX_DOCKER_DISK` sets space for Docker images, containers, and volumes. Sizes are whole numbers followed by a lowercase `m` or `g` for binary megabytes or gigabytes, for example `8g` or `7680m`. Values such as `8G`, `8GB` or `8192` are rejected with `invalid size`. The defaults are two CPUs, `4g` of memory, and `40g` for each disk. `SBX_PATH` can select a different `sbx` executable. The provider checks the minimums below when a machine is created, before it creates a VM. They do not apply when you stop or delete an existing machine.
+Set machine options when creating the machine. `SBX_CPUS` sets virtual CPUs, `SBX_MEMORY` sets memory, `SBX_ROOT_DISK` sets space for the guest system and sources, and `SBX_DOCKER_DISK` sets space for Docker images, containers, and volumes. Sizes are whole numbers followed by a lowercase `m` or `g` for binary megabytes or gigabytes, for example `8g` or `7680m`. Values such as `8G`, `8GB` or `8192` are rejected. The defaults are two CPUs, `4g` of memory, and `40g` for each disk. `SBX_PATH` can select a different `sbx` executable.
 
 | Option | Default | Purpose |
 | --- | --- | --- |
@@ -36,9 +45,14 @@ Set machine options when creating the machine. `SBX_CPUS` sets virtual CPUs, `SB
 | `SBX_CPUS` | `2` | CPUs, from one to the host logical CPU count. |
 | `SBX_MEMORY` | `4g` | Guest memory, at least `512m`. |
 | `SBX_ROOT_DISK` | `40g` | Guest root disk, at least `8g`. |
-| `SBX_DOCKER_DISK` | `40g` | Docker data disk, at least `7g`. |
+| `SBX_DOCKER_DISK` | `40g` | Docker data disk. See the minimum below. |
 
-A value below a minimum fails with an error such as `size "6g" is below the minimum of 7g`. Resources cannot be resized in place. Create another machine and deliberately move the data you need before deleting the original. Changing a saved machine option does not destroy and recreate its VM.
+The Docker disk minimum depends on the provider build.
+
+- **v0.1.1:** The configuration check accepts a Docker disk of `512m` or more, and it runs on every command, including stop and delete. A value below `512m` fails with `E_CONFIG_DRIFT` and `size "<value>" below minimum`. A value below about `7g` passes that check but can fail the guest capacity check when the machine is created. That check requires each guest filesystem to be at least 97 percent of the requested size, and the real filesystem is smaller than requested by an overhead. Measurements on macOS arm64 with `sbx` v0.50.1 showed a failure at `6g` and a pass at `6.5g`. The failure is `E_GUEST_CAPABILITY`. Use `7g` or more.
+- **Builds from `main`:** A Docker disk below `7g`, a root disk below `8g` or memory below `512m` is rejected only when a machine is created, with an error such as `size "6g" is below the minimum of 7g`. Stop, delete, status and start do not apply the minimums. A malformed size is still rejected on every command.
+
+Resources cannot be resized in place. Create another machine and deliberately move the data you need before deleting the original. Changing a saved machine option does not destroy and recreate its VM.
 
 ## Sources and development containers
 
@@ -75,4 +89,4 @@ The provider executable installed with the provider accepts:
 <provider-executable> delete --machine-key <full-key>
 ```
 
-Use `doctor` to inspect the saved identity and backend observation without starting a stopped VM. An attempt acknowledgement is appropriate only after its orphaned client has terminated or the host has restarted. A backend acknowledgement is appropriate only after the Docker side operation has settled. Neither acknowledgement starts, stops, or removes a VM. `devsy provider delete` removes the installed executable. Reinstall the same compatible release or preserve its executable before removal if you need scoped recovery afterward. Use scoped deletion only for a machine you intend to destroy. It is also the way out of a configuration error (`E_CONFIG_DRIFT`) on an existing machine that you no longer want. Run `delete --machine-key <full-key>` with the provider executable. It does not read the machine option values, so it works even when they no longer pass validation. Find the full key with `<provider-executable> doctor --list`. Never use global `sbx` reset or prune to recover one machine.
+Use `doctor` to inspect the saved identity and backend observation without starting a stopped VM. An attempt acknowledgement is appropriate only after its orphaned client has terminated or the host has restarted. A backend acknowledgement is appropriate only after the Docker side operation has settled. Neither acknowledgement starts, stops, or removes a VM. `devsy provider delete` removes the installed executable. Reinstall the same compatible release or preserve its executable before removal if you need scoped recovery afterward. Use scoped deletion only for a machine you intend to destroy. It is also the way out of a configuration error (`E_CONFIG_DRIFT`) on an existing machine that you no longer want. Find the full key with `<provider-executable> doctor --list`, then run `<provider-executable> delete --machine-key <full-key>`. In v0.1.1 and in `main`, the scoped command resolves only `SBX_PATH` and does not parse the size and CPU options, so an invalid option value does not block it. In v0.1.1 it still runs the `sbx` version and host checks, so it cannot fix `E_SBX_VERSION`. Never use global `sbx` reset or prune to recover one machine.
