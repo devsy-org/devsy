@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -72,12 +73,12 @@ func (s *PlatformSuite) TestLifecycleCommandsFailWithTheGatewayMessage() {
 			s.SetupTest()
 			s.login()
 			s.gateway.status = http.StatusNotFound
-			s.gateway.message = "workspace not found"
+			s.gateway.message = msgNotFound
 
 			err := s.run(tc, platName)
 
 			s.Require().Error(err)
-			s.Contains(err.Error(), "workspace not found")
+			s.Contains(err.Error(), msgNotFound)
 			s.Contains(err.Error(), tc.subject)
 			s.Contains(err.Error(), platName)
 			s.NotContains(err.Error(), platTestKey)
@@ -91,7 +92,7 @@ func (s *PlatformSuite) TestLifecycleCommandsShowThePermissionMessage() {
 			s.SetupTest()
 			s.login()
 			s.gateway.status = http.StatusForbidden
-			s.gateway.message = "insufficient scope"
+			s.gateway.message = msgScope
 
 			err := s.run(tc, platName)
 
@@ -159,7 +160,7 @@ func (s *PlatformSuite) TestDeleteSeveralNamesDeletesEachAndReportsEveryFailure(
 func (s *PlatformSuite) TestDeleteKeepsGoingAfterAFailureAndExitsNonZero() {
 	s.login()
 	s.gateway.status = http.StatusNotFound
-	s.gateway.message = "workspace not found"
+	s.gateway.message = msgNotFound
 
 	err := s.run(lifecycleCommands()[2], platWsA, "ws-b")
 
@@ -167,7 +168,107 @@ func (s *PlatformSuite) TestDeleteKeepsGoingAfterAFailureAndExitsNonZero() {
 	s.Len(s.gateway.recorded(), 2, "a failure must not stop the remaining deletes")
 	s.Contains(err.Error(), platWsA)
 	s.Contains(err.Error(), "ws-b")
-	s.Contains(err.Error(), "workspace not found")
+	s.Contains(err.Error(), msgNotFound)
+}
+
+func (s *PlatformSuite) TestDeleteAfterLogoutFailsWithAnAuthenticationError() {
+	s.loggedOut()
+
+	err := s.run(lifecycleCommands()[2], platName)
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "authentication")
+	s.Contains(err.Error(), "devsy login")
+	s.Empty(s.gateway.recorded(), "a logged-out delete must not call the gateway")
+}
+
+func (s *PlatformSuite) TestDeleteAfterLogoutDoesNotFallBackToLocalEvenWithIgnoreNotFound() {
+	s.loggedOut()
+
+	// A local delete of an unknown workspace succeeds under --ignore-not-found,
+	// so success here would mean the command quietly went local.
+	err := s.run(lifecycleCommands()[2], "--ignore-not-found", platName)
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "authentication")
+	s.Empty(s.gateway.recorded())
+}
+
+func (s *PlatformSuite) TestRunPlatformRefusesDeleteAfterLogout() {
+	s.loggedOut()
+	cmd := &DeleteCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: output.ModePlain}, Out: s.out}
+
+	handled, err := cmd.runPlatform(context.Background(), []string{platName})
+
+	s.True(handled, "a logged-out delete must not be left to the local path")
+	s.Require().ErrorIs(err, errLoggedOut)
+}
+
+func (s *PlatformSuite) TestRunPlatformLeavesLocalDeleteAloneWhenSkippedOrUnnamed() {
+	s.loggedOut()
+	cmd := &DeleteCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: output.ModePlain}, Out: s.out}
+
+	handled, err := cmd.runPlatform(context.Background(), nil)
+	s.False(handled, "the interactive picker lists local workspaces")
+	s.NoError(err)
+
+	cmd.SkipPlatform = true
+	handled, err = cmd.runPlatform(context.Background(), []string{platName})
+	s.False(handled)
+	s.NoError(err)
+}
+
+func (s *PlatformSuite) TestDeleteAfterLogoutWithSkipPlatformDeletesLocally() {
+	s.loggedOut()
+
+	// Local deletion of a workspace that does not exist succeeds only when the
+	// command really runs the local path.
+	s.Require().NoError(s.run(
+		lifecycleCommands()[2], "--skip-platform", "--ignore-not-found", "no-such-local-workspace",
+	))
+	s.Empty(s.gateway.recorded())
+}
+
+func (s *PlatformSuite) TestDeleteAfterLogoutWithSkipPlatformReportsAMissingLocalWorkspace() {
+	s.loggedOut()
+
+	err := s.run(lifecycleCommands()[2], "--skip-platform", "no-such-local-workspace")
+
+	s.Require().Error(err, "the local path runs and finds nothing to delete")
+	s.NotContains(err.Error(), "authentication")
+	s.Empty(s.gateway.recorded())
+}
+
+func (s *PlatformSuite) TestDeleteIgnoreNotFoundTreatsA404AsSuccess() {
+	s.login()
+	s.gateway.status = http.StatusNotFound
+	s.gateway.message = msgNotFound
+
+	s.Require().NoError(s.run(lifecycleCommands()[2], "--ignore-not-found", platName))
+
+	s.Len(s.gateway.recorded(), 1, "the delete is sent to the gateway, not run locally")
+	s.NotContains(s.out.String(), "Delete requested")
+}
+
+func (s *PlatformSuite) TestDeleteIgnoreNotFoundStillReportsOtherFailures() {
+	s.login()
+	s.gateway.status = http.StatusForbidden
+	s.gateway.message = msgScope
+
+	err := s.run(lifecycleCommands()[2], "--ignore-not-found", platName)
+
+	s.Require().Error(err)
+	s.Contains(err.Error(), "permission denied")
+}
+
+func (s *PlatformSuite) TestDeleteIgnoreNotFoundDeletesTheRestOfTheNames() {
+	s.login()
+	s.gateway.notFound = map[string]bool{platWsA: true}
+
+	s.Require().NoError(s.run(lifecycleCommands()[2], "--ignore-not-found", platWsA, "ws-b"))
+
+	s.Len(s.gateway.recorded(), 2)
+	s.Contains(s.out.String(), "ws-b")
 }
 
 func (s *PlatformSuite) TestDeleteSkipPlatformLeavesTheGatewayAlone() {

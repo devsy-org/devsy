@@ -49,7 +49,7 @@ var errNotLoggedIn = errors.New(
 var errLoggedOut = errors.New(
 	"authentication required: you are logged out of the platform gateway; " +
 		"run 'devsy login <gateway-url>' to sign in again " +
-		"(use --skip-platform to list local workspaces)",
+		"(use --skip-platform to work with local workspaces)",
 )
 
 // lifecycleTarget is what a lifecycle request needs: the gateway login, where

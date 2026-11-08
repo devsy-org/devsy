@@ -148,8 +148,9 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 
 // runPlatform deletes the named workspaces on the platform gateway when there
 // is a gateway login. It reports handled=false when the delete is local: no
-// login, --skip-platform, or no names (the interactive picker lists local
-// workspaces).
+// gateway config, --skip-platform, or no names (the interactive picker lists
+// local workspaces). A logged-out config is refused rather than deleted
+// locally, because the name was meant for the gateway.
 func (cmd *DeleteCmd) runPlatform(ctx context.Context, args []string) (bool, error) {
 	if cmd.SkipPlatform || len(args) == 0 {
 		return false, nil
@@ -157,6 +158,9 @@ func (cmd *DeleteCmd) runPlatform(ctx context.Context, args []string) (bool, err
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return false, nil
+	}
+	if loggedOut(devsyConfig) {
+		return true, errLoggedOut
 	}
 	creds := platformCredentials(devsyConfig)
 	if creds == nil {

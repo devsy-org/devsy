@@ -24,6 +24,9 @@ const (
 	platWsA      = "ws-a"
 	urlX         = "http://x"
 
+	msgNotFound = "workspace not found"
+	msgScope    = "insufficient scope"
+
 	fieldName     = "name"
 	fieldPhase    = "phase"
 	phaseRunning  = "Running"
@@ -44,6 +47,8 @@ type fakePlatformGateway struct {
 	workspaces []map[string]string
 	status     int
 	message    string
+	// notFound lists workspace names whose lifecycle routes answer 404.
+	notFound map[string]bool
 }
 
 // lifecycleRoute recognises the sleep, wake and delete routes and returns the
@@ -70,6 +75,28 @@ func newFakePlatformGateway() *fakePlatformGateway {
 	return g
 }
 
+func writeGatewayError(w http.ResponseWriter, status int, message string) {
+	if message == "" {
+		message = "invalid api key"
+	}
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": "error", "message": message},
+	})
+}
+
+// failureFor returns the status and message the gateway answers with instead
+// of success, or status 0. The caller holds g.mu.
+func (g *fakePlatformGateway) failureFor(call platformCall) (int, string) {
+	if g.status != 0 {
+		return g.status, g.message
+	}
+	if name, _, ok := lifecycleRoute(call); ok && g.notFound[name] {
+		return http.StatusNotFound, msgNotFound
+	}
+	return 0, ""
+}
+
 func (g *fakePlatformGateway) handle(w http.ResponseWriter, r *http.Request) {
 	call := platformCall{Method: r.Method, Path: r.URL.Path, Auth: r.Header.Get("Authorization")}
 	if r.Body != nil {
@@ -77,18 +104,12 @@ func (g *fakePlatformGateway) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	g.mu.Lock()
 	g.calls = append(g.calls, call)
-	status, message := g.status, g.message
+	status, message := g.failureFor(call)
 	g.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	if status != 0 {
-		if message == "" {
-			message = "invalid api key"
-		}
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": map[string]string{"code": "error", "message": message},
-		})
+		writeGatewayError(w, status, message)
 		return
 	}
 	if name, phase, ok := lifecycleRoute(call); ok {
@@ -257,7 +278,7 @@ func (s *PlatformSuite) TestCreateUnauthorizedSuggestsLogin() {
 func (s *PlatformSuite) TestCreateForbiddenStatesTheKeyLacksWriteScope() {
 	s.login()
 	s.gateway.status = http.StatusForbidden
-	s.gateway.message = "insufficient scope"
+	s.gateway.message = msgScope
 
 	err := s.create(platName, "--template", platTemplate)
 
