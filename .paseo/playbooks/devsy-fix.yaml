@@ -36,7 +36,7 @@ steps:
 
   - id: approve_plan
     needs: [investigate]
-    gate: "Root cause identified for {{ inputs.fingerprint }}. Approve fix hypothesis to begin implementation, or request changes."
+    gate: "Root cause identified. Approve fix hypothesis to begin implementation, or request changes."
     choices:
       approved: { label: Approve and Implement, color: success }
       rejected: { label: Request Changes, comment: required, color: danger }
@@ -58,7 +58,7 @@ steps:
 
   - id: approve_pr
     needs: [implement]
-    gate: "PR {{ steps.implement.outputs.pr_url }} is ready. Review diff, CI, Greptile, and CodeRabbit. Approve to merge, or request changes."
+    gate: "Implementation complete and draft PR is ready. Review diff, CI, Greptile, and CodeRabbit. Approve to merge, or request changes."
     choices:
       approved: { label: Approve and Merge, color: success }
       changes_requested: { label: Request Changes, comment: required, color: danger }

@@ -3,4 +3,4 @@ readonly: false
 agent:
   provider: codex
   model: gpt-6.1-sol
-  mode: auto
+  mode: full-access

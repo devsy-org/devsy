@@ -5,7 +5,7 @@ agent:
 manager:
   provider: codex
   model: gpt-6.1-terra
-  mode: auto
+  mode: full-access
 timeout: 2h
 role:
   silence: 30m
