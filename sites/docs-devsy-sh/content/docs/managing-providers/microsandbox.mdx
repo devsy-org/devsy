@@ -7,7 +7,9 @@ The external MicroSandbox provider runs Devsy workspaces in microVMs using the M
 
 ## Requirements and installation
 
-Install Devsy and the [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli), version 0.7.13 or later. Check `msb --version` in the environment running Devsy. Docker is required for image builds. Provider releases contain binaries for Linux amd64 and arm64, macOS arm64, and Windows amd64. Linux requires KVM and Windows requires Windows Hypervisor Platform.
+Install Devsy v1.24.0 or later, which adds the `microsandbox` short name, and the [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli), version 0.7.13 or later. Check `msb --version` in the environment running Devsy. An older `msb` fails with `MicroSandbox v0.7.13 or newer is required`. Docker is required for image builds.
+
+Provider releases contain binaries for Linux amd64 and arm64, macOS arm64, and Windows amd64. Microsandbox VM tests have run only on macOS arm64. The Linux and Windows binaries are built and unit tested in CI, but have not been tested with a running VM. Linux needs accessible KVM.
 
 ```sh
 devsy provider add microsandbox
