@@ -420,6 +420,7 @@ type StreamingRedactor struct {
 	mu      sync.Mutex
 	base    *Redactor
 	pending string
+	discard bool
 }
 
 // NewStreamingRedactor creates a chunk-safe redactor around r.
@@ -434,6 +435,9 @@ func (r *StreamingRedactor) RedactChunk(chunk string) string {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.base != nil && r.base.scalars != nil {
+		return r.redactScalarChunk(chunk)
+	}
 	combined := r.pending + chunk
 	r.pending = ""
 	if r.base == nil {
@@ -559,5 +563,36 @@ func (r *StreamingRedactor) Flush() string {
 	if r.base == nil {
 		return pending
 	}
+	if r.base.scalars != nil {
+		r.discard = false
+		return r.base.Redact(pending)
+	}
 	return r.base.redact(pending, false)
+}
+
+func (r *StreamingRedactor) redactScalarChunk(chunk string) string {
+	const maxLineLength = 1 << 20
+	var output strings.Builder
+	for len(chunk) > 0 {
+		line, rest, complete := strings.Cut(chunk, "\n")
+		chunk = rest
+		if !r.discard {
+			if len(r.pending)+len(line) > maxLineLength {
+				output.WriteString(redactMask)
+				r.pending = ""
+				r.discard = true
+			} else {
+				r.pending += line
+			}
+		}
+		if complete {
+			if !r.discard {
+				output.WriteString(r.base.Redact(r.pending))
+			}
+			output.WriteByte('\n')
+			r.pending = ""
+			r.discard = false
+		}
+	}
+	return output.String()
 }

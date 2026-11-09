@@ -2,6 +2,7 @@ package secrets_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/secrets"
@@ -124,4 +125,32 @@ func (s *multilineRedactionSuite) TestNumericSecretIsMaskedInTextAndJSONString()
 	s.True(json.Valid([]byte(output)))
 	s.NotContains(output, "123456")
 	s.Contains(output, `"schemaVersion":1`)
+}
+
+func (s *multilineRedactionSuite) TestStreamingNumericStringSecretsAreMasked() {
+	for _, chunks := range [][]string{
+		{"PIN 123456\n"},
+		{"PIN 123", "456\n"},
+		{`{"message":"PIN 123456","schemaVersion":1}`, "\n"},
+	} {
+		redactor := secrets.NewStreamingRedactor(
+			secrets.NewRedactor([]string{"TOKEN={\n\"pin\":\"123456\"\n}"}),
+		)
+		var output string
+		for _, chunk := range chunks {
+			output += redactor.RedactChunk(chunk)
+		}
+		output += redactor.Flush()
+		s.NotContains(output, "123456")
+	}
+}
+
+func (s *multilineRedactionSuite) TestStreamingOversizedLineIsBoundedAndMasked() {
+	redactor := secrets.NewStreamingRedactor(
+		secrets.NewRedactor([]string{"TOKEN={\n\"pin\":\"123456\"\n}"}),
+	)
+	output := redactor.RedactChunk(strings.Repeat("a", 1<<20))
+	output += redactor.RedactChunk("123456\nnext line\n")
+	output += redactor.Flush()
+	s.Equal("***\nnext line\n", output)
 }
