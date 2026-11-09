@@ -195,29 +195,79 @@ func resolveFileProvider(
 	providerSource string,
 	retSource *ProviderSource,
 ) ([]byte, bool, error) {
-	if !strings.HasSuffix(providerSource, ".yaml") && !strings.HasSuffix(providerSource, ".yml") {
+	explicit := isExplicitManifestPath(providerSource)
+	if skipManifestSource(providerSource, explicit) {
+		return nil, false, nil
+	}
+	filePath, err := expandManifestPath(providerSource)
+	if err != nil {
+		return nil, true, err
+	}
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return resolveFileStatError(filePath, explicit, err)
+	}
+	if !info.Mode().IsRegular() {
+		if explicit {
+			return nil, true, fmt.Errorf("provider manifest is not a regular file: %s", filePath)
+		}
 		return nil, false, nil
 	}
 
-	if _, err := os.Stat(providerSource); err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
-		return nil, true, fmt.Errorf("stat provider file %q: %w", providerSource, err)
-	}
-
 	// #nosec G304 - providerSource is user-provided path for loading provider config
-	out, err := os.ReadFile(providerSource)
+	out, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, true, fmt.Errorf("read provider file %q: %w", providerSource, err)
 	}
 
-	absPath, err := filepath.Abs(providerSource)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return nil, true, fmt.Errorf("resolve absolute path for %q: %w", providerSource, err)
 	}
 	retSource.File = absPath
 	return out, true, nil
+}
+
+func skipManifestSource(source string, explicit bool) bool {
+	return !explicit && !hasYAMLSuffix(source)
+}
+
+func isExplicitManifestPath(source string) bool {
+	return filepath.IsAbs(source) || strings.HasPrefix(source, "/") ||
+		strings.HasPrefix(source, "./") ||
+		strings.HasPrefix(source, "../") ||
+		strings.HasPrefix(source, "~") ||
+		strings.Contains(source, `\`) ||
+		(len(source) >= 2 && source[1] == ':')
+}
+
+func expandManifestPath(source string) (string, error) {
+	if source != "~" && !strings.HasPrefix(source, "~/") && !strings.HasPrefix(source, `~\`) {
+		return source, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	return filepath.Join(home, strings.TrimLeft(source[1:], `/\`)), nil
+}
+
+func hasYAMLSuffix(source string) bool {
+	return strings.HasSuffix(source, ".yaml") || strings.HasSuffix(source, ".yml")
+}
+
+func resolveFileStatError(source string, manifestPath bool, err error) ([]byte, bool, error) {
+	if !os.IsNotExist(err) {
+		return nil, true, fmt.Errorf("stat provider file %q: %w", source, err)
+	}
+	if !manifestPath {
+		return nil, false, nil
+	}
+	absPath, absErr := filepath.Abs(source)
+	if absErr != nil {
+		return nil, true, fmt.Errorf("resolve absolute path for %q: %w", source, absErr)
+	}
+	return nil, true, fmt.Errorf("provider manifest file not found: %s", absPath)
 }
 
 func downloadProvider(ctx context.Context, url string) ([]byte, error) {
