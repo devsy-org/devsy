@@ -278,3 +278,18 @@ func (s *localSourceSafetySuite) TestValidStoredCopySurvivesChangedRelativeSourc
 	s.Equal(stored, got)
 	s.FileExists(source)
 }
+
+func (s *localSourceSafetySuite) TestDrivePathClassification() {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{path: "x:foo", want: runtime.GOOS == windowsOS},
+		{path: "C:/missing.yaml", want: true},
+		{path: `C:\missing.yaml`, want: true},
+		{path: "1:foo", want: false},
+	}
+	for _, tc := range cases {
+		s.Run(tc.path, func() { s.Equal(tc.want, isExplicitManifestPath(tc.path)) })
+	}
+}

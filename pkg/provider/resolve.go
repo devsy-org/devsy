@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/config"
@@ -238,7 +239,16 @@ func isExplicitManifestPath(source string) bool {
 		strings.HasPrefix(source, "../") ||
 		strings.HasPrefix(source, "~") ||
 		strings.Contains(source, `\`) ||
-		(len(source) >= 2 && source[1] == ':')
+		isWindowsDrivePath(source)
+}
+
+func isWindowsDrivePath(source string) bool {
+	if len(source) < 2 || source[1] != ':' {
+		return false
+	}
+	letter := source[0] | 0x20
+	return letter >= 'a' && letter <= 'z' &&
+		(runtime.GOOS == windowsOS || (len(source) > 2 && source[2] == '/'))
 }
 
 func expandManifestPath(source string) (string, error) {
