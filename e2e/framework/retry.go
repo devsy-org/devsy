@@ -124,7 +124,9 @@ func isRetryableDockerError(stderr string) bool {
 // provider validation failures are never retried.
 func isRetryableProviderDownloadError(_ error, stderr string) bool {
 	lower := strings.ToLower(stderr)
-	if providerClientErrorPattern.MatchString(stderr) || strings.Contains(lower, "checksum") {
+	if providerClientErrorPattern.MatchString(stderr) ||
+		strings.Contains(lower, "checksum verification failed") ||
+		strings.Contains(lower, "unexpected file checksum") {
 		return false
 	}
 	if providerServerErrorPattern.MatchString(stderr) {
@@ -216,15 +218,17 @@ func execWithDockerRetry(ctx context.Context, fn execFunc) (string, string, erro
 // execWithProviderAddRetry runs fn and retries when the provider manifest
 // download failed with a server or network error.
 func execWithProviderAddRetry(ctx context.Context, fn execFunc) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	retryCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	res := runWithRetry(ctx, retryPolicy{
+	res := runWithRetry(retryCtx, retryPolicy{
 		backoff:   providerAddBackoff,
 		retryable: isRetryableProviderDownloadError,
 		label:     "[retry] provider add:",
 		kind:      "retryable provider download error",
-	}, fn)
+	}, func(context.Context) (string, string, error) {
+		return fn(ctx)
+	})
 	if res.gaveUp {
 		return res.stderr, fmt.Errorf("after %d attempts: %w", res.attempts, res.err)
 	}

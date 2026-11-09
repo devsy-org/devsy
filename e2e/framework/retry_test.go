@@ -708,6 +708,8 @@ func TestIsRetryableProviderDownloadError(t *testing.T) {
 	retryable := []string{
 		"download: received status code 504 when trying to download https://github.com/o/r/provider.yaml",
 		"download failed with status 502",
+		"download failed with status 503: checksum service temporarily unavailable",
+		"Get \"https://github.com/o/checksum-provider\": net/http: TLS handshake timeout",
 		"Get \"https://github.com\": net/http: TLS handshake timeout",
 		"read tcp: connection reset by peer",
 		"download file: stalled: no progress within timeout",
@@ -718,10 +720,12 @@ func TestIsRetryableProviderDownloadError(t *testing.T) {
 	permanent := []string{
 		"download: received status code 404 when trying to download https://github.com/o/r/provider.yaml",
 		"download failed with status 403",
+		"download failed with status 408",
 		"received status code 404: unexpected EOF",
 		"download failed with status 403 after status 502",
 		"external runtime executable checksum verification failed",
 		"checksum verification failed after connection reset by peer",
+		"unexpected file checksum abc != def after connection reset by peer",
 		"provider microsandbox already exists",
 		"validate: exec.command is required",
 	}
@@ -751,18 +755,43 @@ func TestExecWithProviderAddRetryRecoversFromServerErrors(t *testing.T) {
 	assert.Equal(t, 6, attempts)
 }
 
-func TestExecWithProviderAddRetryBoundsAttemptDeadline(t *testing.T) {
-	started := time.Now()
+func TestExecWithProviderAddRetryPreservesAttemptDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	wantDeadline, ok := ctx.Deadline()
+	require.True(t, ok)
 	_, err := execWithProviderAddRetry(
-		context.Background(),
+		ctx,
 		func(ctx context.Context) (string, string, error) {
 			deadline, ok := ctx.Deadline()
 			require.True(t, ok)
-			assert.WithinDuration(t, started.Add(5*time.Minute), deadline, time.Second)
+			assert.Equal(t, wantDeadline, deadline)
 			return "", "", nil
 		},
 	)
 	require.NoError(t, err)
+}
+
+func TestExecWithProviderAddRetryPropagatesActiveDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	attempts := 0
+	_, err := execWithProviderAddRetry(
+		ctx,
+		func(ctx context.Context) (string, string, error) {
+			attempts++
+			timer := time.NewTimer(time.Second)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return "", "", ctx.Err()
+			case <-timer.C:
+				return "", "", errors.New("provider attempt lost caller deadline")
+			}
+		},
+	)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Equal(t, 1, attempts)
 }
 
 func TestExecWithProviderAddRetrySkipsClientErrors(t *testing.T) {

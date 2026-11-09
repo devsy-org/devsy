@@ -53,7 +53,11 @@ var _ = ginkgo.Describe(
 						}
 						session := newMicrosandboxTestSession(ctx)
 						fixture := newCompatibilityFixture(ctx, session, selection)
-						for _, fault := range []string{"old", "malformed", "failing"} {
+						faults := []string{"old", "malformed", "failing"}
+						if selection.runtime == providerpkg.ExternalDriver {
+							faults[0] = "old-external"
+						}
+						for _, fault := range faults {
 							fixture.rejectVersionFault(ctx, fault)
 						}
 						fixture.recover(ctx)
@@ -210,7 +214,7 @@ func (fixture *compatibilityFixture) rejectVersionFault(ctx context.Context, fau
 
 func assertCompatibilityDiagnostic(fault, output, minimumVersion string) {
 	switch fault {
-	case "old":
+	case "old", "old-external":
 		gomega.Expect(output).
 			To(gomega.ContainSubstring("v" + minimumVersion + " or newer is required"))
 	case "malformed":
@@ -302,6 +306,7 @@ if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
   if [ -n "$fault" ]; then
     case "$fault" in
       old) printf 'msb 0.7.1\n'; exit 0 ;;
+      old-external) printf 'msb 0.7.12\n'; exit 0 ;;
       malformed) printf 'msb not-a-version\n'; exit 0 ;;
       failing) printf '%s\n' 'injected version command failure' >&2; exit 42 ;;
       *) printf '%s\n' 'unknown test fault mode' >&2; exit 64 ;;
