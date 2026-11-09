@@ -233,3 +233,22 @@ func (s *localSourceSafetySuite) TestExplicitNonFileAndHomePrefix() {
 	s.NoError(err)
 	s.Equal("~providers/provider.yaml", path)
 }
+
+func (s *localSourceSafetySuite) TestValidStoredCopySurvivesChangedRelativeSource() {
+	dir := s.T().TempDir()
+	source := filepath.Join(dir, "source")
+	stored := filepath.Join(dir, "storage", "test", "binary")
+	s.Require().NoError(os.MkdirAll(filepath.Dir(stored), 0o750))
+	s.Require().NoError(os.WriteFile(source, []byte("changed"), 0o600))
+	content := []byte("installed")
+	s.Require().NoError(os.WriteFile(stored, content, 0o600))
+	cwd, err := os.Getwd()
+	s.Require().NoError(err)
+	relative, err := filepath.Rel(cwd, source)
+	s.Require().NoError(err)
+	binary := &ProviderBinary{OS: runtime.GOOS, Arch: runtime.GOARCH, Path: relative, Name: "binary", Checksum: fmt.Sprintf("%x", sha256.Sum256(content))}
+	got, err := downloadBinaryForPlatform(context.Background(), "TEST", []*ProviderBinary{binary}, filepath.Join(dir, "storage"))
+	s.Require().NoError(err)
+	s.Equal(stored, got)
+	s.FileExists(source)
+}

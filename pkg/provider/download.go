@@ -147,14 +147,14 @@ func preparePlatformBinary(
 ) (string, error) {
 	binaryTargetFolder := filepath.Join(targetFolder, strings.ToLower(binaryName))
 	binaryPath := getBinaryPath(binary, binaryTargetFolder)
-	if err := verifyAvailableLocalSource(binary); err != nil {
-		return "", err
-	}
 	if isUnownedLocalBinary(binary.Path, binaryPath) {
 		return prepareLocalSource(binary, binaryPath, binaryTargetFolder)
 	}
 	if verifyOrRemoveBinary(binaryPath, binary.Checksum) || fromCache(binary, binaryTargetFolder) {
 		return binaryPath, nil
+	}
+	if err := verifyAvailableLocalSource(binary); err != nil {
+		return "", err
 	}
 	return downloadWithRetry(ctx, binaryName, binary, binaryTargetFolder)
 }
