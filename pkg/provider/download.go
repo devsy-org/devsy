@@ -132,27 +132,42 @@ func downloadBinaryForPlatform(
 			continue
 		}
 
-		// check if binary is correct
-		binaryTargetFolder := filepath.Join(targetFolder, strings.ToLower(binaryName))
-		binaryPath := getBinaryPath(binary, binaryTargetFolder)
-		if isUnownedLocalBinary(binary.Path, binaryPath) {
-			return prepareLocalSource(binary, binaryPath, binaryTargetFolder)
-		}
-		if verifyOrRemoveBinary(binaryPath, binary.Checksum) ||
-			fromCache(binary, binaryTargetFolder) {
-			return binaryPath, nil
-		}
-
-		// try to download the binary
-		binaryPath, err := downloadWithRetry(ctx, binaryName, binary, binaryTargetFolder)
-		if err != nil {
-			return "", err
-		}
-		return binaryPath, nil
+		return preparePlatformBinary(ctx, binaryName, binary, targetFolder)
 	}
 	return "", fmt.Errorf(
 		"cannot download provider binary %s, because no binary location matched OS %s and ARCH %s",
 		binaryName, runtime.GOOS, runtime.GOARCH)
+}
+
+func preparePlatformBinary(
+	ctx context.Context,
+	binaryName string,
+	binary *ProviderBinary,
+	targetFolder string,
+) (string, error) {
+	binaryTargetFolder := filepath.Join(targetFolder, strings.ToLower(binaryName))
+	binaryPath := getBinaryPath(binary, binaryTargetFolder)
+	if err := verifyAvailableLocalSource(binary); err != nil {
+		return "", err
+	}
+	if isUnownedLocalBinary(binary.Path, binaryPath) {
+		return prepareLocalSource(binary, binaryPath, binaryTargetFolder)
+	}
+	if verifyOrRemoveBinary(binaryPath, binary.Checksum) || fromCache(binary, binaryTargetFolder) {
+		return binaryPath, nil
+	}
+	return downloadWithRetry(ctx, binaryName, binary, binaryTargetFolder)
+}
+
+func verifyAvailableLocalSource(binary *ProviderBinary) error {
+	if isRemotePath(binary.Path) || filepath.IsAbs(binary.Path) {
+		return nil
+	}
+	_, err := verifyLocalBinary(binary.Path, binary.Checksum)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 func isUnownedLocalBinary(source, target string) bool {
@@ -202,6 +217,11 @@ func verifyLocalBinary(binaryPath, checksum string) (string, error) {
 func sameLocalFile(source, target string) bool {
 	if isRemotePath(source) {
 		return false
+	}
+	sourcePath, sourceErr := filepath.Abs(source)
+	targetPath, targetErr := filepath.Abs(target)
+	if sourceErr == nil && targetErr == nil && sourcePath == targetPath {
+		return true
 	}
 	sourceInfo, err := os.Stat(source)
 	if err != nil {

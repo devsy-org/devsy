@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -27,12 +28,18 @@ type Redactor struct {
 // NewRedactor masks the values (not keys) of KEY=VALUE entries; empty values are ignored.
 func NewRedactor(secretsEnv []string) *Redactor {
 	values := make([]string, 0, len(secretsEnv))
+	seen := map[string]struct{}{}
 	for _, entry := range secretsEnv {
 		_, value, ok := strings.Cut(entry, "=")
 		if !ok || value == "" {
 			continue
 		}
-		values = append(values, value)
+		for _, candidate := range redactionValues(value) {
+			if _, ok := seen[candidate]; !ok {
+				seen[candidate] = struct{}{}
+				values = append(values, candidate)
+			}
+		}
 	}
 	if len(values) == 0 {
 		return &Redactor{}
@@ -52,6 +59,19 @@ func NewRedactor(secretsEnv []string) *Redactor {
 		maxLength: len(values[0]),
 		matcher:   newSecretMatcher(values),
 	}
+}
+
+func redactionValues(value string) []string {
+	values := []string{value}
+	fragments := strings.FieldsFunc(value, func(r rune) bool { return r == '\n' || r == '\r' })
+	values = append(values, fragments...)
+	for _, candidate := range append([]string(nil), values...) {
+		encoded, err := json.Marshal(candidate)
+		if err == nil && len(encoded) > 2 {
+			values = append(values, string(encoded[1:len(encoded)-1]))
+		}
+	}
+	return values
 }
 
 // Combine returns a redactor that masks the values known by every input.

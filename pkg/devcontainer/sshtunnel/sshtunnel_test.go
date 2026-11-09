@@ -72,7 +72,7 @@ func TestLogLine_JSONPassthrough(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logs := log.InitTestObserved(t, zapcore.DebugLevel)
-			streamer := newSSHTunnelJSONLogStreamer()
+			streamer := newSSHTunnelJSONLogStreamer(nil)
 			defer func() { _ = streamer.Close() }()
 			streamer.LogLine(tt.input)
 
@@ -114,7 +114,7 @@ func TestLogLine_JSONLevelNormalization(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logs := log.InitTestObserved(t, zapcore.DebugLevel)
-			streamer := newSSHTunnelJSONLogStreamer()
+			streamer := newSSHTunnelJSONLogStreamer(nil)
 			defer func() { _ = streamer.Close() }()
 			streamer.LogLine(tt.input)
 
@@ -150,7 +150,7 @@ func TestLogLine_PlainText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logs := log.InitTestObserved(t, zapcore.DebugLevel)
-			streamer := newSSHTunnelJSONLogStreamer()
+			streamer := newSSHTunnelJSONLogStreamer(nil)
 			defer func() { _ = streamer.Close() }()
 			streamer.LogLine(tt.input)
 
@@ -164,7 +164,7 @@ func TestLogLine_PlainText(t *testing.T) {
 
 func TestLogLine_EmptyAndWhitespace(t *testing.T) {
 	logs := log.InitTestObserved(t, zapcore.DebugLevel)
-	streamer := newSSHTunnelJSONLogStreamer()
+	streamer := newSSHTunnelJSONLogStreamer(nil)
 	defer func() { _ = streamer.Close() }()
 
 	streamer.LogLine("")
@@ -176,7 +176,7 @@ func TestLogLine_EmptyAndWhitespace(t *testing.T) {
 
 func TestLogLine_JSONWithoutMessage(t *testing.T) {
 	logs := log.InitTestObserved(t, zapcore.DebugLevel)
-	streamer := newSSHTunnelJSONLogStreamer()
+	streamer := newSSHTunnelJSONLogStreamer(nil)
 	defer func() { _ = streamer.Close() }()
 
 	streamer.LogLine(`{"level":"info","key":"value"}`)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"testing"
 
@@ -98,4 +99,23 @@ func (s *pipeBridgeErrorSuite) TestIndependentHandlerCancellationIsPreserved() {
 	)
 	s.ErrorIs(err, context.Canceled)
 	s.ErrorIs(err, commandErr)
+}
+
+func (s *pipeBridgeErrorSuite) TestNetworkCloseDoesNotMaskCommandFailure() {
+	commandErr := errors.New("command failed")
+	err := classifyBridgeErrors(context.Background(), commandErr, net.ErrClosed)
+	s.ErrorIs(err, commandErr)
+	s.ErrorIs(err, net.ErrClosed)
+}
+
+func (s *pipeBridgeErrorSuite) TestInternalCancellationKeepsCleanupDiagnostic() {
+	commandErr := errors.New("command failed")
+	err := classifyBridgeErrors(
+		context.Background(),
+		commandErr,
+		fmt.Errorf("cleanup detail: %w", context.Canceled),
+	)
+	s.ErrorIs(err, commandErr)
+	s.NotErrorIs(err, context.Canceled)
+	s.ErrorContains(err, "cleanup detail")
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
 func (cmd *UpCmd) devsyUp(
@@ -280,6 +281,7 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		AgentInject: newAgentInjectFunc(client, wInfo),
 		SSHCommand:  sshTunnelCmd,
 		Command:     agentCommand,
+		Redactor:    workspaceSecretRedactor(cmd),
 		TunnelServerFunc: func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error) {
 			return tunnelserver.RunUpServer(ctx, tunnelserver.UpSpec{
 				Reader:                 stdout,
@@ -291,6 +293,19 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 			})
 		},
 	})
+}
+
+func workspaceSecretRedactor(cmd *UpCmd) *secrets.Redactor {
+	var token []string
+	if cmd.GitToken != nil {
+		token = append(token, "TOKEN="+cmd.GitToken.Token)
+	}
+	return secrets.Combine(
+		secrets.NewRedactor(cmd.SecretsEnv),
+		secrets.NewRedactor(cmd.SecretsMount),
+		secrets.NewRedactor(cmd.BuildSecrets),
+		secrets.NewRedactor(token),
+	)
 }
 
 func workspaceAgentCommand(agentPath, workspaceInfo string, debug, lifecycleTerminal bool) string {

@@ -28,6 +28,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/version"
@@ -627,13 +628,31 @@ func (r *runner) executeSetup(
 	}
 
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
-		Client:           nil,
-		AddPrivateKeys:   false,
-		AgentInject:      agentInjectFunc,
-		SSHCommand:       sshTunnelCmd,
-		Command:          setupCommand,
+		Client:         nil,
+		AddPrivateKeys: false,
+		AgentInject:    agentInjectFunc,
+		SSHCommand:     sshTunnelCmd,
+		Command:        setupCommand,
+		Redactor: setupSecretRedactor(
+			secretsEnv,
+			secretsMount,
+			r.workspaceConfig.CLIOptions,
+		),
 		TunnelServerFunc: runSetupServer,
 	})
+}
+
+func setupSecretRedactor(env, mount []string, options provider2.CLIOptions) *secrets.Redactor {
+	var token []string
+	if options.GitToken != nil {
+		token = append(token, "TOKEN="+options.GitToken.Token)
+	}
+	return secrets.Combine(
+		secrets.NewRedactor(env),
+		secrets.NewRedactor(mount),
+		secrets.NewRedactor(options.BuildSecrets),
+		secrets.NewRedactor(token),
+	)
 }
 
 func (r *runner) execSetupSSHServer(

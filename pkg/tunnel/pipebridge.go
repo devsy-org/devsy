@@ -3,6 +3,8 @@ package tunnel
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -149,13 +151,21 @@ func isIndependentTunnelError(ctx context.Context, err error) bool {
 
 func classifyBridgeErrors(ctx context.Context, tunnelErr, handlerErr error) error {
 	if ctx.Err() == nil &&
-		(errors.Is(handlerErr, context.Canceled) || errors.Is(handlerErr, os.ErrClosed)) &&
+		isHandlerShutdownError(handlerErr) &&
 		tunnelErr != nil &&
 		!errors.Is(tunnelErr, context.Canceled) {
-		if errors.Is(handlerErr, os.ErrClosed) {
+		if errors.Is(handlerErr, os.ErrClosed) || errors.Is(handlerErr, net.ErrClosed) {
 			return errors.Join(tunnelErr, handlerErr)
+		}
+		if handlerErr != context.Canceled {
+			return fmt.Errorf("%w; handler: %v", tunnelErr, handlerErr)
 		}
 		return tunnelErr
 	}
 	return ClassifyTunnelErrors(tunnelErr, handlerErr)
+}
+
+func isHandlerShutdownError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, os.ErrClosed) ||
+		errors.Is(err, net.ErrClosed)
 }

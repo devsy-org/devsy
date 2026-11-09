@@ -12,6 +12,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
 	"github.com/devsy-org/devsy/pkg/transport"
@@ -32,6 +33,7 @@ type ExecuteCommandOptions struct {
 	SSHCommand       string
 	Command          string
 	TunnelServerFunc TunnelServerFunc
+	Redactor         *secrets.Redactor
 }
 
 // ExecuteCommand runs the command in an SSH Tunnel and returns the result.
@@ -97,7 +99,7 @@ func executeSSHServerHelper(
 	// AgentInject's stderr carries the ssh-server command's structured
 	// JSON logs, and for some callers (see newAgentInjectFunc) also the
 	// injection script's plain-text preamble.
-	streamer := newSSHTunnelJSONLogStreamer()
+	streamer := newSSHTunnelJSONLogStreamer(opts.Redactor)
 	defer func() { _ = streamer.Close() }()
 
 	log.Debugf("injecting and running SSH server command: %q", opts.SSHCommand)
@@ -155,8 +157,9 @@ func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, erro
 	err = p.grpcBridge.RunPair(ctx,
 		func(ctx context.Context, stdin, stdout *os.File) error {
 			return runCommandInSSHTunnel(ctx, sshCommandParams{
-				session: sess,
-				command: p.opts.Command,
+				session:  sess,
+				command:  p.opts.Command,
+				redactor: p.opts.Redactor,
 			}, stdin, stdout)
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
@@ -233,12 +236,13 @@ func setupSSHAgentForwarding(sshClient *ssh.Client, sess *ssh.Session) {
 }
 
 type sshCommandParams struct {
-	session *ssh.Session
-	command string
+	session  *ssh.Session
+	command  string
+	redactor *secrets.Redactor
 }
 
 func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdout *os.File) error {
-	streamer := newSSHTunnelJSONLogStreamer()
+	streamer := newSSHTunnelJSONLogStreamer(p.redactor)
 	defer func() { _ = streamer.Close() }()
 
 	log.Debugf("running agent command in SSH tunnel: %q", p.command)
@@ -280,8 +284,9 @@ const (
 	maxLogBytes = 256 * 1024
 )
 
-func newSSHTunnelJSONLogStreamer() *log.JSONLogStreamer {
+func newSSHTunnelJSONLogStreamer(redactor *secrets.Redactor) *log.JSONLogStreamer {
 	return log.NewJSONLogStreamer(log.StreamerOptions{
+		Redactor:                redactor,
 		FallbackLevel:           log.LevelDebug,
 		CaptureLines:            maxLogLines,
 		CaptureBytes:            maxLogBytes,

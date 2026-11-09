@@ -274,3 +274,49 @@ func (s *localSourceSafetySuite) TestRelativeYAMLStatError() {
 	s.Require().Error(err)
 	s.ErrorContains(err, "stat provider file")
 }
+
+func (s *localSourceSafetySuite) TestRelativeSourceMismatchBeforeStoredCopy() {
+	for _, existing := range []bool{false, true} {
+		s.Run(fmt.Sprintf("stored=%t", existing), func() {
+			dir := s.T().TempDir()
+			source := filepath.Join(dir, "source")
+			actualBytes := []byte("changed source")
+			expectedBytes := []byte("stored binary")
+			s.Require().NoError(os.WriteFile(source, actualBytes, 0o600))
+			cwd, err := os.Getwd()
+			s.Require().NoError(err)
+			relative, err := filepath.Rel(cwd, source)
+			s.Require().NoError(err)
+			storage := filepath.Join(dir, "storage")
+			stored := filepath.Join(storage, "test", "binary")
+			if existing {
+				s.Require().NoError(os.MkdirAll(filepath.Dir(stored), 0o750))
+				s.Require().NoError(os.WriteFile(stored, expectedBytes, 0o600))
+			}
+			expected := fmt.Sprintf("%x", sha256.Sum256(expectedBytes))
+			actual := fmt.Sprintf("%x", sha256.Sum256(actualBytes))
+			binary := &ProviderBinary{
+				OS:       runtime.GOOS,
+				Arch:     runtime.GOARCH,
+				Path:     relative,
+				Name:     "binary",
+				Checksum: expected,
+			}
+			_, err = downloadBinaryForPlatform(
+				context.Background(),
+				"TEST",
+				[]*ProviderBinary{binary},
+				storage,
+			)
+			s.Require().Error(err)
+			s.ErrorContains(err, relative)
+			s.ErrorContains(err, expected)
+			s.ErrorContains(err, actual)
+			s.ErrorContains(err, "regenerate")
+			s.FileExists(source)
+			if existing {
+				s.FileExists(stored)
+			}
+		})
+	}
+}
