@@ -318,6 +318,15 @@ func newAgentInjectFunc(
 	client client2.WorkspaceClient,
 	wInfo *provider2.AgentWorkspaceInfo,
 ) sshtunnel.AgentInjectFunc {
+	var localEnvironment []string
+	if wInfo.Agent.Driver == provider2.ExternalDriver && wInfo.Agent.Local == config.BoolTrue {
+		localEnvironment = provider2.ToEnvironment(
+			wInfo.Workspace,
+			wInfo.Machine,
+			wInfo.Options,
+			nil,
+		)
+	}
 	return func(
 		cancelCtx context.Context,
 		sshCmd string,
@@ -334,14 +343,15 @@ func newAgentInjectFunc(
 					RawStdout: true,
 				})
 			},
-			IsLocal:         client.AgentLocal(),
-			RemoteAgentPath: client.AgentPath(),
-			DownloadURL:     client.AgentURL(),
-			Command:         sshCmd,
-			Stdin:           sshTunnelStdinReader,
-			Stdout:          sshTunnelStdoutWriter,
-			Stderr:          writer,
-			Timeout:         wInfo.InjectTimeout,
+			LocalEnvironment: localEnvironment,
+			IsLocal:          client.AgentLocal(),
+			RemoteAgentPath:  client.AgentPath(),
+			DownloadURL:      client.AgentURL(),
+			Command:          sshCmd,
+			Stdin:            sshTunnelStdinReader,
+			Stdout:           sshTunnelStdoutWriter,
+			Stderr:           writer,
+			Timeout:          wInfo.InjectTimeout,
 		})
 	}
 }

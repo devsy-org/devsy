@@ -461,7 +461,13 @@ func (s *workspaceClient) compressedAgentInfo(
 		}
 	}
 
-	out, err := json.Marshal(agentInfo)
+	payload := agentPayload(agentInfo)
+	if agentInfo.Agent.Driver != provider.ExternalDriver ||
+		agentInfo.Agent.Local != config.BoolTrue {
+		agentInfo = payload
+	}
+
+	out, err := json.Marshal(payload)
 	if err != nil {
 		return "", nil, err
 	}
@@ -472,6 +478,15 @@ func (s *workspaceClient) compressedAgentInfo(
 	}
 
 	return compressed, agentInfo, nil
+}
+
+func agentPayload(info *provider.AgentWorkspaceInfo) *provider.AgentWorkspaceInfo {
+	payload := *info
+	if payload.Agent.Driver != provider.CustomDriver &&
+		(payload.CLIOptions.Platform.Enabled || payload.CLIOptions.DisableDaemon) {
+		stripProviderOptions(&payload)
+	}
+	return &payload
 }
 
 func (s *workspaceClient) agentInfo(cliOptions provider.CLIOptions) *provider.AgentWorkspaceInfo {
@@ -493,11 +508,6 @@ func (s *workspaceClient) agentInfo(cliOptions provider.CLIOptions) *provider.Ag
 	if cliOptions.Platform.Enabled {
 		agentInfo.Agent.InjectGitCredentials = config.BoolTrue
 		agentInfo.Agent.InjectDockerCredentials = config.BoolTrue
-	}
-
-	if agentInfo.Agent.Driver != provider.CustomDriver &&
-		(cliOptions.Platform.Enabled || cliOptions.DisableDaemon) {
-		stripProviderOptions(agentInfo)
 	}
 
 	return agentInfo
@@ -1620,14 +1630,24 @@ func BuildAgentClient(ctx context.Context, opts BuildAgentClientOptions) (*confi
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	var localEnvironment []string
+	if wInfo.Agent.Driver == provider.ExternalDriver && wInfo.Agent.Local == config.BoolTrue {
+		localEnvironment = provider.ToEnvironment(
+			wInfo.Workspace,
+			wInfo.Machine,
+			wInfo.Options,
+			nil,
+		)
+	}
 	command := buildAgentCommand(opts.WorkspaceClient, opts.AgentCommand, workspaceInfo)
 	errChan := runAgentInjection(cancelCtx, workspaceInjectionConfig{
-		workspaceClient: opts.WorkspaceClient,
-		command:         command,
-		stdin:           pipes.stdinReader,
-		stdout:          pipes.stdoutWriter,
-		timeout:         wInfo.InjectTimeout,
-		cancel:          cancel,
+		workspaceClient:  opts.WorkspaceClient,
+		command:          command,
+		stdin:            pipes.stdinReader,
+		stdout:           pipes.stdoutWriter,
+		timeout:          wInfo.InjectTimeout,
+		localEnvironment: localEnvironment,
+		cancel:           cancel,
 	})
 
 	result, err := runTunnelServer(cancelCtx, opts, pipes.stdoutReader, pipes.stdinWriter)
@@ -1690,12 +1710,13 @@ func (p *processIOPipes) close() {
 }
 
 type workspaceInjectionConfig struct {
-	workspaceClient client.WorkspaceClient
-	command         string
-	stdin           *os.File
-	stdout          *os.File
-	timeout         time.Duration
-	cancel          context.CancelFunc
+	localEnvironment []string
+	workspaceClient  client.WorkspaceClient
+	command          string
+	stdin            *os.File
+	stdout           *os.File
+	timeout          time.Duration
+	cancel           context.CancelFunc
 }
 
 func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan error {
@@ -1721,14 +1742,15 @@ func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan e
 					RawStdout: true,
 				})
 			},
-			IsLocal:         cfg.workspaceClient.AgentLocal(),
-			RemoteAgentPath: cfg.workspaceClient.AgentPath(),
-			DownloadURL:     cfg.workspaceClient.AgentURL(),
-			Command:         cfg.command,
-			Stdin:           cfg.stdin,
-			Stdout:          cfg.stdout,
-			Stderr:          streamer,
-			Timeout:         cfg.timeout,
+			LocalEnvironment: cfg.localEnvironment,
+			IsLocal:          cfg.workspaceClient.AgentLocal(),
+			RemoteAgentPath:  cfg.workspaceClient.AgentPath(),
+			DownloadURL:      cfg.workspaceClient.AgentURL(),
+			Command:          cfg.command,
+			Stdin:            cfg.stdin,
+			Stdout:           cfg.stdout,
+			Stderr:           streamer,
+			Timeout:          cfg.timeout,
 		})
 	}()
 	return errChan
