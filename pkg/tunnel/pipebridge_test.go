@@ -182,8 +182,8 @@ func TestRunPairContextCancellation(t *testing.T) {
 	}
 
 	err = pb.RunPair(ctx, tunnel, handler)
-	if err != nil {
-		t.Errorf("RunPair() error = %v, want nil", err)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("RunPair() error = %v, want context canceled", err)
 	}
 }
 
@@ -313,8 +313,8 @@ func TestRunPairLogsParentCancellationDetails(t *testing.T) {
 			return nil
 		},
 	)
-	if err != nil {
-		t.Fatalf("RunPair() error = %v, want nil for classified shutdown", err)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunPair() error = %v, want context canceled", err)
 	}
 
 	entries := logs.FilterMessageSnippet("parent_err=context canceled")
