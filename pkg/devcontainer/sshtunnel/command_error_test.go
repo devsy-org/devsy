@@ -2,6 +2,7 @@ package sshtunnel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"testing"
@@ -77,4 +78,24 @@ func (s *commandErrorSuite) TestStoredSecretIsRedactedFromCapturedDiagnostics() 
 			s.NotContains(streamer.ErrorOutput(), "stored-")
 		})
 	}
+}
+
+func (s *commandErrorSuite) TestNumericJSONSecretIsRedactedFromCapturedDiagnostics() {
+	fixture := "{\n\"pin\": 123456\n}"
+	streamer := newSSHTunnelJSONLogStreamer(secrets.NewRedactor([]string{"VALUE=" + fixture}))
+	_, err := io.WriteString(streamer, "\"pin\": 123456\n")
+	s.Require().NoError(err)
+	s.Require().NoError(streamer.Close())
+	s.NotContains(streamer.ErrorOutput(), "123456")
+}
+
+func (s *commandErrorSuite) TestNumericJSONSecretKeepsStructuredDiagnosticValid() {
+	fixture := "{\n\"pin\": 123456\n}"
+	streamer := newSSHTunnelJSONLogStreamer(secrets.NewRedactor([]string{"VALUE=" + fixture}))
+	_, err := io.WriteString(streamer, `{"level":"info","message":"ready","pin":123456}`+"\n")
+	s.Require().NoError(err)
+	s.Require().NoError(streamer.Close())
+	output := streamer.ErrorOutput()
+	s.True(json.Valid([]byte(output)))
+	s.NotContains(output, "123456")
 }

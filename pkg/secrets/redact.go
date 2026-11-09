@@ -2,26 +2,37 @@ package secrets
 
 import (
 	"encoding/json"
-	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 )
 
-const redactMask = "***"
+const (
+	redactMask     = "***"
+	jsonRedactMask = `"***"`
+)
 
 var (
 	credentialURLPattern = regexp.MustCompile(`(?i)(https?://)[^\s/@]+@`)
 	authorizationPattern = regexp.MustCompile(
 		`(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+`,
 	)
+	jsonScalarLinePattern = regexp.MustCompile(
+		`("(?:[^"\\]|\\.)+"\s*:\s*)(-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|true|false|null)`,
+	)
 )
 
 type Redactor struct {
 	replacer  *strings.Replacer
 	values    []string
+	entries   []string
+	lines     map[string]string
+	scalars   *strings.Replacer
 	maxLength int
 	matcher   *secretNode
 }
@@ -29,18 +40,20 @@ type Redactor struct {
 // NewRedactor masks the values (not keys) of KEY=VALUE entries; empty values are ignored.
 func NewRedactor(secretsEnv []string) *Redactor {
 	values := make([]string, 0, len(secretsEnv))
-	seen := map[string]struct{}{}
+	replacements := map[string]string{}
+	lines := map[string]string{}
+	scalarValues := map[string]struct{}{}
+	var entries []string
 	for _, entry := range secretsEnv {
 		_, value, ok := strings.Cut(entry, "=")
 		if !ok || value == "" {
 			continue
 		}
-		for _, candidate := range redactionValues(value) {
-			if _, ok := seen[candidate]; !ok {
-				seen[candidate] = struct{}{}
-				values = append(values, candidate)
-			}
-		}
+		entries = append(entries, entry)
+		values = appendPlainCandidates(values, replacements, value)
+		fragments, lineValues := jsonScalarFragments(value, scalarValues)
+		maps.Copy(lines, lineValues)
+		values = appendMappedCandidates(values, replacements, fragments)
 	}
 	if len(values) == 0 {
 		return &Redactor{}
@@ -51,28 +64,168 @@ func NewRedactor(secretsEnv []string) *Redactor {
 	sort.SliceStable(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
 	pairs := make([]string, 0, len(values)*2)
 	for _, v := range values {
-		pairs = append(pairs, v, redactMask)
+		pairs = append(pairs, v, replacements[v])
+	}
+	var scalarReplacer *strings.Replacer
+	if len(scalarValues) > 0 {
+		var scalarKeys []string
+		for scalar := range scalarValues {
+			scalarKeys = append(scalarKeys, scalar)
+		}
+		sort.Slice(
+			scalarKeys,
+			func(i, j int) bool { return len(scalarKeys[i]) > len(scalarKeys[j]) },
+		)
+		var scalarPairs []string
+		for _, scalar := range scalarKeys {
+			scalarPairs = append(scalarPairs, scalar, redactMask)
+		}
+		scalarReplacer = strings.NewReplacer(scalarPairs...)
 	}
 
 	return &Redactor{
 		replacer:  strings.NewReplacer(pairs...),
 		values:    values,
+		entries:   entries,
+		lines:     lines,
+		scalars:   scalarReplacer,
 		maxLength: len(values[0]),
 		matcher:   newSecretMatcher(values),
 	}
 }
 
-func redactionValues(value string) []string {
-	values := []string{value}
+func appendPlainCandidates(values []string, replacements map[string]string, value string) []string {
+	for _, candidate := range redactionValues(value) {
+		if _, ok := replacements[candidate]; !ok {
+			values = append(values, candidate)
+		}
+		replacements[candidate] = redactMask
+	}
+	return values
+}
+
+func appendMappedCandidates(values []string, replacements, fragments map[string]string) []string {
+	for candidate, replacement := range fragments {
+		if _, ok := replacements[candidate]; !ok {
+			values = append(values, candidate)
+			replacements[candidate] = replacement
+		}
+	}
+	return values
+}
+
+func jsonScalarFragments(
+	value string,
+	scalarValues map[string]struct{},
+) (map[string]string, map[string]string) {
+	fragments := map[string]string{}
+	lines := map[string]string{}
+	decoded, ok := decodeMultilineJSON(value)
+	if !ok {
+		return fragments, lines
+	}
+	addJSONScalarValues(lines, fragments, scalarValues, decoded)
+	if compact, err := json.Marshal(decoded); err == nil {
+		switch decoded.(type) {
+		case []any, map[string]any:
+			fragments[string(compact)] = jsonRedactMask
+		}
+	}
+	addJSONScalarLineFragments(fragments, lines, value)
+	return fragments, lines
+}
+
+func decodeMultilineJSON(value string) (any, bool) {
+	if !strings.ContainsAny(value, "\r\n") || !json.Valid([]byte(value)) {
+		return nil, false
+	}
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.UseNumber()
 	var decoded any
-	if strings.ContainsAny(value, "\r\n") && json.Unmarshal([]byte(value), &decoded) == nil {
-		values = append(values, jsonStringValues(decoded)...)
-	} else {
-		for _, fragment := range strings.FieldsFunc(value, func(r rune) bool { return r == '\n' || r == '\r' }) {
-			if hasRedactableContent(fragment) {
-				values = append(values, fragment)
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, false
+	}
+	return decoded, true
+}
+
+func addJSONScalarLineFragments(fragments, lines map[string]string, value string) {
+	for _, match := range jsonScalarLinePattern.FindAllStringSubmatch(value, -1) {
+		key := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(match[1]), ":"))
+		for _, prefix := range []string{match[1], key + ":"} {
+			candidate := prefix + match[2]
+			replacement := prefix + jsonRedactMask
+			lines[candidate] = replacement
+			addBoundedJSONFragments(fragments, candidate, replacement)
+		}
+	}
+}
+
+func addBoundedJSONFragments(fragments map[string]string, candidate, replacement string) {
+	for _, suffix := range []string{",", "}", "]"} {
+		for _, space := range []string{"", " ", "\t"} {
+			bounded := candidate + space + suffix
+			fragments[bounded] = replacement + space + suffix
+			encoded, err := json.Marshal(bounded)
+			if err == nil && len(encoded) > 2 {
+				fragments[string(encoded[1:len(encoded)-1])] = redactMask + space + suffix
 			}
 		}
+	}
+}
+
+func addJSONScalarValues(
+	lines, fragments map[string]string,
+	scalarValues map[string]struct{},
+	value any,
+) {
+	switch value := value.(type) {
+	case json.Number:
+		lines[value.String()] = jsonRedactMask
+		scalarValues[value.String()] = struct{}{}
+	case bool:
+		lines[strconv.FormatBool(value)] = jsonRedactMask
+		scalarValues[strconv.FormatBool(value)] = struct{}{}
+	case nil:
+		lines["null"] = jsonRedactMask
+		scalarValues["null"] = struct{}{}
+	case string:
+		addJSONScalarString(lines, fragments, scalarValues, value)
+	case []any:
+		addJSONScalarEntries(lines, fragments, scalarValues, value)
+	case map[string]any:
+		addJSONScalarEntries(lines, fragments, scalarValues, slices.Collect(maps.Values(value)))
+	}
+}
+
+func addJSONScalarEntries(
+	lines, fragments map[string]string,
+	scalarValues map[string]struct{},
+	entries []any,
+) {
+	for _, entry := range entries {
+		addJSONScalarValues(lines, fragments, scalarValues, entry)
+	}
+}
+
+func addJSONScalarString(
+	lines, fragments map[string]string,
+	scalarValues map[string]struct{},
+	value string,
+) {
+	if isJSONScalarToken(value) {
+		scalarValues[value] = struct{}{}
+		lines[value] = jsonRedactMask
+		encoded, _ := json.Marshal(value)
+		fragments[string(encoded)] = jsonRedactMask
+	}
+}
+
+func redactionValues(value string) []string {
+	values := []string{value}
+	if decoded, ok := decodeMultilineJSON(value); ok {
+		values = append(values, jsonStringValues(decoded)...)
+	} else {
+		values = append(values, textSecretFragments(value)...)
 	}
 	for _, candidate := range append([]string(nil), values...) {
 		encoded, err := json.Marshal(candidate)
@@ -83,11 +236,21 @@ func redactionValues(value string) []string {
 	return values
 }
 
+func textSecretFragments(value string) []string {
+	var values []string
+	for _, fragment := range strings.FieldsFunc(value, func(r rune) bool { return r == '\n' || r == '\r' }) {
+		if hasRedactableContent(fragment) {
+			values = append(values, fragment)
+		}
+	}
+	return values
+}
+
 func jsonStringValues(value any) []string {
 	var values []string
 	switch value := value.(type) {
 	case string:
-		if hasRedactableContent(value) {
+		if hasRedactableContent(value) && !isJSONScalarToken(value) {
 			values = append(values, value)
 		}
 	case []any:
@@ -100,6 +263,24 @@ func jsonStringValues(value any) []string {
 		}
 	}
 	return values
+}
+
+func isJSONScalarToken(value string) bool {
+	if !json.Valid([]byte(value)) {
+		return false
+	}
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
+		return false
+	}
+	switch decoded.(type) {
+	case json.Number, bool, nil:
+		return true
+	default:
+		return false
+	}
 }
 
 func hasRedactableContent(value string) bool {
@@ -115,9 +296,7 @@ func Combine(redactors ...*Redactor) *Redactor {
 		if redactor == nil {
 			continue
 		}
-		for i, value := range redactor.values {
-			entries = append(entries, fmt.Sprintf("DEVSY_COMBINED_%d=%s", i, value))
-		}
+		entries = append(entries, redactor.entries...)
 	}
 	return NewRedactor(entries)
 }
@@ -150,13 +329,89 @@ func isSensitiveEnvironmentKey(key string) bool {
 }
 
 func (r *Redactor) Redact(s string) string {
-	if r != nil && r.replacer != nil {
-		s = r.replacer.Replace(s)
+	return r.redact(s, true)
+}
+
+func (r *Redactor) redact(s string, standalone bool) string {
+	if r != nil {
+		s = r.redactKnown(s, standalone)
 	}
-	// Format-based masking protects credentials supplied directly in a URL or
-	// header and therefore not available as environment values.
 	s = credentialURLPattern.ReplaceAllString(s, "$1***@")
 	return authorizationPattern.ReplaceAllString(s, "$1***")
+}
+
+func (r *Redactor) redactKnown(s string, standalone bool) string {
+	if standalone {
+		trimmed := strings.TrimSpace(s)
+		scalar := strings.TrimSpace(strings.TrimSuffix(trimmed, ","))
+		if replacement, ok := r.lines[scalar]; ok {
+			s = strings.Replace(s, scalar, replacement, 1)
+		}
+	}
+	if r.replacer != nil {
+		s = r.replacer.Replace(s)
+	}
+	if standalone && r.scalars != nil {
+		s = redactScalarContent(s, r.scalars)
+	}
+	return s
+}
+
+func redactScalarContent(text string, replacer *strings.Replacer) string {
+	if !json.Valid([]byte(text)) {
+		return replacer.Replace(text)
+	}
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
+		return jsonRedactMask
+	}
+	redacted, changed := redactJSONStringValues(decoded, replacer)
+	if !changed {
+		return text
+	}
+	encoded, err := json.Marshal(redacted)
+	if err != nil {
+		return jsonRedactMask
+	}
+	return string(encoded)
+}
+
+func redactJSONStringValues(value any, replacer *strings.Replacer) (any, bool) {
+	switch value := value.(type) {
+	case string:
+		redacted := replacer.Replace(value)
+		return redacted, redacted != value
+	case []any:
+		return redactJSONArray(value, replacer)
+	case map[string]any:
+		return redactJSONObject(value, replacer)
+	default:
+		return value, false
+	}
+}
+
+func redactJSONArray(value []any, replacer *strings.Replacer) (any, bool) {
+	changed := false
+	for i, entry := range value {
+		var entryChanged bool
+		value[i], entryChanged = redactJSONStringValues(entry, replacer)
+		changed = changed || entryChanged
+	}
+	return value, changed
+}
+
+func redactJSONObject(value map[string]any, replacer *strings.Replacer) (any, bool) {
+	redacted := make(map[string]any, len(value))
+	changed := false
+	for key, entry := range value {
+		redactedKey := replacer.Replace(key)
+		redactedValue, entryChanged := redactJSONStringValues(entry, replacer)
+		redacted[redactedKey] = redactedValue
+		changed = changed || entryChanged || redactedKey != key
+	}
+	return redacted, changed
 }
 
 // StreamingRedactor masks secrets split across text writes, buffering a short
@@ -201,7 +456,7 @@ func (r *StreamingRedactor) RedactChunk(chunk string) string {
 	}
 	cut = r.base.completeSecretBoundary(combined, cut)
 	r.pending = combined[cut:]
-	return r.base.Redact(combined[:cut])
+	return r.base.redact(combined[:cut], false)
 }
 
 // Follow the replacer's leftmost, longest-first matches. A complete secret
@@ -304,5 +559,5 @@ func (r *StreamingRedactor) Flush() string {
 	if r.base == nil {
 		return pending
 	}
-	return r.base.Redact(pending)
+	return r.base.redact(pending, false)
 }
