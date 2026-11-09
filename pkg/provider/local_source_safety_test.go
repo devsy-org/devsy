@@ -246,8 +246,19 @@ func (s *localSourceSafetySuite) TestValidStoredCopySurvivesChangedRelativeSourc
 	s.Require().NoError(err)
 	relative, err := filepath.Rel(cwd, source)
 	s.Require().NoError(err)
-	binary := &ProviderBinary{OS: runtime.GOOS, Arch: runtime.GOARCH, Path: relative, Name: "binary", Checksum: fmt.Sprintf("%x", sha256.Sum256(content))}
-	got, err := downloadBinaryForPlatform(context.Background(), "TEST", []*ProviderBinary{binary}, filepath.Join(dir, "storage"))
+	binary := &ProviderBinary{
+		OS:       runtime.GOOS,
+		Arch:     runtime.GOARCH,
+		Path:     relative,
+		Name:     "binary",
+		Checksum: fmt.Sprintf("%x", sha256.Sum256(content)),
+	}
+	got, err := downloadBinaryForPlatform(
+		context.Background(),
+		"TEST",
+		[]*ProviderBinary{binary},
+		filepath.Join(dir, "storage"),
+	)
 	s.Require().NoError(err)
 	s.Equal(stored, got)
 	s.FileExists(source)
