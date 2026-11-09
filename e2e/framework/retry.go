@@ -34,16 +34,20 @@ var sshBackoff = wait.Backoff{
 }
 
 // providerAddBackoff defines retry timing for provider manifest downloads.
-// 5 total attempts with waits of ~5s, ~10s, ~20s, ~40s.
 var providerAddBackoff = wait.Backoff{
-	Steps:    5,
+	Steps:    8,
 	Duration: 5 * time.Second,
 	Factor:   2.0,
 	Jitter:   0.1,
+	Cap:      time.Minute,
 }
 
 var providerServerErrorPattern = regexp.MustCompile(
 	`(?i)(received status code|download failed with status|status) 5\d\d`,
+)
+
+var providerClientErrorPattern = regexp.MustCompile(
+	`(?i)(received status code|download failed with status|status) 4\d\d`,
 )
 
 var retryableProviderNetworkPatterns = []string{
@@ -119,10 +123,13 @@ func isRetryableDockerError(stderr string) bool {
 // failed on a server error or a network error. Client errors such as 404 and
 // provider validation failures are never retried.
 func isRetryableProviderDownloadError(_ error, stderr string) bool {
+	lower := strings.ToLower(stderr)
+	if providerClientErrorPattern.MatchString(stderr) || strings.Contains(lower, "checksum") {
+		return false
+	}
 	if providerServerErrorPattern.MatchString(stderr) {
 		return true
 	}
-	lower := strings.ToLower(stderr)
 	for _, pattern := range retryableProviderNetworkPatterns {
 		if strings.Contains(lower, strings.ToLower(pattern)) {
 			return true
@@ -209,6 +216,9 @@ func execWithDockerRetry(ctx context.Context, fn execFunc) (string, string, erro
 // execWithProviderAddRetry runs fn and retries when the provider manifest
 // download failed with a server or network error.
 func execWithProviderAddRetry(ctx context.Context, fn execFunc) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
 	res := runWithRetry(ctx, retryPolicy{
 		backoff:   providerAddBackoff,
 		retryable: isRetryableProviderDownloadError,

@@ -718,6 +718,10 @@ func TestIsRetryableProviderDownloadError(t *testing.T) {
 	permanent := []string{
 		"download: received status code 404 when trying to download https://github.com/o/r/provider.yaml",
 		"download failed with status 403",
+		"received status code 404: unexpected EOF",
+		"download failed with status 403 after status 502",
+		"external runtime executable checksum verification failed",
+		"checksum verification failed after connection reset by peer",
 		"provider microsandbox already exists",
 		"validate: exec.command is required",
 	}
@@ -728,21 +732,37 @@ func TestIsRetryableProviderDownloadError(t *testing.T) {
 
 func TestExecWithProviderAddRetryRecoversFromServerErrors(t *testing.T) {
 	original := providerAddBackoff
-	providerAddBackoff = wait.Backoff{Steps: 4, Duration: time.Millisecond, Factor: 1}
+	providerAddBackoff.Duration = time.Millisecond
+	providerAddBackoff.Factor = 1
+	providerAddBackoff.Jitter = 0
 	t.Cleanup(func() { providerAddBackoff = original })
 	attempts := 0
 	_, err := execWithProviderAddRetry(
 		context.Background(),
 		func(context.Context) (string, string, error) {
 			attempts++
-			if attempts < 3 {
+			if attempts < 6 {
 				return "", providerServerFailure, errExitOne
 			}
 			return "", "", nil
 		},
 	)
 	require.NoError(t, err)
-	assert.Equal(t, 3, attempts)
+	assert.Equal(t, 6, attempts)
+}
+
+func TestExecWithProviderAddRetryBoundsAttemptDeadline(t *testing.T) {
+	started := time.Now()
+	_, err := execWithProviderAddRetry(
+		context.Background(),
+		func(ctx context.Context) (string, string, error) {
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok)
+			assert.WithinDuration(t, started.Add(5*time.Minute), deadline, time.Second)
+			return "", "", nil
+		},
+	)
+	require.NoError(t, err)
 }
 
 func TestExecWithProviderAddRetrySkipsClientErrors(t *testing.T) {
@@ -764,7 +784,9 @@ func TestExecWithProviderAddRetrySkipsClientErrors(t *testing.T) {
 
 func TestExecWithProviderAddRetryStopsAtBudget(t *testing.T) {
 	original := providerAddBackoff
-	providerAddBackoff = wait.Backoff{Steps: 3, Duration: time.Millisecond, Factor: 1}
+	providerAddBackoff.Duration = time.Millisecond
+	providerAddBackoff.Factor = 1
+	providerAddBackoff.Jitter = 0
 	t.Cleanup(func() { providerAddBackoff = original })
 	attempts := 0
 	_, err := execWithProviderAddRetry(
@@ -774,8 +796,8 @@ func TestExecWithProviderAddRetryStopsAtBudget(t *testing.T) {
 			return "", providerServerFailure, errExitOne
 		},
 	)
-	require.ErrorContains(t, err, "after 3 attempts")
-	assert.Equal(t, 3, attempts)
+	require.ErrorContains(t, err, fmt.Sprintf("after %d attempts", original.Steps))
+	assert.Equal(t, original.Steps, attempts)
 }
 
 func TestSeedProviderDownloadCache(t *testing.T) {

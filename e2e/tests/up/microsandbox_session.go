@@ -19,7 +19,7 @@ const (
 	microsandboxResourceBuiltin  = provider.DeprecatedMicrosandboxSource
 	osLinux                      = "linux"
 	osDarwin                     = "darwin"
-	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v1.1.1"
+	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v1.1.2"
 	microsandboxRootUser         = "root"
 )
 
