@@ -1,24 +1,22 @@
 package runenv
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework/internal/livetee"
 	"github.com/devsy-org/devsy/pkg/docker"
 )
 
 const (
-	// maxCaptureBytes bounds each captured stream; older output is dropped.
-	maxCaptureBytes = 64 << 10
 	// waitDelay bounds how long Wait lingers on pipes held by orphaned children.
 	waitDelay = 5 * time.Second
 	redacted  = "[REDACTED]"
@@ -26,7 +24,6 @@ const (
 	minSecretLen = 6
 )
 
-// ExecRunner runs real subprocesses with bounded capture and a hard timeout.
 type ExecRunner struct{}
 
 func (ExecRunner) Run(ctx context.Context, c Command) (CommandResult, error) {
@@ -38,7 +35,8 @@ func (ExecRunner) Run(ctx context.Context, c Command) (CommandResult, error) {
 		ctx, cancel = context.WithTimeout(ctx, c.Timeout)
 		defer cancel()
 	}
-	stdout, stderr := newTailBuffer(maxCaptureBytes), newTailBuffer(maxCaptureBytes)
+	var stdout, stderr bytes.Buffer
+	outTee, errTee := livetee.New(&stdout, c.Stdout), livetee.New(&stderr, c.Stderr)
 	//nolint:gosec // G204: ExecRunner runs the command its caller specified, by design
 	cmd := exec.CommandContext(ctx, c.Path, c.Args...)
 	if c.CancelProcessGroup {
@@ -47,11 +45,17 @@ func (ExecRunner) Run(ctx context.Context, c Command) (CommandResult, error) {
 	cmd.Dir = c.Dir
 	cmd.Env = overlayEnv(os.Environ(), c.Env, runtime.GOOS == "windows")
 	cmd.WaitDelay = waitDelay
-	cmd.Stdout = teeWriter(stdout, c.Stdout)
-	cmd.Stderr = teeWriter(stderr, c.Stderr)
+	cmd.Stdout = outTee
+	cmd.Stderr = errTee
 
 	err := cmd.Run()
-	res := CommandResult{Stdout: stdout.String(), Stderr: stderr.String()}
+	outDropped, errDropped := outTee.Close(), errTee.Close()
+	res := CommandResult{
+		Stdout:        stdout.String(),
+		Stderr:        stderr.String(),
+		StdoutDropped: outDropped,
+		StderrDropped: errDropped,
+	}
 	return finishRun(ctx, c.Path, res, err)
 }
 
@@ -71,6 +75,10 @@ func finishRun(
 		res.ExitCode, res.TimedOut = -1, true
 		return res, nil
 	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		res.ExitCode = -1
+		return res, ctxErr
+	}
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		res.ExitCode = exitErr.ExitCode()
 		return res, nil
@@ -83,55 +91,6 @@ func finishRun(
 	return res, fmt.Errorf("run %s: %w", path, err)
 }
 
-func teeWriter(capture io.Writer, live io.Writer) io.Writer {
-	if live == nil {
-		return capture
-	}
-	return io.MultiWriter(capture, live)
-}
-
-// tailBuffer keeps the last limit bytes written to it.
-type tailBuffer struct {
-	mu      sync.Mutex
-	limit   int
-	buf     []byte
-	dropped int64
-}
-
-func newTailBuffer(limit int) *tailBuffer { return &tailBuffer{limit: limit} }
-
-func (t *tailBuffer) Write(p []byte) (int, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	n := len(p)
-	switch {
-	case n >= t.limit:
-		t.dropped += int64(len(t.buf) + n - t.limit)
-		t.buf = append(t.buf[:0], p[n-t.limit:]...)
-	case len(t.buf)+n > t.limit:
-		drop := len(t.buf) + n - t.limit
-		t.dropped += int64(drop)
-		t.buf = append(t.buf[:0], t.buf[drop:]...)
-		t.buf = append(t.buf, p...)
-	default:
-		t.buf = append(t.buf, p...)
-	}
-	return n, nil
-}
-
-func (t *tailBuffer) String() string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	s := strings.ToValidUTF8(string(t.buf), "")
-	if t.dropped > 0 {
-		return fmt.Sprintf("[%d earlier bytes dropped]\n%s", t.dropped, s)
-	}
-	return s
-}
-
-// overlayEnv returns base with every overlay entry applied: an overlay NAME
-// replaces all same-named base entries (case-insensitive when foldCase, as on
-// Windows) instead of appending a duplicate. Later overlay entries win.
 func overlayEnv(base, overlay []string, foldCase bool) []string {
 	if len(overlay) == 0 {
 		return base

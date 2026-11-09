@@ -25,6 +25,7 @@ unit:
       description: E2E runtime helper packages
       packages:
         - ./e2e/framework/runenv/...
+        - ./e2e/framework/internal/livetee
         - ./e2e/framework/dockerwsl
         - ./e2e/framework/ginkgoreport
         - ./e2e/cmd/devsy-ci

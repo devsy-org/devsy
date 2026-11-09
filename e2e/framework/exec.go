@@ -5,13 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework/internal/livetee"
 	"github.com/devsy-org/devsy/pkg/docker"
 )
 
@@ -29,10 +29,16 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
-	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
+	outTee := livetee.New(&execOut, os.Stdout)
+	cmd.Stdout = outTee
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	f.liveStdoutDropped.Add(outTee.Close())
+	if err != nil {
+		if ctx.Err() != nil {
+			return execOut.String(), ctx.Err()
+		}
 		return "", err
 	}
 
@@ -67,10 +73,16 @@ func (f *Framework) ExecCommandContaining(
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
-	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
+	outTee := livetee.New(&execOut, os.Stdout)
+	cmd.Stdout = outTee
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	f.liveStdoutDropped.Add(outTee.Close())
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 
@@ -91,10 +103,17 @@ func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (stri
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
-	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &execErr)
+	outTee := livetee.New(&execOut, os.Stdout)
+	cmd.Stdout = outTee
+	errTee := livetee.New(&execErr, os.Stderr)
+	cmd.Stderr = errTee
 
 	err := cmd.Run()
+	f.liveStdoutDropped.Add(outTee.Close())
+	f.liveStderrDropped.Add(errTee.Close())
+	if err != nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	return execOut.String(), execErr.String(), err
 }
 
