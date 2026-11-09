@@ -81,6 +81,14 @@ jobs:
 
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
+      - id: runner-image
+        run: echo "version=$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-image.outputs.version }}-${{ hashFiles('prek.toml', 'mise.toml', 'mise.lock') }}
+
       - run: prek run --all-files
 
   agent-skill:
