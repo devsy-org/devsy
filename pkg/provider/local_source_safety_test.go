@@ -381,4 +381,7 @@ func (s *localSourceSafetySuite) TestHomeManifestSymlinkTraversal() {
 	reloaded, err := hash.File(source.File)
 	s.Require().NoError(err)
 	s.Equal(fmt.Sprintf("%x", sha256.Sum256(expected)), reloaded)
+	resolvedOuter, err := filepath.EvalSymlinks(outer)
+	s.Require().NoError(err)
+	s.Equal(resolvedOuter, filepath.Dir(source.File))
 }

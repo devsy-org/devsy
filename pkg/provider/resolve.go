@@ -230,8 +230,14 @@ func resolveFileProvider(
 }
 
 func absoluteManifestPath(filePath string) (string, error) {
-	if filepath.IsAbs(filePath) {
-		return filePath, nil
+	for part := range strings.SplitSeq(filepath.ToSlash(filePath), "/") {
+		if part == ".." {
+			resolved, err := filepath.EvalSymlinks(filePath)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Abs(resolved)
+		}
 	}
 	return filepath.Abs(filePath)
 }
