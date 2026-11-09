@@ -249,6 +249,11 @@ func exitCodeForError(err error, machineMode bool) int {
 	if err == nil {
 		return exitcode.Success
 	}
+	if shouldPassthroughAgent(err) {
+		if code, ok := passthroughExitCode(err, machineMode); ok {
+			return code
+		}
+	}
 
 	cliErr := clierr.Classify(err)
 
@@ -269,13 +274,21 @@ func exitCodeForError(err error, machineMode bool) int {
 	return exitcode.Failure
 }
 
+func shouldPassthroughAgent(err error) bool {
+	return isAgentDiagnostic(err) && !errors.Is(err, gocontext.Canceled) &&
+		!errors.Is(
+			err,
+			gocontext.DeadlineExceeded,
+		) && !errors.Is(err, clierr.ErrBuildFailedRecoverable)
+}
+
 func passthroughExitCode(err error, machineMode bool) (int, bool) {
 	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
-		if _, hasDiagnostic := errors.AsType[interface {
-			error
-			AgentDiagnostic()
-		}](err); hasDiagnostic {
-			renderCLIError(clierr.Classify(err), machineMode)
+		if diagnostic, ok := agentDiagnostic(err); ok {
+			renderCLIError(
+				&clierr.CLIError{Code: clierr.CodeUnknown, Message: diagnostic},
+				machineMode,
+			)
 		} else if machineMode {
 			renderCLIError(
 				clierr.Classify(fmt.Errorf(
@@ -306,6 +319,22 @@ func passthroughExitCode(err error, machineMode bool) (int, bool) {
 		return commandExit.Code, true
 	}
 	return 0, false
+}
+
+func isAgentDiagnostic(err error) bool {
+	_, ok := agentDiagnostic(err)
+	return ok
+}
+
+func agentDiagnostic(err error) (string, bool) {
+	diagnostic, ok := errors.AsType[interface {
+		error
+		AgentDiagnostic() string
+	}](err)
+	if !ok {
+		return "", false
+	}
+	return diagnostic.AgentDiagnostic(), true
 }
 
 func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {

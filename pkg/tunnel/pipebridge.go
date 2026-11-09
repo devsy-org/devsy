@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -95,15 +96,22 @@ func (pb *PipeBridge) RunPair(
 		}
 	}()
 
-	tunnelSide := func() error { return tunnelFn(pairCtx, pb.StdinReader, pb.StdoutWriter) }
+	var firstSide atomic.Uint32
+	tunnelSide := func() error {
+		err := tunnelFn(pairCtx, pb.StdinReader, pb.StdoutWriter)
+		firstSide.CompareAndSwap(0, 1)
+		return err
+	}
 	handlerSide := func() error {
-		return handlerFn(pairCtx, pb.StdoutReader, pb.StdinWriter)
+		err := handlerFn(pairCtx, pb.StdoutReader, pb.StdinWriter)
+		firstSide.CompareAndSwap(0, 2)
+		return err
 	}
 
 	// Run the two sides concurrently and wait for both to finish (or the slower
 	// side to be abandoned after joinTimeout).
 	tunnelErr, handlerErr := iojoin.Join(tunnelSide, handlerSide, joinTimeout, stop)
-	classifiedErr := classifyBridgeErrors(ctx, tunnelErr, handlerErr)
+	classifiedErr := classifyOrderedBridgeErrors(ctx, tunnelErr, handlerErr, firstSide.Load())
 	internalTunnelCancel := errors.Is(tunnelErr, context.Canceled) && ctx.Err() == nil
 	if classifiedErr == nil && ctx.Err() == nil && (tunnelErr == nil || internalTunnelCancel) {
 		log.Debug("pipe bridge completed successfully")
@@ -117,6 +125,26 @@ func (pb *PipeBridge) RunPair(
 		)
 	}
 	return classifiedErr
+}
+
+func classifyOrderedBridgeErrors(
+	ctx context.Context,
+	tunnelErr, handlerErr error,
+	firstSide uint32,
+) error {
+	if isIndependentTunnelError(ctx, tunnelErr) {
+		if firstSide == 1 && handlerErr == nil && !IsEOF(tunnelErr) {
+			return tunnelErr
+		}
+		if firstSide == 2 && errors.Is(handlerErr, context.Canceled) {
+			return errors.Join(tunnelErr, handlerErr)
+		}
+	}
+	return classifyBridgeErrors(ctx, tunnelErr, handlerErr)
+}
+
+func isIndependentTunnelError(ctx context.Context, err error) bool {
+	return ctx.Err() == nil && err != nil && !errors.Is(err, context.Canceled)
 }
 
 func classifyBridgeErrors(ctx context.Context, tunnelErr, handlerErr error) error {

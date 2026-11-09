@@ -171,3 +171,91 @@ func (s *localSourceSafetySuite) TestRelativeYAMLManifest() {
 	s.True(ok)
 	s.Equal("name: local\n", string(data))
 }
+
+func (s *localSourceSafetySuite) TestMissingAbsoluteSourceUsesStoredCopy() {
+	dir := s.T().TempDir()
+	target := filepath.Join(dir, "test", "binary")
+	s.Require().NoError(os.MkdirAll(filepath.Dir(target), 0o750))
+	content := []byte("installed binary")
+	s.Require().NoError(os.WriteFile(target, content, 0o600))
+	checksum := fmt.Sprintf("%x", sha256.Sum256(content))
+	binary := &ProviderBinary{
+		OS:       runtime.GOOS,
+		Arch:     runtime.GOARCH,
+		Path:     filepath.Join(dir, "missing"),
+		Name:     "binary",
+		Checksum: checksum,
+	}
+	got, err := downloadBinaryForPlatform(
+		context.Background(),
+		"TEST",
+		[]*ProviderBinary{binary},
+		dir,
+	)
+	s.Require().NoError(err)
+	s.Equal(target, got)
+	s.FileExists(target)
+}
+
+func (s *localSourceSafetySuite) TestMissingExplicitManifestForms() {
+	name := filepath.Base(s.T().TempDir()) + ".yaml"
+	home, err := os.UserHomeDir()
+	s.Require().NoError(err)
+	cases := []struct {
+		name, source, want string
+		local              bool
+	}{
+		{
+			name:   "dot",
+			source: "./" + name,
+			want:   filepath.Join(mustWorkingDir(s), name),
+			local:  true,
+		},
+		{
+			name:   "parent",
+			source: "../" + name,
+			want:   filepath.Join(filepath.Dir(mustWorkingDir(s)), name),
+			local:  true,
+		},
+		{
+			name:   "absolute",
+			source: filepath.Join(s.T().TempDir(), name),
+			want:   filepath.Join(s.T().TempDir(), name),
+			local:  true,
+		},
+		{name: "home", source: "~/" + name, want: filepath.Join(home, name), local: true},
+		{name: "bare repository", source: "owner/repo.yaml"},
+		{name: "bare yaml", source: name},
+	}
+	cases[2].want = cases[2].source
+	if runtime.GOOS == windowsOS {
+		drivePath := filepath.Join(filepath.VolumeName(mustWorkingDir(s))+`\`, name)
+		cases = append(cases, struct {
+			name, source, want string
+			local              bool
+		}{name: "backslash", source: `.\` + name, want: filepath.Join(mustWorkingDir(s), name), local: true})
+		cases = append(cases, struct {
+			name, source, want string
+			local              bool
+		}{name: "drive", source: drivePath, want: drivePath, local: true})
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			_, ok, err := resolveFileProvider(tc.source, &ProviderSource{})
+			if !tc.local {
+				s.NoError(err)
+				s.False(ok)
+				return
+			}
+			s.True(ok)
+			s.Require().Error(err)
+			s.ErrorContains(err, "provider manifest file not found: "+tc.want)
+		})
+	}
+}
+
+func mustWorkingDir(s *localSourceSafetySuite) string {
+	dir, err := os.Getwd()
+	s.Require().NoError(err)
+	return dir
+}

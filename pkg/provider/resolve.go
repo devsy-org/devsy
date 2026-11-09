@@ -195,25 +195,29 @@ func resolveFileProvider(
 	providerSource string,
 	retSource *ProviderSource,
 ) ([]byte, bool, error) {
-	manifestPath := isManifestPath(providerSource)
-	if isNonFileProvider(providerSource, manifestPath) {
+	explicit := isExplicitManifestPath(providerSource)
+	if skipManifestSource(providerSource, explicit) {
 		return nil, false, nil
 	}
-	info, err := os.Stat(providerSource)
+	filePath, err := expandManifestPath(providerSource)
 	if err != nil {
-		return resolveFileStatError(providerSource, manifestPath, err)
+		return nil, true, err
 	}
-	if !manifestPath && !info.Mode().IsRegular() {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return resolveFileStatError(filePath, explicit, err)
+	}
+	if !explicit && !info.Mode().IsRegular() {
 		return nil, false, nil
 	}
 
 	// #nosec G304 - providerSource is user-provided path for loading provider config
-	out, err := os.ReadFile(providerSource)
+	out, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, true, fmt.Errorf("read provider file %q: %w", providerSource, err)
 	}
 
-	absPath, err := filepath.Abs(providerSource)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return nil, true, fmt.Errorf("resolve absolute path for %q: %w", providerSource, err)
 	}
@@ -221,27 +225,28 @@ func resolveFileProvider(
 	return out, true, nil
 }
 
-func isNonFileProvider(source string, manifestPath bool) bool {
-	if isGitHubShorthand(source) {
-		if !hasYAMLSuffix(source) {
-			return true
-		}
-		_, err := os.Stat(source)
-		return os.IsNotExist(err)
-	}
-	return !manifestPath && filepath.Base(source) == source
+func skipManifestSource(source string, explicit bool) bool {
+	return !explicit && !hasYAMLSuffix(source)
 }
 
-func isGitHubShorthand(source string) bool {
-	if filepath.IsAbs(source) || strings.HasPrefix(source, "./") ||
-		strings.HasPrefix(source, "../") {
-		return false
-	}
-	return strings.HasPrefix(source, "github.com/") || strings.Count(source, "/") == 1
+func isExplicitManifestPath(source string) bool {
+	return filepath.IsAbs(source) || strings.HasPrefix(source, "/") ||
+		strings.HasPrefix(source, "./") ||
+		strings.HasPrefix(source, "../") ||
+		strings.HasPrefix(source, "~") ||
+		strings.Contains(source, `\`) ||
+		(len(source) >= 2 && source[1] == ':')
 }
 
-func isManifestPath(source string) bool {
-	return filepath.IsAbs(source) || hasYAMLSuffix(source)
+func expandManifestPath(source string) (string, error) {
+	if !strings.HasPrefix(source, "~") {
+		return source, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	return filepath.Join(home, strings.TrimLeft(source[1:], `/\`)), nil
 }
 
 func hasYAMLSuffix(source string) bool {

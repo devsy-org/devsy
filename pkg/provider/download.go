@@ -136,7 +136,7 @@ func downloadBinaryForPlatform(
 		binaryTargetFolder := filepath.Join(targetFolder, strings.ToLower(binaryName))
 		binaryPath := getBinaryPath(binary, binaryTargetFolder)
 		if isUnownedLocalBinary(binary.Path, binaryPath) {
-			return verifyLocalBinary(binaryPath, binary.Checksum)
+			return prepareLocalSource(binary, binaryPath, binaryTargetFolder)
 		}
 		if verifyOrRemoveBinary(binaryPath, binary.Checksum) ||
 			fromCache(binary, binaryTargetFolder) {
@@ -157,6 +157,22 @@ func downloadBinaryForPlatform(
 
 func isUnownedLocalBinary(source, target string) bool {
 	return filepath.IsAbs(source) || sameLocalFile(source, target)
+}
+
+func prepareLocalSource(binary *ProviderBinary, source, targetFolder string) (string, error) {
+	result, err := verifyLocalBinary(source, binary.Checksum)
+	if !filepath.IsAbs(binary.Path) || !errors.Is(err, os.ErrNotExist) {
+		return result, err
+	}
+	target := localTargetPath(binary, targetFolder)
+	absTarget, absErr := filepath.Abs(target)
+	if absErr != nil || filepath.Clean(absTarget) == filepath.Clean(source) {
+		return "", err
+	}
+	if _, targetErr := verifyLocalBinary(target, binary.Checksum); targetErr == nil {
+		return target, nil
+	}
+	return "", err
 }
 
 func verifyLocalBinary(binaryPath, checksum string) (string, error) {

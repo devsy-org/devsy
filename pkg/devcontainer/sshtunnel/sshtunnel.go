@@ -273,7 +273,7 @@ func (e *agentCommandError) Error() string {
 
 func (e *agentCommandError) Unwrap() error { return e.err }
 
-func (e *agentCommandError) AgentDiagnostic() {}
+func (e *agentCommandError) AgentDiagnostic() string { return e.Error() }
 
 const (
 	maxLogLines = 25

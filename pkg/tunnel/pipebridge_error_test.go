@@ -73,3 +73,29 @@ func (s *pipeBridgeErrorSuite) TestClosedHandlerAndTunnelFailureArePreserved() {
 	s.ErrorIs(err, io.EOF)
 	s.ErrorIs(err, os.ErrClosed)
 }
+
+func (s *pipeBridgeErrorSuite) TestCommandFailureBeforeHandlerSuccess() {
+	bridge, err := NewPipeBridge()
+	s.Require().NoError(err)
+	defer bridge.Close()
+	commandErr := errors.New("command failed")
+	err = bridge.RunPair(context.Background(),
+		func(context.Context, *os.File, *os.File) error { return commandErr },
+		func(ctx context.Context, _, _ *os.File) error { <-ctx.Done(); return nil },
+	)
+	s.ErrorIs(err, commandErr)
+}
+
+func (s *pipeBridgeErrorSuite) TestIndependentHandlerCancellationIsPreserved() {
+	bridge, err := NewPipeBridge()
+	s.Require().NoError(err)
+	defer bridge.Close()
+	commandErr := errors.New("command failed during shutdown")
+	err = bridge.RunPair(
+		context.Background(),
+		func(ctx context.Context, _, _ *os.File) error { <-ctx.Done(); return commandErr },
+		func(context.Context, *os.File, *os.File) error { return fmt.Errorf("handler: %w", context.Canceled) },
+	)
+	s.ErrorIs(err, context.Canceled)
+	s.ErrorIs(err, commandErr)
+}
