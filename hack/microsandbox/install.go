@@ -14,11 +14,11 @@ import (
 )
 
 const (
-	microsandboxVersion = "v0.7.7"
+	microsandboxVersion = "v0.7.13"
 	microsandboxURL     = "https://github.com/superradcompany/microsandbox/releases/download/" +
-		"v0.7.7/microsandbox-linux-x86_64.tar.gz"
-	microsandboxSHA256  = "b3cc4a5e3f52dfdd938a6f67ac4a9a959ddfe304bab56de4964044b8613f01bb"
-	microsandboxArchive = "microsandbox-linux-x86_64-v0.7.7.tar.gz"
+		"v0.7.13/microsandbox-linux-x86_64.tar.gz"
+	microsandboxSHA256  = "c41aeefc050e97f42cd55ce55cc139efc13c6ee2dc371e8d30c325a305a5c3b1"
+	microsandboxArchive = "microsandbox-linux-x86_64-v0.7.13.tar.gz"
 	microsandboxLibrary = "libkrunfw.so.5.6.1"
 )
 

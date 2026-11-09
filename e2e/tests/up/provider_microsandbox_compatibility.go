@@ -53,7 +53,11 @@ var _ = ginkgo.Describe(
 						}
 						session := newMicrosandboxTestSession(ctx)
 						fixture := newCompatibilityFixture(ctx, session, selection)
-						for _, fault := range []string{"old", "malformed", "failing"} {
+						faults := []string{"old", "malformed", "failing"}
+						if selection.runtime == providerpkg.ExternalDriver {
+							faults[0] = "old-external"
+						}
+						for _, fault := range faults {
 							fixture.rejectVersionFault(ctx, fault)
 						}
 						fixture.recover(ctx)
@@ -71,6 +75,7 @@ type compatibilityFixture struct {
 	hostPath, sourcePath, sandbox string
 	uid, label                    string
 	workspace                     *providerpkg.Workspace
+	minimumVersion                string
 	workspaceBefore               compatibilityWorkspaceState
 	vmBefore                      compatibilityVMState
 	sourceBefore                  compatibilityFileState
@@ -83,7 +88,6 @@ func newCompatibilityFixture(
 ) *compatibilityFixture {
 	realMSB := captureCompatibilityMSB()
 	ownedHome := ginkgo.GinkgoT().TempDir()
-	// Pinned msb0.7.7 accepts an absent private config as an empty defaults patch.
 	msbHome := filepath.Join(ownedHome, "microsandbox")
 	ginkgo.GinkgoT().Setenv("MSB_HOME", msbHome)
 	ginkgo.GinkgoT().Setenv("MSB_CONFIG_PATH", filepath.Join(msbHome, "config.json"))
@@ -95,7 +99,11 @@ func newCompatibilityFixture(
 	shim := installCompatibilityMSBShim(ginkgo.GinkgoT(), realMSB, ownedHome)
 	fixture := &compatibilityFixture{
 		framework: f, shim: shim, hostPath: tempDir,
-		uid: encoding.CreateNewUID("", filepath.Base(tempDir)),
+		uid:            encoding.CreateNewUID("", filepath.Base(tempDir)),
+		minimumVersion: "0.7.2",
+	}
+	if selection.runtime == providerpkg.ExternalDriver {
+		fixture.minimumVersion = "0.7.13"
 	}
 	fixture.sandbox = "devsy-" + fixture.uid
 	fixture.label = "devsy.compatibility-parity=" + fixture.uid
@@ -188,7 +196,7 @@ func (fixture *compatibilityFixture) rejectVersionFault(ctx context.Context, fau
 	stdout, stderr, err := fixture.framework.DevsyUpStreams(ctx, fixture.hostPath,
 		append(fixture.upArgs(), "--recreate")...)
 	gomega.Expect(err).To(gomega.HaveOccurred(), "stdout: %s\nstderr: %s", stdout, stderr)
-	assertCompatibilityDiagnostic(fault, stdout+"\n"+stderr)
+	assertCompatibilityDiagnostic(fault, stdout+"\n"+stderr, fixture.minimumVersion)
 	calls := fixture.shim.calls()
 	foundFault := false
 	for _, call := range calls {
@@ -204,12 +212,11 @@ func (fixture *compatibilityFixture) rejectVersionFault(ctx context.Context, fau
 	fixture.assertPreservedState(ctx)
 }
 
-func assertCompatibilityDiagnostic(fault, output string) {
-	// The external provider may fail in Info; builtin fails in provisioning.
-	// Assert the underlying diagnostic without demanding identical RPC phases.
+func assertCompatibilityDiagnostic(fault, output, minimumVersion string) {
 	switch fault {
-	case "old":
-		gomega.Expect(output).To(gomega.ContainSubstring("v0.7.2 or newer is required"))
+	case "old", "old-external":
+		gomega.Expect(output).
+			To(gomega.ContainSubstring("v" + minimumVersion + " or newer is required"))
 	case "malformed":
 		gomega.Expect(output).To(gomega.ContainSubstring("unable to parse microsandbox version"))
 	case "failing":
@@ -299,6 +306,7 @@ if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
   if [ -n "$fault" ]; then
     case "$fault" in
       old) printf 'msb 0.7.1\n'; exit 0 ;;
+      old-external) printf 'msb 0.7.12\n'; exit 0 ;;
       malformed) printf 'msb not-a-version\n'; exit 0 ;;
       failing) printf '%s\n' 'injected version command failure' >&2; exit 42 ;;
       *) printf '%s\n' 'unknown test fault mode' >&2; exit 64 ;;

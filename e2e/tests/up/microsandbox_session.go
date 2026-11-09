@@ -19,7 +19,7 @@ const (
 	microsandboxResourceBuiltin  = provider.DeprecatedMicrosandboxSource
 	osLinux                      = "linux"
 	osDarwin                     = "darwin"
-	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.10"
+	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v1.1.2"
 	microsandboxRootUser         = "root"
 )
 
@@ -52,9 +52,9 @@ func checkMicrosandboxVersion(ctx context.Context) {
 	version, err := semver.ParseTolerant(
 		strings.TrimPrefix(strings.TrimSpace(string(output)), "msb "),
 	)
-	if err != nil || version.LT(semver.Version{Major: 0, Minor: 7, Patch: 7}) {
+	if err != nil || version.LT(semver.Version{Major: 0, Minor: 7, Patch: 13}) {
 		microsandboxUnavailable(
-			"microsandbox parity requires msb v0.7.7 or newer: " + string(output),
+			"microsandbox parity requires msb v0.7.13 or newer: " + string(output),
 		)
 	}
 }

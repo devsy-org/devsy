@@ -16,6 +16,15 @@
   "customManagers": [
     {
       "customType": "regex",
+      "description": "External MicroSandbox provider release used by the core e2e suites",
+      "managerFilePatterns": ["/^e2e/tests/up/microsandbox_session\\.go$/"],
+      "matchStrings": [
+        "github\\.com/(?<depName>devsy-org/devsy-provider-microsandbox)@(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)"
+      ],
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
       "description": "prek hook repositories in prek.toml (Renovate has no prek manager yet)",
       "managerFilePatterns": ["/(^|/)prek\\.toml$/"],
       "matchStrings": [

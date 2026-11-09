@@ -196,9 +196,15 @@ var _ = ginkgo.Describe("microsandbox ephemeral root parity",
 						stdout, stderr, err := f.DevsyUpStreams(ctx, workspace,
 							"--devcontainer", ".devcontainer.json", "--id-label", label)
 						gomega.Expect(err).To(gomega.HaveOccurred())
-						gomega.Expect(stdout + stderr).To(gomega.ContainSubstring(
+						diagnostic := gomega.ContainSubstring(
 							"tmpfs root disk size (2048 MiB) must not exceed sandbox memory (1024 MiB)",
-						))
+						)
+						if provider.source == microsandboxExternalProvider {
+							diagnostic = gomega.MatchRegexp(
+								`tmpfs (root|\*\*\*) disk size \(2048 MiB\) must not exceed sandbox memory \(1024 MiB\)`,
+							)
+						}
+						gomega.Expect(stdout + stderr).To(diagnostic)
 						assertMicrosandboxEphemeralAbsent(ctx, label)
 						configAfter, err := os.ReadFile(
 							configPath,

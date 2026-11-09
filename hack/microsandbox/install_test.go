@@ -24,18 +24,18 @@ const (
 	installerSudoCommand = "sudo"
 	installerTestCommand = "test"
 	installerTestURL     = "https://github.com/superradcompany/microsandbox/releases/download/" +
-		"v0.7.7/microsandbox-linux-x86_64.tar.gz"
+		"v0.7.13/microsandbox-linux-x86_64.tar.gz"
 )
 
 func TestInstallLinuxPinnedBundle(t *testing.T) {
-	require.Equal(t, "v0.7.7", microsandboxVersion)
+	require.Equal(t, "v0.7.13", microsandboxVersion)
 	require.Equal(t, installerTestURL, microsandboxURL)
 	require.Equal(
 		t,
-		"b3cc4a5e3f52dfdd938a6f67ac4a9a959ddfe304bab56de4964044b8613f01bb",
+		"c41aeefc050e97f42cd55ce55cc139efc13c6ee2dc371e8d30c325a305a5c3b1",
 		microsandboxSHA256,
 	)
-	require.Equal(t, "microsandbox-linux-x86_64-v0.7.7.tar.gz", microsandboxArchive)
+	require.Equal(t, "microsandbox-linux-x86_64-v0.7.13.tar.gz", microsandboxArchive)
 }
 
 func TestInstallLinuxBundleUsesCachedArchiveAndInstallsFiles(t *testing.T) {
@@ -47,7 +47,7 @@ func TestInstallLinuxBundleUsesCachedArchiveAndInstallsFiles(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, fixture.installer(context.Background(), runner.run,
 		commandOutput{stdout: &stdout, stderr: &stderr}).install(), stderr.String())
-	require.Equal(t, "MicroSandbox v0.7.7\n", stdout.String())
+	require.Equal(t, "MicroSandbox v0.7.13\n", stdout.String())
 	require.Equal(
 		t,
 		[]string{
@@ -229,7 +229,7 @@ func (runner *installerTestRunner) run(cmd *exec.Cmd) error {
 	case installerTarCommand:
 		return installerExtractFixture(cmd.Args[1:])
 	case installerBinaryName:
-		_, _ = io.WriteString(cmd.Stdout, "MicroSandbox v0.7.7\n")
+		_, _ = io.WriteString(cmd.Stdout, "MicroSandbox v0.7.13\n")
 	case installerSudoCommand:
 		return runner.checkKVM(cmd.Args[1:])
 	default:
@@ -283,7 +283,7 @@ func installerTarFixture(t *testing.T) []byte {
 		mode int64
 		body string
 	}{
-		{name: installerBinaryName, mode: 0o755, body: "#!/bin/sh\necho MicroSandbox v0.7.7\n"},
+		{name: installerBinaryName, mode: 0o755, body: "#!/bin/sh\necho MicroSandbox v0.7.13\n"},
 		{name: microsandboxLibrary, mode: 0o644, body: "library fixture"},
 	} {
 		require.NoError(t, writer.WriteHeader(&tar.Header{
@@ -307,7 +307,7 @@ func installerExtractFixture(args []string) error {
 	}
 	staging := args[3]
 	msb := filepath.Join(staging, installerBinaryName)
-	content := []byte("#!/bin/sh\necho MicroSandbox v0.7.7\n")
+	content := []byte("#!/bin/sh\necho MicroSandbox v0.7.13\n")
 	if err := os.WriteFile(msb, content, 0o600); err != nil {
 		return err
 	}

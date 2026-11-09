@@ -250,7 +250,7 @@ func (fixture *microsandboxMigrationFixture) migrate(ctx context.Context, stoppe
 	gomega.Expect(workspace.UID).To(gomega.Equal(fixture.uid))
 	gomega.Expect(workspace.Provider.Name).To(gomega.Equal("microsandbox"))
 	gomega.Expect(snapshotCompatibilityWorkspace(ctx, workspace)).
-		To(gomega.Equal(fixture.workspaceState))
+		To(gomega.Equal(expectedMigrationWorkspaceAfterUp(fixture.workspaceState)))
 	vmAfterUp := inspectSafeRecreate(ctx, fixture.sandbox)
 	gomega.Expect(vmAfterUp.Status).To(gomega.Equal("Running"))
 	gomega.Expect(vmAfterUp.CreatedAt).To(gomega.Equal(fixture.vmState.CreatedAt))
@@ -261,6 +261,23 @@ func (fixture *microsandboxMigrationFixture) migrate(ctx context.Context, stoppe
 		gomega.Expect(bootAfterUp).To(gomega.Equal(fixture.bootID))
 	}
 	fixture.assertMarkers(ctx)
+}
+
+func expectedMigrationWorkspaceAfterUp(
+	before compatibilityWorkspaceState,
+) compatibilityWorkspaceState {
+	var record map[string]json.RawMessage
+	framework.ExpectNoError(json.Unmarshal(before.RecordWithoutLastUsed, &record))
+	var providerConfig providerpkg.WorkspaceProviderConfig
+	framework.ExpectNoError(json.Unmarshal(record["provider"], &providerConfig))
+	providerConfig.Options["MSB_PATH"] = config.OptionValue{}
+	providerConfig.Options["MSB_LIBKRUNFW_PATH"] = config.OptionValue{}
+	providerData, err := json.Marshal(providerConfig)
+	framework.ExpectNoError(err)
+	record["provider"] = providerData
+	before.RecordWithoutLastUsed, err = json.Marshal(record)
+	framework.ExpectNoError(err)
+	return before
 }
 
 func (fixture *microsandboxMigrationFixture) assertMarkers(ctx context.Context) {
