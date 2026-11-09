@@ -134,9 +134,13 @@ func (cmd *LogsCmd) getWorkspaceClient(
 // injectLogsAgent injects the devsy agent binary over stdin/stdout and runs the
 // remote ssh-server that runLogsSession then connects to.
 func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
-	environment, err := logsAgentEnvironment(params.client)
+	info, err := localLogsAgentInfo(params.client)
 	if err != nil {
 		return err
+	}
+	var environment []string
+	if info != nil {
+		environment = provider.ToEnvironment(info.Workspace, info.Machine, info.Options, nil)
 	}
 
 	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
@@ -167,7 +171,9 @@ func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 	})
 }
 
-func logsAgentEnvironment(workspaceClient clientpkg.WorkspaceClient) ([]string, error) {
+func localLogsAgentInfo(
+	workspaceClient clientpkg.WorkspaceClient,
+) (*provider.AgentWorkspaceInfo, error) {
 	if !workspaceClient.AgentLocal() {
 		return nil, nil
 	}
@@ -178,7 +184,7 @@ func logsAgentEnvironment(workspaceClient clientpkg.WorkspaceClient) ([]string, 
 	if info.Agent.Driver != provider.ExternalDriver {
 		return nil, nil
 	}
-	return provider.ToEnvironment(info.Workspace, info.Machine, info.Options, nil), nil
+	return info, nil
 }
 
 type injectLogsAgentParams struct {
@@ -190,6 +196,10 @@ type injectLogsAgentParams struct {
 }
 
 func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) error {
+	info, err := localLogsAgentInfo(client)
+	if err != nil {
+		return err
+	}
 	sshClient, err := ssh.StdioClientWithUser(stdout, stdin, "")
 	if err != nil {
 		return err
@@ -201,6 +211,13 @@ func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) er
 		return err
 	}
 	defer func() { _ = session.Close() }()
+	if info != nil {
+		for name, value := range provider.ToOptions(info.Workspace, info.Machine, info.Options) {
+			if err := session.Setenv(name, value); err != nil {
+				return fmt.Errorf("set provider environment %q: %w", name, err)
+			}
+		}
+	}
 
 	agentCommand := fmt.Sprintf(
 		"%s internal agent workspace logs --context %s --id %s",

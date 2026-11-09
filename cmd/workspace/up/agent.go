@@ -272,6 +272,10 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 	if lifecycleOption != nil {
 		options = append(options, lifecycleOption)
 	}
+	var environment map[string]string
+	if wInfo.Agent.Driver == provider2.ExternalDriver && wInfo.Agent.Local == config.BoolTrue {
+		environment = provider2.ToOptions(wInfo.Workspace, wInfo.Machine, wInfo.Options)
+	}
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
 		Client: client,
 		AddPrivateKeys: devsyConfig.ContextOption(
@@ -280,6 +284,7 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		AgentInject: newAgentInjectFunc(client, wInfo),
 		SSHCommand:  sshTunnelCmd,
 		Command:     agentCommand,
+		EnvVars:     environment,
 		TunnelServerFunc: func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error) {
 			return tunnelserver.RunUpServer(ctx, tunnelserver.UpSpec{
 				Reader:                 stdout,

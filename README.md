@@ -10,7 +10,7 @@
 
 Devsy gives teams and their AI coding agents separate workspaces built from one standard definition. Workspaces run on Docker, Kubernetes, cloud providers, and SSH remote hosts.
 
-Local external providers keep their configured runtime options when you use `devsy workspace up --disable-daemon`. Provider options stay out of the workspace agent payload in this mode. Workspace logs use the configured runtime options as well.
+Local external providers keep their configured runtime options when you use `devsy workspace up --disable-daemon`, including when a host secret has the same environment name. Provider options stay out of the workspace agent payload in this mode. Workspace logs use the configured runtime options as well.
 
 <table align="center">
 <tr>

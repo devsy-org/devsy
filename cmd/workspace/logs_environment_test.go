@@ -56,9 +56,9 @@ func (s *logsEnvironmentSuite) TestRemoteInjectionDoesNotResolveOptions() {
 	c := newLogsEnvironmentClient(provider.ExternalDriver)
 	c.local = false
 	c.infoErr = errors.New("remote options must not be requested")
-	environment, err := logsAgentEnvironment(c)
+	info, err := localLogsAgentInfo(c)
 	s.Require().NoError(err)
-	s.Nil(environment)
+	s.Nil(info)
 	s.Zero(c.infoCalls)
 }
 

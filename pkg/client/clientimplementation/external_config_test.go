@@ -79,9 +79,15 @@ func (s *externalHandoffSuite) TestProviderOptionsStayOnHost() {
 				value   *provider.AgentWorkspaceInfo
 				options bool
 			}{{host, tc.hostOptions}, {payload, tc.payloadOptions}} {
-				s.Equal(info.options, len(info.value.Options) > 0)
-				s.Equal(info.options, len(info.value.Workspace.Provider.Options) > 0)
-				s.Equal(info.options, len(info.value.Machine.Provider.Options) > 0)
+				if info.options {
+					s.Equal(handoffOption("global"), info.value.Options)
+					s.Equal(handoffOption("workspace"), info.value.Workspace.Provider.Options)
+					s.Equal(handoffOption("machine"), info.value.Machine.Provider.Options)
+				} else {
+					s.Empty(info.value.Options)
+					s.Empty(info.value.Workspace.Provider.Options)
+					s.Empty(info.value.Machine.Provider.Options)
+				}
 			}
 			s.Equal(handoffOption("global"), client.devsyConfig.ProviderOptions(handoffProvider))
 			s.Equal(handoffOption("workspace"), client.providerWorkspace.Provider.Options)
