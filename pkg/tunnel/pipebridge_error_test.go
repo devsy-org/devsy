@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 
@@ -64,4 +65,11 @@ func (s *pipeBridgeErrorSuite) TestCancellationClassification() {
 			}
 		})
 	}
+}
+
+func (s *pipeBridgeErrorSuite) TestClosedHandlerAndTunnelFailureArePreserved() {
+	handlerErr := &os.PathError{Op: "write", Path: "pipe", Err: os.ErrClosed}
+	err := classifyBridgeErrors(context.Background(), io.EOF, handlerErr)
+	s.ErrorIs(err, io.EOF)
+	s.ErrorIs(err, os.ErrClosed)
 }

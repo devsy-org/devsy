@@ -130,3 +130,31 @@ func (s *localSourceSafetySuite) TestBareNameDoesNotReadLocalFile() {
 	s.NoError(err)
 	s.False(ok)
 }
+
+func (s *localSourceSafetySuite) TestDirectoryIsNotBinary() {
+	dir := s.T().TempDir()
+	_, err := verifyLocalBinary(dir, "")
+	s.Require().Error(err)
+}
+
+func (s *localSourceSafetySuite) TestGitHubSourcesDoNotResolveAsFiles() {
+	for _, source := range []string{"owner/repo", "owner/repo.yaml", "github.com/owner/repo.yml"} {
+		s.Run(source, func() {
+			_, ok, err := resolveFileProvider(source, &ProviderSource{})
+			s.NoError(err)
+			s.False(ok)
+		})
+	}
+}
+
+func (s *localSourceSafetySuite) TestGitHubSourceDoesNotReadLocalFile() {
+	dir, err := os.MkdirTemp(".", "owner-")
+	s.Require().NoError(err)
+	file := filepath.Join(dir, "repo")
+	s.Require().NoError(os.WriteFile(file, []byte("local"), 0o600))
+	s.T().Cleanup(func() { _ = os.Remove(file); _ = os.Remove(dir) })
+	source := filepath.Base(dir) + "/repo"
+	_, ok, err := resolveFileProvider(source, &ProviderSource{})
+	s.NoError(err)
+	s.False(ok)
+}

@@ -160,10 +160,14 @@ func isUnownedLocalBinary(source, target string) bool {
 }
 
 func verifyLocalBinary(binaryPath, checksum string) (string, error) {
+	info, err := os.Stat(binaryPath)
+	if err != nil {
+		return "", fmt.Errorf("stat provider binary %s: %w", binaryPath, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("provider binary %s is not a regular file", binaryPath)
+	}
 	if checksum == "" {
-		if _, err := os.Stat(binaryPath); err != nil {
-			return "", fmt.Errorf("stat provider binary %s: %w", binaryPath, err)
-		}
 		return binaryPath, nil
 	}
 	actual, err := hash.File(binaryPath)

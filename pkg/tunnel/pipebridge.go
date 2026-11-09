@@ -124,6 +124,9 @@ func classifyBridgeErrors(ctx context.Context, tunnelErr, handlerErr error) erro
 		(errors.Is(handlerErr, context.Canceled) || errors.Is(handlerErr, os.ErrClosed)) &&
 		tunnelErr != nil &&
 		!errors.Is(tunnelErr, context.Canceled) {
+		if errors.Is(handlerErr, os.ErrClosed) {
+			return errors.Join(tunnelErr, handlerErr)
+		}
 		return tunnelErr
 	}
 	return ClassifyTunnelErrors(tunnelErr, handlerErr)

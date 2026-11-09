@@ -196,7 +196,7 @@ func resolveFileProvider(
 	retSource *ProviderSource,
 ) ([]byte, bool, error) {
 	manifestPath := isManifestPath(providerSource)
-	if !manifestPath && filepath.Base(providerSource) == providerSource {
+	if isNonFileProvider(providerSource, manifestPath) {
 		return nil, false, nil
 	}
 	info, err := os.Stat(providerSource)
@@ -219,6 +219,18 @@ func resolveFileProvider(
 	}
 	retSource.File = absPath
 	return out, true, nil
+}
+
+func isNonFileProvider(source string, manifestPath bool) bool {
+	return isGitHubShorthand(source) || (!manifestPath && filepath.Base(source) == source)
+}
+
+func isGitHubShorthand(source string) bool {
+	if filepath.IsAbs(source) || strings.HasPrefix(source, "./") ||
+		strings.HasPrefix(source, "../") {
+		return false
+	}
+	return strings.HasPrefix(source, "github.com/") || strings.Count(source, "/") == 1
 }
 
 func isManifestPath(source string) bool {

@@ -257,13 +257,23 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 
 func commandFailure(err error, output string) error {
 	if output != "" {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return fmt.Errorf("run agent command failed: %w\n%s", err, output)
-		}
-		return fmt.Errorf("run agent command failed: %v\n%s", err, output)
+		return &agentCommandError{err: err, output: output}
 	}
 	return fmt.Errorf("run agent command failed: %w", err)
 }
+
+type agentCommandError struct {
+	err    error
+	output string
+}
+
+func (e *agentCommandError) Error() string {
+	return fmt.Sprintf("run agent command failed: %v\n%s", e.err, e.output)
+}
+
+func (e *agentCommandError) Unwrap() error { return e.err }
+
+func (e *agentCommandError) AgentDiagnostic() {}
 
 const (
 	maxLogLines = 25

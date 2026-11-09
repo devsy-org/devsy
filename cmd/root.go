@@ -271,7 +271,12 @@ func exitCodeForError(err error, machineMode bool) int {
 
 func passthroughExitCode(err error, machineMode bool) (int, bool) {
 	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
-		if machineMode {
+		if _, hasDiagnostic := errors.AsType[interface {
+			error
+			AgentDiagnostic()
+		}](err); hasDiagnostic {
+			renderCLIError(clierr.Classify(err), machineMode)
+		} else if machineMode {
 			renderCLIError(
 				clierr.Classify(fmt.Errorf(
 					"SSH command failed with exit code %d",

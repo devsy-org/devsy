@@ -29,7 +29,7 @@ func (s *commandErrorSuite) TestCommandFailure() {
 				s.ErrorIs(err, exit)
 			} else {
 				s.ErrorContains(err, tc.output)
-				s.NotErrorIs(err, exit)
+				s.ErrorIs(err, exit)
 			}
 		})
 	}
