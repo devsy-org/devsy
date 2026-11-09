@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const fixtureBinaryName = "binary"
+
 type localSourceSafetySuite struct{ suite.Suite }
 
 func TestLocalSourceSafety(t *testing.T) { suite.Run(t, new(localSourceSafetySuite)) }
@@ -106,7 +108,7 @@ func (s *localSourceSafetySuite) TestManifestPaths() {
 func (s *localSourceSafetySuite) TestRelativeSourceAtDestination() {
 	dir := s.T().TempDir()
 	s.Require().NoError(os.Mkdir(filepath.Join(dir, "test"), 0o750))
-	source := filepath.Join(dir, "test", "binary")
+	source := filepath.Join(dir, "test", fixtureBinaryName)
 	s.Require().NoError(os.WriteFile(source, []byte("local"), 0o600))
 	workingDir, err := os.Getwd()
 	s.Require().NoError(err)
@@ -150,7 +152,7 @@ func (s *localSourceSafetySuite) TestGitHubSourcesDoNotResolveAsFiles() {
 
 func (s *localSourceSafetySuite) TestMissingAbsoluteSourceUsesStoredCopy() {
 	dir := s.T().TempDir()
-	target := filepath.Join(dir, "test", "binary")
+	target := filepath.Join(dir, "test", fixtureBinaryName)
 	s.Require().NoError(os.MkdirAll(filepath.Dir(target), 0o750))
 	content := []byte("installed binary")
 	s.Require().NoError(os.WriteFile(target, content, 0o600))
@@ -159,7 +161,7 @@ func (s *localSourceSafetySuite) TestMissingAbsoluteSourceUsesStoredCopy() {
 		OS:       runtime.GOOS,
 		Arch:     runtime.GOARCH,
 		Path:     filepath.Join(dir, "missing"),
-		Name:     "binary",
+		Name:     fixtureBinaryName,
 		Checksum: checksum,
 	}
 	got, err := downloadBinaryForPlatform(
@@ -262,7 +264,7 @@ func (s *localSourceSafetySuite) TestExplicitNonFileAndHomePrefix() {
 func (s *localSourceSafetySuite) TestValidStoredCopySurvivesChangedRelativeSource() {
 	dir := s.T().TempDir()
 	source := filepath.Join(dir, "source")
-	stored := filepath.Join(dir, "storage", "test", "binary")
+	stored := filepath.Join(dir, "storage", "test", fixtureBinaryName)
 	s.Require().NoError(os.MkdirAll(filepath.Dir(stored), 0o750))
 	s.Require().NoError(os.WriteFile(source, []byte("changed"), 0o600))
 	content := []byte("installed")
@@ -275,7 +277,7 @@ func (s *localSourceSafetySuite) TestValidStoredCopySurvivesChangedRelativeSourc
 		OS:       runtime.GOOS,
 		Arch:     runtime.GOARCH,
 		Path:     relative,
-		Name:     "binary",
+		Name:     fixtureBinaryName,
 		Checksum: fmt.Sprintf("%x", sha256.Sum256(content)),
 	}
 	got, err := downloadBinaryForPlatform(
@@ -306,8 +308,8 @@ func (s *localSourceSafetySuite) TestDrivePathClassification() {
 
 func (s *localSourceSafetySuite) TestMissingSourceFallbackUsesLocalFilename() {
 	dir := s.T().TempDir()
-	source := filepath.Join(dir, "source", "binary")
-	stored := filepath.Join(dir, "test", "binary")
+	source := filepath.Join(dir, "source", fixtureBinaryName)
+	stored := filepath.Join(dir, "test", fixtureBinaryName)
 	s.Require().NoError(os.MkdirAll(filepath.Dir(stored), 0o750))
 	contents := []byte("installed")
 	s.Require().NoError(os.WriteFile(stored, contents, 0o600))
@@ -331,7 +333,7 @@ func (s *localSourceSafetySuite) TestValidLocalSources() {
 	for _, relative := range []bool{false, true} {
 		s.Run(fmt.Sprintf("relative=%t", relative), func() {
 			dir := s.T().TempDir()
-			source := filepath.Join(dir, "test", "binary")
+			source := filepath.Join(dir, "test", fixtureBinaryName)
 			s.Require().NoError(os.MkdirAll(filepath.Dir(source), 0o750))
 			contents := []byte("valid binary")
 			s.Require().NoError(os.WriteFile(source, contents, 0o600))
@@ -384,4 +386,61 @@ func (s *localSourceSafetySuite) TestHomeManifestSymlinkTraversal() {
 	resolvedOuter, err := filepath.EvalSymlinks(outer)
 	s.Require().NoError(err)
 	s.Equal(resolvedOuter, filepath.Dir(source.File))
+}
+
+func (s *localSourceSafetySuite) TestRelativeParentTraversalDoesNotAliasTarget() {
+	if runtime.GOOS == windowsOS {
+		s.T().Skip("symlinks may require elevated privileges on Windows")
+	}
+	dir := s.T().TempDir()
+	folder := filepath.Join(dir, "test")
+	outside := s.T().TempDir()
+	s.Require().NoError(os.MkdirAll(filepath.Join(outside, "nested"), 0o750))
+	s.Require().NoError(os.MkdirAll(folder, 0o750))
+	s.Require().
+		NoError(os.Symlink(filepath.Join(outside, "nested"), filepath.Join(folder, "alias")))
+	content := []byte("correct source")
+	s.Require().NoError(os.WriteFile(filepath.Join(outside, fixtureBinaryName), content, 0o600))
+	target := filepath.Join(folder, fixtureBinaryName)
+	s.Require().NoError(os.WriteFile(target, []byte("stale target"), 0o600))
+	cwd, err := os.Getwd()
+	s.Require().NoError(err)
+	alias, err := filepath.Rel(cwd, filepath.Join(folder, "alias"))
+	s.Require().NoError(err)
+	binary := &ProviderBinary{
+		OS:       runtime.GOOS,
+		Arch:     runtime.GOARCH,
+		Path:     alias + "/../binary",
+		Name:     fixtureBinaryName,
+		Checksum: fmt.Sprintf("%x", sha256.Sum256(content)),
+	}
+	got, err := downloadBinaryForPlatform(
+		context.Background(),
+		"TEST",
+		[]*ProviderBinary{binary},
+		dir,
+	)
+	s.Require().NoError(err)
+	s.Equal(target, got)
+	s.FileExists(filepath.Join(outside, fixtureBinaryName))
+}
+
+func (s *localSourceSafetySuite) TestMissingExternalRuntimeUsesVerifiedStoredCopy() {
+	dir := s.T().TempDir()
+	agent := externalAgentFixture()
+	binary := agent.Binaries["RUNTIME"][0]
+	binary.Path = filepath.Join(dir, "missing")
+	binary.Name = "runtime"
+	stored := filepath.Join(dir, "runtime", "runtime")
+	s.Require().NoError(os.MkdirAll(filepath.Dir(stored), 0o750))
+	fixture := &externalConfigSuite{}
+	fixture.SetT(s.T())
+	fixture.writeExecutable(stored, externalFixturePayload)
+	resolved, err := ResolveExternalRuntimeBinary(agent, dir)
+	s.Require().NoError(err)
+	s.Equal(stored, resolved)
+	s.Require().NoError(os.WriteFile(stored, []byte("tampered"), 0o600))
+	_, err = ResolveExternalRuntimeBinary(agent, dir)
+	s.Require().Error(err)
+	s.FileExists(stored)
 }

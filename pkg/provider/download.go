@@ -227,11 +227,6 @@ func sameLocalFile(source, target string) bool {
 	if isRemotePath(source) {
 		return false
 	}
-	sourcePath, sourceErr := filepath.Abs(source)
-	targetPath, targetErr := filepath.Abs(target)
-	if sourceErr == nil && targetErr == nil && sourcePath == targetPath {
-		return true
-	}
 	sourceInfo, err := os.Stat(source)
 	if err != nil {
 		return false
@@ -438,6 +433,12 @@ func getBinaryFileName(binary *ProviderBinary) string {
 
 func getBinaryPath(binary *ProviderBinary, targetFolder string) string {
 	if filepath.IsAbs(binary.Path) {
+		if _, err := os.Stat(binary.Path); errors.Is(err, os.ErrNotExist) {
+			target := localTargetPath(binary, targetFolder)
+			if _, targetErr := verifyLocalBinary(target, binary.Checksum); targetErr == nil {
+				return target
+			}
+		}
 		return binary.Path
 	}
 
