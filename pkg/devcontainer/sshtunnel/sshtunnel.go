@@ -257,6 +257,9 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 
 func commandFailure(err error, output string) error {
 	if output != "" {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("run agent command failed: %w\n%s", err, output)
+		}
 		return fmt.Errorf("run agent command failed: %v\n%s", err, output)
 	}
 	return fmt.Errorf("run agent command failed: %w", err)

@@ -120,3 +120,13 @@ func (s *localSourceSafetySuite) TestInvalidCachedBinaryIsRemoved() {
 	s.False(verifyOrRemoveBinary(file, strings.Repeat("0", 64)))
 	s.NoFileExists(file)
 }
+
+func (s *localSourceSafetySuite) TestBareNameDoesNotReadLocalFile() {
+	file, err := os.CreateTemp(".", "provider-name-")
+	s.Require().NoError(err)
+	s.Require().NoError(file.Close())
+	s.T().Cleanup(func() { _ = os.Remove(file.Name()) })
+	_, ok, err := resolveFileProvider(filepath.Base(file.Name()), &ProviderSource{})
+	s.NoError(err)
+	s.False(ok)
+}

@@ -195,8 +195,10 @@ func resolveFileProvider(
 	providerSource string,
 	retSource *ProviderSource,
 ) ([]byte, bool, error) {
-	manifestPath := filepath.IsAbs(providerSource) || strings.HasSuffix(providerSource, ".yaml") ||
-		strings.HasSuffix(providerSource, ".yml")
+	manifestPath := isManifestPath(providerSource)
+	if !manifestPath && filepath.Base(providerSource) == providerSource {
+		return nil, false, nil
+	}
 	info, err := os.Stat(providerSource)
 	if err != nil {
 		return resolveFileStatError(providerSource, manifestPath, err)
@@ -217,6 +219,11 @@ func resolveFileProvider(
 	}
 	retSource.File = absPath
 	return out, true, nil
+}
+
+func isManifestPath(source string) bool {
+	return filepath.IsAbs(source) || strings.HasSuffix(source, ".yaml") ||
+		strings.HasSuffix(source, ".yml")
 }
 
 func resolveFileStatError(source string, manifestPath bool, err error) ([]byte, bool, error) {

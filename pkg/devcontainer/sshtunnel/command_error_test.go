@@ -1,6 +1,7 @@
 package sshtunnel
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -32,4 +33,10 @@ func (s *commandErrorSuite) TestCommandFailure() {
 			}
 		})
 	}
+}
+
+func (s *commandErrorSuite) TestCommandFailurePreservesCancellation() {
+	err := commandFailure(context.Canceled, "agent diagnostic")
+	s.ErrorIs(err, context.Canceled)
+	s.ErrorContains(err, "agent diagnostic")
 }

@@ -120,8 +120,10 @@ func (pb *PipeBridge) RunPair(
 }
 
 func classifyBridgeErrors(ctx context.Context, tunnelErr, handlerErr error) error {
-	if ctx.Err() == nil && errors.Is(handlerErr, context.Canceled) &&
-		tunnelErr != nil && !errors.Is(tunnelErr, context.Canceled) {
+	if ctx.Err() == nil &&
+		(errors.Is(handlerErr, context.Canceled) || errors.Is(handlerErr, os.ErrClosed)) &&
+		tunnelErr != nil &&
+		!errors.Is(tunnelErr, context.Canceled) {
 		return tunnelErr
 	}
 	return ClassifyTunnelErrors(tunnelErr, handlerErr)
