@@ -195,15 +195,14 @@ func resolveFileProvider(
 	providerSource string,
 	retSource *ProviderSource,
 ) ([]byte, bool, error) {
-	if !strings.HasSuffix(providerSource, ".yaml") && !strings.HasSuffix(providerSource, ".yml") {
-		return nil, false, nil
+	manifestPath := strings.HasSuffix(providerSource, ".yaml") ||
+		strings.HasSuffix(providerSource, ".yml")
+	info, err := os.Stat(providerSource)
+	if err != nil {
+		return resolveFileStatError(providerSource, manifestPath, err)
 	}
-
-	if _, err := os.Stat(providerSource); err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
-		return nil, true, fmt.Errorf("stat provider file %q: %w", providerSource, err)
+	if !manifestPath && !info.Mode().IsRegular() {
+		return nil, false, nil
 	}
 
 	// #nosec G304 - providerSource is user-provided path for loading provider config
@@ -218,6 +217,20 @@ func resolveFileProvider(
 	}
 	retSource.File = absPath
 	return out, true, nil
+}
+
+func resolveFileStatError(source string, manifestPath bool, err error) ([]byte, bool, error) {
+	if !manifestPath {
+		return nil, false, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, true, fmt.Errorf("stat provider file %q: %w", source, err)
+	}
+	absPath, absErr := filepath.Abs(source)
+	if absErr != nil {
+		return nil, true, fmt.Errorf("resolve absolute path for %q: %w", source, absErr)
+	}
+	return nil, true, fmt.Errorf("provider manifest file not found: %s", absPath)
 }
 
 func downloadProvider(ctx context.Context, url string) ([]byte, error) {

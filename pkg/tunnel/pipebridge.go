@@ -103,7 +103,7 @@ func (pb *PipeBridge) RunPair(
 	// Run the two sides concurrently and wait for both to finish (or the slower
 	// side to be abandoned after joinTimeout).
 	tunnelErr, handlerErr := iojoin.Join(tunnelSide, handlerSide, joinTimeout, stop)
-	classifiedErr := ClassifyTunnelErrors(tunnelErr, handlerErr)
+	classifiedErr := classifyBridgeErrors(ctx, tunnelErr, handlerErr)
 	internalTunnelCancel := errors.Is(tunnelErr, context.Canceled) && ctx.Err() == nil
 	if classifiedErr == nil && ctx.Err() == nil && (tunnelErr == nil || internalTunnelCancel) {
 		log.Debug("pipe bridge completed successfully")
@@ -117,4 +117,12 @@ func (pb *PipeBridge) RunPair(
 		)
 	}
 	return classifiedErr
+}
+
+func classifyBridgeErrors(ctx context.Context, tunnelErr, handlerErr error) error {
+	if ctx.Err() == nil && errors.Is(handlerErr, context.Canceled) &&
+		tunnelErr != nil && !errors.Is(tunnelErr, context.Canceled) {
+		return tunnelErr
+	}
+	return ClassifyTunnelErrors(tunnelErr, handlerErr)
 }

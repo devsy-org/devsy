@@ -135,6 +135,9 @@ func downloadBinaryForPlatform(
 		// check if binary is correct
 		binaryTargetFolder := filepath.Join(targetFolder, strings.ToLower(binaryName))
 		binaryPath := getBinaryPath(binary, binaryTargetFolder)
+		if isUnownedLocalBinary(binary.Path, binaryPath) {
+			return verifyLocalBinary(binaryPath, binary.Checksum)
+		}
 		if verifyOrRemoveBinary(binaryPath, binary.Checksum) ||
 			fromCache(binary, binaryTargetFolder) {
 			return binaryPath, nil
@@ -150,6 +153,42 @@ func downloadBinaryForPlatform(
 	return "", fmt.Errorf(
 		"cannot download provider binary %s, because no binary location matched OS %s and ARCH %s",
 		binaryName, runtime.GOOS, runtime.GOARCH)
+}
+
+func isUnownedLocalBinary(source, target string) bool {
+	return filepath.IsAbs(source) || sameLocalFile(source, target)
+}
+
+func verifyLocalBinary(binaryPath, checksum string) (string, error) {
+	if checksum == "" {
+		if _, err := os.Stat(binaryPath); err != nil {
+			return "", fmt.Errorf("stat provider binary %s: %w", binaryPath, err)
+		}
+		return binaryPath, nil
+	}
+	actual, err := hash.File(binaryPath)
+	if err != nil {
+		return "", fmt.Errorf("hash provider binary %s: %w", binaryPath, err)
+	}
+	if !strings.EqualFold(actual, checksum) {
+		return "", fmt.Errorf(
+			"provider binary %s SHA-256 mismatch: expected %s, actual %s; regenerate the manifest",
+			binaryPath, checksum, actual,
+		)
+	}
+	return binaryPath, nil
+}
+
+func sameLocalFile(source, target string) bool {
+	if isRemotePath(source) {
+		return false
+	}
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		return false
+	}
+	targetInfo, err := os.Stat(target)
+	return err == nil && os.SameFile(sourceInfo, targetInfo)
 }
 
 func downloadWithRetry(

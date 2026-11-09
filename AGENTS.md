@@ -24,6 +24,8 @@ Toolchain is managed by mise. Install mise using `curl https://mise.run | sh`. I
 - **Run unit tests**: `mise run cli:test` (writes coverage to `dist/profile.out`; a `dist` directory is required, e.g. `mkdir -p dist`)
 - **Build development binary**: `mise run cli:build:dev` (output under `dist/devsy-dev_linux_amd64_v1/`)
 
+Local provider manifests can reference absolute binary paths. Regenerate their SHA-256 checksums after rebuilding. A checksum mismatch must preserve the source binary and report the expected and actual hashes.
+
 ### Desktop (Electron/Svelte 5) Development
 
 - **Verify desktop code quality**: `mise run desktop:check` (Svelte check and TypeScript compiler)

@@ -250,12 +250,16 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 	})
 	if err != nil {
 		_ = streamer.Close()
-		if out := streamer.ErrorOutput(); out != "" {
-			return fmt.Errorf("run agent command failed: %w\n%s", err, out)
-		}
-		return fmt.Errorf("run agent command failed: %w", err)
+		return commandFailure(err, streamer.ErrorOutput())
 	}
 	return nil
+}
+
+func commandFailure(err error, output string) error {
+	if output != "" {
+		return fmt.Errorf("run agent command failed: %v\n%s", err, output)
+	}
+	return fmt.Errorf("run agent command failed: %w", err)
 }
 
 const (

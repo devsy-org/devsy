@@ -29,6 +29,8 @@ Devsy gives teams and their AI coding agents separate workspaces built from one 
 </tr>
 </table>
 
+Local provider manifests can be installed with `devsy provider add /absolute/path/provider.yaml`. If a local binary checksum changes, regenerate the manifest with its current SHA-256 before starting a workspace. Devsy preserves the source binary when verification fails.
+
 ![Devsy Flow](sites/docs-devsy-sh/public/docs/media/devsy-flow.gif)
 
 <h2 align="center">Downloads</h2>
