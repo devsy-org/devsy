@@ -222,7 +222,14 @@ func resolveFileProvider(
 }
 
 func isNonFileProvider(source string, manifestPath bool) bool {
-	return isGitHubShorthand(source) || (!manifestPath && filepath.Base(source) == source)
+	if isGitHubShorthand(source) {
+		if !hasYAMLSuffix(source) {
+			return true
+		}
+		_, err := os.Stat(source)
+		return os.IsNotExist(err)
+	}
+	return !manifestPath && filepath.Base(source) == source
 }
 
 func isGitHubShorthand(source string) bool {
@@ -234,8 +241,11 @@ func isGitHubShorthand(source string) bool {
 }
 
 func isManifestPath(source string) bool {
-	return filepath.IsAbs(source) || strings.HasSuffix(source, ".yaml") ||
-		strings.HasSuffix(source, ".yml")
+	return filepath.IsAbs(source) || hasYAMLSuffix(source)
+}
+
+func hasYAMLSuffix(source string) bool {
+	return strings.HasSuffix(source, ".yaml") || strings.HasSuffix(source, ".yml")
 }
 
 func resolveFileStatError(source string, manifestPath bool, err error) ([]byte, bool, error) {

@@ -158,3 +158,16 @@ func (s *localSourceSafetySuite) TestGitHubSourceDoesNotReadLocalFile() {
 	s.NoError(err)
 	s.False(ok)
 }
+
+func (s *localSourceSafetySuite) TestRelativeYAMLManifest() {
+	dir, err := os.MkdirTemp(".", "manifest-dir-")
+	s.Require().NoError(err)
+	file := filepath.Join(dir, "provider.yaml")
+	s.Require().NoError(os.WriteFile(file, []byte("name: local\n"), 0o600))
+	s.T().Cleanup(func() { _ = os.Remove(file); _ = os.Remove(dir) })
+	source := filepath.Base(dir) + "/provider.yaml"
+	data, ok, err := resolveFileProvider(source, &ProviderSource{})
+	s.Require().NoError(err)
+	s.True(ok)
+	s.Equal("name: local\n", string(data))
+}
