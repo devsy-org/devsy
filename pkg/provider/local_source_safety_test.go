@@ -170,6 +170,11 @@ func (s *localSourceSafetySuite) TestMissingAbsoluteSourceUsesStoredCopy() {
 	binaries, err := GetBinariesFrom(config, dir)
 	s.Require().NoError(err)
 	s.Equal(target, binaries["TEST"])
+	s.Require().NoError(os.WriteFile(binary.Path, []byte("changed source"), 0o600))
+	_, err = GetBinariesFrom(config, dir)
+	s.Require().ErrorContains(err, "SHA-256 mismatch")
+	s.FileExists(binary.Path)
+	s.Require().NoError(os.Remove(binary.Path))
 	s.Require().NoError(os.WriteFile(target, []byte("changed"), 0o600))
 	_, err = GetBinariesFrom(config, dir)
 	s.Require().Error(err)
@@ -291,5 +296,61 @@ func (s *localSourceSafetySuite) TestDrivePathClassification() {
 	}
 	for _, tc := range cases {
 		s.Run(tc.path, func() { s.Equal(tc.want, isExplicitManifestPath(tc.path)) })
+	}
+}
+
+func (s *localSourceSafetySuite) TestMissingSourceFallbackUsesLocalFilename() {
+	dir := s.T().TempDir()
+	source := filepath.Join(dir, "source", "binary")
+	stored := filepath.Join(dir, "test", "binary")
+	s.Require().NoError(os.MkdirAll(filepath.Dir(stored), 0o750))
+	contents := []byte("installed")
+	s.Require().NoError(os.WriteFile(stored, contents, 0o600))
+	binary := &ProviderBinary{
+		OS:       runtime.GOOS,
+		Arch:     runtime.GOARCH,
+		Path:     source,
+		Checksum: fmt.Sprintf("%x", sha256.Sum256(contents)),
+	}
+	got, err := downloadBinaryForPlatform(
+		context.Background(),
+		"TEST",
+		[]*ProviderBinary{binary},
+		dir,
+	)
+	s.Require().NoError(err)
+	s.Equal(stored, got)
+}
+
+func (s *localSourceSafetySuite) TestValidLocalSources() {
+	for _, relative := range []bool{false, true} {
+		s.Run(fmt.Sprintf("relative=%t", relative), func() {
+			dir := s.T().TempDir()
+			source := filepath.Join(dir, "test", "binary")
+			s.Require().NoError(os.MkdirAll(filepath.Dir(source), 0o750))
+			contents := []byte("valid binary")
+			s.Require().NoError(os.WriteFile(source, contents, 0o600))
+			path := source
+			if relative {
+				cwd, err := os.Getwd()
+				s.Require().NoError(err)
+				path, err = filepath.Rel(cwd, source)
+				s.Require().NoError(err)
+			}
+			binary := &ProviderBinary{
+				OS:       runtime.GOOS,
+				Arch:     runtime.GOARCH,
+				Path:     path,
+				Checksum: fmt.Sprintf("%x", sha256.Sum256(contents)),
+			}
+			got, err := downloadBinaryForPlatform(
+				context.Background(),
+				"TEST",
+				[]*ProviderBinary{binary},
+				dir,
+			)
+			s.Require().NoError(err)
+			s.Equal(source, got)
+		})
 	}
 }

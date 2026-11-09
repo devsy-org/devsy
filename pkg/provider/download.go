@@ -97,10 +97,10 @@ func GetBinariesFrom(config *ProviderConfig, binariesDir string) (map[string]str
 
 func findBinaryPath(binary *ProviderBinary, targetFolder string) (string, error) {
 	binaryPath := getBinaryPath(binary, targetFolder)
-	_, err := os.Stat(binaryPath)
-	if filepath.IsAbs(binary.Path) && errors.Is(err, os.ErrNotExist) {
+	if filepath.IsAbs(binary.Path) {
 		return prepareLocalSource(binary, binaryPath, targetFolder)
 	}
+	_, err := os.Stat(binaryPath)
 	return binaryPath, err
 }
 
@@ -717,7 +717,7 @@ func downloadToTempFile(reader io.Reader) (string, error) {
 func localTargetPath(binary *ProviderBinary, targetFolder string) string {
 	name := binary.Name
 	if name == "" {
-		name = path.Base(binary.Path)
+		name = filepath.Base(binary.Path)
 	}
 	return filepath.Join(targetFolder, name)
 }
