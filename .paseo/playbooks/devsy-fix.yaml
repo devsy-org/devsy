@@ -35,8 +35,7 @@ steps:
       fix_hypothesis: { type: string }
     outcomes: [success, failure, already_resolved]
     on:
-      already_resolved: complete
-
+      already_resolved: end
   - id: approve_plan
     needs: [investigate]
     gate: "Root cause identified. Approve fix hypothesis to begin implementation, or request changes."
@@ -60,8 +59,7 @@ steps:
       commit_sha: { type: string }
     outcomes: [success, failure, already_resolved]
     on:
-      already_resolved: complete
-
+      already_resolved: end
   - id: approve_pr
     needs: [implement]
     gate: "Implementation complete and draft PR is ready. Review diff, CI, Greptile, and CodeRabbit. Approve to merge, or request changes."
