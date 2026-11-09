@@ -73,8 +73,8 @@ func GetBinariesFrom(config *ProviderConfig, binariesDir string) (map[string]str
 			}
 
 			targetFolder := filepath.Join(binariesDir, strings.ToLower(binaryName))
-			binaryPath := getBinaryPath(binary, targetFolder)
-			if _, err := os.Stat(binaryPath); err != nil {
+			binaryPath, err := findBinaryPath(binary, targetFolder)
+			if err != nil {
 				return nil, fmt.Errorf("error trying to find binary %s: %w", binaryName, err)
 			}
 
@@ -93,6 +93,15 @@ func GetBinariesFrom(config *ProviderConfig, binariesDir string) (map[string]str
 	}
 
 	return retBinaries, nil
+}
+
+func findBinaryPath(binary *ProviderBinary, targetFolder string) (string, error) {
+	binaryPath := getBinaryPath(binary, targetFolder)
+	_, err := os.Stat(binaryPath)
+	if filepath.IsAbs(binary.Path) && errors.Is(err, os.ErrNotExist) {
+		return prepareLocalSource(binary, binaryPath, targetFolder)
+	}
+	return binaryPath, err
 }
 
 func GetBinaries(context string, config *ProviderConfig) (map[string]string, error) {

@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -63,6 +64,9 @@ func (s *localSourceSafetySuite) TestChecksumMismatch() {
 				s.NoFileExists(getBinaryPath(binary, filepath.Join(dir, "storage", "test")))
 			} else {
 				s.FileExists(source)
+				got, readErr := hash.File(source)
+				s.Require().NoError(readErr)
+				s.Equal(actual, got)
 				s.ErrorContains(err, source)
 				s.ErrorContains(err, expected)
 				s.ErrorContains(err, actual)
@@ -117,6 +121,9 @@ func (s *localSourceSafetySuite) TestRelativeSourceAtDestination() {
 	_, err = downloadBinaryForPlatform(context.Background(), "TEST", []*ProviderBinary{binary}, dir)
 	s.Require().ErrorContains(err, "regenerate")
 	s.FileExists(source)
+	got, readErr := hash.File(source)
+	s.Require().NoError(readErr)
+	s.Equal(fmt.Sprintf("%x", sha256.Sum256([]byte("local"))), got)
 }
 
 func (s *localSourceSafetySuite) TestInvalidCachedBinaryIsRemoved() {
@@ -158,6 +165,14 @@ func (s *localSourceSafetySuite) TestMissingAbsoluteSourceUsesStoredCopy() {
 	)
 	s.Require().NoError(err)
 	s.Equal(target, got)
+	s.FileExists(target)
+	config := &ProviderConfig{Binaries: map[string][]*ProviderBinary{"TEST": {binary}}}
+	binaries, err := GetBinariesFrom(config, dir)
+	s.Require().NoError(err)
+	s.Equal(target, binaries["TEST"])
+	s.Require().NoError(os.WriteFile(target, []byte("changed"), 0o600))
+	_, err = GetBinariesFrom(config, dir)
+	s.Require().Error(err)
 	s.FileExists(target)
 }
 
