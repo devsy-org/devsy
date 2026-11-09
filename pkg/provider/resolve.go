@@ -254,11 +254,11 @@ func hasYAMLSuffix(source string) bool {
 }
 
 func resolveFileStatError(source string, manifestPath bool, err error) ([]byte, bool, error) {
-	if !manifestPath {
-		return nil, false, nil
-	}
 	if !os.IsNotExist(err) {
 		return nil, true, fmt.Errorf("stat provider file %q: %w", source, err)
+	}
+	if !manifestPath {
+		return nil, false, nil
 	}
 	absPath, absErr := filepath.Abs(source)
 	if absErr != nil {

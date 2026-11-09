@@ -259,3 +259,18 @@ func mustWorkingDir(s *localSourceSafetySuite) string {
 	s.Require().NoError(err)
 	return dir
 }
+
+func (s *localSourceSafetySuite) TestRelativeYAMLStatError() {
+	if runtime.GOOS == windowsOS {
+		s.T().Skip("Windows reports a missing path for a non-directory parent")
+	}
+	file, err := os.CreateTemp(".", "manifest-parent-")
+	s.Require().NoError(err)
+	s.Require().NoError(file.Close())
+	s.T().Cleanup(func() { _ = os.Remove(file.Name()) })
+	source := filepath.Join(filepath.Base(file.Name()), "provider.yaml")
+	_, ok, err := resolveFileProvider(source, &ProviderSource{})
+	s.True(ok)
+	s.Require().Error(err)
+	s.ErrorContains(err, "stat provider file")
+}
