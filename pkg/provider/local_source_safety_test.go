@@ -77,6 +77,7 @@ func (s *localSourceSafetySuite) TestManifestPaths() {
 	}{
 		{name: "missing yaml", path: filepath.Join(dir, "missing.yaml"), missing: true},
 		{name: "missing yml", path: filepath.Join(dir, "missing.yml"), missing: true},
+		{name: "missing absolute path", path: filepath.Join(dir, "missing"), missing: true},
 		{name: "existing without extension", path: existing},
 	} {
 		s.Run(tc.name, func() {
