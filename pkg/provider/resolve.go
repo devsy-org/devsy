@@ -221,12 +221,19 @@ func resolveFileProvider(
 		return nil, true, fmt.Errorf("read provider file %q: %w", providerSource, err)
 	}
 
-	absPath, err := filepath.Abs(filePath)
+	absPath, err := absoluteManifestPath(filePath)
 	if err != nil {
 		return nil, true, fmt.Errorf("resolve absolute path for %q: %w", providerSource, err)
 	}
 	retSource.File = absPath
 	return out, true, nil
+}
+
+func absoluteManifestPath(filePath string) (string, error) {
+	if filepath.IsAbs(filePath) {
+		return filePath, nil
+	}
+	return filepath.Abs(filePath)
 }
 
 func skipManifestSource(source string, explicit bool) bool {
@@ -259,7 +266,15 @@ func expandManifestPath(source string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve home directory: %w", err)
 	}
-	return filepath.Join(home, strings.TrimLeft(source[1:], `/\`)), nil
+	return strings.TrimRight(
+		home,
+		`/\`,
+	) + string(
+		filepath.Separator,
+	) + strings.TrimLeft(
+		source[1:],
+		`/\`,
+	), nil
 }
 
 func hasYAMLSuffix(source string) bool {

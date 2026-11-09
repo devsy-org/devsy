@@ -97,7 +97,7 @@ func GetBinariesFrom(config *ProviderConfig, binariesDir string) (map[string]str
 
 func findBinaryPath(binary *ProviderBinary, targetFolder string) (string, error) {
 	binaryPath := getBinaryPath(binary, targetFolder)
-	if filepath.IsAbs(binary.Path) {
+	if isUnownedLocalBinary(binary.Path, binaryPath) {
 		return prepareLocalSource(binary, binaryPath, targetFolder)
 	}
 	_, err := os.Stat(binaryPath)

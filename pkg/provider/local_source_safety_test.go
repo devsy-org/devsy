@@ -124,6 +124,11 @@ func (s *localSourceSafetySuite) TestRelativeSourceAtDestination() {
 	got, readErr := hash.File(source)
 	s.Require().NoError(readErr)
 	s.Equal(fmt.Sprintf("%x", sha256.Sum256([]byte("local"))), got)
+	binary.Checksum = fmt.Sprintf("%x", sha256.Sum256([]byte("expected")))
+	config := &ProviderConfig{Binaries: map[string][]*ProviderBinary{"TEST": {binary}}}
+	_, err = GetBinariesFrom(config, dir)
+	s.Require().ErrorContains(err, "SHA-256 mismatch")
+	s.FileExists(source)
 }
 
 func (s *localSourceSafetySuite) TestInvalidCachedBinaryIsRemoved() {
@@ -353,4 +358,27 @@ func (s *localSourceSafetySuite) TestValidLocalSources() {
 			s.Equal(source, got)
 		})
 	}
+}
+
+func (s *localSourceSafetySuite) TestHomeManifestSymlinkTraversal() {
+	if runtime.GOOS == windowsOS {
+		s.T().Skip("symlinks may require elevated privileges on Windows")
+	}
+	home := s.T().TempDir()
+	s.T().Setenv("HOME", home)
+	outer := s.T().TempDir()
+	s.Require().NoError(os.Mkdir(filepath.Join(outer, "nested"), 0o750))
+	s.Require().NoError(os.Symlink(filepath.Join(outer, "nested"), filepath.Join(home, "alias")))
+	expected := []byte("name: from-outer\n")
+	s.Require().NoError(os.WriteFile(filepath.Join(outer, "provider.yaml"), expected, 0o600))
+	s.Require().
+		NoError(os.WriteFile(filepath.Join(home, "provider.yaml"), []byte("name: from-home\n"), 0o600))
+	source := &ProviderSource{}
+	data, ok, err := resolveFileProvider("~/alias/../provider.yaml", source)
+	s.Require().NoError(err)
+	s.True(ok)
+	s.Equal(expected, data)
+	reloaded, err := hash.File(source.File)
+	s.Require().NoError(err)
+	s.Equal(fmt.Sprintf("%x", sha256.Sum256(expected)), reloaded)
 }
