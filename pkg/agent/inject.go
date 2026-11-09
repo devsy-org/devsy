@@ -39,6 +39,7 @@ var (
 
 // InjectOptions defines the parameters for injecting the Devsy agent into a remote environment.
 type InjectOptions struct {
+	LocalEnvironment []string
 	// Exec is the function used to execute commands on the remote machine. Required.
 	// nolint:staticcheck
 	Exec inject.ExecFunc
@@ -271,7 +272,7 @@ func injectLocally(ctx context.Context, opts *InjectOptions) error {
 		Stdin:   opts.Stdin,
 		Stdout:  opts.Stdout,
 		Stderr:  opts.Stderr,
-		Environ: nil,
+		Environ: opts.LocalEnvironment,
 	})
 }
 

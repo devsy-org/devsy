@@ -31,6 +31,7 @@ type ExecuteCommandOptions struct {
 	AgentInject      AgentInjectFunc
 	SSHCommand       string
 	Command          string
+	EnvVars          map[string]string
 	TunnelServerFunc TunnelServerFunc
 }
 
@@ -157,6 +158,7 @@ func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, erro
 			return runCommandInSSHTunnel(ctx, sshCommandParams{
 				session: sess,
 				command: p.opts.Command,
+				envVars: p.opts.EnvVars,
 			}, stdin, stdout)
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
@@ -235,9 +237,15 @@ func setupSSHAgentForwarding(sshClient *ssh.Client, sess *ssh.Session) {
 type sshCommandParams struct {
 	session *ssh.Session
 	command string
+	envVars map[string]string
 }
 
 func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdout *os.File) error {
+	for name, value := range p.envVars {
+		if err := p.session.Setenv(name, value); err != nil {
+			return fmt.Errorf("set provider environment %q: %w", name, err)
+		}
+	}
 	streamer := newSSHTunnelJSONLogStreamer()
 	defer func() { _ = streamer.Close() }()
 

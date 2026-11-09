@@ -59,6 +59,8 @@ The agent binary runs inside the (Linux) workspace, so it is a Linux binary (`de
 
 ## Testing and Headless Verification
 
+When testing local external providers with `--disable-daemon`, verify that startup and workspace logs pass configured options to the runtime subprocess and that the serialized agent payload excludes them. Include a host secret with the same name to check the local SSH session handoff. Provider options can contain host credentials.
+
 ### Headless / Xvfb Requirements
 
 Desktop tests run inside an Electron browser environment. In headless or container environments, Electron commands require an `xvfb-run` prefix to emulate a display server:

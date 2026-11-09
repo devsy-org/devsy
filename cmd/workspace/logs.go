@@ -14,6 +14,7 @@ import (
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -133,6 +134,15 @@ func (cmd *LogsCmd) getWorkspaceClient(
 // injectLogsAgent injects the devsy agent binary over stdin/stdout and runs the
 // remote ssh-server that runLogsSession then connects to.
 func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
+	info, err := localLogsAgentInfo(params.client)
+	if err != nil {
+		return err
+	}
+	var environment []string
+	if info != nil {
+		environment = provider.ToEnvironment(info.Workspace, info.Machine, info.Options, nil)
+	}
+
 	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
 		FallbackLevel:       log.LevelDebug,
 		DetectLevelPrefixes: true,
@@ -149,15 +159,32 @@ func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 				RawStdout: true,
 			})
 		},
-		IsLocal:         params.client.AgentLocal(),
-		RemoteAgentPath: params.client.AgentPath(),
-		DownloadURL:     params.client.AgentURL(),
-		Command:         params.sshServerCmd,
-		Stdin:           params.stdin,
-		Stdout:          params.stdout,
-		Stderr:          streamer,
-		Timeout:         params.timeout,
+		LocalEnvironment: environment,
+		IsLocal:          params.client.AgentLocal(),
+		RemoteAgentPath:  params.client.AgentPath(),
+		DownloadURL:      params.client.AgentURL(),
+		Command:          params.sshServerCmd,
+		Stdin:            params.stdin,
+		Stdout:           params.stdout,
+		Stderr:           streamer,
+		Timeout:          params.timeout,
 	})
+}
+
+func localLogsAgentInfo(
+	workspaceClient clientpkg.WorkspaceClient,
+) (*provider.AgentWorkspaceInfo, error) {
+	if !workspaceClient.AgentLocal() {
+		return nil, nil
+	}
+	_, info, err := workspaceClient.AgentInfo(provider.CLIOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get agent info for logs: %w", err)
+	}
+	if info.Agent.Driver != provider.ExternalDriver {
+		return nil, nil
+	}
+	return info, nil
 }
 
 type injectLogsAgentParams struct {
@@ -169,6 +196,10 @@ type injectLogsAgentParams struct {
 }
 
 func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) error {
+	info, err := localLogsAgentInfo(client)
+	if err != nil {
+		return err
+	}
 	sshClient, err := ssh.StdioClientWithUser(stdout, stdin, "")
 	if err != nil {
 		return err
@@ -180,6 +211,13 @@ func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) er
 		return err
 	}
 	defer func() { _ = session.Close() }()
+	if info != nil {
+		for name, value := range provider.ToOptions(info.Workspace, info.Machine, info.Options) {
+			if err := session.Setenv(name, value); err != nil {
+				return fmt.Errorf("set provider environment %q: %w", name, err)
+			}
+		}
+	}
 
 	agentCommand := fmt.Sprintf(
 		"%s internal agent workspace logs --context %s --id %s",

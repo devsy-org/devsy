@@ -33,7 +33,10 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-const noImageBackend = "none"
+const (
+	noImageBackend = "none"
+	fixtureSetting = "FIXTURE_SETTING"
+)
 
 type ProductionHostSuite struct{ suite.Suite }
 
@@ -83,10 +86,34 @@ func (s *ProductionHostSuite) TestPreparedRuntimeThroughCLIHelper() {
 	s.NotEmpty(host.Info().RuntimeName)
 	s.Require().NoError(host.Preflight(ctx, driver.PreflightOptions{}))
 	s.assertFactoryIntegration(ctx, workspace)
+	s.assertProviderEnvironment(ctx, workspace)
 
 	workspace.Origin = filepath.Join(origin, "missing")
 	_, err = external.New(ctx, workspace)
 	s.ErrorIs(err, os.ErrNotExist)
+}
+
+func (s *ProductionHostSuite) assertProviderEnvironment(
+	ctx context.Context,
+	workspace *provider.AgentWorkspaceInfo,
+) {
+	workspace = provider.CloneAgentWorkspaceInfo(workspace)
+	workspace.Agent.External.Args = append(workspace.Agent.External.Args, "--mode", "environment")
+	workspace.CLIOptions.DisableDaemon = true
+	workspace.Options = map[string]config.OptionValue{
+		"FIXTURE_TOKEN": {Value: "private-canary-value"},
+		fixtureSetting:  {Value: "global"},
+	}
+	workspace.Workspace.Provider.Options = map[string]config.OptionValue{
+		"FIXTURE_EMPTY": {},
+		fixtureSetting:  {Value: "workspace"},
+	}
+	workspace.Machine = &provider.Machine{Provider: provider.MachineProviderConfig{
+		Options: map[string]config.OptionValue{fixtureSetting: {Value: "machine"}},
+	}}
+	host, err := external.New(ctx, workspace)
+	s.Require().NoError(err)
+	s.Equal("machine", host.Info().RuntimeVersion)
 }
 
 func (s *ProductionHostSuite) assertFactoryIntegration(
