@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 const redactMask = "***"
@@ -63,8 +64,16 @@ func NewRedactor(secretsEnv []string) *Redactor {
 
 func redactionValues(value string) []string {
 	values := []string{value}
-	fragments := strings.FieldsFunc(value, func(r rune) bool { return r == '\n' || r == '\r' })
-	values = append(values, fragments...)
+	var decoded any
+	if strings.ContainsAny(value, "\r\n") && json.Unmarshal([]byte(value), &decoded) == nil {
+		values = append(values, jsonStringValues(decoded)...)
+	} else {
+		for _, fragment := range strings.FieldsFunc(value, func(r rune) bool { return r == '\n' || r == '\r' }) {
+			if hasRedactableContent(fragment) {
+				values = append(values, fragment)
+			}
+		}
+	}
 	for _, candidate := range append([]string(nil), values...) {
 		encoded, err := json.Marshal(candidate)
 		if err == nil && len(encoded) > 2 {
@@ -72,6 +81,30 @@ func redactionValues(value string) []string {
 		}
 	}
 	return values
+}
+
+func jsonStringValues(value any) []string {
+	var values []string
+	switch value := value.(type) {
+	case string:
+		if hasRedactableContent(value) {
+			values = append(values, value)
+		}
+	case []any:
+		for _, entry := range value {
+			values = append(values, jsonStringValues(entry)...)
+		}
+	case map[string]any:
+		for _, entry := range value {
+			values = append(values, jsonStringValues(entry)...)
+		}
+	}
+	return values
+}
+
+func hasRedactableContent(value string) bool {
+	return strings.IndexFunc(value, unicode.IsLetter) >= 0 ||
+		strings.IndexFunc(value, unicode.IsNumber) >= 0
 }
 
 // Combine returns a redactor that masks the values known by every input.
