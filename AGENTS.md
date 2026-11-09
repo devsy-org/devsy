@@ -86,10 +86,15 @@ Devsy uses [Ginkgo](https://onsi.github.io/ginkgo/) for Go E2E and integration t
 `e2e/tests/up/microsandbox_session.go` pins the external provider release. Renovate
 tracks that source. When updating it, check the provider's runtime requirement
 and qualified executable and firmware pair. Update `hack/microsandbox/install.go`,
-its tests, and the release bundle cache in `.github/workflows/pr-ci.yml` together.
+its tests, the external runtime minimum in `e2e/tests/up/microsandbox_session.go`,
+the release bundle cache in `.github/workflows/pr-ci.yml`, and the external
+provider minimum in `sites/docs-devsy-sh/content/docs/managing-providers/microsandbox.mdx`
+together. `TestMicrosandboxPins` checks those runtime values with
+`go test ./hack/microsandbox -run TestMicrosandboxPins`.
 The Linux CI bundle uses msb 0.7.13 and `libkrunfw.so.5.6.1`. Keep the
-built-in provider's compatibility expectations separate. The prefetch helper
-reads runtime asset names and checksums from the published provider manifest.
+built-in driver's ownership synchronization and explicit recreation minimums
+separate from the external provider minimum. The docs page lists each check.
+The prefetch helper reads runtime asset names and checksums from the published provider manifest.
 Run the real VM specs on Linux with KVM before claiming parity.
 
 ---

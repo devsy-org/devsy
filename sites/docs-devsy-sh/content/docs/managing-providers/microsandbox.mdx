@@ -7,7 +7,7 @@ The external MicroSandbox provider runs Devsy workspaces in microVMs using the M
 
 ## Requirements and installation
 
-Install Devsy v1.24.0 or later, which adds the `microsandbox` short name, and the [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli), version 0.7.13 or later. Check `msb --version` in the environment running Devsy. Docker is required for image builds.
+Install Devsy v1.24.0 or later, which adds the `microsandbox` short name, and a [MicroSandbox CLI](https://github.com/superradcompany/microsandbox#install-the-cli) that meets the external provider minimum below. Check `msb --version` in the environment running Devsy. Docker is required for image builds.
 
 Provider releases contain binaries for Linux amd64 and arm64, macOS arm64, and Windows amd64. Microsandbox VM tests have run only on macOS arm64. The Linux and Windows binaries are built and unit tested in CI, but have not been tested with a running VM. Linux needs accessible KVM.
 
@@ -19,6 +19,16 @@ devsy workspace up . --provider microsandbox
 `devsy provider add` installs the latest provider release but does not download the provider's runtime binary. Devsy downloads it from the provider's GitHub release at the first `devsy workspace up`, so that first run needs access to GitHub release downloads.
 
 A successful add initializes the provider and makes it the default for the current context. Workspaces that do not specify a provider use the default. To keep the current default, add `--use=false` to the add command, then run `devsy provider init microsandbox` before creating a workspace.
+
+## Runtime minimums
+
+| Driver and operation | Minimum msb version |
+| --- | --- |
+| External provider | 0.7.13 |
+| Built-in driver, workspace ownership synchronization | 0.7.2 |
+| Built-in driver, explicit recreation | 0.7.7 |
+
+The built-in ownership synchronization check does not run when `MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION=off`. The explicit recreation check still applies. Inspecting, stopping, and deleting existing built-in workspaces do not require these minimums.
 
 ## Existing built-in installations
 
@@ -62,7 +72,7 @@ An invalid option value stops the workspace from starting and Devsy shows the ca
 
 `msb` rejects a bind mount host path that goes through a symbolic link, such as `/tmp` or `/var` on macOS. The provider resolves symbolic links in bind mount host paths, so a project folder under `/tmp` works. Before provider v1.0.5, this failed with `bind mount host path ... goes through symlink /tmp`, and the workaround was the resolved path, for example `/private/tmp/project`.
 
-An `msb` older than 0.7.13 is rejected in two ways. When the provider creates a workspace, it fails with `MicroSandbox v0.7.13 or newer is required`. If a newer `msb` already upgraded the `MSB_HOME` database, the older `msb` refuses it first, and the error includes the `msb inspect` output, for example `database schema is newer than this msb binary`. In both cases, update `msb` with `msb self update`.
+The external provider rejects an `msb` older than its minimum in two ways. When it creates a workspace, the error states the required version. If a newer `msb` already upgraded the `MSB_HOME` database, the older `msb` refuses it first, and the error includes the `msb inspect` output, for example `database schema is newer than this msb binary`. In both cases, update `msb` with `msb self update`.
 
 Devsy does not put devcontainer environment and label values on the `msb` command line, where other local users could read them with `ps`. The provider passes them through a private runtime configuration file that refers to host variables. The values remain visible in `msb inspect` output, because `msb` stores them with the VM.
 

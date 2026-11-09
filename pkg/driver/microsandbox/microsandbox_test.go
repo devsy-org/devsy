@@ -220,10 +220,11 @@ func TestRunDevContainerRejectsOldRuntimeBeforeMutation(t *testing.T) {
 
 	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
 	if err == nil || !strings.Contains(
-		err.Error(), "v0.7.2 or newer is required to create or recreate",
+		err.Error(), "v0.7.2 or newer is required for workspace ownership synchronization",
 	) {
 		t.Fatalf("RunDevContainer error = %v, want provisioning version error", err)
 	}
+	require.ErrorContains(t, err, "built-in MicroSandbox driver")
 	assertProvisioningUnchanged(t, f)
 }
 
