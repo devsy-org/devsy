@@ -85,7 +85,7 @@ Devsy uses [Ginkgo](https://onsi.github.io/ginkgo/) for Go E2E and integration t
 tracks that source. When updating it, check the provider's runtime requirement
 and qualified executable and firmware pair. Update `hack/microsandbox/install.go`,
 its tests, and the release bundle cache in `.github/workflows/pr-ci.yml` together.
-The external provider v1.0.5 uses msb 0.7.13 and `libkrunfw.so.5.6.1`. Keep the
+The Linux CI bundle uses msb 0.7.13 and `libkrunfw.so.5.6.1`. Keep the
 built-in provider's compatibility expectations separate. The prefetch helper
 reads runtime asset names and checksums from the published provider manifest.
 Run the real VM specs on Linux with KVM before claiming parity.
