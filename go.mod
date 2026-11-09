@@ -29,7 +29,7 @@ require (
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.8.2+incompatible
 	github.com/docker/docker v28.5.2+incompatible
-	github.com/docker/docker-credential-helpers v0.9.9
+	github.com/docker/docker-credential-helpers v0.9.10
 	github.com/docker/go-connections v0.8.1
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/getsops/sops/v3 v3.13.3
