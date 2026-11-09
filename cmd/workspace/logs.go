@@ -14,6 +14,7 @@ import (
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -133,6 +134,11 @@ func (cmd *LogsCmd) getWorkspaceClient(
 // injectLogsAgent injects the devsy agent binary over stdin/stdout and runs the
 // remote ssh-server that runLogsSession then connects to.
 func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
+	environment, err := logsAgentEnvironment(params.client)
+	if err != nil {
+		return err
+	}
+
 	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
 		FallbackLevel:       log.LevelDebug,
 		DetectLevelPrefixes: true,
@@ -149,15 +155,30 @@ func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 				RawStdout: true,
 			})
 		},
-		IsLocal:         params.client.AgentLocal(),
-		RemoteAgentPath: params.client.AgentPath(),
-		DownloadURL:     params.client.AgentURL(),
-		Command:         params.sshServerCmd,
-		Stdin:           params.stdin,
-		Stdout:          params.stdout,
-		Stderr:          streamer,
-		Timeout:         params.timeout,
+		LocalEnvironment: environment,
+		IsLocal:          params.client.AgentLocal(),
+		RemoteAgentPath:  params.client.AgentPath(),
+		DownloadURL:      params.client.AgentURL(),
+		Command:          params.sshServerCmd,
+		Stdin:            params.stdin,
+		Stdout:           params.stdout,
+		Stderr:           streamer,
+		Timeout:          params.timeout,
 	})
+}
+
+func logsAgentEnvironment(workspaceClient clientpkg.WorkspaceClient) ([]string, error) {
+	if !workspaceClient.AgentLocal() {
+		return nil, nil
+	}
+	_, info, err := workspaceClient.AgentInfo(provider.CLIOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get agent info for logs: %w", err)
+	}
+	if info.Agent.Driver != provider.ExternalDriver {
+		return nil, nil
+	}
+	return provider.ToEnvironment(info.Workspace, info.Machine, info.Options, nil), nil
 }
 
 type injectLogsAgentParams struct {
