@@ -5,13 +5,12 @@ sidebar_label: Provider Agent
 
 Devsy runs a copy of its CLI as an agent in the provider environment. For a remote provider, it places the binary on the remote machine. A local provider uses the host's binary. The agent deploys the workspace, forwards credentials, runs the SSH server, and manages inactivity shutdown.
 
-Configure it in the `agent` section of `provider.yaml`. This example uses a local Docker daemon and stops idle containers after 10 minutes:
+Configure it in the `agent` section of `provider.yaml`. This example uses a local Docker daemon:
 
 ```yaml
 agent:
   local: true
   driver: docker
-  containerInactivityTimeout: 10m
 ```
 
 This section can use option values.
@@ -20,7 +19,7 @@ This section can use option values.
 - **local**: set to `true` when the agent runs on the user's machine. Leave it unset or `false` for a remote machine.
 - **driver**: how the container is deployed. One of `docker` (default), `kubernetes`, `apple`, `microsandbox`, `custom` or `external`. See [Drivers](./driver.mdx).
 - **inactivityTimeout**: how long an idle machine runs before Devsy stops it. Machine providers only.
-- **containerInactivityTimeout**: how long the container may stay idle before it stops. A Go duration such as `10m`. Empty or `0` disables it. Non-machine providers only.
+- **containerInactivityTimeout**: idle period monitored by the container daemon, as a Go duration such as `10m`. Empty or `0` disables the monitor. For Kubernetes, expiry ends the pod. A detached Docker or Podman daemon does not stop its container when the timer expires.
 - **injectGitCredentials**, **injectDockerCredentials**: whether to forward those credentials into the environment. The context's credential-forwarding settings override these provider values. See [Credentials](../developing-in-workspaces/credentials.mdx).
 - **exec.shutdown**: the command that stops the machine once it is idle. Option values are available in it.
 - **binaries**: helper binaries for `exec.shutdown`. Declare them under `agent.binaries`, using the format in [Provider binaries](./binaries.mdx).
@@ -45,7 +44,7 @@ Set `configureDaemon: false` when the provider owns the Docker daemon, including
 
 ## Stopping idle environments
 
-Devsy tracks connections and stops the environment after the timeout. It starts the environment again when the user returns. State survives only if the provider keeps the storage. A shutdown command that deletes the machine must keep workspace data elsewhere, for example on a persistent volume.
+Inactivity shutdown depends on the provider and driver. Start a stopped workspace with `devsy workspace up`. State survives only if the provider keeps the storage. A shutdown command that deletes the machine must keep workspace data elsewhere, for example on a persistent volume.
 
 ### Non-machine providers
 
