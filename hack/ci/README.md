@@ -61,6 +61,9 @@ gate.
   `e2e.ungated` with a reason. These include sub-labels exercised by gated
   suites and labels run manually or by another workflow.
 
+Keep suite paths aligned with implementation packages when code moves.
+Include runtime helpers such as `pkg/dockerinstall/**`, not only provider wrappers.
+
 `go test ./hack/ci` fails when a Ginkgo label or Go test package has no tier, or
 when the manifest names a label that no longer exists. New tests need no
 workflow edits.

@@ -259,7 +259,7 @@ e2e:
     - { group: integration, label: build, install_kind: true, requires_secret: true, pr_smoke: true, paths: ["e2e/tests/build/**", "cmd/workspace/build.go", "pkg/devcontainer/build/**", "pkg/devcontainer/feature/**", "pkg/dockerfile/**", "pkg/devcontainer/metadata/**", "pkg/devcontainer/buildkit/**", "pkg/driver/docker/**"] }
     - group: integration
       label: docker-install
-      paths: ["e2e/tests/dockerinstall/**", "pkg/docker/**", "pkg/driver/docker/**", "providers/docker/**"]
+      paths: ["e2e/tests/dockerinstall/**", "pkg/dockerinstall/**", "pkg/docker/**", "pkg/driver/docker/**", "providers/docker/**"]
       host_setup: [remove-docker]
       post_checks: [docker-installed]
     - { group: integration, label: exec, paths: ["e2e/tests/exec/**", "cmd/workspace/exec.go", "pkg/driver/docker/**", "pkg/ssh/**"] }

@@ -163,6 +163,22 @@ func (s *selectionSuite) TestEmbeddedLeafAndDocumentationSelection() {
 	}
 }
 
+func (s *selectionSuite) TestDockerInstallerChangesSelectInstallationSuite() {
+	m, err := LoadManifest()
+	s.Require().NoError(err)
+	opts := selectionOptions{
+		mode:         selectionModePR,
+		changedFiles: []string{"pkg/dockerinstall/install.go"},
+	}
+	for _, group := range []string{groupUnprivileged, groupIntegration, groupMicrosandbox} {
+		want := []string{}
+		if group == groupIntegration {
+			want = []string{"docker-install"}
+		}
+		s.Equal(want, selectionLabels(selectSuites(m, group, opts)), group)
+	}
+}
+
 func (s *selectionSuite) TestEmbeddedCoreSmokeTier() {
 	m, err := LoadManifest()
 	s.Require().NoError(err)
