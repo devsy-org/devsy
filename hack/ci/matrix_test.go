@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,9 +47,7 @@ e2e:
 
 const (
 	matrixProviderLabel  = "provider"
-	matrixUbuntuRunner   = "ubuntu-latest"
 	matrixPodmanRunner   = "ubuntu-24.04"
-	matrixWindowsRunner  = "windows-latest"
 	matrixWindowsTimeout = "900s"
 )
 
@@ -218,9 +218,17 @@ func (s *matrixSuite) TestPlainSuiteHasNoRuntime() {
 func (s *matrixSuite) TestSecretSuitesOmittedUnlessAvailable() {
 	m := s.testManifest()
 
-	withoutSecret, err := matrixOutput(m, groupIntegration, false)
+	withoutSecret, err := matrixOutput(
+		m,
+		groupIntegration,
+		selectionOptions{mode: selectionModeFull},
+	)
 	s.Require().NoError(err)
-	withSecret, err := matrixOutput(m, groupIntegration, true)
+	withSecret, err := matrixOutput(
+		m,
+		groupIntegration,
+		selectionOptions{secretAvailable: true, mode: selectionModeFull},
+	)
 	s.Require().NoError(err)
 
 	names := func(line string) []string {
@@ -249,21 +257,25 @@ func (s *matrixSuite) TestGroupFlagPrintsOnlyThatGroup() {
 	s.Equal("context", entries[0].Name)
 }
 
-func (s *matrixSuite) TestNoGroupPrintsFourLinesInOrder() {
+func (s *matrixSuite) TestNoGroupPrintsFiveLinesInOrder() {
 	code, stdout, stderr := s.runCLI()
 
 	s.Equal(0, code, stderr)
 	s.Empty(stderr)
 	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
-	s.Require().Len(lines, 4)
-	for i, name := range []string{"unit", groupUnprivileged, groupIntegration, groupMicrosandbox} {
+	s.Require().Len(lines, 5)
+	for i, name := range []string{"unit", matrixBuildGroup, groupUnprivileged, groupIntegration, groupMicrosandbox} {
 		s.True(strings.HasPrefix(lines[i], name+`={"include":[`), lines[i])
 		s.True(json.Valid([]byte(strings.TrimPrefix(lines[i], name+"="))), lines[i])
 	}
 }
 
 func (s *matrixSuite) TestUnitEntriesCarryOS() {
-	out, err := matrixOutput(s.testManifest(), matrixUnitGroup, false)
+	out, err := matrixOutput(
+		s.testManifest(),
+		matrixUnitGroup,
+		selectionOptions{mode: selectionModeFull},
+	)
 	s.Require().NoError(err)
 
 	s.Equal(`{"include":[`+
@@ -273,7 +285,11 @@ func (s *matrixSuite) TestUnitEntriesCarryOS() {
 
 func (s *matrixSuite) TestCompactJSONDoesNotEscapeHTML() {
 	m := s.testManifest()
-	line, err := matrixGroupJSON(m, groupIntegration, true)
+	line, err := matrixGroupJSON(
+		m,
+		groupIntegration,
+		selectionOptions{secretAvailable: true, mode: selectionModeFull},
+	)
 	s.Require().NoError(err)
 
 	s.Contains(line, `"name":"a<b&c"`)
@@ -283,7 +299,11 @@ func (s *matrixSuite) TestCompactJSONDoesNotEscapeHTML() {
 }
 
 func (s *matrixSuite) TestEmptyGroupEncodesAsArray() {
-	line, err := matrixGroupJSON(&Manifest{}, groupMicrosandbox, false)
+	line, err := matrixGroupJSON(
+		&Manifest{},
+		groupMicrosandbox,
+		selectionOptions{mode: selectionModeFull},
+	)
 
 	s.Require().NoError(err)
 	s.Equal(`{"include":[]}`, line)
@@ -304,6 +324,102 @@ func (s *matrixSuite) TestUnexpectedArgumentsExitWithUsageCode() {
 	s.Equal(2, code)
 	s.Empty(stdout)
 	s.Contains(stderr, "unexpected arguments: extra")
+}
+
+func (s *matrixSuite) TestUnknownModeAndMissingChangedFiles() {
+	code, stdout, stderr := s.runCLI("--mode=invalid")
+	s.Equal(2, code)
+	s.Empty(stdout)
+	s.Contains(stderr, errUnknownMatrixMode.Error())
+
+	code, stdout, stderr = s.runCLI(
+		"--mode=pr",
+		"--changed-files",
+		filepath.Join(s.T().TempDir(), "missing"),
+	)
+	s.Equal(1, code)
+	s.Empty(stdout)
+	s.Contains(stderr, "read changed files")
+}
+
+func (s *matrixSuite) TestFullModeMatrices() {
+	code, stdout, stderr := s.runCLI("--mode=full", "--secret-available=true")
+	s.Require().Equal(0, code, stderr)
+	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+	s.Require().Len(lines, 5)
+	m, err := LoadManifest()
+	s.Require().NoError(err)
+	build := matrixIncludeOf[matrixBuildEntry](s, strings.TrimPrefix(lines[1], "build="))
+	s.Equal([]matrixBuildEntry{
+		{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
+		{Runner: matrixMacOSRunner, JobTimeoutMinutes: 20},
+		{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45},
+	}, build)
+	for i, group := range []string{groupUnprivileged, groupIntegration, groupMicrosandbox} {
+		entries := matrixIncludeOf[matrixEntry](s, strings.TrimPrefix(lines[i+2], group+"="))
+		s.Len(entries, len(m.SuitesIn(group)))
+	}
+}
+
+func (s *matrixSuite) TestPRSelectionAndBuild() {
+	leaf := s.planChanges("cmd/mcp/serve.go\r\n\r\n")
+	s.Equal(`{"include":[]}`, leaf[groupUnprivileged])
+	s.Equal(`{"include":[]}`, leaf[groupMicrosandbox])
+	integration := matrixIncludeOf[matrixEntry](s, leaf[groupIntegration])
+	s.Require().Len(integration, 1)
+	s.Equal("mcp", integration[0].Name)
+	s.Equal(
+		[]matrixBuildEntry{{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45}},
+		matrixIncludeOf[matrixBuildEntry](s, leaf[matrixBuildGroup]),
+	)
+
+	core := s.planChanges("cmd/workspace/up/up.go\n")
+	m, err := LoadManifest()
+	s.Require().NoError(err)
+	for _, group := range []string{groupUnprivileged, groupIntegration, groupMicrosandbox} {
+		entries := matrixIncludeOf[matrixEntry](s, core[group])
+		for _, definition := range m.SuitesIn(group) {
+			if definition.PRSmoke {
+				s.Contains(entries, newMatrixEntry(definition))
+			}
+		}
+	}
+	var integrationNames []string
+	for _, entry := range matrixIncludeOf[matrixEntry](s, core[groupIntegration]) {
+		integrationNames = append(integrationNames, entry.Name)
+	}
+	s.Contains(integrationNames, "up-handle-errors")
+	s.Equal([]matrixBuildEntry{
+		{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
+		{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45},
+	}, matrixIncludeOf[matrixBuildEntry](s, core[matrixBuildGroup]))
+
+	for _, changes := range []string{"sites/docs-devsy-sh/README.md\n", ""} {
+		docs := s.planChanges(changes)
+		for _, group := range []string{matrixBuildGroup, groupUnprivileged, groupIntegration, groupMicrosandbox} {
+			s.Equal(`{"include":[]}`, docs[group])
+		}
+	}
+	full := s.planChanges("go.mod\n")
+	s.Equal([]matrixBuildEntry{
+		{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
+		{Runner: matrixMacOSRunner, JobTimeoutMinutes: 20, BuildMicrosandbox: true},
+		{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
+	}, matrixIncludeOf[matrixBuildEntry](s, full[matrixBuildGroup]))
+}
+
+func (s *matrixSuite) TestWindowsOnlySelectionRequiresLinuxBuild() {
+	m := s.testManifest()
+	m.E2E.Suites = []Suite{{
+		Group:  groupIntegration,
+		Label:  "windows-only",
+		Runner: matrixWindowsRunner,
+		Paths:  []string{"windows-only.go"},
+	}}
+	s.Equal([]matrixBuildEntry{
+		{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45},
+		{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45},
+	}, buildMatrixEntries(m, selectionOptions{mode: selectionModePR, changedFiles: []string{"windows-only.go"}}))
 }
 
 func (s *matrixSuite) TestEmbeddedManifestEntriesAreComplete() {
@@ -363,4 +479,24 @@ func matrixIncludeOf[T any](s *matrixSuite, line string) []T {
 	}
 	s.Require().NoError(json.Unmarshal([]byte(line), &doc))
 	return doc.Include
+}
+
+func (s *matrixSuite) planChanges(changes string) map[string]string {
+	path := filepath.Join(s.T().TempDir(), "changes")
+	s.T().Helper()
+	s.Require().NoError(os.WriteFile(path, []byte(changes), 0o600))
+	code, stdout, stderr := s.runCLI(
+		"--mode=pr",
+		"--secret-available=true",
+		"--changed-files",
+		path,
+	)
+	s.Require().Equal(0, code, stderr)
+	output := make(map[string]string)
+	for line := range strings.SplitSeq(strings.TrimSuffix(stdout, "\n"), "\n") {
+		name, value, ok := strings.Cut(line, "=")
+		s.Require().True(ok)
+		output[name] = value
+	}
+	return output
 }
