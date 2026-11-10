@@ -63,6 +63,7 @@ gate.
 
 Keep suite paths aligned with implementation packages when code moves.
 Include runtime helpers such as `pkg/dockerinstall/**`, not only provider wrappers.
+Include direct compile dependencies in native host job filters.
 
 `go test ./hack/ci` fails when a Ginkgo label or Go test package has no tier, or
 when the manifest names a label that no longer exists. New tests need no

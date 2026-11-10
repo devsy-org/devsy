@@ -78,6 +78,7 @@ jobs:
               - 'pkg/log/**'
               - 'pkg/http/**'
               - 'pkg/port/**'
+              - 'pkg/netstat/**'
               - 'pkg/random/**'
               - 'pkg/gitsshsigning/**'
               - 'pkg/transport/**'
