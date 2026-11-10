@@ -60,15 +60,25 @@ steps:
     outcomes: [success, failure, already_resolved]
     on:
       already_resolved: end
-  - id: approve_pr
+  - id: wait_ci
     needs: [implement]
-    gate: "Implementation complete and draft PR is ready. Review diff, CI, Greptile, and CodeRabbit. Approve to merge, or request changes."
+    script: wait_ci.sh
+    poll: 30s
+    timeout: 45m
+    inputs:
+      pr_url: "{{ steps.implement.outputs.pr_url }}"
+    outcomes: [success, failure]
+    on:
+      failure: { goto: implement }
+
+  - id: approve_pr
+    needs: [wait_ci]
+    gate: "All CI status checks have passed and PR is green. Review and approve to merge, or request changes."
     choices:
       approved: { label: Approve and Merge, color: success }
       changes_requested: { label: Request Changes, comment: required, color: danger }
     on:
       changes_requested: { goto: implement }
-
   - id: merge
     needs: [approve_pr]
     role: fix-worker
