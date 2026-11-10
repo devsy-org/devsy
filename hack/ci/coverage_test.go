@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -145,6 +146,37 @@ func (s *coverageSuite) TestUnitEntriesExistOnDisk() {
 			"remove or fix these entries in hack/ci/suites.yaml:\n%s",
 			strings.Join(missing, "\n"),
 		)
+	}
+}
+
+func (s *coverageSuite) TestEverySuiteHasSelectionPaths() {
+	s.NotEmpty(s.manifest.Selection.FullRunPaths)
+	s.NotEmpty(s.manifest.Selection.CorePaths)
+	patterns := append([]string{}, s.manifest.Selection.FullRunPaths...)
+	patterns = append(patterns, s.manifest.Selection.CorePaths...)
+	for _, selected := range s.manifest.E2E.Suites {
+		s.NotEmpty(selected.Paths, "%s/%s needs selection paths", selected.Runner, selected.Label)
+		patterns = append(patterns, selected.Paths...)
+	}
+	for _, pattern := range patterns {
+		normalized := normalizeSelectionPath(pattern)
+		prefix := normalized
+		wildcard := strings.IndexAny(normalized, "*?[")
+		if wildcard >= 0 {
+			prefix = path.Dir(normalized[:wildcard])
+		}
+		info, err := os.Stat(filepath.Join(s.root, filepath.FromSlash(prefix)))
+		if !s.NoError(err, "selection pattern %q has missing static prefix %q", pattern, prefix) {
+			continue
+		}
+		if wildcard >= 0 {
+			s.True(
+				info.IsDir(),
+				"selection pattern %q has a non-directory static prefix %q",
+				pattern,
+				prefix,
+			)
+		}
 	}
 }
 

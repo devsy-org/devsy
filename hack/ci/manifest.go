@@ -38,12 +38,19 @@ var (
 	errDuplicateSuite = errors.New("duplicate suite")
 	errInvalidSuite   = errors.New("invalid suite")
 	errInvalidStep    = errors.New("invalid unit step")
+	errInvalidGlob    = errors.New("invalid selection glob")
 )
 
 // Manifest is the parsed hack/ci/suites.yaml.
 type Manifest struct {
-	Unit UnitTier `yaml:"unit"`
-	E2E  E2ETier  `yaml:"e2e"`
+	Unit      UnitTier        `yaml:"unit"`
+	E2E       E2ETier         `yaml:"e2e"`
+	Selection SelectionConfig `yaml:"selection"`
+}
+
+type SelectionConfig struct {
+	FullRunPaths []string `yaml:"full_run_paths"`
+	CorePaths    []string `yaml:"core_paths"`
 }
 
 // UnitTier describes how Go unit tests run.
@@ -114,9 +121,11 @@ type FocusedCheck struct {
 // Suite is one Ginkgo label executed as one CI job. After Resolve, every
 // inherited field is populated.
 type Suite struct {
-	Group  string `yaml:"group"`
-	Label  string `yaml:"label"`
-	Runner string `yaml:"runner"`
+	Group   string   `yaml:"group"`
+	Label   string   `yaml:"label"`
+	Runner  string   `yaml:"runner"`
+	PRSmoke bool     `yaml:"pr_smoke"`
+	Paths   []string `yaml:"paths"`
 	// Privileged selects sudo for the e2e binary on Linux. Nil inherits the group.
 	Privileged        *bool          `yaml:"privileged"`
 	TestTimeout       string         `yaml:"test_timeout"`
@@ -220,6 +229,9 @@ func (s Suite) validate() error {
 	case s.requiresSpecCount() && s.ExpectedSpecCount <= 0:
 		return fmt.Errorf("%w: %s needs expected_spec_count", errInvalidSuite, s.Label)
 	}
+	if err := validateGlobs(s.Paths); err != nil {
+		return fmt.Errorf("%w: %s paths: %w", errInvalidSuite, s.Label, err)
+	}
 	if err := s.validateFixtures(); err != nil {
 		return err
 	}
@@ -312,6 +324,12 @@ func (m *Manifest) resolve() error {
 }
 
 func (m *Manifest) validate() error {
+	if err := validateGlobs(m.Selection.FullRunPaths); err != nil {
+		return fmt.Errorf("full_run_paths: %w", err)
+	}
+	if err := validateGlobs(m.Selection.CorePaths); err != nil {
+		return fmt.Errorf("core_paths: %w", err)
+	}
 	seen := map[string]bool{}
 	for _, s := range m.E2E.Suites {
 		key := s.Runner + "/" + s.Label
