@@ -15,19 +15,20 @@ import (
 )
 
 const (
-	fakeModeEnv    = "DEVSY_PROVIDER_UPDATE_CI_FAKE_MODE"
-	cliModeEnv     = "DEVSY_PROVIDER_UPDATE_CI_RUN_CLI"
-	fakeExitEnv    = "DEVSY_PROVIDER_UPDATE_CI_FAKE_EXIT"
-	attemptsEnv    = "DEVSY_PROVIDER_UPDATE_CI_ATTEMPTS_FILE"
-	largeLineEnv   = "DEVSY_PROVIDER_UPDATE_CI_LARGE_LINE"
-	fakeGoBasename = "go"
-	missingMode    = "missing"
-	skipMode       = "skip"
-	noPassMode     = "no-pass"
-	multipleMode   = "multiple"
-	crashOnceMode  = "crash-once"
-	crashTwiceMode = "crash-twice"
-	crashFailMode  = "crash-after-failure"
+	fakeModeEnv     = "DEVSY_PROVIDER_UPDATE_CI_FAKE_MODE"
+	cliModeEnv      = "DEVSY_PROVIDER_UPDATE_CI_RUN_CLI"
+	fakeExitEnv     = "DEVSY_PROVIDER_UPDATE_CI_FAKE_EXIT"
+	attemptsEnv     = "DEVSY_PROVIDER_UPDATE_CI_ATTEMPTS_FILE"
+	largeLineEnv    = "DEVSY_PROVIDER_UPDATE_CI_LARGE_LINE"
+	fakeGoBasename  = "go"
+	missingMode     = "missing"
+	skipMode        = "skip"
+	noPassMode      = "no-pass"
+	multipleMode    = "multiple"
+	crashOnceMode   = "crash-once"
+	crashTwiceMode  = "crash-twice"
+	crashThriceMode = "crash-thrice"
+	crashFailMode   = "crash-after-failure"
 )
 
 var fixtureTests = []testID{
@@ -49,7 +50,12 @@ var fakeCaseExceptions = map[string]map[int][]string{
 	},
 }
 
-var fakeCrashCounts = map[string]int{crashOnceMode: 1, crashTwiceMode: 2, crashFailMode: 1}
+var fakeCrashCounts = map[string]int{
+	crashOnceMode:   1,
+	crashTwiceMode:  2,
+	crashThriceMode: 3,
+	crashFailMode:   1,
+}
 
 func TestMain(m *testing.M) {
 	if isFakeGoInvocation(os.Args[0]) {
@@ -358,19 +364,33 @@ func TestCLIRetriesRuntimeCrashOnce(t *testing.T) {
 	if got := countAttempts(t, attempts); got != 2 {
 		t.Fatalf("attempts = %d, want 2", got)
 	}
-	if !strings.Contains(stderr, "::warning::") || !strings.Contains(stderr, "attempt 2 of 2") {
+	if !strings.Contains(stderr, "::warning::") || !strings.Contains(stderr, "attempt 2 of 3") {
+		t.Fatalf("retry warning missing: %q", stderr)
+	}
+}
+
+func TestCLIRetriesTwoRuntimeCrashes(t *testing.T) {
+	attempts := setUpFakeGoWithAttempts(t, crashTwiceMode, "0")
+	_, stderr, code := runCLIProcess(t, "--artifacts-dir", t.TempDir())
+	if code != 0 {
+		t.Fatalf("CLI failed after two recoverable crashes: %q", stderr)
+	}
+	if got := countAttempts(t, attempts); got != 3 {
+		t.Fatalf("attempts = %d, want 3", got)
+	}
+	if !strings.Contains(stderr, "attempt 3 of 3") {
 		t.Fatalf("retry warning missing: %q", stderr)
 	}
 }
 
 func TestCLIFailsWhenRuntimeCrashRepeats(t *testing.T) {
-	attempts := setUpFakeGoWithAttempts(t, crashTwiceMode, "0")
+	attempts := setUpFakeGoWithAttempts(t, crashThriceMode, "0")
 	_, _, code := runCLIProcess(t, "--artifacts-dir", t.TempDir())
 	if code != 2 {
 		t.Fatalf("CLI exit code = %d, want 2", code)
 	}
-	if got := countAttempts(t, attempts); got != 2 {
-		t.Fatalf("attempts = %d, want 2", got)
+	if got := countAttempts(t, attempts); got != 3 {
+		t.Fatalf("attempts = %d, want 3", got)
 	}
 }
 
