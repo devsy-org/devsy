@@ -63,7 +63,10 @@ var (
 	_ driver.ProvisioningPreflighter = (*microsandboxDriver)(nil)
 )
 
-var minimumMicrosandboxVersion = semver.MustParse("0.7.2")
+var (
+	minimumBuiltinMicrosandboxVersion         = semver.MustParse("0.7.2")
+	minimumBuiltinMicrosandboxRecreateVersion = semver.MustParse("0.7.7")
+)
 
 var microsandboxVersionPattern = regexp.MustCompile(
 	`(?:^|[^0-9])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)`,
@@ -331,12 +334,13 @@ func (d *microsandboxDriver) ProvisioningPreflight(ctx context.Context) error {
 	if err != nil {
 		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
 	}
-	if version.LT(minimumMicrosandboxVersion) {
+	if version.LT(minimumBuiltinMicrosandboxVersion) {
 		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: fmt.Errorf(
-			"microsandbox %s is too old for Devsy workspace ownership synchronization; "+
-				"v%s or newer is required to create or recreate a workspace. "+
+			"msb %s is too old for the built-in MicroSandbox driver; "+
+				"v%s or newer is required for workspace ownership synchronization. "+
 				"Update with `msb self update`",
-			version, minimumMicrosandboxVersion,
+			version,
+			minimumBuiltinMicrosandboxVersion,
 		)}
 	}
 	return nil

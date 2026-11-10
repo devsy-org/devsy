@@ -103,7 +103,7 @@ func newCompatibilityFixture(
 		minimumVersion: "0.7.2",
 	}
 	if selection.runtime == providerpkg.ExternalDriver {
-		fixture.minimumVersion = "0.7.13"
+		fixture.minimumVersion = microsandboxExternalMinimumVersion
 	}
 	fixture.sandbox = "devsy-" + fixture.uid
 	fixture.label = "devsy.compatibility-parity=" + fixture.uid
