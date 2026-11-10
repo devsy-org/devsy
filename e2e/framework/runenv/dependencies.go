@@ -30,19 +30,17 @@ type Command struct {
 	Dir                string
 	Timeout            time.Duration
 	CancelProcessGroup bool
-	// Stdout and Stderr optionally receive output live, in addition to the
-	// tail-capped capture returned in CommandResult.
-	Stdout io.Writer
-	Stderr io.Writer
+	Stdout             io.Writer
+	Stderr             io.Writer
 }
 
-// CommandResult is the bounded outcome of a Command. Stdout and Stderr hold
-// only the last maxCaptureBytes of output.
 type CommandResult struct {
-	ExitCode int // -1 when the process did not exit normally
-	Stdout   string
-	Stderr   string
-	TimedOut bool
+	ExitCode      int // -1 when the process did not exit normally
+	Stdout        string
+	Stderr        string
+	StdoutDropped int64
+	StderrDropped int64
+	TimedOut      bool
 }
 
 // Runner executes a Command. A nonzero exit status is reported through

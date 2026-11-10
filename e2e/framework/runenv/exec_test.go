@@ -24,14 +24,21 @@ func TestHelperProcess(t *testing.T) {
 		t.Skip("helper process only")
 	}
 	switch mode {
+	case "success":
+		_, _ = fmt.Fprint(os.Stdout, "stdout")
+		_, _ = fmt.Fprint(os.Stderr, "stderr")
 	case "exit3":
 		fmt.Fprint(os.Stderr, "bad things")
 		os.Exit(3)
+	case "output-sleep":
+		_, _ = fmt.Fprint(os.Stderr, "diagnostic")
+		_, _ = fmt.Fprint(os.Stdout, "ready")
+		time.Sleep(time.Minute)
 	case "sleep":
 		time.Sleep(time.Minute)
 	case "flood":
 		chunk := strings.Repeat("x", 1024)
-		for range 4 * maxCaptureBytes / 1024 {
+		for range 256 {
 			_, _ = os.Stdout.WriteString(chunk)
 		}
 		_, _ = os.Stdout.WriteString("END")
@@ -54,6 +61,21 @@ func helperCommand(mode string, extraEnv ...string) Command {
 	}
 }
 
+func (s *ExecSuite) TestSuccessCapturesBothStreams() {
+	var stdout, stderr bytes.Buffer
+	cmd := helperCommand("success")
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	res, err := (ExecRunner{}).Run(context.Background(), cmd)
+	s.Require().NoError(err)
+	s.Zero(res.ExitCode)
+	s.Equal("stdout", res.Stdout)
+	s.Equal("stderr", res.Stderr)
+	s.Equal(res.Stdout, stdout.String())
+	s.Equal(res.Stderr, stderr.String())
+	s.Zero(res.StdoutDropped)
+	s.Zero(res.StderrDropped)
+}
+
 func (s *ExecSuite) TestExitCodeAndStderr() {
 	res, err := ExecRunner{}.Run(context.Background(), helperCommand("exit3"))
 	s.Require().NoError(err)
@@ -73,17 +95,17 @@ func (s *ExecSuite) TestTimeoutKillsChild() {
 	s.Less(time.Since(start), 20*time.Second)
 }
 
-func (s *ExecSuite) TestCaptureIsTailCappedAndLiveTee() {
+func (s *ExecSuite) TestFullCaptureAndLiveTee() {
 	var live bytes.Buffer
 	cmd := helperCommand("flood")
 	cmd.Stdout = &live
 	res, err := ExecRunner{}.Run(context.Background(), cmd)
 	s.Require().NoError(err)
 	s.Zero(res.ExitCode)
-	s.LessOrEqual(len(res.Stdout), maxCaptureBytes+64)
-	s.Contains(res.Stdout, "earlier bytes dropped")
+	s.Equal(strings.Repeat("x", 256*1024)+"END", res.Stdout)
 	s.True(strings.HasSuffix(res.Stdout, "END"))
-	s.Greater(live.Len(), maxCaptureBytes, "live writer sees everything")
+	s.Equal(res.Stdout, live.String())
+	s.Zero(res.StdoutDropped)
 }
 
 func (s *ExecSuite) TestEnvOverlayReplacesParent() {
@@ -106,16 +128,6 @@ func (s *ExecSuite) TestStartFailureAndCancel() {
 
 	_, err = ExecRunner{}.Run(context.Background(), Command{})
 	s.Require().Error(err)
-}
-
-func (s *ExecSuite) TestTailBuffer() {
-	tb := newTailBuffer(8)
-	_, _ = tb.Write([]byte("abcd"))
-	s.Equal("abcd", tb.String())
-	_, _ = tb.Write([]byte("efghij"))
-	s.Equal("[2 earlier bytes dropped]\ncdefghij", tb.String())
-	_, _ = tb.Write([]byte("0123456789"))
-	s.Equal("[12 earlier bytes dropped]\n23456789", tb.String())
 }
 
 func (s *ExecSuite) TestOverlayEnv() {
@@ -183,4 +195,44 @@ func (s *ExecSuite) TestRedact() {
 	}
 	s.Equal("plain output: 3 specs passed", Redact("plain output: 3 specs passed"))
 	s.Equal("short x stays", Redact("short x stays", "x"), "tiny secrets ignored")
+}
+
+type blockedWriter struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (w *blockedWriter) Write(p []byte) (int, error) {
+	close(w.entered)
+	<-w.release
+	return len(p), nil
+}
+
+func (s *ExecSuite) TestBlockedLiveWriterCancellation() {
+	w := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	defer close(w.release)
+	cmd := helperCommand("output-sleep")
+	cmd.Stdout = w
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type outcome struct {
+		result CommandResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() { result, err := (ExecRunner{}).Run(ctx, cmd); done <- outcome{result, err} }()
+	select {
+	case <-w.entered:
+	case <-time.After(10 * time.Second):
+		s.FailNow("writer not entered")
+	}
+	cancel()
+	select {
+	case got := <-done:
+		s.ErrorIs(got.err, context.Canceled)
+		s.Equal("ready", got.result.Stdout)
+		s.Equal("diagnostic", got.result.Stderr)
+	case <-time.After(10 * time.Second):
+		s.FailNow("canceled command blocked")
+	}
 }

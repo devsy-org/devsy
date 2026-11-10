@@ -46,17 +46,6 @@ type imageConfigFixture struct {
 	uid, controlUID, configDigest                                                     string
 }
 
-type imageConfigOutput struct {
-	mu     sync.Mutex
-	buffer bytes.Buffer
-}
-
-func (o *imageConfigOutput) Write(data []byte) (int, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.buffer.Write(data)
-}
-
 type imageConfigLogObserver struct {
 	mu     sync.Mutex
 	tail   []byte
@@ -111,11 +100,10 @@ func imageConfigCommand(
 	default:
 		return "", fmt.Errorf("unsupported fixture command %q", program)
 	}
-	output := &imageConfigOutput{}
 	result, err := (runenv.ExecRunner{}).Run(ctx, runenv.Command{
-		Path: program, Args: args, Env: env, Stdout: output, Stderr: output,
+		Path: program, Args: args, Env: env,
 	})
-	out := strings.TrimSpace(output.buffer.String())
+	out := strings.TrimSpace(result.Stdout + result.Stderr)
 	if err != nil {
 		return out, fmt.Errorf("run %s: %w", program, err)
 	}

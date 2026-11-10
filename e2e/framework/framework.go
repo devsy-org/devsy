@@ -2,11 +2,14 @@ package framework
 
 import (
 	"runtime"
+	"sync/atomic"
 )
 
 type Framework struct {
-	DevsyBinDir  string
-	DevsyBinName string
+	DevsyBinDir       string
+	DevsyBinName      string
+	liveStdoutDropped atomic.Int64
+	liveStderrDropped atomic.Int64
 }
 
 func NewDefaultFramework(path string) *Framework {
@@ -32,4 +35,8 @@ func NewDefaultFramework(path string) *Framework {
 	}
 
 	return &Framework{DevsyBinDir: path, DevsyBinName: binName}
+}
+
+func (f *Framework) LiveOutputDropped() (int64, int64) {
+	return f.liveStdoutDropped.Load(), f.liveStderrDropped.Load()
 }
