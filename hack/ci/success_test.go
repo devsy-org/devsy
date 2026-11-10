@@ -162,13 +162,168 @@ func (s *successSuite) TestChangesGoOutputMustBeTrueOrFalse() {
 	}
 }
 
-func (s *successSuite) TestFailedChangesJobSkipsOutputCheck() {
+func (s *successSuite) TestFailedChangesJobRejectsSkippedJobs() {
 	needs := needsObject(entry("changes", failedJob), entry("unit-tests", skippedJob))
 
 	res := s.runSuccess(needs)
 
 	s.Equal(1, res.code)
-	s.Equal("::error::changes ended with result=failure\n", res.stdout)
+	s.Contains(res.stdout, "::error::changes ended with result=failure\n")
+	s.Contains(res.stdout, "::error::unit-tests ended with result=skipped unexpectedly\n")
+}
+
+func (s *successSuite) TestMicrosandboxMatrixAllowsOnlyEmptySuccessfulPlan() {
+	tests := []struct {
+		name    string
+		plan    string
+		include string
+		want    int
+	}{
+		{
+			name:    "empty matrix",
+			plan:    okPlan(`{"include":[]}`),
+			include: `"integration-tests-microsandbox":` + skippedJob + `,"prepare-microsandbox-provider":` + skippedJob,
+			want:    0,
+		},
+		{
+			name:    "nonempty matrix",
+			plan:    okPlan(`{"include":[{"suite":"one"}]}`),
+			include: `"integration-tests-microsandbox":` + skippedJob,
+			want:    1,
+		},
+		{
+			name:    "missing plan",
+			include: `"integration-tests-microsandbox":` + skippedJob,
+			want:    1,
+		},
+		{
+			name:    "failed plan",
+			plan:    failedJob,
+			include: `"integration-tests-microsandbox":` + skippedJob,
+			want:    1,
+		},
+		{
+			name:    "invalid matrix",
+			plan:    okPlan(`null`),
+			include: `"integration-tests-microsandbox":` + skippedJob,
+			want:    1,
+		},
+		{
+			name:    "missing matrix output",
+			plan:    `{"result":"success","outputs":{}}`,
+			include: `"integration-tests-microsandbox":` + skippedJob,
+			want:    1,
+		},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.checkMicrosandboxPlan(tt.plan, tt.include, tt.want)
+		})
+	}
+}
+
+func (s *successSuite) TestMatrixSkipRequiresValidPlanEvenWhenGoDidNotChange() {
+	tests := []struct {
+		name string
+		plan string
+		want int
+	}{
+		{name: "empty matrix", plan: okPlan(`{"include":[]}`), want: 0},
+		{name: "nonempty matrix", plan: okPlan(`{"include":[{"suite":"one"}]}`), want: 0},
+		{name: "failed plan", plan: failedJob, want: 1},
+		{name: "invalid matrix", plan: okPlan(`{"include":null}`), want: 1},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			needs := needsObject(
+				entry("changes", goFalse),
+				entry("plan", tt.plan),
+				entry("integration-tests-microsandbox", skippedJob),
+			)
+
+			res := s.runSuccess(needs)
+
+			s.Equal(tt.want, res.code)
+		})
+	}
+}
+
+func (s *successSuite) TestPerDomainSkipsRequireExactFalseOutput() {
+	tests := []struct {
+		job   string
+		field string
+	}{
+		{job: "agent-skill", field: "agent_skill"},
+		{job: "licenses", field: "licenses"},
+		{job: "github-credential-host-tests", field: "gh_credentials"},
+		{job: "provider-update-windows", field: "provider_update"},
+	}
+	for _, tt := range tests {
+		s.Run(tt.job, func() {
+			for _, value := range []string{outputFalse, outputTrue, ""} {
+				outputs := `{"go":"` + outputTrue + `","` + tt.field + `":"` + value + `"}`
+				needs := needsObject(
+					entry("changes", `{"result":"success","outputs":`+outputs+`}`),
+					entry(tt.job, skippedJob),
+				)
+
+				res := s.runSuccess(needs)
+
+				if value == outputFalse {
+					s.Zero(res.code)
+				} else {
+					s.Equal(1, res.code)
+					s.Contains(
+						res.stdout,
+						"::error::"+tt.job+" ended with result=skipped unexpectedly\n",
+					)
+				}
+			}
+		})
+	}
+}
+
+func (s *successSuite) TestMatrixSkipsUseTheirOwnPlanOutput() {
+	for job, group := range map[string]string{
+		"build-cli":                      "build",
+		"integration-tests-unprivileged": "unprivileged",
+		"integration-tests":              "integration",
+		"prepare-microsandbox-provider":  "microsandbox",
+		"integration-tests-microsandbox": "microsandbox",
+	} {
+		s.Run(job, func() {
+			for _, empty := range []bool{true, false} {
+				matrix := `{\"include\":[]}`
+				other := `{\"include\":[{}]}`
+				if !empty {
+					matrix, other = other, matrix
+				}
+				plan := `{"result":"success","outputs":{"` + group + `":"` + matrix + `","other":"` + other + `"}}`
+				res := s.runSuccess(needsObject(
+					entry("changes", goTrue),
+					entry("plan", plan),
+					entry(job, skippedJob),
+				))
+				if empty {
+					s.Zero(res.code, res.stdout)
+				} else {
+					s.Equal(1, res.code)
+					s.Contains(
+						res.stdout,
+						"::error::"+job+" ended with result=skipped unexpectedly\n",
+					)
+				}
+			}
+		})
+	}
+}
+
+func okPlan(matrix string) string {
+	return `{"result":"success","outputs":{"microsandbox":` + `"` + strings.ReplaceAll(
+		matrix,
+		`"`,
+		`\"`,
+	) + `"}}`
 }
 
 func (s *successSuite) TestEmptyOrInvalidNeedsFails() {
@@ -302,4 +457,19 @@ func (s *successSuite) runSuccess(needs string, args ...string) successResult {
 		stderr: &stderr,
 	}
 	return successResult{code: check.run(args), stdout: stdout.String(), stderr: stderr.String()}
+}
+
+func (s *successSuite) checkMicrosandboxPlan(plan, include string, want int) {
+	jobs := []string{entry("changes", goTrue)}
+	if plan != "" {
+		jobs = append(jobs, entry("plan", plan))
+	}
+	res := s.runSuccess(needsObject(append(jobs, include)...))
+	s.Equal(want, res.code)
+	if want == 1 {
+		s.Contains(
+			res.stdout,
+			"::error::integration-tests-microsandbox ended with result=skipped unexpectedly\n",
+		)
+	}
 }

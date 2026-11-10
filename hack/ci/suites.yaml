@@ -1,3 +1,59 @@
+selection:
+  full_run_paths:
+    - .github/workflows/pr-ci.yml
+    - .github/actions/**
+    - hack/ci/**
+    - go.mod
+    - go.sum
+    - .goreleaser.yml
+    - e2e/framework/**
+    - e2e/cmd/**
+    - e2e/*.go
+  core_paths:
+    - main.go
+    - cmd/root.go
+    - cmd/flags/**
+    - cmd/workspace/up/**
+    - cmd/internal/agent*.go
+    - cmd/internal/agentworkspace/**
+    - cmd/internal/agentcontainer/**
+    - cmd/internal/runusercommands.go
+    - pkg/agent/**
+    - pkg/client/**
+    - pkg/command/**
+    - pkg/config/**
+    - pkg/copy/**
+    - pkg/devcontainer/*.go
+    - pkg/devcontainer/build/**
+    - pkg/devcontainer/config/**
+    - pkg/devcontainer/setup/**
+    - pkg/devcontainer/metadata/**
+    - pkg/dockerfile/**
+    - pkg/driver/*.go
+    - pkg/driver/drivercreate/create.go
+    - pkg/encoding/**
+    - pkg/envfile/**
+    - pkg/exitcode/**
+    - pkg/extract/**
+    - pkg/flags/**
+    - pkg/git/**
+    - pkg/image/**
+    - pkg/inject/**
+    - pkg/language/**
+    - pkg/log/**
+    - pkg/options/**
+    - pkg/output/**
+    - pkg/provider/**
+    - pkg/secrets/**
+    - pkg/shell/**
+    - pkg/ssh/**
+    - pkg/status/**
+    - pkg/telemetry/**
+    - pkg/types/**
+    - pkg/util/**
+    - pkg/workspace/**
+    - providers/providers.go
+
 unit:
   # One job per runner; every runner executes the steps whose `os` matches.
   runners:
@@ -180,55 +236,58 @@ e2e:
 
   suites:
     # --- unprivileged ---
-    - { group: unprivileged, label: context }
-    - { group: unprivileged, label: extends }
-    - { group: unprivileged, label: outdated }
-    - { group: unprivileged, label: machine }
-    - { group: unprivileged, label: self-update }
-    - { group: unprivileged, label: upgrade }
+    - { group: unprivileged, label: context, pr_smoke: true, paths: ["e2e/tests/context/**", "cmd/context/**", "pkg/config/**", "pkg/options/**"] }
+    - { group: unprivileged, label: extends, pr_smoke: true, paths: ["e2e/tests/extends/**", "cmd/workspace/describe.go", "pkg/devcontainer/config/**", "pkg/compose/**"] }
+    - { group: unprivileged, label: outdated, paths: ["e2e/tests/outdated/**", "cmd/feature/outdated.go", "pkg/devcontainer/feature/**", "pkg/image/**"] }
+    - { group: unprivileged, label: machine, paths: ["e2e/tests/machine/**", "cmd/machine/**", "pkg/driver/custom/**"] }
+    - { group: unprivileged, label: self-update, paths: ["e2e/tests/self/**", "cmd/update/**", "pkg/selfupdate/**", "pkg/version/**"] }
+    - { group: unprivileged, label: upgrade, paths: ["e2e/tests/upgrade/**", "cmd/feature/upgrade.go", "pkg/devcontainer/feature/**", "pkg/image/**"] }
 
     # --- integration: Linux ---
-    - { group: integration, label: docker-context, test_timeout: 300s, job_timeout_minutes: 10 }
-    - { group: integration, label: ide }
-    - { group: integration, label: machine-provider }
-    - { group: integration, label: integration }
-    - { group: integration, label: tunnel, flake_attempts: 2 }
-    - { group: integration, label: mcp }
-    - { group: integration, label: provider, free_disk_space: true, install_kind: true, flake_attempts: 2 }
-    - { group: integration, label: ssh, fixtures: [ghfixture-linux] }
-    - { group: integration, label: ssh-agent-forward }
-    - { group: integration, label: ssh-ports-attributes }
-    - { group: integration, label: ssh-tunnel-mode }
-    - { group: integration, label: task-cancel }
-    - { group: integration, label: ssh-credentials-server-race }
-    - { group: integration, label: build, install_kind: true, requires_secret: true }
+    - { group: integration, label: docker-context, test_timeout: 300s, job_timeout_minutes: 10, paths: ["e2e/tests/dockercontext/**", "pkg/docker/**", "pkg/driver/docker/**", "providers/docker/**"] }
+    - { group: integration, label: ide, paths: ["e2e/tests/ide/**", "cmd/ide/**", "cmd/workspace/set_ide.go", "cmd/internal/browser_tunnel.go", "pkg/ide/**", "pkg/ide/opener/**", "pkg/open/**"] }
+    - { group: integration, label: machine-provider, paths: ["e2e/tests/machineprovider/**", "cmd/machine/**", "cmd/provider/**", "pkg/driver/custom/**"] }
+    - { group: integration, label: integration, paths: ["e2e/tests/integration/**", "cmd/workspace/**", "pkg/workspace/**"] }
+    - { group: integration, label: tunnel, flake_attempts: 2, paths: ["e2e/tests/tunnel/**", "cmd/workspace/**", "pkg/tunnel/**", "pkg/port/**", "pkg/credentials/**"] }
+    - { group: integration, label: mcp, paths: ["e2e/tests/mcp/**", "cmd/mcp/**"] }
+    - { group: integration, label: provider, free_disk_space: true, install_kind: true, flake_attempts: 2, paths: ["e2e/tests/provider/**", "cmd/provider/**", "pkg/provider/**", "pkg/options/**", "providers/**"] }
+    - { group: integration, label: ssh, fixtures: [ghfixture-linux], pr_smoke: true, paths: ["e2e/tests/ssh/**", "cmd/workspace/ssh.go", "cmd/workspace/port_forward.go", "cmd/workspace/gpg_tunnel.go", "cmd/internal/ssh_*.go", "cmd/internal/container_tunnel.go", "cmd/internal/gh.go", "cmd/internal/install_gh_wrapper.go", "cmd/internal/git_*.go", "pkg/ssh/**", "pkg/gpg/**", "pkg/credentials/**", "pkg/ghcredentials/**", "pkg/gitcredentials/**", "pkg/gitsshsigning/**", "pkg/port/**"] }
+    - { group: integration, label: ssh-agent-forward, paths: ["e2e/tests/ssh/**", "cmd/internal/ssh_*.go", "pkg/ssh/**"] }
+    - { group: integration, label: ssh-ports-attributes, paths: ["e2e/tests/ssh/**", "cmd/internal/container_tunnel.go", "pkg/port/**", "pkg/netstat/**", "pkg/devcontainer/config/**"] }
+    - { group: integration, label: ssh-tunnel-mode, paths: ["e2e/tests/ssh/**", "cmd/workspace/up/**", "cmd/workspace/task*.go", "pkg/ssh/**", "pkg/task/**", "pkg/command/**"] }
+    - { group: integration, label: task-cancel, paths: ["e2e/tests/ssh/**", "cmd/workspace/task*.go", "cmd/workspace/stop.go", "pkg/task/**", "pkg/command/**"] }
+    - { group: integration, label: ssh-credentials-server-race, paths: ["e2e/tests/ssh/**", "cmd/workspace/ssh.go", "cmd/internal/container_tunnel.go", "pkg/credentials/**"] }
+    - { group: integration, label: build, install_kind: true, requires_secret: true, pr_smoke: true, paths: ["e2e/tests/build/**", "cmd/workspace/build.go", "pkg/devcontainer/build/**", "pkg/devcontainer/feature/**", "pkg/dockerfile/**", "pkg/devcontainer/metadata/**", "pkg/devcontainer/buildkit/**", "pkg/driver/docker/**"] }
     - group: integration
       label: docker-install
+      paths: ["e2e/tests/dockerinstall/**", "pkg/dockerinstall/**", "pkg/docker/**", "pkg/driver/docker/**", "providers/docker/**"]
       host_setup: [remove-docker]
       post_checks: [docker-installed]
-    - { group: integration, label: exec }
-    - { group: integration, label: ci }
-    - { group: integration, label: feature }
-    - { group: integration, label: extends-up }
-    - { group: integration, label: down }
-    - { group: integration, label: rename }
-    - { group: integration, label: delivery }
-    - { group: integration, label: logs }
-    - { group: integration, label: templates }
-    - { group: integration, label: config-apply }
-    - { group: integration, label: run-user-commands }
-    - { group: integration, label: config-read }
-    - { group: integration, label: up-workspaces, free_disk_space: true, install_kind: true }
-    - { group: integration, label: up-behaviors }
-    - { group: integration, label: up-handle-errors, free_disk_space: true, install_kind: true }
-    - { group: integration, label: up-private-token, requires_secret: true }
-    - { group: integration, label: up-provider-kubernetes, free_disk_space: true, install_kind: true }
-    - { group: integration, label: up-provider-kubernetes-restricted-scc, free_disk_space: true, install_kind: true }
-    - { group: integration, label: up-provider-kubernetes-inactivity, free_disk_space: true, install_kind: true, test_timeout: 60m, job_timeout_minutes: 75 }
-    - { group: integration, label: up-provider-docker, install_kind: true }
-    - { group: integration, label: snapshot, host_setup: [insecure-registry] }
+    - { group: integration, label: exec, paths: ["e2e/tests/exec/**", "cmd/workspace/exec.go", "pkg/driver/docker/**", "pkg/ssh/**"] }
+    - { group: integration, label: ci, paths: ["e2e/tests/ci/**", "cmd/workspace/up/up.go", "cmd/workspace/build.go", "cmd/workspace/**", "pkg/git/**", "pkg/workspace/**"] }
+    - { group: integration, label: feature, paths: ["e2e/tests/feature/**", "cmd/feature/**", "pkg/devcontainer/feature/**", "pkg/image/**"] }
+    - { group: integration, label: extends-up, paths: ["e2e/tests/extends-up/**", "pkg/devcontainer/config/**"] }
+    - { group: integration, label: down, paths: ["e2e/tests/down/**", "cmd/workspace/stop.go", "cmd/workspace/delete.go", "pkg/workspace/**"] }
+    - { group: integration, label: rename, paths: ["e2e/tests/rename/**", "cmd/workspace/rename.go", "pkg/workspace/**", "pkg/ssh/**", "pkg/ide/vscode/**"] }
+    - { group: integration, label: delivery, paths: ["e2e/tests/delivery/**", "cmd/workspace/up/up.go", "cmd/workspace/up/**", "pkg/devcontainer/**", "pkg/driver/docker/**"] }
+    - { group: integration, label: logs, paths: ["e2e/tests/logs/**", "cmd/workspace/logs.go", "cmd/workspace/setup_logs.go", "cmd/internal/logs_daemon.go", "cmd/internal/runusercommands.go", "pkg/devcontainer/setup/**"] }
+    - { group: integration, label: templates, paths: ["e2e/tests/template/**", "cmd/template/**", "pkg/template/**"] }
+    - { group: integration, label: config-apply, paths: ["e2e/tests/configapply/**", "pkg/devcontainer/config/**", "pkg/driver/docker/**"] }
+    - { group: integration, label: run-user-commands, paths: ["e2e/tests/runusercommands/**", "cmd/internal/runusercommands.go", "pkg/devcontainer/setup/**"] }
+    - { group: integration, label: config-read, paths: ["e2e/tests/configread/**", "cmd/workspace/describe.go", "pkg/devcontainer/config/**", "pkg/compose/**"] }
+    - { group: integration, label: up-workspaces, free_disk_space: true, install_kind: true, pr_smoke: true, paths: ["e2e/tests/up/**", "cmd/workspace/up/up.go", "cmd/workspace/events.go", "cmd/container/**", "pkg/git/**", "pkg/language/**", "pkg/envfile/**"] }
+    - { group: integration, label: up-behaviors, paths: ["e2e/tests/up/**", "pkg/dotfiles/**", "pkg/ide/openvscode/**", "pkg/devcontainer/**"] }
+    - { group: integration, label: up-handle-errors, free_disk_space: true, install_kind: true, paths: ["e2e/tests/up/**", "cmd/workspace/up/**", "pkg/exitcode/**", "pkg/devcontainer/**"] }
+    - { group: integration, label: up-private-token, requires_secret: true, paths: ["e2e/tests/up/up_private_token.go", "cmd/internal/git_credentials.go", "pkg/git/**", "pkg/gitcredentials/**"] }
+    - { group: integration, label: up-provider-kubernetes, free_disk_space: true, install_kind: true, pr_smoke: true, paths: ["e2e/tests/up/provider_kubernetes*.go", "pkg/driver/kubernetes/**", "providers/kubernetes/**", "cmd/internal/ssh_git_clone.go"] }
+    - { group: integration, label: up-provider-kubernetes-restricted-scc, free_disk_space: true, install_kind: true, paths: ["e2e/tests/up/provider_kubernetes*.go", "pkg/driver/kubernetes/**", "providers/kubernetes/**", "cmd/internal/ssh_git_clone.go"] }
+    - { group: integration, label: up-provider-kubernetes-inactivity, free_disk_space: true, install_kind: true, test_timeout: 60m, job_timeout_minutes: 75, paths: ["e2e/tests/up/provider_kubernetes_inactivity.go", "pkg/driver/kubernetes/**", "providers/kubernetes/**", "cmd/internal/agent_daemon.go", "cmd/internal/ssh_server.go", "cmd/internal/agentcontainer/daemon.go", "cmd/internal/agentcontainer/ssh_server.go", "pkg/daemon/agent/**"] }
+    - { group: integration, label: up-provider-docker, install_kind: true, pr_smoke: true, paths: ["e2e/tests/up/provider_docker.go", "e2e/tests/up/dockerfile_build.go", "e2e/tests/up/interactive_post_start.go", "e2e/tests/up/sops.go", "cmd/secrets/**", "pkg/driver/docker/**", "pkg/docker/**", "pkg/secrets/**", "providers/docker/**"] }
+    - { group: integration, label: snapshot, host_setup: [insecure-registry], paths: ["e2e/tests/snapshot/**", "cmd/workspace/snapshot*.go", "pkg/snapshot/**", "pkg/driver/docker/**"] }
     - group: integration
       label: up-docker-compose
+      pr_smoke: true
+      paths: ["e2e/tests/up-docker-compose/**", "pkg/compose/**", "pkg/driver/docker/**", "pkg/secrets/**"]
       # Runs first, as the existing non-root runner user, before the sudo run.
       focused_checks:
         - name: compose-uid-nonroot
@@ -236,33 +295,34 @@ e2e:
           expect_leaf: implements updateRemoteUserUID with root container user
           require_uid: 1001
           require_gid: 1001
-    - { group: integration, label: up-features, install_kind: true }
+    - { group: integration, label: up-features, install_kind: true, pr_smoke: true, paths: ["e2e/tests/up-features/**", "pkg/devcontainer/feature/**", "pkg/devcontainer/build/**"] }
 
     # --- integration: Podman on Linux ---
-    - { group: integration, label: up-provider-podman-rootless-basic, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootless-exec, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootless-lifecycle, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootless-config, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootless-features, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootful-basic, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootful-lifecycle, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootful-lifecycle-2, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootful-config, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-provider-podman-rootful-features, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootless-basic, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20, pr_smoke: true, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootless-exec, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootless-lifecycle, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootless-config, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootless-features, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootful-basic, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20, pr_smoke: true, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootful-lifecycle, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootful-lifecycle-2, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootful-config, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-provider-podman-rootful-features, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20, paths: ["e2e/tests/up/*podman*", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "hack/podman_ci/**"] }
 
     # --- integration: Windows (Docker API served by Podman) ---
-    - { group: integration, label: provider, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-docker-wsl, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
-    - { group: integration, label: up-features, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
-    - { group: integration, label: ssh-proxy-command, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
-    - { group: integration, label: ssh-tunnel-mode, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
-    - { group: integration, label: task-cancel, runner: windows-latest, install_podman: rootful, test_timeout: 900s, job_timeout_minutes: 20 }
+    - { group: integration, label: provider, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20, paths: ["e2e/tests/provider/**", "cmd/provider/**", "pkg/provider/**", "pkg/options/**", "providers/**", "e2e/framework/dockerwsl/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-docker-wsl, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20, pr_smoke: true, paths: ["e2e/tests/up/docker_wsl.go", "pkg/driver/docker/**", "pkg/docker/**", "providers/docker/**", "e2e/framework/dockerwsl/**", "hack/podman_ci/**"] }
+    - { group: integration, label: up-features, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20, paths: ["e2e/tests/up-features/**", "pkg/devcontainer/feature/**", "pkg/devcontainer/build/**"] }
+    - { group: integration, label: ssh-proxy-command, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20, paths: ["e2e/tests/ssh/**", "cmd/workspace/ssh.go", "cmd/internal/ssh_*.go", "pkg/ssh/**", "e2e/framework/dockerwsl/**", "hack/podman_ci/**"] }
+    - { group: integration, label: ssh-tunnel-mode, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20, paths: ["e2e/tests/ssh/**", "cmd/workspace/up/**", "cmd/workspace/task*.go", "pkg/ssh/**", "pkg/task/**", "pkg/command/**", "e2e/framework/dockerwsl/**", "hack/podman_ci/**"] }
+    - { group: integration, label: task-cancel, runner: windows-latest, install_podman: rootful, test_timeout: 900s, job_timeout_minutes: 20, paths: ["e2e/tests/ssh/**", "cmd/workspace/task*.go", "cmd/workspace/stop.go", "pkg/task/**", "pkg/command/**"] }
 
     # --- integration: Windows with a Docker Engine in WSL2, reached over SSH ---
     # The workflow provisions the daemon with `devsy-ci docker-wsl setup`; the
     # report must show exactly expected_spec_count specs passing first try.
     - group: integration
       label: docker-internal-buildkit
+      paths: ["e2e/tests/dockerbuildkit/**", "e2e/framework/dockerwsl/**", "pkg/devcontainer/buildkit/**", "pkg/driver/docker/**", "pkg/docker/**"]
       runner: windows-latest
       runtime: docker-wsl
       expected_spec_count: 6
@@ -272,6 +332,7 @@ e2e:
     # selected WSL user's display, and the job also runs the Compose parity probe.
     - group: integration
       label: wslg
+      paths: ["e2e/tests/dockerbuildkit/wslg.go", "e2e/framework/dockerwsl/**", "pkg/wslg/**", "pkg/compose/**"]
       runner: windows-latest
       runtime: docker-wsl
       expected_spec_count: 2
@@ -279,19 +340,19 @@ e2e:
       job_timeout_minutes: 40
 
     # --- microsandbox ---
-    - { group: microsandbox, label: up-provider-microsandbox, expected_spec_count: 2, performance_capture: true }
-    - { group: microsandbox, label: up-provider-microsandbox-images, expected_spec_count: 6 }
-    - { group: microsandbox, label: up-provider-microsandbox-mounts, expected_spec_count: 10 }
-    - { group: microsandbox, label: up-provider-microsandbox-resources, expected_spec_count: 12 }
-    - { group: microsandbox, label: up-provider-microsandbox-storage, expected_spec_count: 6 }
-    - { group: microsandbox, label: up-provider-microsandbox-ephemeral, expected_spec_count: 6 }
-    - { group: microsandbox, label: up-provider-microsandbox-egress, expected_spec_count: 4 }
-    - { group: microsandbox, label: up-provider-microsandbox-prebuilds, expected_spec_count: 4 }
-    - { group: microsandbox, label: up-provider-microsandbox-dockerless, expected_spec_count: 8 }
-    - { group: microsandbox, label: up-provider-microsandbox-recreate, expected_spec_count: 4 }
-    - { group: microsandbox, label: up-provider-microsandbox-managed-recreate, expected_spec_count: 4 }
-    - { group: microsandbox, label: up-provider-microsandbox-logs-cancel, expected_spec_count: 6 }
-    - { group: microsandbox, label: up-provider-microsandbox-compatibility, expected_spec_count: 2 }
-    - { group: microsandbox, label: up-provider-microsandbox-registry-consumer, expected_spec_count: 3, provider_mode: external }
-    - { group: microsandbox, label: up-provider-microsandbox-remote-agent-binaries, expected_spec_count: 1, provider_mode: external }
-    - { group: microsandbox, label: up-provider-microsandbox-source-migration, expected_spec_count: 2, provider_mode: external }
+    - { group: microsandbox, label: up-provider-microsandbox, expected_spec_count: 2, performance_capture: true, pr_smoke: true, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-images, expected_spec_count: 6, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-mounts, expected_spec_count: 10, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-resources, expected_spec_count: 12, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-storage, expected_spec_count: 6, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-ephemeral, expected_spec_count: 6, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-egress, expected_spec_count: 4, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-prebuilds, expected_spec_count: 4, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-dockerless, expected_spec_count: 8, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-recreate, expected_spec_count: 4, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-managed-recreate, expected_spec_count: 4, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-logs-cancel, expected_spec_count: 6, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-compatibility, expected_spec_count: 2, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-registry-consumer, expected_spec_count: 3, provider_mode: external, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-remote-agent-binaries, expected_spec_count: 1, provider_mode: external, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
+    - { group: microsandbox, label: up-provider-microsandbox-source-migration, expected_spec_count: 2, provider_mode: external, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }

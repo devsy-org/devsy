@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -198,6 +199,40 @@ func (s *manifestSuite) TestParseRejectsUnknownKey() {
 	)
 	s.Error(err)
 	s.ErrorContains(err, "flake_attempt")
+}
+
+func (s *manifestSuite) TestSelectionGlobValidation() {
+	const pathsField = "paths"
+	for _, pattern := range []string{"", "   ", "[", "pkg/[", "pkg/[/../file.go", "/pkg/**", "../pkg/**"} {
+		for _, field := range []string{"full_run_paths", "core_paths", pathsField} {
+			s.Run(field+"/"+pattern, func() {
+				data := testGroupsYAML + "    - { group: integration, label: x }\n"
+				if field == pathsField {
+					data = testGroupsYAML + fmt.Sprintf(
+						"    - { group: integration, label: x, paths: [%q] }\n", pattern,
+					)
+				} else {
+					data += fmt.Sprintf("selection:\n  %s: [%q]\n", field, pattern)
+				}
+				_, err := ParseManifest([]byte(data))
+				s.ErrorIs(err, errInvalidGlob)
+				if field == pathsField {
+					s.ErrorIs(err, errInvalidSuite)
+				}
+			})
+		}
+	}
+}
+
+func (s *manifestSuite) TestSyntheticManifestNeedsNoSelectionRules() {
+	m, err := ParseManifest([]byte(testGroupsYAML + "    - { group: integration, label: x }\n"))
+	s.Require().NoError(err)
+	s.Equal(
+		[]string{"x"},
+		selectionLabels(
+			selectSuites(m, groupIntegration, selectionOptions{mode: selectionModeFull}),
+		),
+	)
 }
 
 // Footgun: RunsOn disagrees with the os list, so a step runs on a platform it

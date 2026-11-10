@@ -26,35 +26,96 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      go: ${{ steps.filter.outputs.go }}
+      go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.go == 'true' }}
+      agent_skill: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.agent_skill == 'true' }}
+      licenses: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.licenses == 'true' }}
+      gh_credentials: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.gh_credentials == 'true' }}
+      provider_update: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.provider_update == 'true' }}
+      mode: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
+      changed_files: ${{ steps.filter.outputs.all_files || '[]' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
+        if: github.event_name == 'pull_request'
         with:
+          list-files: json
           filters: |
-            go:
-              - '**/*.go'
-              - 'pkg/inject/**'
+            full:
+              - '.github/workflows/pr-ci.yml'
+              - '.github/actions/**'
+              - 'hack/ci/**'
               - 'go.mod'
               - 'go.sum'
               - '.goreleaser.yml'
+              - 'e2e/framework/**'
+              - 'e2e/cmd/**'
+              - 'e2e/*.go'
+            go:
+              - '**/*.go'
+              - 'cmd/**'
+              - 'pkg/**'
+              - 'providers/**'
               - 'e2e/**'
-              - 'hack/ci/**'
               - 'hack/microsandbox/**'
               - 'hack/provider_update_ci/**'
-              - '.github/workflows/pr-ci.yml'
               - 'hack/licenses/**'
               - 'hack/podman_ci/**'
+              - '.golangci.yaml'
+            agent_skill:
+              - '.agents/skills/devsy/**'
+              - 'hack/validate_agent_skill/**'
+            licenses:
+              - '**/*.go'
+              - 'hack/licenses/**'
               - 'THIRD_PARTY_LICENSES.md'
+            gh_credentials:
+              - 'pkg/ghcredentials/**'
+              - 'pkg/credentials/**'
+              - 'pkg/tunnel/**'
+              - 'pkg/agent/tunnel/**'
+              - 'pkg/agent/tunnelserver/**'
+              - 'pkg/config/**'
+              - 'pkg/log/**'
+              - 'pkg/http/**'
+              - 'pkg/port/**'
+              - 'pkg/netstat/**'
+              - 'pkg/random/**'
+              - 'pkg/gitsshsigning/**'
+              - 'pkg/transport/**'
+              - 'pkg/client/**'
+              - 'pkg/ssh/**'
+              - 'pkg/flags/**'
+              - 'pkg/exitcode/**'
+              - 'e2e/cmd/ghfixture/**'
+            provider_update:
+              - 'pkg/workspace/**'
+              - 'pkg/provider/**'
+              - 'pkg/config/**'
+              - 'pkg/extract/**'
+              - 'pkg/copy/**'
+              - 'pkg/download/**'
+              - 'pkg/http/**'
+              - 'pkg/gitcredentials/**'
+              - 'pkg/hash/**'
+              - 'pkg/log/**'
+              - 'pkg/id/**'
+              - 'pkg/types/**'
+              - 'providers/**'
+              - 'hack/provider_update_ci/**'
+            all:
+              - '**'
 
   plan:
     name: Plan
+    needs: [changes]
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       unit: ${{ steps.matrix.outputs.unit }}
+      build: ${{ steps.matrix.outputs.build }}
       unprivileged: ${{ steps.matrix.outputs.unprivileged }}
       integration: ${{ steps.matrix.outputs.integration }}
       microsandbox: ${{ steps.matrix.outputs.microsandbox }}
@@ -71,7 +132,11 @@ jobs:
         id: matrix
         env:
           SECRET_AVAILABLE: ${{ secrets.DEVSY_GITHUB_APP_ID != '' }}
-        run: go run ./hack/ci matrix --secret-available="$SECRET_AVAILABLE" >> "$GITHUB_OUTPUT"
+          MATRIX_MODE: ${{ needs.changes.outputs.mode }}
+          CHANGED_FILES_JSON: ${{ needs.changes.outputs.changed_files }}
+        run: |
+          printf '%s' "$CHANGED_FILES_JSON" | jq -r '.[]' > "$RUNNER_TEMP/changed-files.txt"
+          go run ./hack/ci matrix --mode="$MATRIX_MODE" --changed-files="$RUNNER_TEMP/changed-files.txt" --secret-available="$SECRET_AVAILABLE" >> "$GITHUB_OUTPUT"
 
   precommit:
     name: Pre-commit
@@ -81,10 +146,12 @@ jobs:
 
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
-      - run: prek run --all-files
+      - run: SKIP=golangci-lint prek run --all-files
 
   agent-skill:
     name: Agent Skill
+    needs: [changes]
+    if: needs.changes.outputs.agent_skill == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -106,6 +173,8 @@ jobs:
 
   lint:
     name: Lint
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -128,7 +197,7 @@ jobs:
   github-credential-host-tests:
     name: GitHub Credential Host Tests (${{ matrix.runner }})
     needs: [changes]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.gh_credentials == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -193,7 +262,7 @@ jobs:
   provider-update-windows:
     name: Provider Update Tests (windows-latest)
     needs: [changes]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.provider_update == 'true'
     runs-on: windows-latest
     # Allow cold Go compilation and the post-job cache save to complete.
     timeout-minutes: 30
@@ -221,17 +290,11 @@ jobs:
 
   build-cli:
     name: Build CLI Binary on ${{ matrix.runner }}
-    needs: [changes, precommit, lint]
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes, plan]
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.build != '{"include":[]}'
     strategy:
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            job_timeout_minutes: 45
-          - runner: macos-latest
-          - runner: windows-latest
-            # Cold builds need room to save the Go cache after artifact uploads.
-            job_timeout_minutes: 45
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.build) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.job_timeout_minutes || 20 }}
     steps:
@@ -318,24 +381,24 @@ jobs:
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
 
       - name: build MicroSandbox CI helper
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.build_microsandbox
         env:
           CGO_ENABLED: 0
         run: go build -trimpath -o "${RUNNER_TEMP}/devsy-ci-microsandbox" ./hack/microsandbox
 
       - name: build pinned runtime performance tools
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.build_microsandbox
         run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" build-performance-tools --output-dir "${RUNNER_TEMP}/runtime-performance-tools"'
 
       - name: upload runtime performance tools
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.build_microsandbox
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: runtime-performance-tools-linux
           path: ${{ runner.temp }}/runtime-performance-tools/
 
       - name: upload MicroSandbox CI helper
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.build_microsandbox
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-ci-microsandbox-linux
@@ -380,8 +443,8 @@ jobs:
 
   licenses:
     name: Third-party licenses
-    needs: [changes, precommit, lint]
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes]
+    if: needs.changes.outputs.licenses == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -397,7 +460,7 @@ jobs:
   integration-tests-unprivileged:
     name: ${{ matrix.title }}
     needs: [changes, plan, build-cli]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.unprivileged != '{"include":[]}'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.unprivileged) }}
@@ -446,8 +509,8 @@ jobs:
 
   prepare-microsandbox-provider:
     name: Prepare MicroSandbox provider assets
-    needs: [changes, build-cli]
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes, plan, build-cli]
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.microsandbox != '{"include":[]}'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -496,7 +559,7 @@ jobs:
   integration-tests-microsandbox:
     name: ${{ matrix.title }}
     needs: [changes, plan, build-cli, prepare-microsandbox-provider]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.microsandbox != '{"include":[]}'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.microsandbox) }}
@@ -621,7 +684,7 @@ jobs:
   integration-tests:
     name: ${{ matrix.title }}
     needs: [changes, plan, build-cli]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.integration != '{"include":[]}'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.integration) }}
@@ -933,9 +996,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Jobs gated on Go changes may be skipped only when no Go-relevant file
-      # changed; the jobs listed in --always-run must never be skipped.
       - name: Check required jobs
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: go run ./hack/ci success --always-run changes,plan,precommit,lint,agent-skill
+        run: go run ./hack/ci success --always-run changes,plan,precommit
