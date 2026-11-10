@@ -32,6 +32,8 @@ every suite. Paths in `selection.core_paths` select the 13 suites marked
 only suites with a matching entry. Patterns support `*` within one path
 segment and `**` across zero or more segments.
 
+Changes under `e2e/cmd/` are shared CI dependencies and select the full matrix.
+
 The build matrix follows selected suites. Every E2E run needs the Linux
 binary, including Windows runs that inject it into containers. Windows
 suites also need a Windows build. MicroSandbox suites enable the provider

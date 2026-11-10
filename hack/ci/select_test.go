@@ -179,6 +179,24 @@ func (s *selectionSuite) TestDockerInstallerChangesSelectInstallationSuite() {
 	}
 }
 
+func (s *selectionSuite) TestSharedE2EHelpersSelectFullMatrix() {
+	m, err := LoadManifest()
+	s.Require().NoError(err)
+	for _, file := range []string{
+		"e2e/cmd/ghfixture/main_linux.go",
+		"e2e/cmd/devsy-ci/main.go",
+	} {
+		opts := selectionOptions{
+			secretAvailable: true,
+			mode:            selectionModePR,
+			changedFiles:    []string{file},
+		}
+		for _, group := range []string{groupUnprivileged, groupIntegration, groupMicrosandbox} {
+			s.Equal(m.SuitesIn(group), selectSuites(m, group, opts), file+"/"+group)
+		}
+	}
+}
+
 func (s *selectionSuite) TestEmbeddedCoreSmokeTier() {
 	m, err := LoadManifest()
 	s.Require().NoError(err)

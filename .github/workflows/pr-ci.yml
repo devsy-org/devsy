@@ -49,6 +49,7 @@ jobs:
               - 'go.sum'
               - '.goreleaser.yml'
               - 'e2e/framework/**'
+              - 'e2e/cmd/**'
               - 'e2e/*.go'
             go:
               - '**/*.go'
