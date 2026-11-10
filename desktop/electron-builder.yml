@@ -92,7 +92,9 @@ rpm:
     - libXtst
     - xdg-utils
     - at-spi2-core
-    - libuuid
+    # Require the shared library rather than a package name: Fedora/RHEL ship
+    # it as "libuuid", openSUSE as "libuuid1".
+    - libuuid.so.1()(64bit)
   fpm:
     - --rpm-rpmbuild-define=_rpmformat 4
 
