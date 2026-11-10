@@ -17,7 +17,7 @@ A [provider](./managing-providers/what-are-providers) decides where a workspace 
 
 - Define your project's tools and setup commands in `devcontainer.json`, an open standard. Runtime-specific settings, such as host mounts, may need changes when you switch providers.
 - Run workspaces on machines you already have. Machine providers can stop idle machines with an [inactivity timeout](./developing-in-workspaces/inactivity-timeout).
-- Recreate a workspace on another provider with the same definition. To also move container and volume state, [snapshot](./developing-in-workspaces/workspace-snapshots) a local-provider workspace that has a single bind mount.
+- Recreate a workspace on another provider with the same definition. A [snapshot](./developing-in-workspaces/workspace-snapshots) can also move the container filesystem and a host bind-mounted workspace. Move named volume data separately.
 - Connect with VS Code, a JetBrains IDE, or any editor that supports SSH.
 - Use the desktop app for daily work and the CLI for automation.
 

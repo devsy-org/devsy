@@ -51,7 +51,7 @@ Devsy extracts the whole archive into a folder for the binary and keeps its layo
 
 `checksum` is optional, except for the `agent.binaries` entry selected by `agent.external.binary`, which needs one for every platform. See [External Driver](./driver.mdx#external-driver).
 
-When set, Devsy computes the SHA-256 of the executable and compares it case-insensitively. For an HTTP(S) archive, it checks the extracted file at `archivePath`, not the archive. A downloaded file with a checksum mismatch is removed, and the download fails without retrying. A local source file with a mismatch is left in place; correct the file or regenerate the manifest checksum before trying again.
+When set, Devsy computes the SHA-256 of the executable and compares it case-insensitively. For an HTTP(S) archive, it checks the extracted file at `archivePath`, not the archive. A downloaded file with a checksum mismatch is removed, and the download fails without retrying. A local source file with a mismatch is left in place. Verify the binary against a trusted source before changing its checksum. Update the manifest checksum only for an intentional, verified binary change; otherwise, restore the expected file before trying again.
 
 ## Use a binary
 

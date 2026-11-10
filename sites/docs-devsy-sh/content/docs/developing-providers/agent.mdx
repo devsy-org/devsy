@@ -19,7 +19,7 @@ This section can use option values.
 - **local**: set to `true` when the agent runs on the user's machine. Leave it unset or `false` for a remote machine.
 - **driver**: how the container is deployed. One of `docker` (default), `kubernetes`, `apple`, `microsandbox`, `custom` or `external`. See [Drivers](./driver.mdx).
 - **inactivityTimeout**: how long an idle machine runs before Devsy stops it. Machine providers only.
-- **containerInactivityTimeout**: idle period monitored by the container daemon, as a Go duration such as `10m`. Empty or `0` disables the monitor. For Kubernetes, expiry ends the pod. A detached Docker or Podman daemon does not stop its container when the timer expires.
+- **containerInactivityTimeout**: idle period monitored by the container daemon, as a Go duration such as `10m`. For Kubernetes, an empty value falls back to the deprecated `agent.kubernetes.inactivityTimeout`. If both fields are set, their durations must match. Clear both fields or set both to `0` to disable the timeout. For Kubernetes, expiry ends the pod. A detached Docker or Podman daemon does not stop its container when the timer expires.
 - **injectGitCredentials**, **injectDockerCredentials**: whether to forward those credentials into the environment. The context's credential-forwarding settings override these provider values. See [Credentials](../developing-in-workspaces/credentials.mdx).
 - **exec.shutdown**: the command that stops the machine once it is idle. Option values are available in it.
 - **binaries**: helper binaries for `exec.shutdown`. Declare them under `agent.binaries`, using the format in [Provider binaries](./binaries.mdx).
