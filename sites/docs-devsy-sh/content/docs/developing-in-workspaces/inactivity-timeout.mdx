@@ -20,6 +20,10 @@ Defaults when the option is unset:
 
 **Docker, Podman, Apple, and Microsandbox:** A daemon in the container watches for activity. For Microsandbox, Devsy also passes the timeout to the microsandbox CLI as `--idle-timeout`.
 
+<Callout type="warn" title="Docker and Podman">
+The detached container daemon exits when its timeout expires, but that exit does not stop a Docker or Podman container. Do not rely on `INACTIVITY_TIMEOUT` to stop these containers. Stop them explicitly with `devsy workspace stop`.
+</Callout>
+
 <Callout type="warn" title="Apple provider">
 The Apple provider option describes the timeout as deleting the container instead of stopping it. Deleting a container loses files outside mounted volumes.
 </Callout>
@@ -35,9 +39,9 @@ A workspace is active while either of these holds:
 - A tracked `devsy workspace ssh` session is connected. Devsy records activity when the session connects, periodically while it stays open, and when it ends. The idle period starts at disconnect.
 - Setup is running: the synchronous `devsy workspace up` setup, deferred lifecycle hooks, and `postAttachCommand`.
 
-CPU use and processes you start yourself do not count. For example, `nohup make &` in a closed session does not keep the workspace running.
+CPU use and processes you start yourself do not count as activity. For example, `nohup make &` in a closed session does not reset the idle timer.
 
-The daemon checks idle time about once a second, so a workspace stops a few seconds after the timeout passes.
+The daemon checks idle time about once a second. A managed Kubernetes pod ends a few seconds after the timeout passes.
 
 On Kubernetes, SSH sessions and hooks register with the daemon before they do work and stay active while their connection lasts. If the daemon connection is lost, Devsy cancels the protected work. Failed activity-file writes or a full disk cannot hide live work.
 

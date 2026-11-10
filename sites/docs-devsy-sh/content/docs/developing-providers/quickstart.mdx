@@ -1,39 +1,41 @@
 ---
-title: Quickstart Guide
+title: Build a provider
 sidebar_label: Quickstart
 ---
 
 A provider is a program described by a `provider.yaml` file. Devsy reads the manifest and calls the commands it defines to create and reach an environment.
 
 <Callout title="Recommended reading">
-Read [What are providers](../managing-providers/what-are-providers.mdx) and [Add a Devsy Provider](../managing-providers/manage-providers.mdx) first.
+Read [What are providers](../managing-providers/what-are-providers.mdx) and [Manage providers](../managing-providers/manage-providers.mdx) first.
 </Callout>
 
 ## A minimal provider
 
-This provider runs workspaces on the local machine:
+This provider runs workspaces through Docker on your machine. Install Docker and start its daemon before trying it.
 
 ```yaml
-name: my-first-provider  # required
-version: v0.0.1          # required
+name: my-first-provider
+version: v0.0.1
 agent:
-  path: ${DEVSY}         # path to the current Devsy binary
+  local: true
+  driver: docker
 exec:
-  # How to run a command in the environment. Here: a local shell.
   command: |-
-    sh -c "${COMMAND}"
+    "${DEVSY}" internal sh -c "${COMMAND}"
 ```
 
-Save it as `provider.yaml`, add it, and start a workspace:
+Save it as `provider.yaml`. Run these commands in your host terminal:
 
-```
+```sh
 devsy provider add ./provider.yaml
 devsy workspace up github.com/microsoft/vscode-remote-try-go
 ```
 
+Adding the provider makes it the default for new workspaces. The second command clones the sample repository and starts its devcontainer. Existing workspaces keep their provider.
+
 ## Sections of provider.yaml
 
-- `name`, `version`: required. `description` is optional and shown in the Desktop app.
+- `name`: required, at most 32 lowercase letters, numbers, or hyphens. `version` is optional; when set, use a semantic version such as `v0.0.1`. `description` is optional and shown in the Desktop app.
 - [`exec`](#exec): the commands Devsy runs to reach and manage the environment.
 - [`options`](./options.mdx): settings the user can configure. Devsy passes them to commands as environment variables.
 - [`binaries`](./binaries.mdx): helper binaries Devsy downloads for the provider.
@@ -48,21 +50,37 @@ An array with one element is parsed as a shell script, not as an executable path
 
 - **command**: runs a command in the environment. Devsy uses it to inject itself, and sends all traffic through its standard input and output. Devsy fills in the `${COMMAND}` placeholder.
 - **init**: checks that the options are valid and the provider is ready. Devsy runs it when options change.
-- **create**, **delete**: create and delete a machine. Defining `create` makes the provider a machine provider, so `delete` is expected too.
-- **start**, **stop**: start and stop a machine. Machine providers only.
+- **create**, **delete**: create and delete a machine. Define both or neither. Defining `create` makes this a machine provider.
+- **start**, **stop**: start and stop a machine. Define both or neither. These require `create` and `status`.
 - **status**: prints one of `Running`, `Busy` (wait and check again), `Stopped` or `NotFound`.
 - **describe**: prints a text description of the machine.
-- **cancellation**: omit it for existing process cancellation behavior, or set `file` to give provider commands a cooperative cleanup window.
+- **cancellation**: omit it to use the default cancellation behavior, or set `file` to give provider commands a cooperative cleanup window.
 
 A standard provider without `create` is a non-machine provider and uses only `command` and `init`. The cancellation policy applies to both machine and non-machine providers.
 
-With `exec.cancellation: file`, Devsy sets the reserved `DEVSY_PROVIDER_CANCEL_FILE` environment variable to a private, initially nonexistent marker path for each invocation. The provider must watch for the marker, stop admitting work, cancel its owned processes, finish cleanup, and exit. On caller cancellation, Devsy creates the marker and allows up to 10 seconds for cleanup. For single-string shell commands that remain blocked, Devsy then asks its supervised shell to stop and reap its direct children before terminating the shell; it waits up to another 5 seconds for an authenticated acknowledgement before killing an unresponsive helper. A provider-writable acknowledgement file does not establish that cleanup finished: a missing or forged acknowledgement, including when the helper exits abruptly during the cleanup window, is reported as an unclean shutdown alongside the caller's cancellation error. Devsy never kills the provider's process group or unrelated daemon processes. It waits for the invocation to finish and still returns the caller's cancellation error even if cleanup exits successfully. A provider must not set or override the reserved variable.
+### Handle cancellation
 
-For shell commands, the supervisor also stops and reaps direct children still running when the script completes normally. A direct background child started with `&` cannot outlive its invocation. A detached descendant can outlive it, so the provider must manage those processes explicitly. Start durable services through the backend's explicit detached operation, not a shell background job.
+With `exec.cancellation: file`, Devsy sets `DEVSY_PROVIDER_CANCEL_FILE` to a private marker path that does not exist yet. Do not set or override this reserved variable.
 
-File mode accepts finite or nonblocking standard streams, direct file input handles, and blocking streams whose owner unblocks them when the original calling context is cancelled. A direct `*os.File` output handle is not exempt: Devsy can wrap it for redaction, and a blocked output write can prevent completion after the child exits. Callers must drain or unblock blocking stdout and stderr, including file-backed pipes, on cancellation. Devsy does not close caller-owned input or global standard input, and process cancellation cannot interrupt an arbitrary blocked reader or writer. Machine command transports close their pipe endpoints on cancellation of the original context. Standard input can close independently of standard output, so providers must continue draining output after input reaches EOF.
+When the caller cancels, Devsy creates the marker. Your command has up to 10 seconds to stop accepting work, cancel its owned processes, clean up, and exit.
 
-On Windows, Devsy runs these scripts in an [emulated shell](https://github.com/mvdan/sh). The emulated shell has no `grep` or `sed`. Move that logic into a helper binary.
+If a single-string shell command is still blocked, Devsy asks its shell supervisor to stop and reap direct children. It allows up to another 5 seconds for an authenticated acknowledgement, then kills an unresponsive helper. A missing or forged acknowledgement, including after an abrupt helper exit, is reported as an unclean shutdown. A provider-written acknowledgement file does not prove cleanup finished.
+
+Devsy waits for the invocation to finish and returns the caller's cancellation error even if cleanup succeeds. It does not kill the provider's process group or unrelated daemons.
+
+The supervisor also stops and reaps direct children when the script finishes normally. A job started with `&` cannot outlive that invocation. A detached descendant can, so your provider must manage it. Use the backend's detached operation for durable services.
+
+### Handle command streams
+
+Cancellation cannot interrupt an arbitrary blocked reader or writer. File cancellation mode works with finite or nonblocking streams, direct file input handles, or blocking streams that their owner unblocks when the original calling context is cancelled.
+
+- Drain or unblock stdout and stderr on cancellation, including file-backed pipes. Devsy may wrap a direct `*os.File` output for redaction, so it can still block after the child exits.
+- Devsy does not close caller-owned input or global standard input. Machine command transports close their own pipe endpoints when the original context is cancelled.
+- Keep draining output after standard input reaches EOF. Input and output can close independently.
+
+### Windows compatibility
+
+On Windows, Devsy runs these scripts in an [emulated shell](https://github.com/mvdan/sh). It does not provide `grep` or `sed`. Put that logic in a helper binary or require the user to install those tools.
 
 Example from the [SSH provider](https://github.com/devsy-org/devsy-provider-ssh):
 

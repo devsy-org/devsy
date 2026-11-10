@@ -3,16 +3,20 @@ title: Continuous Integration
 sidebar_label: Continuous Integration
 ---
 
-`devsy ci` starts a devcontainer workspace and runs a command in it. It deletes a newly created workspace afterward unless you pass `--keep`, but never deletes a workspace that existed before the run. Use it to run tests inside the container and check the build of a newly created workspace.
+`devsy ci` starts a devcontainer workspace and runs a command in it. Use it to run tests inside the container and check the build of a newly created workspace.
+
+<Callout type="warn">
+If you omit the workspace argument and select an existing workspace interactively, Devsy can delete that workspace after the run, including its workspace data. Pass `--keep` when selecting a workspace interactively to prevent cleanup.
+</Callout>
 
 ## How it works
 
-1. Devsy resolves a workspace from the current directory or a given source.
+1. Devsy resolves a workspace from the given source. With no source, it prompts for a workspace in an interactive terminal.
 2. Devsy builds and starts the devcontainer like `devsy workspace up`, without IDE or SSH config changes.
 3. Devsy runs the command inside the container.
-4. Devsy deletes the workspace, even when the command fails, unless you pass `--keep`. Devsy never deletes a workspace that existed before the run.
+4. Unless you pass `--keep`, Devsy attempts cleanup when its initial lookup finds no existing workspace, even when the command fails. This can delete an existing workspace selected interactively after that lookup.
 
-The command's exit code becomes the exit code of `devsy ci`, so a failing test fails the CI job.
+A failing command fails the CI job. Workspace setup or cleanup errors also cause `devsy ci` to fail.
 
 ## Usage
 
@@ -23,26 +27,26 @@ devsy ci [flags] [workspace-path|workspace-name] -- <cmd> [args...]
 Run the test suite inside the devcontainer for the current project:
 
 ```sh
-devsy ci -- make test
+devsy ci . -- make test
 ```
 
 Target a specific project folder and pass environment variables:
 
 ```sh
 devsy ci ./service -- npm test
-devsy ci --remote-env CI=true --remote-env NODE_ENV=test -- npm test
+devsy ci --remote-env CI=true --remote-env NODE_ENV=test . -- npm test
 ```
 
 Select a named config, such as a `.devcontainer/<name>` profile:
 
 ```sh
-devsy ci --devcontainer id:ci -- make test
+devsy ci --devcontainer id:ci . -- make test
 ```
 
 Keep the workspace after the run, for debugging:
 
 ```sh
-devsy ci --keep -- ./run-integration-tests.sh
+devsy ci --keep . -- ./run-integration-tests.sh
 ```
 
 ### Common flags
@@ -87,7 +91,7 @@ structured result.
 
 ## Setup history after cleanup
 
-`devsy ci` deletes the workspace, but Devsy keeps the build and lifecycle hook history in the local store. Read it by run ID after the job ends, or from an artifact step on the same machine:
+Devsy keeps the build and lifecycle hook history in the local store after workspace cleanup. Read it by run ID after the job ends, or from an artifact step on the same machine:
 
 ```sh
 devsy workspace logs --source setup --list
@@ -104,7 +108,7 @@ Desktop launches, `--detach`, JSON output, and management or platform tasks also
 
 Pass values to the workspace in one of these ways:
 
-- Environment variables: `devsy ci --workspace-env NAME=value -- make test`. Use `--workspace-env` for values that hooks need. The `--remote-env` flag applies only to the command that CI runs.
+- Environment variables: `devsy ci --workspace-env NAME=value . -- make test`. Use `--workspace-env` for values that hooks need. The `--remote-env` flag applies only to the command that CI runs.
 - Secrets: `--secret` injects a stored Devsy secret. See [Secrets](./secrets.mdx).
 - Files: write the value to a file that the hook reads.
 - Arguments: put a value that is not secret in the hook command, such as `"postStartCommand": ["./start.sh", "example-name"]`.
@@ -144,5 +148,5 @@ jobs:
       - name: Run CI in devcontainer
         run: |
           devsy provider add docker && devsy provider use docker
-          devsy ci -- make test
+          devsy ci . -- make test
 ```

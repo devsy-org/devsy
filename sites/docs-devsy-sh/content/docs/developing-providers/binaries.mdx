@@ -12,9 +12,9 @@ binaries:
   MY_BINARY:
     - os: linux
       arch: amd64
-      path: https://example.com/my-binary-linux-amd64  # URL or local path
+      path: https://example.com/my-binary-linux-amd64
       checksum: <sha256 of the file>
-      name: my-binary             # optional, defaults to the file name
+      name: my-binary
     - os: darwin
       arch: arm64
       path: https://example.com/my-binary-darwin-arm64
@@ -22,6 +22,8 @@ binaries:
 ```
 
 Supported archives are `.tgz`, `.tar`, `.tar.gz` and `.zip`. When a user adds the provider, Devsy downloads the item that matches their OS and architecture and verifies `checksum` if set.
+
+`path` can also point to a local executable. `name` sets the installed file name for a direct download and defaults to the file name in `path`.
 
 See the official providers, such as [devsy-provider-aws](https://github.com/devsy-org/devsy-provider-aws), for complete examples.
 
@@ -39,7 +41,7 @@ binaries:
     - os: linux
       arch: amd64
       path: https://example.com/my-binary-linux-amd64.tar.gz
-      archivePath: bin/my-binary  # executable inside the archive
+      archivePath: bin/my-binary
       checksum: <sha256 of bin/my-binary after extraction>
 ```
 
@@ -49,7 +51,7 @@ Devsy extracts the whole archive into a folder for the binary and keeps its layo
 
 `checksum` is optional, except for the `agent.binaries` entry selected by `agent.external.binary`, which needs one for every platform. See [External Driver](./driver.mdx#external-driver).
 
-When set, Devsy computes the SHA256 of the file it runs and compares it case-insensitively. For an HTTP(S) archive, that file is the one extracted at `archivePath`, never the archive. A mismatch deletes the file and fails the download without retrying.
+When set, Devsy computes the SHA-256 of the executable and compares it case-insensitively. For an HTTP(S) archive, it checks the extracted file at `archivePath`, not the archive. A downloaded file with a checksum mismatch is removed, and the download fails without retrying. A local source file with a mismatch is left in place. Verify the binary against a trusted source before changing its checksum. Update the manifest checksum only for an intentional, verified binary change; otherwise, restore the expected file before trying again.
 
 ## Use a binary
 

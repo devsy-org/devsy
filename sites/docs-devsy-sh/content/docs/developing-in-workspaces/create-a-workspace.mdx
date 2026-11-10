@@ -176,17 +176,21 @@ This prints the configuration and live state. Add `--result-format json` for scr
 
 Recreating applies changes to `devcontainer.json` or its Dockerfile. If a prebuild repository is configured, Devsy looks there for the new image first.
 
-```sh
-devsy workspace up my-workspace --recreate
-```
-
 <Callout type="warn">
 Recreating keeps only the project folder and mounted volumes. Anything else in the container is lost.
 </Callout>
 
+```sh
+devsy workspace up my-workspace --recreate
+```
+
 ## Reset a workspace
 
-A reset pulls the latest Git changes, or uploads your local folder again. For local-folder workspaces, Devsy removes and re-seeds its managed named volumes. Bind mounts and unmanaged volumes stay.
+A reset recreates the container and prepares the source again. For a Git workspace, Devsy removes the existing project folder and clones the configured ref again. For a local-folder workspace, Devsy re-seeds its managed named volumes from the local folder. Bind mounts and unmanaged volumes stay.
+
+<Callout type="warn">
+Back up changes in the workspace before resetting. Removing a Git workspace's project folder deletes uncommitted work and other files in that folder. Resetting managed named volumes deletes their existing contents.
+</Callout>
 
 ```sh
 devsy workspace up my-workspace --reset
