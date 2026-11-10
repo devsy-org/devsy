@@ -10,9 +10,9 @@ sidebar_label: Continuous Integration
 1. Devsy resolves a workspace from the current directory or a given source.
 2. Devsy builds and starts the devcontainer like `devsy workspace up`, without IDE or SSH config changes.
 3. Devsy runs the command inside the container.
-4. Devsy deletes the workspace, even when the command fails, unless you pass `--keep`. Devsy never deletes a workspace that existed before the run.
+4. Devsy attempts to delete a newly created workspace, even when the command fails, unless you pass `--keep`. Devsy never deletes a workspace that existed before the run.
 
-The command's exit code becomes the exit code of `devsy ci`, so a failing test fails the CI job.
+A failing command fails the CI job. Workspace setup or cleanup errors also cause `devsy ci` to fail.
 
 ## Usage
 
@@ -87,7 +87,7 @@ structured result.
 
 ## Setup history after cleanup
 
-`devsy ci` deletes the workspace, but Devsy keeps the build and lifecycle hook history in the local store. Read it by run ID after the job ends, or from an artifact step on the same machine:
+Devsy keeps the build and lifecycle hook history in the local store after workspace cleanup. Read it by run ID after the job ends, or from an artifact step on the same machine:
 
 ```sh
 devsy workspace logs --source setup --list

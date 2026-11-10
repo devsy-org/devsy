@@ -49,7 +49,7 @@ Options for the Kubernetes driver:
 - **serviceAccount**: if set, the dev container uses this service account.
 - **architecture**: CPU architecture of the workspace pod, e.g. `amd64` or `arm64`. If empty, Devsy detects it from the cluster nodes. It fails if the cluster mixes architectures.
 - **imageConfigFile**: path to a versioned JSON file with the digest-pinned image reference, platform, and OCI config for the devcontainer.json `image`. When set, Devsy reads the user, env, entrypoint, cmd, and `devcontainer.metadata` label from the file instead of the registry. See [Starting workspaces without registry access](#starting-workspaces-without-registry-access).
-- **inactivityTimeout**: idle time before Devsy stops the pod
+- **inactivityTimeout**: deprecated fallback for `agent.containerInactivityTimeout`. Set `agent.containerInactivityTimeout` for new providers.
 - **storageClass**: storage class for the persistent volume claim
 - **diskSize**: default persistent volume size, e.g. `10Gi`
 - **pvcAccessMode**: access mode for the persistent volume claim, e.g. `RWO`, `ROX`, `RWX` or `RWOP`
@@ -86,19 +86,15 @@ Example provider that runs a workspace in the current kube context:
 name: simple-kubernetes
 version: v0.0.1
 agent:
-  containerInactivityTimeout: 10m # Pod stops itself after being idle for the timeout
-  path: ${DEVSY}
+  containerInactivityTimeout: 10m
+  local: true
   driver: kubernetes
   kubernetes:
-    # kubernetesContext: default
-    # kubernetesNamespace: my-namespace-for-devsy
-    # clusterRole: ""
-    # serviceAccount: ""
     diskSize: 20Gi
     createNamespace: true
 exec:
   command: |-
-    ${DEVSY} helper sh -c "${COMMAND}"
+    "${DEVSY}" internal sh -c "${COMMAND}"
 ```
 
 Add the provider with `devsy provider add ./simple-kubernetes.yaml`.

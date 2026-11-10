@@ -11,12 +11,16 @@ Devsy creates development workspaces from a [devcontainer.json](https://containe
   <figcaption>Devsy</figcaption>
 </figure>
 
-A [provider](./managing-providers/what-are-providers) decides where a workspace runs: your machine, an SSH host, Kubernetes, or a cloud. You can also [write your own](./developing-providers/quickstart). Devsy creates and manages every workspace the same way, whatever the provider.
+A [provider](./managing-providers/what-are-providers) decides where a workspace runs: your machine, an SSH host, Kubernetes, or a cloud. You can also [write your own](./developing-providers/quickstart). The provider handles access to that environment; you use Devsy to create, connect to, and stop the workspace.
 
-## Benefits
+## What you can do
 
-- **One environment definition.** `devcontainer.json` is an open standard. The same file works on every provider.
-- **Your infrastructure.** Run workspaces on machines you already have. Machine providers can stop idle machines with an [inactivity timeout](./developing-in-workspaces/inactivity-timeout).
-- **Portable workspaces.** Recreate a workspace on another provider with the same definition. To also move container and volume state, [snapshot](./developing-in-workspaces/workspace-snapshots) a local-provider workspace that has a single bind mount.
-- **Your editor.** VS Code, the JetBrains IDEs, and any editor that can connect over SSH.
-- **Desktop app and CLI.** Use the desktop app day to day. Use the CLI for automation.
+- Define your project's tools and setup commands in `devcontainer.json`, an open standard. Runtime-specific settings, such as host mounts, may need changes when you switch providers.
+- Run workspaces on machines you already have. Machine providers can stop idle machines with an [inactivity timeout](./developing-in-workspaces/inactivity-timeout).
+- Recreate a workspace on another provider with the same definition. To also move container and volume state, [snapshot](./developing-in-workspaces/workspace-snapshots) a local-provider workspace that has a single bind mount.
+- Connect with VS Code, a JetBrains IDE, or any editor that supports SSH.
+- Use the desktop app for daily work and the CLI for automation.
+
+## Start a workspace
+
+[Install Devsy](./getting-started/install), then follow the [quickstart](./getting-started/quickstart) to start a workspace with Docker. If you already have a workspace, see [Connect to a workspace](./developing-in-workspaces/connect-to-a-workspace).

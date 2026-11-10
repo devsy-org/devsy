@@ -3,7 +3,7 @@ title: Workspace Snapshots
 sidebar_label: Workspace Snapshots
 ---
 
-A snapshot saves a workspace at one point in time: the container filesystem (installed packages, config changes) and the contents of the bind-mounted volume, including uncommitted code. Devsy stores snapshots as OCI artifacts in a registry you control. Restore a snapshot later or use it to move a workspace to another provider.
+A snapshot saves the container filesystem (installed packages and config changes) and the contents of the workspace mount, including uncommitted code. Devsy stores snapshots as OCI artifacts in a registry you control. Restore a snapshot later or use it to move a workspace to another provider.
 
 <Callout title="Registry required">
 Devsy pushes snapshots to an OCI registry and pulls them from it when needed. Creating a snapshot also leaves the committed container image locally after the push, but the registry is still required for the snapshot manifest and volume. You need push and pull access.
@@ -17,6 +17,8 @@ Devsy pushes snapshots to an OCI registry and pulls them from it when needed. Cr
 ## Create a snapshot
 
 The workspace must exist and be running.
+
+Stop applications that write to the container filesystem or workspace mount before creating the snapshot. Devsy captures them separately while the workspace is running, so changes made during capture can leave the snapshot inconsistent.
 
 ```sh
 devsy snapshot create my-workspace --registry ghcr.io/my-org/snapshots

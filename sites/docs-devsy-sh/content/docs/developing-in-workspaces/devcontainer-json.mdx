@@ -94,15 +94,15 @@ To send HTTP headers when Devsy downloads a feature archive, set them under `cus
 
 After you edit the configuration, apply it without deleting the workspace:
 
+<Callout type="warn" title="Recreating">
+Anything outside volumes is lost. The project folder and other mounted paths stay.
+</Callout>
+
 ```sh
 devsy workspace up my-workspace --recreate
 ```
 
 Devsy builds and validates the new image before stopping or replacing the existing container. If the build fails, the existing workspace stays in its previous state, whether running or stopped. A later failure can leave the old container stopped or removed, depending on the provider. Pass `--recovery` to start a recovery container with features and lifecycle commands disabled if the build fails.
-
-<Callout type="warn" title="Recreating">
-Anything outside volumes is lost. The project folder and other mounted paths stay.
-</Callout>
 
 ## postStartCommand and waitFor
 

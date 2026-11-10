@@ -7,14 +7,13 @@ Options are settings the user configures for a provider, such as an account, reg
 
 ```yaml
 options:
-  MY_OPTION:
-    description: "this is my option"
-    default: "default_value"
-    required: false
+  API_TOKEN:
+    description: API token for the provider service
+    required: true
     password: true
 ```
 
-Devsy validates options when the provider is added. It passes them to every command as environment variables. Options can also appear in the `agent` section and in `agent.exec`. The provider reads and validates its own variables. Put that check in the `init` command, which Devsy runs when options change.
+Devsy validates the option definitions when the provider is added. It resolves their values and passes them to provider commands as environment variables. The `agent` section can also reference these values. Use `init` for checks that need to contact the service, such as verifying a token. Devsy runs `init` when options change.
 
 ## Attributes
 
@@ -23,7 +22,7 @@ Devsy validates options when the provider is added. It passes them to every comm
 - `default`: default value, as a string. It can reference other options, for example `${OTHER}-suffix`. Devsy resolves them in order. Cannot be combined with `command`.
 - `required`: the value must be non-empty. The CLI prompts for it, and the Desktop app asks for it.
 - `password`: treat the value as a secret. `devsy provider get` hides it, and the Desktop app shows a password field.
-- `type`: `string` (default), `multiline`, `duration`, `number` or `boolean`. Devsy validates the value against it.
+- `type`: `string` (default), `multiline`, `duration`, `number` or `boolean`. Devsy validates the value against it. `number` accepts integers, not decimals; `duration` accepts Go durations such as `30s` or `10m`.
 - `enum`: the only allowed values. Devsy rejects anything else.
 - `suggestions`: values offered as autocomplete in the Desktop app. Not enforced, and not shown in the CLI.
 - `validationPattern`: regex the value must match.
@@ -41,21 +40,25 @@ Devsy validates options when the provider is added. It passes them to every comm
 Pass a variable from the user's machine:
 
 ```yaml
-AWS_ACCESS_KEY_ID:
-  description: The AWS access key ID
-  command: printf "%s" "${AWS_ACCESS_KEY_ID:-}"
+options:
+  AWS_ACCESS_KEY_ID:
+    description: The AWS access key ID
+    command: printf "%s" "${AWS_ACCESS_KEY_ID:-}"
 ```
 
 Run a helper binary and cache the result:
 
 ```yaml
-AWS_TOKEN:
-  local: true
-  hidden: true
-  cache: 5m
-  description: The AWS auth token to use
-  command: ${AWS_PROVIDER} token
+options:
+  AWS_TOKEN:
+    local: true
+    hidden: true
+    cache: 5m
+    description: The AWS auth token to use
+    command: ${AWS_PROVIDER} token
 ```
+
+The second example assumes the provider declares a helper binary named `AWS_PROVIDER` with a `token` command.
 
 ## Built-in options
 
