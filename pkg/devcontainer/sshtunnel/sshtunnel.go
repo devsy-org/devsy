@@ -257,25 +257,14 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 		Stderr:  streamer,
 	})
 	if err != nil {
-		_ = streamer.Close()
-		if out := streamer.ErrorOutput(); out != "" {
-			return fmt.Errorf("run agent command failed: %w\n%s", err, out)
-		}
 		return fmt.Errorf("run agent command failed: %w", err)
 	}
 	return nil
 }
 
-const (
-	maxLogLines = 25
-	maxLogBytes = 256 * 1024
-)
-
 func newSSHTunnelJSONLogStreamer() *log.JSONLogStreamer {
 	return log.NewJSONLogStreamer(log.StreamerOptions{
 		FallbackLevel:           log.LevelDebug,
-		CaptureLines:            maxLogLines,
-		CaptureBytes:            maxLogBytes,
 		DetectLevelPrefixes:     true,
 		TreatUnknownJSONAsDebug: true,
 	})
