@@ -302,7 +302,7 @@ func (c *client) Login(host string, insecure bool) error {
 		msg += " --insecure"
 	}
 	msg += "'"
-	log.Infof(msg, host, pkgconfig.BinaryName+" pro login", host)
+	log.Infof(msg, host, pkgconfig.BinaryName+" platform login", host)
 	log.Infof("Logging into Devsy Platform")
 
 	key = <-keyChannel
@@ -491,7 +491,8 @@ func (c *client) restConfig(hostSuffix string) (*rest.Config, error) {
 		return nil, errors.New("no config loaded")
 	} else if c.config.Host == "" || c.config.AccessKey == "" {
 		return nil, errors.New(
-			"not logged in, run 'devsy pro start' or 'devsy pro login [devsy-pro-url]'",
+			"not logged in, run 'devsy platform start' or " +
+				"'devsy platform login [devsy-platform-url]'",
 		)
 	}
 
