@@ -153,7 +153,7 @@ gh api repos/devsy-org/devsy/actions/runs/<run_id>/jobs --jq '.jobs[] | select(.
 
 3. Extract failure signature with bounded log extraction:
 ```bash
-gh run view --job <job_id> --log-failed | tail -n 150
+gh run view -R devsy-org/devsy --job <job_id> --log-failed | tail -n 150
 ```
 Standardized fingerprint formula:
 The fingerprint is the first 12 hex characters of SHA-256 over the lowercase string workflow|job|step|test, after stripping ANSI escapes, timestamps, and hex memory addresses.

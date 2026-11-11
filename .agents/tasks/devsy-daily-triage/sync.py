@@ -7,8 +7,13 @@ from pathlib import Path
 
 
 def run_command(args: list[str]) -> str:
-    result = subprocess.run(args, capture_output=True, text=True, check=True)
-    return result.stdout.strip()
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as exc:
+        err_msg = exc.stderr.strip() if exc.stderr else str(exc)
+        sys.stderr.write(f"Command failed ({' '.join(args)}): {err_msg}\n")
+        sys.exit(1)
 
 
 def find_schedule_id(schedule_name: str) -> str | None:
