@@ -3,9 +3,9 @@ agent:
   model: anthropic/claude-haiku-5-5
   mode: full
 manager:
-  provider: codex
-  model: gpt-6.1-terra
-  mode: full-access
+  provider: omp
+  model: anthropic/claude-haiku-5-5
+  mode: full
 timeout: 2h
 role:
   silence: 30m
