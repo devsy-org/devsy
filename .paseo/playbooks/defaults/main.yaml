@@ -1,7 +1,7 @@
 agent:
-  provider: claude
-  model: claude-sonnet-5-5
-  mode: auto
+  provider: omp
+  model: anthropic/claude-haiku-5-5
+  mode: full
 manager:
   provider: codex
   model: gpt-6.1-terra
