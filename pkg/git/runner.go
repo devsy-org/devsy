@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/livetee"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
@@ -44,13 +45,14 @@ type Runner interface {
 
 // RunOptions describes one command invocation.
 type RunOptions struct {
-	Binary string
-	Dir    string
-	Env    []string
-	Args   []string
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
+	Binary      string
+	Dir         string
+	Env         []string
+	Args        []string
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	CloseOutput func() error
 	// UnredactedStdout preserves machine-readable output that may contain a
 	// credential, such as the response from `git credential fill`.
 	UnredactedStdout bool
@@ -68,12 +70,13 @@ type execRunner struct{}
 var _ Runner = execRunner{}
 
 func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
+	tee := livetee.NewWithClose(io.Discard, nil, opts.CloseOutput)
 	binary := opts.Binary
 	if binary == "" {
 		binary = binGit
 	}
 	if !command.Exists(binary) {
-		return RunResult{}, missingBinaryError(binary, opts.Args)
+		return RunResult{}, errors.Join(missingBinaryError(binary, opts.Args), tee.Finish())
 	}
 
 	cmd := exec.CommandContext(
@@ -90,13 +93,13 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 		stdoutRedactor = nil
 	}
 	outBuf := subprocess.NewBuffer(stdoutRedactor)
-	streamOut := attachStream(&cmd.Stdout, outBuf, opts.Stdout, stdoutRedactor)
+	streamOut := attachStream(&cmd.Stdout, outBuf, tee.Writer(opts.Stdout), stdoutRedactor)
 	errBuf := subprocess.NewBuffer(redactor)
-	streamErr := attachStream(&cmd.Stderr, errBuf, opts.Stderr, redactor)
+	streamErr := attachStream(&cmd.Stderr, errBuf, tee.Writer(opts.Stderr), redactor)
 
 	err := cmd.Run()
 	result := RunResult{Stdout: []byte(outBuf.String()), Stderr: []byte(errBuf.String())}
-	flushErr := errors.Join(flushStream(streamOut), flushStream(streamErr))
+	flushErr := errors.Join(flushStream(streamOut), flushStream(streamErr), tee.Finish())
 
 	return result, finishRun(opts.Args, errBuf.String(), err, flushErr)
 }
@@ -141,7 +144,7 @@ func attachStream(
 		return nil
 	}
 	stream := &subprocess.StreamingRedactingWriter{Next: live, Redactor: redactor}
-	*dst = io.MultiWriter(stream, buf)
+	*dst = io.MultiWriter(buf, stream)
 	return stream
 }
 

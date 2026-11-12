@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -12,6 +13,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/blang/semver/v4"
 	composecli "github.com/compose-spec/compose-go/v2/cli"
@@ -20,7 +22,10 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/livetee"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/wslg"
 )
 
@@ -277,22 +282,51 @@ func (h *ComposeHelper) Run(
 	args []string,
 	streams docker.Streams,
 ) error {
+	return h.RunWithOutput(ctx, args, streams, Output{})
+}
+
+type Output struct {
+	Capture io.Writer
+	Close   func() error
+}
+
+type captureWriter struct {
+	mu   sync.Mutex
+	next io.Writer
+}
+
+func (w *captureWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.next.Write(p)
+}
+
+func (h *ComposeHelper) RunWithOutput(
+	ctx context.Context,
+	args []string,
+	streams docker.Streams,
+	output Output,
+) error {
 	cmd := h.buildCmd(ctx, args...)
 	cmd.Stdin = streams.Stdin
-	cmd.Stdout = streams.Stdout
-
-	var stderrBuf strings.Builder
-	if streams.Stderr != nil {
-		cmd.Stderr = io.MultiWriter(streams.Stderr, &stderrBuf)
-	} else {
-		cmd.Stderr = &stderrBuf
+	tee := livetee.NewWithClose(io.Discard, nil, output.Close)
+	redactor := secrets.NewEnvironmentRedactor(cmd.Environ())
+	stdout, stderr := tee.Writer(streams.Stdout), tee.Writer(streams.Stderr)
+	if output.Capture != nil {
+		capture := &captureWriter{next: output.Capture}
+		stdout = io.MultiWriter(capture, stdout)
+		stderr = io.MultiWriter(capture, stderr)
 	}
-
+	outStream := &subprocess.StreamingRedactingWriter{Next: stdout, Redactor: redactor}
+	errStream := &subprocess.StreamingRedactingWriter{Next: stderr, Redactor: redactor}
+	cmd.Stdout = outStream
+	var stderrBuf strings.Builder
+	cmd.Stderr = io.MultiWriter(&stderrBuf, errStream)
 	err := cmd.Run()
 	if err != nil && stderrBuf.Len() > 0 {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(stderrBuf.String()), err)
+		err = fmt.Errorf("%s: %w", strings.TrimSpace(redactor.Redact(stderrBuf.String())), err)
 	}
-	return err
+	return errors.Join(err, outStream.Flush(), errStream.Flush(), tee.Finish())
 }
 
 func (h *ComposeHelper) Stop(ctx context.Context, projectName string, args []string) error {

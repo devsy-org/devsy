@@ -114,11 +114,11 @@ func (r *runner) startComposeInstance(
 	}
 	args = r.onlyRunServices(append(args, "start"), params.runParams.parsedConfig)
 	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-	if err := params.composeHelper.Run(
+	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		args,
 		docker.Streams{Stdout: writer, Stderr: writer},
+		compose.Output{Close: writer.Close},
 	); err != nil {
 		return nil, fmt.Errorf("start existing compose workspace: %w", err)
 	}

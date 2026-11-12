@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devsy-org/devsy/e2e/framework/internal/livetee"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/livetee"
 )
 
 // execWaitDelay bounds how long Wait may block on I/O after the process exits
