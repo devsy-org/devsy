@@ -47,6 +47,12 @@ const (
 	// EnvPlatformRunnerLegacy is the pre-rename runner marker still set by existing runner pods.
 	EnvPlatformRunnerLegacy = "DEVSY_PRO_RUNNER"
 
+	// EnvPlatformEnabled exposes the platform command tree when set to "true".
+	EnvPlatformEnabled = "DEVSY_PLATFORM_ENABLED"
+
+	// EnvPlatformEnabledLegacy is the pre-rename switch for the platform command tree.
+	EnvPlatformEnabledLegacy = "DEVSY_PRO_ENABLED"
+
 	// EnvTelemetryDistinctID is set by the desktop app on spawned CLI
 	// processes so their events share the desktop's analytics identity.
 	EnvTelemetryDistinctID = "DEVSY_TELEMETRY_DISTINCT_ID"

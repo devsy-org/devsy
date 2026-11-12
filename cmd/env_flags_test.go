@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	pkgflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
@@ -23,7 +24,7 @@ const (
 // setting the corresponding DEVSY_* env var pushes the value into the bound
 // pflag at registration time, satisfying cobra's required-flag check.
 func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
-	t.Setenv(envPlatformEnabled, "true")
+	t.Setenv(config.EnvPlatformEnabled, "true")
 	cases := []struct {
 		cmdPath    string
 		flagName   string
@@ -99,7 +100,7 @@ func TestOptInEnvFlags_NoEnvLeavesDefault(t *testing.T) {
 // BindEnv: setting DEVSY_HOST="" must NOT mark the flag as Changed (otherwise
 // MarkFlagRequired would be satisfied by an empty value).
 func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
-	t.Setenv(envPlatformEnabled, "true")
+	t.Setenv(config.EnvPlatformEnabled, "true")
 	t.Setenv(envDevsyHost, "")
 	rootCmd, _ := BuildRoot()
 	cmd := resolveCommand(t, rootCmd, "platform workspace list")
@@ -112,7 +113,7 @@ func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
 // wins over a value supplied via DEVSY_*. This is the standard precedence
 // users expect: flag > env > default.
 func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
-	t.Setenv(envPlatformEnabled, "true")
+	t.Setenv(config.EnvPlatformEnabled, "true")
 	t.Setenv(envDevsyHost, "env-value")
 	rootCmd, _ := BuildRoot()
 	// Replace the leaf command's RunE so Execute() doesn't try to actually
@@ -130,7 +131,7 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 }
 
 func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
-	t.Setenv(envPlatformEnabled, "true")
+	t.Setenv(config.EnvPlatformEnabled, "true")
 	t.Setenv(envDevsyHost, "from-env.example.com")
 	rootCmd, _ := BuildRoot()
 	leaf := resolveCommand(t, rootCmd, "platform workspace list")
@@ -149,7 +150,7 @@ func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 // This catches the regression where a future addition to cmd/platform/ forgets
 // the inline BindEnv call.
 func TestOptInEnvFlags_PlatformSubcommandSweep(t *testing.T) {
-	t.Setenv(envPlatformEnabled, "true")
+	t.Setenv(config.EnvPlatformEnabled, "true")
 	for _, env := range []string{envDevsyHost, envDevsyProject} {
 		t.Setenv(env, "sweep-"+strings.ToLower(env))
 	}
@@ -175,7 +176,8 @@ func TestOptInEnvFlags_PlatformSubcommandSweep(t *testing.T) {
 
 // TestPlatformCommand_HiddenWhenDisabled verifies platform is gated off by default.
 func TestPlatformCommand_HiddenWhenDisabled(t *testing.T) {
-	t.Setenv(envPlatformEnabled, "")
+	t.Setenv(config.EnvPlatformEnabled, "")
+	t.Setenv(config.EnvPlatformEnabledLegacy, "")
 	rootCmd, _ := BuildRoot()
 	for _, c := range rootCmd.Commands() {
 		use := c.Use
@@ -186,7 +188,7 @@ func TestPlatformCommand_HiddenWhenDisabled(t *testing.T) {
 			t,
 			"platform",
 			use,
-			"platform command should not be registered when DEVSY_PRO_ENABLED is unset",
+			"platform command should not be registered when DEVSY_PLATFORM_ENABLED is unset",
 		)
 	}
 }
