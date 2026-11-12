@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devsy-org/devsy/e2e/framework/internal/livetee"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/livetee"
 )
 
 const (

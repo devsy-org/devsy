@@ -677,11 +677,11 @@ func (r *runner) composeUpExistingProject(
 	upArgs = r.onlyRunServices(upArgs, params.parsedConfig)
 
 	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-	if err := params.composeHelper.Run(
+	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		upArgs,
 		docker.Streams{Stdout: writer, Stderr: writer},
+		compose.Output{Close: writer.Close},
 	); err != nil {
 		log.Debugf("could not reuse persisted compose project: %v", err)
 		return nil, err
@@ -1414,11 +1414,11 @@ func (r *runner) composeUpAndFindContainer(
 	upArgs = r.onlyRunServices(upArgs, params.parsedConfig)
 
 	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-	if err := params.composeHelper.Run(
+	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		upArgs,
 		docker.Streams{Stdout: writer, Stderr: writer},
+		compose.Output{Close: writer.Close},
 	); err != nil {
 		return nil, fmt.Errorf("docker-compose run: %w", err)
 	}

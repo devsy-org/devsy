@@ -247,21 +247,20 @@ func (r *Repo) run(ctx context.Context, args ...string) (RunResult, error) {
 // runLogged executes a git subcommand streaming its output to the logs.
 func (r *Repo) runLogged(ctx context.Context, args ...string) error {
 	w := log.Writer(log.LevelInfo)
-	defer func() { _ = w.Close() }()
 
 	_, err := r.runner.Run(ctx, RunOptions{
-		Dir:    r.path,
-		Env:    r.env,
-		Args:   args,
-		Stdout: w,
-		Stderr: w,
+		Dir:         r.path,
+		Env:         r.env,
+		Args:        args,
+		Stdout:      w,
+		Stderr:      w,
+		CloseOutput: w.Close,
 	})
 	return err
 }
 
 func (r *Repo) cloneWith(ctx context.Context, repository string, c cloneConfig) error {
 	w := log.Writer(log.LevelInfo)
-	defer func() { _ = w.Close() }()
 
 	pw := newProgressWriter(w)
 
@@ -272,14 +271,12 @@ func (r *Repo) cloneWith(ctx context.Context, repository string, c cloneConfig) 
 	args = append(args, cloneArgsForLFS()...)
 
 	_, err := r.runner.Run(ctx, RunOptions{
-		Env:    env,
-		Args:   args,
-		Stdout: pw,
-		Stderr: pw,
+		Env:         env,
+		Args:        args,
+		Stdout:      pw,
+		Stderr:      pw,
+		CloseOutput: func() error { return errors.Join(pw.Close(), w.Close()) },
 	})
-	if closeErr := pw.Close(); err == nil {
-		err = closeErr
-	}
 	return err
 }
 

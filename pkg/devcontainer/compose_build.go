@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -419,13 +420,12 @@ func (r *runner) runComposeBuild(
 	buildArgs []string,
 ) error {
 	logWriter := log.Writer(log.LevelInfo)
-	defer func() { _ = logWriter.Close() }()
-	// One shared writer keeps stdout and stderr on a single pipe, so the
-	// recorded text is combined like the logged text.
 	step := buildkit.StartStep(ctx, "compose")
-	writer := step.Tee(logWriter, workspacelogs.StreamCombined)
+	writer := step.Tee(io.Discard, workspacelogs.StreamCombined)
 	log.Debugf("Run %s %s", composeHelper.Command, strings.Join(buildArgs, " "))
-	err := composeHelper.Run(ctx, buildArgs, docker.Streams{Stdout: writer, Stderr: writer})
+	err := composeHelper.RunWithOutput(ctx, buildArgs,
+		docker.Streams{Stdout: logWriter, Stderr: logWriter},
+		compose.Output{Capture: writer, Close: logWriter.Close})
 	step.Finish(ctx, err)
 	return err
 }
