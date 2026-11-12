@@ -70,7 +70,7 @@ The authoritative path for executing code fixes is the declarative Paseo Playboo
 
 If executing via direct subagent profile:
 
-1. Delegate to `.agents/agents/fix-worker/agent.md` using `.agents/agents/fix-worker/config.json`.
+1. Delegate to the subagent profile defined at `.agents/agents/fix-worker/agent.md`.
 2. Authorized provider configurations:
    * `codex/gpt-6.1-sol`
    * `codex/gpt-6.1-terra`

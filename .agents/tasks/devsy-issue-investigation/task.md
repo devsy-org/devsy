@@ -77,7 +77,7 @@ For each selected candidate issue:
    paseo workspace create --isolation worktree --mode branch-off --base origin/main --new-branch diag/<fingerprint> --json
    ```
 
-2. Delegate to the subagent profile defined at `.agents/agents/ci-investigator/agent.md` using configuration `.agents/agents/ci-investigator/config.json`.
+2. Delegate to the subagent profile defined at `.agents/agents/ci-investigator/agent.md`.
 
 3. Format the subagent payload:
    ```json

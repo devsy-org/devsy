@@ -9,6 +9,17 @@ models_allowed:
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
   - codex/gpt-6.1-terra
+target: paseo
+read_only: false
+use_host_git_config: true
+tools:
+  - read
+  - edit
+  - write
+  - glob
+  - grep
+  - find
+  - bash
 ---
 
 # Fix Worker Agent Profile

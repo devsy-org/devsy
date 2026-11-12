@@ -13,6 +13,13 @@ models_allowed:
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
   - antigravity/gemini-3.8-flash-medium
+read_only: true
+tools:
+  - read
+  - glob
+  - grep
+  - find
+  - bash
 ---
 
 # CI Investigator Agent Profile (Paseo)
