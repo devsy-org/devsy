@@ -77,6 +77,14 @@ func (s *RunArgsSuite) TestRejectsOptionsItCannotPlace() {
 			"runArgs: item 1: unknown option --future-flag; write it as --future-flag=VALUE",
 		},
 		{[]string{"-itZ"}, "runArgs: item 1: unknown option -Z"},
+		{
+			[]string{"--rootfs"},
+			"runArgs: item 1: option --rootfs makes the runtime read the image as a root filesystem",
+		},
+		{
+			[]string{"-it", "--rootfs=true"},
+			"runArgs: item 2: option --rootfs makes the runtime read the image as a root filesystem",
+		},
 	} {
 		s.EqualError(Validate(DockerCompatible, tc.args, s.dir), tc.want, tc.args)
 	}

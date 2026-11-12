@@ -21,6 +21,7 @@ const (
 	valueOption
 	labelOption
 	labelFileOption
+	imageSourceOption
 )
 
 type Grammar struct {
@@ -97,6 +98,10 @@ func (g Grammar) parseLong(arg string) (assignment, bool, error) {
 	name, value, hasValue := strings.Cut(arg, "=")
 	a := assignment{name: name, kind: g.options[name], value: value}
 	switch {
+	case a.kind == imageSourceOption:
+		return assignment{}, false, fmt.Errorf(
+			"option %s makes the runtime read the image as a root filesystem", name,
+		)
 	case hasValue:
 		return a, false, nil
 	case a.kind == unknownOption:

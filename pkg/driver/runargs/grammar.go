@@ -6,7 +6,7 @@ var dockerCompatibleOptions = map[optionKind]string{
 	switchOption: "-d --detach -i --interactive -P --publish-all -q --quiet -t --tty " +
 		"--disable-content-trust --env-host --http-proxy --init --no-healthcheck " +
 		"--no-hostname --no-hosts --oom-kill-disable --passwd --privileged --read-only " +
-		"--read-only-tmpfs --replace --rm --rmi --rootfs --sig-proxy --tls-verify " +
+		"--read-only-tmpfs --replace --rm --rmi --sig-proxy --tls-verify " +
 		"--unsetenv-all --use-api-socket",
 	valueOption: "-a --attach -c --cpu-shares -e --env -h --hostname -m --memory " +
 		"-p --publish -u --user -v --volume -w --workdir --add-host --annotation --arch " +
@@ -37,8 +37,9 @@ var dockerCompatibleOptions = map[optionKind]string{
 		"--subgidname --subuidname --sysctl --systemd --timeout --tmpfs --tz --uidmap " +
 		"--ulimit --umask --unsetenv --userns --uts --variant --verify --volume-driver " +
 		"--volumes-from",
-	labelOption:     "-l --label",
-	labelFileOption: "--label-file",
+	labelOption:       "-l --label",
+	labelFileOption:   "--label-file",
+	imageSourceOption: "--rootfs",
 }
 
 var appleContainerOptions = map[optionKind]string{

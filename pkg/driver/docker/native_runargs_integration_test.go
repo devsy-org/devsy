@@ -1,9 +1,12 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,11 +97,20 @@ func (s *NativeRunArgsSuite) runDevContainer(name string, runArgs ...string) err
 }
 
 func (s *NativeRunArgsSuite) assertNoContainer(name string) {
-	details, err := s.helper.InspectContainers(context.Background(), []string{name})
-	if err != nil || len(details) == 0 {
+	var out bytes.Buffer
+	err := s.helper.Run(
+		context.Background(),
+		[]string{"ps", "--all", "--format", "{{.Names}}"},
+		docker.Streams{Stdout: &out},
+	)
+	s.Require().NoError(err)
+	if !slices.Contains(strings.Fields(out.String()), name) {
 		s.T().Logf("%s: no container", name)
 		return
 	}
+	details, err := s.helper.InspectContainers(context.Background(), []string{name})
+	s.Require().NoError(err)
+	s.Require().NotEmpty(details)
 	s.Failf(
 		"container was created",
 		"%s: status=%s image=%s labels=%v",
