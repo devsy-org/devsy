@@ -1,6 +1,6 @@
 title: CI Investigator
 readonly: true
 agent:
-  provider: antigravity
-  model: gemini-3.8-flash-medium
-  mode: yolo
+  provider: omp
+  model: openai-codex/gpt-6.1-terra
+  mode: full

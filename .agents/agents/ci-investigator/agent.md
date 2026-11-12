@@ -13,6 +13,7 @@ models_allowed:
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
   - antigravity/gemini-3.8-flash-medium
+  - omp/openai-codex/gpt-6.1-terra
 read_only: true
 tools:
   - read
