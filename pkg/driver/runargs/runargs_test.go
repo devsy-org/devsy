@@ -16,6 +16,7 @@ const (
 	positionalImage  = "busybox"
 	reservedUser     = "devsy.user=secret-value"
 	teamLabel        = "team=a"
+	interactiveTTY   = "-it"
 )
 
 type RunArgsSuite struct {
@@ -37,7 +38,7 @@ func (s *RunArgsSuite) TestAcceptsCommonRunArgs() {
 		"--cap-add=SYS_PTRACE",
 		"--security-opt", "seccomp=unconfined",
 		"--network", "host",
-		"-it",
+		interactiveTTY,
 		"-v", "/a:/b",
 		"-p8080:8080",
 		"-eFOO=bar",
@@ -71,7 +72,7 @@ func (s *RunArgsSuite) TestRejectsOptionsItCannotPlace() {
 		want string
 	}{
 		{[]string{labelFlag}, "runArgs: item 1: --label needs a value"},
-		{[]string{"-it", "-e"}, "runArgs: item 2: -e needs a value"},
+		{[]string{interactiveTTY, "-e"}, "runArgs: item 2: -e needs a value"},
 		{
 			[]string{"--future-flag", "x"},
 			"runArgs: item 1: unknown option --future-flag; write it as --future-flag=VALUE",
@@ -82,7 +83,7 @@ func (s *RunArgsSuite) TestRejectsOptionsItCannotPlace() {
 			"runArgs: item 1: option --rootfs makes the runtime read the image as a root filesystem",
 		},
 		{
-			[]string{"-it", "--rootfs=true"},
+			[]string{interactiveTTY, "--rootfs=true"},
 			"runArgs: item 2: option --rootfs makes the runtime read the image as a root filesystem",
 		},
 	} {
