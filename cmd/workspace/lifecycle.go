@@ -72,6 +72,10 @@ type LifecycleExecParams struct {
 
 // EnvArgsRedactor masks sensitive values passed to docker exec as -e entries.
 func EnvArgsRedactor(envArgs []string) *secrets.Redactor {
+	return secrets.NewEnvironmentRedactor(envArgsEntries(envArgs))
+}
+
+func envArgsEntries(envArgs []string) []string {
 	entries := make([]string, 0, len(envArgs)/2)
 	for _, arg := range envArgs {
 		if arg != "-e" {
@@ -79,7 +83,7 @@ func EnvArgsRedactor(envArgs []string) *secrets.Redactor {
 		}
 	}
 
-	return secrets.NewEnvironmentRedactor(entries)
+	return entries
 }
 
 // ExecLifecycleHook runs a single devcontainer lifecycle hook against a container.
@@ -104,9 +108,12 @@ func ExecLifecycleHook(params *LifecycleExecParams, name string, hook types.Life
 		rec := newLifecycleRecording(params, name, key)
 		started := time.Now()
 		err := params.Helper.Run(params.Ctx, args, docker.Streams{
-			Stdin:  os.Stdin,
-			Stdout: rec.tee(os.Stdout, workspacelogs.StreamStdout),
-			Stderr: rec.tee(os.Stderr, workspacelogs.StreamStderr),
+			Stdin:        os.Stdin,
+			Stdout:       rec.capture(workspacelogs.StreamStdout),
+			LiveStdout:   os.Stdout,
+			Stderr:       rec.capture(workspacelogs.StreamStderr),
+			LiveStderr:   os.Stderr,
+			RedactionEnv: envArgsEntries(params.EnvArgs),
 		})
 		rec.finish(params.Ctx, time.Since(started), err)
 		if err != nil {
@@ -144,16 +151,14 @@ func newLifecycleRecording(params *LifecycleExecParams, hook, key string) *lifec
 	return r
 }
 
-// tee keeps dst as the only functional destination when nothing is recorded.
-func (r *lifecycleRecording) tee(dst io.Writer, stream workspacelogs.Stream) io.Writer {
+func (r *lifecycleRecording) capture(stream workspacelogs.Stream) io.Writer {
 	if r == nil {
-		return dst
+		return nil
 	}
 	if stream == workspacelogs.StreamStderr {
-		return io.MultiWriter(dst, r.stderr)
+		return r.stderr
 	}
-
-	return io.MultiWriter(dst, r.stdout)
+	return r.stdout
 }
 
 func (r *lifecycleRecording) record(state workspacelogs.InvocationState, reason string) {
@@ -180,7 +185,7 @@ func (r *lifecycleRecording) finish(ctx context.Context, elapsed time.Duration, 
 			code := exitErr.ExitCode()
 			inv.ExitCode = &code
 		}
-	} else if runErr == nil {
+	} else if _, outputOnly := runErr.(*docker.LiveOutputError); runErr == nil || outputOnly {
 		code := 0
 		inv.ExitCode = &code
 	}
@@ -193,6 +198,9 @@ func lifecycleOutcome(ctx context.Context, runErr error) (workspacelogs.Invocati
 		return workspacelogs.InvocationSucceeded, ""
 	case ctx != nil && ctx.Err() != nil:
 		return workspacelogs.InvocationCanceled, ""
+	}
+	if _, ok := errors.AsType[*docker.LiveOutputError](runErr); ok {
+		return workspacelogs.InvocationFailed, "output_failed"
 	}
 	if _, ok := errors.AsType[*exec.ExitError](runErr); !ok {
 		return workspacelogs.InvocationFailed, "start_failed"

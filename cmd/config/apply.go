@@ -384,14 +384,16 @@ func (cmd *ApplyCmd) copyAndExecFeatures(
 ) error {
 	featureSets, featureStageDir := stage.featureSets, stage.dir
 	containerFeaturesPath := "/tmp/build-features"
-	streams := docker.Streams{Stdout: os.Stdout, Stderr: os.Stderr}
+	streams := docker.Streams{LiveStdout: os.Stdout, LiveStderr: os.Stderr}
 	if emitJSON {
 		// Raw Docker output must never share stdout with status and result
 		// envelopes. The configured logger preserves the selected machine
 		// encoding on stderr instead.
 		outputWriter := log.Writer(log.LevelInfo)
 		defer func() { _ = outputWriter.Close() }()
+		streams.LiveStdout = nil
 		streams.Stdout = outputWriter
+		streams.LiveStderr = nil
 		streams.Stderr = outputWriter
 	}
 

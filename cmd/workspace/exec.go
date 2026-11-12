@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -353,16 +354,26 @@ func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []s
 	stdoutIsTerminal := term.IsTerminal(
 		int(os.Stdout.Fd()),
 	) // #nosec G115 -- valid standard descriptor
+	stderrFD := os.Stderr.Fd()
+	stderrIsTerminal := stderrFD <= math.MaxInt && term.IsTerminal(int(stderrFD))
 	code, err := opts.runtime.Exec(ctx, workspace2.ExecRequest{
-		Target: opts.target, Workdir: opts.workdir, Env: opts.envMap, Argv: args,
-		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
-		TTY: stdinIsTerminal && stdoutIsTerminal,
+		Target:  opts.target,
+		Workdir: opts.workdir,
+		Env:     opts.envMap,
+		Argv:    args,
+		Stdin:   os.Stdin,
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+		TTY: stdinIsTerminal &&
+			stdoutIsTerminal,
+		LiveStdout: stdoutIsTerminal,
+		LiveStderr: stderrIsTerminal,
 	})
-	if err != nil {
+	if err != nil && code < 0 {
 		return err
 	}
-	if code != 0 {
-		return &workspace2.CommandExitError{Code: code}
+	if code != 0 || err != nil {
+		return &workspace2.CommandExitError{Code: code, Cause: err}
 	}
 	return nil
 }

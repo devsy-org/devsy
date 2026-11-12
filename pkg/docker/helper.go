@@ -9,16 +9,21 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/livetee"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/scanner"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -442,9 +447,12 @@ func (r *DockerHelper) Remove(ctx context.Context, id string) error {
 }
 
 type Streams struct {
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	LiveStdout   io.Writer
+	LiveStderr   io.Writer
+	RedactionEnv []string
 }
 
 func (r *DockerHelper) Run(ctx context.Context, args []string, streams Streams) error {
@@ -459,10 +467,7 @@ func (r *DockerHelper) RunWithDir(
 ) error {
 	cmd := r.buildCmd(ctx, args...)
 	cmd.Dir = dir
-	cmd.Stdin = streams.Stdin
-	cmd.Stdout = streams.Stdout
-	cmd.Stderr = streams.Stderr
-	return runCmd(ctx, cmd)
+	return runStreams(ctx, cmd, streams)
 }
 
 // RunWithEnv runs a command with extra environment variables for this
@@ -480,10 +485,133 @@ func (r *DockerHelper) RunWithEnv(
 		}
 		cmd.Env = append(cmd.Env, extraEnv...)
 	}
+	return runStreams(ctx, cmd, streams)
+}
+
+type synchronizedCapture struct {
+	mu     *sync.Mutex
+	writer io.Writer
+}
+
+func (w synchronizedCapture) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.writer.Write(p)
+}
+
+func attachDockerStream(
+	capture, live io.Writer,
+	tee *livetee.Tee,
+	redactor *secrets.Redactor,
+) (io.Writer, *subprocess.StreamingRedactingWriter) {
+	if live == nil {
+		return capture, nil
+	}
+	if file, ok := live.(*os.File); ok {
+		if capture == nil {
+			return file, nil
+		}
+		return io.MultiWriter(capture, file), nil
+	}
+	redacted := &subprocess.StreamingRedactingWriter{Next: tee.Writer(live), Redactor: redactor}
+	if capture == nil {
+		return redacted, redacted
+	}
+	return io.MultiWriter(capture, redacted), redacted
+}
+
+func sameDockerWriter(a, b io.Writer) bool {
+	return a != nil && b != nil && reflect.ValueOf(a).Comparable() &&
+		reflect.ValueOf(b).Comparable() &&
+		a == b
+}
+
+func captureSharedLive(capture, otherCapture, live io.Writer) (io.Writer, io.Writer, bool) {
+	if sameDockerWriter(live, capture) {
+		return capture, nil, true
+	}
+	if !sameDockerWriter(live, otherCapture) {
+		return capture, live, false
+	}
+	if capture == nil {
+		return live, nil, true
+	}
+	return io.MultiWriter(capture, live), nil, true
+}
+
+func synchronizedStreams(streams Streams) Streams {
+	var stdoutShared, stderrShared bool
+	originalStdout := streams.Stdout
+	streams.Stdout, streams.LiveStdout, stdoutShared = captureSharedLive(
+		streams.Stdout,
+		streams.Stderr,
+		streams.LiveStdout,
+	)
+	streams.Stderr, streams.LiveStderr, stderrShared = captureSharedLive(
+		streams.Stderr,
+		originalStdout,
+		streams.LiveStderr,
+	)
+	if (stdoutShared || stderrShared || streams.LiveStdout != nil || streams.LiveStderr != nil) &&
+		streams.Stdout != nil &&
+		streams.Stderr != nil {
+		mu := new(sync.Mutex)
+		streams.Stdout = synchronizedCapture{mu: mu, writer: streams.Stdout}
+		streams.Stderr = synchronizedCapture{mu: mu, writer: streams.Stderr}
+	}
+	return streams
+}
+
+func flushDockerStream(stream *subprocess.StreamingRedactingWriter) error {
+	if stream == nil {
+		return nil
+	}
+	return stream.Flush()
+}
+
+type LiveOutputError struct{ Err error }
+
+func (e *LiveOutputError) Error() string { return e.Err.Error() }
+
+func (e *LiveOutputError) Unwrap() error { return e.Err }
+
+func (e *LiveOutputError) SkipFinalStatus() bool { return true }
+
+type canceledFileOutputError struct{ err error }
+
+func (e *canceledFileOutputError) Error() string { return e.err.Error() }
+
+func (e *canceledFileOutputError) Unwrap() error { return e.err }
+
+func (e *canceledFileOutputError) SkipFinalStatus() bool { return true }
+
+func hasLiveFile(streams Streams) bool {
+	_, stdout := streams.LiveStdout.(*os.File)
+	_, stderr := streams.LiveStderr.(*os.File)
+	return stdout || stderr
+}
+
+func runStreams(ctx context.Context, cmd *exec.Cmd, streams Streams) error {
+	streams = synchronizedStreams(streams)
 	cmd.Stdin = streams.Stdin
-	cmd.Stdout = streams.Stdout
-	cmd.Stderr = streams.Stderr
-	return runCmd(ctx, cmd)
+	tee := livetee.New(io.Discard, nil)
+	redactor := secrets.NewEnvironmentRedactor(append(cmd.Environ(), streams.RedactionEnv...))
+	var stdout, stderr *subprocess.StreamingRedactingWriter
+	cmd.Stdout, stdout = attachDockerStream(streams.Stdout, streams.LiveStdout, tee, redactor)
+	cmd.Stderr, stderr = attachDockerStream(streams.Stderr, streams.LiveStderr, tee, redactor)
+	err := runCmd(ctx, cmd)
+	if err != nil && ctx.Err() != nil && hasLiveFile(streams) {
+		err = &canceledFileOutputError{err: err}
+	}
+	outputErr := errors.Join(flushDockerStream(stdout), flushDockerStream(stderr), tee.Finish())
+	if outputErr != nil {
+		liveErr := &LiveOutputError{Err: outputErr}
+		if err == nil {
+			return liveErr
+		}
+		return errors.Join(err, liveErr)
+	}
+	return err
 }
 
 func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) error {

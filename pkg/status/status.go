@@ -4,6 +4,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
@@ -160,6 +161,11 @@ type Operation struct {
 	Step     string
 }
 
+type skipFinalStatus interface {
+	error
+	SkipFinalStatus() bool
+}
+
 // Run reports an operation lifecycle and returns the callback error.
 func Run(
 	ctx context.Context,
@@ -198,6 +204,9 @@ func Run(
 		}
 	}()
 	err := fn(childCtx)
+	if skip, ok := errors.AsType[skipFinalStatus](err); ok && skip.SkipFinalStatus() {
+		return err
+	}
 	done := Event{
 		Pipeline:          operation.Pipeline,
 		OperationID:       id,
