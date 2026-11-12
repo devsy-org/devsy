@@ -646,7 +646,10 @@ func (r *runner) validateImageRun(
 	}
 	return validator.ValidateRunImageDevContainer(
 		&driver.RunImageDevContainerParams{
-			WorkspaceID: r.id, Options: options, ParsedConfig: parsedConfig,
+			WorkspaceID:          r.id,
+			Options:              options,
+			ParsedConfig:         parsedConfig,
+			LocalWorkspaceFolder: r.localWorkspaceFolder,
 		},
 	)
 }

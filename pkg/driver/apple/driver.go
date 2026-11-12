@@ -37,8 +37,9 @@ var (
 	_ driver.RecreatePolicyDriver = (*appleDriver)(nil)
 	_ driver.WorkspaceChowner     = (*appleDriver)(nil)
 
-	_ driver.ImageDriver = (*appleDriver)(nil)
-	_ driver.Preflighter = (*appleDriver)(nil)
+	_ driver.ImageDriver       = (*appleDriver)(nil)
+	_ driver.Preflighter       = (*appleDriver)(nil)
+	_ driver.ImageRunValidator = (*appleDriver)(nil)
 )
 
 // NewAppleDriver verifies the host is supported and constructs the driver;

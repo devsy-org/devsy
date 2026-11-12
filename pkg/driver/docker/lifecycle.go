@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/driver/runargs"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
@@ -313,10 +314,24 @@ func (d *dockerDriver) GetDevContainerLogs(
 	return d.Docker.GetContainerLogs(ctx, container.ID, stdout, stderr)
 }
 
+func (d *dockerDriver) ValidateRunImageDevContainer(
+	params *driver.RunImageDevContainerParams,
+) error {
+	return runargs.Validate(
+		runargs.DockerCompatible,
+		params.ParsedConfig.RunArgs,
+		params.LocalWorkspaceFolder,
+	)
+}
+
 func (d *dockerDriver) RunImageDevContainer(
 	ctx context.Context,
 	params *driver.RunImageDevContainerParams,
 ) error {
+	if err := d.ValidateRunImageDevContainer(params); err != nil {
+		return err
+	}
+
 	if err := d.EnsureImage(ctx, params.Options); err != nil {
 		return err
 	}

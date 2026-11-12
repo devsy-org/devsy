@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/apple"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/driver/runargs"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -146,10 +147,24 @@ func (d *appleDriver) TagDevContainer(ctx context.Context, image, tag string) er
 	return nil
 }
 
+func (d *appleDriver) ValidateRunImageDevContainer(
+	params *driver.RunImageDevContainerParams,
+) error {
+	return runargs.Validate(
+		runargs.AppleContainer,
+		params.ParsedConfig.RunArgs,
+		params.LocalWorkspaceFolder,
+	)
+}
+
 func (d *appleDriver) RunImageDevContainer(
 	ctx context.Context,
 	params *driver.RunImageDevContainerParams,
 ) error {
+	if err := d.ValidateRunImageDevContainer(params); err != nil {
+		return err
+	}
+
 	if err := d.EnsureImage(ctx, params.Options); err != nil {
 		return err
 	}
