@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	maxTestAttempts       = 2
+	maxTestAttempts       = 3
 	windowsAccessViolated = 0xc0000005
 )
 
@@ -19,7 +19,7 @@ var runtimeFatalPrefixes = []string{
 	"panic: (interface {}) 0x",
 }
 
-// runGoTestsWithRetry reruns the tests once when the Go runtime itself crashed.
+// runGoTestsWithRetry reruns the tests up to twice when the Go runtime itself crashed.
 // Windows/amd64 AMX runners corrupt the heap when an exception frame overflows
 // the goroutine stack reserve (golang/go#81238, unfixed). Remove this retry once
 // a released Go toolchain contains the upstream fix.
