@@ -118,6 +118,11 @@ func (s *RunArgsSuite) TestRejectsLabelFilesItCannotReadAsTheRuntimeDoes() {
 		Validate(DockerCompatible, []string{"--label-file=link/../labels.env"}, s.dir),
 		`runArgs: label file path "link/../labels.env" must not contain a .. element`,
 	)
+	s.Require().NoError(os.Mkdir(filepath.Join(s.dir, "labels.d"), 0o700))
+	s.EqualError(
+		Validate(DockerCompatible, []string{labelFileFlag, "labels.d"}, s.dir),
+		`runArgs: label file "labels.d" is not a regular file`,
+	)
 	s.ErrorContains(
 		Validate(DockerCompatible, []string{labelFileFlag, "missing.env"}, s.dir),
 		"runArgs: read label file:",

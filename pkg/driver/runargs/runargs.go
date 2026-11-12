@@ -147,6 +147,13 @@ func readLabelFile(path, dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("read label file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("label file %q is not a regular file", path)
+	}
 	file, err := os.Open(filepath.Clean(resolved))
 	if err != nil {
 		return nil, fmt.Errorf("read label file: %w", err)

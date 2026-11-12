@@ -31,3 +31,15 @@ func (s *DockerDriverTestSuite) TestRunImageDevContainerRejectsRunArgsBeforeRunt
 	)
 	s.ErrorContains(run("--label", "team=a"), "missing-runtime")
 }
+
+func (s *DockerDriverTestSuite) TestValidateRunImageDevContainerChecksRunArgs() {
+	err := (&dockerDriver{}).ValidateRunImageDevContainer(&driver.RunImageDevContainerParams{
+		ParsedConfig: &config.DevContainerConfig{
+			NonComposeBase: config.NonComposeBase{RunArgs: []string{"--tty", "false"}},
+		},
+	})
+	s.EqualError(
+		err,
+		"runArgs: item 2: not an option or option value; the runtime would read it as the image",
+	)
+}

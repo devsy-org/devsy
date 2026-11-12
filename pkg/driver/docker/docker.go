@@ -109,6 +109,7 @@ var (
 	_ driver.DockerHelperProvider  = (*dockerDriver)(nil)
 	_ driver.SnapshotCapableDriver = (*dockerDriver)(nil)
 	_ driver.Preflighter           = (*dockerDriver)(nil)
+	_ driver.ImageRunValidator     = (*dockerDriver)(nil)
 )
 
 // Preflight checks the runtime binary is installed and its daemon reachable,

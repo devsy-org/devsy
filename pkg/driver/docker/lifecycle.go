@@ -314,15 +314,21 @@ func (d *dockerDriver) GetDevContainerLogs(
 	return d.Docker.GetContainerLogs(ctx, container.ID, stdout, stderr)
 }
 
+func (d *dockerDriver) ValidateRunImageDevContainer(
+	params *driver.RunImageDevContainerParams,
+) error {
+	return runargs.Validate(
+		runargs.DockerCompatible,
+		params.ParsedConfig.RunArgs,
+		params.LocalWorkspaceFolder,
+	)
+}
+
 func (d *dockerDriver) RunImageDevContainer(
 	ctx context.Context,
 	params *driver.RunImageDevContainerParams,
 ) error {
-	if err := runargs.Validate(
-		runargs.DockerCompatible,
-		params.ParsedConfig.RunArgs,
-		params.LocalWorkspaceFolder,
-	); err != nil {
+	if err := d.ValidateRunImageDevContainer(params); err != nil {
 		return err
 	}
 

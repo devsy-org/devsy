@@ -37,6 +37,19 @@ func (s *RunArgsValidationSuite) TestRejectsBeforeAnyRuntimeCall() {
 	s.Empty(s.client.ranArgs)
 }
 
+func (s *RunArgsValidationSuite) TestValidatesBeforeRecreateRemovesTheContainer() {
+	err := s.driver.ValidateRunImageDevContainer(&driver.RunImageDevContainerParams{
+		ParsedConfig: &config.DevContainerConfig{
+			NonComposeBase: config.NonComposeBase{RunArgs: []string{"-l", "devsy.user=root"}},
+		},
+	})
+	s.EqualError(
+		err,
+		`runArgs: label "devsy.user" is reserved by Devsy; remove the user-supplied label`,
+	)
+	s.Empty(s.client.calls)
+}
+
 func (s *RunArgsValidationSuite) TestOrdinaryRunArgsReachTheRuntime() {
 	s.Require().NoError(s.run("--label", "team=a"))
 	s.Equal([]string{"pull", runCall}, s.client.calls)

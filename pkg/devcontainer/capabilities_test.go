@@ -271,6 +271,7 @@ func TestImageRunValidationPreservesContainerBeforeRecreate(t *testing.T) {
 			r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: workspaceUid}
 			r.imageBackend = &separateImages{details: &config.ImageDetails{ID: imageValue}}
 			r.reporter = status.Nop()
+			r.localWorkspaceFolder = t.TempDir()
 			p := recreateResolveParams()
 			p.parsedConfig.Config.Image = alpine
 			p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
@@ -283,6 +284,7 @@ func TestImageRunValidationPreservesContainerBeforeRecreate(t *testing.T) {
 			}
 			require.NotNil(t, d.validationParams)
 			require.Equal(t, r.id, d.validationParams.WorkspaceID)
+			require.Equal(t, r.localWorkspaceFolder, d.validationParams.LocalWorkspaceFolder)
 			require.NotEmpty(t, d.validationParams.Options.Image)
 			assert.Equal(t, !reject, d.stopCalled)
 			assert.False(t, d.deleteCalled)
