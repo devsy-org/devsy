@@ -1,6 +1,6 @@
 title: Fix Worker
 readonly: false
 agent:
-  provider: codex
-  model: gpt-6.1-sol
-  mode: full-access
+  provider: omp
+  model: openai-codex/gpt-6.1-terra
+  mode: full
