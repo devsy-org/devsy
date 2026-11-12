@@ -1,0 +1,176 @@
+package runargs
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode"
+
+	"github.com/devsy-org/devsy/pkg/config"
+)
+
+type optionKind int
+
+const (
+	unknownOption optionKind = iota
+	switchOption
+	valueOption
+	labelOption
+	labelFileOption
+)
+
+type Grammar struct {
+	options             map[string]optionKind
+	attachedShortValues bool
+}
+
+type assignment struct {
+	name  string
+	kind  optionKind
+	value string
+}
+
+func Validate(grammar Grammar, args []string, dir string) error {
+	if err := validate(grammar, args, dir); err != nil {
+		return fmt.Errorf("runArgs: %w", err)
+	}
+	return nil
+}
+
+func validate(grammar Grammar, args []string, dir string) error {
+	assignments, err := grammar.parse(args)
+	if err != nil {
+		return err
+	}
+	var labels []string
+	for _, a := range assignments {
+		switch a.kind {
+		case labelOption:
+			labels = append(labels, a.value)
+		case labelFileOption:
+			fileLabels, err := readLabelFile(a.value, dir)
+			if err != nil {
+				return err
+			}
+			labels = append(labels, fileLabels...)
+		}
+	}
+	return config.ValidateUserLabels(labels)
+}
+
+func (g Grammar) parse(args []string) ([]assignment, error) {
+	var assignments []assignment
+	for i := 0; i < len(args); i++ {
+		a, consumesNext, err := g.parseArg(args[i])
+		if err != nil {
+			return nil, fmt.Errorf("item %d: %w", i+1, err)
+		}
+		if consumesNext {
+			if i+1 == len(args) {
+				return nil, fmt.Errorf("item %d: %s needs a value", i+1, a.name)
+			}
+			i++
+			a.value = args[i]
+		}
+		assignments = append(assignments, a)
+	}
+	return assignments, nil
+}
+
+func (g Grammar) parseArg(arg string) (assignment, bool, error) {
+	if arg == "-" || arg == "--" || !strings.HasPrefix(arg, "-") {
+		return assignment{}, false, errors.New(
+			"not an option or option value; the runtime would read it as the image",
+		)
+	}
+	if strings.HasPrefix(arg, "--") {
+		return g.parseLong(arg)
+	}
+	return g.parseShort(arg[1:])
+}
+
+func (g Grammar) parseLong(arg string) (assignment, bool, error) {
+	name, value, hasValue := strings.Cut(arg, "=")
+	a := assignment{name: name, kind: g.options[name], value: value}
+	switch {
+	case hasValue:
+		return a, false, nil
+	case a.kind == unknownOption:
+		return assignment{}, false, fmt.Errorf(
+			"unknown option %s; write it as %s=VALUE", name, name,
+		)
+	default:
+		return a, a.kind != switchOption, nil
+	}
+}
+
+func (g Grammar) parseShort(cluster string) (assignment, bool, error) {
+	for i := range len(cluster) {
+		a := assignment{name: "-" + cluster[i:i+1]}
+		a.kind = g.options[a.name]
+		rest := cluster[i+1:]
+		switch {
+		case a.kind == unknownOption:
+			return assignment{}, false, fmt.Errorf("unknown option %s", a.name)
+		case len(rest) > 1 && rest[0] == '=':
+			a.value = rest[1:]
+			return a, false, nil
+		case a.kind == switchOption:
+			continue
+		case rest == "":
+			return a, true, nil
+		case g.attachedShortValues:
+			a.value = rest
+			return a, false, nil
+		default:
+			return assignment{}, false, fmt.Errorf(
+				"put the value of %s in the next item", a.name,
+			)
+		}
+	}
+	return assignment{kind: switchOption}, false, nil
+}
+
+func readLabelFile(path, dir string) ([]string, error) {
+	resolved, err := resolveLabelFile(path, dir)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("read label file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	var labels []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimPrefix(scanner.Text(), "\uFEFF")
+		labels = append(labels, strings.TrimLeftFunc(line, unicode.IsSpace))
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read label file: %w", err)
+	}
+	return labels, nil
+}
+
+func resolveLabelFile(path, dir string) (string, error) {
+	if strings.ContainsAny(path, ",\"\r\n") {
+		return "", fmt.Errorf(
+			"label file path %q must not contain a comma, quote or line break", path,
+		)
+	}
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	if filepath.VolumeName(path) != "" || strings.HasPrefix(path, `\`) ||
+		strings.HasPrefix(path, "/") {
+		return "", fmt.Errorf(
+			"label file path %q must be absolute or relative to the workspace", path,
+		)
+	}
+	return filepath.Join(dir, path), nil
+}

@@ -167,4 +167,6 @@ Do not supply these keys through `--id-label`, Kubernetes provider labels, or Ku
 
 Custom identification labels, including `dev.containers.id`, remain configurable. The `devcontainer.metadata` image label remains a supported configuration source and can contain private values. Reserving a label does not make every value stored under it public.
 
-The top-level `containerLabels` and `labels` fields in devcontainer.json are ignored. External providers reject `runArgs` rather than translate them into request labels. Native Docker, Podman, nerdctl, Apple and Compose arguments and inherited image labels are outside this explicit map reservation. Avoid using reserved keys there. Native argument validation is a separate follow-up.
+The top-level `containerLabels` and `labels` fields in devcontainer.json are ignored. External providers reject `runArgs` rather than translate them into request labels.
+
+For Docker, Podman, nerdctl and Apple, Devsy checks `runArgs` before it creates the container. It rejects reserved keys set with `--label`, `-l` or `--label-file`. It also rejects any item the runtime would read as the image, such as a word after a switch like `--privileged`, and an option that is missing its value. Write an option Devsy does not recognize as `--option=value`. Compose labels and labels inherited from an image are not checked. `runArgs` can still set privileges and mounts, so only open a devcontainer.json you trust.
