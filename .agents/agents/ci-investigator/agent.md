@@ -11,6 +11,7 @@ models_allowed:
   - codex/gpt-6-luna
   - codex/gpt-6.1-terra
   - claude/claude-sonnet-5-5
+  - antigravity/gemini-3.8-flash
 ---
 
 # CI Investigator Agent Profile (Paseo)
@@ -29,7 +30,7 @@ Your role is performing read-only root cause analysis on CI failures and reporte
 ## Authorized Models
 
 Execution must run strictly in normal mode across these authorized models:
-* Small Tier: claude/claude-haiku-5-5, codex/gpt-6-luna
+* Small Tier: claude/claude-haiku-5-5, codex/gpt-6-luna, antigravity/gemini-3.8-flash
 * Medium Tier: codex/gpt-6.1-terra, claude/claude-sonnet-5-5
 
 ## Investigation Workflow
