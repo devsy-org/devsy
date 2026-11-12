@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	overlayStructureLabel  = "devsy.overlay.structure"
-	composeInvocationLabel = "devsy.compose.invocation"
+	overlayStructureLabel  = pkgconfig.OverlayStructureLabel
+	composeInvocationLabel = pkgconfig.ComposeInvocationLabel
 )
 
 func structuralSignature(c *config.DevContainerConfig) string {

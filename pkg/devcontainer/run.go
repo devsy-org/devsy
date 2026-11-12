@@ -9,6 +9,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/clierr"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/driver/drivercreate"
@@ -158,6 +159,9 @@ func (r *runner) Up(
 	timeout time.Duration,
 	reporter status.Reporter,
 ) (*config.Result, error) {
+	if err := pkgconfig.ValidateUserLabels(r.workspaceConfig.CLIOptions.IDLabels); err != nil {
+		return nil, err
+	}
 	if r.workspaceConfig.CLIOptions.LifecycleTerminal != nil &&
 		options.LifecycleTerminalClient == nil {
 		return nil, fmt.Errorf("lifecycle terminal request requires a lifecycle terminal client")

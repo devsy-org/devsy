@@ -24,7 +24,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
-const userLabel = "devsy.sh/user"
+const userLabel = pkgconfig.MicrosandboxUserLabel
 
 const createdAtLayout = "2006-01-02T15:04:05Z07:00"
 
@@ -515,8 +515,8 @@ func (d *microsandboxDriver) RequiresMountStreaming() bool { return false }
 func (d *microsandboxDriver) RecreateMode() driver.RecreateMode { return driver.RecreateOnRun }
 
 const (
-	workspaceMountContractLabel = "devsy.sh/microsandbox-workspace-mount"
-	workspaceRemoteUserLabel    = "devsy.sh/microsandbox-workspace-user"
+	workspaceMountContractLabel = pkgconfig.MicrosandboxMountLabel
+	workspaceRemoteUserLabel    = pkgconfig.MicrosandboxWorkspaceUserLabel
 )
 
 func (d *microsandboxDriver) RequiresRecreate(

@@ -137,3 +137,34 @@ With the SSH provider, the variable in `${localEnv:NAME}` must reach the remote 
    ```sh
    devsy workspace up <GITHUB-REPOSITORY-URL> --provider ssh --ide=none
    ```
+
+## Reserved labels
+
+Devsy owns the following labels in the explicit label maps it sends to drivers and external providers:
+
+- `devsy.user`
+- `sh.devsy.recovery`
+- `devsy.overlay.structure`
+- `devsy.sh/metadata-creation-config`
+- `devsy.compose.contract`
+- `devsy.compose.invocation`
+- `devsy.wslg.snapshot`
+- `devsy.sh/user`
+- `devsy.sh/microsandbox-workspace-mount`
+- `devsy.sh/microsandbox-workspace-user`
+- `sh.devsy.managed`
+- `sh.devsy.workspace-id`
+- `sh.devsy.resource`
+- `sh.devsy.volume-role`
+- `sh.devsy.seeded`
+- `devsy.sh/created`
+- `devsy.sh/workspace-uid`
+- `devsy.sh/managed`
+- `devsy.sh/resource`
+- `devsy.sh/volume-role`
+
+Do not supply these keys through `--id-label`, Kubernetes provider labels, or Kubernetes pod template labels. Devsy rejects them with an error naming the key. This also applies to saved workspace options. Remove the assignment before starting an older workspace again. Devsy still writes its own values for these keys.
+
+Custom identification labels, including `dev.containers.id`, remain configurable. The `devcontainer.metadata` image label remains a supported configuration source and can contain private values. Reserving a label does not make every value stored under it public.
+
+The top-level `containerLabels` and `labels` fields in devcontainer.json are ignored. External providers reject `runArgs` rather than translate them into request labels. Native Docker, Podman, nerdctl, Apple and Compose arguments and inherited image labels are outside this explicit map reservation. Avoid using reserved keys there. Native argument validation is a separate follow-up.

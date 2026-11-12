@@ -11,12 +11,13 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 )
 
 func (h *Host) ValidateRunImageDevContainer(params *driver.RunImageDevContainerParams) error {
-	request, err := runImageRequest(params)
+	request, err := h.runImageRequest(params)
 	if err != nil {
 		return err
 	}
@@ -27,11 +28,10 @@ func (h *Host) RunImageDevContainer(
 	ctx context.Context,
 	params *driver.RunImageDevContainerParams,
 ) error {
-	request, err := runImageRequest(params)
+	request, err := h.runImageRequest(params)
 	if err != nil {
 		return err
 	}
-	request.Labels = append(request.Labels, config.GetIDLabels(params.WorkspaceID, h.idLabels)...)
 	if err := h.validateRunImage(request); err != nil {
 		return err
 	}
@@ -39,6 +39,20 @@ func (h *Host) RunImageDevContainer(
 		return err
 	}
 	return h.RunImage(ctx, request)
+}
+
+func (h *Host) runImageRequest(
+	params *driver.RunImageDevContainerParams,
+) (*runtimev1.RunImageRequest, error) {
+	if err := pkgconfig.ValidateUserLabels(h.idLabels); err != nil {
+		return nil, err
+	}
+	request, err := runImageRequest(params)
+	if err != nil {
+		return nil, err
+	}
+	request.Labels = append(request.Labels, config.GetIDLabels(params.WorkspaceID, h.idLabels)...)
+	return request, nil
 }
 
 func runImageRequest(
