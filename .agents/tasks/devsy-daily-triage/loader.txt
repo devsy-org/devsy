@@ -1,4 +1,0 @@
-Fetch origin/main. Read and execute .agents/tasks/devsy-daily-triage/task.md at origin/main.
-Log the current commit SHA in the first output line.
-Strictly adhere to all instructions, subagent model tiers, and PR constraints defined in that file.
-If the file is missing or unreadable, abort and report error.
