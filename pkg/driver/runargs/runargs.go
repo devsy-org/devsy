@@ -27,6 +27,7 @@ const (
 type Grammar struct {
 	options             map[string]optionKind
 	attachedShortValues bool
+	dashValues          bool
 }
 
 type assignment struct {
@@ -71,7 +72,7 @@ func (g Grammar) parse(args []string) ([]assignment, error) {
 			return nil, fmt.Errorf("item %d: %w", i+1, err)
 		}
 		if consumesNext {
-			if i+1 == len(args) {
+			if i+1 == len(args) || !g.dashValues && strings.HasPrefix(args[i+1], "-") {
 				return nil, fmt.Errorf("item %d: %s needs a value", i+1, a.name)
 			}
 			i++
@@ -164,12 +165,20 @@ func readLabelFile(path, dir string) ([]string, error) {
 		return nil, fmt.Errorf("read label file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
+	return scanLabelFile(file)
+}
 
+func scanLabelFile(file *os.File) ([]string, error) {
 	var labels []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := strings.TrimPrefix(scanner.Text(), "\uFEFF")
-		labels = append(labels, strings.TrimLeftFunc(line, unicode.IsSpace))
+		line := strings.TrimLeftFunc(strings.TrimPrefix(scanner.Text(), "\uFEFF"), unicode.IsSpace)
+		if !strings.Contains(line, "=") && strings.HasSuffix(line, "*") {
+			return nil, fmt.Errorf(
+				"label file entry %q copies variables from the runtime environment", line,
+			)
+		}
+		labels = append(labels, line)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read label file: %w", err)

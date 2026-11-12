@@ -55,16 +55,20 @@ var appleContainerOptions = map[optionKind]string{
 }
 
 var (
-	DockerCompatible = newGrammar(true, dockerCompatibleOptions)
-	AppleContainer   = newGrammar(false, appleContainerOptions)
+	DockerCompatible = Grammar{
+		options:             optionNames(dockerCompatibleOptions),
+		attachedShortValues: true,
+		dashValues:          true,
+	}
+	AppleContainer = Grammar{options: optionNames(appleContainerOptions)}
 )
 
-func newGrammar(attachedShortValues bool, names map[optionKind]string) Grammar {
+func optionNames(names map[optionKind]string) map[string]optionKind {
 	options := make(map[string]optionKind)
 	for kind, list := range names {
 		for name := range strings.FieldsSeq(list) {
 			options[name] = kind
 		}
 	}
-	return Grammar{options: options, attachedShortValues: attachedShortValues}
+	return options
 }

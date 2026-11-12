@@ -127,6 +127,11 @@ func (s *RunArgsSuite) TestRejectsLabelFilesItCannotReadAsTheRuntimeDoes() {
 		Validate(DockerCompatible, []string{"--label-file=link/../labels.env"}, s.dir),
 		`runArgs: label file path "link/../labels.env" must not contain a .. element`,
 	)
+	s.writeFile("wildcard.env", "team=a\n  sh.devsy.*\n")
+	s.EqualError(
+		Validate(DockerCompatible, []string{labelFileFlag, "wildcard.env"}, s.dir),
+		`runArgs: label file entry "sh.devsy.*" copies variables from the runtime environment`,
+	)
 	s.Require().NoError(os.Mkdir(filepath.Join(s.dir, "labels.d"), 0o700))
 	s.EqualError(
 		Validate(DockerCompatible, []string{labelFileFlag, "labels.d"}, s.dir),
@@ -153,6 +158,7 @@ func (s *RunArgsSuite) TestAppleRules() {
 			"runArgs: item 1: unknown option --label-file; write it as --label-file=VALUE",
 		},
 		{[]string{"-h"}, "runArgs: item 1: unknown option -h"},
+		{[]string{labelFlag, "--rm"}, "runArgs: item 1: --label needs a value"},
 		{
 			[]string{"-l", "devsy.user=root"},
 			`runArgs: label "devsy.user" is reserved by Devsy; remove the user-supplied label`,
