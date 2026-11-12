@@ -58,14 +58,14 @@ func NewTroubleshootCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 type troubleshootInfo struct {
-	CLIVersion            string
-	Config                *config.Config
-	Providers             map[string]provider.ProviderWithDefault
-	DevsyProInstances     []DevsyPlatformInstance
-	Workspace             *pkgprovider.Workspace
-	WorkspaceStatus       client.Status
-	WorkspaceTroubleshoot *managementv1.DevsyWorkspaceInstanceTroubleshoot
-	DaemonStatus          *daemon.Status
+	CLIVersion             string
+	Config                 *config.Config
+	Providers              map[string]provider.ProviderWithDefault
+	DevsyPlatformInstances []DevsyPlatformInstance
+	Workspace              *pkgprovider.Workspace
+	WorkspaceStatus        client.Status
+	WorkspaceTroubleshoot  *managementv1.DevsyWorkspaceInstanceTroubleshoot
+	DaemonStatus           *daemon.Status
 
 	Errors []PrintableError `json:",omitempty"`
 }
@@ -105,7 +105,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		info.addErr("collect providers", err)
 	}
 
-	info.DevsyProInstances, err = collectPlatformInfo(info.Config)
+	info.DevsyPlatformInstances, err = collectPlatformInfo(info.Config)
 	if err != nil {
 		info.addErr("collect platform info", err)
 	}
@@ -136,7 +136,7 @@ func (cmd *TroubleshootCmd) collectWorkspaceInfo(
 
 	if info.Workspace.Platform != nil {
 		info.WorkspaceTroubleshoot, err = collectWorkspacePlatformTroubleshoot(
-			ctx, info.Config, info.Workspace, info.DevsyProInstances,
+			ctx, info.Config, info.Workspace, info.DevsyPlatformInstances,
 		)
 		if err != nil {
 			info.addErr("collect platform workspace info", err)
