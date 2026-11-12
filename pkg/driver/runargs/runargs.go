@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -112,26 +113,33 @@ func (g Grammar) parseShort(cluster string) (assignment, bool, error) {
 		a := assignment{name: "-" + cluster[i:i+1]}
 		a.kind = g.options[a.name]
 		rest := cluster[i+1:]
-		switch {
-		case a.kind == unknownOption:
+		if a.kind == unknownOption {
 			return assignment{}, false, fmt.Errorf("unknown option %s", a.name)
-		case len(rest) > 1 && rest[0] == '=':
-			a.value = rest[1:]
-			return a, false, nil
-		case a.kind == switchOption:
-			continue
-		case rest == "":
-			return a, true, nil
-		case g.attachedShortValues:
-			a.value = rest
-			return a, false, nil
-		default:
-			return assignment{}, false, fmt.Errorf(
-				"put the value of %s in the next item", a.name,
-			)
+		}
+		if a.kind != switchOption || hasInlineValue(rest) {
+			return g.shortValue(a, rest)
 		}
 	}
 	return assignment{kind: switchOption}, false, nil
+}
+
+func (g Grammar) shortValue(a assignment, rest string) (assignment, bool, error) {
+	switch {
+	case hasInlineValue(rest):
+		a.value = rest[1:]
+		return a, false, nil
+	case rest == "":
+		return a, true, nil
+	case g.attachedShortValues:
+		a.value = rest
+		return a, false, nil
+	default:
+		return assignment{}, false, fmt.Errorf("put the value of %s in the next item", a.name)
+	}
+}
+
+func hasInlineValue(rest string) bool {
+	return len(rest) > 1 && rest[0] == '='
 }
 
 func readLabelFile(path, dir string) ([]string, error) {
@@ -139,7 +147,7 @@ func readLabelFile(path, dir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	file, err := os.Open(resolved)
+	file, err := os.Open(filepath.Clean(resolved))
 	if err != nil {
 		return nil, fmt.Errorf("read label file: %w", err)
 	}
@@ -158,19 +166,33 @@ func readLabelFile(path, dir string) ([]string, error) {
 }
 
 func resolveLabelFile(path, dir string) (string, error) {
-	if strings.ContainsAny(path, ",\"\r\n") {
-		return "", fmt.Errorf(
-			"label file path %q must not contain a comma, quote or line break", path,
-		)
+	if err := checkLabelFilePath(path); err != nil {
+		return "", err
 	}
 	if filepath.IsAbs(path) {
 		return path, nil
 	}
-	if filepath.VolumeName(path) != "" || strings.HasPrefix(path, `\`) ||
-		strings.HasPrefix(path, "/") {
-		return "", fmt.Errorf(
+	return filepath.Join(dir, path), nil
+}
+
+func checkLabelFilePath(path string) error {
+	if strings.ContainsAny(path, ",\"\r\n") {
+		return fmt.Errorf(
+			"label file path %q must not contain a comma, quote or line break", path,
+		)
+	}
+	if slices.Contains(strings.FieldsFunc(path, isPathSeparator), "..") {
+		return fmt.Errorf("label file path %q must not contain a .. element", path)
+	}
+	if !filepath.IsAbs(path) &&
+		(filepath.VolumeName(path) != "" || strings.IndexFunc(path, isPathSeparator) == 0) {
+		return fmt.Errorf(
 			"label file path %q must be absolute or relative to the workspace", path,
 		)
 	}
-	return filepath.Join(dir, path), nil
+	return nil
+}
+
+func isPathSeparator(r rune) bool {
+	return r == '/' || r == '\\'
 }

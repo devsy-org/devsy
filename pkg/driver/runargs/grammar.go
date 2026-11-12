@@ -61,7 +61,7 @@ var (
 func newGrammar(attachedShortValues bool, names map[optionKind]string) Grammar {
 	options := make(map[string]optionKind)
 	for kind, list := range names {
-		for _, name := range strings.Fields(list) {
+		for name := range strings.FieldsSeq(list) {
 			options[name] = kind
 		}
 	}

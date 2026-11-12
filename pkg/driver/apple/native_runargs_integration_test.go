@@ -16,6 +16,7 @@ import (
 const (
 	nativeIntendedImage   = "alpine:3.22"
 	nativePositionalImage = "busybox:1"
+	nativeEntrypoint      = "/bin/sh"
 )
 
 type NativeRunArgsSuite struct {
@@ -89,7 +90,7 @@ func (s *NativeRunArgsSuite) runDevContainer(name string, runArgs ...string) err
 			Options: &driver.RunOptions{
 				Image:      nativeIntendedImage,
 				Labels:     []string{config.UserLabel + "=root"},
-				Entrypoint: "/bin/sh",
+				Entrypoint: nativeEntrypoint,
 				Cmd:        []string{"-c", "sleep 120"},
 			},
 		},

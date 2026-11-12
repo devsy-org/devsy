@@ -9,7 +9,14 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const imageReadMessage = "the runtime would read it as the image"
+const (
+	imageReadMessage = "the runtime would read it as the image"
+	labelFlag        = "--label"
+	labelFileFlag    = "--label-file"
+	positionalImage  = "busybox"
+	reservedUser     = "devsy.user=secret-value"
+	teamLabel        = "team=a"
+)
 
 type RunArgsSuite struct {
 	suite.Suite
@@ -24,10 +31,6 @@ func (s *RunArgsSuite) SetupTest() {
 	s.dir = s.T().TempDir()
 }
 
-func (s *RunArgsSuite) writeFile(name, content string) {
-	s.Require().NoError(os.WriteFile(filepath.Join(s.dir, name), []byte(content), 0o600))
-}
-
 func (s *RunArgsSuite) TestAcceptsCommonRunArgs() {
 	s.writeFile("labels.env", "team=a\n# devsy.user=commented\n\n")
 	args := []string{
@@ -38,10 +41,10 @@ func (s *RunArgsSuite) TestAcceptsCommonRunArgs() {
 		"-v", "/a:/b",
 		"-p8080:8080",
 		"-eFOO=bar",
-		"--label", "team=a",
+		labelFlag, teamLabel,
 		"-l=team=b",
 		"--entrypoint", "-x",
-		"--label-file", "labels.env",
+		labelFileFlag, "labels.env",
 		"--future-flag=value",
 		"--rm=true",
 	}
@@ -50,13 +53,13 @@ func (s *RunArgsSuite) TestAcceptsCommonRunArgs() {
 
 func (s *RunArgsSuite) TestRejectsTokensTheRuntimeReadsAsTheImage() {
 	for _, args := range [][]string{
-		{"--privileged", "busybox"},
+		{"--privileged", positionalImage},
 		{"--tty", "false"},
-		{"--network", "host", "busybox", "sh"},
+		{"--network", "host", positionalImage, "sh"},
 		{"--"},
 		{"-"},
 		{""},
-		{"-li", "team=a"},
+		{"-li", teamLabel},
 	} {
 		s.ErrorContains(Validate(DockerCompatible, args, s.dir), imageReadMessage, args)
 	}
@@ -67,7 +70,7 @@ func (s *RunArgsSuite) TestRejectsOptionsItCannotPlace() {
 		args []string
 		want string
 	}{
-		{[]string{"--label"}, "runArgs: item 1: --label needs a value"},
+		{[]string{labelFlag}, "runArgs: item 1: --label needs a value"},
 		{[]string{"-it", "-e"}, "runArgs: item 2: -e needs a value"},
 		{
 			[]string{"--future-flag", "x"},
@@ -84,16 +87,16 @@ func (s *RunArgsSuite) TestRejectsReservedLabelsInEveryForm() {
 	s.writeFile("spaced.env", "team=a\n  \tdevsy.user=secret-value\n")
 	s.writeFile("key-only.env", "devsy.overlay.structure\n")
 	for _, args := range [][]string{
-		{"--label", "devsy.user=secret-value"},
+		{labelFlag, reservedUser},
 		{"--label=devsy.user=secret-value"},
-		{"-l", "devsy.user=secret-value"},
+		{"-l", reservedUser},
 		{"-l=devsy.user=secret-value"},
 		{"-ldevsy.user=secret-value"},
-		{"-il", "devsy.user=secret-value"},
-		{"--label-file", "bom.env"},
+		{"-il", reservedUser},
+		{labelFileFlag, "bom.env"},
 		{"--label-file=spaced.env"},
-		{"--label-file", "key-only.env"},
-		{"--label-file", filepath.Join(s.dir, "bom.env")},
+		{labelFileFlag, "key-only.env"},
+		{labelFileFlag, filepath.Join(s.dir, "bom.env")},
 	} {
 		err := Validate(DockerCompatible, args, s.dir)
 		s.Require().Error(err, args)
@@ -104,31 +107,35 @@ func (s *RunArgsSuite) TestRejectsReservedLabelsInEveryForm() {
 
 func (s *RunArgsSuite) TestRejectsLabelFilesItCannotReadAsTheRuntimeDoes() {
 	s.EqualError(
-		Validate(DockerCompatible, []string{"--label-file", "a.env,b.env"}, s.dir),
+		Validate(DockerCompatible, []string{labelFileFlag, "a.env,b.env"}, s.dir),
 		`runArgs: label file path "a.env,b.env" must not contain a comma, quote or line break`,
 	)
 	s.EqualError(
-		Validate(DockerCompatible, []string{"--label-file", `\labels.env`}, s.dir),
+		Validate(DockerCompatible, []string{labelFileFlag, `\labels.env`}, s.dir),
 		`runArgs: label file path "\\labels.env" must be absolute or relative to the workspace`,
 	)
+	s.EqualError(
+		Validate(DockerCompatible, []string{"--label-file=link/../labels.env"}, s.dir),
+		`runArgs: label file path "link/../labels.env" must not contain a .. element`,
+	)
 	s.ErrorContains(
-		Validate(DockerCompatible, []string{"--label-file", "missing.env"}, s.dir),
+		Validate(DockerCompatible, []string{labelFileFlag, "missing.env"}, s.dir),
 		"runArgs: read label file:",
 	)
 }
 
 func (s *RunArgsSuite) TestAppleRules() {
 	s.NoError(
-		Validate(AppleContainer, []string{"-il", "team=a", "--cpus", "2", "-l=team=b"}, s.dir),
+		Validate(AppleContainer, []string{"-il", teamLabel, "--cpus", "2", "-l=team=b"}, s.dir),
 	)
 	for _, tc := range []struct {
 		args []string
 		want string
 	}{
 		{[]string{"-lteam=a"}, "runArgs: item 1: put the value of -l in the next item"},
-		{[]string{"-li", "team=a"}, "runArgs: item 1: put the value of -l in the next item"},
+		{[]string{"-li", teamLabel}, "runArgs: item 1: put the value of -l in the next item"},
 		{
-			[]string{"--label-file", "labels.env"},
+			[]string{labelFileFlag, "labels.env"},
 			"runArgs: item 1: unknown option --label-file; write it as --label-file=VALUE",
 		},
 		{[]string{"-h"}, "runArgs: item 1: unknown option -h"},
@@ -139,18 +146,25 @@ func (s *RunArgsSuite) TestAppleRules() {
 	} {
 		s.EqualError(Validate(AppleContainer, tc.args, s.dir), tc.want, tc.args)
 	}
-	s.ErrorContains(Validate(AppleContainer, []string{"--rm", "busybox"}, s.dir), imageReadMessage)
+	s.ErrorContains(
+		Validate(AppleContainer, []string{"--rm", positionalImage}, s.dir),
+		imageReadMessage,
+	)
 }
 
 func (s *RunArgsSuite) TestOptionTablesNameEachOptionOnce() {
 	for _, table := range []map[optionKind]string{dockerCompatibleOptions, appleContainerOptions} {
 		seen := map[string]bool{}
 		for _, list := range table {
-			for _, name := range strings.Fields(list) {
+			for name := range strings.FieldsSeq(list) {
 				s.False(seen[name], name)
 				seen[name] = true
 				s.Regexp(`^(-[a-zA-Z]|--[a-z0-9][a-z0-9-]*)$`, name)
 			}
 		}
 	}
+}
+
+func (s *RunArgsSuite) writeFile(name, content string) {
+	s.Require().NoError(os.WriteFile(filepath.Join(s.dir, name), []byte(content), 0o600))
 }

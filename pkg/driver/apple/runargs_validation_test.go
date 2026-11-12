@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const runCall = "run"
+
 type RunArgsValidationSuite struct {
 	suite.Suite
 	client *mockClient
@@ -25,15 +27,6 @@ func (s *RunArgsValidationSuite) SetupTest() {
 	s.driver = &appleDriver{Apple: s.client}
 }
 
-func (s *RunArgsValidationSuite) run(runArgs ...string) error {
-	return s.driver.RunImageDevContainer(context.Background(), &driver.RunImageDevContainerParams{
-		ParsedConfig: &config.DevContainerConfig{
-			NonComposeBase: config.NonComposeBase{RunArgs: runArgs},
-		},
-		Options: &driver.RunOptions{Image: testImageRef},
-	})
-}
-
 func (s *RunArgsValidationSuite) TestRejectsBeforeAnyRuntimeCall() {
 	s.ErrorContains(s.run("--rm", "busybox"), "the runtime would read it as the image")
 	s.EqualError(
@@ -46,7 +39,16 @@ func (s *RunArgsValidationSuite) TestRejectsBeforeAnyRuntimeCall() {
 
 func (s *RunArgsValidationSuite) TestOrdinaryRunArgsReachTheRuntime() {
 	s.Require().NoError(s.run("--label", "team=a"))
-	s.Equal([]string{"pull", "run"}, s.client.calls)
+	s.Equal([]string{"pull", runCall}, s.client.calls)
 	s.Require().Len(s.client.ranArgs, 1)
 	s.Contains(s.client.ranArgs[0], "team=a")
+}
+
+func (s *RunArgsValidationSuite) run(runArgs ...string) error {
+	return s.driver.RunImageDevContainer(context.Background(), &driver.RunImageDevContainerParams{
+		ParsedConfig: &config.DevContainerConfig{
+			NonComposeBase: config.NonComposeBase{RunArgs: runArgs},
+		},
+		Options: &driver.RunOptions{Image: testImageRef},
+	})
 }
