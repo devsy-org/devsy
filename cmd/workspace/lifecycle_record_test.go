@@ -4,7 +4,9 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
 const fakeDockerScript = `#!/bin/sh
@@ -203,4 +206,52 @@ func TestExecLifecycleHookWithoutRecorderIsUnchanged(t *testing.T) {
 		types.LifecycleHook{"": {"x"}})
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "full output")
+}
+
+type lifecycleOutputSuite struct{ suite.Suite }
+
+func TestLifecycleOutputSuite(t *testing.T) { suite.Run(t, new(lifecycleOutputSuite)) }
+
+func (s *lifecycleOutputSuite) TestSuccessfulCommandWithLostOutput() {
+	run := newRecordedLifecycle(s.T())
+	rec := newLifecycleRecording(execParams(s.T(), run.rec), "postCreateCommand", sourceSetup)
+	rec.finish(
+		context.Background(),
+		time.Second,
+		&docker.LiveOutputError{Err: errors.New("bytes dropped")},
+	)
+	inv := lastInvocation(run.records(s.T()))
+	s.Require().NotNil(inv)
+	s.Equal(workspacelogs.InvocationFailed, inv.State)
+	s.Equal("output_failed", inv.Reason)
+	s.Require().NotNil(inv.ExitCode)
+	s.Zero(*inv.ExitCode)
+}
+
+func (s *lifecycleOutputSuite) TestFileLiveOutputPreservesRawHookOutput() {
+	stdoutPath, _ := redirectStdio(s.T())
+	params := execParams(s.T(), nil)
+	params.EnvArgs = []string{"-e", "API_TOKEN=fake-out"}
+	s.Require().
+		NoError(ExecLifecycleHook(params, "postCreateCommand", types.LifecycleHook{sourceSetup: {"echo hi"}}))
+	s.Equal("fake-out\n", readFile(s.T(), stdoutPath))
+}
+
+func (s *lifecycleOutputSuite) TestFailedCommandWithLostOutput() {
+	run := newRecordedLifecycle(s.T())
+	rec := newLifecycleRecording(execParams(s.T(), run.rec), "postCreateCommand", sourceSetup)
+	cmd := exec.Command("sh", "-c", "exit 7")
+	exitErr := cmd.Run()
+	s.Require().Error(exitErr)
+	rec.finish(
+		context.Background(),
+		time.Second,
+		errors.Join(exitErr, &docker.LiveOutputError{Err: errors.New("bytes dropped")}),
+	)
+	inv := lastInvocation(run.records(s.T()))
+	s.Require().NotNil(inv)
+	s.Equal(workspacelogs.InvocationFailed, inv.State)
+	s.Equal("output_failed", inv.Reason)
+	s.Require().NotNil(inv.ExitCode)
+	s.Equal(7, *inv.ExitCode)
 }

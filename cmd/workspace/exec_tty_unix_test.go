@@ -48,26 +48,28 @@ func TestExecInContainerRequestsTTYOnlyWhenInputAndOutputAreTerminals(t *testing
 			runtime := &execTTYCaptureRuntime{}
 			target := workspace2.ContainerTarget{ContainerID: "container-id", User: "1001:1002"}
 			env := map[string]string{"LANG": "C.UTF-8"}
-			originalStdin, originalStdout := os.Stdin, os.Stdout
-			os.Stdin, os.Stdout = stdin, stdout
+			originalStdin, originalStdout, originalStderr := os.Stdin, os.Stdout, os.Stderr
+			os.Stdin, os.Stdout, os.Stderr = stdin, stdout, stdin
 			t.Cleanup(func() {
-				os.Stdin, os.Stdout = originalStdin, originalStdout
+				os.Stdin, os.Stdout, os.Stderr = originalStdin, originalStdout, originalStderr
 			})
 			err := (&ExecCmd{}).execInContainer(
 				t.Context(),
 				execOpts{runtime: runtime, target: target, workdir: "/workspace", envMap: env},
 				[]string{"printf", "hello"},
 			)
-			os.Stdin, os.Stdout = originalStdin, originalStdout
+			os.Stdin, os.Stdout, os.Stderr = originalStdin, originalStdout, originalStderr
 			require.NoError(t, err)
 			require.Equal(t, test.wantTTY, runtime.request.TTY)
+			require.Equal(t, test.stdoutTTY, runtime.request.LiveStdout)
+			require.Equal(t, test.stdinTTY, runtime.request.LiveStderr)
 			require.Equal(t, target, runtime.request.Target)
 			require.Equal(t, "/workspace", runtime.request.Workdir)
 			require.Equal(t, env, runtime.request.Env)
 			require.Equal(t, []string{"printf", "hello"}, runtime.request.Argv)
 			require.Same(t, stdin, runtime.request.Stdin)
 			require.Same(t, stdout, runtime.request.Stdout)
-			require.Same(t, os.Stderr, runtime.request.Stderr)
+			require.Same(t, stdin, runtime.request.Stderr)
 		})
 	}
 }

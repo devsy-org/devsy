@@ -220,12 +220,21 @@ type ContainerRuntime interface {
 
 // CommandExitError preserves a guest command's exit status at the CLI boundary.
 type CommandExitError struct {
-	Code int
+	Code  int
+	Cause error
 }
 
 func (e *CommandExitError) Error() string {
+	if e.Cause != nil {
+		if e.Code == 0 {
+			return fmt.Sprintf("workspace command output: %v", e.Cause)
+		}
+		return fmt.Sprintf("workspace command failed with exit code %d: %v", e.Code, e.Cause)
+	}
 	return fmt.Sprintf("workspace command failed with exit code %d", e.Code)
 }
+
+func (e *CommandExitError) Unwrap() error { return e.Cause }
 
 // CommandRuntime exposes the native CLI used by legacy raw-command callers.
 type CommandRuntime interface {
@@ -241,14 +250,16 @@ type CommandRuntime interface {
 
 // ExecRequest is the per-call input to ContainerRuntime.Exec.
 type ExecRequest struct {
-	Target  ContainerTarget
-	Workdir string
-	Env     map[string]string
-	Argv    []string
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Stdin   io.Reader
-	TTY     bool
+	Target     ContainerTarget
+	Workdir    string
+	Env        map[string]string
+	Argv       []string
+	Stdout     io.Writer
+	Stderr     io.Writer
+	Stdin      io.Reader
+	TTY        bool
+	LiveStdout bool
+	LiveStderr bool
 }
 
 // ContainerTarget identifies a container and the user to exec as.
@@ -310,6 +321,9 @@ func (r *DockerRuntime) FindRunning(
 }
 
 func (r *DockerRuntime) Exec(ctx context.Context, req ExecRequest) (int, error) {
+	if req.LiveStdout || req.LiveStderr {
+		return execWithRunner(ctx, req, r.liveRunner(req.LiveStdout, req.LiveStderr, req.Env))
+	}
 	return execWithRunner(ctx, req, r.runner())
 }
 
@@ -319,6 +333,31 @@ func (r *DockerRuntime) ProbeEnv(
 	probe string,
 ) map[string]string {
 	return probeEnvWithRunner(ctx, target, probe, r.runner())
+}
+
+func (r *DockerRuntime) liveRunner(
+	liveStdout, liveStderr bool,
+	env map[string]string,
+) containerRunFunc {
+	redactionEnv := make([]string, 0, len(env))
+	for key, value := range env {
+		redactionEnv = append(redactionEnv, key+"="+value)
+	}
+	return func(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+		streams := docker.Streams{
+			Stdin:        stdin,
+			Stdout:       stdout,
+			Stderr:       stderr,
+			RedactionEnv: redactionEnv,
+		}
+		if liveStdout {
+			streams.Stdout, streams.LiveStdout = nil, stdout
+		}
+		if liveStderr {
+			streams.Stderr, streams.LiveStderr = nil, stderr
+		}
+		return r.helper.Run(ctx, args, streams)
+	}
 }
 
 // runner adapts the helper's Streams-based Run to containerRunFunc.
@@ -380,7 +419,13 @@ func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) 
 		return -1, fmt.Errorf("exec in container %s: %w", req.Target.ContainerID, err)
 	}
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		if outputErr, found := errors.AsType[*docker.LiveOutputError](err); found {
+			return exitErr.ExitCode(), outputErr
+		}
 		return exitErr.ExitCode(), nil
+	}
+	if outputErr, found := err.(*docker.LiveOutputError); found {
+		return 0, outputErr
 	}
 	return -1, fmt.Errorf("exec in container %s: %w", req.Target.ContainerID, err)
 }

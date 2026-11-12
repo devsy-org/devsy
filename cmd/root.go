@@ -250,6 +250,9 @@ func exitCodeForError(err error, machineMode bool) int {
 		return exitcode.Success
 	}
 
+	if code, ok := unsafeOutputExitCode(err); ok {
+		return code
+	}
 	cliErr := clierr.Classify(err)
 
 	// Stay transparent for unclassified child-process exits (e.g. `devsy ssh -- cmd`).
@@ -269,7 +272,31 @@ func exitCodeForError(err error, machineMode bool) int {
 	return exitcode.Failure
 }
 
+func unsafeOutputExitCode(err error) (int, bool) {
+	unsafe, ok := errors.AsType[interface {
+		error
+		SkipFinalStatus() bool
+	}](err)
+	if !ok || !unsafe.SkipFinalStatus() {
+		return 0, false
+	}
+	if commandExit, ok := errors.AsType[*workspace.CommandExitError](err); ok {
+		return commandExit.Code, true
+	}
+	return exitcode.Failure, true
+}
+
+func commandExitCode(commandExit *workspace.CommandExitError, machineMode bool) int {
+	if machineMode || commandExit.Cause != nil {
+		renderCLIError(clierr.Classify(commandExit), machineMode)
+	}
+	return commandExit.Code
+}
+
 func passthroughExitCode(err error, machineMode bool) (int, bool) {
+	if commandExit, ok := errors.AsType[*workspace.CommandExitError](err); ok {
+		return commandExitCode(commandExit, machineMode), true
+	}
 	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
 		if machineMode {
 			renderCLIError(
@@ -293,12 +320,6 @@ func passthroughExitCode(err error, machineMode bool) (int, bool) {
 			)
 		}
 		return execExitErr.ExitCode(), true
-	}
-	if commandExit, ok := errors.AsType[*workspace.CommandExitError](err); ok {
-		if machineMode {
-			renderCLIError(clierr.Classify(commandExit), true)
-		}
-		return commandExit.Code, true
 	}
 	return 0, false
 }
