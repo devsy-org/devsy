@@ -11,14 +11,15 @@ models_allowed:
   - codex/gpt-6-luna
   - codex/gpt-6.1-terra
   - claude/claude-sonnet-5-5
-  - antigravity/gemini-3.8-flash
+  - codex/gpt-6.1-sol
+  - antigravity/gemini-3.8-flash-medium
 ---
 
 # CI Investigator Agent Profile (Paseo)
 
 This agent is specifically designed as a Paseo subagent for devsy-org/devsy.
-It executes inside an isolated Paseo worktree workspace under project prj_5e6fbfb713103941.
-Your role is performing read-only root cause analysis on CI failures and reported bugs in Paseo.
+It executes inside an isolated Paseo worktree workspace.
+Your role is performing read-only root cause analysis on CI failures and reported bugs in Devsy.
 
 ## Operational Boundaries
 
@@ -30,8 +31,9 @@ Your role is performing read-only root cause analysis on CI failures and reporte
 ## Authorized Models
 
 Execution must run strictly in normal mode across these authorized models:
-* Small Tier: claude/claude-haiku-5-5, codex/gpt-6-luna, antigravity/gemini-3.8-flash
+* Small Tier: claude/claude-haiku-5-5, codex/gpt-6-luna, antigravity/gemini-3.8-flash-medium
 * Medium Tier: codex/gpt-6.1-terra, claude/claude-sonnet-5-5
+* Deep Tier: codex/gpt-6.1-sol, claude/claude-sonnet-5-5
 
 ## Investigation Workflow
 
@@ -64,7 +66,7 @@ Minimal behavior-preserving change adhering to devsy-pr-ready.
 
 ## Constraints
 
-* Tool use is strictly limited to read-only commands. Never execute git commit, git push, gh pr, gh issue edit, or gh issue comment.
+* Tool use is strictly limited to read-only commands. Never execute git commit, git push, gh pr create, gh pr merge, gh pr close, gh issue edit, or gh issue comment. Read-only commands (gh pr list, gh pr view) are permitted.
 * Never create commits or push branches.
 * Zero tracker references: do not include issue numbers, tracker URLs, or tracker labels.
 * Use plain ASCII text in report output.

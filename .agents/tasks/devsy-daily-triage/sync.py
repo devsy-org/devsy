@@ -2,6 +2,7 @@
 import argparse
 import json
 import subprocess
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,14 @@ def run_command(args: list[str]) -> str:
         err_msg = exc.stderr.strip() if exc.stderr else str(exc)
         sys.stderr.write(f"Command failed ({' '.join(args)}): {err_msg}\n")
         sys.exit(1)
+
+def resolve_repo_root() -> str:
+    try:
+        common_dir = run_command(["git", "rev-parse", "--git-common-dir"]).strip()
+        return os.path.dirname(os.path.abspath(common_dir))
+    except Exception:
+        return os.getcwd()
+
 
 
 def find_schedule_id(schedule_name: str) -> str | None:
@@ -50,7 +59,7 @@ def handle_diff(config: dict, schedule_name: str, loader_prompt: str) -> None:
         ("timezone", config.get("timezone"), cadence.get("timezone")),
         ("provider", config.get("provider"), actual_provider),
         ("mode", config.get("mode", "auto"), target_config.get("modeId")),
-        ("cwd", config.get("cwd"), target_config.get("cwd")),
+        ("cwd", config.get("cwd") or resolve_repo_root(), target_config.get("cwd")),
         ("prompt", loader_prompt.strip(), daemon_data.get("prompt", "").strip()),
     ]
 
@@ -92,7 +101,7 @@ def handle_apply(config: dict, schedule_name: str, loader_prompt: str) -> None:
         "--mode",
         config.get("mode", "auto"),
         "--cwd",
-        config["cwd"],
+        config.get("cwd") or resolve_repo_root(),
         "--prompt",
         loader_prompt,
     ]
@@ -126,7 +135,7 @@ def handle_create(config: dict, schedule_name: str, loader_prompt: str) -> None:
         "--mode",
         config.get("mode", "auto"),
         "--cwd",
-        config["cwd"],
+        config.get("cwd") or resolve_repo_root(),
         loader_prompt,
     ]
     output = run_command(cmd)

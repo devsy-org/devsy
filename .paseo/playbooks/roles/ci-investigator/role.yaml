@@ -2,5 +2,5 @@ title: CI Investigator
 readonly: true
 agent:
   provider: antigravity
-  model: gemini-3.8-flash
-  mode: default
+  model: gemini-3.8-flash-medium
+  mode: yolo

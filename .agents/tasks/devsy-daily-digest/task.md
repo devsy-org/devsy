@@ -3,7 +3,6 @@ kind: task
 id: devsy-daily-digest
 name: devsy-daily-digest
 target: paseo
-cwd: /Users/ocean_trader/Documents/devsy/devsy
 isolation: worktree
 fast_mode_allowed: false
 models_allowed:
@@ -12,19 +11,29 @@ models_allowed:
   - codex/gpt-6.1-terra
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
-  - antigravity/gemini-3.8-flash
+  - antigravity/gemini-3.8-flash-medium
 ---
 
 # Devsy Daily Digest and Memory Consolidation
 
 This task consolidates durable triage facts into persistent memory and outputs the structured daily markdown report summarizing garbage collection, pull request gates, main branch health, and active investigations.
-Target project: devsy-org/devsy (Paseo project ID: prj_5e6fbfb713103941).
+Target repository: devsy-org/devsy.
 
 ## Operational Boundaries
 
 * Use memory only for durable knowledge: normalized failure fingerprints, flake classifications, and verified root causes.
 * Never retain tracker identifiers or issue numbers as permanent durable facts.
 * Do not perform loops or polling. Generate the report and finish.
+
+## Standalone Live Queries
+
+When running standalone without prior stage state, query live environment state:
+1. Active pull requests:
+   `gh pr list -R devsy-org/devsy --state open --author @me --json number,title,headRefName,statusCheckRollup,mergeStateStatus`
+2. Main branch runs:
+   `gh run list -R devsy-org/devsy --branch main --limit 20 --json databaseId,status,conclusion`
+3. Active agents:
+   `paseo agent ls --json`
 
 ## Execution Procedure
 
@@ -55,5 +64,5 @@ Output the daily report adhering strictly to this markdown structure:
 * Issues opened or updated: <list>
 
 ## Active Investigations and Fixes
-* Issue <id>: <tier> (<model>) - <status>
+* Issue <id>: <tier> (<model>), status: <status>
 ```

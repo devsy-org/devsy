@@ -3,7 +3,6 @@ kind: task
 id: devsy-issue-investigation
 name: devsy-issue-investigation
 target: paseo
-cwd: /Users/ocean_trader/Documents/devsy/devsy
 isolation: worktree
 fast_mode_allowed: false
 models_allowed:
@@ -12,13 +11,19 @@ models_allowed:
   - codex/gpt-6.1-terra
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
-  - antigravity/gemini-3.8-flash
+  - antigravity/gemini-3.8-flash-medium
 ---
 
 # Devsy Issue Investigation Delegation
 
 This task triages open issues, tags feature requests and already investigated issues, selects priority failure candidates within capacity, and delegates read-only diagnostic investigations to subagents using `.agents/agents/ci-investigator`.
-Target project: devsy-org/devsy (Paseo project ID: prj_5e6fbfb713103941).
+Target repository: devsy-org/devsy.
+
+## Task Inputs & Defaults
+
+* `slots_investigation`: integer. If not supplied, compute available capacity directly from active subagents:
+  `ACTIVE_COUNT=$(paseo agent ls --json 2>/dev/null | jq '[.[] | select(.labels.tier=="investigation" and (.status=="running" or .status=="initializing"))] | length')`
+  `slots_investigation=$(( 2 - ACTIVE_COUNT > 0 ? 2 - ACTIVE_COUNT : 0 ))`
 
 ## Operational Boundaries
 
@@ -40,9 +45,11 @@ gh issue list -R devsy-org/devsy --state open --limit 20 --json number,title,lab
 ### 2. Triage and Tag
 
 Review issues for preliminary classification:
-* Feature requests: label with enhancement:
+* Feature requests: ensure label exists and tag issue:
+  `gh label create enhancement -R devsy-org/devsy 2>/dev/null || true`
   `gh issue edit <issue_id> -R devsy-org/devsy --add-label enhancement`
-* Already investigated issues: label with investigated:
+* Already investigated issues: ensure label exists and tag issue:
+  `gh label create investigated -R devsy-org/devsy 2>/dev/null || true`
   `gh issue edit <issue_id> -R devsy-org/devsy --add-label investigated`
 
 ### 3. Select Candidate Issues
@@ -55,7 +62,7 @@ Prioritize CI failures on main first, followed by high-impact bugs.
 Select the model configuration according to failure complexity:
 
 * Small Tier (single package, CLI flag or typo, simple unit assertion):
-  provider: `claude/claude-haiku-5-5`, `codex/gpt-6-luna`, or `antigravity/gemini-3.8-flash`
+  provider: `claude/claude-haiku-5-5`, `codex/gpt-6-luna`, or `antigravity/gemini-3.8-flash-medium`
 * Medium Tier (multi-package interaction, provider parameters, state race):
   provider: `codex/gpt-6.1-terra` or `claude/claude-sonnet-5-5` (standard reasoning)
 * Deep Tier (daemon lifecycle, container idle timeouts, k8s pod reconciliation, SSH tunneling):
@@ -67,7 +74,7 @@ For each selected candidate issue:
 
 1. Create an isolated diagnostic workspace:
    ```bash
-   paseo workspace create --isolation worktree --mode branch-off --base origin/main --new-branch diag/issue-<issue_id> --json
+   paseo workspace create --isolation worktree --mode branch-off --base origin/main --new-branch diag/<fingerprint> --json
    ```
 
 2. Delegate to the subagent profile defined at `.agents/agents/ci-investigator/agent.md` using configuration `.agents/agents/ci-investigator/config.json`.
@@ -77,8 +84,8 @@ For each selected candidate issue:
    {
      "workspaceId": "<workspace_id>",
      "provider": "<selected_provider_and_model>",
-     "title": "[devsy] Investigate <issue_id>",
-     "labels": { "repo": "devsy", "tier": "investigation", "issue": "<issue_id>" },
+     "title": "[devsy] Investigate <fingerprint>",
+     "labels": { "repo": "devsy", "tier": "investigation", "fingerprint": "<fingerprint>" },
      "agentProfile": ".agents/agents/ci-investigator/agent.md",
      "initialPrompt": "# Investigation Brief for Issue <issue_id>\n\n## Context\nFailure fingerprint: <fingerprint>\nIssue description: <issue_description>\n\n## Objectives\n1. Identify root cause with exact file paths and line numbers.\n2. Formulate minimal reproduction command or test case.\n3. Propose minimal fix hypothesis adhering to devsy-pr-ready.\n\n## Constraints\n* Strictly read-only: do not commit, push, or edit repository files.\n* Format final report using the output template."
    }

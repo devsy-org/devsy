@@ -3,7 +3,6 @@ kind: task
 id: devsy-workspace-gc
 name: devsy-workspace-gc
 target: paseo
-cwd: /Users/ocean_trader/Documents/devsy/devsy
 isolation: worktree
 fast_mode_allowed: false
 models_allowed:
@@ -12,13 +11,13 @@ models_allowed:
   - codex/gpt-6.1-terra
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
-  - antigravity/gemini-3.8-flash
+  - antigravity/gemini-3.8-flash-medium
 ---
 
 # Devsy Workspace Garbage Collection
 
 This task identifies and archives completed, merged, or stale automation worktrees in Devsy.
-Target project: devsy-org/devsy (Paseo project ID: prj_5e6fbfb713103941).
+Target repository: devsy-org/devsy.
 
 ## Operational Boundaries
 
@@ -67,9 +66,9 @@ For each candidate workspace tuple [workspaceId, cwd, title]:
    BRANCH=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)
    git -C "$cwd" fetch origin main --quiet
    IS_MERGED=$(git -C "$cwd" merge-base --is-ancestor HEAD origin/main && echo "yes" || echo "no")
-   PR_STATE=$(gh pr list -R devsy-org/devsy --head "$BRANCH" --state all --json state --jq '.[0].state' 2>/dev/null)
+   PR_STATE=$(gh pr list -R devsy-org/devsy --head "$BRANCH" --state all --json state --jq '.[0].state' 2>/dev/null || echo "")
    ```
-   If the pull request lookup returns an error or empty result unexpectedly, do not archive. Fail closed.
+   For fix branches (`fix/*`), an unexpected PR lookup error must fail closed without archiving. For diagnostic branches (`diag/*`), an empty PR lookup is expected because diagnostic branches do not open pull requests.
 
 6. Archive if completed or stale:
    * If IS_MERGED is yes, or PR_STATE is MERGED or CLOSED, and worktree is clean:
@@ -77,5 +76,5 @@ For each candidate workspace tuple [workspaceId, cwd, title]:
    * If diagnostic branch (`diag/*`) and subagent status is idle or closed:
      If worktree is clean and zero active playbook runs exist, archive:
      `paseo workspace archive <workspaceId>`
-   * If older than 48 hours with no uncommitted changes, no open pull request, and zero active playbook runs:
+   * If worktree age exceeds 48 hours with no uncommitted changes, no open pull request, and zero active playbook runs:
      `paseo workspace archive <workspaceId>`

@@ -3,7 +3,6 @@ kind: task
 id: devsy-pr-reconciliation
 name: devsy-pr-reconciliation
 target: paseo
-cwd: /Users/ocean_trader/Documents/devsy/devsy
 isolation: worktree
 fast_mode_allowed: false
 models_allowed:
@@ -12,13 +11,17 @@ models_allowed:
   - codex/gpt-6.1-terra
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
-  - antigravity/gemini-3.8-flash
+  - antigravity/gemini-3.8-flash-medium
 ---
 
 # Devsy In-Flight Pull Request Reconciliation
 
 This task reconciles open pull requests created by this automation, checks review gates, verifies issue resolution, and reconciles completed investigations.
-Target project: devsy-org/devsy (Paseo project ID: prj_5e6fbfb713103941).
+Target repository: devsy-org/devsy.
+
+## Task Inputs & Defaults
+
+* `auto_merge`: boolean, default `false`. Auto-merge requires explicit caller or human authorization.
 
 ## Operational Boundaries
 
@@ -52,17 +55,25 @@ For each open automation pull request:
 1. Check branch drift and merge conflicts:
    Inspect `mergeStateStatus`.
    If BEHIND, steer the worker to rebase onto origin/main, rerun local validation, and push with `--force-with-lease`. Limit to one rebase attempt per day.
-   If DIRTY, steer the worker once to resolve conflicts. If still conflicting on the next run, label the pull request blocked and record for the daily digest. Never merge a pull request whose base branch is stale.
+   If DIRTY, steer the worker once to resolve conflicts. If still conflicting on the next run, label the pull request blocked:
+   `gh pr edit <pr_number> -R devsy-org/devsy --add-label blocked`
+   Never merge a pull request whose base branch is stale.
 
 2. Handle CI failures:
-   Inspect failing status checks. If a transient infrastructure failure occurred, rerun the failed job. If a code failure occurred, steer the worker agent to diagnose and correct it.
+   Inspect failing status checks. If a transient infrastructure failure occurred, rerun the failed job:
+   `gh run rerun <run_id> --failed`
+   If a code failure occurred, steer the worker agent to diagnose and correct it.
 
 3. Promote draft pull requests to ready:
    If all CI checks pass on the current head commit SHA and the pull request is draft, mark it ready:
    `gh pr ready <pr_number> -R devsy-org/devsy`
 
 4. Review thread handling:
-   Inspect CodeRabbit and Greptile reviews on ready pull requests. Steer the worker agent if unresolved comments or review findings remain.
+   Inspect CodeRabbit and Greptile reviews on ready pull requests. Check for unresolved review threads:
+   ```bash
+   gh api graphql -f query='query { repository(owner:"devsy-org", name:"devsy") { pullRequest(number:<pr_number>) { reviewThreads(first:50) { nodes { isResolved } } } } }' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)] | length'
+   ```
+   Steer the worker agent if unresolved comments or review findings remain.
 
 5. Auto-merge execution and gate verification:
    Auto-merge runs only when the coordinator input explicitly sets `auto_merge` to true.

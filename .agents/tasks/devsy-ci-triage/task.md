@@ -3,7 +3,6 @@ kind: task
 id: devsy-ci-triage
 name: devsy-ci-triage
 target: paseo
-cwd: /Users/ocean_trader/Documents/devsy/devsy
 isolation: worktree
 fast_mode_allowed: false
 models_allowed:
@@ -12,13 +11,13 @@ models_allowed:
   - codex/gpt-6.1-terra
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
-  - antigravity/gemini-3.8-flash
+  - antigravity/gemini-3.8-flash-medium
 ---
 
 # Devsy CI Failure Triage
 
 This task inspects failed GitHub Actions workflow runs on origin/main, classifies failures, deduplicates issues, triggers safe reruns for transient flakes, and files structured tracking issues.
-Target project: devsy-org/devsy (Paseo project ID: prj_5e6fbfb713103941).
+Target repository: devsy-org/devsy.
 
 ## Operational Boundaries
 
@@ -43,7 +42,7 @@ gh run list -R devsy-org/devsy --branch main --created ">=$SINCE" --status failu
 For each failed run, inspect failed jobs:
 
 ```bash
-gh api repos/devsy-org/devsy/actions/runs/<run_id>/jobs --jq '.jobs[] | select(.conclusion=="failure") | {name: .name, id: .id, run_attempt: .run_attempt}'
+gh api repos/devsy-org/devsy/actions/runs/<run_id>/jobs --paginate --jq '.jobs[] | select(.conclusion=="failure") | {job_name: .name, job_id: .id, run_attempt: .run_attempt, failed_step: (.steps[]? | select(.conclusion=="failure") | .name)}'
 ```
 
 ### 3. Extract Failure Signature with Bounded Log Extraction
@@ -54,9 +53,12 @@ Fetch the trailing failure log:
 gh run view -R devsy-org/devsy --job <job_id> --log-failed | tail -n 150
 ```
 
-Compute the standardized failure fingerprint:
+Compute the standardized failure fingerprint using a normalized pipeline:
+```bash
+SIGNATURE=$(printf '%s|%s|%s|%s' "$WORKFLOW" "$JOB" "$STEP" "$TEST" | sed -E 's/\x1B\[[0-9;]*[a-zA-Z]//g; s/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z//g; s/0x[0-9a-fA-F]+//g' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+FINGERPRINT=$(printf '%s' "$SIGNATURE" | shasum -a 256 | cut -c1-12)
+```
 The fingerprint is the first 12 hex characters of SHA-256 over the lowercase string `workflow|job|step|test`, after stripping ANSI escape sequences, timestamps, and hex memory addresses.
-
 ### 4. Classify and Deduplicate
 
 Evaluate the extracted signature against these classifications:
@@ -66,6 +68,7 @@ Evaluate the extracted signature against these classifications:
    * Classify as `upstream-asset`.
    * Rerun at most once.
    * Probe referenced provider repository using `gh api repos/<owner>/<repo>/releases/latest`.
+   * Ensure label exists: `gh label create ci-infra -R devsy-org/devsy 2>/dev/null || true`.
    * Open or update a tracking issue on devsy with label `ci-infra`.
    * Record provider blockage for the daily digest.
    * Do not open issues in provider repositories.
@@ -80,39 +83,36 @@ Evaluate the extracted signature against these classifications:
 
 3. Deduplication and regression reopening:
    Search existing issues:
-   `gh issue list -R devsy-org/devsy --state all --search "<fingerprint>"`
-   If an open issue matches, append run ID and head SHA using this template:
-   ```markdown
-   ### Recurrence Detected
-   Failure recurred on main in run <run_id> at commit <head_sha>.
-   devsy-fingerprint: <fingerprint>
-   ```
+   `gh issue list -R devsy-org/devsy --state all --search "<fingerprint>" --json number,title,state`
+   If an open issue matches, append run ID and head SHA:
+   `gh issue comment <issue_number> -R devsy-org/devsy --body "### Recurrence Detected\nFailure recurred on main in run <run_id> at commit <head_sha>.\ndevsy-fingerprint: <fingerprint>"`
    Do not create duplicate issues.
-   If a closed issue matches and the failure recurs on main, reopen the issue with the recurrence template.
+   If a closed issue matches and the failure recurs on main, reopen the issue:
+   `gh issue reopen <issue_number> -R devsy-org/devsy --comment "### Recurrence Detected\nFailure recurred on main in run <run_id> at commit <head_sha>.\ndevsy-fingerprint: <fingerprint>"`
    Only open a new issue when zero matches exist across open and closed states:
+   Ensure labels exist:
+   `gh label create ci -R devsy-org/devsy 2>/dev/null || true`
+   `gh label create bug -R devsy-org/devsy 2>/dev/null || true`
+   Create tracking issue:
    ```bash
    gh issue create -R devsy-org/devsy \
      --title "ci: <test_name> failure in <workflow_name>" \
      --label "ci,bug" \
      --body "$(cat <<'EOF'
-   ### Summary
-   Automated triage detected CI failure on main in run <run_id> at commit <head_sha>.
-
+   Summary: Automated triage detected CI failure on main in run <run_id> at commit <head_sha>.
    devsy-fingerprint: <fingerprint>
 
-   ### Failure Signature
-   * Workflow: <workflow_name>
-   * Job: <job_name>
-   * Step: <step_name>
+   Failure Signature:
+   Workflow: <workflow_name>
+   Job: <job_name>
+   Step: <step_name>
 
-   ### Log Excerpt
-   ```
+   Log Excerpt:
    <bounded_log_extract>
-   ```
 
-   ### Next Actions
+   Next Actions:
    Triaged for root-cause investigation.
-   EOF
+EOF
    )"
    ```
 

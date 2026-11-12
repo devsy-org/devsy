@@ -3,7 +3,6 @@ kind: task
 id: devsy-fix-delegation
 name: devsy-fix-delegation
 target: paseo
-cwd: /Users/ocean_trader/Documents/devsy/devsy
 isolation: worktree
 fast_mode_allowed: false
 models_allowed:
@@ -12,13 +11,21 @@ models_allowed:
   - codex/gpt-6.1-terra
   - claude/claude-sonnet-5-5
   - codex/gpt-6.1-sol
-  - antigravity/gemini-3.8-flash
+  - antigravity/gemini-3.8-flash-medium
 ---
 
 # Devsy Fix Delegation and Playbook Orchestration
 
 This task orchestrates bug fix implementation for verified issues, enforcing open pull request deduplication, human approval gates, and PR readiness standards.
-Target project: devsy-org/devsy (Paseo project ID: prj_5e6fbfb713103941).
+Target repository: devsy-org/devsy.
+
+## Task Inputs & Defaults
+
+* `slots_fix`: integer. If not supplied, compute directly from open pull requests:
+  `OPEN_FIX_PRS=$(gh pr list -R devsy-org/devsy --state open --author @me --json headRefName --jq '[.[] | select(.headRefName | startswith("fix/"))] | length' 2>/dev/null || echo 0)`
+  `slots_fix=$(( 1 - OPEN_FIX_PRS > 0 ? 1 - OPEN_FIX_PRS : 0 ))`
+* `fingerprint`, `description`, `failing_step`: required strings for playbook execution. If executing standalone without explicit parameters, query the latest open issue labeled `investigated`:
+  `gh issue list -R devsy-org/devsy --label investigated --state open --limit 1 --json number,title,body`
 
 ## Operational Boundaries
 
@@ -37,7 +44,7 @@ Target project: devsy-org/devsy (Paseo project ID: prj_5e6fbfb713103941).
 Before creating a fix workspace or starting the fix pipeline, verify that no open pull request already targets this failure:
 
 ```bash
-gh pr list -R devsy-org/devsy --state open --search "<fingerprint>"
+gh pr list -R devsy-org/devsy --state open --search "<fingerprint>" --json number,title,headRefName
 ```
 
 If an open pull request already exists, do not launch a duplicate fix. Record the active pull request for the daily digest and finish.
@@ -52,11 +59,13 @@ The authoritative path for executing code fixes is the declarative Paseo Playboo
    ```
 
 2. Start Playbook Run:
-   Initiate `.paseo/playbooks/devsy-fix.yaml` in the newly created fix workspace with inputs:
-   * `fingerprint`: `<fingerprint>`
-   * `description`: `<root_cause_summary>`
-   * `failing_step`: `<step_name>`
-
+   Call the `start_playbook` tool in the newly created fix workspace with:
+   * `playbook`: "devsy-fix"
+   * `name`: "<fingerprint>"
+   * `inputs`:
+     * `fingerprint`: "<fingerprint>"
+     * `description`: "<root_cause_summary>"
+     * `failing_step`: "<step_name>"
 ### 3. Alternative Direct Worker Subagent (Normal Mode Only)
 
 If executing via direct subagent profile:
@@ -86,19 +95,19 @@ If executing via direct subagent profile:
       If actionable findings exist, fix them, revalidate, and amend:
       git commit -S --amend --no-edit
    6. Push and Create Draft PR using this template:
-      gh pr create -R devsy-org/devsy --draft \
-        --title "fix(<scope>): <short description>" \
-        --body "$(cat <<'EOF'
-   ## Cause
-   <concise cause description under 30 words>
+   gh pr create -R devsy-org/devsy --draft \
+     --title "fix(<scope>): <short description>" \
+     --body "$(cat <<'EOF'
+## Cause
+<concise cause description under 30 words>
 
-   ## Fix
-   <concise fix description under 30 words>
+## Fix
+<concise fix description under 30 words>
 
-   ## Test evidence
-   <validation commands run and test output summary>
-   devsy-fingerprint: <fingerprint>
-   EOF
-   )"
+## Test evidence
+<validation commands run and test output summary>
+devsy-fingerprint: <fingerprint>
+EOF
+)"
    (PR body must be strictly under 100 words total with no other sections).
    ```
