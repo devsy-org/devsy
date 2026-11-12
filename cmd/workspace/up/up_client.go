@@ -342,8 +342,8 @@ func (cmd *UpCmd) checkProviderUpdate(
 	if cmd.Platform.Enabled {
 		return nil
 	}
-	proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
-	return workspace2.CheckProviderUpdate(ctx, devsyConfig, proInstance)
+	platformInstance := workspace2.GetPlatformInstance(devsyConfig, client.Provider())
+	return workspace2.CheckProviderUpdate(ctx, devsyConfig, platformInstance)
 }
 
 // ensureArgs returns args unchanged unless either --from-snapshot or --source is

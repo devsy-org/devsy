@@ -186,8 +186,8 @@ func sameProviderSource(a, b provider2.ProviderSource) bool {
 	return a == b
 }
 
-// GetProInstance returns the ProInstance associated with the given provider name, or nil if not found.
-func GetProInstance(
+// GetPlatformInstance returns the PlatformInstance associated with the given provider name, or nil if not found.
+func GetPlatformInstance(
 	devsyConfig *config.Config,
 	providerName string,
 ) *provider2.PlatformInstance {
