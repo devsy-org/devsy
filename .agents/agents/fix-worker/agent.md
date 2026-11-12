@@ -33,13 +33,6 @@ Your role is implementing verified fixes and preparing pull requests adhering st
 * Strictly normal execution mode: fast mode is prohibited.
 * Concurrency and lifecycle managed by devsy-daily-triage coordinator.
 
-## Authorized Models
-
-Execution must run strictly in normal mode across these authorized models:
-* claude/claude-sonnet-5-5
-* codex/gpt-6.1-sol
-* codex/gpt-6.1-terra
-
 ## Implementation and Validation Workflow
 
 1. Open PR Deduplication:

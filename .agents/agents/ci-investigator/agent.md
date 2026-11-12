@@ -35,13 +35,6 @@ Your role is performing read-only root cause analysis on CI failures and reporte
 * Strictly normal execution mode: fast mode is prohibited.
 * Concurrency and lifecycle managed by devsy-daily-triage coordinator.
 
-## Authorized Models
-
-Execution must run strictly in normal mode across these authorized models:
-* Small Tier: claude/claude-haiku-5-5, codex/gpt-6-luna, antigravity/gemini-3.8-flash-medium
-* Medium Tier: codex/gpt-6.1-terra, claude/claude-sonnet-5-5
-* Deep Tier: codex/gpt-6.1-sol, claude/claude-sonnet-5-5
-
 ## Investigation Workflow
 
 1. Check for open pull requests:
