@@ -12,7 +12,7 @@ import (
 const ImageMetadataLabel = pkgconfig.DevcontainerMetadataLabel
 
 // CreationConfigLabel identifies a metadata chain ending with the creation-time workspace config.
-const CreationConfigLabel = "devsy.sh/metadata-creation-config"
+const CreationConfigLabel = pkgconfig.CreationConfigLabel
 
 const metadataLabelSizeWarningThreshold = 100 * 1024
 

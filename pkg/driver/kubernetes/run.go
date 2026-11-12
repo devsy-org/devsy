@@ -79,6 +79,9 @@ func (k *KubernetesDriver) preflightTemplate(options *driver.RunOptions) error {
 	if err != nil {
 		return err
 	}
+	if _, err := getLabels(pod, k.options.Labels); err != nil {
+		return err
+	}
 	timeout, err := lifecycleTimeout(options)
 	if err != nil {
 		return fmt.Errorf("read lifecycle policy: %w", err)
@@ -719,6 +722,9 @@ func getLabels(pod *corev1.Pod, rawLabels string) (map[string]string, error) {
 			return nil, fmt.Errorf("parse labels: %w", err)
 		}
 		maps.Copy(labels, extraLabels)
+	}
+	if err := pkgconfig.ValidateUserLabels(config.ObjectToList(labels)); err != nil {
+		return nil, err
 	}
 	// make sure we don't overwrite the devsy labels
 	maps.Copy(labels, ExtraDevsyLabels)

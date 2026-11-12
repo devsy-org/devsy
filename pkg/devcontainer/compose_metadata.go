@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	composeContractLabel    = "devsy.compose.contract"
+	composeContractLabel    = pkgconfig.ComposeContractLabel
 	composeRecreateGuidance = "rerun workspace up with the original configuration and --recreate"
 )
 

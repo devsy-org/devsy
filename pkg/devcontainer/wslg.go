@@ -18,7 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/wslg"
 )
 
-const wslgSnapshotLabel = "devsy.wslg.snapshot"
+const wslgSnapshotLabel = pkgconfig.WSLgSnapshotLabel
 
 // The local context is the authority. Neither agent workspace JSON nor a
 // downloaded provider can opt in, and cleanup never calls this method.

@@ -38,6 +38,9 @@ func (cmd *UpCmd) validate() error {
 	if err := validatePodmanFlags(cmd); err != nil {
 		return err
 	}
+	if err := config.ValidateUserLabels(cmd.IDLabels); err != nil {
+		return err
+	}
 	if err := config2.ValidateIDLabels(cmd.IDLabels); err != nil {
 		return err
 	}
