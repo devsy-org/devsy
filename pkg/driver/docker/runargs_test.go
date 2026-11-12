@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 
@@ -9,9 +11,24 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 )
 
+func (s *DockerDriverTestSuite) TestCreateSeparatesWarningsFromContainerID() {
+	if os.PathSeparator == '\\' {
+		s.T().Skip("requires a POSIX shell")
+	}
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: testShellPath}}
+	var logs engineOutputBuffer
+	var id bytes.Buffer
+	s.Require().NoError(d.startContainer(context.Background(), "", []string{
+		"-c", "printf 'warning\\n' >&2; printf 'container-id\\n'",
+	}, &logs, &id))
+	s.Equal("container-id\n", id.String())
+	s.Contains(logs.String(), "warning\n")
+}
+
 const (
 	testBindMountType = "bind"
 	testReadonly      = "readonly"
+	testShellPath     = "/bin/sh"
 )
 
 func (s *DockerDriverTestSuite) TestAddCapabilityArgs_SingleSecurityOpt() {

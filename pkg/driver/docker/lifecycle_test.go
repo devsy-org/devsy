@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -591,6 +592,7 @@ fi
 		t.TempDir(),
 		[]string{testRunArg, source},
 		&streamed,
+		io.Discard,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to start dev container")
@@ -622,7 +624,13 @@ fi
 	require.NoError(t, os.Chmod(bin, 0o700))
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
 	var streamed engineOutputBuffer
-	err := d.startContainer(context.Background(), t.TempDir(), []string{testRunArg}, &streamed)
+	err := d.startContainer(
+		context.Background(),
+		t.TempDir(),
+		[]string{testRunArg},
+		&streamed,
+		io.Discard,
+	)
 	require.Error(t, err)
 	assert.Len(t, streamed.String(), 2048*1024+len("tail-marker"))
 	assert.True(t, strings.HasSuffix(err.Error(), "tail-marker"))

@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	stopC1 = "stop:c1"
+	stopC1            = "stop:c1"
+	testCreateCommand = "create"
+	testRunCall       = "run"
 )
 
 // Test image references shared across driver tests.
@@ -39,6 +41,8 @@ type mockClient struct {
 	runWithDir string     // dir passed to the last RunWithDir call
 	systemDown bool       // SystemRunning reports false
 	ensureErr  error      // error returned by EnsureSystemRunning
+
+	createOutput string
 }
 
 func (m *mockClient) EnsureSystemRunning(context.Context) error  { return m.ensureErr }
@@ -78,11 +82,21 @@ func (m *mockClient) RunWithDir(
 	_ context.Context,
 	dir string,
 	args []string,
-	_ apple.Streams,
+	streams apple.Streams,
 ) error {
-	m.calls = append(m.calls, "run")
+	m.calls = append(m.calls, testRunCall)
 	m.runWithDir = dir
 	m.ranArgs = append(m.ranArgs, args)
+	if args[0] == testCreateCommand {
+		output := m.createOutput
+		if output == "" {
+			output = "created-id\n"
+		}
+		_, _ = io.WriteString(streams.Stdout, output)
+		if m.found == nil {
+			m.found = &config.ContainerDetails{ID: "created-id"}
+		}
+	}
 	return nil
 }
 
@@ -198,7 +212,7 @@ func TestRunImageDevContainer_PullsRunsThenUID(t *testing.T) {
 		t.Fatalf("RunImageDevContainer: %v", err)
 	}
 	// Image must be ensured (pulled) before the container is run.
-	if want := []string{"pull", "run"}; !slices.Equal(m.calls, want) {
+	if want := []string{"pull", testRunCall, "start:created-id"}; !slices.Equal(m.calls, want) {
 		t.Errorf("call order = %v, want %v (ensure image before run)", m.calls, want)
 	}
 	if m.runWithDir != "/local/ws" {

@@ -14,7 +14,7 @@ import (
 // buildRunArgs assembles `container run` args, emitting only flags Apple supports
 // (Docker/Podman-only flags like --security-opt/--gpus/--userns are omitted).
 func (d *appleDriver) buildRunArgs(params *driver.RunImageDevContainerParams) []string {
-	args := []string{"run", "-d"}
+	args := []string{"create"}
 
 	if d.Rosetta {
 		args = append(args, "--rosetta")

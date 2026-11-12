@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
@@ -334,8 +336,45 @@ func (d *dockerDriver) RunImageDevContainer(
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	if err := d.startContainer(ctx, params.LocalWorkspaceFolder, args, writer); err != nil {
-		return err
+	var output bytes.Buffer
+	if err := d.startContainer(
+		ctx, params.LocalWorkspaceFolder, args, writer, &output,
+	); err != nil {
+		return fmt.Errorf(
+			"%w; runArgs must be valid for container create; options that only apply to run are not supported",
+			err,
+		)
+	}
+	ids := strings.Fields(output.String())
+	if len(ids) != 1 || len(ids[0]) != 64 || strings.Trim(ids[0], "0123456789abcdef") != "" {
+		return fmt.Errorf(
+			"failed to identify created container; inspect the runtime for an unstarted container",
+		)
+	}
+	id := ids[0]
+	actualLabels, actualEnv, err := d.Docker.InspectCreatedContainer(ctx, id)
+	if err == nil {
+		labels := append(
+			config.GetIDLabels(params.WorkspaceID, d.IDLabels),
+			params.Options.Labels...)
+		err = pkgconfig.ValidateCreatedLabels(labels, actualLabels)
+	}
+	if err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		removeErr := d.Docker.Run(
+			cleanupCtx,
+			[]string{"rm", "-f", id},
+			docker.Streams{Stderr: writer},
+		)
+		return errors.Join(err, removeErr)
+	}
+	environment := append([]string(nil), actualEnv...)
+	for key, value := range params.Options.Env {
+		environment = append(environment, key+"="+value)
+	}
+	if err := d.Docker.StartContainerWithEnvironment(ctx, id, environment); err != nil {
+		return fmt.Errorf("failed to start dev container: %w", err)
 	}
 
 	return d.UpdateContainerUserUID(ctx, params.WorkspaceID, params.ParsedConfig, writer)
@@ -421,6 +460,7 @@ func (d *dockerDriver) startContainer(
 	dir string,
 	args []string,
 	writer io.Writer,
+	stdout io.Writer,
 ) error {
 	log.Debugf(
 		"running docker command: command=%s, args=%s, cwd=%s",
@@ -439,7 +479,10 @@ func (d *dockerDriver) startContainer(
 		ctx,
 		dir,
 		args,
-		docker.Streams{Stdout: writer, Stderr: io.MultiWriter(writer, stderr)},
+		docker.Streams{
+			Stdout: io.MultiWriter(writer, stdout),
+			Stderr: io.MultiWriter(writer, stderr),
+		},
 	)
 	if err != nil {
 		log.Errorf(

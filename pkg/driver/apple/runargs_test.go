@@ -37,7 +37,7 @@ func TestBuildRunArgs(t *testing.T) {
 	joined := strings.Join(args, " ")
 
 	for _, want := range []string{
-		"run -d",
+		testCreateCommand,
 		"-p 8080:8080",
 		"-u vscode",
 		"-e FOO=bar",
@@ -253,7 +253,10 @@ func TestBuildRunArgsPreservesRunArgs(t *testing.T) {
 	args := (&appleDriver{}).buildRunArgs(params)
 	require.Equal(
 		t,
-		append(append([]string{"run", "-d", "-l", "dev.containers.id="}, raw...), testImageRef),
+		append(
+			append([]string{testCreateCommand, "-l", "dev.containers.id="}, raw...),
+			testImageRef,
+		),
 		args,
 	)
 }

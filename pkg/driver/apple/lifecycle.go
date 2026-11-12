@@ -1,11 +1,16 @@
 package apple
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/apple"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -163,9 +168,39 @@ func (d *appleDriver) RunImageDevContainer(
 		"running apple container command: command=%s, args=%s",
 		d.command, redactArgs(args),
 	)
+	var output bytes.Buffer
 	err := d.Apple.RunWithDir(ctx, params.LocalWorkspaceFolder, args,
-		apple.Streams{Stdout: writer, Stderr: writer})
+		apple.Streams{Stdout: io.MultiWriter(writer, &output), Stderr: writer})
 	if err != nil {
+		return fmt.Errorf(
+			"failed to start dev container: %w; %s",
+			err,
+			"runArgs must be valid for container create; options that only apply to run are not supported",
+		)
+	}
+	ids := strings.Fields(output.String())
+	if len(ids) != 1 {
+		return fmt.Errorf(
+			"failed to identify created container; inspect the runtime for an unstarted container",
+		)
+	}
+	id := ids[0]
+	details, err := d.Apple.FindContainerByID(ctx, []string{id})
+	if err == nil && (details == nil || details.ID != id) {
+		err = fmt.Errorf("created container inspection returned an unexpected result")
+	}
+	if err == nil {
+		labels := append(
+			config.GetIDLabels(params.WorkspaceID, d.IDLabels),
+			params.Options.Labels...)
+		err = pkgconfig.ValidateCreatedLabels(labels, details.Config.Labels)
+	}
+	if err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return errors.Join(err, d.Apple.Remove(cleanupCtx, id))
+	}
+	if err := d.Apple.StartContainer(ctx, id); err != nil {
 		return fmt.Errorf("failed to start dev container: %w", err)
 	}
 

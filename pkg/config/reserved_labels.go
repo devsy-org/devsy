@@ -48,3 +48,22 @@ func ValidateUserLabels(labels []string) error {
 	}
 	return nil
 }
+
+func ValidateCreatedLabels(expected []string, actual map[string]string) error {
+	values := make(map[string]string, len(expected))
+	for _, label := range expected {
+		key, value, _ := strings.Cut(label, "=")
+		values[key] = value
+	}
+	for key := range reservedLabels {
+		want, expectedPresent := values[key]
+		got, actualPresent := actual[key]
+		if expectedPresent != actualPresent || expectedPresent && want != got {
+			return fmt.Errorf(
+				"label %q does not match the value Devsy set; runArgs must not set Devsy reserved labels",
+				key,
+			)
+		}
+	}
+	return nil
+}

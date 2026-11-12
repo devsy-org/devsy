@@ -60,3 +60,28 @@ func (s *ReservedLabelsSuite) TestPreservesOrdinaryLabelsAndSupportedMetadata() 
 	s.Equal(original, labels)
 	s.NoError(ValidateUserLabels(nil))
 }
+
+func (s *ReservedLabelsSuite) TestCreatedLabels() {
+	for _, tc := range []struct {
+		name     string
+		expected []string
+		actual   map[string]string
+		key      string
+	}{
+		{"match", []string{"devsy.user=root"}, map[string]string{"devsy.user": "root"}, ""},
+		{"ordinary", nil, map[string]string{"team": "a"}, ""},
+		{"override", []string{"devsy.user=root"}, map[string]string{"devsy.user": "private-value"}, "devsy.user"},
+		{"missing", []string{"devsy.user=private-value"}, nil, "devsy.user"},
+		{"extra", nil, map[string]string{"sh.devsy.recovery": "private-value"}, "sh.devsy.recovery"},
+	} {
+		s.Run(tc.name, func() {
+			err := ValidateCreatedLabels(tc.expected, tc.actual)
+			if tc.key == "" {
+				s.NoError(err)
+				return
+			}
+			s.Require().ErrorContains(err, tc.key)
+			s.NotContains(err.Error(), "private-value")
+		})
+	}
+}

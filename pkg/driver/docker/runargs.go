@@ -32,14 +32,10 @@ func (d *dockerDriver) buildRunArgs(
 	helper *docker.DockerHelper,
 ) ([]string, error) {
 	b := &runArgsBuilder{
-		args:   []string{"run"},
+		args:   []string{"create"},
 		driver: d,
 		params: params,
 		helper: helper,
-	}
-
-	if helper.GetRuntime().SupportsSignalProxy() {
-		b.args = append(b.args, "--sig-proxy=false")
 	}
 
 	steps := []func() error{
@@ -58,7 +54,6 @@ func (d *dockerDriver) buildRunArgs(
 		b.addGPU,
 		b.addRunArgs,
 		b.addRunPlatform,
-		b.addDetached,
 		b.addEntrypoint,
 		b.addImage,
 	}
@@ -151,11 +146,6 @@ func (b *runArgsBuilder) addRunPlatform() error {
 		}
 	}
 	b.args = append(b.args, "--platform="+b.params.Options.Platform)
-	return nil
-}
-
-func (b *runArgsBuilder) addDetached() error {
-	b.args = append(b.args, "-d")
 	return nil
 }
 

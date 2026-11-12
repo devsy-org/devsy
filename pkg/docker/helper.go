@@ -19,6 +19,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/scanner"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -487,17 +489,40 @@ func (r *DockerHelper) RunWithEnv(
 }
 
 func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) error {
-	out, err := r.buildCmd(ctx, "start", containerId).CombinedOutput()
+	return r.StartContainerWithEnvironment(ctx, containerId, nil)
+}
+
+func (r *DockerHelper) StartContainerWithEnvironment(
+	ctx context.Context,
+	containerId string,
+	environment []string,
+) error {
+	redactor := secrets.Combine(
+		secrets.NewEnvironmentRedactor(append(os.Environ(), r.Environment...)),
+		secrets.NewRedactor(environment),
+	)
+	run := func(args ...string) (string, error) {
+		output := subprocess.NewBuffer(redactor)
+		cmd := r.buildCmd(ctx, args...)
+		cmd.Stdout = output
+		cmd.Stderr = output
+		err := cmd.Run()
+		return output.String(), err
+	}
+	out, err := run("start", containerId)
 	if err != nil {
-		stateErr, _ := r.buildCmd(ctx, "inspect", containerId, "--format",
-			"{{.State.Error}} (exit code: {{.State.ExitCode}})").
-			CombinedOutput()
-		logs, _ := r.buildCmd(ctx, "logs", containerId, "--tail", "50").CombinedOutput()
-		details := strings.TrimSpace(string(stateErr) + "\n" + string(logs))
+		stateErr, _ := run(
+			"inspect",
+			containerId,
+			"--format",
+			"{{.State.Error}} (exit code: {{.State.ExitCode}})",
+		)
+		logs, _ := run("logs", containerId, "--tail", "50")
+		details := strings.TrimSpace(stateErr + "\n" + logs)
 		if details != "" {
 			log.Errorf("container failed to start: %s", details)
 		}
-		return fmt.Errorf("failed to start container: %s: %w", string(out), err)
+		return fmt.Errorf("failed to start container: %s: %w", out, err)
 	}
 
 	container, err := r.FindContainerByID(ctx, []string{containerId})
@@ -662,6 +687,30 @@ func (r *DockerHelper) InspectContainers(
 	}
 
 	return details, nil
+}
+
+type createdContainerConfig struct {
+	Labels map[string]string `json:"Labels"`
+	Env    []string          `json:"Env"`
+}
+
+type createdContainerDetails struct {
+	ID     string                 `json:"Id"`
+	Config createdContainerConfig `json:"Config"`
+}
+
+func (r *DockerHelper) InspectCreatedContainer(
+	ctx context.Context,
+	id string,
+) (map[string]string, []string, error) {
+	var details []createdContainerDetails
+	if err := r.Inspect(ctx, []string{id}, "container", &details); err != nil {
+		return nil, nil, err
+	}
+	if len(details) != 1 || details[0].ID != id {
+		return nil, nil, fmt.Errorf("created container inspection returned an unexpected result")
+	}
+	return details[0].Config.Labels, details[0].Config.Env, nil
 }
 
 func (r *DockerHelper) IsPodman() bool {
