@@ -173,7 +173,8 @@ func scanLabelFile(file *os.File) ([]string, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimLeftFunc(strings.TrimPrefix(scanner.Text(), "\uFEFF"), unicode.IsSpace)
-		if !strings.Contains(line, "=") && strings.HasSuffix(line, "*") {
+		if !strings.HasPrefix(line, "#") && !strings.Contains(line, "=") &&
+			strings.HasSuffix(line, "*") {
 			return nil, fmt.Errorf(
 				"label file entry %q copies variables from the runtime environment", line,
 			)

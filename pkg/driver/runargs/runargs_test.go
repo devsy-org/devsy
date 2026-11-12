@@ -33,7 +33,7 @@ func (s *RunArgsSuite) SetupTest() {
 }
 
 func (s *RunArgsSuite) TestAcceptsCommonRunArgs() {
-	s.writeFile("labels.env", "team=a\n# devsy.user=commented\n\n")
+	s.writeFile("labels.env", "team=a\n# devsy.user=commented\n  # copied from sh.devsy.*\n\n")
 	args := []string{
 		"--cap-add=SYS_PTRACE",
 		"--security-opt", "seccomp=unconfined",
