@@ -40,3 +40,30 @@ func TestIsPlatformRunner(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPlatformEnabled(t *testing.T) {
+	tests := []struct {
+		name        string
+		newValue    string
+		legacyValue string
+		want        bool
+	}{
+		{name: "neither set", want: false},
+		{name: "only new set", newValue: BoolTrue, want: true},
+		{name: "only legacy set", legacyValue: BoolTrue, want: true},
+		{name: "new false beats legacy true", newValue: BoolFalse, legacyValue: BoolTrue},
+		{
+			name:        "new true beats legacy false",
+			newValue:    BoolTrue,
+			legacyValue: BoolFalse,
+			want:        true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvPlatformEnabled, tt.newValue)
+			t.Setenv(EnvPlatformEnabledLegacy, tt.legacyValue)
+			assert.Equal(t, tt.want, IsPlatformEnabled())
+		})
+	}
+}

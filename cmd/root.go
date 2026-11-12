@@ -58,11 +58,6 @@ const (
 	flagLogOutput = "--" + names.LogOutput
 	flagLogFormat = "--" + names.LogFormat
 
-	// envPlatformEnabled gates registration of the `pro` command tree. The pro
-	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
-	// expose it (e.g. for internal testing).
-	envPlatformEnabled = "DEVSY_PRO_ENABLED"
-
 	internalCommand = "internal"
 
 	rootLong = "Devsy - standardized development workspaces built on devcontainers, " +
@@ -81,8 +76,10 @@ const (
     $ devsy provider add docker`
 )
 
+// platformEnabled keeps the platform command tree off until DEVSY_PLATFORM_ENABLED=true;
+// the feature is not ready for general use.
 func platformEnabled() bool {
-	return os.Getenv(envPlatformEnabled) == "true"
+	return config.IsPlatformEnabled()
 }
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
