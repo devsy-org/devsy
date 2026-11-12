@@ -9,7 +9,7 @@ import (
 	"charm.land/huh/v2"
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	"github.com/devsy-org/devsy/cmd/pro/provider/list"
+	"github.com/devsy-org/devsy/cmd/platform/provider/list"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/encoding"
 	"github.com/devsy-org/devsy/pkg/log"

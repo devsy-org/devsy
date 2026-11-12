@@ -22,7 +22,7 @@ import (
 	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/mcp"
-	"github.com/devsy-org/devsy/cmd/pro"
+	"github.com/devsy-org/devsy/cmd/platform"
 	"github.com/devsy-org/devsy/cmd/provider"
 	secretscmd "github.com/devsy-org/devsy/cmd/secrets"
 	snapshotcmd "github.com/devsy-org/devsy/cmd/snapshot"
@@ -403,7 +403,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		cmdinternal.NewInternalCmd(globalFlags),
 	)
 	if platformEnabled() {
-		rootCmd.AddCommand(pro.NewPlatformCmd(globalFlags))
+		rootCmd.AddCommand(platform.NewPlatformCmd(globalFlags))
 	}
 }
 

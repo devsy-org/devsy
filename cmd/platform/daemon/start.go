@@ -1,0 +1,159 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/cmd/platform/cmdutil"
+	platformflags "github.com/devsy-org/devsy/cmd/platform/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/spf13/cobra"
+)
+
+// StartCmd holds the devsy daemon flags.
+type StartCmd struct {
+	*platformflags.GlobalFlags
+
+	Host string
+}
+
+// NewStartCmd creates a new command.
+func NewStartCmd(flags *platformflags.GlobalFlags) *cobra.Command {
+	cmd := &StartCmd{
+		GlobalFlags: flags,
+	}
+	c := &cobra.Command{
+		Use:   "start",
+		Short: "Start the client daemon",
+		RunE:  cmdutil.HostRunE(flags, &cmd.Host, cmd.Run),
+	}
+	cmdutil.AddHostFlag(c, &cmd.Host, cmdutil.WithHostCompletion(flags))
+
+	return c
+}
+
+func (cmd *StartCmd) Run(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	provider *providerpkg.ProviderConfig,
+) error {
+	isDesktopControlled := os.Getenv(config.EnvUI) == config.BoolTrue
+	dir, err := ensureDaemonDir(devsyConfig.DefaultContext, provider.Name)
+	if err != nil {
+		return err
+	}
+
+	devsyConfigPath := filepath.Join(dir, "..", "devsy-config.json")
+	baseClient, err := client.InitClientFromPath(ctx, devsyConfigPath)
+	if err != nil {
+		if daemon.IsAccessKeyNotFound(err) && isDesktopControlled {
+			printStatus(daemon.Status{State: daemon.DaemonStateStopped, LoginRequired: true})
+			return err
+		}
+
+		return err
+	}
+	userName := getUserName(baseClient.Self())
+	if userName == "" {
+		return fmt.Errorf("user name not set")
+	}
+
+	// Create a context with signal handling
+	ctx, cancel := withGracefulShutdown(ctx)
+	defer cancel()
+
+	d, err := daemon.Init(ctx, daemon.InitConfig{
+		RootDir:        dir,
+		ProviderName:   provider.Name,
+		Context:        devsyConfig.DefaultContext,
+		UserName:       userName,
+		PlatformClient: baseClient,
+		Debug:          cmd.Debug,
+	})
+	if err != nil {
+		return fmt.Errorf("init daemon: %w", err)
+	}
+
+	if isDesktopControlled {
+		printStatus(daemon.Status{State: daemon.DaemonStatePending})
+	}
+
+	return d.Start(ctx)
+}
+
+// withGracefulShutdown returns a context that is canceled when termination signals are received.
+// It implements a two-phase shutdown where a second signal forces immediate termination.
+func withGracefulShutdown(ctx context.Context) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	sigChan := make(chan os.Signal, 2)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+
+	go func() {
+		for {
+			select {
+			case sig := <-sigChan:
+				log.Infof("Received signal %s, starting graceful shutdown", sig)
+
+				cancel()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		<-sigChan
+		// force shutdown if context is done and we receive another signal
+		os.Exit(1)
+	}()
+
+	return ctx, func() {
+		cancel()
+		signal.Stop(sigChan)
+	}
+}
+
+func ensureDaemonDir(context, providerName string) (string, error) {
+	tsDir, err := providerpkg.GetDaemonDir(context, providerName)
+	if err != nil {
+		return "", fmt.Errorf("get daemon dir: %w", err)
+	}
+
+	err = os.MkdirAll(tsDir, 0o700)
+	if err != nil {
+		return tsDir, fmt.Errorf("make daemon dir: %w", err)
+	}
+
+	return tsDir, nil
+}
+
+func printStatus(status daemon.Status) {
+	out, err := json.Marshal(status)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "failed to marshal status: %v\n", err)
+		os.Exit(1)
+	}
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
+}
+
+func getUserName(self *managementv1.Self) string {
+	if self.Status.User != nil {
+		return self.Status.User.Name
+	}
+
+	if self.Status.Team != nil {
+		return self.Status.Team.Name
+	}
+
+	return self.Status.Subject
+}

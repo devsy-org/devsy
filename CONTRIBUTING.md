@@ -173,7 +173,7 @@ as well as successful calls.
 
 The browser tunnel regression in `pkg/ide/opener` injects a failing `/dev/null`
 open on Linux and macOS. It checks that a failed helper launch releases its
-reserved port. Platform reachability tests in `cmd/pro` use local HTTP servers
+reserved port. Platform reachability tests in `cmd/platform` use local HTTP servers
 to check connection cleanup between probes.
 
 Cross-compilation checks platform buildability, not runtime behavior. Windows

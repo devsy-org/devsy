@@ -146,7 +146,7 @@ func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 
 // TestOptInEnvFlags_PlatformSubcommandSweep asserts that DEVSY_HOST applies to
 // every platform subcommand that exposes --host (and similarly for --project).
-// This catches the regression where a future addition to cmd/pro/ forgets
+// This catches the regression where a future addition to cmd/platform/ forgets
 // the inline BindEnv call.
 func TestOptInEnvFlags_PlatformSubcommandSweep(t *testing.T) {
 	t.Setenv(envPlatformEnabled, "true")
