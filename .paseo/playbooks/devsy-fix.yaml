@@ -26,8 +26,9 @@ outputs:
 
 steps:
   - id: investigate
-    role: ci-investigator
-    prompt: "Investigate failure: {{ inputs.description }}.\nFingerprint: {{ inputs.fingerprint }}.\nFailing step: {{ inputs.failing_step }}."
+    role:
+      name: ci-investigator
+      prompt: "Investigate failure: {{ inputs.description }}.\nFingerprint: {{ inputs.fingerprint }}.\nFailing step: {{ inputs.failing_step }}."
     inputs: [fingerprint, description, failing_step]
     outputs:
       root_cause: { type: string }
@@ -38,17 +39,19 @@ steps:
       already_resolved: end
   - id: approve_plan
     needs: [investigate]
-    gate: "Root cause identified. Approve fix hypothesis to begin implementation, or request changes."
-    choices:
-      approved: { label: Approve and Implement, color: success }
-      rejected: { label: Request Changes, comment: required, color: danger }
+    gate:
+      question: "Root cause identified. Approve fix hypothesis to begin implementation, or request changes."
+      choices:
+        approved: { label: Approve and Implement, color: success }
+        rejected: { label: Request Changes, comment: required, color: danger }
     on:
       rejected: { goto: investigate }
 
   - id: implement
     needs: [approve_plan]
-    role: fix-worker
-    prompt: "Implement approved fix for {{ inputs.fingerprint }}. Attempt {{ attempt }}.\nHypothesis: {{ inputs.fix_hypothesis }}.\nRoot cause: {{ inputs.root_cause }}.\nRepro: {{ inputs.repro_command }}.\nIf attempt is greater than 1, apply changes to the existing branch and push with force-with-lease instead of opening a duplicate PR."
+    role:
+      name: fix-worker
+      prompt: "Implement approved fix for {{ inputs.fingerprint }}. Attempt {{ attempt }}.\nHypothesis: {{ inputs.fix_hypothesis }}.\nRoot cause: {{ inputs.root_cause }}.\nRepro: {{ inputs.repro_command }}.\nIf attempt is greater than 1, apply changes to the existing branch and push with force-with-lease instead of opening a duplicate PR."
     inputs:
       fingerprint: "{{ playbook.inputs.fingerprint }}"
       fix_hypothesis: "{{ steps.investigate.outputs.fix_hypothesis }}"
@@ -62,8 +65,9 @@ steps:
       already_resolved: end
   - id: wait_ci
     needs: [implement]
-    script: wait_ci.sh
-    poll: 30s
+    script:
+      run: wait_ci.sh
+      poll: 30s
     timeout: 45m
     inputs:
       pr_url: "{{ steps.implement.outputs.pr_url }}"
@@ -73,16 +77,18 @@ steps:
 
   - id: approve_pr
     needs: [wait_ci]
-    gate: "All CI status checks have passed and PR is green. Review and approve to merge, or request changes."
-    choices:
-      approved: { label: Approve and Merge, color: success }
-      changes_requested: { label: Request Changes, comment: required, color: danger }
+    gate:
+      question: "All CI status checks have passed and PR is green. Review and approve to merge, or request changes."
+      choices:
+        approved: { label: Approve and Merge, color: success }
+        changes_requested: { label: Request Changes, comment: required, color: danger }
     on:
       changes_requested: { goto: implement }
   - id: merge
     needs: [approve_pr]
-    role: fix-worker
-    prompt: "Merge pull request {{ inputs.pr_url }}. Retrieve PR title and number using gh pr view {{ inputs.pr_url }} --json title,number. Run squash merge with one-line subject and empty body: gh pr merge {{ inputs.pr_url }} --squash --delete-branch --subject \"<title> (#<number>)\" --body \"\". Verify commit message is single line."
+    role:
+      name: fix-worker
+      prompt: "Merge pull request {{ inputs.pr_url }}. Retrieve PR title and number using gh pr view {{ inputs.pr_url }} --json title,number. Run squash merge with one-line subject and empty body: gh pr merge {{ inputs.pr_url }} --squash --delete-branch --subject \"<title> (#<number>)\" --body \"\". Verify commit message is single line."
     inputs:
       pr_url: "{{ steps.implement.outputs.pr_url }}"
     outputs:
