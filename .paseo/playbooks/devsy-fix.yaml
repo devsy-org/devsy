@@ -51,7 +51,7 @@ steps:
     needs: [approve_plan]
     role:
       name: fix-worker
-      prompt: "Implement approved fix for {{ inputs.fingerprint }}. Attempt {{ attempt }}.\nHypothesis: {{ inputs.fix_hypothesis }}.\nRoot cause: {{ inputs.root_cause }}.\nRepro: {{ inputs.repro_command }}.\nIf attempt is greater than 1, apply changes to the existing branch and push with force-with-lease instead of opening a duplicate PR."
+      prompt: "Implement approved fix for {{ inputs.fingerprint }}. Loop {{ loop }}.\nHypothesis: {{ inputs.fix_hypothesis }}.\nRoot cause: {{ inputs.root_cause }}.\nRepro: {{ inputs.repro_command }}.\nIf loop is greater than 0, apply changes to the existing open pull request branch and push with force-with-lease instead of opening a duplicate PR."
     inputs:
       fingerprint: "{{ playbook.inputs.fingerprint }}"
       fix_hypothesis: "{{ steps.investigate.outputs.fix_hypothesis }}"
@@ -88,7 +88,7 @@ steps:
     needs: [approve_pr]
     role:
       name: fix-worker
-      prompt: "Merge pull request {{ inputs.pr_url }}. Retrieve PR title and number using gh pr view {{ inputs.pr_url }} --json title,number. Run squash merge with one-line subject and empty body: gh pr merge {{ inputs.pr_url }} --squash --delete-branch --subject \"<title> (#<number>)\" --body \"\". Verify commit message is single line."
+      prompt: "Run gh pr ready {{ inputs.pr_url }} to mark the draft pull request ready for review. Then merge pull request {{ inputs.pr_url }}. Retrieve PR title and number using gh pr view {{ inputs.pr_url }} --json title,number. Run squash merge with one-line subject and empty body: gh pr merge {{ inputs.pr_url }} --squash --delete-branch --subject \"<title> (#<number>)\" --body \"\". Verify commit message is single line."
     inputs:
       pr_url: "{{ steps.implement.outputs.pr_url }}"
     outputs:
