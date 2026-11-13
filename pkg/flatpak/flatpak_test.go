@@ -3,6 +3,7 @@ package flatpak
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -70,6 +71,40 @@ func TestReexecOnHost_MissingHostBinary(t *testing.T) {
 	}
 	if shouldExit {
 		t.Fatal("ReexecOnHost() shouldExit = true on pre-check failure, want false")
+	}
+}
+
+const testHome = "/home/u"
+
+func TestHostSpawnDirectory(t *testing.T) {
+	cases := []struct{ name, cwd, home, want string }{
+		{"host path kept", "/home/u/project", testHome, "/home/u/project"},
+		{"app root falls back to home", "/app", testHome, testHome},
+		{"app subdirectory falls back to home", "/app/extra/claude-desktop", testHome, testHome},
+		{"app-like prefix kept", "/application/data", testHome, "/application/data"},
+		{"empty cwd falls back to home", "", testHome, testHome},
+		{"empty cwd and home yields empty", "", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hostSpawnDirectory(tc.cwd, tc.home); got != tc.want {
+				t.Fatalf("hostSpawnDirectory(%q, %q) = %q, want %q", tc.cwd, tc.home, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildSpawnArgs(t *testing.T) {
+	got := buildSpawnArgs("/h/devsy", "/app/x", testHome, []string{"workspace", "ssh"})
+	want := []string{"--directory=/home/u", "--host", "/h/devsy", "workspace", "ssh"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("buildSpawnArgs() = %v, want %v", got, want)
+	}
+
+	got = buildSpawnArgs("/h/devsy", "", "", []string{"up"})
+	want = []string{"--host", "/h/devsy", "up"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("buildSpawnArgs() without directory = %v, want %v", got, want)
 	}
 }
 
