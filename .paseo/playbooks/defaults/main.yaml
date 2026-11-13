@@ -1,0 +1,12 @@
+agent:
+  provider: omp
+  model: anthropic/claude-haiku-5-5
+  mode: full
+manager:
+  provider: omp
+  model: anthropic/claude-haiku-5-5
+  mode: full
+timeout: 2h
+role:
+  silence: 30m
+  archive_agents: true
