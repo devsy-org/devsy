@@ -14,6 +14,7 @@ import (
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/platformclient"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,18 @@ func TestExitCodeForError_WorkspaceNotFound(t *testing.T) {
 
 func TestExitCodeForError_GenericFailure(t *testing.T) {
 	assert.Equal(t, exitcode.Failure, exitCodeForError(fmt.Errorf("boom"), true))
+}
+
+func TestExitCodeForError_PlatformPermissionDenied(t *testing.T) {
+	err := fmt.Errorf("creating workspace %q: %w", "ws-ro", &platformclient.PermissionError{
+		Scope: "write",
+		Cause: &platformclient.APIError{Status: 403, Message: "insufficient scope"},
+	})
+	for _, machine := range []bool{false, true} {
+		assert.NotEqual(t, exitcode.Success, exitCodeForError(err, machine))
+		assert.Equal(t, exitcode.Failure, exitCodeForError(err, machine))
+	}
+	assert.Contains(t, clierr.Classify(err).Message, "stored API key lacks write scope")
 }
 
 func TestRenderCLIErrorRedactsEnvironmentSecrets(t *testing.T) {
