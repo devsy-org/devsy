@@ -94,6 +94,59 @@ describe("provider_icon IPC", () => {
     vi.clearAllMocks()
   })
 
+  it("restricts dependency inspection to trusted passive inputs", async () => {
+    const { cli } = setup()
+    await invoke(trustedEvent, "dependency:inspect", {
+      tool: "apple-container",
+      providerName: "dock",
+    })
+    expect(cli.run).toHaveBeenCalledExactlyOnceWith([
+      "dependency",
+      "inspect",
+      "apple-container",
+      "--for-provider",
+      "dock",
+      "--json",
+    ])
+    await expect(
+      invoke(foreignEvent, "dependency:inspect", {
+        tool: "docker",
+        providerName: "dock",
+      }),
+    ).rejects.toThrow()
+    await expect(
+      invoke(trustedEvent, "dependency:inspect", {
+        tool: "../x",
+        providerName: "dock",
+      }),
+    ).rejects.toThrow()
+    await expect(
+      invoke(trustedEvent, "dependency:inspect", {
+        tool: "docker",
+        providerName: "dock",
+        argv: ["unsafe"],
+      }),
+    ).rejects.toThrow()
+  })
+
+  it("returns null when the CLI lacks dependency inspection", async () => {
+    const { cli } = setup()
+    cli.run.mockRejectedValueOnce(new Error('unknown command "dependency"'))
+    await expect(
+      invoke(trustedEvent, "dependency:inspect", {
+        tool: "docker",
+        providerName: "dock",
+      }),
+    ).resolves.toBeNull()
+    cli.run.mockRejectedValueOnce(new Error("provider does not exist"))
+    await expect(
+      invoke(trustedEvent, "dependency:inspect", {
+        tool: "docker",
+        providerName: "missing",
+      }),
+    ).rejects.toThrow("provider does not exist")
+  })
+
   it("returns the data URL for a trusted sender", async () => {
     const { cli } = setup()
 

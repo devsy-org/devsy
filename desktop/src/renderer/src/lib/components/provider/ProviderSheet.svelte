@@ -18,6 +18,7 @@ import UpdateConfirmDialog from "./UpdateConfirmDialog.svelte"
 import type { CLIError } from "$shared/cli-error.js"
 import {
   providerUse,
+  dependencyInspect,
   providerUpdateStreaming,
   providerDelete,
   providerInit,
@@ -44,7 +45,10 @@ import {
   providerOptionEnumHasValue,
 } from "$lib/utils/provider-option-enum.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
-import { providerSourceReference } from "$lib/utils/provider-source.js"
+import {
+  dependencyToolForBuiltin,
+  providerSourceReference,
+} from "$lib/utils/provider-source.js"
 import { providerStatus } from "$lib/utils/provider-status.js"
 import type {
   CommandProgress,
@@ -63,6 +67,8 @@ let {
 } = $props()
 
 let options = $state<Record<string, ProviderOption>>({})
+let dependencyStatus = $state<unknown | null>(null)
+let dependencyStatusError = $state("")
 let optionValues = $state<Record<string, string>>({})
 let initialValues = $state<Record<string, string>>({})
 let saving = $state(false)
@@ -246,6 +252,8 @@ async function loadOptions() {
   const request = ++optionsRequest
   loading = true
   optionsError = ""
+  dependencyStatus = null
+  dependencyStatusError = ""
   options = {}
   optionValues = {}
   initialValues = {}
@@ -253,6 +261,9 @@ async function loadOptions() {
     const raw = await providerOptions(name)
     if (request !== optionsRequest || provider.name !== name || !open) return
     options = raw as unknown as Record<string, ProviderOption>
+    const dependencyTool = dependencyToolForBuiltin(provider.source)
+    if (dependencyTool)
+      void inspectSheetDependency(dependencyTool, name, request)
 
     const values: Record<string, string> = {}
     for (const [key, opt] of Object.entries(options)) {
@@ -267,6 +278,21 @@ async function loadOptions() {
   } finally {
     if (request === optionsRequest && provider.name === name && open)
       loading = false
+  }
+}
+
+async function inspectSheetDependency(
+  tool: string,
+  name: string,
+  request: number,
+): Promise<void> {
+  try {
+    const report = await dependencyInspect(tool, name)
+    if (request !== optionsRequest || provider.name !== name || !open) return
+    dependencyStatus = report
+  } catch (inspectionError) {
+    if (request !== optionsRequest || provider.name !== name || !open) return
+    dependencyStatusError = `Could not inspect this dependency: ${extractErrorMessage(inspectionError)}`
   }
 }
 
@@ -287,8 +313,17 @@ $effect(() => {
     loadedFor = null
     return
   }
-  if (loadedFor !== provider.name) {
-    loadedFor = provider.name
+  const source = provider.source
+  const identity = [
+    provider.name,
+    provider.version,
+    source?.raw,
+    source?.github,
+    source?.file,
+    source?.url,
+  ].join("\0")
+  if (loadedFor !== identity) {
+    loadedFor = identity
     optionSearch = ""
     loadOptions()
     loadVersionsFor(provider.name).catch(() => {})
@@ -541,6 +576,7 @@ async function handleSaveOptions() {
     providers.set(updated)
     initialValues = { ...optionValues }
     toasts.success("Options saved")
+    void loadOptions()
   } catch (err) {
     toasts.error(`Failed to save options: ${extractErrorMessage(err)}`)
   } finally {
@@ -631,6 +667,25 @@ async function handleSaveOptions() {
         </Alert.Root>
       {/if}
     </Sheet.Header>
+    {#if dependencyStatus !== null || dependencyStatusError}
+      <section aria-label="Dependency status" class="mx-6 mt-3 rounded-md border p-3 text-sm">
+        <h3 class="font-medium">Passive dependency status</h3>
+        {#if dependencyStatusError}
+          <p class="mt-1 text-muted-foreground">{dependencyStatusError}</p>
+        {:else}
+          {@const report = dependencyStatus as { schema?: unknown; schemaVersion?: unknown; surveyMode?: unknown; executed?: unknown; availability?: unknown; reasonCode?: unknown; message?: unknown }}
+          {#if report.schema === "devsy.dependencies.report.v1" && report.schemaVersion === 1 && report.surveyMode === "passive" && report.executed === false && typeof report.availability === "string" && typeof report.reasonCode === "string" && typeof report.message === "string"}
+            <p class="mt-1">Observed availability: {report.availability}</p>
+            <p class="mt-1">{report.message}</p>
+            {#if report.availability === "missing" || report.availability === "incomplete" || report.reasonCode === "dependency_path_invalid"}
+              <p class="mt-1 text-muted-foreground">Review dependency requirements outside Devsy.</p>
+            {/if}
+          {:else}
+            <p class="mt-1 text-muted-foreground">Dependency status could not be interpreted safely. Review it outside Devsy.</p>
+          {/if}
+        {/if}
+      </section>
+    {/if}
 
     <div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
     <section aria-label="Provider actions" class="flex flex-wrap items-center gap-2">

@@ -68,7 +68,16 @@ func (e *ContextDeletionPendingError) Unwrap() error { return ErrContextDeletion
 // CheckPendingContextDeletion is startup detection only. It does not open a
 // value store, request credentials, or change any persistent data.
 func CheckPendingContextDeletion() error {
-	intent, err := ReadContextDeletionIntent()
+	return CheckPendingContextDeletionWithPathManager(DefaultPathManager())
+}
+
+// CheckPendingContextDeletionWithPathManager detects the startup fence using
+// only pm for path resolution. Use a read-only manager to avoid creating roots.
+func CheckPendingContextDeletionWithPathManager(pm PathManager) error {
+	if pm == nil {
+		return ErrContextDeletionIntentInvalid
+	}
+	intent, err := readContextDeletionIntentWithPathManager(pm)
 	if err != nil {
 		return err
 	}
@@ -88,7 +97,11 @@ func ContextDeletionFingerprint(ctx *ContextConfig) (string, error) {
 }
 
 func ReadContextDeletionIntent() (*ContextDeletionIntent, error) {
-	path, _, err := contextDeletionPaths()
+	return readContextDeletionIntentWithPathManager(DefaultPathManager())
+}
+
+func readContextDeletionIntentWithPathManager(pm PathManager) (*ContextDeletionIntent, error) {
+	path, _, err := contextDeletionPathsWithPathManager(pm)
 	if err != nil {
 		return nil, ErrContextDeletionIntentInvalid
 	}
@@ -99,7 +112,7 @@ func ReadContextDeletionIntent() (*ContextDeletionIntent, error) {
 	if raw == nil {
 		return nil, nil
 	}
-	return decodeContextDeletionIntent(raw)
+	return decodeContextDeletionIntent(raw, pm)
 }
 
 func readContextDeletionBytes(path string) ([]byte, error) {
@@ -121,7 +134,7 @@ func readContextDeletionBytes(path string) ([]byte, error) {
 	return raw, nil
 }
 
-func decodeContextDeletionIntent(raw []byte) (*ContextDeletionIntent, error) {
+func decodeContextDeletionIntent(raw []byte, pm PathManager) (*ContextDeletionIntent, error) {
 	var intent ContextDeletionIntent
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.DisallowUnknownFields()
@@ -132,7 +145,7 @@ func decodeContextDeletionIntent(raw []byte) (*ContextDeletionIntent, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, ErrContextDeletionIntentInvalid
 	}
-	if err := validateContextDeletionIntent(&intent); err != nil {
+	if err := validateContextDeletionIntentWithPathManager(&intent, pm); err != nil {
 		return nil, err
 	}
 	return &intent, nil
@@ -245,7 +258,11 @@ func ClearContextDeletionIntent() error {
 // ContextDeletionDataDirectory binds context-directory cleanup to the original
 // data root without resolving the final context directory or following its link.
 func ContextDeletionDataDirectory() (string, error) {
-	path, err := DefaultPathManager().DataDir()
+	return contextDeletionDataDirectoryWithPathManager(DefaultPathManager())
+}
+
+func contextDeletionDataDirectoryWithPathManager(pm PathManager) (string, error) {
+	path, err := pm.DataDir()
 	if err != nil {
 		return "", err
 	}
@@ -263,7 +280,11 @@ func ContextDeletionDataDirectory() (string, error) {
 // ContextDeletionStoreDirectory identifies the configured managed-value root.
 // It can differ from the real config file's parent when the file is a symlink.
 func ContextDeletionStoreDirectory() (string, error) {
-	path, err := GetConfigPath()
+	return contextDeletionStoreDirectoryWithPathManager(DefaultPathManager())
+}
+
+func contextDeletionStoreDirectoryWithPathManager(pm PathManager) (string, error) {
+	path, err := pm.ConfigFilePath()
 	if err != nil {
 		return "", err
 	}
@@ -282,7 +303,11 @@ func ContextDeletionStoreDirectory() (string, error) {
 }
 
 func contextDeletionPaths() (string, string, error) {
-	path, err := getConfigMutationPath()
+	return contextDeletionPathsWithPathManager(DefaultPathManager())
+}
+
+func contextDeletionPathsWithPathManager(pm PathManager) (string, string, error) {
+	path, err := getConfigMutationPathWithPathManager(pm)
 	if err != nil {
 		return "", "", err
 	}
@@ -300,6 +325,13 @@ func contextDeletionPaths() (string, string, error) {
 }
 
 func validateContextDeletionIntent(intent *ContextDeletionIntent) error {
+	return validateContextDeletionIntentWithPathManager(intent, DefaultPathManager())
+}
+
+func validateContextDeletionIntentWithPathManager(
+	intent *ContextDeletionIntent,
+	pm PathManager,
+) error {
 	if intent == nil || intent.SchemaVersion != 1 {
 		return ErrContextDeletionIntentInvalid
 	}
@@ -309,7 +341,7 @@ func validateContextDeletionIntent(intent *ContextDeletionIntent) error {
 	if !validDeletionFingerprint(intent.Fingerprint) || !validDeletionNames(intent) {
 		return ErrContextDeletionIntentInvalid
 	}
-	return validateContextDeletionRoots(intent)
+	return validateContextDeletionRoots(intent, pm)
 }
 
 func validDeletionFingerprint(fingerprint string) bool {
@@ -317,16 +349,16 @@ func validDeletionFingerprint(fingerprint string) bool {
 	return err == nil && len(hash) == sha256.Size
 }
 
-func validateContextDeletionRoots(intent *ContextDeletionIntent) error {
-	_, expected, err := contextDeletionPaths()
+func validateContextDeletionRoots(intent *ContextDeletionIntent, pm PathManager) error {
+	_, expected, err := contextDeletionPathsWithPathManager(pm)
 	if err != nil || intent.ConfigFile != expected {
 		return ErrContextDeletionIntentInvalid
 	}
-	directory, err := ContextDeletionStoreDirectory()
+	directory, err := contextDeletionStoreDirectoryWithPathManager(pm)
 	if err != nil || intent.StoreDirectory != directory {
 		return ErrContextDeletionIntentInvalid
 	}
-	dataDirectory, err := ContextDeletionDataDirectory()
+	dataDirectory, err := contextDeletionDataDirectoryWithPathManager(pm)
 	if err != nil || intent.DataDirectory != dataDirectory {
 		return ErrContextDeletionIntentInvalid
 	}
