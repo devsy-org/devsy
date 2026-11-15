@@ -27,23 +27,26 @@ func NewClient() Client {
 		return NewNoopClient()
 	}
 
-	phClient, err := posthog.NewWithConfig(posthogAPIKey, posthogConfig(posthogEndpoint))
+	cfg, trace := posthogConfig(posthogEndpoint)
+	phClient, err := posthog.NewWithConfig(posthogAPIKey, cfg)
 	if err != nil {
 		log.Debugf("failed to initialize analytics client: %v", err)
 		return NewNoopClient()
 	}
 
-	return &client{phClient: phClient, flushTimeout: flushTimeout}
+	return &client{phClient: phClient, flushTimeout: flushTimeout, trace: trace}
 }
 
-func posthogConfig(endpoint string) posthog.Config {
+func posthogConfig(endpoint string) (posthog.Config, *phaseTrace) {
+	transport, trace := newTracingTransport()
 	return posthog.Config{
 		Endpoint:     endpoint,
 		DisableGeoIP: new(false),
+		Transport:    transport,
 		// Bounds Close as well, so no shutdown path can block the CLI.
 		ShutdownTimeout: flushTimeout,
 		Logger:          quietLogger{},
-	}
+	}, trace
 }
 
 // quietLogger keeps the SDK off stderr, which machine consumers parse.
@@ -57,6 +60,7 @@ func (quietLogger) Errorf(format string, args ...any) { log.Debugf("posthog: "+f
 type client struct {
 	phClient     posthog.Client
 	flushTimeout time.Duration
+	trace        *phaseTrace
 	closeOnce    sync.Once
 }
 
@@ -130,7 +134,10 @@ func (c *client) Flush() {
 		switch err := c.phClient.CloseWithContext(ctx); {
 		case err == nil:
 		case errors.Is(err, context.DeadlineExceeded):
-			log.Debugf("analytics flush timed out after %s; dropping queued events", c.flushTimeout)
+			log.Debugf(
+				"analytics flush timed out after %s; dropping queued events (%s)",
+				c.flushTimeout, c.trace.summary(),
+			)
 		default:
 			log.Debugf("error flushing analytics client: %v", err)
 		}
