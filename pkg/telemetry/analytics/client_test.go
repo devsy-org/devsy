@@ -76,11 +76,12 @@ func TestBuildProperties_ExcludesReservedKeys(t *testing.T) {
 
 func newTestClient(t *testing.T, endpoint string, timeout time.Duration) *client {
 	t.Helper()
-	ph, err := posthog.NewWithConfig("test-key", posthogConfig(endpoint))
+	cfg, trace := posthogConfig(endpoint)
+	ph, err := posthog.NewWithConfig("test-key", cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &client{phClient: ph, flushTimeout: timeout}
+	return &client{phClient: ph, flushTimeout: timeout, trace: trace}
 }
 
 func testEvent() Event {
