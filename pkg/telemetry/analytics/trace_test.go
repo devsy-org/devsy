@@ -107,6 +107,25 @@ func TestAttempt_FirstSuccessfulDialClosesPhase(t *testing.T) {
 	}
 }
 
+func TestAttempt_IgnoresPhasesStartedAfterFailure(t *testing.T) {
+	trace := &phaseTrace{}
+	a := trace.newAttempt()
+	a.begin(phaseDNS)
+	a.fail(errors.New("context canceled"))
+
+	// A detached dial keeps going after RoundTrip returned its error.
+	a.begin(phaseConnect)
+	a.begin(phaseTLS)
+
+	got := trace.summary()
+	if strings.Contains(got, "connect") || strings.Contains(got, "tls") {
+		t.Fatalf("summary = %q, want no phases started after the failure", got)
+	}
+	if !strings.Contains(got, "dns") || !strings.Contains(got, "(context canceled)") {
+		t.Fatalf("summary = %q, want the interrupted dns phase", got)
+	}
+}
+
 func TestAttempt_FailedWriteIsAttributedToSend(t *testing.T) {
 	trace := &phaseTrace{}
 	a := trace.newAttempt()

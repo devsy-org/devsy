@@ -63,6 +63,9 @@ func (p *phaseTrace) summary() string {
 type attempt struct {
 	mu     sync.Mutex
 	number int
+	// failed stops late callbacks from adding phases: Go's detached dials can
+	// keep reporting after RoundTrip has returned an error.
+	failed bool
 	open   map[string]openPhase
 	done   []donePhase
 }
@@ -82,6 +85,9 @@ type donePhase struct {
 func (a *attempt) begin(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.failed {
+		return
+	}
 	entry := a.open[name]
 	if entry.count == 0 {
 		entry.start = time.Now()
@@ -120,6 +126,7 @@ func (a *attempt) end(name string, err error) {
 func (a *attempt) fail(err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.failed = true
 	for _, name := range phaseOrder {
 		if entry, ok := a.open[name]; ok {
 			entry.err = err
