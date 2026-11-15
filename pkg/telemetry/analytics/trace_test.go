@@ -172,8 +172,10 @@ func TestFlushTimeout_ReportsStuckResponse(t *testing.T) {
 	}
 }
 
-func TestFlushTimeout_ReportsResponseStalledAfterFirstByte(t *testing.T) {
-	// Sends part of the status line, then stalls.
+// stallingServer answers each request with reply and then goes silent. It
+// returns the address to upload to.
+func stallingServer(t *testing.T, reply string) string {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -189,20 +191,50 @@ func TestFlushTimeout_ReportsResponseStalledAfterFirstByte(t *testing.T) {
 			go func() {
 				buf := make([]byte, 4096)
 				_, _ = conn.Read(buf)
-				_, _ = conn.Write([]byte("HTTP/1.1 2"))
+				_, _ = conn.Write([]byte(reply))
 			}()
 		}
 	}()
+	return "http://" + listener.Addr().String()
+}
 
-	c := newTestClient(t, "http://"+listener.Addr().String(), 300*time.Millisecond)
-	c.RecordEvent(testEvent())
-	c.Flush()
+func TestFlushTimeout_ReportsResponseStalls(t *testing.T) {
+	tests := map[string]string{
+		// Part of the status line, then silence.
+		"stalled after first byte": "HTTP/1.1 2",
+		// Complete headers, then a body that never finishes. The SDK reads
+		// the body of non-2xx replies, so this stalls after RoundTrip returns.
+		"stalled body": "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 100\r\n\r\npartial",
+	}
+	for name, reply := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := newTestClient(t, stallingServer(t, reply), 300*time.Millisecond)
+			c.RecordEvent(testEvent())
+			c.Flush()
 
-	// Either still waiting or interrupted with an error, never a clean finish.
-	got := c.trace.summary()
-	if !stalledResponse.MatchString(got) {
-		t.Fatalf("summary = %q, want the stall reported in the response phase", got)
+			// Either still waiting or interrupted with an error, never a clean finish.
+			got := c.trace.summary()
+			if !stalledResponse.MatchString(got) {
+				t.Fatalf("summary = %q, want the stall reported in the response phase", got)
+			}
+		})
 	}
 }
 
 var stalledResponse = regexp.MustCompile(`stuck in response|response \S+ \(`)
+
+func TestFlush_SuccessfulUploadLeavesNoOpenPhase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":1}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newTestClient(t, srv.URL, 5*time.Second)
+	c.RecordEvent(testEvent())
+	c.Flush()
+
+	got := c.trace.summary()
+	if strings.Contains(got, "stuck in") || strings.Contains(got, "(") {
+		t.Fatalf("summary = %q, want every phase completed cleanly", got)
+	}
+}

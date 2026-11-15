@@ -2,6 +2,8 @@ package analytics
 
 import (
 	"crypto/tls"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptrace"
 	"strconv"
@@ -176,7 +178,7 @@ func (a *attempt) clientTrace() *httptrace.ClientTrace {
 		},
 		// The response phase stays open past the first byte: a server that
 		// sends part of the headers and stalls is still a stuck response.
-		// RoundTrip closes it.
+		// The response body closes it.
 	}
 }
 
@@ -192,10 +194,35 @@ func (t *tracingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	resp, err := t.base.RoundTrip(req.WithContext(ctx))
 	if err != nil {
 		a.fail(err)
-	} else {
-		a.end(phaseResponse, nil)
+		return resp, err
 	}
-	return resp, err
+	// RoundTrip returns once the headers are in; the body is read later.
+	resp.Body = &tracedBody{ReadCloser: resp.Body, attempt: a}
+	return resp, nil
+}
+
+// tracedBody keeps the response phase open until the body is fully read,
+// fails, or is closed, so a stalled body read is not reported as finished.
+type tracedBody struct {
+	io.ReadCloser
+	attempt *attempt
+}
+
+func (b *tracedBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	switch {
+	case errors.Is(err, io.EOF):
+		b.attempt.end(phaseResponse, nil)
+	case err != nil:
+		b.attempt.end(phaseResponse, err)
+	}
+	return n, err
+}
+
+func (b *tracedBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.attempt.end(phaseResponse, nil)
+	return err
 }
 
 // newTracingTransport mirrors the SDK's default transport, which a custom
