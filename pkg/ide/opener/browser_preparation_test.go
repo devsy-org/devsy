@@ -8,7 +8,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 func TestBrowserReuseWaitsForPreparedHelperIdentity(t *testing.T) {
@@ -51,7 +50,7 @@ func TestBrowserReuseRejectsLegacyAndCanceledPreparation(t *testing.T) {
 
 func TestBrowserReuseReleasesLockWhilePreparationIsPending(t *testing.T) {
 	setupTempHome(t)
-	logs := log.InitTestObserved(t, zapcore.InfoLevel)
+	logs := log.InitTestObserved(t, log.SlogLevelInfo)
 	created, err := helperCreateTime(os.Getpid())
 	require.NoError(t, err)
 	existing := TunnelState{PID: os.Getpid(), CreateTime: created, PreparationVersion: 1}

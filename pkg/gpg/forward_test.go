@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,8 +26,8 @@ func TestBuildForwardArgs(t *testing.T) {
 		"--user", "root",
 		"--context", "test-context",
 		"test-workspace",
-		"--log-output=raw",
 		"--command", "sleep infinity",
+		"--log-level", log.LevelString(),
 	}
 	assert.Equal(t, expected, got)
 }
@@ -42,8 +43,8 @@ func TestBuildForwardArgs_NonRootUser(t *testing.T) {
 		"--user", "vscode",
 		"--context", "test-context",
 		"test-workspace",
-		"--log-output=raw",
 		"--command", "sleep infinity",
+		"--log-level", log.LevelString(),
 	}
 	assert.Equal(t, expected, got)
 }

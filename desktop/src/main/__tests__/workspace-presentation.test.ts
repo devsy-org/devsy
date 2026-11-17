@@ -32,11 +32,12 @@ vi.mock("electron", () => ({
 }))
 
 vi.mock("../analytics.js", () => ({
-  hashWorkspaceRef: (v: string) => v,
-  trackEvent: () => undefined,
+  hashWorkspaceUid: (v: string) => v,
+  trackEvent: vi.fn(),
 }))
 
 const { registerIpcHandlers } = await import("../ipc.js")
+const { trackEvent } = await import("../analytics.js")
 
 const base: WorkspacePresentationBase = {
   id: "backend",
@@ -369,7 +370,7 @@ function setup(runImpl: (args: string[]) => Promise<unknown>) {
     refreshWorkspaces,
     // biome-ignore lint/suspicious/noExplicitAny: partial test doubles
   } as any)
-  return { cli, refreshWorkspaces }
+  return { cli, refreshWorkspaces, state }
 }
 
 function invokeEdit(request: unknown) {
@@ -382,6 +383,51 @@ describe("workspace_edit IPC", () => {
   beforeEach(() => {
     handlers.clear()
     vi.clearAllMocks()
+  })
+
+  it("uses only a context-matched trusted UID and verifies the renderer expectation", async () => {
+    const { state } = setup(async () => resultPayload)
+    state.updateContexts([{ name: "work" }], "work")
+    state.updateWorkspaces([{ id: "backend", uid: "uid-1", context: "work" }])
+    await invokeEdit({
+      workspaceId: "backend",
+      expectedUid: "uid-1",
+      context: "work",
+      displayName: "x",
+    })
+    expect(trackEvent).toHaveBeenLastCalledWith("workspace_edit", {
+      workspace_id: "uid-1",
+    })
+    await invokeEdit({
+      workspaceId: "backend",
+      expectedUid: "forged",
+      context: "work",
+      displayName: "x",
+    })
+    expect(trackEvent).toHaveBeenLastCalledWith("workspace_edit", {})
+    await invokeEdit({
+      workspaceId: "backend",
+      expectedUid: "uid-1",
+      context: "other",
+      displayName: "x",
+    })
+    expect(trackEvent).toHaveBeenLastCalledWith("workspace_edit", {})
+  })
+  it("keeps identity stable across a backend rename", async () => {
+    const { state } = setup(async () => resultPayload)
+    state.updateContexts([{ name: "work" }], "work")
+    state.updateWorkspaces([{ id: "backend", uid: "uid-1", context: "work" }])
+    const rename = handlers.get("workspace_rename")
+    if (!rename) throw new Error("workspace_rename handler missing")
+    await rename({}, { workspaceId: "backend", newWorkspaceId: "renamed" })
+    expect(trackEvent).toHaveBeenLastCalledWith("workspace_rename", {
+      workspace_id: "uid-1",
+    })
+    state.updateWorkspaces([{ id: "renamed", uid: "uid-1", context: "work" }])
+    await rename({}, { workspaceId: "renamed", newWorkspaceId: "again" })
+    expect(trackEvent).toHaveBeenLastCalledWith("workspace_rename", {
+      workspace_id: "uid-1",
+    })
   })
 
   it("runs the CLI with an argv array and the captured context", async () => {

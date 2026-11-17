@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,4 +77,31 @@ func TestWaitForStream_PropagatesRealStreamErrorEvenAfterCancellation(t *testing
 	})
 
 	require.ErrorIs(t, err, wantErr)
+}
+
+type testExitStatus int
+
+func (e testExitStatus) Error() string   { return "command failed" }
+func (e testExitStatus) ExitStatus() int { return int(e) }
+
+func TestExecResultLogging(t *testing.T) {
+	logs := log.InitTestObserved(t, log.SlogLevelDebug)
+	ctx := (&KubernetesDriver{}).logContext(context.Background(), "workspace-canary")
+	logExecResult(ctx, time.Now(), testExitStatus(7))
+	logExecResult(ctx, time.Now(), context.Canceled)
+	logExecResult(ctx, time.Now(), nil)
+
+	failed := logs.FilterMessage("runtime command failed").All()
+	require.Len(t, failed, 2)
+	attrs := failed[0].AttrsMap()
+	assert.Equal(t, "kubernetes-driver", attrs["component"])
+	assert.Equal(t, "kubernetes", attrs["provider"])
+	assert.Equal(t, "workspace-canary", attrs["workspace_id"])
+	assert.Equal(t, "exec", attrs["operation"])
+	assert.Equal(t, int64(7), attrs["exit_code"])
+	assert.Contains(t, attrs, "duration_ms")
+	assert.NotContains(t, failed[1].AttrsMap(), "exit_code")
+	completed := logs.FilterMessage("runtime command completed").All()
+	require.Len(t, completed, 1)
+	assert.Equal(t, int64(0), completed[0].AttrsMap()["exit_code"])
 }

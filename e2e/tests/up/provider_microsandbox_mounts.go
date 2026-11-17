@@ -342,7 +342,7 @@ func microsandboxSSHAsRootOnce(
 		microsandboxRootUser,
 		flagCommand,
 		command,
-		names.Flag(names.Debug),
+		debugFlag,
 	})
 	if err != nil {
 		return "", fmt.Errorf("devsy ssh as root failed: %w (stderr: %s)", err, stderr)

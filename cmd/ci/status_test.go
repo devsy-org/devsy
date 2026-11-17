@@ -2,6 +2,7 @@ package ci
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 
 func TestStatusReporterUsesDeterministicASCIIOutput(t *testing.T) {
 	var out bytes.Buffer
-	reporter, err := newStatusReporter(&out, false, false)
+	reporter, err := newStatusReporter("plain", &out, false, false)
 	if err != nil {
 		t.Fatalf("newStatusReporter: %v", err)
 	}
@@ -39,7 +40,7 @@ func TestStatusReporterUsesDeterministicASCIIOutput(t *testing.T) {
 func TestStatusReporterNoStatus(t *testing.T) {
 	for _, verbose := range []bool{false, true} {
 		var out bytes.Buffer
-		reporter, err := newStatusReporter(&out, verbose, true)
+		reporter, err := newStatusReporter("plain", &out, verbose, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,5 +48,22 @@ func TestStatusReporterNoStatus(t *testing.T) {
 		if out.Len() != 0 {
 			t.Fatalf("unexpected status: %q", out.String())
 		}
+	}
+}
+
+func TestStatusReporterJSON(t *testing.T) {
+	var out bytes.Buffer
+	reporter, err := newStatusReporter("json", &out, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reporter.Report(status.Event{Phase: status.PhaseRunningCommand, State: status.StateStarted})
+	var event map[string]any
+	if err := json.Unmarshal(out.Bytes(), &event); err != nil {
+		t.Fatalf("invalid JSON status %q: %v", out.String(), err)
+	}
+	if event["kind"] != "status" || event["phase"] != string(status.PhaseRunningCommand) ||
+		event["state"] != string(status.StateStarted) {
+		t.Fatalf("unexpected status event: %#v", event)
 	}
 }

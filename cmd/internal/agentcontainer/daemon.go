@@ -289,6 +289,7 @@ func runSshServer(ctx context.Context, cmd *DaemonCmd) error {
 	}
 
 	args := sshServerArgs(cmd.Config)
+	args = append(args, log.ForwardFlagArgs()...)
 
 	sshCmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204
 	sshCmd.Stdout = os.Stdout

@@ -10,11 +10,28 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/require"
 )
 
 func runPrefix() []string {
 	return []string{msbCmdRun, msbFlagDetach, names.Flag(names.Name), wsName}
+}
+
+func TestRuntimeCommandLogContext(t *testing.T) {
+	logs := log.InitTestObserved(t, log.SlogLevelDebug)
+	ctx := microsandboxLogContext(t.Context(), "workspace-1")
+	logMicrosandboxCommand(ctx, "exec", time.Now(), nil)
+
+	entries := logs.FilterMessage("microsandbox runtime command completed").All()
+	require.Len(t, entries, 1)
+	attrs := entries[0].AttrsMap()
+	require.Equal(t, "builtin-driver", attrs["component"])
+	require.Equal(t, "microsandbox", attrs["provider"])
+	require.Equal(t, "workspace-1", attrs["workspace_id"])
+	require.Equal(t, "exec", attrs["operation"])
+	require.EqualValues(t, 0, attrs["exit_code"])
+	require.Contains(t, attrs, "duration_ms")
 }
 
 func TestRunArgsFull(t *testing.T) {

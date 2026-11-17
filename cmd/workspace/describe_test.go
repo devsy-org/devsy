@@ -90,7 +90,7 @@ func TestDescribeSource(t *testing.T) { //nolint:funlen // table-driven test
 }
 
 func TestDescribeCmd_JSONOutput(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	cfg := &provider.Workspace{
 		ID:       testWorkspaceName,
@@ -126,7 +126,7 @@ func TestDescribeCmd_JSONOutput(t *testing.T) {
 
 func describeJSON(t *testing.T, cfg *provider.Workspace) map[string]any {
 	t.Helper()
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatJSON}}
 	fake := &fakeWorkspaceClient{
@@ -168,7 +168,7 @@ func TestDescribeCmd_JSONDisplayNameEmptyWhenUnset(t *testing.T) {
 }
 
 func TestDescribeCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	cfg := &provider.Workspace{
 		ID:       testWorkspaceName,
@@ -200,7 +200,7 @@ func TestDescribeCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
 }
 
 func TestDescribeCmd_PlainOmitsEmptyFields(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	cfg := &provider.Workspace{
 		ID:     testWorkspaceName,
@@ -224,7 +224,7 @@ func TestDescribeCmd_PlainOmitsEmptyFields(t *testing.T) {
 }
 
 func TestDescribeCmd_NilConfigErrors(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatPlain}}
 	fake := &fakeWorkspaceClient{

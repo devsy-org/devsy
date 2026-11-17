@@ -118,7 +118,7 @@ func (e ExtensionInstall) Run() error {
 		quote = func(name string) string { return name }
 	}
 
-	out := log.Writer(log.LevelInfo)
+	out := log.Writer(log.SlogLevelInfo)
 	defer func() { _ = out.Close() }()
 
 	var failed []string

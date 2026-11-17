@@ -26,13 +26,6 @@ const EnvAnnotation = "devsy_env"
 // immediately after the flag's *Var registration. If the env var is set, the
 // value is applied to the flag (Changed=true, satisfying MarkFlagRequired) and
 // the env var is recorded under [EnvAnnotation] for the help renderer.
-//
-// Failure modes are loud by design:
-//   - panics if the flag is not registered (programmer bug at startup);
-//   - log.Fatalf if the env value is rejected by the flag's type (operator bug;
-//     e.g. DEVSY_DEBUG=garbage on a bool flag). This matches the contract of
-//     the prior inheritFlagsFromEnvironment loop so misconfigured env vars are
-//     never silently ignored.
 func BindEnv(fs *pflag.FlagSet, flagName string) {
 	f := fs.Lookup(flagName)
 	if f == nil {
@@ -48,7 +41,7 @@ func BindEnv(fs *pflag.FlagSet, flagName string) {
 		return
 	}
 	if err := fs.Set(flagName, value); err != nil {
-		log.Fatalf("invalid value %q for %s (flag --%s): %v", value, envName, flagName, err)
+		log.Fatalf("invalid value for %s (flag --%s)", envName, flagName)
 	}
 	f.DefValue = value
 }

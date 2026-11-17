@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -278,7 +279,7 @@ func (cmd *SetupContainerCmd) prepareWorkspace(
 		SetupInfo:         state.setupInfo,
 		DockerlessOptions: &state.workspaceInfo.Dockerless,
 		ImageConfigOutput: agent.DefaultImageConfigPath,
-		Debug:             cmd.Debug,
+		Debug:             log.DebugEnabled(),
 		ConfigureCredentialsFunc: func(ctx context.Context) (string, error) {
 			serverPort, err := credentials.StartCredentialsServer(
 				ctx,
@@ -527,6 +528,7 @@ func buildDeferredHooksCmd(a deferredHooksArgs) (*exec.Cmd, error) {
 	if a.dotfilesScript != "" {
 		args = append(args, names.Flag(names.DotfilesScript), a.dotfilesScript)
 	}
+	args = append(args, log.ForwardFlagArgs()...)
 	cmd := &exec.Cmd{
 		Path: binaryPath,
 		Args: append([]string{binaryPath}, args...),
@@ -670,6 +672,7 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 		if shutdownAction != "" {
 			args = append(args, names.Flag(names.ShutdownAction), shutdownAction)
 		}
+		args = append(args, log.ForwardFlagArgs()...)
 
 		daemonCmd := &exec.Cmd{
 			Path: binaryPath,
@@ -700,6 +703,7 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(
 				cmdInternal, cmdAgent, cmdContainer, "post-attach",
 				names.Flag(names.SetupInfo), cmd.SetupInfo,
 			}
+			args = append(args, log.ForwardFlagArgs()...)
 			execCmd := &exec.Cmd{
 				Path: binaryPath,
 				Args: append([]string{binaryPath}, args...),
@@ -756,11 +760,15 @@ func configureSystemGitCredentials(
 		return nil, err
 	}
 
-	gitCredentials := fmt.Sprintf(
-		"!'%s' internal agent git-credentials --port %d",
+	helperArgs := []string{
 		binaryPath,
-		serverPort,
-	)
+		"internal",
+		"agent",
+		"git-credentials",
+		"--port",
+		strconv.Itoa(serverPort),
+	}
+	gitCredentials := "!" + shellescape.QuoteCommand(helperArgs)
 	_ = os.Setenv(config2.EnvGitHelperPort, strconv.Itoa(serverPort))
 
 	gitConfig := git.At("/", git.WithStrictHostKeyChecking(false)).Config()

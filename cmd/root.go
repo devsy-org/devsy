@@ -29,6 +29,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/template"
 	"github.com/devsy-org/devsy/cmd/update"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/clihelp"
 	"github.com/devsy-org/devsy/pkg/command"
@@ -38,6 +39,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/flatpak"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/version"
@@ -53,9 +55,9 @@ import (
 const (
 	logOutputJSON   = "json"
 	logOutputLogfmt = "logfmt"
+	logOutputPlain  = "plain"
 	logOutputText   = "text"
 
-	flagLogOutput = "--" + names.LogOutput
 	flagLogFormat = "--" + names.LogFormat
 
 	internalCommand = "internal"
@@ -82,25 +84,25 @@ func platformEnabled() bool {
 	return config.IsPlatformEnabled()
 }
 
-// isMachineLogFormat reports whether the configured --log-output mode produces
-// a structured, machine-parseable stream (json or logfmt). Callers use this to
-// suppress decorative human-readable affordances that would corrupt the stream.
 func isMachineLogFormat(format string) bool {
 	return format == logOutputJSON || format == logOutputLogfmt
 }
 
 func logOutputFromArgs(args []string) string {
-	for i, arg := range args {
-		for _, name := range []string{flagLogOutput, flagLogFormat} {
-			if val, ok := strings.CutPrefix(arg, name+"="); ok {
-				return val
-			}
-			if arg == name && i+1 < len(args) {
-				return args[i+1]
-			}
+	var value string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			break
+		}
+		if val, ok := strings.CutPrefix(arg, flagLogFormat+"="); ok {
+			value = val
+		} else if arg == flagLogFormat && i+1 < len(args) {
+			i++
+			value = args[i]
 		}
 	}
-	return ""
+	return value
 }
 
 func defaultLogLevel(globalFlags *flags.GlobalFlags) string {
@@ -120,8 +122,7 @@ func validateLogLevel(level string) error {
 	}
 	if _, ok := log.LevelFromString(level); !ok {
 		return fmt.Errorf(
-			"invalid log level %q, expected one of: %s",
-			level,
+			"invalid log level, expected one of: %s",
 			strings.Join(log.ValidLevels(), ", "),
 		)
 	}
@@ -134,8 +135,10 @@ func isMachineConsumer(logOutput string, isInternal bool) bool {
 		return true
 	case os.Getenv(config.EnvUI) == config.BoolTrue:
 		return true
-	case logOutput != "":
-		return isMachineLogFormat(logOutput)
+	case isMachineLogFormat(logOutput):
+		return true
+	case logOutput == "text" || logOutput == logOutputPlain:
+		return false
 	default:
 		return !term.IsTerminal(int(os.Stderr.Fd())) //nolint:gosec // fd fits in int
 	}
@@ -148,35 +151,53 @@ func Execute() {
 
 func run() (code int) {
 	machineMode := false
+	metrics := telemetry.NewMetricsReporter()
+	var finalErr error
 	collector := telemetry.FromContext(gocontext.Background()) // noop until BootstrapCLI
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorf("panic: %v\n%s", r, debug.Stack())
-			panicErr := clierr.NewPanic(r)
-			collector.RecordCLI(panicErr)
-			code = exitCodeForError(panicErr, machineMode)
+			finalErr = clierr.NewPanic(r)
+			code = exitCodeForError(finalErr, machineMode)
+		}
+		snapshot := metrics.Finish(finalErr)
+		collector.RecordCLI(finalErr, snapshot)
+		if err := telemetry.ExportMetrics(snapshot); err != nil {
+			log.WithAttrs(log.AttrErrorCode("metrics_export_failed")).
+				Error("local metrics export failed")
 		}
 		collector.Flush()
 	}()
 
+	earlyFlags := &flags.GlobalFlags{
+		LogLevel:  os.Getenv(config.EnvLogLevel),
+		LogFormat: os.Getenv("DEVSY_LOG_FORMAT"),
+	}
+	machineMode = configureOutput(
+		&cobra.Command{},
+		earlyFlags,
+		slices.Contains(os.Args[1:], internalCommand),
+	)
+
 	rootCmd, globalFlags := BuildRoot()
 	target := resolveTarget(rootCmd)
 	collector = telemetry.BootstrapCLI(target)
-	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
+	ctx := telemetry.WithCollector(gocontext.Background(), collector)
+	rootCmd.SetContext(telemetry.WithMetrics(ctx, metrics))
 
 	isInternal := topLevelCommand(target) == internalCommand
 	machineMode = configureOutput(rootCmd, globalFlags, isInternal)
 
 	if !isInternal {
 		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
-			collector.RecordCLI(err)
-			return exitCodeForError(err, machineMode)
+			finalErr = err
+			return exitCodeForError(finalErr, machineMode)
 		} else if shouldExit {
 			return 0
 		}
 	}
 
-	err := rootCmd.Execute()
+	finalErr = rootCmd.Execute()
 	if devsyConfig, cfgErr := config.LoadConfig(
 		globalFlags.Context,
 		globalFlags.Provider,
@@ -184,9 +205,8 @@ func run() (code int) {
 		collector = telemetry.ApplyCLIConfig(devsyConfig, collector)
 	}
 
-	collector.RecordCLI(err)
-	if err != nil {
-		return exitCodeForError(err, machineMode)
+	if finalErr != nil {
+		return exitCodeForError(finalErr, machineMode)
 	}
 	return 0
 }
@@ -204,12 +224,18 @@ func configureOutput(
 	isInternal bool,
 ) bool {
 	logOutput := logOutputFromArgs(os.Args[1:])
+	if logOutput == "" {
+		logOutput = globalFlags.LogFormat
+	}
 	machineMode := isMachineConsumer(logOutput, isInternal)
 	rootCmd.SilenceErrors = true
 	rootCmd.SilenceUsage = machineMode
 
 	format := logOutput
-	if format == "" {
+	if format == logOutputPlain {
+		format = logOutputText
+	}
+	if format != logOutputText && format != logOutputJSON && format != logOutputLogfmt {
 		if machineMode {
 			format = logOutputJSON
 		} else {
@@ -217,12 +243,8 @@ func configureOutput(
 		}
 	}
 	log.Init(log.Config{
-		Verbosity:    globalFlags.Verbosity,
-		Quiet:        globalFlags.Quiet,
-		Debug:        globalFlags.Debug,
 		Level:        globalFlags.LogLevel,
 		DefaultLevel: defaultLogLevel(globalFlags),
-		VerbositySet: rootCmd.PersistentFlags().Changed(names.Verbose),
 		Format:       format,
 		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 	})
@@ -381,6 +403,8 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		SilenceErrors: true,
 	}
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
+	rootCmd.Flags().Bool("version", false, "version for "+rootCmd.DisplayName())
+	_ = rootCmd.Flags().SetAnnotation("version", cobra.FlagSetByCobraAnnotation, []string{"true"})
 	clihelp.Install(rootCmd)
 	persistentFlags := rootCmd.PersistentFlags()
 	globalFlags := flags.SetGlobalFlags(persistentFlags)
@@ -430,11 +454,52 @@ func rootPreRun(
 	globalFlags *flags.GlobalFlags,
 	persistentFlags *pflag.FlagSet,
 ) error {
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{names.LogLevel, globalFlags.LogLevel},
+		{names.LogFormat, globalFlags.LogFormat},
+		{names.ResultFormat, globalFlags.ResultFormat},
+	} {
+		if item.value == "" && persistentFlags.Changed(item.name) {
+			return fmt.Errorf("--%s cannot be empty", item.name)
+		}
+	}
+	parent := cobraCmd.Parent()
+	if globalFlags.LogLevel == "" && !persistentFlags.Changed(names.LogLevel) &&
+		cobraCmd.Name() == "up" && parent != nil && parent.Name() == "workspace" &&
+		parent.Parent() == cobraCmd.Root() {
+		var payload struct {
+			LogLevel string `json:"logLevel"`
+		}
+		if _, err := clientimplementation.DecodeOptionsFromEnv(
+			config.EnvFlagsUp,
+			&payload,
+		); err != nil {
+			return fmt.Errorf("decode up options: %w", err)
+		}
+		globalFlags.LogLevel = payload.LogLevel
+	}
 	if err := validateLogLevel(globalFlags.LogLevel); err != nil {
+		return err
+	}
+	switch globalFlags.LogFormat {
+	case "", "auto", "text", logOutputPlain, "json", "logfmt":
+	default:
+		return errors.New("invalid log format, expected auto, text, plain, json, or logfmt")
+	}
+	if _, err := output.ResolveMode(globalFlags.ResultFormat); err != nil {
 		return err
 	}
 	if globalFlags.DevsyHome != "" {
 		_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
+	}
+	defaultLevel := defaultLogLevel(globalFlags)
+	if globalFlags.LogLevel == "" {
+		if err := validateLogLevel(defaultLevel); err != nil {
+			return err
+		}
 	}
 	if err := checkPendingContextDeletion(cobraCmd); err != nil {
 		return err
@@ -442,13 +507,9 @@ func rootPreRun(
 	cobraCmd.SilenceUsage = true
 
 	log.Init(log.Config{
-		Verbosity:    globalFlags.Verbosity,
-		Quiet:        globalFlags.Quiet,
-		Debug:        globalFlags.Debug,
 		Level:        globalFlags.LogLevel,
-		DefaultLevel: defaultLogLevel(globalFlags),
-		VerbositySet: persistentFlags.Changed(names.Verbose),
-		Format:       resolveLogFormat(cobraCmd, globalFlags.LogOutput),
+		DefaultLevel: defaultLevel,
+		Format:       resolveLogFormat(cobraCmd, globalFlags.LogFormat),
 		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 	})
 	klog.SetLogger(logr.New(log.LogrSink()))
@@ -479,7 +540,10 @@ func checkPendingContextDeletion(cobraCmd *cobra.Command) error {
 }
 
 func resolveLogFormat(cobraCmd *cobra.Command, logFormat string) string {
-	if logFormat != "" {
+	if logFormat == logOutputPlain {
+		return logOutputText
+	}
+	if logFormat != "" && logFormat != "auto" {
 		return logFormat
 	}
 	if isMachineConsumer("", topLevelCommand(cobraCmd) == internalCommand) {

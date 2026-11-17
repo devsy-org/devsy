@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -145,10 +146,22 @@ type LogMetadata struct {
 }
 
 func LogClose(info CloseInfo, metadata LogMetadata) {
-	log.Debugw("ssh transport closed",
-		"reason", info.Reason, "side", info.Side, "error", info.Err,
-		"provider", metadata.Provider, "mode", metadata.Mode,
-		"workspace", metadata.Workspace, "transport_impl", metadata.TransportImpl,
+	log.DebugContext(
+		context.Background(),
+		"ssh transport closed",
+		slog.String(
+			"reason",
+			string(info.Reason),
+		),
+		slog.String("side", string(info.Side)),
+		slog.Any("error", info.Err),
+		slog.String("provider", metadata.Provider),
+		slog.String("mode", metadata.Mode),
+		slog.String(
+			"workspace",
+			metadata.Workspace,
+		),
+		slog.String("transport_impl", metadata.TransportImpl),
 	)
 }
 

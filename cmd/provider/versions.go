@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -20,7 +21,6 @@ import (
 // VersionsCmd holds the cmd flags for `provider versions`.
 type VersionsCmd struct {
 	*flags.GlobalFlags
-	JSON              bool
 	IncludePrerelease bool
 	NoCache           bool
 }
@@ -33,6 +33,10 @@ func NewVersionsCmd(f *flags.GlobalFlags) *cobra.Command {
 		Short: "List upstream versions for a provider",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			mode, err := output.ResolveMode(cmd.ResultFormat)
+			if err != nil {
+				return err
+			}
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
@@ -52,7 +56,7 @@ func NewVersionsCmd(f *flags.GlobalFlags) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("list versions for %s: %w", name, err)
 			}
-			if cmd.JSON {
+			if mode == output.ModeJSON {
 				return json.NewEncoder(os.Stdout).Encode(versions)
 			}
 			return renderVersionsTable(os.Stdout, versions)
@@ -60,7 +64,6 @@ func NewVersionsCmd(f *flags.GlobalFlags) *cobra.Command {
 		ValidArgsFunction: completeProviderName(cmd),
 	}
 	cliflags.Add(versionsCmd,
-		cliflags.Bool(&cmd.JSON, names.JSON, false, "Output JSON"),
 		cliflags.Bool(&cmd.IncludePrerelease, names.Prerelease, false, "Include prereleases"),
 		cliflags.Bool(&cmd.NoCache, names.NoCache, false, "Bypass the version cache"),
 	)

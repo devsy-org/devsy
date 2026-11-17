@@ -42,6 +42,18 @@ func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
 	}
 }
 
+func TestTextFormatRendersPlain(t *testing.T) {
+	var out bytes.Buffer
+	reporter, err := NewReporter(ReporterOptions{Format: "text", Out: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reporter.Report(Event{Phase: PhaseReady, State: StateSucceeded})
+	if out.String() != "[OK]   ready\n" {
+		t.Fatalf("unexpected output %q", out.String())
+	}
+}
+
 func TestNewReporter_AutoUsesPlainForInteractive(t *testing.T) {
 	var out bytes.Buffer
 	reporter, err := NewReporter(ReporterOptions{
@@ -103,19 +115,30 @@ func TestNewReporter_AutoRequiresEnvelopeWhenNonInteractive(t *testing.T) {
 	}
 }
 
-func TestNewReporter_DesktopForcesEnvelope(t *testing.T) {
+func TestNewReporter_DesktopFormatPrecedence(t *testing.T) {
 	t.Setenv("DEVSY_UI", "true")
+	for _, format := range []string{"plain", "text"} {
+		var out bytes.Buffer
+		reporter, err := NewReporter(ReporterOptions{Format: format, Out: &out, Interactive: true})
+		if err != nil {
+			t.Fatalf("%s reporter: %v", format, err)
+		}
+		reporter.Report(Event{Phase: PhaseReady, State: StateSucceeded})
+		if got := out.String(); got != "[OK]   ready\n" {
+			t.Fatalf("%s output = %q", format, got)
+		}
+	}
 	var events []Event
 	reporter, err := NewReporter(ReporterOptions{
-		Format:   "plain",
-		NoStatus: true,
+		Format:      "auto",
+		Interactive: true,
 		Envelope: func(e Event) error {
 			events = append(events, e)
 			return nil
 		},
 	})
 	if err != nil {
-		t.Fatalf("desktop reporter: %v", err)
+		t.Fatalf("desktop auto reporter: %v", err)
 	}
 	reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
 	if len(events) != 1 {
@@ -137,6 +160,18 @@ func TestNewReporter_NoStatus(t *testing.T) {
 		}
 		reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
 	}
+	t.Setenv("DEVSY_UI", "true")
+	reporter, err := NewReporter(
+		ReporterOptions{
+			Format:   formatPlain,
+			NoStatus: true,
+			Envelope: func(Event) error { calls++; return nil },
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
 	if out.Len() != 0 || calls != 0 {
 		t.Fatalf("suppressed output = %q, envelope calls = %d", out.String(), calls)
 	}
@@ -198,9 +233,14 @@ func TestNoStatusTeePreservesRunEvents(t *testing.T) {
 }
 
 func TestNewReporter_RejectsUnknownFormat(t *testing.T) {
-	_, err := NewReporter(ReporterOptions{Format: "ansi", Out: &bytes.Buffer{}})
-	if err == nil {
-		t.Fatal("expected invalid format error")
+	const secret = "private-format-secret"
+	for _, noStatus := range []bool{false, true} {
+		_, err := NewReporter(
+			ReporterOptions{Format: secret, Out: &bytes.Buffer{}, NoStatus: noStatus},
+		)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), secret)
+		require.Contains(t, err.Error(), "choose json, plain, or auto")
 	}
 }
 

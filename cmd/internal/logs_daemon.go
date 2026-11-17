@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -56,19 +58,23 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	command := fmt.Sprintf(
-		"%s internal agent workspace logs-daemon --context %s --id %s",
+	var command strings.Builder
+	_, _ = fmt.Fprintf(&command, "%s internal agent workspace logs-daemon --context %s --id %s",
 		shellescape.Quote(workspaceClient.AgentPath()),
 		shellescape.Quote(workspaceClient.Context()),
-		shellescape.Quote(workspaceClient.Workspace()),
-	)
+		shellescape.Quote(workspaceClient.Workspace()))
 	if agentInfo.Agent.DataPath != "" {
-		command += " --agent-dir " + shellescape.Quote(agentInfo.Agent.DataPath)
+		command.WriteString(" --agent-dir ")
+		command.WriteString(shellescape.Quote(agentInfo.Agent.DataPath))
+	}
+	for _, arg := range log.ForwardFlagArgs() {
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote(arg))
 	}
 
 	var stdout bytes.Buffer
 	if err := workspaceClient.Command(ctx, client.CommandOptions{
-		Command: command,
+		Command: command.String(),
 		Stdout:  &stdout,
 		Stderr:  os.Stderr,
 	}); err != nil {

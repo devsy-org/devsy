@@ -9,10 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
@@ -20,8 +22,20 @@ import (
 )
 
 const (
-	devsy = "devsy"
+	devsy                   = "devsy"
+	testInvalidValue        = "invalid"
+	testInvalidLevelMessage = "invalid log level"
 )
+
+type payloadLevelCase struct {
+	name       string
+	payload    string
+	env        string
+	argument   string
+	want       string
+	wantErr    string
+	fromSender bool
+}
 
 func TestExitCodeForError_WorkspaceNotFound(t *testing.T) {
 	err := fmt.Errorf("get workspace: %w", workspace.ErrWorkspaceNotFound)
@@ -98,6 +112,141 @@ func TestRenderCLIErrorMachineModeIgnoresDiagnosticLevel(t *testing.T) {
 	}
 }
 
+func TestRootPreRunValidatesPersistedLevelUnlessOverridden(t *testing.T) {
+	config.ResetPathManager()
+	t.Cleanup(func() { log.Init(log.Config{}) })
+	t.Cleanup(config.ResetPathManager)
+	t.Setenv(config.EnvHome, t.TempDir())
+	t.Setenv("DEVSY_LOG_FORMAT", "")
+	t.Setenv("DEVSY_RESULT_FORMAT", "")
+	t.Setenv("DEVSY_NO_STATUS", "")
+	t.Setenv(config.EnvLogLevel, "")
+	require.NoError(t, config.SaveConfig(&config.Config{
+		DefaultContext: config.DefaultContext,
+		Contexts: map[string]*config.ContextConfig{
+			config.DefaultContext: {Options: map[string]config.OptionValue{
+				config.ContextOptionLogLevel: {Value: testInvalidValue},
+			}},
+		},
+	}))
+	root, global := BuildRoot()
+	root.SetContext(t.Context())
+	err := rootPreRun(root, global, root.PersistentFlags())
+	require.ErrorContains(t, err, testInvalidLevelMessage)
+	global.LogLevel = "debug"
+	require.NoError(t, rootPreRun(root, global, root.PersistentFlags()))
+}
+
+func TestRootPreRunRejectsExplicitEmptyOutputFlags(t *testing.T) {
+	t.Setenv("DEVSY_LOG_LEVEL", "")
+	t.Setenv("DEVSY_LOG_FORMAT", "")
+	t.Setenv("DEVSY_RESULT_FORMAT", "")
+	t.Setenv("DEVSY_NO_STATUS", "")
+	for _, name := range []string{"log-level", "log-format", "result-format"} {
+		t.Run(name, func(t *testing.T) {
+			root, global := BuildRoot()
+			require.NoError(t, root.PersistentFlags().Set(name, ""))
+			err := rootPreRun(root, global, root.PersistentFlags())
+			require.ErrorContains(t, err, "--"+name+" cannot be empty")
+		})
+	}
+}
+
+func TestWorkspaceUpPayloadLogLevelPrecedence(t *testing.T) {
+	for _, tc := range []payloadLevelCase{
+		{name: "sender trace", fromSender: true, want: log.LevelTraceName},
+		{name: "sender info", fromSender: true, want: log.LevelInfoName},
+		{name: "sender warn", fromSender: true, want: log.LevelWarnName},
+		{name: "absent payload falls back to context", payload: `{}`, want: log.LevelWarnName},
+		{
+			name: "environment wins", payload: `{"logLevel":"trace"}`,
+			env: log.LevelInfoName, want: log.LevelInfoName,
+		},
+		{
+			name: "argument wins", payload: `{"logLevel":"trace"}`,
+			env: log.LevelInfoName, argument: log.LevelWarnName, want: log.LevelWarnName,
+		},
+		{name: "invalid payload", payload: `{"logLevel":"invalid"}`, wantErr: testInvalidLevelMessage},
+		{
+			name: "environment overrides invalid payload", payload: `{"logLevel":"invalid"}`,
+			env: log.LevelWarnName, want: log.LevelWarnName,
+		},
+		{name: "malformed selected payload", payload: `{`, wantErr: "decode up options"},
+		{
+			name: "malformed selected level type", payload: `{"logLevel":123,"secret":"payload-secret-4982"}`,
+			wantErr: "decode up options",
+		},
+		{name: "argument overrides malformed payload", payload: `{`, argument: log.LevelInfoName, want: log.LevelInfoName},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checkPayloadLogLevel(t, tc)
+		})
+	}
+}
+
+func checkPayloadLogLevel(t *testing.T, tc payloadLevelCase) {
+	t.Helper()
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	t.Cleanup(func() { log.Init(log.Config{}) })
+	t.Setenv(config.EnvHome, t.TempDir())
+	payload := tc.payload
+	if tc.fromSender {
+		encoded, err := json.Marshal(client.UpOptions{LogLevel: tc.want})
+		require.NoError(t, err)
+		payload = string(encoded)
+	}
+	t.Setenv(config.EnvFlagsUp, payload)
+	t.Setenv(config.EnvLogLevel, tc.env)
+	t.Setenv(config.ContextOptionLogLevel, "")
+	t.Setenv("DEVSY_LOG_FORMAT", "")
+	t.Setenv("DEVSY_RESULT_FORMAT", "")
+	t.Setenv("DEVSY_NO_STATUS", "")
+	require.NoError(t, config.SaveConfig(&config.Config{
+		DefaultContext: config.DefaultContext,
+		Contexts:       map[string]*config.ContextConfig{config.DefaultContext: {}},
+	}))
+	root, global := BuildRoot()
+	up, _, err := root.Find([]string{"workspace", "up"})
+	require.NoError(t, err)
+	up.SetContext(t.Context())
+	if tc.argument != "" {
+		require.NoError(t, root.PersistentFlags().Set(names.LogLevel, tc.argument))
+	}
+	err = rootPreRun(up, global, root.PersistentFlags())
+	if tc.wantErr != "" {
+		require.ErrorContains(t, err, tc.wantErr)
+		assert.NotContains(t, err.Error(), "payload-secret-4982")
+		return
+	}
+	require.NoError(t, err)
+	assert.Equal(t, tc.want, log.LevelString())
+	assert.Equal(t, []string{"--log-level", tc.want}, log.ForwardFlagArgs())
+}
+
+func TestNonUpCommandIgnoresTaskPayload(t *testing.T) {
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	t.Cleanup(func() { log.Init(log.Config{}) })
+	t.Setenv(config.EnvHome, t.TempDir())
+	t.Setenv(config.EnvFlagsUp, `{`)
+	t.Setenv(config.EnvLogLevel, "")
+	t.Setenv(config.ContextOptionLogLevel, "")
+	t.Setenv("DEVSY_LOG_FORMAT", "")
+	t.Setenv("DEVSY_RESULT_FORMAT", "")
+	t.Setenv("DEVSY_NO_STATUS", "")
+	require.NoError(t, config.SaveConfig(&config.Config{
+		DefaultContext: config.DefaultContext,
+		Contexts:       map[string]*config.ContextConfig{config.DefaultContext: {}},
+	}))
+	root, global := BuildRoot()
+	list, _, err := root.Find([]string{"workspace", cmdList})
+	require.NoError(t, err)
+	list.SetContext(t.Context())
+	require.NoError(t, rootPreRun(list, global, root.PersistentFlags()))
+	assert.Equal(t, log.LevelWarnName, log.LevelString())
+}
+
 func TestTopLevelCommand(t *testing.T) {
 	rootCmd, _ := BuildRoot()
 
@@ -130,24 +279,24 @@ func TestLogOutputFromArgs(t *testing.T) {
 		want string
 	}{
 		{"absent returns empty", []string{cmdProvider, cmdList}, ""},
-		{"space-separated log-output", []string{"up", flagLogOutput, logOutputJSON}, logOutputJSON},
+		{"space-separated log-format", []string{"up", flagLogFormat, logOutputJSON}, logOutputJSON},
 		{
-			"equals-form log-output",
-			[]string{"up", flagLogOutput + "=" + logOutputJSON},
+			"equals-form log-format",
+			[]string{"up", flagLogFormat + "=" + logOutputJSON},
 			logOutputJSON,
 		},
-		{"log-format alias", []string{"up", flagLogFormat, logOutputLogfmt}, logOutputLogfmt},
 		{
-			"equals-form log-format alias",
-			[]string{flagLogFormat + "=" + logOutputJSON, "up"},
-			logOutputJSON,
+			"last format wins",
+			[]string{flagLogFormat, logOutputJSON, flagLogFormat, logOutputText},
+			logOutputText,
 		},
+		{"child arguments ignored", []string{"exec", "--", flagLogFormat, logOutputJSON}, ""},
 		{
 			"flag before unknown command",
-			[]string{flagLogOutput, logOutputJSON, "bogus"},
+			[]string{flagLogFormat, logOutputJSON, "bogus"},
 			logOutputJSON,
 		},
-		{"trailing flag with no value returns empty", []string{"up", flagLogOutput}, ""},
+		{"trailing flag with no value returns empty", []string{"up", flagLogFormat}, ""},
 	}
 
 	for _, tc := range cases {
@@ -177,8 +326,15 @@ func TestIsMachineConsumer(t *testing.T) {
 		{"explicit json", logOutputJSON, false, "", true},
 		{"explicit logfmt", logOutputLogfmt, false, "", true},
 		{"explicit text is human", logOutputText, false, "", false},
-		{"internal wins over text", logOutputText, true, "", true},
-		{"desktop wins over text", logOutputText, false, config.BoolTrue, true},
+		{"internal errors stay machine-readable with text logs", logOutputText, true, "", true},
+		{
+			"desktop errors stay machine-readable with text logs",
+			logOutputText,
+			false,
+			config.BoolTrue,
+			true,
+		},
+		{"invalid format retains internal machine mode", testInvalidValue, true, "", true},
 	}
 
 	for _, tc := range cases {
@@ -202,9 +358,9 @@ func TestConfigureOutput_SilencesCobra(t *testing.T) {
 		isInternal bool
 		wantSilent bool
 	}{
-		{"json machine", []string{"up", flagLogOutput, logOutputJSON}, false, true},
-		{"logfmt machine", []string{"up", flagLogOutput, logOutputLogfmt}, false, true},
-		{"explicit text is human", []string{"up", flagLogOutput, logOutputText}, false, false},
+		{"json machine", []string{"up", flagLogFormat, logOutputJSON}, false, true},
+		{"logfmt machine", []string{"up", flagLogFormat, logOutputLogfmt}, false, true},
+		{"explicit text is human", []string{"up", flagLogFormat, logOutputText}, false, false},
 		{"internal stays silent", []string{internalCommand}, true, true},
 	}
 
@@ -224,6 +380,41 @@ func TestConfigureOutput_SilencesCobra(t *testing.T) {
 	}
 }
 
+func TestConfigureOutput_DesktopTextLogsKeepMachineErrors(t *testing.T) {
+	t.Setenv(config.EnvUI, config.BoolTrue)
+	t.Cleanup(func() { log.Init(log.Config{}) })
+	originalArgs := os.Args
+	t.Cleanup(func() { os.Args = originalArgs })
+	root, global := BuildRoot()
+	global.LogLevel = log.LevelInfoName
+	os.Args = []string{devsy, flagLogFormat, logOutputText}
+	require.True(t, configureOutput(root, global, false))
+	var sink bytes.Buffer
+	remove := log.AddSink(&sink)
+	defer remove()
+	log.Info("root format test")
+	require.NoError(t, log.Sync())
+	assertTextLogLine(t, strings.TrimSpace(sink.String()))
+}
+
+func TestConfigureOutput_InvalidFormatUsesMachineFallback(t *testing.T) {
+	t.Cleanup(func() { log.Init(log.Config{}) })
+	originalArgs := os.Args
+	t.Cleanup(func() { os.Args = originalArgs })
+	root, global := BuildRoot()
+	global.LogLevel = log.LevelInfoName
+	os.Args = []string{devsy, internalCommand, flagLogFormat, testInvalidValue}
+	require.True(t, configureOutput(root, global, true))
+	var sink bytes.Buffer
+	remove := log.AddSink(&sink)
+	defer remove()
+	log.Info("early configuration error")
+	require.NoError(t, log.Sync())
+	var record map[string]any
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(sink.Bytes()), &record))
+	assert.Equal(t, "early configuration error", record["msg"])
+}
+
 func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 	origArgs := os.Args
 	t.Cleanup(func() { os.Args = origArgs })
@@ -240,8 +431,8 @@ func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rootCmd, globalFlags := BuildRoot()
-			globalFlags.Verbosity = 1
-			os.Args = []string{devsy, flagLogOutput, tc.flag}
+			globalFlags.LogLevel = log.LevelInfoName
+			os.Args = []string{devsy, flagLogFormat, tc.flag}
 			configureOutput(rootCmd, globalFlags, false)
 
 			var sink bytes.Buffer
@@ -298,7 +489,7 @@ func TestConfigureOutput_DefaultMachineModeUsesJSONLogs(t *testing.T) {
 	originalArgs := os.Args
 	t.Cleanup(func() { os.Args = originalArgs })
 	rootCmd, globalFlags := BuildRoot()
-	globalFlags.Verbosity = 1
+	globalFlags.LogLevel = log.LevelInfoName
 	os.Args = []string{devsy, internalCommand}
 	assert.True(t, configureOutput(rootCmd, globalFlags, true))
 

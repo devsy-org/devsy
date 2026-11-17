@@ -246,7 +246,7 @@ func (r *Repo) run(ctx context.Context, args ...string) (RunResult, error) {
 
 // runLogged executes a git subcommand streaming its output to the logs.
 func (r *Repo) runLogged(ctx context.Context, args ...string) error {
-	w := log.Writer(log.LevelInfo)
+	w := log.Writer(log.SlogLevelInfo)
 
 	_, err := r.runner.Run(ctx, RunOptions{
 		Dir:         r.path,
@@ -260,7 +260,7 @@ func (r *Repo) runLogged(ctx context.Context, args ...string) error {
 }
 
 func (r *Repo) cloneWith(ctx context.Context, repository string, c cloneConfig) error {
-	w := log.Writer(log.LevelInfo)
+	w := log.Writer(log.SlogLevelInfo)
 
 	pw := newProgressWriter(w)
 

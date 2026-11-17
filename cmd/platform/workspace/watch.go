@@ -100,7 +100,7 @@ func (cmd *WatchWorkspacesCmd) Run(
 			Options:              opts,
 			Config:               providerConfig,
 			Stdout:               os.Stdout,
-			Stderr:               log.Writer(log.LevelError),
+			Stderr:               log.Writer(log.SlogLevelError),
 		},
 	)
 	if err != nil {

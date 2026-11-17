@@ -576,7 +576,7 @@ func (r *runner) updateContainerUserUID(
 	if !ok {
 		return nil
 	}
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(log.SlogLevelInfo)
 	defer func() { _ = writer.Close() }()
 	if err := dockerDriver.UpdateContainerUserUID(
 		ctx,
@@ -676,7 +676,7 @@ func (r *runner) composeUpExistingProject(
 	upArgs = append(upArgs, "up", "-d")
 	upArgs = r.onlyRunServices(upArgs, params.parsedConfig)
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(log.SlogLevelInfo)
 	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		upArgs,
@@ -1413,7 +1413,7 @@ func (r *runner) composeUpAndFindContainer(
 	}
 	upArgs = r.onlyRunServices(upArgs, params.parsedConfig)
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(log.SlogLevelInfo)
 	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		upArgs,

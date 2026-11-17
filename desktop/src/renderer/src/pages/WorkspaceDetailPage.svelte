@@ -99,6 +99,7 @@ import {
   isRecoverableBuildFailure,
   isCommandSuccess,
   parseRecoveryContainer,
+  progressLogMessage,
   stripAnsi,
 } from "$lib/utils/log-parser.js"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
@@ -384,8 +385,8 @@ onMount(async () => {
   try {
     unlisten = await onCommandProgress((progress) => {
       if (commandId && progress.commandId === commandId) {
-        const incoming =
-          progress.lines ?? (progress.message ? [progress.message] : [])
+        const message = progressLogMessage(progress)
+        const incoming = progress.lines ?? (message ? [message] : [])
         if (incoming.length > 0) {
           pendingLines.push(...incoming)
           if (flushHandle === null) {

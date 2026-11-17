@@ -192,7 +192,7 @@ func ensureDotfileExecutable(ctx context.Context, path string) error {
 }
 
 func execDotfilesCmd(ctx context.Context, script, remoteUser string) error {
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(log.SlogLevelInfo)
 
 	currentUser, err := user.Current()
 	if err != nil {

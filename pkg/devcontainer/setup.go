@@ -466,7 +466,7 @@ func (r *runner) addSetupFlags(args *[]string) {
 	r.addPlatformFlags(args)
 	r.addDotfilesFlags(args)
 	r.addPrebuildFlag(args)
-	r.addDebugFlag(args)
+	*args = append(*args, log.ForwardFlagArgs()...)
 }
 
 func (r *runner) addChownFlag(args *[]string) {
@@ -552,12 +552,6 @@ func (r *runner) addDotfilesFlags(args *[]string) {
 func (r *runner) addPrebuildFlag(args *[]string) {
 	if r.workspaceConfig.CLIOptions.Prebuild {
 		*args = append(*args, names.Flag(names.Prebuild))
-	}
-}
-
-func (r *runner) addDebugFlag(args *[]string) {
-	if r.isDebugMode() {
-		*args = append(*args, names.Flag(names.Debug))
 	}
 }
 
@@ -687,9 +681,7 @@ func (r *runner) buildSSHTunnelArgv() []string {
 			r.workspaceConfig.CLIOptions.SSHAuthSockID,
 		)
 	}
-	if r.isDebugMode() {
-		args = append(args, names.Flag(names.Debug))
-	}
+	args = append(args, log.ForwardFlagArgs()...)
 	return args
 }
 

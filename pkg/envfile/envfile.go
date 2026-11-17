@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -19,6 +20,9 @@ func Apply() {
 	envFile, ok := readEnvFile()
 	if !ok {
 		return
+	}
+	if os.Getenv(config.EnvDisableTelemetry) == config.BoolTrue {
+		delete(envFile.Env, config.EnvDisableTelemetry)
 	}
 
 	for k, v := range envFile.Env {
@@ -58,6 +62,9 @@ func MergeAndApply(env map[string]string) {
 		envFile.Env = map[string]string{}
 	}
 	maps.Copy(envFile.Env, env)
+	if os.Getenv(config.EnvDisableTelemetry) == config.BoolTrue {
+		envFile.Env[config.EnvDisableTelemetry] = config.BoolTrue
+	}
 
 	out, err := json.Marshal(envFile)
 	if err != nil {

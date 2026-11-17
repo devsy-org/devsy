@@ -24,6 +24,8 @@ func (d *dockerDriver) BuildDevContainer(
 	ctx context.Context,
 	req driver.BuildRequest,
 ) (*config.BuildInfo, error) {
+	ctx = d.logContext(ctx, "")
+	log.DebugContext(ctx, "building dev container")
 	imageName := build.GetImageName(req.LocalWorkspaceFolder, req.PrebuildHash)
 	if req.Options.ImageName != "" {
 		imageName = req.Options.ImageName
@@ -510,7 +512,7 @@ func (d *dockerDriver) executeBuild(
 ) error {
 	log.Debugf("build with %s", strategy.name())
 	writer := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel: log.LevelInfo,
+		FallbackLevel: log.SlogLevelInfo,
 	})
 	defer func() { _ = writer.Close() }()
 

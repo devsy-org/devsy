@@ -3,11 +3,10 @@ package up
 import (
 	"bytes"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/workspacejournal"
@@ -37,6 +36,14 @@ func TestConfigureRunNoStatusPreservesJournalAndWorkerRecording(t *testing.T) {
 			}
 			_, _, err := cmd.configureRun("test-workspace")
 			require.NoError(t, err)
+			if worker {
+				_, err = cmd.setUpTask(
+					presentationClient{ws: &provider.Workspace{ID: "test-workspace"}},
+					true,
+					&out,
+				)
+				require.NoError(t, err)
+			}
 			for _, event := range []status.Event{
 				{Phase: status.PhasePreparingDevContainer, State: status.StateStarted, OperationID: "parent"},
 				{
@@ -45,24 +52,24 @@ func TestConfigureRunNoStatusPreservesJournalAndWorkerRecording(t *testing.T) {
 				},
 			} {
 				cmd.statusReporter.Report(event)
+				if worker {
+					state, err := store.Get(cmd.workerTask.ID())
+					require.NoError(t, err)
+					require.Equal(t, string(event.Phase), state.Phase)
+					require.Equal(t, event.OperationID, state.OperationID)
+					require.Equal(t, event.ParentOperationID, state.ParentOperationID)
+				}
 			}
 			dir, err := workspacejournal.DefaultDir()
 			require.NoError(t, err)
 			events, err := workspacejournal.Read(dir, "test-workspace", 10)
 			require.NoError(t, err)
 			require.Len(t, events, 2)
-			if worker {
-				lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-				require.Len(t, lines, 2)
-				completion, ok := devcconfig.ParseStatusLine(lines[1])
-				require.True(t, ok)
-				require.Equal(t, status.PhaseStartingContainer, completion.Phase)
-				require.Equal(t, status.StateSucceeded, completion.State)
-				require.Equal(t, "child", completion.OperationID)
-				require.Equal(t, "parent", completion.ParentOperationID)
-			} else {
-				require.Empty(t, out.String())
-			}
+			require.Equal(t, status.StateStarted, events[0].State)
+			require.Equal(t, status.PhasePreparingDevContainer, events[0].Phase)
+			require.Equal(t, status.StateSucceeded, events[1].State)
+			require.Equal(t, status.PhaseStartingContainer, events[1].Phase)
+			require.Empty(t, out.String())
 		})
 	}
 }

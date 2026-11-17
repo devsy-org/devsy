@@ -15,7 +15,9 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +25,8 @@ import (
 )
 
 const (
-	binSh = "/bin/sh"
+	binSh                = "/bin/sh"
+	testProxyWorkspaceID = "workspace"
 )
 
 func TestHandleForceError(t *testing.T) {
@@ -141,6 +144,31 @@ func TestRunCommand(t *testing.T) {
 		assert.Contains(t, stdout.String(), "***")
 		assert.Contains(t, stderr.String(), "***")
 	})
+}
+
+func TestRunCommandPreservesCancellationAndExit(t *testing.T) {
+	requirePOSIXShell(t)
+	ready := filepath.Join(t.TempDir(), "ready")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- RunCommand(ctx, RunCommandOptions{
+			Command: types.StrArray{binSh, "-c", `printf x > "$READY"; exec /bin/sleep 60`},
+			Environ: []string{"READY=" + ready},
+			Stdout:  io.Discard,
+			Stderr:  io.Discard,
+		})
+	}()
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(ready)
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond)
+	cancel()
+	err := <-done
+	require.ErrorIs(t, err, context.Canceled)
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
 }
 
 func TestMachineCommandErrorsRedactOpaquePayloadAndArguments(t *testing.T) {
@@ -449,4 +477,153 @@ func (f *fakeWorkspaceClient) Start(context.Context) error {
 func (f *fakeWorkspaceClient) Create(context.Context) error {
 	f.createCalled = true
 	return f.createErr
+}
+
+func TestTelemetryProviderKindUsesBuiltinProvenance(t *testing.T) {
+	const dockerProvider = "docker"
+	const customProvider = "custom"
+	for _, tc := range []struct {
+		name   string
+		config *provider.ProviderConfig
+		want   string
+	}{
+		{"builtin alias", &provider.ProviderConfig{
+			Name: "my-provider", Source: provider.ProviderSource{Internal: true, Raw: dockerProvider},
+		}, dockerProvider},
+		{"external with builtin alias", &provider.ProviderConfig{
+			Name: dockerProvider, Source: provider.ProviderSource{Github: "example/provider"},
+		}, customProvider},
+		{"unknown internal", &provider.ProviderConfig{
+			Source: provider.ProviderSource{Internal: true, Raw: "private-provider"},
+		}, customProvider},
+		{"missing config", nil, customProvider},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &workspaceClient{providerConfig: tc.config}
+			assert.Equal(t, tc.want, c.TelemetryProviderKind())
+		})
+	}
+}
+
+func TestProxyExecutionRecordsProviderMetric(t *testing.T) {
+	requirePOSIXShell(t)
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	t.Setenv(config.EnvHome, t.TempDir())
+	const contextName = "default"
+	proxy := &proxyClient{
+		devsyConfig: &config.Config{
+			DefaultContext: contextName,
+			Contexts:       map[string]*config.ContextConfig{contextName: {}},
+		},
+		config:    &provider.ProviderConfig{Name: "proxy"},
+		workspace: &provider.Workspace{ID: "private-workspace", Context: contextName},
+	}
+	executor := &proxyExecutor{client: proxy}
+	metrics := telemetry.NewMetricsReporter()
+	ctx := telemetry.WithMetrics(context.Background(), metrics)
+	err := executor.execute(ctx, execParams{
+		operation: "command",
+		command:   types.StrArray{binSh, "-c", testShellExitSuccess},
+		stdout:    io.Discard,
+		stderr:    io.Discard,
+	})
+	require.NoError(t, err)
+	snapshot := metrics.Finish(nil)
+	require.Len(t, snapshot.ProviderOperations, 1)
+	assert.Equal(t, telemetry.ProviderTypeScriptProxy, snapshot.ProviderOperations[0].ProviderType)
+	assert.Equal(t, "command", snapshot.ProviderOperations[0].Operation)
+	assert.EqualValues(t, 1, snapshot.ProviderOperations[0].Count)
+}
+
+func TestProxyUpForwardsRequestedLogLevel(t *testing.T) {
+	requirePOSIXShell(t)
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	t.Setenv(config.EnvHome, t.TempDir())
+	log.InitTestObserved(t, log.SlogLevelDebug)
+	const contextName = "default"
+	for _, tc := range []struct{ level, want string }{
+		{"warn", "warn"}, {"info", "info"}, {"trace", "trace"}, {"", "debug"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			var stdout bytes.Buffer
+			proxy := &proxyClient{
+				devsyConfig: &config.Config{
+					DefaultContext: contextName,
+					Contexts:       map[string]*config.ContextConfig{contextName: {}},
+				},
+				config: &provider.ProviderConfig{
+					Name: "proxy",
+					Exec: provider.ProviderCommands{Proxy: &provider.ProxyCommands{
+						Up: types.StrArray{
+							binSh,
+							"-c",
+							`printf '%s|%s|%s|%s' "$DEVSY_LOG_LEVEL" "$DEVSY_LOG_FORMAT" "$#" "$1"`,
+							"provider",
+							"sentinel",
+						},
+					}},
+				},
+				workspace: &provider.Workspace{ID: testProxyWorkspaceID, Context: contextName},
+			}
+			proxy.executor = &proxyExecutor{client: proxy}
+			require.NoError(
+				t,
+				proxy.Up(
+					context.Background(),
+					client.UpOptions{LogLevel: tc.level, Stdout: &stdout},
+				),
+			)
+			assert.Equal(t, tc.want+"|json|1|sentinel", stdout.String())
+		})
+	}
+}
+
+func TestProxyUpRejectsInvalidLogLevelBeforeExecution(t *testing.T) {
+	proxy := &proxyClient{}
+	err := proxy.Up(context.Background(), client.UpOptions{LogLevel: "invalid"})
+	require.ErrorContains(t, err, "invalid log level")
+}
+
+func TestRunCommandLoggingEnvironmentDefaultsAndPrecedence(t *testing.T) {
+	requirePOSIXShell(t)
+	t.Setenv(config.EnvLogLevel, "warn")
+	t.Setenv("DEVSY_LOG_FORMAT", "text")
+	log.InitTestObserved(t, log.SlogLevelInfo)
+	const printEnvironment = `printf '%s|%s' "$DEVSY_LOG_LEVEL" "$DEVSY_LOG_FORMAT"`
+	for _, tc := range []struct {
+		name    string
+		env     []string
+		command types.StrArray
+		want    string
+	}{
+		{"inherited environment", nil, types.StrArray{binSh, "-c", printEnvironment}, "warn|text"},
+		{"custom argv defaults", []string{}, types.StrArray{binSh, "-c", printEnvironment}, "info|json"},
+		{"custom shell defaults", []string{}, types.StrArray{printEnvironment}, "info|json"},
+		{
+			"explicit format",
+			[]string{"DEVSY_LOG_FORMAT=plain"},
+			types.StrArray{binSh, "-c", printEnvironment},
+			"info|plain",
+		},
+		{"last explicit values win", []string{
+			"DEVSY_LOG_LEVEL=trace", "DEVSY_LOG_LEVEL=warn", "DEVSY_LOG_FORMAT=json", "DEVSY_LOG_FORMAT=logfmt",
+		}, types.StrArray{binSh, "-c", printEnvironment}, "warn|logfmt"},
+		{"shell last explicit values win", []string{
+			"DEVSY_LOG_LEVEL=trace", "DEVSY_LOG_LEVEL=warn", "DEVSY_LOG_FORMAT=json", "DEVSY_LOG_FORMAT=logfmt",
+		}, types.StrArray{printEnvironment}, "warn|logfmt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			err := RunCommand(context.Background(), RunCommandOptions{
+				Command: tc.command,
+				Environ: tc.env,
+				Stdout:  &stdout,
+				Stderr:  io.Discard,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, stdout.String())
+		})
+	}
 }

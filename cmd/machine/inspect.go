@@ -7,6 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -32,6 +33,9 @@ func NewInspectCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *InspectCmd) Run(ctx context.Context, args []string) error {
+	if _, err := output.ResolveMode(cmd.ResultFormat); err != nil {
+		return err
+	}
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err

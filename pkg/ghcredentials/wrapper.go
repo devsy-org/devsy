@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,8 +18,9 @@ import (
 )
 
 const (
-	sessionEnv   = "DEVSY_GH_SESSION"
-	authProbeEnv = "DEVSY_GH_AUTH_PROBE"
+	sessionEnv            = "DEVSY_GH_SESSION"
+	authProbeEnv          = "DEVSY_GH_AUTH_PROBE"
+	forwardingUnavailable = "gh relay: forwarding unavailable"
 )
 
 func Run(args []string) int {
@@ -28,10 +30,18 @@ func Run(args []string) int {
 	}
 	binary, err := realBinary(args[0])
 	if err != nil {
-		log.Errorw("gh relay: executable unavailable", "error_type", errorKind(err))
+		log.ErrorContext(
+			context.Background(),
+			"gh relay: executable unavailable",
+			slog.String("error_type", errorKind(err)),
+		)
 		return 127
 	}
-	log.Debugw("gh relay: executable selected", "binary", binary)
+	log.DebugContext(
+		context.Background(),
+		"gh relay: executable selected",
+		slog.String("binary", binary),
+	)
 	env := os.Environ()
 	if _, explicit := os.LookupEnv("GH_PATH"); !explicit {
 		env = replaceEnv(env, "GH_PATH", wrapperPath)
@@ -63,12 +73,12 @@ type invocation struct {
 func (inv *invocation) recover(ctx context.Context) {
 	root, err := sessionRoot()
 	if err != nil {
-		logFailure("gh relay: recovery unavailable", "session.recover", err, false)
+		logFailure(ctx, err, failureLog{recoveryUnavailable, "session.recover"})
 		return
 	}
 	l, err := lock(ctx, filepath.Join(root, "sessions.lock"))
 	if err != nil {
-		logFailure("gh relay: recovery unavailable", "session.recover_lock", err, false)
+		logFailure(ctx, err, failureLog{recoveryUnavailable, "session.recover_lock"})
 		return
 	}
 	defer func() { _ = l.Close() }()
@@ -78,19 +88,16 @@ func (inv *invocation) recover(ctx context.Context) {
 func (inv *invocation) prepare(ctx context.Context) *session {
 	result, err := fetch(ctx)
 	if err != nil {
-		logFailure("gh relay: forwarding unavailable", "relay.fetch", err, false)
+		logFailure(ctx, err, failureLog{forwardingFailure, "relay.fetch"})
 		return nil
 	}
-	log.Debugw("gh relay: host authentication", "status", result.Status)
+	log.DebugContext(ctx, "gh relay: host authentication", slog.String("status", result.Status))
 	switch result.Status {
 	case stateAvailable, "gh_not_found", hostNoActiveAccounts, "rpc_denied":
 	default:
-		log.Warnw(
-			"gh relay: forwarding unavailable",
-			"operation",
-			"host.resolve",
-			"status",
-			result.Status,
+		log.WarnContext(ctx, forwardingUnavailable,
+			slog.String("operation", "host.resolve"),
+			slog.String("status", result.Status),
 		)
 	}
 	if len(result.Accounts) == 0 {
@@ -98,16 +105,16 @@ func (inv *invocation) prepare(ctx context.Context) *session {
 	}
 	original, err := ConfigDir()
 	if err != nil {
-		logFailure("gh relay: forwarding unavailable", "config.path", err, false)
+		logFailure(ctx, err, failureLog{forwardingFailure, "config.path"})
 		return nil
 	}
 	s, err := startSession(ctx, original, result.Accounts)
 	if err != nil {
-		logFailure("gh relay: forwarding unavailable", "session.snapshot", err, false)
+		logFailure(ctx, err, failureLog{forwardingFailure, "session.snapshot"})
 		return nil
 	}
 	if err := s.inject(ctx, inv.binary, inv.env); err != nil {
-		logFailure("gh relay: forwarding unavailable", "config.overlay", err, false)
+		logFailure(ctx, err, failureLog{forwardingFailure, "config.overlay"})
 		_ = os.RemoveAll(s.dir)
 		_ = s.lock.Close()
 		return nil
@@ -122,7 +129,7 @@ func (inv *invocation) withSession(s *session) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.finish(ctx); err != nil {
-		logFailure("gh relay: configuration writeback pending", "config.writeback", err, true)
+		logFailure(ctx, err, failureLog{writebackPending, "config.writeback"})
 	}
 	return code
 }

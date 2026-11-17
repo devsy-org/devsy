@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { StreamLine } from "../cli.js"
 import { ProviderJobs } from "../provider-jobs.js"
 import { DaemonState } from "../state.js"
 
@@ -25,7 +26,7 @@ vi.mock("electron", () => ({
 }))
 
 vi.mock("../analytics.js", () => ({
-  hashWorkspaceRef: (v: string) => v,
+  hashWorkspaceUid: (v: string) => v,
   trackEvent: () => undefined,
 }))
 
@@ -55,10 +56,15 @@ function setup(
     setUnlockHandler: vi.fn(),
     run: vi.fn(async () => ({})),
     runRaw: vi.fn(async () => ""),
+    runText: vi.fn(async () => ""),
     runStreaming: vi.fn(
       async (
         cliArgs: string[],
-        onLine: (line: string, stream: "stdout" | "stderr") => void,
+        onLine: (
+          line: string,
+          stream: "stdout" | "stderr",
+          meta?: StreamLine,
+        ) => void,
         onExit: (code: number, cliError?: unknown) => void,
       ) => {
         const { lines, code } = script(cliArgs)
@@ -371,16 +377,26 @@ describe("provider job lifecycle over IPC", () => {
 
   it("forwards managed secret attachment intent to the CLI", async () => {
     const { cli } = setup()
-    await invoke("secret_attach", { name: "DB_PASSWORD", context: "staging" })
-    await invoke("secret_detach", { name: "DB_PASSWORD", context: "staging" })
-    expect(cli.runRaw).toHaveBeenCalledWith([
+    expect(
+      await invoke("secret_attach", {
+        name: "DB_PASSWORD",
+        context: "staging",
+      }),
+    ).toEqual({ ok: true })
+    expect(
+      await invoke("secret_detach", {
+        name: "DB_PASSWORD",
+        context: "staging",
+      }),
+    ).toEqual({ ok: true })
+    expect(cli.runText).toHaveBeenCalledWith([
       "--context",
       "staging",
       "secret",
       "attach",
       "DB_PASSWORD",
     ])
-    expect(cli.runRaw).toHaveBeenCalledWith([
+    expect(cli.runText).toHaveBeenCalledWith([
       "--context",
       "staging",
       "secret",
@@ -400,21 +416,25 @@ describe("provider job lifecycle over IPC", () => {
       message: "context is required",
       cliError: undefined,
     })
-    expect(cli.runRaw).not.toHaveBeenCalled()
+    expect(cli.runText).not.toHaveBeenCalled()
   })
 
   it("forwards managed environment attachment intent to the CLI", async () => {
     const { cli } = setup()
-    await invoke("env_attach", { name: "LOG_LEVEL", context: "staging" })
-    await invoke("env_detach", { name: "LOG_LEVEL", context: "staging" })
-    expect(cli.runRaw).toHaveBeenCalledWith([
+    expect(
+      await invoke("env_attach", { name: "LOG_LEVEL", context: "staging" }),
+    ).toEqual({ ok: true })
+    expect(
+      await invoke("env_detach", { name: "LOG_LEVEL", context: "staging" }),
+    ).toEqual({ ok: true })
+    expect(cli.runText).toHaveBeenCalledWith([
       "--context",
       "staging",
       "env",
       "attach",
       "LOG_LEVEL",
     ])
-    expect(cli.runRaw).toHaveBeenCalledWith([
+    expect(cli.runText).toHaveBeenCalledWith([
       "--context",
       "staging",
       "env",
@@ -425,8 +445,10 @@ describe("provider job lifecycle over IPC", () => {
 
   it("deletes managed environment values in the displayed context", async () => {
     const { cli } = setup()
-    await invoke("env_delete", { name: "LOG_LEVEL", context: "staging" })
-    expect(cli.runRaw).toHaveBeenCalledWith([
+    expect(
+      await invoke("env_delete", { name: "LOG_LEVEL", context: "staging" }),
+    ).toEqual({ ok: true })
+    expect(cli.runText).toHaveBeenCalledWith([
       "--context",
       "staging",
       "env",
@@ -446,7 +468,7 @@ describe("provider job lifecycle over IPC", () => {
       message: "context is required",
       cliError: undefined,
     })
-    expect(cli.runRaw).not.toHaveBeenCalled()
+    expect(cli.runText).not.toHaveBeenCalled()
   })
 
   it("clears the job when init succeeds", async () => {
@@ -648,6 +670,46 @@ describe("provider job lifecycle over IPC", () => {
     ).rejects.toThrow()
 
     expect(providerJobs.get("docker")?.error).toBeTruthy()
+  })
+
+  it("redacts nested diagnostic attributes without promoting control fields", async () => {
+    vi.stubEnv("DEVSY_TEST_TOKEN", "diagnostic-secret")
+    const { cli, send } = setup()
+    cli.runStreaming.mockImplementation(async (_args, onLine, onExit) => {
+      const parsed = {
+        ts: "2026-01-01T00:00:00Z",
+        level: "debug" as const,
+        msg: "visible canary",
+        kind: "error",
+        cliError: { message: "diagnostic-secret" },
+        nested: { "diagnostic-secret-key": ["diagnostic-secret", 42, true] },
+      }
+      onLine("visible canary", "stderr", {
+        raw: "visible canary",
+        parsed,
+        level: "debug",
+      })
+      onExit(0)
+      return fakeChild([], 0).child
+    })
+    try {
+      await invoke("provider_init_streaming", { name: "docker" })
+      expect(send).toHaveBeenCalledWith(
+        "command-progress",
+        expect.objectContaining({
+          level: "debug",
+          diagnostic: expect.objectContaining({
+            msg: "visible canary",
+            kind: "error",
+            cliError: { message: "***" },
+            nested: { "***-key": ["***", 42, true] },
+          }),
+          done: false,
+        }),
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it("streams update phases and completes the provider job", async () => {

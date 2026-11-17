@@ -45,7 +45,7 @@ func Run(ctx context.Context, cfg Options) ([]byte, error) {
 
 	stderr := cfg.Stderr
 	if stderr == nil {
-		stderr = log.Writer(log.LevelError)
+		stderr = log.Writer(log.SlogLevelError)
 	}
 
 	var stdout bytes.Buffer

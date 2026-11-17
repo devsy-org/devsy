@@ -118,7 +118,7 @@ func (s *pkgManagerStrategy) usable() bool {
 func (s *pkgManagerStrategy) install(ctx context.Context, t tool) error {
 	log.Debugf("installing %s with %s", t.pkg, s.manager)
 	for _, args := range s.installArgs(t.pkg) {
-		w := log.Writer(log.LevelInfo)
+		w := log.Writer(log.SlogLevelInfo)
 		if _, err := s.runner.Run(ctx, RunOptions{
 			Binary:      s.manager,
 			Args:        args,

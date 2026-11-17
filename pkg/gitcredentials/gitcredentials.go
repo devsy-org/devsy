@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/git"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 // GitCredentials is the git credential-helper record. Its wire form is git's
@@ -221,12 +222,9 @@ func credentialsViaServer(
 		return nil, err
 	}
 
-	//nolint:gosec // binaryPath is from os.Executable(), not user input
-	cmd := exec.CommandContext(
-		ctx,
-		binaryPath,
-		"internal", "agent", "git-credentials", "--port", port, "get",
-	)
+	args := []string{"internal", "agent", "git-credentials", "--port", port, "get"}
+	args = append(args, log.ForwardFlagArgs()...)
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
 	cmd.Stdin = strings.NewReader(request.Encode())
 	stdout, err := cmd.Output()
 	if err != nil {

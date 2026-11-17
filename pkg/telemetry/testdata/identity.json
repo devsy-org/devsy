@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "machine_vectors": [
+    {"name":"linux-dbus-priority","platform":"linux","native_inputs":{"dbus_machine_id":"  synthetic-machine-1\n","etc_machine_id":"ignored-machine-id","ioreg_output":null,"machine_guid":null},"normalized_machine_id":"synthetic-machine-1","distinct_id":"1c2e920264e22f547f8b3298338963bc8b97648b73b042be91c589808809cc1a"},
+    {"name":"linux-empty-dbus","platform":"linux","native_inputs":{"dbus_machine_id":" \n","etc_machine_id":" linux-fallback-2 \n","ioreg_output":null,"machine_guid":null},"normalized_machine_id":"linux-fallback-2","distinct_id":"e8bf08432ece16e2a217c7bd4ded7c0253bf99fa580e7a4a40025c3d9e1b6510"},
+    {"name":"darwin-case","platform":"darwin","native_inputs":{"dbus_machine_id":null,"etc_machine_id":null,"ioreg_output":"    \"IOPlatformUUID\" = \"Mac-UUID-A1\"\n","machine_guid":null},"normalized_machine_id":"Mac-UUID-A1","distinct_id":"1b1440906c0e6750fa6580b4bca3da2f68aec3ffa405c2aeb12398167b41d551"},
+    {"name":"windows-trim","platform":"windows","native_inputs":{"dbus_machine_id":null,"etc_machine_id":null,"ioreg_output":null,"machine_guid":"  Win-GUID-B2  "},"normalized_machine_id":"Win-GUID-B2","distinct_id":"ae692c1f8fb03e359f5799e48a1c1c12295caf0a40710b705a31ebd8f635139a"},
+    {"name":"equal-domain-input","platform":"linux","native_inputs":{"dbus_machine_id":"same-value","etc_machine_id":null,"ioreg_output":null,"machine_guid":null},"normalized_machine_id":"same-value","distinct_id":"762e2357c3da0648a1a46212c16840bb8ac66420e8b113bf32c570407e75b306"}
+  ],
+  "workspace_vectors": [
+    {"name":"trusted-uid","workspace_uid":"workspace-uid-1","backend_id":"backend-1","context":"test-context","source":"git:synthetic-source","workspace_id":"37b331c6b57b53da152e64fdd3cc2ee63c1dabba2842ed5508539628f55640b9"},
+    {"name":"equal-domain-input","workspace_uid":"same-value","backend_id":"different-backend","context":"other-context","source":"local:synthetic-source","workspace_id":"4b3f60d8eb570083f90afa676c07c6758a0f60bf49ee38838358610f202a563e"}
+  ],
+  "override_vectors": [
+    {"name":"explicit-override","override":"already-derived","normalized_machine_id":"same-value","distinct_id":"already-derived"},
+    {"name":"empty-override","override":"","normalized_machine_id":"same-value","distinct_id":"762e2357c3da0648a1a46212c16840bb8ac66420e8b113bf32c570407e75b306"}
+  ],
+  "failure_vectors": [
+    {"name":"cached-random-fallback","platform":"linux","native_inputs":{"dbus_machine_id":null,"etc_machine_id":null,"ioreg_output":null,"machine_guid":null},"fallback_seed":"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff","random_error":false,"distinct_id":"5c08544da57b6d07115af6991147e785fb33017384db3e496b518032c59bcf43"},
+    {"name":"linux-unknown-does-not-fall-through","platform":"linux","native_inputs":{"dbus_machine_id":"unknown","etc_machine_id":"ignored-machine-id","ioreg_output":null,"machine_guid":null},"fallback_seed":"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff","random_error":false,"distinct_id":"5c08544da57b6d07115af6991147e785fb33017384db3e496b518032c59bcf43"},
+    {"name":"darwin-malformed","platform":"darwin","native_inputs":{"dbus_machine_id":null,"etc_machine_id":null,"ioreg_output":"IOPlatformUUID = unavailable","machine_guid":null},"fallback_seed":"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff","random_error":false,"distinct_id":"5c08544da57b6d07115af6991147e785fb33017384db3e496b518032c59bcf43"},
+    {"name":"random-failure","platform":"windows","native_inputs":{"dbus_machine_id":null,"etc_machine_id":null,"ioreg_output":null,"machine_guid":null},"fallback_seed":null,"random_error":true,"distinct_id":null}
+  ]
+}

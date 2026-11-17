@@ -1,8 +1,10 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,10 +42,10 @@ func ValidateHostRequirements(
 	warnings = appendGPUWarning(warnings, reqs.GPU)
 
 	for _, w := range warnings {
-		log.Warnw("hostRequirements not met", "warning", w)
+		log.WarnContext(context.Background(), "hostRequirements not met", slog.String("warning", w))
 	}
 	for _, f := range hardFailures {
-		log.Warnw("hostRequirements not met", "error", f)
+		log.WarnContext(context.Background(), "hostRequirements not met", slog.String("error", f))
 	}
 
 	if len(hardFailures) > 0 {

@@ -268,7 +268,7 @@ func parseIgnorePaths(ignorePaths string) []string {
 }
 
 func runDockerlessBuild(ctx context.Context, args []string, debug bool) error {
-	errWriter := log.Writer(log.LevelInfo)
+	errWriter := log.Writer(log.SlogLevelInfo)
 	defer func() { _ = errWriter.Close() }()
 
 	var stderrBuf bytes.Buffer
@@ -277,7 +277,7 @@ func runDockerlessBuild(ctx context.Context, args []string, debug bool) error {
 	//nolint:gosec // command is built from the agent configuration by design
 	cmd := exec.CommandContext(ctx, "/.dockerless/dockerless", args...)
 	if debug {
-		debugWriter := log.Writer(log.LevelDebug)
+		debugWriter := log.Writer(log.SlogLevelDebug)
 		defer func() { _ = debugWriter.Close() }()
 		cmd.Stdout = debugWriter
 	}

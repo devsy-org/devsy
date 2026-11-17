@@ -21,6 +21,8 @@ import (
 // don't drown out meaningful CLI activity.
 const AnnotationSkipInUI = "telemetry.skip-in-ui"
 
+const metricOther = "other"
+
 // SkipInUIAnnotation returns the cobra Annotations map that flags a command
 // as one the desktop polls frequently.
 func SkipInUIAnnotation() map[string]string {
@@ -37,7 +39,7 @@ const (
 )
 
 type CLICollector interface {
-	RecordCLI(err error)
+	RecordCLI(err error, snapshot MetricsSnapshot)
 	RecordWorkspaceGauge(count int)
 	SetClient(client devsyclient.BaseWorkspaceClient)
 	Flush()
@@ -108,7 +110,7 @@ func (d *cliCollector) Flush() {
 	d.analyticsClient.Flush()
 }
 
-func (d *cliCollector) RecordCLI(err error) {
+func (d *cliCollector) RecordCLI(err error, snapshot MetricsSnapshot) {
 	if d.cmd == nil {
 		log.Debug("no command found, skipping")
 		return
@@ -137,18 +139,31 @@ func (d *cliCollector) RecordCLI(err error) {
 		isInteractive: isInteractive,
 		err:           err,
 	})
+	addSnapshotProperties(eventProperties, snapshot)
 	userProperties := map[string]any{
 		"os_name":  runtime.GOOS,
 		"os_arch":  runtime.GOARCH,
 		"timezone": timezone,
 	}
 
-	eventType := config.BinaryName + "_cli"
-	if config.IsPlatformRunner() {
-		eventType = config.BinaryName + "_cli_runner"
-	}
+	d.recordEvent("cli_command_executed", eventProperties, userProperties)
+}
 
-	d.recordEvent(eventType, eventProperties, userProperties)
+func addSnapshotProperties(properties map[string]any, snapshot MetricsSnapshot) {
+	properties["duration_ms"] = snapshot.DurationMs
+	properties["runner"] = config.IsPlatformRunner()
+	if len(snapshot.PhaseDurationsMs) != 0 {
+		properties["phase_durations_ms"] = snapshot.PhaseDurationsMs
+	}
+	if snapshot.FailedPhase != "" {
+		properties["failed_phase"] = snapshot.FailedPhase
+	}
+	if snapshot.ErrorCode != "" {
+		properties["error_code"] = snapshot.ErrorCode
+	}
+	if len(snapshot.ProviderOperations) != 0 {
+		properties["provider_operations"] = snapshot.ProviderOperations
+	}
 }
 
 type eventPropertiesParams struct {
@@ -185,16 +200,18 @@ func (d *cliCollector) buildEventProperties(p eventPropertiesParams) map[string]
 		"is_interactive": p.isInteractive,
 	}
 	if d.client != nil {
-		eventProperties["provider"] = d.client.Provider()
-
+		eventProperties["provider"] = "custom"
+		if provider, ok := d.client.(interface{ TelemetryProviderKind() string }); ok {
+			eventProperties["provider"] = canonicalProvider(provider.TelemetryProviderKind())
+		}
 		if workspaceConfig := d.client.WorkspaceConfig(); workspaceConfig != nil {
-			eventProperties["source_type"] = workspaceConfig.Source.Type()
-			eventProperties["ide"] = workspaceConfig.IDE.Name
+			eventProperties["source_type"] = canonicalSource(workspaceConfig.Source.Type())
+			eventProperties["ide"] = canonicalIDE(workspaceConfig.IDE.Name)
 		}
 	}
 	// Raw err.Error() strings can leak paths, hostnames, tokens.
 	if p.err != nil {
-		eventProperties["error_code"] = string(clierr.Classify(p.err).Code)
+		eventProperties["error_code"] = safeErrorCode(string(clierr.Classify(p.err).Code))
 	}
 	return eventProperties
 }
@@ -204,6 +221,9 @@ func (d *cliCollector) recordEvent(
 	eventProperties, userProperties map[string]any,
 ) {
 	machineID := GetMachineID()
+	if machineID == "" {
+		return
+	}
 	timestamp := time.Now().Unix()
 
 	eventPayload := map[string]any{}
@@ -226,6 +246,37 @@ func (d *cliCollector) recordEvent(
 		"event": eventPayload,
 		"user":  userPayload,
 	})
+}
+
+func canonicalProvider(value string) string {
+	switch value {
+	case "docker", "podman", "kubernetes", "apple", "microsandbox", "pro":
+		return value
+	default:
+		return "custom"
+	}
+}
+
+func canonicalSource(value string) string {
+	switch value {
+	case "git:", "git:pr", "git:branch", "git:commit":
+		return "git"
+	case "local:":
+		return "local"
+	case "image:":
+		return "image"
+	default:
+		return metricOther
+	}
+}
+
+func canonicalIDE(value string) string {
+	switch value {
+	case "vscode", "vscode-insiders", "cursor", "windsurf", "jetbrains", "none":
+		return value
+	default:
+		return metricOther
+	}
 }
 
 // isCIEnvironment looks up a couple of well-known CI env vars.

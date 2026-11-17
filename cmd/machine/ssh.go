@@ -134,7 +134,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:       log.LevelInfo,
+		FallbackLevel:       log.SlogLevelInfo,
 		DetectLevelPrefixes: true,
 	})
 	defer func() { _ = streamer.Close() }()
@@ -166,8 +166,8 @@ func (cmd *SSHCmd) injectExec(
 			"%s internal ssh-server --stdio",
 			shellescape.Quote(machineClient.AgentPath()),
 		)
-		if cmd.Debug {
-			_, _ = c.WriteString(" --debug")
+		for _, arg := range log.ForwardFlagArgs() {
+			_, _ = c.WriteString(" " + shellescape.Quote(arg))
 		}
 		command := c.String()
 		return devagent.InjectAgent(ctx, &devagent.InjectOptions{

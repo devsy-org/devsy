@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -63,17 +65,34 @@ func NewOutdatedCmd(f *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *OutdatedCmd) Run(ctx context.Context) error {
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
 	parsedConfig, err := cmd.loadConfig(ctx)
 	if err != nil {
 		return err
 	}
 
-	if len(parsedConfig.Features) == 0 {
+	if len(parsedConfig.Features) == 0 && mode != output.ModeJSON {
 		_, _ = fmt.Fprintln(os.Stdout, noFeaturesMessage)
 		return nil
 	}
 
 	outdated := checkOutdatedFeatures(parsedConfig.Features)
+	if mode == output.ModeJSON {
+		sort.Slice(outdated, func(i, j int) bool { return outdated[i].repo < outdated[j].repo })
+		type resultEntry struct {
+			Feature string `json:"feature"`
+			Current string `json:"current"`
+			Latest  string `json:"latest"`
+		}
+		result := make([]resultEntry, 0, len(outdated))
+		for _, entry := range outdated {
+			result = append(result, resultEntry{entry.repo, entry.current, entry.latest})
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
 	if len(outdated) == 0 {
 		_, _ = fmt.Fprintln(os.Stdout, allUpToDateMessage)
 		return nil

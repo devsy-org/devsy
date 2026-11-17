@@ -10,6 +10,7 @@ import (
 	platformflags "github.com/devsy-org/devsy/cmd/platform/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	platformdaemon "github.com/devsy-org/devsy/pkg/daemon/platform"
+	"github.com/devsy-org/devsy/pkg/log"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
@@ -42,7 +43,7 @@ func (cmd *StatusCmd) Run(
 	devsyConfig *config.Config,
 	provider *providerpkg.ProviderConfig,
 ) error {
-	status, err := platformdaemon.NewLocalClient(provider.Name).Status(ctx, cmd.Debug)
+	status, err := platformdaemon.NewLocalClient(provider.Name).Status(ctx, log.DebugEnabled())
 	if err != nil {
 		return err
 	}

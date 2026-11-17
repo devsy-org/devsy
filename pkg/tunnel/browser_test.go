@@ -11,6 +11,7 @@ import (
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/exitcode"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,10 +65,11 @@ func exitError(t *testing.T, code int) error {
 }
 
 func baseSSHArgs(ctx, user, ws string) []string {
-	return []string{
+	args := []string{
 		"workspace", "ssh", "--user=" + user, "--agent-forwarding=false",
 		"--start-services=false", "--context", ctx, ws,
 	}
+	return append(args, log.ForwardFlagArgs()...)
 }
 
 func baseParams(user string) sshCommandArgsParams {
@@ -98,33 +100,13 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 			expected: baseSSHArgs(testCtxName, testUserRoot, testWorkspaceName),
 		},
 		{
-			name: "with debug",
-			params: sshCommandArgsParams{
-				clientContext: testCtxName, workspace: testWorkspaceName,
-				user: testUserVSCode, debug: true,
-			},
-			expected: append(
-				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug",
-			),
-		},
-		{
 			name: "with extra args",
 			params: sshCommandArgsParams{
 				clientContext: "prod", workspace: "ws", user: testUserVSCode,
-				extraArgs: []string{"--stdio", "--log-output=raw"},
+				extraArgs: []string{"--stdio"},
 			},
 			expected: append(
-				baseSSHArgs("prod", testUserVSCode, "ws"), "--stdio", "--log-output=raw",
-			),
-		},
-		{
-			name: "with debug and extra args",
-			params: sshCommandArgsParams{
-				clientContext: testCtxName, workspace: testWorkspaceName, user: testUserVSCode,
-				debug: true, extraArgs: []string{"--stdio"},
-			},
-			expected: append(
-				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug", "--stdio",
+				baseSSHArgs("prod", testUserVSCode, "ws"), "--stdio",
 			),
 		},
 	}

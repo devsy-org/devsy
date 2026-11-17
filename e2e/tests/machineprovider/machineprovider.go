@@ -50,7 +50,7 @@ var _ = ginkgo.Describe(
 				})
 
 				// wait for devsy workspace to come online (deadline: 30s)
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, "--log-level=debug")
 				framework.ExpectNoError(err)
 
 				// expect workspace
@@ -121,7 +121,7 @@ var _ = ginkgo.Describe(
 				})
 
 				// wait for devsy workspace to come online (deadline: 30s)
-				err = f.DevsyUp(ctx, tempDir, "--debug", "--daemon-interval=3s")
+				err = f.DevsyUp(ctx, tempDir, "--log-level=debug", "--daemon-interval=3s")
 				framework.ExpectNoError(err)
 
 				// check status
@@ -194,7 +194,7 @@ var _ = ginkgo.Describe(
 				})
 
 				// wait for devsy workspace to come online
-				err = f.DevsyUp(ctx, tempDir, "--debug", "--daemon-interval=3s")
+				err = f.DevsyUp(ctx, tempDir, "--log-level=debug", "--daemon-interval=3s")
 				framework.ExpectNoError(err)
 
 				// check initial status

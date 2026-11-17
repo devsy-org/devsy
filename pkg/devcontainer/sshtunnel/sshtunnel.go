@@ -264,7 +264,7 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 
 func newSSHTunnelJSONLogStreamer() *log.JSONLogStreamer {
 	return log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:           log.LevelDebug,
+		FallbackLevel:           log.SlogLevelDebug,
 		DetectLevelPrefixes:     true,
 		TreatUnknownJSONAsDebug: true,
 	})

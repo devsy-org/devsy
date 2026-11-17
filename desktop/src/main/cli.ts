@@ -7,7 +7,8 @@ import { promisify } from "node:util"
 import type { CLIError, CliLogLine } from "../shared/cli-error.js"
 import {
   cliErrorFromEnvelope,
-  cliErrorFromLegacy,
+  isCliDiagnostic,
+  parseCliEnvelope,
 } from "../shared/cli-error.js"
 import { getAnalyticsDistinctId } from "./analytics.js"
 import { desktopExecutablePath } from "./executable-path.js"
@@ -34,12 +35,10 @@ function backpressureController(
 export interface StreamLine {
   /** Raw line text from the CLI (already ANSI-stripped upstream is not assumed). */
   raw: string
-  /** Parsed zap JSON log line, if the line was valid JSON. */
   parsed?: CliLogLine
-  /** Convenience: the structured cliError extracted from a parsed line, if any. */
   cliError?: CLIError
   /** Log level from the parsed line, if available. */
-  level?: "info" | "warn" | "error"
+  level?: CliLogLine["level"]
 }
 
 export interface CliInvocationOptions {
@@ -60,36 +59,17 @@ export interface CliInvocationPolicy {
   resultFormat: CliResultFormat
 }
 
-/**
- * Coerce an arbitrary zap level string into the narrow set the IPC payload uses.
- * Unknown levels map to "info".
- */
-function normalizeLevel(level: unknown): "info" | "warn" | "error" | undefined {
-  if (typeof level !== "string") return undefined
-  const lower = level.toLowerCase()
-  if (lower === "warn" || lower === "warning") return "warn"
-  if (
-    lower === "error" ||
-    lower === "fatal" ||
-    lower === "panic" ||
-    lower === "dpanic"
-  )
-    return "error"
-  return "info"
-}
-
-/**
- * Walk a multi-line stderr blob, parse each line as a zap JSON record, and
- * return the last `cliError` field encountered. Used by the non-streaming
- * `run`/`runRaw` paths where the entire stderr is delivered after exit.
- */
 function extractCliErrorFromStderr(stderr: string): CLIError | undefined {
   let found: CLIError | undefined
   for (const line of stderr.split(/\r?\n/)) {
-    const parsed = parseStderrLine(line)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(line)
+    } catch {
+      continue
+    }
     const direct = cliErrorFromEnvelope(parsed)
-    const legacy = cliErrorFromLegacy(parsed)
-    if (direct ?? legacy) found = direct ?? legacy
+    if (direct) found = direct
   }
   return found
 }
@@ -106,6 +86,8 @@ function parseCommandResult<T>(stdout: string): T {
 
   try {
     const parsed = JSON.parse(trimmed) as unknown
+    if (isCliDiagnostic(parsed))
+      throw new SyntaxError("CLI returned no JSON result")
     if (
       parsed &&
       typeof parsed === "object" &&
@@ -122,6 +104,7 @@ function parseCommandResult<T>(stdout: string): T {
       if (!candidate) continue
       try {
         const parsed = JSON.parse(candidate) as unknown
+        if (isCliDiagnostic(parsed)) continue
         if (
           parsed &&
           typeof parsed === "object" &&
@@ -140,19 +123,12 @@ function parseCommandResult<T>(stdout: string): T {
   }
 }
 
-/**
- * Parse a single stderr line as a zap JSON record. Returns undefined when the
- * line is not valid JSON or not a plain object - callers should treat the line
- * as opaque text in that case.
- */
 function parseStderrLine(line: string): CliLogLine | undefined {
   const trimmed = line.trim()
   if (!trimmed.startsWith("{")) return undefined
   try {
     const obj = JSON.parse(trimmed) as unknown
-    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
-      return obj as CliLogLine
-    }
+    if (isCliDiagnostic(obj)) return obj
   } catch {
     // not JSON - fall through
   }
@@ -166,10 +142,12 @@ function parseStderrLine(line: string): CliLogLine | undefined {
  * We augment PATH so all spawned CLI processes can find these tools.
  */
 function buildEnv(): NodeJS.ProcessEnv {
+  const distinctId = getAnalyticsDistinctId()
   const baseEnv = {
     ...process.env,
     DEVSY_UI: "true",
-    DEVSY_TELEMETRY_DISTINCT_ID: getAnalyticsDistinctId(),
+    DEVSY_TELEMETRY_DISTINCT_ID: distinctId,
+    ...(distinctId ? {} : { DEVSY_DISABLE_TELEMETRY: "true" }),
   }
 
   if (process.platform !== "darwin") return baseEnv
@@ -195,6 +173,52 @@ function requestedResultFormat(args: string[]): string | undefined {
   if (index === -1) return undefined
   const arg = args[index]
   return arg.includes("=") ? arg.split("=", 2)[1] : args[index + 1]
+}
+const VALUE_FLAGS: Record<string, true> = {
+  "--context": true,
+  "-c": true,
+  "--log-level": true,
+  "--log-format": true,
+  "--result-format": true,
+  "--config": true,
+  "--config-dir": true,
+  "--provider": true,
+  "--owner": true,
+  "--home": true,
+  "--uid": true,
+  "--agent-dir": true,
+}
+
+function commandWords(args: string[]): string[] {
+  const words: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === "--") break
+    if (VALUE_FLAGS[arg]) {
+      i++
+    } else if (!arg.startsWith("-")) {
+      words.push(arg)
+      if (words.length === 2) break
+    }
+  }
+  return words
+}
+
+function assertParsedCommand(args: string[]): void {
+  const [root, sub] = commandWords(args)
+  if (
+    root === "ci" ||
+    root === "exec" ||
+    root === "ssh" ||
+    ((root === "workspace" || root === "ws") &&
+      (sub === "exec" || sub === "ssh")) ||
+    ((root === "machine" || root === "provider") && sub === "ssh") ||
+    (root === "internal" &&
+      !!sub &&
+      (sub.startsWith("ssh-") || sub.endsWith("-tunnel")))
+  ) {
+    throw new Error("Transparent CLI commands require a raw API")
+  }
 }
 
 export class CliRunner {
@@ -236,28 +260,13 @@ export class CliRunner {
   }
 
   private commandNeedsSecret(args: string[]): boolean {
-    const valueFlags = new Set([
-      "--context",
-      "-c",
-      "--log-level",
-      "--log-output",
-      "--log-format",
-      "--result-format",
-      "--config",
-      "--config-dir",
-    ])
-    let commandIndex = 0
-    while (commandIndex < args.length && args[commandIndex].startsWith("-")) {
-      const flag = args[commandIndex++]
-      if (valueFlags.has(flag)) commandIndex++
-    }
-    const rootCommand = args[commandIndex]
-    const command = args[commandIndex + 1]
+    const [rootCommand, command] = commandWords(args)
     return (
       (rootCommand === "secret" &&
         ["set", "get", "delete", "list", "protection"].includes(command)) ||
       (rootCommand === "context" && ["delete", "rm"].includes(command)) ||
-      (rootCommand === "workspace" && command === "up") ||
+      ((rootCommand === "workspace" || rootCommand === "ws") &&
+        command === "up") ||
       rootCommand === "up"
     )
   }
@@ -267,6 +276,8 @@ export class CliRunner {
     options: CliInvocationOptions,
   ): NodeJS.ProcessEnv {
     const env = { ...this.env, ...options.env }
+    if (this.env.DEVSY_DISABLE_TELEMETRY === "true")
+      env.DEVSY_DISABLE_TELEMETRY = "true"
     // Unlock material is withheld from unrelated commands.
     if (!this.commandNeedsSecret(args)) {
       delete env.DEVSY_SECRETS_PASSPHRASE
@@ -307,29 +318,62 @@ export class CliRunner {
     this.policy.diagnosticLogLevel = level
   }
 
-  private argsWithLogLevel(args: string[]): string[] {
-    const explicit = args.some(
-      (arg) => arg === "--log-level" || arg.startsWith("--log-level="),
-    )
+  private argsWithLogLevel(
+    args: string[],
+    options: CliInvocationOptions,
+  ): string[] {
+    const end = args.indexOf("--")
+    const flags = end < 0 ? args : args.slice(0, end)
+    const levels = ["error", "warn", "info", "debug", "trace"]
+    let explicitLevel: string | undefined
+    for (let i = 0; i < flags.length; i++) {
+      if (flags[i] === "--log-level") explicitLevel = flags[++i] ?? ""
+      else if (flags[i].startsWith("--log-level="))
+        explicitLevel = flags[i].slice("--log-level=".length)
+    }
+    const explicit = explicitLevel !== undefined
+    const envLevel = options.env?.DEVSY_LOG_LEVEL || this.env.DEVSY_LOG_LEVEL
+    if (explicit && !levels.includes(explicitLevel))
+      throw new Error("Invalid --log-level")
+    if (!explicit && envLevel && !levels.includes(envLevel))
+      throw new Error("Invalid DEVSY_LOG_LEVEL")
+    const levelArgs = explicit
+      ? []
+      : ["--log-level", envLevel || this.policy.diagnosticLogLevel]
     return [
       ...this.prefixArgs,
-      ...args,
-      ...(explicit ? [] : ["--log-level", this.policy.diagnosticLogLevel]),
+      ...flags,
+      ...levelArgs,
+      ...(end < 0 ? [] : args.slice(end)),
     ]
   }
 
   private argsWithProtocol(
     args: string[],
     includeResultFormat = false,
+    options: CliInvocationOptions = {},
   ): string[] {
-    const fullArgs = this.argsWithLogLevel(args)
+    const fullArgs = this.argsWithLogLevel(args, options)
+    const end = fullArgs.indexOf("--")
+    const protocolArgs = end < 0 ? fullArgs : fullArgs.slice(0, end)
     const hasFlag = (flag: string) =>
-      fullArgs.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
+      protocolArgs.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
     if (includeResultFormat && !hasFlag("--result-format")) {
-      fullArgs.push("--result-format", this.policy.resultFormat)
+      fullArgs.splice(
+        end < 0 ? fullArgs.length : end,
+        0,
+        "--result-format",
+        this.policy.resultFormat,
+      )
     }
-    if (!hasFlag("--log-output") && !hasFlag("--log-format")) {
-      fullArgs.push("--log-output", this.policy.logOutput)
+    if (!hasFlag("--log-format")) {
+      const end = fullArgs.indexOf("--")
+      fullArgs.splice(
+        end < 0 ? fullArgs.length : end,
+        0,
+        "--log-format",
+        this.policy.logOutput,
+      )
     }
     return fullArgs
   }
@@ -354,6 +398,8 @@ export class CliRunner {
   }
 
   async run<T>(args: string[], options: CliInvocationOptions = {}): Promise<T> {
+    assertParsedCommand(args)
+    const fullArgs = this.argsWithProtocol(args, true, options)
     const requestedFormat =
       requestedResultFormat(args) ?? this.policy.resultFormat
     if (requestedFormat !== "json") {
@@ -364,7 +410,6 @@ export class CliRunner {
     await this.acquire()
     let released = false
     try {
-      const fullArgs = this.argsWithProtocol(args, true)
       const stdout =
         options.stdin === undefined
           ? (
@@ -397,35 +442,56 @@ export class CliRunner {
     }
   }
 
-  async runRaw(
+  async runText(
     args: string[],
     options: CliInvocationOptions = {},
   ): Promise<string> {
+    assertParsedCommand(args)
+    const fullArgs = this.argsWithProtocol(args, false, options)
     await this.acquire()
     let released = false
     try {
       if (options.stdin !== undefined)
         return await this.spawnWithStdin(
-          this.argsWithProtocol(args),
+          fullArgs,
           options.stdin,
           this.invocationEnv(args, options),
         )
-      const { stdout } = await execFile(
-        this.execPath,
-        this.argsWithProtocol(args),
-        { env: this.invocationEnv(args, options) },
-      )
+      const { stdout } = await execFile(this.execPath, fullArgs, {
+        env: this.invocationEnv(args, options),
+      })
       return stdout
     } catch (error: unknown) {
       const wrapped = this.wrapError(error, options)
       this.release()
       released = true
-      if (await this.unlockForRetry(args, wrapped, options)) {
-        return this.runRaw(args, { ...options, unlockRetried: true })
-      }
+      if (await this.unlockForRetry(args, wrapped, options))
+        return this.runText(args, { ...options, unlockRetried: true })
       throw wrapped
     } finally {
       if (!released) this.release()
+    }
+  }
+
+  async runRaw(
+    args: string[],
+    options: CliInvocationOptions = {},
+  ): Promise<string> {
+    const fullArgs = this.argsWithProtocol(args, false, options)
+    await this.acquire()
+    try {
+      if (options.stdin !== undefined)
+        return await this.spawnWithStdin(
+          fullArgs,
+          options.stdin,
+          this.invocationEnv(args, options),
+        )
+      const { stdout } = await execFile(this.execPath, fullArgs, {
+        env: this.invocationEnv(args, options),
+      })
+      return stdout
+    } finally {
+      this.release()
     }
   }
 
@@ -435,28 +501,7 @@ export class CliRunner {
     input: string,
     options: CliInvocationOptions = {},
   ): Promise<string> {
-    await this.acquire()
-    let released = false
-    try {
-      return await this.spawnWithStdin(
-        this.argsWithProtocol(args),
-        input,
-        this.invocationEnv(args, options),
-      )
-    } catch (error: unknown) {
-      const wrapped = this.wrapError(error, { ...options, stdin: input })
-      this.release()
-      released = true
-      if (await this.unlockForRetry(args, wrapped, options)) {
-        return this.runRawStdin(args, input, {
-          ...options,
-          unlockRetried: true,
-        })
-      }
-      throw wrapped
-    } finally {
-      if (!released) this.release()
-    }
+    return this.runRaw(args, { ...options, stdin: input })
   }
 
   // Uses spawn, not execFile: async execFile ignores { input } (Sync-only), which
@@ -485,7 +530,8 @@ export class CliRunner {
         }
         const err = new Error(
           `command failed with exit code ${code}`,
-        ) as Error & { stderr: string; code: number | null }
+        ) as Error & { stdout: string; stderr: string; code: number | null }
+        err.stdout = stdout
         err.stderr = stderr
         err.code = code
         reject(err)
@@ -522,6 +568,8 @@ export class CliRunner {
     options: CliInvocationOptions = {},
     retryCancellationGeneration?: number,
   ): Promise<ChildProcess> {
+    assertParsedCommand(args)
+    const fullArgs = this.argsWithProtocol(args, false, options)
     // A retry keeps its originating generation. A new call captures the
     // latest generation, so it remains valid after an older call is canceled.
     const cancellationGeneration = workspaceId
@@ -547,7 +595,7 @@ export class CliRunner {
         (text, credential) => text.replaceAll(credential, "***"),
         value,
       )
-    const child = spawn(this.execPath, this.argsWithProtocol(args), {
+    const child = spawn(this.execPath, fullArgs, {
       env: invocationEnv,
     })
 
@@ -570,18 +618,17 @@ export class CliRunner {
       rl.on("line", (line) => {
         if (suppressCallbacks) return
         line = redact(line)
-        const parsed = parseStderrLine(line)
-        const direct = cliErrorFromEnvelope(parsed)
-        const statusError = parsed?.error as
-          | { code?: string; message?: string }
-          | undefined
+        const envelope = parseCliEnvelope(line)
+        const direct =
+          envelope?.kind === "error"
+            ? cliErrorFromEnvelope(envelope)
+            : undefined
+        const statusError =
+          envelope?.kind === "status" ? envelope.error : undefined
         const cliError =
           direct ??
           (statusError?.code === "unlock_required"
-            ? {
-                code: "unlock_required",
-                message: statusError.message ?? "Secret store unlock required",
-              }
+            ? { code: statusError.code, message: statusError.message }
             : undefined)
         if (cliError) lastCliError = cliError
         if (
@@ -604,11 +651,10 @@ export class CliRunner {
         if (suppressCallbacks) return
         line = redact(line)
         const parsed = parseStderrLine(line)
-        const direct = cliErrorFromEnvelope(parsed)
-        const legacy = cliErrorFromLegacy(parsed)
-        if (direct ?? legacy) lastCliError = direct ?? legacy
+        const direct = parsed ? undefined : extractCliErrorFromStderr(line)
+        if (direct) lastCliError = direct
         if (
-          (direct ?? legacy)?.code === "unlock_required" &&
+          direct?.code === "unlock_required" &&
           !options.unlockRetried &&
           this.commandNeedsSecret(args) &&
           this.unlockHandler
@@ -617,8 +663,8 @@ export class CliRunner {
         const meta: StreamLine = {
           raw: line,
           parsed,
-          cliError: direct ?? legacy,
-          level: normalizeLevel(parsed?.level),
+          cliError: direct,
+          level: parsed?.level,
         }
         applyBackpressure(onLine(line, "stderr", meta))
       })

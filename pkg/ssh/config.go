@@ -2,10 +2,12 @@ package ssh
 
 import (
 	"bufio"
+	stdcontext "context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -150,12 +152,11 @@ func normalizeSSHExecPathForOS(execPath, goos string) string {
 
 func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCommandBuilder {
 	normalizedExecPath := normalizeSSHExecPath(execPath)
-	log.Debugw(
-		"ssh proxy command config",
-		"os", runtime.GOOS,
-		"executable_raw", execPath,
-		"executable_normalized", normalizedExecPath,
-		"workspace", workspace,
+	log.DebugContext(stdcontext.Background(), "ssh proxy command config",
+		slog.String("os", runtime.GOOS),
+		slog.String("executable_raw", execPath),
+		slog.String("executable_normalized", normalizedExecPath),
+		slog.String("workspace", workspace),
 	)
 
 	return &proxyCommandBuilder{

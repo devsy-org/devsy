@@ -202,13 +202,11 @@ const (
 
 // Miscellaneous.
 const (
-	Debug                = "debug"
 	Command              = "command"
 	Context              = "context"
 	User                 = "user"
 	Workdir              = "workdir"
 	Home                 = "home"
-	LogOutput            = "log-output"
 	LogLevel             = "log-level"
 	LogFormat            = "log-format"
 	ResultFormat         = "result-format"
@@ -221,8 +219,6 @@ const (
 	ShutdownAction       = "shutdown-action"
 	Timeout              = "timeout"
 	Flavor               = "flavor"
-	Verbose              = "verbose"
-	Quiet                = "quiet"
 	Owner                = "owner"
 	AgentDir             = "agent-dir"
 	StateRoot            = "state-root"

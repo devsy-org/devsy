@@ -226,6 +226,7 @@ func (cmd *SetupContainerCmd) startExtensionsInstallInBackground(
 			names.Flag(names.SetupInfo), cmd.SetupInfo,
 		}
 		args = append(args, extraArgs...)
+		args = append(args, log.ForwardFlagArgs()...)
 		//nolint:gosec // binaryPath is from os.Executable(), not user input
 		return exec.Command(binaryPath, args...), nil
 	})

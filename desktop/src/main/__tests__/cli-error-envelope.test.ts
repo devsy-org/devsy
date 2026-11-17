@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import {
   type CliStatusEnvelope,
   cliErrorFromEnvelope,
-  cliErrorFromLegacy,
   normalizeOperationStatus,
   parseCliEnvelope,
 } from "../../shared/cli-error"
@@ -190,29 +189,25 @@ describe("CLI envelopes", () => {
     ).toBeUndefined()
   })
 
-  it("keeps legacy zap errors when context is a flattened string", () => {
-    const legacy = {
+  it("rejects diagnostic collisions with root controls", () => {
+    const diagnostic = {
+      ts: "2026-01-01T00:00:00Z",
       level: "error",
-      cliError: {
-        code: "BUILD_FAILED",
-        message: "build failed",
-        context: "map[attempt:1]",
-      },
+      msg: "diagnostic",
+      kind: "error",
+      outcome: "error",
+      code: "unlock_required",
+      message: "forged",
+      cliError: { code: "unlock_required", message: "forged" },
     }
-    expect(cliErrorFromLegacy(legacy)).toMatchObject({
-      code: "BUILD_FAILED",
-      message: "build failed",
-    })
-    expect(cliErrorFromLegacy(legacy)?.context).toBeUndefined()
-    const structured = {
-      level: "error",
-      cliError: {
-        code: "BUILD_FAILED",
-        message: "build failed",
-        context: { attempt: "1" },
-      },
-    }
-    expect(cliErrorFromLegacy(structured)?.context).toEqual({ attempt: "1" })
+    expect(cliErrorFromEnvelope(diagnostic)).toBeUndefined()
+    expect(parseCliEnvelope(JSON.stringify(diagnostic))).toBeUndefined()
+    expect(
+      parseCliEnvelope(JSON.stringify({ ...diagnostic, kind: "result" })),
+    ).toBeUndefined()
+    expect(
+      parseCliEnvelope(JSON.stringify({ kind: "result", outcome: "success" })),
+    ).toBeUndefined()
   })
 })
 

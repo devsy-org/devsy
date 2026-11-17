@@ -2,8 +2,10 @@ package log
 
 import (
 	"io"
+	"os"
 
 	"github.com/devsy-org/devsy/pkg/scanner"
+	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
 func PipeJSONStream() (io.WriteCloser, chan struct{}) {
@@ -50,6 +52,12 @@ func ReadJSONStream(reader io.Reader) {
 // A line that isn't valid JSON, or whose level isn't recognized, is written
 // to fallback verbatim if fallback is non-nil; otherwise it's dropped.
 func readJSONStreamWithFallback(reader io.Reader, fallback io.Writer) {
+	redactor := &JSONLogStreamer{
+		redactor: secrets.Combine(
+			current.Load().redactor,
+			secrets.NewEnvironmentRedactor(os.Environ()),
+		),
+	}
 	scan := scanner.NewScanner(reader)
 	for scan.Scan() {
 		line := scan.Bytes()
@@ -59,10 +67,10 @@ func readJSONStreamWithFallback(reader io.Reader, fallback io.Writer) {
 
 		decoded, ok := decodeJSONLogLine(line)
 		if !ok || !decoded.recognized {
-			writeFallbackLine(fallback, line)
+			writeFallbackLine(fallback, []byte(redactor.redactLine(string(line))))
 			continue
 		}
-		logAtZapLevel(decoded.level, decoded.text)
+		emitRecord(decoded.level, decoded.timestamp, decoded.text, decoded.attrs)
 	}
 }
 

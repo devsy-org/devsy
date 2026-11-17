@@ -13,7 +13,7 @@ import (
 
 const (
 	testRepoArg   = "myrepo"
-	testDebugFlag = "--debug"
+	testDebugFlag = "--log-level=debug"
 )
 
 func TestDetachedArgs_StripsDetachFlag(t *testing.T) {

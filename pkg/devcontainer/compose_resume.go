@@ -113,7 +113,7 @@ func (r *runner) startComposeInstance(
 		return nil, err
 	}
 	args = r.onlyRunServices(append(args, "start"), params.runParams.parsedConfig)
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(log.SlogLevelInfo)
 	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		args,

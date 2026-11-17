@@ -108,6 +108,8 @@ Run the real VM specs on Linux with KVM before claiming parity.
 - **Unit Testing**: Prefer using [testify suite](https://github.com/stretchr/testify#suite-package) (`testify/suite`) for writing unit tests.
 - **Linter**: `golangci-lint` via `mise run cli:lint` (or `mise run cli:lint:fix`). Run `mise run cli:lint:ci` before pushing changes.
 
+Use `log.*Context` with typed `slog.Attr` values for new structured diagnostics. Prefer the canonical attribute constructors, snake_case keys, and static messages. Keep secrets, environment values, command arguments, private paths, and raw backend errors out of diagnostics and telemetry. Existing `log.*f` and unstructured calls remain supported during migration. Do not add direct zap or zapr imports.
+
 ### TypeScript / Svelte Code Style
 
 Biome formats and checks web frontend files.

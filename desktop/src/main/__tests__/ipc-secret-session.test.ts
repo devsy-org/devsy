@@ -30,7 +30,7 @@ vi.mock("electron", () => ({
 }))
 
 vi.mock("../analytics.js", () => ({
-  hashWorkspaceRef: (value: string) => value,
+  hashWorkspaceUid: (value: string) => value,
   trackEvent: vi.fn(),
 }))
 
@@ -83,6 +83,18 @@ function setup(timeoutMs = 5 * 60 * 1000) {
     run: vi.fn(async () => ({})),
     runRaw: vi.fn(async (..._args: unknown[]) => ""),
     runRawStdin: vi.fn(async (..._args: unknown[]) => ""),
+    runText: async (
+      args: string[],
+      options?: { stdin?: string; [key: string]: unknown },
+    ) => {
+      if (options?.stdin !== undefined) {
+        const { stdin, ...rest } = options
+        return Object.keys(rest).length
+          ? cli.runRawStdin(args, stdin, rest)
+          : cli.runRawStdin(args, stdin)
+      }
+      return options ? cli.runRaw(args, options) : cli.runRaw(args)
+    },
     setSessionPassphrase: vi.fn(),
     hasSessionPassphrase: () => false,
   }

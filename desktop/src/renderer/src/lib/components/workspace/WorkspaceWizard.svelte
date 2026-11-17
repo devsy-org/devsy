@@ -67,6 +67,7 @@ import { extractErrorMessage } from "$lib/utils/error.js"
 import {
   isRecoverableBuildFailure,
   isCommandSuccess,
+  progressLogMessage,
   stripAnsi,
 } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
@@ -658,8 +659,8 @@ function flushLines() {
 }
 
 function queueProgressLines(progress: CommandProgress) {
-  const incoming =
-    progress.lines ?? (progress.message ? [progress.message] : [])
+  const message = progressLogMessage(progress)
+  const incoming = progress.lines ?? (message ? [message] : [])
   if (incoming.length === 0) return
   pendingLines.push(...incoming)
   if (flushHandle === null) {

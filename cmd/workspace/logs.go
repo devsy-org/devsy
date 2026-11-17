@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
@@ -80,9 +81,12 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	sshServerCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
-	if log.DebugEnabled() {
-		sshServerCmd += " --debug"
+	var command strings.Builder
+	command.WriteString(shellescape.Quote(client.AgentPath()))
+	command.WriteString(" internal ssh-server --stdio")
+	for _, arg := range log.ForwardFlagArgs() {
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote(arg))
 	}
 
 	timeout := config.ParseTimeOption(devsyConfig, config.ContextOptionAgentInjectTimeout)
@@ -97,7 +101,7 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 		func(ctx context.Context, stdin, stdout *os.File) error {
 			return injectLogsAgent(ctx, injectLogsAgentParams{
 				client:       client,
-				sshServerCmd: sshServerCmd,
+				sshServerCmd: command.String(),
 				timeout:      timeout,
 				stdin:        stdin,
 				stdout:       stdout,
@@ -144,7 +148,7 @@ func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 	}
 
 	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:       log.LevelDebug,
+		FallbackLevel:       log.SlogLevelDebug,
 		DetectLevelPrefixes: true,
 	})
 	defer func() { _ = streamer.Close() }()
@@ -219,17 +223,17 @@ func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) er
 		}
 	}
 
-	agentCommand := fmt.Sprintf(
-		"%s internal agent workspace logs --context %s --id %s",
+	var agentCommand strings.Builder
+	_, _ = fmt.Fprintf(&agentCommand, "%s internal agent workspace logs --context %s --id %s",
 		shellescape.Quote(client.AgentPath()),
 		shellescape.Quote(client.Context()),
-		shellescape.Quote(client.Workspace()),
-	)
-	if log.DebugEnabled() {
-		agentCommand += " --debug"
+		shellescape.Quote(client.Workspace()))
+	for _, arg := range log.ForwardFlagArgs() {
+		agentCommand.WriteByte(' ')
+		agentCommand.WriteString(shellescape.Quote(arg))
 	}
 
 	session.Stdout = os.Stdout
 	session.Stderr = os.Stderr
-	return session.Run(agentCommand)
+	return session.Run(agentCommand.String())
 }

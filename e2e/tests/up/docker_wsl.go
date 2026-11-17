@@ -40,7 +40,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 		tempDir, err := setupWorkspace("tests/up/testdata/docker-mounts", initialDir, f)
 		framework.ExpectNoError(err)
 
-		err = f.DevsyUp(ctx, tempDir, "--debug")
+		err = f.DevsyUp(ctx, tempDir, "--log-level=debug")
 		framework.ExpectNoError(err)
 
 		workspace, err := f.FindWorkspace(ctx, tempDir)

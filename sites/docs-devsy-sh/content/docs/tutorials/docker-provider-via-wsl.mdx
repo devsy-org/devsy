@@ -89,7 +89,7 @@ devsy workspace up
 
 In VS Code or VSCodium with the [Open Remote - SSH](https://marketplace.visualstudio.com/items?itemName=jeanp413.open-remote-ssh) extension, choose **Open Folder in Remote...** and select that host. Devsy tunnels the session into the dev container, so you need no jump host.
 
-The tunnel uses your local SSH keys and agent. If the editor log shows `write EPIPE`, run `devsy workspace up` with `DEVSY_DEBUG=true` to see the cause, such as a stopped WSL SSH server or an untrusted host key.
+The tunnel uses your local SSH keys and agent. If the editor log shows `write EPIPE`, run `devsy workspace up --log-level=debug` to see the cause, such as a stopped WSL SSH server or an untrusted host key.
 
 ## Next steps
 

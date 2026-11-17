@@ -43,7 +43,7 @@ import {
   normalizeProviderOptionEnums,
   providerOptionEnumHasValue,
 } from "$lib/utils/provider-option-enum.js"
-import { isCommandSuccess } from "$lib/utils/log-parser.js"
+import { isCommandSuccess, progressLogMessage } from "$lib/utils/log-parser.js"
 import { providerSourceReference } from "$lib/utils/provider-source.js"
 import { providerStatus } from "$lib/utils/provider-status.js"
 import type {
@@ -139,8 +139,9 @@ let updatePhase = $derived.by(() => {
 
 function handleUpdateProgress(progress: CommandProgress) {
   const targetName = updateProviderName
-  if (progress.message && targetName === provider.name) {
-    updateLines = [...updateLines, progress.message]
+  const message = progressLogMessage(progress)
+  if (message && targetName === provider.name) {
+    updateLines = [...updateLines, message]
   }
   if (!progress.done) return
   updating = false

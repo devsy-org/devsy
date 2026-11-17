@@ -284,11 +284,11 @@ func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) erro
 		return err
 	}
 
-	writer, writerDone := log.PipeJSONStream()
-	defer func() {
-		_ = writer.Close()
-		<-writerDone
-	}()
+	writer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.SlogLevelWarn,
+		DetectLevelPrefixes: true,
+	})
+	defer func() { _ = writer.Close() }()
 	if err := devssh.Run(ctx, devssh.RunOptions{
 		Client:  containerClient,
 		Command: command,
@@ -326,9 +326,7 @@ func (t *gpgTunnel) buildSetupCommand(ctx context.Context) (string, error) {
 		names.Flag(names.SocketPath),
 		gpg.ContainerSocketPath,
 	}
-	if log.DebugEnabled() {
-		forwardAgent = append(forwardAgent, names.Flag(names.Debug))
-	}
+	forwardAgent = append(forwardAgent, log.ForwardFlagArgs()...)
 	if gitKey != "" {
 		forwardAgent = append(forwardAgent, names.Flag(names.GitKey), gitKey)
 	}

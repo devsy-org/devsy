@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
@@ -16,9 +16,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/scanner"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/types"
-	"go.uber.org/zap/zapcore"
 )
 
 func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo) driver.Driver {
@@ -42,24 +41,21 @@ func (c *customDriver) FindDevContainer(
 	ctx context.Context,
 	workspaceId string,
 ) (*config.ContainerDetails, error) {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	stdout := &bytes.Buffer{}
 	if err := c.runCommand(ctx, runCommandOptions{
-		workspaceId: workspaceId,
-		name:        "findDevContainer",
-		command:     c.workspaceInfo.Agent.Custom.FindDevContainer,
-		stdout:      stdout,
-		stderr:      writer,
+		workspaceId:      workspaceId,
+		name:             "findDevContainer",
+		command:          c.workspaceInfo.Agent.Custom.FindDevContainer,
+		stdout:           stdout,
+		diagnosticStderr: true,
 	}); err != nil {
-		return nil, fmt.Errorf("error finding devcontainer: %s%w", stdout.String(), err)
+		return nil, fmt.Errorf("error finding devcontainer: %w", err)
 	} else if len(stdout.Bytes()) == 0 {
 		return nil, nil
 	}
 	var containerDetails config.ContainerDetails
 	if err := json.Unmarshal(stdout.Bytes(), &containerDetails); err != nil {
-		return nil, fmt.Errorf("error parsing devcontainer details: %s%w", stdout.String(), err)
+		return nil, fmt.Errorf("error parsing devcontainer details: %w", err)
 	}
 
 	return &containerDetails, nil
@@ -91,26 +87,20 @@ func (c *customDriver) CommandDevContainer(
 
 // TargetArchitecture returns the architecture of the container runtime. e.g. amd64 or arm64.
 func (c *customDriver) TargetArchitecture(ctx context.Context, workspaceId string) (string, error) {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	stdout := &bytes.Buffer{}
 	if err := c.runCommand(ctx, runCommandOptions{
-		workspaceId: workspaceId,
-		name:        "getTargetArchitecture",
-		command:     c.workspaceInfo.Agent.Custom.TargetArchitecture,
-		stdout:      stdout,
-		stderr:      writer,
+		workspaceId:      workspaceId,
+		name:             "getTargetArchitecture",
+		command:          c.workspaceInfo.Agent.Custom.TargetArchitecture,
+		stdout:           stdout,
+		diagnosticStderr: true,
 	}); err != nil {
-		return "", fmt.Errorf("error getting target architecture: %s%w", stdout.String(), err)
+		return "", fmt.Errorf("error getting target architecture: %w", err)
 	}
 
 	targetArchitecture := strings.ToLower(strings.TrimSpace(stdout.String()))
 	if targetArchitecture != "amd64" && targetArchitecture != "arm64" {
-		return "", fmt.Errorf(
-			"invalid target architecture %s, expected either arm64 or amd64",
-			targetArchitecture,
-		)
+		return "", fmt.Errorf("invalid target architecture, expected either arm64 or amd64")
 	}
 
 	return targetArchitecture, nil
@@ -118,17 +108,14 @@ func (c *customDriver) TargetArchitecture(ctx context.Context, workspaceId strin
 
 // DeleteDevContainer deletes the devcontainer.
 func (c *customDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	if err := c.runCommand(ctx, runCommandOptions{
-		workspaceId: workspaceId,
-		name:        "deleteDevContainer",
-		command:     c.workspaceInfo.Agent.Custom.DeleteDevContainer,
-		stdin:       nil,
-		stdout:      writer,
-		stderr:      writer,
-		extraEnv:    nil,
+		workspaceId:      workspaceId,
+		name:             "deleteDevContainer",
+		command:          c.workspaceInfo.Agent.Custom.DeleteDevContainer,
+		stdin:            nil,
+		diagnosticStdout: true,
+		diagnosticStderr: true,
+		extraEnv:         nil,
 	}); err != nil {
 		return fmt.Errorf("error deleting devcontainer: %w", err)
 	}
@@ -137,15 +124,12 @@ func (c *customDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 
 // StartDevContainer starts the devcontainer.
 func (c *customDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	if err := c.runCommand(ctx, runCommandOptions{
-		workspaceId: workspaceId,
-		name:        "startDevContainer",
-		command:     c.workspaceInfo.Agent.Custom.StartDevContainer,
-		stdout:      writer,
-		stderr:      writer,
+		workspaceId:      workspaceId,
+		name:             "startDevContainer",
+		command:          c.workspaceInfo.Agent.Custom.StartDevContainer,
+		diagnosticStdout: true,
+		diagnosticStderr: true,
 	}); err != nil {
 		return fmt.Errorf("error starting devcontainer: %w", err)
 	}
@@ -155,17 +139,14 @@ func (c *customDriver) StartDevContainer(ctx context.Context, workspaceId string
 
 // StopDevContainer stops the devcontainer.
 func (c *customDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	if err := c.runCommand(ctx, runCommandOptions{
-		workspaceId: workspaceId,
-		name:        "stopDevContainer",
-		command:     c.workspaceInfo.Agent.Custom.StopDevContainer,
-		stdin:       nil,
-		stdout:      writer,
-		stderr:      writer,
-		extraEnv:    nil,
+		workspaceId:      workspaceId,
+		name:             "stopDevContainer",
+		command:          c.workspaceInfo.Agent.Custom.StopDevContainer,
+		stdin:            nil,
+		diagnosticStdout: true,
+		diagnosticStderr: true,
+		extraEnv:         nil,
 	}); err != nil {
 		return fmt.Errorf("error stopping devcontainer: %w", err)
 	}
@@ -184,33 +165,17 @@ func (c *customDriver) RunDevContainer(
 		return fmt.Errorf("marshal run options: %w", err)
 	}
 
-	done := make(chan struct{})
-	reader, writer := io.Pipe()
-	defer func() { _ = writer.Close() }()
-	go func() {
-		scan := scanner.NewScanner(reader)
-		for scan.Scan() {
-			log.Info(scan.Text())
-		}
-		done <- struct{}{}
-	}()
-
 	if err := c.runCommand(ctx, runCommandOptions{
-		workspaceId: workspaceId,
-		name:        "runDevContainer",
-		command:     c.workspaceInfo.Agent.Custom.RunDevContainer,
-		stdin:       nil,
-		stdout:      writer,
-		stderr:      writer,
+		workspaceId:      workspaceId,
+		name:             "runDevContainer",
+		command:          c.workspaceInfo.Agent.Custom.RunDevContainer,
+		stdin:            nil,
+		diagnosticStdout: true,
+		diagnosticStderr: true,
 		extraEnv: []string{
 			"DEVCONTAINER_RUN_OPTIONS=" + string(out),
 		},
 	}); err != nil {
-		_ = writer.Close() // close writer to unblock logging goroutine
-		select {
-		case <-done:
-		case <-time.After(1 * time.Second): // timeout to avoid hanging if logging goroutine is blocked
-		}
 		return fmt.Errorf("error running devcontainer: %w", err)
 	}
 
@@ -243,14 +208,16 @@ func (c *customDriver) CanReprovision() bool {
 }
 
 type runCommandOptions struct {
-	workspaceId string
-	name        string
-	command     types.StrArray
-	stdin       io.Reader
-	stdout      io.Writer
-	stderr      io.Writer
-	rawStdout   bool
-	extraEnv    []string
+	workspaceId      string
+	name             string
+	command          types.StrArray
+	stdin            io.Reader
+	stdout           io.Writer
+	stderr           io.Writer
+	rawStdout        bool
+	extraEnv         []string
+	diagnosticStdout bool
+	diagnosticStderr bool
 }
 
 func ToEnvironWithBinaries(
@@ -302,7 +269,7 @@ func (c *customDriver) runCommand(
 		return nil
 	}
 
-	log.Debugf("run %s driver command: %s", runOpts.name, strings.Join(runOpts.command, " "))
+	log.Debugf("run %s driver command", runOpts.name)
 	environ, err := ToEnvironWithBinaries(ctx, c.workspaceInfo)
 	if err != nil {
 		return err
@@ -310,11 +277,46 @@ func (c *customDriver) runCommand(
 	environ = append(environ, pkgconfig.EnvDevcontainerID+"="+runOpts.workspaceId)
 	environ = append(environ, runOpts.extraEnv...)
 
-	if log.Underlying().Core().Enabled(zapcore.DebugLevel) {
-		environ = append(environ, pkgconfig.EnvDebug+"="+pkgconfig.BoolTrue)
+	var stdoutStream, stderrStream *log.JSONLogStreamer
+	if runOpts.diagnosticStdout || runOpts.diagnosticStderr {
+		var optionEntries []string
+		for key, value := range provider.CombineOptions(
+			c.workspaceInfo.Workspace, c.workspaceInfo.Machine, c.workspaceInfo.Options,
+		) {
+			optionEntries = append(optionEntries, key+"="+value.Value)
+		}
+		attrs := []slog.Attr{
+			log.AttrComponent("custom-driver"),
+			log.AttrOperation(runOpts.name),
+			log.AttrWorkspaceID(runOpts.workspaceId),
+		}
+		if c.workspaceInfo.Workspace != nil {
+			attrs = append(attrs, log.AttrProvider(c.workspaceInfo.Workspace.Provider.Name))
+		}
+		if c.workspaceInfo.Machine != nil {
+			attrs = append(attrs, log.AttrMachineID(c.workspaceInfo.Machine.ID))
+		}
+		streamOptions := log.StreamerOptions{
+			Redactor: secrets.Combine(
+				secrets.NewRedactor(optionEntries),
+				secrets.NewEnvironmentRedactor(environ),
+			),
+			FallbackLevel: log.SlogLevelInfo,
+			DefaultAttrs:  attrs,
+		}
+		if runOpts.diagnosticStdout {
+			stdoutStream = log.NewJSONLogStreamer(streamOptions)
+			runOpts.stdout = stdoutStream
+		}
+		if runOpts.diagnosticStderr {
+			streamOptions.CaptureLines = 50
+			streamOptions.CaptureBytes = 32 * 1024
+			stderrStream = log.NewJSONLogStreamer(streamOptions)
+			runOpts.stderr = stderrStream
+		}
 	}
 
-	return clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
+	err = clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
 		Command:   runOpts.command,
 		Environ:   environ,
 		Stdin:     runOpts.stdin,
@@ -322,4 +324,14 @@ func (c *customDriver) runCommand(
 		Stderr:    runOpts.stderr,
 		RawStdout: runOpts.rawStdout,
 	})
+	if stdoutStream != nil {
+		_ = stdoutStream.Close()
+	}
+	if stderrStream != nil {
+		_ = stderrStream.Close()
+		if output := stderrStream.ErrorOutput(); err != nil && output != "" {
+			err = fmt.Errorf("%s: %w", output, err)
+		}
+	}
+	return err
 }

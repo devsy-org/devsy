@@ -15,6 +15,7 @@ linters:
   enable:
     - cyclop
     - decorder
+    - depguard
     - dupl
     - errcheck
     - fatcontext
@@ -30,6 +31,7 @@ linters:
     - modernize
     - nestif
     - revive
+    - sloglint
     - staticcheck
     - unparam
     - unused
@@ -43,6 +45,146 @@ linters:
           - gosec
         text: "G101"
         path: "pkg/telemetry/analytics/client.go"
+      - path: '^cmd/env_flags_test\.go$'
+        linters: [gosec]
+        text: '^G703: Path traversal via taint analysis$'
+        source: 'os\.WriteFile\(os\.Getenv\("DEVSY_INVALID_NO_STATUS_MARKER"\), \[\]byte\("ran"\), 0o600\)'
+      - path: '^cmd/env_flags_test\.go$'
+        linters: [gosec]
+        text: '^G204: Subprocess launched with a potential tainted input or cmd arguments$'
+        source: '^\s*child := exec\.Command\(os\.Args\[0\], noStatusSelector\)$'
+      - path: '^pkg/log/streamer_test\.go$'
+        linters: [gosec]
+        text: '^G204: Subprocess launched with a potential tainted input or cmd arguments$'
+        source: '^\s*cmd := exec\.CommandContext\(ctx, os\.Args\[0\], streamHelperSelector\)$'
+      - path: '^pkg/telemetry/export_test\.go$'
+        linters: [gosec]
+        text: '^G204: Subprocess launched with a potential tainted input or cmd arguments$'
+        source: 'exec\.Command\(os\.Args\[0\], "-test\.run=\^TestMetricsExportProcess\$"\)'
+      - path: '^pkg/gitcredentials/gitcredentials\.go$'
+        linters: [gosec]
+        text: '^G204: Subprocess launched with variable$'
+        source: 'exec\.CommandContext\(ctx, binaryPath, args\.\.\.\)'
+      - path: '^cmd/provider/init_environment_test\.go$'
+        linters: [gosec]
+        text: '^G101: Potential hardcoded credentials$'
+        source: 'const (optionSecret = "opaque-provider-secret-78153"|hostSecret = "host-provider-secret-78154")'
+      - path: '^cmd/workspace/exec_tty_unix_test\.go$'
+        linters: [gosec]
+        text: '^G101: Potential hardcoded credentials$'
+        source: 'const secret = "raw-exec-secret-92815"'
+      - path: '^cmd/workspace/exec_tty_unix_test\.go$'
+        linters: [gosec]
+        text: '^G306: Expect WriteFile permissions to be 0600 or less$'
+        source: 'os\.WriteFile\(wrapper, \[\]byte\(script\), 0o700\)'
+      - path: '^pkg/telemetry/export_darwin_test\.go$'
+        linters: [gosec]
+        text: '^G306: Expect WriteFile permissions to be 0600 or less$'
+        source: 'os\.WriteFile\(path, \[\]byte\("existing\\n"\), 0o644\)'
+      - path: '^pkg/telemetry/export_darwin_test\.go$'
+        linters: [gosec]
+        text: '^G302: Expect file permissions to be 0600 or less$'
+        source: 'os\.Chmod\(path, 0o644\)'
+      - path: '^pkg/envfile/envfile_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: 'data, err := os\.ReadFile\(path\)'
+      - path: '^pkg/gitcredentials/credentials_server_test\.go$'
+        linters: [gosec]
+        text: '^G703: Path traversal via taint analysis$'
+        source: '^\s*if err := os\.WriteFile\(recordPath, record, 0o600\); err != nil \{$'
+      - path: '^pkg/gitcredentials/credentials_server_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: 'data, err := os\.ReadFile\(recordPath\)'
+      - path: '^cmd/env_flags_test\.go$'
+        linters: [gosec]
+        text: '^G101: Potential hardcoded credentials$'
+        source: '^\s*const secret = "invalid-bool-secret-9471"$'
+      - path: '^cmd/env_flags_test\.go$'
+        linters: [gosec]
+        text: '^G204: Subprocess launched with a potential tainted input or cmd arguments$'
+        source: '^\s*child := exec\.Command\(os\.Args\[0\], loggingSelector\)$'
+      - path: '^pkg/ghcredentials/install_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*trace, openErr := os\.Open\(record \+ "\.trace"\)$'
+      - path: '^pkg/gitcredentials/gitcredentials\.go$'
+        linters: [gosec]
+        text: '^G702: Command injection via taint analysis$'
+        source: '^\s*cmd := exec\.CommandContext\(ctx, binaryPath, args\.\.\.\)$'
+      - path: '^pkg/log/streamer_test\.go$'
+        linters: [gosec]
+        text: '^G702: Command injection via taint analysis$'
+        source: '^\s*cmd := exec\.CommandContext\(ctx, os\.Args\[0\], streamHelperSelector\)$'
+      - path: '^pkg/log/writer_test\.go$'
+        linters: [gosec]
+        text: '^G101: Potential hardcoded credentials$'
+        source: '^const testLongSecret = "TOKEN=long-secret-value"$'
+      - path: '^pkg/telemetry/export_darwin_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*f, err := os\.OpenFile\(path, os\.O_WRONLY, 0\)$'
+      - path: '^pkg/telemetry/export_darwin_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*data, err := os\.ReadFile\(path\)$'
+      - path: '^pkg/telemetry/export_test\.go$'
+        linters: [gosec]
+        text: '^G702: Command injection via taint analysis$'
+        source: '^\s*cmd := exec\.Command\(os\.Args\[0\], "-test\.run=\^TestMetricsExportProcess\$"\)$'
+      - path: '^cmd/env_flags_test\.go$'
+        linters: [gosec]
+        text: '^G702: Command injection via taint analysis$'
+        source: '^\s*child := exec\.Command\(os\.Args\[0\], noStatusSelector\)$'
+      - path: '^cmd/env_flags_test\.go$'
+        linters: [gosec]
+        text: '^G702: Command injection via taint analysis$'
+        source: '^\s*child := exec\.Command\(os\.Args\[0\], loggingSelector\)$'
+      - path: '^pkg/driver/external/host_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*data, err := os\.ReadFile\(filepath\.Join\(directory, kind\+"-pids"\)\)$'
+      - path: '^pkg/telemetry/export_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*data, err := os\.ReadFile\(path\)$'
+      - path: '^pkg/telemetry/metrics_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*data, err := os\.ReadFile\(path\)$'
+      - path: '^pkg/tunnel/container_host_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*f, err := os\.Open\(path\)$'
+      - path: '^pkg/telemetry/export_linux_test\.go$'
+        linters: [gosec]
+        text: '^G306: Expect WriteFile permissions to be 0600 or less$'
+        source: '^\s*if err := os\.WriteFile\(path, \[\]byte\("existing\\n"\), 0o644\); err != nil \{$'
+      - path: '^pkg/telemetry/export_linux_test\.go$'
+        linters: [gosec]
+        text: '^G302: Expect file permissions to be 0600 or less$'
+        source: '^\s*if err := os\.Chmod\(path, 0o644\); err != nil \{$'
+      - path: '^pkg/telemetry/export_linux_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*f, err := os\.OpenFile\(path, os\.O_WRONLY, 0\)$'
+      - path: '^pkg/telemetry/export_linux_test\.go$'
+        linters: [gosec]
+        text: '^G304: Potential file inclusion via variable$'
+        source: '^\s*data, err := os\.ReadFile\(path\)$'
+      - path: '^pkg/telemetry/export_windows\.go$'
+        linters: [gosec]
+        text: '^G103: Use of unsafe calls should be audited$'
+        source: '^\s*descriptor := unsafe\.Slice\(\(\*byte\)\(unsafe\.Pointer\(security\)\), int\(security\.Length\(\)\)\)$'
+      - path: '^pkg/telemetry/export_windows\.go$'
+        linters: [gosec]
+        text: '^G103: Use of unsafe calls should be audited$'
+        source: '^\s*user := unsafe\.Slice\(\(\*byte\)\(unsafe\.Pointer\(sid\)\), sid\.Len\(\)\)$'
+      - path: "^pkg/log/(context|logger)\\.go$"
+        linters:
+          - sloglint
+        text: "message should be a string literal or a constant"
       - path: "hack/"
         linters:
           - forbidigo
@@ -50,6 +192,36 @@ linters:
   settings:
     cyclop:
       max-complexity: 8
+    depguard:
+      rules:
+        logging:
+          files:
+            - $all
+          deny:
+            - pkg: go.uber.org/zap
+              desc: Use the standard structured logging API.
+            - pkg: github.com/go-logr/zapr
+              desc: Use the standard structured logging API.
+    sloglint:
+      attr-only: true
+      static-msg: true
+      key-naming-case: snake
+      custom-funcs:
+        - name: github.com/devsy-org/devsy/pkg/log.TraceContext
+          msg-pos: 1
+          args-pos: 2
+        - name: github.com/devsy-org/devsy/pkg/log.DebugContext
+          msg-pos: 1
+          args-pos: 2
+        - name: github.com/devsy-org/devsy/pkg/log.InfoContext
+          msg-pos: 1
+          args-pos: 2
+        - name: github.com/devsy-org/devsy/pkg/log.WarnContext
+          msg-pos: 1
+          args-pos: 2
+        - name: github.com/devsy-org/devsy/pkg/log.ErrorContext
+          msg-pos: 1
+          args-pos: 2
     revive:
       rules:
         - name: argument-limit

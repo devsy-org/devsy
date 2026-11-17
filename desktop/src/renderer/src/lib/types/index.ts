@@ -1,3 +1,5 @@
+import type { CLIError, CliLogLine } from "$shared/cli-error.js"
+
 // Types matching the Rust daemon types (camelCase)
 
 export interface WorkspaceSource {
@@ -243,8 +245,8 @@ export interface CommandProgress {
   commandId: string
   lines?: string[]
   message?: string
-  /** Optional log level; populated when the underlying stderr line was JSON. */
-  level?: "info" | "warn" | "error"
+  level?: CliLogLine["level"]
+  diagnostic?: CliLogLine
   done: boolean
   /**
    * Whether the command succeeded. Set on the final (done: true) event by the
@@ -252,11 +254,7 @@ export interface CommandProgress {
    * rather than pattern-matching the log text.
    */
   success?: boolean
-  /**
-   * Structured CLI error. Present only on the final (done: true) event when the
-   * CLI emitted a `cliError` field on its zap JSON output.
-   */
-  cliError?: import("$shared/cli-error.js").CLIError
+  cliError?: CLIError
 }
 
 /** A workspace phase transition, pushed as it happens. */

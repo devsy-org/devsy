@@ -995,7 +995,7 @@ func (r *runner) runContainer(
 		runOptions.Labels = append(runOptions.Labels, key+"="+value)
 	}
 	runOptions.AllowRecreate = p.options.Recreate
-	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
+	runOptions.Env = r.addExtraEnvVars(runOptions.Env, distinctid.Get)
 	if r.needsCurrentContainerIdentity() {
 		runOptions.Labels = append(runOptions.Labels, metadata.CreationConfigLabel+"="+stringTrue)
 	}
@@ -1349,7 +1349,10 @@ func secretsEnvironmentTmpfsMount(enabled, supported bool) (*config.Mount, error
 
 // add environment variables that signals that we are in a remote container
 // (vscode compatibility) and specifically that we are using devsy.
-func (r *runner) addExtraEnvVars(env map[string]string) map[string]string {
+func (r *runner) addExtraEnvVars(
+	env map[string]string,
+	getDistinctID func() string,
+) map[string]string {
 	if env == nil {
 		env = make(map[string]string)
 	}
@@ -1358,10 +1361,15 @@ func (r *runner) addExtraEnvVars(env map[string]string) map[string]string {
 	env[RemoteContainersExtraEnvVar] = stringTrue
 	r.addWorkspaceEnvVars(env)
 
-	if os.Getenv(pkgconfig.EnvDisableTelemetry) == pkgconfig.BoolTrue {
+	if os.Getenv(pkgconfig.EnvDisableTelemetry) == pkgconfig.BoolTrue ||
+		env[pkgconfig.EnvDisableTelemetry] == pkgconfig.BoolTrue {
 		env[pkgconfig.EnvDisableTelemetry] = pkgconfig.BoolTrue
+		delete(env, pkgconfig.EnvTelemetryDistinctID)
+	} else if id := getDistinctID(); id != "" {
+		env[pkgconfig.EnvTelemetryDistinctID] = id
 	} else {
-		env[pkgconfig.EnvTelemetryDistinctID] = distinctid.Get()
+		env[pkgconfig.EnvDisableTelemetry] = pkgconfig.BoolTrue
+		delete(env, pkgconfig.EnvTelemetryDistinctID)
 	}
 
 	return env

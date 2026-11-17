@@ -96,7 +96,7 @@ func (cmd *SetSourceCmd) setSource(
 	reporter, err := newStatusReporter(
 		cmd.ResultFormat,
 		os.Stdout,
-		cmd.Verbosity > 0 || cmd.Debug,
+		log.InfoEnabled(),
 		cmd.NoStatus,
 	)
 	if err != nil {

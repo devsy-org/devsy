@@ -23,7 +23,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -573,9 +572,9 @@ func setupSSHArgvRunner(d driver.Driver) *runner {
 
 func TestBuildSSHTunnelArgvPreservesLiteralArguments(t *testing.T) {
 	for _, debug := range []bool{false, true} {
-		level := zapcore.InfoLevel
+		level := log.SlogLevelInfo
 		if debug {
-			level = zapcore.DebugLevel
+			level = log.SlogLevelDebug
 		}
 		log.InitTestObserved(t, level)
 		r := setupSSHArgvRunner(&mockDriver{})
@@ -583,15 +582,11 @@ func TestBuildSSHTunnelArgvPreservesLiteralArguments(t *testing.T) {
 			r.agentContainerPath(), "internal", "ssh-server", "--stdio",
 			"--reuse-ssh-auth-sock", r.workspaceConfig.CLIOptions.SSHAuthSockID,
 		}
-		if debug {
-			want = append(want, "--debug")
-		}
+		want = append(want, log.ForwardFlagArgs()...)
 		assert.Equal(t, want, r.buildSSHTunnelArgv())
 		r.workspaceConfig.Workspace.IDE.Name = none
 		want = []string{r.agentContainerPath(), "internal", "ssh-server", "--stdio"}
-		if debug {
-			want = append(want, "--debug")
-		}
+		want = append(want, log.ForwardFlagArgs()...)
 		assert.Equal(t, want, r.buildSSHTunnelArgv())
 	}
 }

@@ -28,10 +28,6 @@ func NewPlatformProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 				globalFlags.Config = os.Getenv(platform.ConfigEnv)
 			}
 
-			if os.Getenv(config.EnvDebug) == config.BoolTrue {
-				globalFlags.Debug = true
-			}
-
 			if os.Getenv(config.EnvUI) == config.BoolTrue {
 				cmd.VisitParents(func(c *cobra.Command) {
 					if c.Name() == config.BinaryName {

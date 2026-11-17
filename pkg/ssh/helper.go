@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/stdio"
 	"golang.org/x/crypto/ssh"
 )
@@ -46,7 +47,7 @@ func NewSSHPassClient(user, addr, password string) (*ssh.Client, error) {
 
 	client, err := ssh.Dial("tcp", addr, clientConfig)
 	if err != nil {
-		return nil, fmt.Errorf("dial to %v failed: %w", addr, err)
+		return nil, clierr.ClassifySSHConnection(fmt.Errorf("dial to %v failed: %w", addr, err))
 	}
 
 	return client, nil
@@ -64,7 +65,7 @@ func NewSSHClient(user, addr string, keyBytes []byte) (*ssh.Client, error) {
 
 	client, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
-		return nil, fmt.Errorf("dial to %v failed: %w", addr, err)
+		return nil, clierr.ClassifySSHConnection(fmt.Errorf("dial to %v failed: %w", addr, err))
 	}
 
 	return client, nil
@@ -179,11 +180,15 @@ func clientFromConn(
 
 	clientConfig.User = user
 	if handshakeIdleTimeout > 0 {
-		return handshakeWithIdleTimeout(conn, clientConfig, handshakeIdleTimeout)
+		client, err := handshakeWithIdleTimeout(conn, clientConfig, handshakeIdleTimeout)
+		if err != nil {
+			return nil, clierr.ClassifySSHConnection(err)
+		}
+		return client, nil
 	}
 	c, chans, req, err := ssh.NewClientConn(conn, "stdio", clientConfig)
 	if err != nil {
-		return nil, err
+		return nil, clierr.ClassifySSHConnection(err)
 	}
 	return ssh.NewClient(c, chans, handleKeepAliveRequests(req)), nil
 }

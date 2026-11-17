@@ -2,11 +2,13 @@ package machine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -34,6 +36,10 @@ func NewDescribeCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *DescribeCmd) Run(ctx context.Context, args []string) error {
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
@@ -48,6 +54,11 @@ func (cmd *DescribeCmd) Run(ctx context.Context, args []string) error {
 	machineDescription, err := machineClient.Describe(ctx)
 	if err != nil {
 		return err
+	}
+	if mode == output.ModeJSON {
+		return json.NewEncoder(os.Stdout).Encode(struct {
+			Description string `json:"description"`
+		}{machineDescription})
 	}
 
 	_, _ = fmt.Fprintln(os.Stdout, machineDescription)

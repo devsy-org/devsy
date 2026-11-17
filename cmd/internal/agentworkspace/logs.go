@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
@@ -211,6 +212,9 @@ func setupReaderCommand(info *provider2.AgentWorkspaceInfo, read workspacelogs.R
 	}
 	if read.Limit > 0 {
 		args = append(args, "--limit", strconv.Itoa(read.Limit))
+	}
+	for _, arg := range log.ForwardFlagArgs() {
+		args = append(args, shellescape.Quote(arg))
 	}
 
 	return strings.Join(args, " ")

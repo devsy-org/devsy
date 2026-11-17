@@ -5,11 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/devsy-org/devsy/pkg/config"
 )
 
 const (
-	testEnvVal = "value"
-	testEnvNew = "new"
+	testEnvVal   = "value"
+	testEnvNew   = "new"
+	testRetained = "retained"
 )
 
 func useTempLocation(t *testing.T) string {
@@ -165,5 +168,62 @@ func TestMergeAndApplyMalformedFileIsNoOp(t *testing.T) {
 
 	if got := os.Getenv("DEVSY_ENVFILE_TEST_MERGE"); got != "keep" {
 		t.Fatalf("DEVSY_ENVFILE_TEST_MERGE = %q, want %q", got, "keep")
+	}
+}
+
+func TestApplyPreservesInheritedTelemetryOptOut(t *testing.T) {
+	path := useTempLocation(t)
+	t.Setenv(config.EnvDisableTelemetry, config.BoolTrue)
+	t.Setenv("DEVSY_ENVFILE_TEST_CANARY", "")
+	original := `{"env":{"DEVSY_DISABLE_TELEMETRY":"false","DEVSY_ENVFILE_TEST_CANARY":"retained"}}`
+	writeFile(t, path, original)
+
+	Apply()
+
+	if got := os.Getenv(config.EnvDisableTelemetry); got != config.BoolTrue {
+		t.Fatalf("telemetry opt-out = %q, want true", got)
+	}
+	if got := os.Getenv("DEVSY_ENVFILE_TEST_CANARY"); got != testRetained {
+		t.Fatalf("canary = %q, want retained", got)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != original {
+		t.Fatal("Apply changed the environment file")
+	}
+}
+
+func TestMergeAndApplyPersistsInheritedTelemetryOptOut(t *testing.T) {
+	path := useTempLocation(t)
+	t.Setenv(config.EnvDisableTelemetry, config.BoolTrue)
+	t.Setenv("DEVSY_ENVFILE_TEST_CANARY", "")
+	writeFile(t, path, `{"env":{"DEVSY_DISABLE_TELEMETRY":"false"}}`)
+	input := map[string]string{
+		config.EnvDisableTelemetry:  "false",
+		"DEVSY_ENVFILE_TEST_CANARY": testRetained,
+	}
+
+	MergeAndApply(input)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted EnvFile
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Env[config.EnvDisableTelemetry] != config.BoolTrue ||
+		os.Getenv(config.EnvDisableTelemetry) != config.BoolTrue {
+		t.Fatal("inherited telemetry opt-out was not preserved")
+	}
+	if persisted.Env["DEVSY_ENVFILE_TEST_CANARY"] != testRetained ||
+		os.Getenv("DEVSY_ENVFILE_TEST_CANARY") != testRetained {
+		t.Fatal("unrelated environment was not preserved")
+	}
+	if input[config.EnvDisableTelemetry] != "false" {
+		t.Fatal("input was mutated")
 	}
 }

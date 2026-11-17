@@ -6,8 +6,6 @@ import (
 	stderrs "errors"
 	"fmt"
 	"testing"
-
-	"go.uber.org/zap/zapcore"
 )
 
 func TestClassifyCancellation(t *testing.T) {
@@ -90,6 +88,27 @@ func TestCLIError_UnwrapPreservesChain(t *testing.T) {
 	}
 }
 
+func TestProviderFailurePreservesCauseAndSafeMessage(t *testing.T) {
+	if got := ProviderFailure(nil, "diagnostic", CodeRateLimited); got != nil {
+		t.Fatalf("ProviderFailure(nil) = %v", got)
+	}
+	cause := stderrs.New("private cause")
+	wrapped := fmt.Errorf("operation: %w", cause)
+	err := ProviderFailure(wrapped, "redacted diagnostic", CodeRateLimited)
+	if !stderrs.Is(err, cause) {
+		t.Fatal("provider failure lost its original cause")
+	}
+	var classified *CLIError
+	if !stderrs.As(err, &classified) || classified.Code != CodeRateLimited ||
+		err.Error() != "redacted diagnostic" {
+		t.Fatalf("unexpected provider failure: %#v", err)
+	}
+	fallback := ProviderFailure(cause, "", "")
+	if fallback.Error() != "Provider operation failed." || Classify(fallback).Code != CodeUnknown {
+		t.Fatalf("unexpected default provider failure: %#v", fallback)
+	}
+}
+
 func TestClassify_RecoverableBuildFailure(t *testing.T) {
 	got := Classify(Recoverable(fmt.Errorf("build image: boom")))
 	if got.Code != CodeBuildFailedRecoverable {
@@ -156,20 +175,21 @@ func TestCLIError_MarshalJSONIncludesHintAndContext(t *testing.T) {
 	}
 }
 
-func TestCLIError_LogObjectShape(t *testing.T) {
-	enc := zapcore.NewMapObjectEncoder()
-	e := &CLIError{Code: CodeRateLimited, Message: testRateLimited}
-	if err := e.MarshalLogObject(enc); err != nil {
-		t.Fatalf("MarshalLogObject: %v", err)
+func TestCLIErrorLogValue(t *testing.T) {
+	e := &CLIError{
+		Code:    CodeRateLimited,
+		Message: testRateLimited,
+		Hint:    "retry",
+		Context: map[string]string{"provider": "example"},
 	}
-	if len(enc.Fields) != 2 {
-		t.Fatalf("wire object must be exactly {code, message}, got %v", enc.Fields)
-	}
-	if enc.Fields["code"] != string(CodeRateLimited) {
-		t.Fatalf("code = %v, want %q", enc.Fields["code"], CodeRateLimited)
-	}
-	if enc.Fields["message"] != testRateLimited {
-		t.Fatalf("message = %v", enc.Fields["message"])
+	attrs := e.LogValue().Group()
+	if len(attrs) != 4 || attrs[0].Key != "code" ||
+		attrs[0].Value.String() != string(CodeRateLimited) ||
+		attrs[1].Key != "message" ||
+		attrs[1].Value.String() != testRateLimited ||
+		attrs[2].Key != "hint" ||
+		attrs[3].Key != "context" {
+		t.Fatalf("unexpected error attributes: %v", attrs)
 	}
 }
 

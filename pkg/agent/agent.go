@@ -402,6 +402,7 @@ func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 
 	// call ourself
 	args := []string{"--preserve-env", binary}
+	args = append(args, log.ForwardFlagArgs()...)
 	args = append(args, os.Args[1:]...)
 	log.Debugf("re-run as root: command=%s", strings.Join(args, " "))
 	//nolint:gosec // sudo args are built internally from fixed flags
@@ -487,7 +488,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		return err
 	}
 
-	command := sshServerCommand(remoteAgentPath, log.DebugEnabled())
+	command := sshServerCommand(remoteAgentPath)
 	user := opts.User
 	if user == "" {
 		user = "root"
@@ -505,11 +506,9 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 
 // sshServerCommand builds the remote command that runs the ssh-server
 // subcommand at agentPath.
-func sshServerCommand(agentPath string, debug bool) string {
+func sshServerCommand(agentPath string) string {
 	args := []string{agentPath, "internal", "ssh-server", "--stdio"}
-	if debug {
-		args = append(args, "--debug")
-	}
+	args = append(args, log.ForwardFlagArgs()...)
 	return shellescape.QuoteCommand(args)
 }
 
