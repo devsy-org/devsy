@@ -211,23 +211,50 @@ func TestValidateSDKToolRejectsDifferentBuildSource(t *testing.T) {
 }
 
 func TestParseStartupEvents(t *testing.T) {
+	const startupPrefix = `{"ts":"2026-11-17T20:11:24.373Z","level":"debug",` +
+		`"msg":"External runtime startup completed",`
+
 	output := strings.Join([]string{
+		startupPrefix + `"duration_ms":80,"operation":"Info"}`,
+		`{"ts":"2026-11-17T20:11:24.791Z","level":"debug","msg":"External runtime startup completed",` +
+			`"duration_ms":0,"operation":"Find","operation_id":"op-3","parent_operation_id":""}`,
+		`{"ts":"2026-11-17T20:11:24.373+0100","level":"debug","msg":"External runtime startup completed",` +
+			`"duration_ms":12,"operation":"Exec"}`,
+		`{"ts":"2026-11-17T20:11:24.373+01:00","level":"debug","msg":"External runtime startup completed",` +
+			`"duration_ms":13,"operation":"Logs"}`,
+		`{"ts":"2026-11-17T20:11:24.373Z","level":"debug","msg":"External runtime startup completed","operation":"Info"}`,
+		startupPrefix + `"duration_ms":null,"operation":"Info"}`,
+		startupPrefix + `"duration_ms":-1,"operation":"Info"}`,
+		startupPrefix + `"duration_ms":9223372036855,"operation":"Info"}`,
+		startupPrefix + `"duration_ms":1.5,"operation":"Info"}`,
+		startupPrefix + `"duration_ms":"80","operation":"Info"}`,
+		`{"ts":"invalid","level":"debug","msg":"External runtime startup completed","duration_ms":80,"operation":"Info"}`,
+		`{"ts":"2026-11-17T20:11:24.373Z","level":"info",` +
+			`"msg":"External runtime startup completed","duration_ms":80,"operation":"Info"}`,
+		`{"ts":"2026-11-17T20:11:24.373Z","level":"debug","msg":"different event","duration_ms":80,"operation":"Info"}`,
+		startupPrefix + `"duration_ms":80,"operation":"Unknown"}`,
+		`{"ts":"2026-11-17T20:11:24.373Z","level":"debug","msg":"External runtime startup completed","duration_ms":80}`,
+		startupPrefix + `"duration_ms":80,"operation":"Info"`,
+		"prefix " + startupPrefix + `"duration_ms":80,"operation":"Info"}`,
+		startupPrefix + `"duration_ms":80,"operation":"Info"} {}`,
+		`{"msg":"{\"msg\":\"External runtime startup completed\",\"operation\":\"Info\",\"duration_ms\":80}"}`,
 		"DEBU External runtime Info startup completed in 4.2ms",
-		"DEBU External runtime Find startup completed in 1s",
-		"DEBU External runtime Info startup completed in someday",
-		"DEBU External runtime Info startup completed in 0s",
-		"DEBU External runtime Info startup completed in -3ms",
 	}, "\n")
 
 	events := parseStartupEvents(output)
-	if len(events) != 2 {
-		t.Fatalf("expected two positive startup timings, got %#v", events)
+	expected := []startupPerformance{
+		{Operation: "Info", DurationNS: int64(80 * time.Millisecond)},
+		{Operation: "Find", DurationNS: 0},
+		{Operation: "Exec", DurationNS: int64(12 * time.Millisecond)},
+		{Operation: "Logs", DurationNS: int64(13 * time.Millisecond)},
 	}
-	if events[0].Operation != "Info" || events[0].DurationNS != int64(4200*time.Microsecond) {
-		t.Errorf("unexpected first startup event: %#v", events[0])
+	if len(events) != len(expected) {
+		t.Fatalf("expected %#v, got %#v", expected, events)
 	}
-	if events[1].Operation != "Find" || events[1].DurationNS != int64(time.Second) {
-		t.Errorf("unexpected second startup event: %#v", events[1])
+	for i := range expected {
+		if events[i] != expected[i] {
+			t.Errorf("event %d: expected %#v, got %#v", i, expected[i], events[i])
+		}
 	}
 }
 

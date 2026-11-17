@@ -2,10 +2,13 @@ package up
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"os"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
@@ -69,7 +72,24 @@ func TestConfigureRunNoStatusPreservesJournalAndWorkerRecording(t *testing.T) {
 			require.Equal(t, status.PhasePreparingDevContainer, events[0].Phase)
 			require.Equal(t, status.StateSucceeded, events[1].State)
 			require.Equal(t, status.PhaseStartingContainer, events[1].Phase)
-			require.Empty(t, out.String())
+			if !worker {
+				require.Empty(t, out.String())
+				return
+			}
+			decoder := json.NewDecoder(&out)
+			var parent, child config2.StatusEnvelope
+			require.NoError(t, decoder.Decode(&parent))
+			require.NoError(t, decoder.Decode(&child))
+			require.Equal(t, config2.KindStatus, parent.Kind)
+			require.Equal(t, string(status.PhasePreparingDevContainer), parent.Phase)
+			require.Equal(t, status.StateStarted, parent.State)
+			require.Equal(t, "parent", parent.OperationID)
+			require.Equal(t, config2.KindStatus, child.Kind)
+			require.Equal(t, string(status.PhaseStartingContainer), child.Phase)
+			require.Equal(t, status.StateSucceeded, child.State)
+			require.Equal(t, "child", child.OperationID)
+			require.Equal(t, parent.OperationID, child.ParentOperationID)
+			require.ErrorIs(t, decoder.Decode(&config2.StatusEnvelope{}), io.EOF)
 		})
 	}
 }

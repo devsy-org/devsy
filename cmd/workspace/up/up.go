@@ -370,7 +370,7 @@ func (cmd *UpCmd) configureRun(workspaceID string) (bool, io.Writer, error) {
 		cmd.ResultFormat,
 		out,
 		log.InfoEnabled(),
-		cmd.NoStatus,
+		cmd.NoStatus && cmd.workerTask == nil,
 	)
 	if err == nil {
 		cmd.statusReporter = withJournal(cmd.statusReporter, workspaceID)
