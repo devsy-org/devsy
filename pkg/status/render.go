@@ -35,11 +35,16 @@ const (
 
 // NewReporter selects a status presentation.
 func NewReporter(opts ReporterOptions) (Reporter, error) {
-	r, err := newReporter(resolveFormat(opts), opts)
+	format := resolveFormat(opts)
+	desktop := os.Getenv("DEVSY_UI") == "true"
+	if opts.NoStatus && desktop && (format == formatPlain || format == "text") {
+		format = formatJSON
+	}
+	r, err := newReporter(format, opts)
 	if err != nil {
 		return nil, err
 	}
-	if opts.NoStatus {
+	if opts.NoStatus && !desktop {
 		return Nop(), nil
 	}
 	return r, nil

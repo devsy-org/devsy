@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testTextFormat = "text"
+
 func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
 	var plain bytes.Buffer
 	plainReporter, err := NewReporter(ReporterOptions{
@@ -44,7 +46,7 @@ func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
 
 func TestTextFormatRendersPlain(t *testing.T) {
 	var out bytes.Buffer
-	reporter, err := NewReporter(ReporterOptions{Format: "text", Out: &out})
+	reporter, err := NewReporter(ReporterOptions{Format: testTextFormat, Out: &out})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +119,7 @@ func TestNewReporter_AutoRequiresEnvelopeWhenNonInteractive(t *testing.T) {
 
 func TestNewReporter_DesktopFormatPrecedence(t *testing.T) {
 	t.Setenv("DEVSY_UI", "true")
-	for _, format := range []string{"plain", "text"} {
+	for _, format := range []string{formatPlain, testTextFormat} {
 		var out bytes.Buffer
 		reporter, err := NewReporter(ReporterOptions{Format: format, Out: &out, Interactive: true})
 		if err != nil {
@@ -160,18 +162,6 @@ func TestNewReporter_NoStatus(t *testing.T) {
 		}
 		reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
 	}
-	t.Setenv("DEVSY_UI", "true")
-	reporter, err := NewReporter(
-		ReporterOptions{
-			Format:   formatPlain,
-			NoStatus: true,
-			Envelope: func(Event) error { calls++; return nil },
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
 	if out.Len() != 0 || calls != 0 {
 		t.Fatalf("suppressed output = %q, envelope calls = %d", out.String(), calls)
 	}
@@ -182,6 +172,60 @@ func TestNewReporter_NoStatus(t *testing.T) {
 		if _, err := NewReporter(opts); err == nil {
 			t.Fatalf("expected validation error for %+v", opts)
 		}
+	}
+}
+
+func TestNewReporter_DesktopForcesEnvelope(t *testing.T) {
+	t.Setenv("DEVSY_UI", "true")
+	var events []Event
+	reporter, err := NewReporter(ReporterOptions{
+		Format: formatPlain, NoStatus: true,
+		Envelope: func(event Event) error {
+			events = append(events, event)
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
+	require.Len(t, events, 1)
+	require.Equal(t, PhaseReady, events[0].Phase)
+	require.Equal(t, StateStarted, events[0].State)
+	for _, opts := range []ReporterOptions{
+		{Format: "ansi", NoStatus: true},
+		{Format: formatJSON, NoStatus: true},
+		{Format: formatPlain, NoStatus: true},
+	} {
+		_, err := NewReporter(opts)
+		require.Error(t, err)
+	}
+}
+
+func TestNewCLIReporter_NoStatusPreservesDesktopEnvelopes(t *testing.T) {
+	t.Setenv("DEVSY_UI", "true")
+	for _, format := range []string{formatAuto, formatJSON, formatPlain, testTextFormat} {
+		t.Run(format, func(t *testing.T) {
+			var events []Event
+			reporter, err := NewCLIReporter(CLIOptions{
+				Format: format, NoStatus: true,
+				Envelope: func(event Event) error {
+					events = append(events, event)
+					return nil
+				},
+			})
+			require.NoError(t, err)
+			err = Run(
+				context.Background(),
+				reporter,
+				Operation{Phase: PhaseInstallingProvider},
+				func(context.Context) error { return nil },
+			)
+			require.NoError(t, err)
+			require.Len(t, events, 2)
+			require.Equal(t, PhaseInstallingProvider, events[0].Phase)
+			require.Equal(t, StateStarted, events[0].State)
+			require.Equal(t, PhaseInstallingProvider, events[1].Phase)
+			require.Equal(t, StateSucceeded, events[1].State)
+		})
 	}
 }
 
