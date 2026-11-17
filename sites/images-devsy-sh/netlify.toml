@@ -2,6 +2,8 @@
   base = "sites/images-devsy-sh/"
   publish = "dist"
   command = "npm install && npm run build"
+  # Only rebuild when files in this site's base directory change.
+  ignore = "git diff --quiet HEAD^ HEAD -- ."
 
 [[headers]]
   for = "/catalog.json"
