@@ -30,58 +30,72 @@ function redactLabels(value: string): string {
   let copied = 0
   for (let match = tokens.exec(value); match; match = tokens.exec(value)) {
     const start = match.index
-    let end = tokens.lastIndex
-    let label = match[0]
-    let candidateEnd = end
-    for (let parts = 0; parts < 2; parts++) {
-      const suffix = /^[ \t]+[a-z0-9_.-]+/i.exec(
-        value.slice(candidateEnd, candidateEnd + 64),
-      )
-      if (!suffix) break
-      candidateEnd += suffix[0].length
-      const candidate = value.slice(start, candidateEnd)
-      if (sensitiveLabel.test(candidate)) {
-        end = candidateEnd
-        label = candidate
-      }
-    }
-    let next = end
+    const end = labelEnd(value, start, tokens.lastIndex)
+    const label = end === tokens.lastIndex ? match[0] : value.slice(start, end)
     if (!sensitiveKey.test(label)) continue
-    if (value[next] === '"' || value[next] === "'") next++
-    while (next < value.length && /\s/.test(value[next])) next++
-    if (value[next] !== ":" && value[next] !== "=") continue
-    next++
-    while (next < value.length && /\s/.test(value[next])) next++
-    const secretStart = next
-    const scheme = value.slice(next, next + 6).toLowerCase()
-    const schemeLength = scheme.startsWith("bearer")
-      ? 6
-      : scheme.startsWith("basic")
-        ? 5
-        : 0
-    if (schemeLength && /\s/.test(value[next + schemeLength] ?? "")) {
-      next += schemeLength
-      while (next < value.length && /\s/.test(value[next])) next++
-    }
-    const quote =
-      value[next] === '"' || value[next] === "'" ? value[next++] : ""
-    if (quote) {
-      while (next < value.length) {
-        if (value[next] === "\\") {
-          next = Math.min(next + 2, value.length)
-        } else if (value[next++] === quote) {
-          break
-        }
-      }
-    } else {
-      while (next < value.length && !/[\s,;]/.test(value[next])) next++
-    }
+    const secretStart = labelValueStart(value, end)
+    if (secretStart < 0) continue
+    const next = secretEnd(value, secretStart)
     if (next === secretStart) continue
     output += `${value.slice(copied, secretStart)}***`
     copied = next
     tokens.lastIndex = next
   }
   return output + value.slice(copied)
+}
+
+function labelEnd(value: string, start: number, initialEnd: number): number {
+  let end = initialEnd
+  let candidateEnd = end
+  for (let parts = 0; parts < 2; parts++) {
+    const suffix = /^[ \t]+[a-z0-9_.-]+/i.exec(
+      value.slice(candidateEnd, candidateEnd + 64),
+    )
+    if (!suffix) break
+    candidateEnd += suffix[0].length
+    const candidate = value.slice(start, candidateEnd)
+    if (sensitiveLabel.test(candidate)) end = candidateEnd
+  }
+  return end
+}
+
+function skipWhitespace(value: string, next: number): number {
+  while (next < value.length && /\s/.test(value[next])) next++
+  return next
+}
+
+function labelValueStart(value: string, end: number): number {
+  let next = end
+  if (value[next] === '"' || value[next] === "'") next++
+  next = skipWhitespace(value, next)
+  if (value[next] !== ":" && value[next] !== "=") return -1
+  return skipWhitespace(value, next + 1)
+}
+
+function secretEnd(value: string, start: number): number {
+  let next = start
+  const scheme = value.slice(next, next + 6).toLowerCase()
+  const schemeLength = scheme.startsWith("bearer")
+    ? 6
+    : scheme.startsWith("basic")
+      ? 5
+      : 0
+  if (schemeLength && /\s/.test(value[next + schemeLength] ?? "")) {
+    next = skipWhitespace(value, next + schemeLength)
+  }
+  const quote = value[next] === '"' || value[next] === "'" ? value[next++] : ""
+  if (!quote) {
+    while (next < value.length && !/[\s,;]/.test(value[next])) next++
+    return next
+  }
+  while (next < value.length) {
+    if (value[next] === "\\") {
+      next = Math.min(next + 2, value.length)
+    } else if (value[next++] === quote) {
+      break
+    }
+  }
+  return next
 }
 
 function redactText(value: string): string {

@@ -73,6 +73,12 @@ interface SecretIpcFailure {
   message: string
 }
 
+interface ProtectionActionArgs {
+  action: string
+  newPassphrase?: string
+  currentPassphrase?: string
+}
+
 type SecretUnlockResult = (SecretIpcFailure | { ok: true }) & {
   remembered?: true
 }
@@ -831,37 +837,50 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     cli.setSessionPassphrase(value)
   }
 
+  function validateProtectionAction(
+    args: ProtectionActionArgs,
+  ): SecretIpcFailure | undefined {
+    const allowed = [
+      "set-passphrase",
+      "change-passphrase",
+      "remove-passphrase",
+      "remember",
+      "forget",
+    ]
+    if (!args || typeof args !== "object" || !allowed.includes(args.action))
+      return { ok: false, message: "Unknown protection action." }
+    return undefined
+  }
+
+  function validateProtectionPassphrases(
+    currentPassphrase: string | undefined,
+    newPassphrase: string | undefined,
+  ): SecretIpcFailure | undefined {
+    if (
+      currentPassphrase !== undefined &&
+      typeof currentPassphrase !== "string"
+    )
+      return { ok: false, message: "Enter a valid current passphrase." }
+    if (newPassphrase !== undefined && typeof newPassphrase !== "string")
+      return { ok: false, message: "Enter a non-empty passphrase." }
+    return undefined
+  }
+
   ipcMain.handle(
     "secret_protection_action",
-    async (
-      event,
-      args: {
-        action: string
-        newPassphrase?: string
-        currentPassphrase?: string
-      },
-    ) => {
+    async (event, args: ProtectionActionArgs) => {
       const win = getMainWindow()
       if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
         return secretRequestDenied
-      const allowed = [
-        "set-passphrase",
-        "change-passphrase",
-        "remove-passphrase",
-        "remember",
-        "forget",
-      ]
-      if (!args || typeof args !== "object" || !allowed.includes(args.action))
-        return { ok: false, message: "Unknown protection action." }
+      const inputFailure = validateProtectionAction(args)
+      if (inputFailure) return inputFailure
       const action = args.action
       const { newPassphrase, currentPassphrase } = args
-      if (
-        currentPassphrase !== undefined &&
-        typeof currentPassphrase !== "string"
+      const passphraseFailure = validateProtectionPassphrases(
+        currentPassphrase,
+        newPassphrase,
       )
-        return { ok: false, message: "Enter a valid current passphrase." }
-      if (newPassphrase !== undefined && typeof newPassphrase !== "string")
-        return { ok: false, message: "Enter a non-empty passphrase." }
+      if (passphraseFailure) return passphraseFailure
       const options: CliInvocationOptions = {
         allowUnlockPrompt: false,
         ...(currentPassphrase !== undefined

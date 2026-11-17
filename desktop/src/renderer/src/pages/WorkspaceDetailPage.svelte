@@ -774,6 +774,21 @@ $effect(() => {
     resetPresentationEdit()
 })
 
+function presentationSaveFailure(
+  err: unknown,
+): Partial<Record<WorkspacePresentationField, string>> {
+  if (err instanceof WorkspaceEditError) {
+    const conflictNote =
+      err.code === "conflict" &&
+      err.conflict &&
+      !err.message.includes(err.conflict)
+        ? ` Conflicts with ${err.conflict}.`
+        : ""
+    return { [err.field]: `${err.message}${conflictNote}` }
+  }
+  return { workspace: extractErrorMessage(err) }
+}
+
 async function savePresentation() {
   const base = presentationBase
   if (!base || presentationSaving) return
@@ -805,17 +820,7 @@ async function savePresentation() {
     toasts.success("Workspace details saved")
   } catch (err) {
     if (presentationBase !== base) return
-    if (err instanceof WorkspaceEditError) {
-      const conflictNote =
-        err.code === "conflict" &&
-        err.conflict &&
-        !err.message.includes(err.conflict)
-          ? ` Conflicts with ${err.conflict}.`
-          : ""
-      presentationErrors = { [err.field]: `${err.message}${conflictNote}` }
-    } else {
-      presentationErrors = { workspace: extractErrorMessage(err) }
-    }
+    presentationErrors = presentationSaveFailure(err)
   } finally {
     if (presentationBase === base) presentationSaving = false
   }
