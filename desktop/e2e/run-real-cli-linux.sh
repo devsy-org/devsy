@@ -57,24 +57,65 @@ for (const file of ['routes-v4.json', 'routes-v6.json']) {
 NODE
     printf 'netns=%s\npidns=%s\nuid=%s gid=%s\nunix_sockets=none\n' "$(readlink /proc/self/ns/net)" "$(readlink /proc/self/ns/pid)" "$uid" "$gid" >"$REAL_CLI_EVIDENCE/boundary.txt"
     grep -E '^(Cap(Inh|Prm|Eff|Bnd|Amb)|NoNewPrivs):' /proc/self/status >>"$REAL_CLI_EVIDENCE/boundary.txt"
-    [[ -f $REAL_CLI_ELECTRON && ! -L $REAL_CLI_ELECTRON && -x $REAL_CLI_ELECTRON ]]
-    [[ -f $DEVSY_CLI_PATH && ! -L $DEVSY_CLI_PATH && -x $DEVSY_CLI_PATH ]]
-    [[ -f $desktop/node_modules/@playwright/test/cli.js && -f $desktop/playwright.real-cli.config.ts ]]
-    "$node" - "$desktop" <<'NODE'
+    preflight_fail() {
+        printf 'preflight: %s\n' "$1" | tee -a "$REAL_CLI_EVIDENCE/preflight.txt" >&2
+        exit 1
+    }
+    [[ -f $REAL_CLI_ELECTRON && ! -L $REAL_CLI_ELECTRON && -x $REAL_CLI_ELECTRON ]] ||
+        preflight_fail 'Electron executable missing, symlinked, or not executable'
+    [[ -f $DEVSY_CLI_PATH && ! -L $DEVSY_CLI_PATH && -x $DEVSY_CLI_PATH ]] ||
+        preflight_fail 'candidate CLI missing, symlinked, or not executable'
+    [[ -f $desktop/node_modules/@playwright/test/cli.js ]] ||
+        preflight_fail 'local Playwright CLI missing'
+    [[ -f $desktop/playwright.real-cli.config.ts ]] ||
+        preflight_fail 'real CLI Playwright config missing'
+    sha256sum "$DEVSY_CLI_PATH" "$REAL_CLI_ELECTRON" "$desktop/package-lock.json" >>"$REAL_CLI_EVIDENCE/hashes.txt" ||
+        preflight_fail 'executable or lockfile hashing failed'
+    if ! "$node" - "$desktop" >>"$REAL_CLI_EVIDENCE/preflight.txt" <<'NODE'; then
 const fs = require('node:fs')
 const dir = process.argv[2]
-const pkg = JSON.parse(fs.readFileSync(`${dir}/node_modules/electron/package.json`, 'utf8'))
-const lock = JSON.parse(fs.readFileSync(`${dir}/package-lock.json`, 'utf8'))
-if (pkg.version !== '44.5.1' || lock.packages['node_modules/electron'].version !== '44.5.1' || fs.readFileSync(`${dir}/node_modules/electron/dist/version`, 'utf8').trim() !== 'v44.5.1') process.exit(1)
+const values = [
+  ['electron_package', () => JSON.parse(fs.readFileSync(`${dir}/node_modules/electron/package.json`, 'utf8')).version],
+  ['electron_lock', () => JSON.parse(fs.readFileSync(`${dir}/package-lock.json`, 'utf8')).packages['node_modules/electron'].version],
+  ['electron_dist', () => fs.readFileSync(`${dir}/node_modules/electron/dist/version`, 'utf8').trim()],
+]
+let failed = false
+for (const [name, read] of values) {
+  let value
+  try {
+    value = read()
+  } catch {
+    console.log(`${name}=unreadable`)
+    failed = true
+    continue
+  }
+  const safe = typeof value === 'string' && /^v?[0-9.]{1,32}$/.test(value) ? value : 'invalid'
+  console.log(`${name}=${safe}`)
+  const normalized = name === 'electron_dist' && safe.startsWith('v') ? safe.slice(1) : safe
+  if (normalized !== '44.5.1') failed = true
+}
+if (failed) process.exit(1)
 NODE
-    [[ $(ELECTRON_RUN_AS_NODE=1 timeout 15s "$REAL_CLI_ELECTRON" -e 'process.stdout.write(process.versions.electron)') == 44.5.1 ]]
-    timeout 15s "$DEVSY_CLI_PATH" --version >"$REAL_CLI_EVIDENCE/cli-version.txt"
-    [[ -s $REAL_CLI_EVIDENCE/cli-version.txt ]]
-    timeout 15s "$DEVSY_CLI_PATH" context get --help >"$REAL_CLI_EVIDENCE/cli-api.txt"
-    timeout 15s "$go" version -m "$DEVSY_CLI_PATH" >"$REAL_CLI_EVIDENCE/cli-build.txt"
-    grep -Fq 'github.com/devsy-org/devsy' "$REAL_CLI_EVIDENCE/cli-build.txt"
-    awk -v revision="$revision" '$1 == "build" && $2 ~ /^vcs\.revision=/ { revisions++; if ($2 != "vcs.revision=" revision) exit 1 } $1 == "build" && $2 ~ /^vcs\.modified=/ { modified++; if ($2 != "vcs.modified=false") exit 1 } END { if (revisions != 1 || modified != 1) exit 1 }' "$REAL_CLI_EVIDENCE/cli-build.txt"
-    sha256sum "$DEVSY_CLI_PATH" "$REAL_CLI_ELECTRON" "$desktop/package-lock.json" >>"$REAL_CLI_EVIDENCE/hashes.txt"
+        preflight_fail 'Electron package, lock, or distribution version invalid; see preflight.txt'
+    fi
+    if electron_version=$(ELECTRON_RUN_AS_NODE=1 timeout 15s "$REAL_CLI_ELECTRON" -e 'process.stdout.write(process.versions.electron)' 2>/dev/null); then
+        [[ $electron_version =~ ^[0-9.]{1,32}$ ]] || preflight_fail 'Electron runtime version output invalid'
+        printf 'electron_runtime=%s\n' "$electron_version" >>"$REAL_CLI_EVIDENCE/preflight.txt"
+        [[ $electron_version == 44.5.1 ]] || preflight_fail 'Electron runtime version mismatch; see preflight.txt'
+    else
+        preflight_fail 'Electron runtime version command failed or timed out'
+    fi
+    timeout 15s "$DEVSY_CLI_PATH" --version >"$REAL_CLI_EVIDENCE/cli-version.txt" ||
+        preflight_fail 'candidate CLI version command failed or timed out'
+    [[ -s $REAL_CLI_EVIDENCE/cli-version.txt ]] || preflight_fail 'candidate CLI version output empty'
+    timeout 15s "$DEVSY_CLI_PATH" context get --help >"$REAL_CLI_EVIDENCE/cli-api.txt" ||
+        preflight_fail 'candidate CLI API probe failed or timed out'
+    timeout 15s "$go" version -m "$DEVSY_CLI_PATH" >"$REAL_CLI_EVIDENCE/cli-build.txt" ||
+        preflight_fail 'candidate CLI build metadata probe failed or timed out'
+    grep -Fq 'github.com/devsy-org/devsy' "$REAL_CLI_EVIDENCE/cli-build.txt" ||
+        preflight_fail 'candidate CLI module identity mismatch'
+    awk -v revision="$revision" '$1 == "build" && $2 ~ /^vcs\.revision=/ { revisions++; if ($2 != "vcs.revision=" revision) exit 1 } $1 == "build" && $2 ~ /^vcs\.modified=/ { modified++; if ($2 != "vcs.modified=false") exit 1 } END { if (revisions != 1 || modified != 1) exit 1 }' "$REAL_CLI_EVIDENCE/cli-build.txt" ||
+        preflight_fail 'candidate CLI revision or clean-build metadata mismatch'
     cd "$desktop"
     exec timeout --kill-after=10s 180s xvfb-run -a "$node" "$desktop/node_modules/@playwright/test/cli.js" test --config playwright.real-cli.config.ts --workers=1 --retries=0 --reporter=list --output "$REAL_CLI_EVIDENCE/playwright-output"
 fi
