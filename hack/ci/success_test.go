@@ -257,6 +257,7 @@ func (s *successSuite) TestPerDomainSkipsRequireExactFalseOutput() {
 		{job: "licenses", field: "licenses"},
 		{job: "github-credential-host-tests", field: "gh_credentials"},
 		{job: "provider-update-windows", field: "provider_update"},
+		{job: "shared-logging", field: "shared_logging"},
 	}
 	for _, tt := range tests {
 		s.Run(tt.job, func() {
@@ -281,6 +282,12 @@ func (s *successSuite) TestPerDomainSkipsRequireExactFalseOutput() {
 			}
 		})
 	}
+	s.Run("shared-logging missing output", func() {
+		needs := needsObject(entry("changes", goTrue), entry("shared-logging", skippedJob))
+		res := s.runSuccess(needs)
+		s.Equal(1, res.code)
+		s.Contains(res.stdout, "::error::shared-logging ended with result=skipped unexpectedly\n")
+	})
 }
 
 func (s *successSuite) TestMatrixSkipsUseTheirOwnPlanOutput() {
