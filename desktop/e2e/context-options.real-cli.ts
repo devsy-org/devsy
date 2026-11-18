@@ -10,6 +10,7 @@ import {
 import { homedir } from "node:os"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { stripVTControlCharacters } from "node:util"
 import {
   type ElectronApplication,
   _electron as electron,
@@ -171,8 +172,9 @@ test("private context options reach the real Electron sheet and errors reach its
     ) as Array<{ name: string; default?: boolean }>
     expect(list.find((entry) => entry.name === name)?.default).toBe(true)
     const plain = run(["context", "get", "--context", name]).stdout
-    expect(plain).toContain("AGENT_INJECT_TIMEOUT")
-    expect(plain).toMatch(/AGENT_INJECT_TIMEOUT[^\n]*\b37\b/)
+    const visiblePlain = stripVTControlCharacters(plain)
+    expect(visiblePlain).toContain("AGENT_INJECT_TIMEOUT")
+    expect(visiblePlain).toMatch(/AGENT_INJECT_TIMEOUT[^\n]*\b37\b/)
     expect(() => JSON.parse(plain)).toThrow()
     const options = JSON.parse(
       run(["context", "get", "--context", name, "--result-format=json"]).stdout,
