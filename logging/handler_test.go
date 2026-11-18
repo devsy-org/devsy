@@ -479,3 +479,48 @@ func TestStructuredAuthorizationKnownOverlap(t *testing.T) {
 		t.Fatalf("overlapping redaction failed: %s", output.String())
 	}
 }
+
+type structuredDiagnosticError struct{}
+
+func (structuredDiagnosticError) Error() string {
+	return "fallback secret-value"
+}
+
+func (structuredDiagnosticError) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"code":          "backend_failure",
+		"message":       "failed secret-value",
+		"Authorization": "Bearer fresh-token",
+	})
+}
+
+func TestStructuredErrorJSONAndPlainErrorRedaction(t *testing.T) {
+	var output bytes.Buffer
+	handler := NewHandler(&output, HandlerOptions{
+		Format: FormatJSON, Redactor: redact.New(redact.Options{Values: []string{testSecret}}),
+	})
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "message", 0)
+	record.AddAttrs(
+		slog.Any("structured", structuredDiagnosticError{}),
+		slog.Any("plain", fmt.Errorf("plain %s", testSecret)),
+	)
+	if err := handler.Handle(context.Background(), record); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	structured, ok := got["structured"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured error was not an object: %s", output.String())
+	}
+	if structured["code"] != "backend_failure" ||
+		structured["message"] != "failed ***" ||
+		structured["Authorization"] != "Bearer ***" {
+		t.Fatalf("unexpected structured error: %s", output.String())
+	}
+	if got["plain"] != "plain ***" {
+		t.Fatalf("plain error was not redacted: %s", output.String())
+	}
+}

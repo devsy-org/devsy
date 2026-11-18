@@ -405,7 +405,8 @@ func (h *sanitizer) cleanAny(key string, value any) (result any) {
 			result = "[invalid value]"
 		}
 	}()
-	if err, ok := value.(error); ok {
+	_, marshalsJSON := value.(json.Marshaler)
+	if err, ok := value.(error); ok && !marshalsJSON {
 		return h.redactor.RedactField(key, err.Error())
 	}
 	data, err := json.Marshal(value)
