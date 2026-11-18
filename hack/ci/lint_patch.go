@@ -15,7 +15,9 @@ import (
 
 var (
 	lintCommitID = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
-	lintSafePath = regexp.MustCompile(`^/[A-Za-z0-9_./-]+$`)
+	lintSafePath = regexp.MustCompile(
+		`^(?:/[A-Za-z0-9_.-][A-Za-z0-9_./-]*|[A-Za-z]:/[A-Za-z0-9_./-]*)$`,
+	)
 )
 
 type lintPatchRef struct {
@@ -205,7 +207,8 @@ func writeLintPatch(repo, temp, mergeBase, head string) (string, string, error) 
 }
 
 func openLintPatch(temp string) (*os.File, string, error) {
-	if !filepath.IsAbs(temp) || filepath.Clean(temp) != temp || !lintSafePath.MatchString(temp) {
+	if !filepath.IsAbs(temp) || filepath.Clean(temp) != temp ||
+		!lintSafePath.MatchString(filepath.ToSlash(temp)) {
 		return nil, "", errors.New("RUNNER_TEMP must be a safe absolute directory")
 	}
 	dir, err := os.MkdirTemp(temp, "devsy-lint-patch-")
@@ -217,5 +220,5 @@ func openLintPatch(temp string) (*os.File, string, error) {
 	if err != nil {
 		return nil, "", errors.New("cannot create patch file")
 	}
-	return file, path, nil
+	return file, filepath.ToSlash(path), nil
 }

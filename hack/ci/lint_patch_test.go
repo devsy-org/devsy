@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -168,9 +169,59 @@ func assertLintPatchBinding(t *testing.T, data []byte, result lintPatchResult, f
 	if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != result.digest {
 		t.Fatalf("patch digest = %s, want %s", result.digest, got)
 	}
-	info, err := os.Stat(result.path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("patch permissions: %v %v", info, err)
+	assertLintPatchFile(t, result.path, f.temp)
+}
+
+func assertLintPatchFile(t *testing.T, path, temp string) {
+	t.Helper()
+	assertLintPatchContainment(t, path, temp)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("patch is not a regular file: %v %v", info, err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("patch permissions: %v", info.Mode())
+	}
+}
+
+func assertLintPatchContainment(t *testing.T, path, temp string) {
+	t.Helper()
+	rel, err := filepath.Rel(temp, path)
+	if err != nil || rel == "." || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		t.Fatalf("patch is outside its temporary directory: %q %v", rel, err)
+	}
+}
+
+func TestLintPatchSafePaths(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want bool
+	}{
+		{"/tmp/runner-temp", true},
+		{"C:/runner-temp", true},
+		{"C:/", true},
+		{"relative/path", false},
+		{"//server/share", false},
+		{"//?/C:/temp", false},
+		{"C:/temp/D:/file", false},
+		{"C:/temp with spaces", false},
+		{"/tmp/file;unsafe", false},
+	} {
+		if got := lintSafePath.MatchString(test.path); got != test.want {
+			t.Errorf("safe path %q = %t, want %t", test.path, got, test.want)
+		}
+	}
+	for _, path := range []string{
+		"relative/path",
+		filepath.Join(os.TempDir(), "safe") + string(os.PathSeparator) + "..",
+		"//server/share",
+	} {
+		file, _, err := openLintPatch(path)
+		if err == nil {
+			_ = file.Close()
+			t.Errorf("accepted unsafe path %q", path)
+		}
 	}
 }
 
