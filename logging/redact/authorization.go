@@ -11,17 +11,21 @@ const (
 	authToken
 )
 
+const authorizationName = "authorization"
+
+var authorizationFailure = [...]int{0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0}
+
 type authorizationState struct {
-	phase    int
-	position int
-	scheme   string
+	phase        int
+	position     int
+	namePosition int
+	scheme       string
 }
 
-func (s *authorizationState) restart(value byte) {
-	*s = authorizationState{}
-	if asciiLower(value) == 'a' {
-		s.position = 1
-	}
+func (s *authorizationState) restart(_ byte) {
+	s.phase = authName
+	s.position = 0
+	s.scheme = ""
 }
 
 func asciiLower(value byte) byte {
@@ -32,9 +36,14 @@ func asciiLower(value byte) byte {
 }
 
 func (s *authorizationState) step(value byte) bool {
+	if s.phase != authToken && s.nameByte(value) {
+		s.phase = authAfterName
+		s.position = 0
+		s.scheme = ""
+		return false
+	}
 	switch s.phase {
 	case authName:
-		s.nameByte(value)
 	case authAfterName:
 		s.separatorByte(value)
 	case authBeforeScheme:
@@ -47,17 +56,19 @@ func (s *authorizationState) step(value byte) bool {
 	return false
 }
 
-func (s *authorizationState) nameByte(value byte) {
-	const name = "authorization"
-	if asciiLower(value) != name[s.position] {
-		s.restart(value)
-		return
+func (s *authorizationState) nameByte(value byte) bool {
+	value = asciiLower(value)
+	for s.namePosition > 0 && authorizationName[s.namePosition] != value {
+		s.namePosition = authorizationFailure[s.namePosition-1]
 	}
-	s.position++
-	if s.position == len(name) {
-		s.phase = authAfterName
-		s.position = 0
+	if authorizationName[s.namePosition] == value {
+		s.namePosition++
 	}
+	if s.namePosition != len(authorizationName) {
+		return false
+	}
+	s.namePosition = authorizationFailure[len(authorizationName)-1]
+	return true
 }
 
 func (s *authorizationState) separatorByte(value byte) {
@@ -114,6 +125,7 @@ func (s *authorizationState) tokenStart(value byte) bool {
 		return false
 	}
 	s.phase = authToken
+	s.namePosition = 0
 	return true
 }
 
@@ -164,7 +176,7 @@ func scanAuthorization(
 	value string,
 	limit int,
 	initial authorizationState,
-) ([][]int, authorizationState) {
+) [][]int {
 	state := initial
 	var matches [][]int
 	start := -1
@@ -181,5 +193,5 @@ func scanAuthorization(
 	if start >= 0 {
 		matches = append(matches, []int{start, limit, start, start})
 	}
-	return matches, state
+	return matches
 }

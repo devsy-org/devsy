@@ -85,7 +85,7 @@ func (s *Stream) processChunk(chunk string) string {
 func (s *Stream) process(value string, final bool) string {
 	frame := findURLFrame(value, s.urlOpen)
 	urls := frame.matches
-	headers, _ := scanAuthorization(value, len(value), s.auth)
+	headers := scanAuthorization(value, len(value), s.auth)
 	if frame.overflow {
 		urls = append(urls, []int{frame.start, len(value) + 1, frame.start, frame.authority})
 	}

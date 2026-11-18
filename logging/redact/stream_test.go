@@ -174,6 +174,41 @@ func TestStreamFormatCredentialsEverySplit(t *testing.T) {
 	}
 }
 
+func TestStreamAuthorizationRecoversOverlappingNames(t *testing.T) {
+	r := New(Options{})
+	for _, test := range []struct{ input, want string }{
+		{
+			"authorizAuthorization: Bearer canary-token, safe",
+			"authorizAuthorization: Bearer ***, safe",
+		},
+		{
+			"Authorization: BAuthorization: Basic nested-token, safe",
+			"Authorization: BAuthorization: Basic ***, safe",
+		},
+		{
+			"Authorization: BaAuthorization: Bearer nested-token, safe",
+			"Authorization: BaAuthorization: Bearer ***, safe",
+		},
+		{
+			"Authorization   Authorization: Bearer another-token, safe",
+			"Authorization   Authorization: Bearer ***, safe",
+		},
+		{
+			"Authorization: Bearer abcAuthorization:def, safe",
+			"Authorization: Bearer ***, safe",
+		},
+		{
+			"Authorization: Bearer abcAuthorization:def, Authorization: Basic other-token",
+			"Authorization: Bearer ***, Authorization: Basic ***",
+		},
+	} {
+		if got := r.Redact(test.input); got != test.want {
+			t.Fatalf("complete %q = %q, want %q", test.input, got, test.want)
+		}
+		assertAllStreamCuts(t, r, test.input, test.want)
+	}
+}
+
 func TestStreamCustomMaskAndIntersectingSecrets(t *testing.T) {
 	r := New(Options{
 		Values: []string{testShortSecret, testCrossingSecret, testCrossingTail},
@@ -301,7 +336,7 @@ func TestStreamURLOverflowMasksUntilDelimiter(t *testing.T) {
 		{"query", "?u=@example.test/x", scheme + "***?u=@example.test/x"},
 		{"fragment", "#u=@example.test/x", scheme + "***#u=@example.test/x"},
 		{"space", " done", scheme + "*** done"},
-		{"eof", "", scheme + "***"},
+		{"eof", "", scheme + defaultMask},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -311,7 +346,7 @@ func TestStreamURLOverflowMasksUntilDelimiter(t *testing.T) {
 			if got != test.want {
 				t.Fatalf("got %q, want %q", got, test.want)
 			}
-			if strings.Contains(got, authority) || strings.Count(got, "***") != 1 {
+			if strings.Contains(got, authority) || strings.Count(got, defaultMask) != 1 {
 				t.Fatalf("unmasked authority or duplicate marker: %q", got)
 			}
 		})
@@ -393,7 +428,7 @@ func TestStreamURLLookaheadThreshold(t *testing.T) {
 		t.Fatalf("boundary credential = %q", got)
 	}
 	stream = NewStream(New(Options{}))
-	if got := stream.RedactChunk(short + "x"); got != scheme+"***" {
+	if got := stream.RedactChunk(short + "x"); got != scheme+defaultMask {
 		t.Fatalf("overflow did not mask promptly: %q", got)
 	}
 	if got := stream.RedactChunk(testURLSuffix) + stream.Flush(); got != testURLSuffix {
@@ -498,7 +533,7 @@ func TestStreamLongKnownPrefixChunks(t *testing.T) {
 	tests := []struct {
 		name, input, want string
 	}{
-		{benchComplete, prefix + "Z", "***"},
+		{benchComplete, prefix + "Z", defaultMask},
 		{benchMismatch, prefix + "Q", prefix + "Q"},
 		{benchFlush, prefix, prefix},
 		{benchSliding, prefix + prefix, prefix + prefix},
@@ -698,7 +733,7 @@ func benchmarkStreamKnownPrefix(b *testing.B, size int, chunks []int, mode strin
 func benchmarkInput(prefix, mode string, r *Redactor) (string, string) {
 	switch mode {
 	case benchComplete:
-		return prefix + "Z", "***"
+		return prefix + "Z", defaultMask
 	case benchMismatch:
 		return prefix + "Q", prefix + "Q"
 	case benchSliding, benchDense, benchFormat:

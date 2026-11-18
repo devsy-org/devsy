@@ -323,3 +323,159 @@ func TestReservedValuesAreResolvedOnlyWhenRetained(t *testing.T) {
 		}
 	}
 }
+
+func TestColoredTextWireOutput(t *testing.T) {
+	for _, tc := range []struct {
+		level slog.Level
+		want  string
+	}{
+		{LevelTrace, "level=\x1b[36mTRACE\x1b[0m"},
+		{slog.LevelDebug, "level=\x1b[36mDEBUG\x1b[0m"},
+		{slog.LevelInfo, "level=\x1b[36mINFO\x1b[0m"},
+		{slog.LevelWarn, "level=\x1b[33mWARN\x1b[0m"},
+		{slog.LevelError, "level=\x1b[31mERROR\x1b[0m"},
+		{LevelFatal, "level=\x1b[31mFATAL\x1b[0m"},
+	} {
+		for _, timestamp := range []time.Time{
+			{},
+			time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		} {
+			checkColoredText(t, tc.level, tc.want, timestamp)
+		}
+	}
+}
+
+func checkColoredText(t *testing.T, level slog.Level, want string, timestamp time.Time) {
+	t.Helper()
+	var output bytes.Buffer
+	handler := NewHandler(&output, HandlerOptions{
+		Level: LevelTrace, Format: FormatText, TextStyle: TextColored,
+	})
+	record := slog.NewRecord(timestamp, level, "user \x1b[31m", 0)
+	record.AddAttrs(slog.String("value", "\x1b[32m"))
+	if err := handler.Handle(context.Background(), record); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	if !strings.Contains(got, want) || strings.Count(got, "\x1b") != 2 {
+		t.Fatalf("unexpected terminal output %q", got)
+	}
+	if !strings.Contains(got, `\x1b[31m`) || !strings.Contains(got, `\x1b[32m`) {
+		t.Fatalf("user escapes were not quoted: %q", got)
+	}
+}
+
+type limitedColorWriter struct {
+	limit int
+	err   error
+}
+
+func (w limitedColorWriter) Write(p []byte) (int, error) {
+	return min(w.limit, len(p)), w.err
+}
+
+func TestColorWriterCountsAndErrors(t *testing.T) {
+	input := []byte("level=INFO msg=hello\n")
+	failure := fmt.Errorf("sink failure")
+	for _, tc := range []struct{ limit, want int }{
+		{2, 2}, {8, 6}, {13, 8}, {17, 10}, {100, len(input)},
+	} {
+		writer := colorWriter{writer: limitedColorWriter{limit: tc.limit, err: failure}}
+		n, err := writer.Write(input)
+		if n != tc.want || err != failure {
+			t.Fatalf("limit %d: count %d, error %v", tc.limit, n, err)
+		}
+	}
+}
+
+type trustedGroupValue struct {
+	calls *int
+}
+
+func (v trustedGroupValue) LogValue() slog.Value {
+	*v.calls++
+	return slog.GroupValue(slog.String("provider", "trusted"))
+}
+
+func TestInlineTrustedGroupsReserveRootKeys(t *testing.T) {
+	for _, policy := range []ReservedKeys{DropReserved, EscapeReserved} {
+		var output bytes.Buffer
+		calls := 0
+		handler := NewHandler(&output, HandlerOptions{
+			Format: FormatJSON, ReservedKeys: policy,
+			TrustedAttrs: []slog.Attr{
+				slog.Group("", slog.Any("", trustedGroupValue{calls: &calls})),
+				slog.Group("scope", slog.String("scoped", "trusted")),
+			},
+		})
+		handler = handler.WithAttrs([]slog.Attr{slog.String("provider", "bound-forged")})
+		record := slog.NewRecord(time.Now(), slog.LevelInfo, "message", 0)
+		record.AddAttrs(slog.String("provider", "record-forged"), slog.String("scoped", "root"))
+		if err := handler.Handle(context.Background(), record); err != nil {
+			t.Fatal(err)
+		}
+		got := output.String()
+		checkTrustedIdentity(t, got, calls)
+		checkTrustedPolicy(t, got, policy)
+	}
+}
+
+func checkTrustedIdentity(t *testing.T, got string, calls int) {
+	t.Helper()
+	if calls != 1 || strings.Count(got, `"provider":`) != 1 {
+		t.Fatalf("trusted key or resolution failed: calls=%d output=%s", calls, got)
+	}
+	if !strings.Contains(got, `"provider":"trusted"`) || !strings.Contains(got, `"scoped":"root"`) {
+		t.Fatalf("trusted or scoped attribute lost: %s", got)
+	}
+}
+
+func checkTrustedPolicy(t *testing.T, got string, policy ReservedKeys) {
+	t.Helper()
+	if policy == DropReserved && strings.Contains(got, "forged") {
+		t.Fatalf("reserved attribute leaked: %s", got)
+	}
+	if policy == EscapeReserved && !strings.Contains(got, `"user_provider":"record-forged"`) {
+		t.Fatalf("reserved attribute was not escaped: %s", got)
+	}
+}
+
+func TestStructuredAuthorizationRedaction(t *testing.T) {
+	var output bytes.Buffer
+	handler := NewHandler(&output, HandlerOptions{Format: FormatJSON})
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "message", 0)
+	record.AddAttrs(
+		slog.String("Authorization", "  bAsIc\tfixture, safe"),
+		slog.Any("nested", map[string]any{"authorization": []any{"Bearer opaque", "Basic token"}}),
+		slog.Group("headers", slog.String("Authorization", "Bearer group-secret")),
+	)
+	if err := handler.Handle(context.Background(), record); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	for _, secret := range []string{"fixture", "opaque", "token", "group-secret"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("structured credential leaked: %s", got)
+		}
+	}
+	for _, expected := range []string{`bAsIc\t***, safe`, "Bearer ***", "Basic ***"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("expected %q in %s", expected, got)
+		}
+	}
+}
+
+func TestStructuredAuthorizationKnownOverlap(t *testing.T) {
+	var output bytes.Buffer
+	handler := NewHandler(&output, HandlerOptions{
+		Format: FormatJSON, Redactor: redact.New(redact.Options{Values: []string{"Bearer"}}),
+	})
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "message", 0)
+	record.AddAttrs(slog.String("Authorization", "Bearer opaque"))
+	if err := handler.Handle(context.Background(), record); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"Authorization":"*** ***"`) {
+		t.Fatalf("overlapping redaction failed: %s", output.String())
+	}
+}

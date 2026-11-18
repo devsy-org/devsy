@@ -56,6 +56,9 @@ func NewHandler(w io.Writer, options HandlerOptions) slog.Handler {
 	if options.Format == FormatJSON || options.Format == FormatLogfmt {
 		style = TextLowercase
 	}
+	if style == TextColored {
+		w = &colorWriter{writer: w}
+	}
 	opts := &slog.HandlerOptions{
 		Level: options.Level,
 		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
@@ -101,10 +104,86 @@ func replaceLevelAttr(attr slog.Attr, style TextStyle) slog.Attr {
 	if style != TextLowercase {
 		name = strings.ToUpper(name)
 	}
-	if style == TextColored {
-		name = colorLevel(level, name)
-	}
+
 	return slog.String("level", name)
+}
+
+type colorWriter struct {
+	writer io.Writer
+}
+
+func (w *colorWriter) Write(p []byte) (int, error) {
+	token, ok := canonicalLevelToken(p)
+	if !ok {
+		return w.writer.Write(p)
+	}
+	name := string(p[token.start:token.end])
+	colored := colorLevel(token.level, name)
+	output := make([]byte, 0, len(p)+len(colored)-len(name))
+	output = append(output, p[:token.start]...)
+	output = append(output, colored...)
+	output = append(output, p[token.end:]...)
+	n, err := w.writer.Write(output)
+	return originalWriteCount(n, token.start, token.end, len(p)), err
+}
+
+type levelToken struct {
+	start int
+	end   int
+	level slog.Level
+}
+
+func canonicalLevelToken(p []byte) (levelToken, bool) {
+	start := 0
+	if bytes.HasPrefix(p, []byte("ts=")) {
+		space := bytes.IndexByte(p, ' ')
+		if space < 0 {
+			return levelToken{}, false
+		}
+		start = space + 1
+	}
+	if !bytes.HasPrefix(p[start:], []byte("level=")) {
+		return levelToken{}, false
+	}
+	start += len("level=")
+	end := len(p)
+	if offset := bytes.IndexAny(p[start:], " \n"); offset >= 0 {
+		end = start + offset
+	}
+	level, ok := canonicalColorLevel(string(p[start:end]))
+	return levelToken{start: start, end: end, level: level}, ok
+}
+
+func canonicalColorLevel(name string) (slog.Level, bool) {
+	switch name {
+	case "TRACE", "DEBUG", "INFO":
+		return slog.LevelInfo, true
+	case "WARN":
+		return slog.LevelWarn, true
+	case "ERROR", "FATAL":
+		return slog.LevelError, true
+	default:
+		return 0, false
+	}
+}
+
+func originalWriteCount(n, start, end, inputLen int) int {
+	const prefix = len("\x1b[36m")
+	const suffix = len("\x1b[0m")
+	switch {
+	case n <= start:
+		return n
+	case n <= start+prefix:
+		return start
+	case n < end+prefix:
+		return n - prefix
+	case n <= end+prefix+suffix:
+		return end
+	case n >= inputLen+prefix+suffix:
+		return inputLen
+	default:
+		return n - prefix - suffix
+	}
 }
 
 func newSanitizer(
@@ -122,12 +201,30 @@ func newSanitizer(
 		"msg":     true,
 		"message": true,
 	}
-	for _, attr := range trustedAttrs {
+	reserveTrustedKeys(reserved, trustedAttrs)
+	return sanitizer{redactor: redactor, policy: policy, reserved: reserved}
+}
+
+func reserveTrustedKeys(reserved map[string]bool, attrs []slog.Attr) {
+	for _, attr := range attrs {
 		if attr.Key != "" {
 			reserved[attr.Key] = true
+		} else if attr.Value.Kind() == slog.KindGroup {
+			reserveTrustedKeys(reserved, attr.Value.Group())
 		}
 	}
-	return sanitizer{redactor: redactor, policy: policy, reserved: reserved}
+}
+
+func resolveTrustedAttrs(attrs []slog.Attr) []slog.Attr {
+	resolved := make([]slog.Attr, 0, len(attrs))
+	for _, attr := range attrs {
+		attr.Value = attr.Value.Resolve()
+		if attr.Value.Kind() == slog.KindGroup {
+			attr.Value = slog.GroupValue(resolveTrustedAttrs(attr.Value.Group())...)
+		}
+		resolved = append(resolved, attr)
+	}
+	return resolved
 }
 
 func SanitizeAttrs(redactor *redact.Redactor, attrs []slog.Attr) []slog.Attr {
@@ -141,6 +238,7 @@ func ProtectHandler(
 	policy ReservedKeys,
 	trustedAttrs ...slog.Attr,
 ) slog.Handler {
+	trustedAttrs = resolveTrustedAttrs(trustedAttrs)
 	h := &handler{inner: next, sanitizer: newSanitizer(redactor, policy, trustedAttrs)}
 	if len(trustedAttrs) != 0 {
 		cleaned := make([]slog.Attr, 0, len(trustedAttrs))
@@ -206,6 +304,14 @@ func (h *handler) Handle(ctx context.Context, record slog.Record) error {
 }
 
 func (h *sanitizer) cleanTrusted(attr slog.Attr) slog.Attr {
+	if attr.Key == "" && attr.Value.Kind() == slog.KindGroup {
+		children := attr.Value.Group()
+		cleaned := make([]slog.Attr, 0, len(children))
+		for _, child := range children {
+			cleaned = append(cleaned, h.cleanTrusted(child))
+		}
+		return slog.Attr{Value: slog.GroupValue(cleaned...)}
+	}
 	key := attr.Key
 	cleaned, _ := h.clean(attr, false)
 	cleaned.Key = key
@@ -242,7 +348,7 @@ func (h *sanitizer) clean(attr slog.Attr, root bool) (slog.Attr, bool) {
 		}
 		return slog.Attr{Key: key, Value: slog.GroupValue(cleaned...)}, true
 	}
-	return slog.Attr{Key: key, Value: h.cleanValue(attr.Value)}, true
+	return slog.Attr{Key: key, Value: h.cleanValue(attr.Key, attr.Value)}, true
 }
 
 func (h *sanitizer) rootKey(original, key string) (string, bool) {
@@ -282,25 +388,25 @@ func (h *sanitizer) reservedAncestors(key string) int {
 	}
 }
 
-func (h *sanitizer) cleanValue(value slog.Value) slog.Value {
+func (h *sanitizer) cleanValue(key string, value slog.Value) slog.Value {
 	switch value.Kind() {
 	case slog.KindString:
-		return slog.StringValue(h.redactor.Redact(value.String()))
+		return slog.StringValue(h.redactor.RedactField(key, value.String()))
 	case slog.KindAny:
-		return slog.AnyValue(h.cleanAny(value.Any()))
+		return slog.AnyValue(h.cleanAny(key, value.Any()))
 	default:
 		return value
 	}
 }
 
-func (h *sanitizer) cleanAny(value any) (result any) {
+func (h *sanitizer) cleanAny(key string, value any) (result any) {
 	defer func() {
 		if recover() != nil {
 			result = "[invalid value]"
 		}
 	}()
 	if err, ok := value.(error); ok {
-		return h.redactor.Redact(err.Error())
+		return h.redactor.RedactField(key, err.Error())
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -312,21 +418,21 @@ func (h *sanitizer) cleanAny(value any) (result any) {
 	if decoder.Decode(&decoded) != nil {
 		return "[invalid value]"
 	}
-	return h.cleanJSON(decoded)
+	return h.cleanJSON(key, decoded)
 }
 
-func (h *sanitizer) cleanJSON(value any) any {
+func (h *sanitizer) cleanJSON(key string, value any) any {
 	switch v := value.(type) {
 	case string:
-		return h.redactor.Redact(v)
+		return h.redactor.RedactField(key, v)
 	case []any:
 		for i := range v {
-			v[i] = h.cleanJSON(v[i])
+			v[i] = h.cleanJSON(key, v[i])
 		}
 	case map[string]any:
 		out := make(map[string]any, len(v))
-		for key, item := range v {
-			out[h.redactor.Redact(key)] = h.cleanJSON(item)
+		for childKey, item := range v {
+			out[h.redactor.Redact(childKey)] = h.cleanJSON(childKey, item)
 		}
 		return out
 	}

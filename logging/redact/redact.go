@@ -5,7 +5,10 @@ import (
 	"strings"
 )
 
-const defaultMask = "***"
+const (
+	defaultMask        = "***"
+	authorizationField = "Authorization"
+)
 
 type Options struct {
 	Values                    []string
@@ -103,6 +106,43 @@ func (r *Redactor) Redact(value string) string {
 	urls, headers := formatMatches(value, 0)
 	value, _, _ = r.known(value, matchState{cut: len(value), urls: urls, headers: headers})
 	return value
+}
+
+func (r *Redactor) RedactField(key, value string) string {
+	if !strings.EqualFold(key, authorizationField) {
+		return r.Redact(value)
+	}
+	urls, headers := formatMatches(value, 0)
+	fieldHeaders := scanAuthorization(
+		value,
+		len(value),
+		authorizationState{phase: authBeforeScheme},
+	)
+	headers = mergeHeaderMatches(headers, fieldHeaders)
+	value, _, _ = r.known(value, matchState{cut: len(value), urls: urls, headers: headers})
+	return value
+}
+
+func mergeHeaderMatches(first, second [][]int) [][]int {
+	if len(first) == 0 {
+		return second
+	}
+	if len(second) == 0 {
+		return first
+	}
+	result := make([][]int, 0, len(first)+len(second))
+	i, j := 0, 0
+	for i < len(first) && j < len(second) {
+		if first[i][3] <= second[j][3] {
+			result = append(result, first[i])
+			i++
+		} else {
+			result = append(result, second[j])
+			j++
+		}
+	}
+	result = append(result, first[i:]...)
+	return append(result, second[j:]...)
 }
 
 func newRedactor(values []string, mask string) *Redactor {

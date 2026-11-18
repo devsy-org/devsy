@@ -12,6 +12,10 @@ const (
 	testCrossingSecret = "abc-secret-part"
 	testCrossingTail   = "part-tail"
 	testRepeatedSecret = "abcabc"
+	testBearer         = "Bearer"
+	testBearerValue    = "Bearer fresh-token"
+	testOrdinary       = "ordinary"
+	testMaskedBearer   = testBearer + " " + testProviderMask
 	testProviderMask   = "[REDACTED]"
 )
 
@@ -34,7 +38,7 @@ func TestRedactValuesAndOverlap(t *testing.T) {
 		{"self overlap", "x ababa y", "x *** y", []string{testSelfOverlap}},
 		{"repeated", "abcabcabcabc", "******", []string{testRepeatedSecret}},
 		{"binary", "a\x00\xffba\x00\xffb", "******", []string{"a\x00\xffb"}},
-		{"ordinary", "ordinary output", "ordinary output", []string{"private"}},
+		{testOrdinary, "ordinary output", "ordinary output", []string{"private"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -60,7 +64,7 @@ func TestEnvironmentAndExplicitPolicy(t *testing.T) {
 		Mask:                      testProviderMask, MinExplicitBytes: 4, SplitExplicitLines: true,
 	}
 	r := New(opts)
-	opts.Values[0] = "ordinary"
+	opts.Values[0] = testOrdinary
 	opts.Environment[1] = "API_TOKEN=changed"
 	input := "abc xyz whole-secret line-secret /usr/local/bin canary-token secret-command q"
 	want := "abc xyz [REDACTED] [REDACTED] /usr/local/bin [REDACTED] [REDACTED] [REDACTED]"
@@ -104,6 +108,50 @@ func TestFormatCredentialsAndNil(t *testing.T) {
 	long := "https://" + strings.Repeat("x", 1024) + "@example.com"
 	if got := r.Redact(long); got != "https://***@example.com" {
 		t.Fatalf("long complete URL leaked: %q", got)
+	}
+}
+
+func TestRedactFieldAuthorization(t *testing.T) {
+	r := New(Options{Values: []string{"known-secret"}, Mask: testProviderMask})
+	for _, test := range []struct {
+		key, value, want string
+	}{
+		{authorizationField, testBearerValue, testMaskedBearer},
+		{"authorization", "  Basic\tfresh-token, safe", "  Basic\t[REDACTED], safe"},
+		{"AUTHORIZATION", "Bearer known-secret", testMaskedBearer},
+		{authorizationField, "Bearer " + testCredentialURL(), testMaskedBearer},
+		{authorizationField, "prefix Authorization: Basic fresh-token", "prefix Authorization: Basic [REDACTED]"},
+		{
+			authorizationField,
+			"Bearer first, Authorization: Basic second",
+			"Bearer [REDACTED], Authorization: Basic [REDACTED]",
+		},
+		{testOrdinary, "Authorization: Bearer fresh-token", "Authorization: Bearer [REDACTED]"},
+		{"X-Authorization", testBearerValue, testBearerValue},
+		{authorizationField, testBearer, testBearer},
+		{authorizationField, "Bearer ", "Bearer "},
+	} {
+		if got := r.RedactField(test.key, test.value); got != test.want {
+			t.Fatalf("key %q value %q: got %q, want %q", test.key, test.value, got, test.want)
+		}
+	}
+	var nilRedactor *Redactor
+	if got := nilRedactor.RedactField(authorizationField, "Basic fresh-token"); got != "Basic ***" {
+		t.Fatalf("nil field redaction = %q", got)
+	}
+}
+
+func TestRedactFieldUsesOriginalSpans(t *testing.T) {
+	r := New(Options{Values: []string{testBearer}})
+	if got := r.RedactField(authorizationField, testBearerValue); got != "*** ***" {
+		t.Fatalf("overlapping authorization field = %q", got)
+	}
+	if got := r.RedactField(testOrdinary, testBearerValue); got != "*** fresh-token" {
+		t.Fatalf("ordinary field = %q", got)
+	}
+	whole := New(Options{Values: []string{testBearerValue}})
+	if got := whole.RedactField(authorizationField, testBearerValue); got != defaultMask {
+		t.Fatalf("whole value overlap = %q", got)
 	}
 }
 
