@@ -114,7 +114,7 @@ test("private context options reach the real Electron sheet and errors reach its
     const paths = await app.evaluate(({ app }) => ({
       platform: process.platform,
       packaged: app.isPackaged,
-      home: require("node:os").homedir(),
+      home: process.getBuiltinModule("node:os").homedir(),
       electronHome: app.getPath("home"),
       envHome: process.env.HOME,
       devsyHome: process.env.DEVSY_HOME,
