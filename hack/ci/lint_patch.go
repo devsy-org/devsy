@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 var (
@@ -48,6 +51,12 @@ func lintPatchCLI(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "lint-patch: unexpected arguments")
 		return 2
 	}
+	temp := os.Getenv("RUNNER_TEMP")
+	if !filepath.IsAbs(temp) || filepath.Clean(temp) != temp ||
+		!lintSafePath.MatchString(filepath.ToSlash(temp)) {
+		_, _ = fmt.Fprintln(stderr, "lint-patch: RUNNER_TEMP must be a safe absolute directory")
+		return 1
+	}
 	repo, err := os.Getwd()
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "lint-patch: cannot determine checkout directory")
@@ -55,7 +64,7 @@ func lintPatchCLI(args []string, stdout, stderr io.Writer) int {
 	}
 	result, err := generateLintPatch(lintPatchInput{
 		repo: repo, eventPath: os.Getenv("GITHUB_EVENT_PATH"),
-		runnerTemp: os.Getenv("RUNNER_TEMP"),
+		runnerTemp: temp,
 	})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "lint-patch: %v\n", err)
@@ -170,6 +179,9 @@ func lintGitOutput(repo string, args ...string) (string, error) {
 }
 
 func writeLintPatch(repo, temp, mergeBase, head string) (string, string, error) {
+	if err := validateLintPatchPaths(repo, mergeBase, head); err != nil {
+		return "", "", err
+	}
 	file, path, err := openLintPatch(temp)
 	if err != nil {
 		return "", "", err
@@ -178,6 +190,8 @@ func writeLintPatch(repo, temp, mergeBase, head string) (string, string, error) 
 	cmd := exec.Command(
 		"git",
 		"--no-pager",
+		"-c",
+		"core.quotePath=false",
 		"diff",
 		"--no-ext-diff",
 		"--no-textconv",
@@ -208,7 +222,7 @@ func writeLintPatch(repo, temp, mergeBase, head string) (string, string, error) 
 
 func openLintPatch(temp string) (*os.File, string, error) {
 	if !filepath.IsAbs(temp) || filepath.Clean(temp) != temp ||
-		!lintSafePath.MatchString(filepath.ToSlash(temp)) {
+		strings.HasPrefix(filepath.ToSlash(temp), "//") {
 		return nil, "", errors.New("RUNNER_TEMP must be a safe absolute directory")
 	}
 	dir, err := os.MkdirTemp(temp, "devsy-lint-patch-")
@@ -221,4 +235,63 @@ func openLintPatch(temp string) (*os.File, string, error) {
 		return nil, "", errors.New("cannot create patch file")
 	}
 	return file, filepath.ToSlash(path), nil
+}
+
+func validateLintPatchPaths(repo, mergeBase, head string) error {
+	cmd := exec.Command(
+		"git", "--no-pager", "-c", "core.quotePath=false", "diff",
+		"--no-ext-diff", "--no-textconv", "--no-color", "--no-relative",
+		"--find-renames", "-l0", "--name-only", "-z", "--diff-filter=d",
+		mergeBase, head, "--",
+	)
+	cmd.Dir = repo
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return errors.New("cannot open pull request path list")
+	}
+	if err := cmd.Start(); err != nil {
+		return errors.New("cannot start pull request path list")
+	}
+	pathErr := checkLintPatchPaths(pipe)
+	if pathErr != nil {
+		_ = pipe.Close()
+		_ = cmd.Process.Kill()
+	}
+	waitErr := cmd.Wait()
+	if pathErr != nil {
+		return pathErr
+	}
+	if waitErr != nil {
+		return errors.New("cannot validate pull request Go paths for lint")
+	}
+	return nil
+}
+
+func checkLintPatchPaths(src io.Reader) error {
+	reader := bufio.NewReader(src)
+	for {
+		path, err := reader.ReadString(0)
+		if errors.Is(err, io.EOF) && path == "" {
+			return nil
+		}
+		if err != nil || !strings.HasSuffix(path, "\x00") {
+			return errors.New("invalid pull request path list")
+		}
+		path = strings.TrimSuffix(path, "\x00")
+		if strings.HasSuffix(path, ".go") && !lintRepresentableGoPath(path) {
+			return errors.New("pull request Go path cannot be represented in lint patch")
+		}
+	}
+}
+
+func lintRepresentableGoPath(path string) bool {
+	if !utf8.ValidString(path) || strings.ContainsAny(path, " \"\\") {
+		return false
+	}
+	for _, char := range path {
+		if unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
 }

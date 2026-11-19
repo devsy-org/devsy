@@ -181,6 +181,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - uses: ./.github/actions/relocate-tmp
 

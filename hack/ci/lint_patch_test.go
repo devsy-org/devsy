@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -225,6 +226,118 @@ func TestLintPatchSafePaths(t *testing.T) {
 	}
 }
 
+func TestLintPatchCLISafeArguments(t *testing.T) {
+	temp := filepath.Join(t.TempDir(), "temp with spaces")
+	if err := os.Mkdir(temp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RUNNER_TEMP", temp)
+	var stdout, stderr bytes.Buffer
+	if code := lintPatchCLI(nil, &stdout, &stderr); code != 1 || stdout.Len() != 0 {
+		t.Fatalf("unsafe temporary path: exit %d, output %q", code, stdout.String())
+	}
+	entries, err := os.ReadDir(temp)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("unsafe temporary path was used: %v %v", entries, err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := lintPatchCLI(
+		[]string{"unexpected"},
+		&stdout,
+		&stderr,
+	); code != 2 ||
+		stdout.Len() != 0 {
+		t.Fatalf("unexpected arguments: exit %d, output %q", code, stdout.String())
+	}
+}
+
+func TestLintPatchGeneratorAllowsSpacesInTemp(t *testing.T) {
+	f := newLintPatchFixture(t)
+	temp := filepath.Join(f.temp, "temp with spaces")
+	if err := os.Mkdir(temp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	input := f.input()
+	input.runnerTemp = temp
+	result, err := generateLintPatch(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(result.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLintPatchContents(t, data, result, f)
+}
+
+func TestLintPatchPathRepresentability(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want bool
+	}{
+		{"pkg/caf\u00e9.go\x00", true},
+		{"pkg/space name.go\x00", false},
+		{"pkg/quoted\"name.go\x00", false},
+		{"pkg/back\\slash.go\x00", false},
+		{"pkg/new\nline.go\x00", false},
+		{"pkg/tab\tname.go\x00", false},
+		{"pkg/\xff.go\x00", false},
+		{"docs/space name.txt\x00", true},
+		{"pkg/truncated.go", false},
+	} {
+		err := checkLintPatchPaths(strings.NewReader(test.path))
+		if (err == nil) != test.want {
+			t.Errorf("path list %q: got error %v", test.path, err)
+		}
+	}
+}
+
+func TestLintPatchUnicodeAndUnsupportedGoPaths(t *testing.T) {
+	f := newLintPatchFixture(t)
+	unicodeName := "caf\u00e9.go"
+	writeFixture(t, filepath.Join(f.repo, unicodeName), "package sample\n")
+	writeFixture(t, filepath.Join(f.repo, "space notes.txt"), "notes\n")
+	gitFixture(t, f.repo, "add", unicodeName, "space notes.txt")
+	gitFixture(t, f.repo, "commit", "-m", "unicode paths")
+	head := gitFixture(t, f.repo, "rev-parse", "HEAD")
+	path, _, err := writeLintPatch(f.repo, f.temp, f.ancestor, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patch, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.assertRawPatch(t, head, patch)
+	if !bytes.Contains(patch, []byte("+++ b/"+unicodeName+"\n")) ||
+		!bytes.Contains(patch, []byte("+++ b/space notes.txt\t\n")) {
+		t.Fatal("patch did not preserve raw Git postimage headers")
+	}
+	writeFixture(t, filepath.Join(f.repo, "space fixture.go"), "package sample\n")
+	gitFixture(t, f.repo, "add", "space fixture.go")
+	gitFixture(t, f.repo, "commit", "-m", "unsupported path")
+	head = gitFixture(t, f.repo, "rev-parse", "HEAD")
+	if _, _, err := writeLintPatch(f.repo, f.temp, f.ancestor, head); err == nil {
+		t.Fatal("accepted unsupported Go postimage path")
+	}
+}
+
+func (f lintPatchFixture) assertRawPatch(t *testing.T, head string, patch []byte) {
+	t.Helper()
+	cmd := exec.Command(
+		"git", "--no-pager", "-c", "core.quotePath=false", "diff",
+		"--no-ext-diff", "--no-textconv", "--no-color", "--no-relative",
+		"--src-prefix=a/", "--dst-prefix=b/", "--find-renames", "-l0", "--unified=3",
+		f.ancestor, head, "--",
+	)
+	cmd.Dir = f.repo
+	raw, err := cmd.Output()
+	if err != nil || !bytes.Equal(raw, patch) {
+		t.Fatalf("patch differs from raw Git diff: %v", err)
+	}
+}
+
 func TestLintPatchRejectsInvalidEventsAndCheckouts(t *testing.T) {
 	f := newLintPatchFixture(t)
 	for _, test := range []struct {
@@ -233,7 +346,9 @@ func TestLintPatchRejectsInvalidEventsAndCheckouts(t *testing.T) {
 	}{
 		{"missing event", func(input *lintPatchInput) { input.eventPath = "" }},
 		{"missing file", func(input *lintPatchInput) { input.eventPath = filepath.Join(f.temp, "missing") }},
-		{"unsafe temporary path", func(input *lintPatchInput) { input.runnerTemp += ";unsafe" }},
+		{"noncanonical temporary path", func(input *lintPatchInput) {
+			input.runnerTemp += string(os.PathSeparator) + ".."
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			input := f.input()
