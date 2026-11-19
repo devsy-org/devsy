@@ -125,11 +125,43 @@ func cancellationDeliveryRuntime(t *testing.T, blockCompletion bool) driver.Argv
 	return argvRuntime
 }
 
+type cancellationDeliveryEvent struct {
+	phase string
+	start bool
+	at    time.Time
+	err   error
+}
+
 func cancellationDeliveryExecutor(
 	t *testing.T, runtime driver.ArgvExecDriver, canceled chan<- error,
 ) func(context.Context, []string, driver.Streams) error {
+	events := make(chan cancellationDeliveryEvent, 16)
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		for {
+			select {
+			case event := <-events:
+				t.Logf(
+					"delivery phase=%s start=%t time=%s error=%v",
+					event.phase, event.start, event.at.Format(time.RFC3339Nano), event.err,
+				)
+			default:
+				return
+			}
+		}
+	})
 	return func(ctx context.Context, argv []string, streams driver.Streams) error {
+		phase := "validation"
+		if streams.Stdin != nil {
+			phase = "stage"
+		} else if len(argv) > 2 && strings.HasPrefix(argv[2], "rm -f ") {
+			phase = "cleanup"
+		}
+		events <- cancellationDeliveryEvent{phase: phase, start: true, at: time.Now()}
 		err := runtime.CommandContainerArgv(ctx, "owned-delivery-test", argv, streams)
+		events <- cancellationDeliveryEvent{phase: phase, at: time.Now(), err: err}
 		if streams.Stdin != nil {
 			if cause := context.Cause(ctx); cause != nil {
 				select {

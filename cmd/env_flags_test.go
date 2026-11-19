@@ -1,6 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,12 +18,121 @@ import (
 )
 
 const (
-	envDevsyHost    = "DEVSY_HOST"
-	envDevsyProject = "DEVSY_PROJECT"
-	cmdWorkspace    = "workspace"
-	cmdProvider     = "provider"
-	cmdList         = "list"
+	envDevsyHost        = "DEVSY_HOST"
+	envDevsyProject     = "DEVSY_PROJECT"
+	cmdWorkspace        = "workspace"
+	cmdProvider         = "provider"
+	cmdList             = "list"
+	testVersionFlag     = "--version"
+	testAgentCommand    = "agent"
+	testLogLevelEnv     = "DEVSY_LOG_LEVEL"
+	testLogFormatEnv    = "DEVSY_LOG_FORMAT"
+	testResultFormatEnv = "DEVSY_RESULT_FORMAT"
+	testRootCommand     = "root"
 )
+
+const (
+	noStatusSelector = "-test.run=^TestInvalidNoStatusEnvironmentStopsBeforeCommand$"
+	loggingSelector  = "-test.run=^TestInvalidLoggingEnvironmentDoesNotExposeValue$"
+)
+
+func TestInvalidNoStatusEnvironmentStopsBeforeCommand(t *testing.T) {
+	if os.Getenv("DEVSY_INVALID_NO_STATUS_CHILD") == "1" {
+		os.Args = []string{devsy, testVersionFlag}
+		_ = run()
+		_ = os.WriteFile(os.Getenv("DEVSY_INVALID_NO_STATUS_MARKER"), []byte("ran"), 0o600)
+		return
+	}
+
+	const secret = "invalid-bool-secret-9471"
+	for _, registered := range []bool{false, true} {
+		name := "unregistered"
+		if registered {
+			name = "registered"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "command-ran")
+			metrics := filepath.Join(dir, "metrics.jsonl")
+			t.Setenv("DEVSY_INVALID_NO_STATUS_CHILD", "1")
+			t.Setenv("DEVSY_INVALID_NO_STATUS_MARKER", marker)
+			t.Setenv(config.EnvHome, dir)
+			t.Setenv("DEVSY_NO_STATUS", secret)
+			t.Setenv("DEVSY_TEST_SECRET", "")
+			if registered {
+				t.Setenv("DEVSY_TEST_SECRET", secret)
+			}
+			t.Setenv(testLogFormatEnv, logOutputJSON)
+			t.Setenv("DEVSY_METRICS_FILE", metrics)
+			child := exec.Command(os.Args[0], noStatusSelector)
+			var stdout, stderr bytes.Buffer
+			child.Stdout = &stdout
+			child.Stderr = &stderr
+			err := child.Run()
+			var exitErr *exec.ExitError
+			require.ErrorAs(t, err, &exitErr)
+			require.NotZero(t, exitErr.ExitCode())
+			var record map[string]any
+			require.NoError(t, json.Unmarshal(bytes.TrimSpace(stderr.Bytes()), &record))
+			assert.Equal(t, "fatal", record["level"])
+			assert.Contains(t, record["msg"], "DEVSY_NO_STATUS")
+			assert.NotContains(t, stdout.String(), secret)
+			assert.NotContains(t, stderr.String(), secret)
+			_, err = os.Stat(marker)
+			require.True(t, os.IsNotExist(err))
+			_, err = os.Stat(metrics)
+			require.True(t, os.IsNotExist(err))
+		})
+	}
+}
+
+func TestInvalidLoggingEnvironmentDoesNotExposeValue(t *testing.T) {
+	if mode := os.Getenv("DEVSY_TEST_INVALID_LOG_CHILD"); mode != "" {
+		os.Args = []string{devsy, "context", cmdList}
+		if mode == testAgentCommand {
+			os.Args = []string{devsy, "internal", testAgentCommand, "git-credentials"}
+		}
+		os.Exit(run())
+	}
+	const canary = "synthetic-invalid-logging-value-81492"
+	for _, tc := range []struct {
+		name    string
+		mode    string
+		env     string
+		message string
+		choice  string
+	}{
+		{"root level", testRootCommand, testLogLevelEnv, "invalid log level", "trace"},
+		{"root format", testRootCommand, testLogFormatEnv, "invalid log format", logOutputLogfmt},
+		{"root result format", testRootCommand, testResultFormatEnv, "unexpected output format", "plain"},
+		{"agent level", testAgentCommand, testLogLevelEnv, "invalid log level", "trace"},
+		{"agent format", testAgentCommand, testLogFormatEnv, "invalid log format", logOutputLogfmt},
+		{"agent result format", testAgentCommand, testResultFormatEnv, "unexpected output format", "plain"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DEVSY_TEST_INVALID_LOG_CHILD", tc.mode)
+			t.Setenv(config.EnvHome, t.TempDir())
+			t.Setenv(testLogLevelEnv, "")
+			t.Setenv(testLogFormatEnv, "")
+			t.Setenv(testResultFormatEnv, "")
+			t.Setenv("DEVSY_NO_STATUS", "")
+			t.Setenv("DEVSY_METRICS_FILE", "")
+			t.Setenv(tc.env, canary)
+			child := exec.Command(os.Args[0], loggingSelector)
+			var stdout, stderr bytes.Buffer
+			child.Stdout = &stdout
+			child.Stderr = &stderr
+			err := child.Run()
+			var exitErr *exec.ExitError
+			require.ErrorAs(t, err, &exitErr)
+			require.NotZero(t, exitErr.ExitCode())
+			assert.Contains(t, stderr.String(), tc.message)
+			assert.Contains(t, stderr.String(), tc.choice)
+			assert.NotContains(t, stderr.String(), canary)
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
 
 // TestOptInEnvFlags_AppliesEnvValueToFlag verifies that for each opt-in flag,
 // setting the corresponding DEVSY_* env var pushes the value into the bound
@@ -35,7 +149,10 @@ func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
 		{flagName: "home", envName: "DEVSY_HOME", want: "/tmp/h", persistent: true},
 		{flagName: "context", envName: "DEVSY_CONTEXT", want: "ctx-a", persistent: true},
 		{flagName: cmdProvider, envName: "DEVSY_PROVIDER", want: "docker", persistent: true},
-		{flagName: "debug", envName: "DEVSY_DEBUG", want: "true", persistent: true},
+		{flagName: "log-level", envName: testLogLevelEnv, want: "debug", persistent: true},
+		{flagName: "log-format", envName: testLogFormatEnv, want: logOutputJSON, persistent: true},
+		{flagName: "result-format", envName: testResultFormatEnv, want: "text", persistent: true},
+		{flagName: "no-status", envName: "DEVSY_NO_STATUS", want: "true", persistent: true},
 		{
 			cmdPath:  "platform workspace list",
 			flagName: "host",

@@ -16,7 +16,7 @@ import (
 
 const (
 	registryFlag        = "--registry"
-	debugFlag           = "--debug"
+	debugFlag           = "--log-level=debug"
 	workspaceIDFlag     = "--workspace-id"
 	snapshotCmd         = "snapshot"
 	snapshotVerbCreate  = "create"

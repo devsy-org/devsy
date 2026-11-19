@@ -95,8 +95,8 @@ func (c *initializeCommand) run(ctx context.Context, name string, cmd []string) 
 		strings.Join(args, " "),
 	)
 
-	stdout := log.Writer(log.LevelInfo)
-	stderr := log.Writer(log.LevelError)
+	stdout := log.Writer(log.SlogLevelInfo)
+	stderr := log.Writer(log.SlogLevelError)
 	defer func() { _ = stdout.Close() }()
 	defer func() { _ = stderr.Close() }()
 

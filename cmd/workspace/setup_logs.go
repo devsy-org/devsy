@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
@@ -635,6 +636,9 @@ func (a *agentRefresher) command(runID, after string) string {
 	}
 	if after != "" {
 		words = append(words, "--after", shellescape.Quote(after))
+	}
+	for _, arg := range log.ForwardFlagArgs() {
+		words = append(words, shellescape.Quote(arg))
 	}
 
 	return strings.Join(words, " ")

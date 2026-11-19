@@ -112,13 +112,14 @@ func addExecFlags(execCmd *cobra.Command, cmd *ExecCmd) {
 func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	cmd.warnUnsupportedFlags()
 
-	if err := cmd.validateExecFlags(); err != nil {
+	mode, err := cmd.validateExecFlags()
+	if err != nil {
 		return err
 	}
 	reporter, err := newWorkspaceStatusReporter(
-		cmd.ResultFormat,
+		mode,
 		os.Stderr,
-		cmd.Verbosity > 0 || cmd.Debug,
+		log.InfoEnabled(),
 		cmd.NoStatus,
 	)
 	if err != nil {
@@ -148,17 +149,14 @@ func (cmd *ExecCmd) warnUnsupportedFlags() {
 	}
 }
 
-func (cmd *ExecCmd) validateExecFlags() error {
+func (cmd *ExecCmd) validateExecFlags() (string, error) {
 	if err := cmd.validateRemoteEnv(); err != nil {
-		return err
+		return "", err
 	}
 	if err := devcconfig.ValidateIDLabels(cmd.IDLabels); err != nil {
-		return err
+		return "", err
 	}
-	if _, err := output.ResolveMode(cmd.ResultFormat); err != nil {
-		return err
-	}
-	return nil
+	return output.ResolveMode(cmd.ResultFormat)
 }
 
 func (cmd *ExecCmd) resolveExecArgs() ([]string, error) {

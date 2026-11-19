@@ -78,6 +78,12 @@ Cancellation cannot interrupt an arbitrary blocked reader or writer. File cancel
 - Devsy does not close caller-owned input or global standard input. Machine command transports close their own pipe endpoints when the original context is cancelled.
 - Keep draining output after standard input reaches EOF. Input and output can close independently.
 
+### Logging and output
+
+Write diagnostics to stderr. Keep stdout reserved for provider results, status tokens, plugin handshakes, and transported command bytes. Do not wrap or rewrite command streams. Structured diagnostics use `ts`, `level`, and `msg` with typed attributes, snake_case keys, and static messages. Go providers should use `log.*Context` and canonical attribute constructors. Existing formatted and unstructured logging calls remain supported during migration.
+
+Honor `DEVSY_LOG_LEVEL`. The standalone provider default is `info`. Devsy forwards its effective level to child processes. Never log credentials, environment contents, command arguments, private paths, or raw backend payloads. Review diagnostics before sharing them.
+
 ### Windows compatibility
 
 On Windows, Devsy runs these scripts in an [emulated shell](https://github.com/mvdan/sh). It does not provide `grep` or `sed`. Put that logic in a helper binary or require the user to install those tools.

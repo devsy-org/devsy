@@ -96,7 +96,7 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, workspaceName)
 
 				// Wait for devsy workspace to come online (deadline: 30s)
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, "--log-level=debug")
 				framework.ExpectNoError(err)
 			},
 			ginkgo.SpecTimeout(framework.TimeoutLong()),

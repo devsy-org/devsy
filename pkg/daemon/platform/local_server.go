@@ -124,7 +124,7 @@ func newLocalServer(
 		handlers.RecoveryLogger(panicLogger{}),
 		handlers.PrintRecoveryStack(true),
 	)(mux)
-	handler = handlers.LoggingHandler(log.Writer(log.LevelDebug), handler)
+	handler = handlers.LoggingHandler(log.Writer(log.SlogLevelDebug), handler)
 	l.httpServer = &http.Server{Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
 
 	return l

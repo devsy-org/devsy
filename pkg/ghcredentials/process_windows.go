@@ -1,6 +1,8 @@
 package ghcredentials
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 
@@ -33,7 +35,11 @@ func runGH(binary string, args, env []string, _ *os.File) int {
 		if cmd.ProcessState != nil {
 			return cmd.ProcessState.ExitCode()
 		}
-		log.Errorw("gh relay: executable unavailable", "error_type", errorKind(err))
+		log.ErrorContext(
+			context.Background(),
+			"gh relay: executable unavailable",
+			slog.String("error_type", errorKind(err)),
+		)
 		return 126
 	}
 	return 0

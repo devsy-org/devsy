@@ -29,7 +29,7 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.It(
-			"make sure devsy output is correct and log-output works correctly",
+			"reports workspace errors with JSON diagnostics",
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				tempDir := framework.CopyTestdata("tests/up/testdata/docker", initialDir)
@@ -51,7 +51,9 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				// Wait for devsy workspace to come online
-				stdout, stderr, err := f.DevsyUpStreams(ctx, tempDir, "--log-output=json")
+				stdout, stderr, err := f.DevsyUpStreams(
+					ctx, tempDir, "--log-format=json", "--result-format=json",
+				)
 				deleteErr := f.DevsyWorkspaceDelete(ctx, tempDir, "--force")
 				framework.ExpectNoError(deleteErr)
 				framework.ExpectError(err, "expected error")
@@ -103,7 +105,7 @@ var _ = ginkgo.Describe(
 					initialDir,
 				)
 
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, debugFlag)
 
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(err.Error()).To(gomega.ContainSubstring("devsy up failed"))
@@ -143,7 +145,7 @@ var _ = ginkgo.Describe(
 
 				_, _, err = f.ExecCommandCapture(ctx, []string{
 					cmdWorkspace, "up",
-					names.Flag(names.Debug),
+					debugFlag,
 					names.Flag(names.IDE), "none",
 					tempDir,
 				})

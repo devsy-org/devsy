@@ -1,6 +1,11 @@
 package status
 
-import "github.com/devsy-org/devsy/pkg/log"
+import (
+	"context"
+	"log/slog"
+
+	"github.com/devsy-org/devsy/pkg/log"
+)
 
 // logReporter renders events as debug log lines.
 type logReporter struct{}
@@ -9,23 +14,18 @@ type logReporter struct{}
 func NewLogReporter() Reporter { return logReporter{} }
 
 func (logReporter) Report(e Event) {
-	pipeline := string(e.Pipeline)
-	if pipeline == "" {
-		pipeline = "up"
+	code := ""
+	if e.Error != nil {
+		code = e.Error.Code
 	}
-	state := e.State
-	switch state {
-	case StateFailed:
-		message := ""
-		if e.Error != nil {
-			message = e.Error.Message
-		}
-		log.Debugf("%s: phase %q failed: %s", pipeline, e.Phase, message)
-	case StateStarted:
-		log.Debugf("%s: entering phase %q: %s", pipeline, e.Phase, e.Step)
-	case StateSkipped:
-		log.Debugf("%s: skipped phase %q: %s", pipeline, e.Phase, e.Step)
-	default:
-		log.Debugf("%s: completed phase %q: %s", pipeline, e.Phase, e.Step)
-	}
+	log.DebugContext(context.Background(), "status",
+		slog.String("pipeline", string(e.Pipeline)),
+		slog.String("phase", string(e.Phase)),
+		slog.String("step", e.Step),
+		slog.String("operation_id", e.OperationID),
+		slog.String("parent_operation_id", e.ParentOperationID),
+		slog.String("state", string(e.State)),
+		slog.Int64("duration_ms", e.Duration.Milliseconds()),
+		slog.String("error_code", code),
+	)
 }

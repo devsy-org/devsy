@@ -123,7 +123,7 @@ func (fixture *dockerlessPathFixture) up(
 	baseArgs := []string{
 		cmdWorkspace,
 		"up",
-		names.Flag(names.Debug),
+		debugFlag,
 		names.Flag(names.IDE),
 		kubernetesIgnoreIDE,
 	}

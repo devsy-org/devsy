@@ -36,6 +36,14 @@ type InitConfig struct {
 }
 
 func Init(ctx context.Context, config InitConfig) (*Daemon, error) {
+	ctx = log.WithContext(
+		ctx,
+		log.AttrComponent("platform_daemon"),
+		log.AttrOperation("initialize"),
+	)
+	if config.ProviderName != "" {
+		ctx = log.WithContext(ctx, log.AttrProvider(config.ProviderName))
+	}
 	socketAddr := GetSocketAddr(config.ProviderName)
 	log.Infof("Starting Daemon on address: %s", socketAddr)
 	// listen to socket for early return  in case it's already in use
@@ -67,6 +75,7 @@ func Init(ctx context.Context, config InitConfig) (*Daemon, error) {
 }
 
 func (d *Daemon) Start(ctx context.Context) error {
+	ctx = log.WithContext(ctx, log.AttrComponent("platform_daemon"), log.AttrOperation("serve"))
 	errChan := make(chan error, 1)
 
 	go func() {
@@ -74,16 +83,16 @@ func (d *Daemon) Start(ctx context.Context) error {
 		errChan <- d.localServer.ListenAndServe()
 	}()
 	go func() {
-		log.Info("Start proxying connections")
+		log.InfoContext(ctx, "start proxying connections")
 		errChan <- d.Listen(d.socketListener)
 	}()
 	go func() {
-		log.Info("Start netmap watcher")
+		log.InfoContext(ctx, "start netmap watcher")
 		errChan <- d.watchNetmap(ctx)
 	}()
 
 	defer func() {
-		log.Info("Cleaning up daemon resources")
+		log.InfoContext(ctx, "cleaning up daemon resources")
 		_ = d.tsServer.Close()
 		_ = d.localServer.Close()
 		_ = d.socketListener.Close()

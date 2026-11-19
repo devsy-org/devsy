@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"al.essio.dev/pkg/shellescape"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -62,13 +63,11 @@ func Setup(p SetupParams) error {
 	if err != nil {
 		return err
 	}
-	if log.DebugEnabled() {
-		dotCmd.Args = append(dotCmd.Args, names.Flag(names.Debug))
-	}
+	dotCmd.Args = append(dotCmd.Args, log.ForwardFlagArgs()...)
 
 	log.Debugf("Running dotfiles setup command: %v", dotCmd.Args)
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(log.SlogLevelInfo)
 
 	dotCmd.Stdout = writer
 	dotCmd.Stderr = writer
@@ -85,7 +84,7 @@ func Setup(p SetupParams) error {
 
 func buildDotCmdAgentArguments(
 	dotfilesRepo, dotfilesScript string,
-	strictHostKey, debug bool,
+	strictHostKey bool,
 ) []string {
 	agentArguments := []string{
 		cmdInternal,
@@ -100,9 +99,7 @@ func buildDotCmdAgentArguments(
 		agentArguments = append(agentArguments, names.Flag(names.StrictHostKeyChecking))
 	}
 
-	if debug {
-		agentArguments = append(agentArguments, names.Flag(names.Debug))
-	}
+	agentArguments = append(agentArguments, log.ForwardFlagArgs()...)
 
 	if dotfilesScript != "" {
 		agentArguments = append(
@@ -157,24 +154,25 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 	strictHostKey := p.devsyConfig.ContextOption(
 		config.ContextOptionSSHStrictHostKeyChecking,
 	) == config.BoolTrue
-	debug := log.DebugEnabled()
 	agentArguments := buildDotCmdAgentArguments(
-		p.dotfilesRepo, p.dotfilesScript, strictHostKey, debug,
+		p.dotfilesRepo, p.dotfilesScript, strictHostKey,
 	)
 
 	if p.dotfilesScript != "" {
 		log.Infof("Dotfiles script %s specified", p.dotfilesScript)
 	}
 
-	sshCmd = append(sshCmd,
+	sshCmd = append(
+		sshCmd,
 		names.Flag(names.User),
 		remoteUser,
 		names.Flag(names.Context),
 		p.client.Context(),
 		p.client.Workspace(),
-		names.FlagValue(names.LogOutput, "raw"),
 		names.Flag(names.Command),
-		config.ContainerDevsyHelperLocation+" "+strings.Join(agentArguments, " "),
+		shellescape.QuoteCommand(
+			append([]string{config.ContainerDevsyHelperLocation}, agentArguments...),
+		),
 	)
 	execPath, err := os.Executable()
 	if err != nil {

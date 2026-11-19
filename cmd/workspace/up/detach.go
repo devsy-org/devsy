@@ -14,6 +14,7 @@ import (
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
@@ -129,7 +130,8 @@ func launchDetached(t *task.Task, invocationEnv []string) error {
 		return err
 	}
 
-	args := append(detachedArgs(os.Args[1:]), names.Flag(names.TaskID), t.ID())
+	args := append(log.ForwardFlagArgs(), detachedArgs(os.Args[1:])...)
+	args = append(args, names.Flag(names.TaskID), t.ID())
 	return command.StartSupervisedBackground(command.SupervisedStartOptions{
 		Name:            task.WorkerProcessName(t.ID()),
 		Lease:           t.LaunchLease(),

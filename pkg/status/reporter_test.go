@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testTextFormat = "text"
+
 func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
 	var plain bytes.Buffer
 	plainReporter, err := NewReporter(ReporterOptions{
@@ -39,6 +41,18 @@ func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
 	jsonReporter.Report(Event{Phase: PhaseReady, State: StateStarted})
 	if len(events) != 1 || events[0].State != StateStarted {
 		t.Fatalf("events = %#v", events)
+	}
+}
+
+func TestTextFormatRendersPlain(t *testing.T) {
+	var out bytes.Buffer
+	reporter, err := NewReporter(ReporterOptions{Format: testTextFormat, Out: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reporter.Report(Event{Phase: PhaseReady, State: StateSucceeded})
+	if out.String() != "[OK]   ready\n" {
+		t.Fatalf("unexpected output %q", out.String())
 	}
 }
 
@@ -103,19 +117,30 @@ func TestNewReporter_AutoRequiresEnvelopeWhenNonInteractive(t *testing.T) {
 	}
 }
 
-func TestNewReporter_DesktopForcesEnvelope(t *testing.T) {
+func TestNewReporter_DesktopFormatPrecedence(t *testing.T) {
 	t.Setenv("DEVSY_UI", "true")
+	for _, format := range []string{formatPlain, testTextFormat} {
+		var out bytes.Buffer
+		reporter, err := NewReporter(ReporterOptions{Format: format, Out: &out, Interactive: true})
+		if err != nil {
+			t.Fatalf("%s reporter: %v", format, err)
+		}
+		reporter.Report(Event{Phase: PhaseReady, State: StateSucceeded})
+		if got := out.String(); got != "[OK]   ready\n" {
+			t.Fatalf("%s output = %q", format, got)
+		}
+	}
 	var events []Event
 	reporter, err := NewReporter(ReporterOptions{
-		Format:   "plain",
-		NoStatus: true,
+		Format:      "auto",
+		Interactive: true,
 		Envelope: func(e Event) error {
 			events = append(events, e)
 			return nil
 		},
 	})
 	if err != nil {
-		t.Fatalf("desktop reporter: %v", err)
+		t.Fatalf("desktop auto reporter: %v", err)
 	}
 	reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
 	if len(events) != 1 {
@@ -147,6 +172,60 @@ func TestNewReporter_NoStatus(t *testing.T) {
 		if _, err := NewReporter(opts); err == nil {
 			t.Fatalf("expected validation error for %+v", opts)
 		}
+	}
+}
+
+func TestNewReporter_DesktopForcesEnvelope(t *testing.T) {
+	t.Setenv("DEVSY_UI", "true")
+	var events []Event
+	reporter, err := NewReporter(ReporterOptions{
+		Format: formatPlain, NoStatus: true,
+		Envelope: func(event Event) error {
+			events = append(events, event)
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	reporter.Report(Event{Phase: PhaseReady, State: StateStarted})
+	require.Len(t, events, 1)
+	require.Equal(t, PhaseReady, events[0].Phase)
+	require.Equal(t, StateStarted, events[0].State)
+	for _, opts := range []ReporterOptions{
+		{Format: "ansi", NoStatus: true},
+		{Format: formatJSON, NoStatus: true},
+		{Format: formatPlain, NoStatus: true},
+	} {
+		_, err := NewReporter(opts)
+		require.Error(t, err)
+	}
+}
+
+func TestNewCLIReporter_NoStatusPreservesDesktopEnvelopes(t *testing.T) {
+	t.Setenv("DEVSY_UI", "true")
+	for _, format := range []string{formatAuto, formatJSON, formatPlain, testTextFormat} {
+		t.Run(format, func(t *testing.T) {
+			var events []Event
+			reporter, err := NewCLIReporter(CLIOptions{
+				Format: format, NoStatus: true,
+				Envelope: func(event Event) error {
+					events = append(events, event)
+					return nil
+				},
+			})
+			require.NoError(t, err)
+			err = Run(
+				context.Background(),
+				reporter,
+				Operation{Phase: PhaseInstallingProvider},
+				func(context.Context) error { return nil },
+			)
+			require.NoError(t, err)
+			require.Len(t, events, 2)
+			require.Equal(t, PhaseInstallingProvider, events[0].Phase)
+			require.Equal(t, StateStarted, events[0].State)
+			require.Equal(t, PhaseInstallingProvider, events[1].Phase)
+			require.Equal(t, StateSucceeded, events[1].State)
+		})
 	}
 }
 
@@ -198,9 +277,14 @@ func TestNoStatusTeePreservesRunEvents(t *testing.T) {
 }
 
 func TestNewReporter_RejectsUnknownFormat(t *testing.T) {
-	_, err := NewReporter(ReporterOptions{Format: "ansi", Out: &bytes.Buffer{}})
-	if err == nil {
-		t.Fatal("expected invalid format error")
+	const secret = "private-format-secret"
+	for _, noStatus := range []bool{false, true} {
+		_, err := NewReporter(
+			ReporterOptions{Format: secret, Out: &bytes.Buffer{}, NoStatus: noStatus},
+		)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), secret)
+		require.Contains(t, err.Error(), "choose json, plain, or auto")
 	}
 }
 

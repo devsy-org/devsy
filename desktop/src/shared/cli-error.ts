@@ -6,11 +6,23 @@ export interface CLIError {
 }
 
 export interface CliLogLine {
-  level?: "debug" | "info" | "warn" | "error" | "panic" | "fatal" | string
-  ts?: string
-  msg?: string
-  cliError?: CLIError
+  level: "trace" | "debug" | "info" | "warn" | "error" | "fatal"
+  ts: string
+  msg: string
   [key: string]: unknown
+}
+
+export function isCliDiagnostic(value: unknown): value is CliLogLine {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  return (
+    typeof candidate.ts === "string" &&
+    typeof candidate.msg === "string" &&
+    typeof candidate.level === "string" &&
+    ["trace", "debug", "info", "warn", "error", "fatal"].includes(
+      candidate.level,
+    )
+  )
 }
 
 export type CliEnvelopeKind = "status" | "result" | "error"
@@ -104,6 +116,15 @@ export function cliErrorFromEnvelope(value: unknown): CLIError | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return undefined
   const candidate = value as Record<string, unknown>
+  if (
+    Object.keys(candidate).some(
+      (key) =>
+        !["kind", "outcome", "code", "message", "hint", "context"].includes(
+          key,
+        ),
+    )
+  )
+    return undefined
   if (candidate.kind !== "error" || candidate.outcome !== "error")
     return undefined
   if (typeof candidate.message !== "string" || candidate.message.length === 0)
@@ -120,37 +141,6 @@ export function cliErrorFromEnvelope(value: unknown): CLIError | undefined {
     hint: typeof candidate.hint === "string" ? candidate.hint : undefined,
     context: candidate.context as Record<string, string> | undefined,
   }
-}
-
-export function cliErrorFromLegacy(value: unknown): CLIError | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return undefined
-  const candidate = value as Record<string, unknown>
-  if (
-    candidate.level !== "error" &&
-    candidate.level !== "fatal" &&
-    candidate.level !== "panic"
-  )
-    return undefined
-  if (!isCLIError(candidate.cliError)) return undefined
-  // Legacy zap encoding flattens context to a string; drop it rather than discard the error.
-  const err = candidate.cliError
-  return isStringMap(err.context) || err.context === undefined
-    ? err
-    : { ...err, context: undefined }
-}
-
-function isCLIError(value: unknown): value is CLIError {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false
-  const candidate = value as Record<string, unknown>
-  return (
-    typeof candidate.code === "string" &&
-    typeof candidate.message === "string" &&
-    (candidate.hint === undefined || typeof candidate.hint === "string") &&
-    (candidate.context === undefined ||
-      typeof candidate.context === "string" ||
-      isStringMap(candidate.context))
-  )
 }
 
 function isStringMap(value: unknown): value is Record<string, string> {
@@ -173,6 +163,7 @@ export function parseCliEnvelope(line: string): CliEnvelope | undefined {
   if (!trimmed.startsWith("{")) return undefined
   try {
     const obj = JSON.parse(trimmed) as unknown
+    if (isCliDiagnostic(obj)) return undefined
     if (
       obj &&
       typeof obj === "object" &&
@@ -190,12 +181,49 @@ export function parseCliEnvelope(line: string): CliEnvelope | undefined {
         !cliErrorFromEnvelope(obj)
       )
         return undefined
+      if (obj.kind === "result" && !isResultEnvelope(obj)) return undefined
       return obj as CliEnvelope
     }
   } catch {
     // not JSON - fall through
   }
   return undefined
+}
+
+function isResultEnvelope(value: object): value is CliResultEnvelope {
+  const candidate = value as Record<string, unknown>
+  if (
+    Object.keys(candidate).some(
+      (key) =>
+        ![
+          "kind",
+          "outcome",
+          "containerId",
+          "remoteUser",
+          "remoteWorkspaceFolder",
+          "url",
+          "warnings",
+          "recovery",
+          "runId",
+        ].includes(key),
+    )
+  )
+    return false
+  return (
+    candidate.outcome === "success" &&
+    typeof candidate.containerId === "string" &&
+    typeof candidate.remoteUser === "string" &&
+    typeof candidate.remoteWorkspaceFolder === "string" &&
+    (candidate.url === undefined || typeof candidate.url === "string") &&
+    (candidate.recovery === undefined ||
+      typeof candidate.recovery === "boolean") &&
+    (candidate.runId === undefined ||
+      (typeof candidate.runId === "string" &&
+        RUN_UUID.test(candidate.runId))) &&
+    (candidate.warnings === undefined ||
+      (Array.isArray(candidate.warnings) &&
+        candidate.warnings.every((item) => typeof item === "string")))
+  )
 }
 
 function isCurrentStatusEnvelope(value: object): value is CliStatusEnvelope {

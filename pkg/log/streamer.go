@@ -2,14 +2,18 @@ package log
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/secrets"
-	"go.uber.org/zap/zapcore"
 )
 
 // StreamerOptions configures a JSON-aware subprocess log streamer.
@@ -18,7 +22,7 @@ type StreamerOptions struct {
 	// When omitted, sensitive values from the current environment are masked.
 	Redactor *secrets.Redactor
 	// FallbackLevel is used for non-structured subprocess output.
-	FallbackLevel int
+	FallbackLevel Level
 	// CaptureLines retains this many raw lines for ErrorOutput.
 	CaptureLines int
 	// CaptureBytes bounds the total raw bytes retained for ErrorOutput,
@@ -29,6 +33,7 @@ type StreamerOptions struct {
 	// TreatUnknownJSONAsDebug preserves the historical tunnel behavior for
 	// JSON messages whose level is absent or unrecognized.
 	TreatUnknownJSONAsDebug bool
+	DefaultAttrs            []slog.Attr
 }
 
 // JSONLogStreamer consumes line-oriented subprocess output. Devsy structured
@@ -38,12 +43,14 @@ type JSONLogStreamer struct {
 	pw   *io.PipeWriter
 	done chan struct{}
 
-	fallbackLevel           zapcore.Level
+	fallbackLevel           Level
 	detectLevelPrefixes     bool
 	treatUnknownJSONAsDebug bool
 	captureLines            int
 	captureBytes            int
 	redactor                *secrets.Redactor
+	defaultAttrs            []slog.Attr
+	errorCode               string
 
 	mu            sync.Mutex
 	lastLines     []string
@@ -59,17 +66,24 @@ func NewJSONLogStreamer(options StreamerOptions) *JSONLogStreamer {
 	streamer := &JSONLogStreamer{
 		pw:                      pw,
 		done:                    make(chan struct{}),
-		fallbackLevel:           verbosityConstToZapLevel(options.FallbackLevel),
+		fallbackLevel:           options.FallbackLevel,
 		detectLevelPrefixes:     options.DetectLevelPrefixes,
 		treatUnknownJSONAsDebug: options.TreatUnknownJSONAsDebug,
 		captureLines:            options.CaptureLines,
 		captureBytes:            options.CaptureBytes,
 		redactor:                options.Redactor,
+		defaultAttrs:            append([]slog.Attr(nil), options.DefaultAttrs...),
 	}
 	streamer.redactor = secrets.Combine(
 		streamer.redactor,
 		secrets.NewEnvironmentRedactor(os.Environ()),
 	)
+	for i := range streamer.defaultAttrs {
+		streamer.defaultAttrs[i] = (&redactHandler{redactor: streamer.redactor}).cleanAttr(
+			streamer.defaultAttrs[i],
+			true,
+		)
+	}
 	if options.CaptureLines > 0 {
 		streamer.lastLines = make([]string, 0, options.CaptureLines)
 	}
@@ -100,45 +114,158 @@ func (s *JSONLogStreamer) ErrorOutput() string {
 	return strings.Join(s.lastLines, "\n")
 }
 
-// LogLine processes one line. It is exported for callers that need to feed a
-// line directly, while Write remains the normal subprocess boundary API.
 func (s *JSONLogStreamer) LogLine(line string) {
-	line = strings.TrimSpace(line)
-	line = strings.ReplaceAll(line, "\r", "")
+	line = strings.TrimSpace(strings.ReplaceAll(line, "\r", ""))
 	if line == "" {
 		return
 	}
-
-	if decoded, ok := decodeJSONLogLine([]byte(line)); ok &&
+	s.mu.Lock()
+	s.errorCode = ""
+	s.mu.Unlock()
+	if decoded, ok := decodeJSONLogLine(
+		[]byte(line),
+	); ok &&
 		(decoded.recognized || s.treatUnknownJSONAsDebug) {
-		logAtZapLevel(decoded.level, decoded.text)
-	} else if s.detectLevelPrefixes {
-		if matched, level := extractLevelPrefix(line); matched {
-			logAtZapLevel(level, line)
-		} else {
-			logAtZapLevel(s.fallbackLevel, line)
-		}
-	} else {
-		logAtZapLevel(s.fallbackLevel, line)
+		s.emitDecodedLine(decoded)
+		return
 	}
+	line = s.redactLine(line)
+	level := s.fallbackLevel
+	if s.detectLevelPrefixes {
+		if matched, found := extractLevelPrefix(line); matched {
+			level = found
+		}
+	}
+	emitRecord(level, time.Time{}, line, s.defaultAttrs)
 }
+
+func (s *JSONLogStreamer) ErrorCode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.errorCode
+}
+
+func (s *JSONLogStreamer) emitDecodedLine(decoded decodedJSONLogLine) {
+	decoded.text = s.redactor.Redact(decoded.text)
+	for i := range decoded.attrs {
+		decoded.attrs[i] = (&redactHandler{redactor: s.redactor}).cleanAttr(decoded.attrs[i], true)
+	}
+	if decoded.recognized && decoded.level >= SlogLevelError {
+		s.captureErrorCode(decoded.attrs)
+	}
+	emitRecord(
+		decoded.level,
+		decoded.timestamp,
+		decoded.text,
+		mergeAttrs(s.defaultAttrs, decoded.attrs),
+	)
+}
+
+func (s *JSONLogStreamer) captureErrorCode(attrs []slog.Attr) {
+	var code string
+	for _, attr := range attrs {
+		if attr.Key != "error_code" {
+			continue
+		}
+		switch value := attr.Value.Any().(type) {
+		case string:
+			code = value
+		case json.Number:
+			code = value.String()
+		case bool:
+			if value {
+				code = "true"
+			} else {
+				code = "false"
+			}
+		}
+	}
+	if len(code) > 128 {
+		code = code[:128]
+	}
+	s.mu.Lock()
+	s.errorCode = code
+	s.mu.Unlock()
+}
+
+func (s *JSONLogStreamer) redactLine(line string) string {
+	dec := json.NewDecoder(strings.NewReader(line))
+	dec.UseNumber()
+	var value any
+	if dec.Decode(&value) != nil {
+		return s.redactor.Redact(line)
+	}
+	var extra any
+	if dec.Decode(&extra) != io.EOF {
+		return s.redactor.Redact(line)
+	}
+	clean := (&redactHandler{redactor: s.redactor}).cleanValue(value)
+	if reflect.DeepEqual(value, clean) {
+		return line
+	}
+	if data, err := json.Marshal(clean); err == nil {
+		return string(data)
+	}
+	return s.redactor.Redact(line)
+}
+
+const maxStructuredLine = 1024 * 1024
 
 func (s *JSONLogStreamer) process(reader io.Reader) {
 	defer close(s.done)
-	scanner := bufio.NewScanner(reader)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
-		line := s.redactor.Redact(scanner.Text())
-		s.LogLine(line)
-		s.capture(line)
-	}
-	if err := scanner.Err(); err != nil {
-		Debugf("error reading subprocess output: %v", err)
-	}
 	if closer, ok := reader.(io.Closer); ok {
-		_ = closer.Close()
+		defer func() { _ = closer.Close() }()
+	}
+	input := bufio.NewReaderSize(reader, 64*1024)
+	var line []byte
+	oversized := false
+	for {
+		chunk, err := input.ReadSlice('\n')
+		complete := err == nil
+		if complete {
+			chunk = chunk[:len(chunk)-1]
+		}
+		line, oversized = appendStructuredChunk(line, chunk, oversized)
+		end := err != nil && err != bufio.ErrBufferFull
+		if complete || end {
+			s.processLine(line, oversized)
+			line, oversized = nil, false
+		}
+		if end {
+			logStreamReadError(err)
+			return
+		}
+	}
+}
+
+func appendStructuredChunk(line, chunk []byte, oversized bool) ([]byte, bool) {
+	if oversized {
+		return line, true
+	}
+	if len(line)+len(chunk) <= maxStructuredLine {
+		return append(line, chunk...), false
+	}
+	return nil, true
+}
+
+func (s *JSONLogStreamer) processLine(line []byte, oversized bool) {
+	if oversized {
+		s.mu.Lock()
+		s.errorCode = ""
+		s.mu.Unlock()
+		message := "[oversized subprocess output truncated]"
+		emitRecord(s.fallbackLevel, time.Time{}, message, s.defaultAttrs)
+		s.capture(message)
+	} else if len(line) > 0 {
+		text := strings.TrimSuffix(string(line), "\r")
+		s.LogLine(text)
+		s.capture(s.redactLine(text))
+	}
+}
+
+func logStreamReadError(err error) {
+	if err != io.EOF {
+		Debugf("error reading subprocess output: %v", err)
 	}
 }
 
@@ -190,79 +317,110 @@ func (s *JSONLogStreamer) dropOldestLine() {
 	s.lastLines = s.lastLines[1:]
 }
 
-type jsonLine struct {
-	Message string `json:"message,omitempty"`
-	Msg     string `json:"msg,omitempty"`
-	Level   string `json:"level,omitempty"`
-}
-
-func (l *jsonLine) text() string {
-	if l.Message != "" {
-		return l.Message
-	}
-	return l.Msg
-}
-
 type decodedJSONLogLine struct {
 	text       string
-	level      zapcore.Level
+	level      Level
 	recognized bool
+	timestamp  time.Time
+	attrs      []slog.Attr
 }
 
 func decodeJSONLogLine(line []byte) (decodedJSONLogLine, bool) {
-	var obj jsonLine
-	if err := json.Unmarshal(line, &obj); err != nil || obj.text() == "" {
+	decoder := json.NewDecoder(bytes.NewReader(line))
+	decoder.UseNumber()
+	var obj map[string]any
+	if decoder.Decode(&obj) != nil || obj == nil {
 		return decodedJSONLogLine{}, false
 	}
-	level, recognized := normalizeZapLevel(obj.Level)
+	var extra any
+	if decoder.Decode(&extra) != io.EOF {
+		return decodedJSONLogLine{}, false
+	}
+	text, ok := obj[slog.MessageKey].(string)
+	if !ok || text == "" {
+		text, _ = obj["message"].(string)
+	}
+	if text == "" {
+		return decodedJSONLogLine{}, false
+	}
+	rawLevel, _ := obj["level"].(string)
+	level, recognized := normalizeLevel(rawLevel)
+	var timestamp time.Time
+	for _, key := range []string{"ts", slog.TimeKey} {
+		rawTime, _ := obj[key].(string)
+		var err error
+		timestamp, err = time.Parse(time.RFC3339Nano, rawTime)
+		if err != nil {
+			timestamp, err = time.Parse("2006-01-02T15:04:05.000Z0700", rawTime)
+		}
+		if err == nil {
+			break
+		}
+	}
+	delete(obj, slog.MessageKey)
+	delete(obj, "message")
+	delete(obj, "level")
+	delete(obj, "ts")
+	delete(obj, slog.TimeKey)
+	attrs := make([]slog.Attr, 0, len(obj))
+	for k, v := range obj {
+		attrs = append(attrs, slog.Any(k, v))
+	}
+	sort.Slice(attrs, func(i, j int) bool { return attrs[i].Key < attrs[j].Key })
 	return decodedJSONLogLine{
-		text:       obj.text(),
+		text:       text,
 		level:      level,
 		recognized: recognized,
+		timestamp:  timestamp,
+		attrs:      attrs,
 	}, true
 }
 
-const infoLevelName = "info"
-
-func normalizeZapLevel(raw string) (zapcore.Level, bool) {
+func normalizeLevel(raw string) (Level, bool) {
 	switch strings.ToLower(raw) {
-	case LevelTraceName, LevelDebugName:
-		return zapcore.DebugLevel, true
-	case infoLevelName:
-		return zapcore.InfoLevel, true
+	case "trace":
+		return SlogLevelTrace, true
+	case "debug":
+		return SlogLevelDebug, true
+	case "info":
+		return SlogLevelInfo, true
 	case "warning", "warn":
-		return zapcore.WarnLevel, true
-	case "error", "panic", "fatal":
-		return zapcore.ErrorLevel, true
+		return SlogLevelWarn, true
+	case "error", "panic":
+		return SlogLevelError, true
+	case "fatal":
+		return SlogLevelFatal, true
 	default:
-		return zapcore.DebugLevel, false
+		return SlogLevelDebug, false
 	}
 }
 
-func extractLevelPrefix(line string) (bool, zapcore.Level) {
+func extractLevelPrefix(line string) (bool, Level) {
 	parts := strings.Fields(line)
 	if len(parts) < 2 || !strings.Contains(parts[0], ":") {
 		return false, 0
 	}
-
-	level, recognized := normalizeZapLevel(parts[1])
-	if !recognized {
-		return false, 0
-	}
-	return true, level
+	level, ok := normalizeLevel(parts[1])
+	return ok, level
 }
 
-func logAtZapLevel(level zapcore.Level, message string) {
-	switch level {
-	case zapcore.DebugLevel:
-		Debug(message)
-	case zapcore.InfoLevel:
-		Info(message)
-	case zapcore.WarnLevel:
-		Warn(message)
-	case zapcore.ErrorLevel:
-		Error(message)
-	default:
-		Debug(message)
+func mergeAttrs(defaults, explicit []slog.Attr) []slog.Attr {
+	attrs := make([]slog.Attr, 0, len(defaults)+len(explicit))
+	for _, attr := range defaults {
+		if isEnvelopeKey(attr.Key) || containsAttr(explicit, attr.Key) ||
+			containsAttr(attrs, attr.Key) {
+			continue
+		}
+		attrs = append(attrs, attr)
 	}
+	return append(attrs, explicit...)
+}
+
+func containsAttr(attrs []slog.Attr, key string) bool {
+	for _, attr := range attrs {
+		if attr.Key == key {
+			return true
+		}
+	}
+	return false
 }

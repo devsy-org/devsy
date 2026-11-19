@@ -14,7 +14,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 type streamingClient struct {
@@ -84,7 +83,7 @@ func invocationRecords(recs []workspacelogs.Record) []workspacelogs.Record {
 }
 
 func TestExecuteBuildRetainsOutputAtWarnLevel(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.WarnLevel)
+	logs := log.InitTestObserved(t, log.SlogLevelWarn)
 	ctx, store, runID := recordedContext(t)
 	d := &appleDriver{Apple: &streamingClient{stdout: "built layer\n", stderr: "warning text"}}
 
@@ -103,7 +102,7 @@ func TestExecuteBuildRetainsOutputAtWarnLevel(t *testing.T) {
 }
 
 func TestExecuteBuildFailureKeepsErrorTail(t *testing.T) {
-	log.InitTestObserved(t, zapcore.WarnLevel)
+	log.InitTestObserved(t, log.SlogLevelWarn)
 	ctx, store, runID := recordedContext(t)
 	cause := errors.New("exit status 2")
 	d := &appleDriver{Apple: &streamingClient{stderr: "no space left\n", err: cause}}
@@ -121,7 +120,7 @@ func TestExecuteBuildFailureKeepsErrorTail(t *testing.T) {
 }
 
 func TestExecuteBuildCanceledIsRecorded(t *testing.T) {
-	log.InitTestObserved(t, zapcore.WarnLevel)
+	log.InitTestObserved(t, log.SlogLevelWarn)
 	ctx, store, runID := recordedContext(t)
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
@@ -136,7 +135,7 @@ func TestExecuteBuildCanceledIsRecorded(t *testing.T) {
 }
 
 func TestExecuteBuildWithoutRecorderLogsOnly(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.InfoLevel)
+	logs := log.InitTestObserved(t, log.SlogLevelInfo)
 	d := &appleDriver{Apple: &streamingClient{stdout: "plain\n"}}
 
 	require.NoError(t, d.executeBuild(t.Context(), &build.BuildOptions{}, ""))
@@ -146,6 +145,22 @@ func TestExecuteBuildWithoutRecorderLogsOnly(t *testing.T) {
 		messages = append(messages, e.Message)
 	}
 	assert.Equal(t, []string{"plain"}, messages)
+}
+
+func TestExecuteBuildLogsRuntimeContext(t *testing.T) {
+	logs := log.InitTestObserved(t, log.SlogLevelDebug)
+	d := &appleDriver{Apple: &streamingClient{}, workspaceID: "workspace-1"}
+	ctx := appleLogContext(t.Context(), d.workspaceID)
+
+	require.NoError(t, d.executeBuild(ctx, &build.BuildOptions{}, ""))
+	entries := logs.FilterMessage("apple runtime command completed").All()
+	require.Len(t, entries, 1)
+	attrs := entries[0].AttrsMap()
+	assert.Equal(t, "builtin-driver", attrs["component"])
+	assert.Equal(t, "apple", attrs["provider"])
+	assert.Equal(t, "workspace-1", attrs["workspace_id"])
+	assert.EqualValues(t, 0, attrs["exit_code"])
+	assert.Contains(t, attrs, "duration_ms")
 }
 
 func TestResolveExistingImageRecordsReuse(t *testing.T) {

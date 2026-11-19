@@ -9,6 +9,7 @@ import (
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/transport"
@@ -184,10 +185,24 @@ type CommandTransportOptions struct {
 type UpOptions struct {
 	provider.CLIOptions
 
-	Debug    bool
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Reporter status.Reporter
+	LogLevel string          `json:"logLevel,omitempty"`
+	Stdin    io.Reader       `json:"-"`
+	Stdout   io.Writer       `json:"-"`
+	Reporter status.Reporter `json:"-"`
+}
+
+func (o UpOptions) EffectiveLogLevel() (string, error) {
+	level := o.LogLevel
+	if level == "" {
+		level = log.LevelString()
+	}
+	if _, ok := log.LevelFromString(level); !ok {
+		return "", fmt.Errorf(
+			"invalid log level, expected one of: %s",
+			strings.Join(log.ValidLevels(), ", "),
+		)
+	}
+	return level, nil
 }
 
 type SshOptions struct {

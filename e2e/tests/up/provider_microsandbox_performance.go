@@ -10,10 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -37,8 +37,6 @@ const (
 	performanceUpFresh  = "fresh"
 	performanceUpReused = "reused"
 )
-
-var startupEvent = regexp.MustCompile(`External runtime ([^ ]+) startup completed in ([^\s]+)`)
 
 type microsandboxPerformanceCapture struct {
 	active        bool
@@ -339,17 +337,32 @@ func (c *microsandboxPerformanceCapture) captureFreshWorkspace(
 func parseStartupEvents(output string) []startupPerformance {
 	var events []startupPerformance
 	for line := range strings.SplitSeq(output, "\n") {
-		match := startupEvent.FindStringSubmatch(line)
-		if len(match) != 3 {
+		var record struct {
+			Time       string `json:"ts"`
+			Level      string `json:"level"`
+			Message    string `json:"msg"`
+			Operation  string `json:"operation"`
+			DurationMS *int64 `json:"duration_ms"`
+		}
+		if json.Unmarshal([]byte(line), &record) != nil ||
+			record.Level != "debug" || record.Message != "External runtime startup completed" ||
+			record.DurationMS == nil || *record.DurationMS < 0 || *record.DurationMS > math.MaxInt64/int64(time.Millisecond) {
 			continue
 		}
-		duration, err := time.ParseDuration(match[2])
-		if err == nil && duration > 0 {
-			events = append(
-				events,
-				startupPerformance{Operation: match[1], DurationNS: duration.Nanoseconds()},
-			)
+		if _, err := time.Parse(time.RFC3339Nano, record.Time); err != nil {
+			if _, err := time.Parse("2006-01-02T15:04:05.000Z0700", record.Time); err != nil {
+				continue
+			}
 		}
+		switch record.Operation {
+		case "Info", "Preflight", "ProvisioningPreflight", "ReusePreflight", "Find",
+			"TargetArchitecture", "RunImage", "Start", "Stop", "Delete", "Exec", "Logs":
+		default:
+			continue
+		}
+		events = append(events, startupPerformance{
+			Operation: record.Operation, DurationNS: *record.DurationMS * int64(time.Millisecond),
+		})
 	}
 	return events
 }

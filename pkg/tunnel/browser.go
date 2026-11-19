@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -70,11 +71,10 @@ func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 	return NewManagedSSHTunnel(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-			writer := log.Writer(log.LevelDebug)
+			writer := log.Writer(log.SlogLevelDebug)
 			defer func() { _ = writer.Close() }()
 
 			sshCmd, err := CreateSSHCommand(ctx, p.Client, p.User, []string{
-				names.FlagValue(names.LogOutput, "raw"),
 				names.FlagValue(names.ReuseSSHAuthSock, p.AuthSockID),
 				names.Flag(names.Stdio),
 			})
@@ -134,7 +134,11 @@ func runPreparedBrowserServices(
 	run func(func(credentials.Readiness)) error,
 ) error {
 	return run(func(status credentials.Readiness) {
-		log.Debugw("browser credentials prepared", "status", status.GitHubState)
+		log.DebugContext(
+			ctx,
+			"browser credentials prepared",
+			slog.String("status", status.GitHubState),
+		)
 		notifyBrowserPrepared(ctx, p)
 	})
 }
@@ -143,7 +147,12 @@ func notifyBrowserPrepared(ctx context.Context, p BrowserTunnelParams) {
 	if ctx.Err() != nil {
 		return
 	}
-	log.Infow("browser tunnel ready", "url", p.TargetURL, "done", "true")
+	log.InfoContext(
+		ctx,
+		"browser tunnel ready",
+		slog.String("url", p.TargetURL),
+		slog.String("done", "true"),
+	)
 	if p.OnPrepared != nil {
 		p.OnPrepared(ctx)
 	}
@@ -171,7 +180,7 @@ func SetupBackhaul(
 
 	log.Info("Setting up backhaul SSH connection")
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(log.SlogLevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	// 5 steps × 200ms ≈ 1s covers the workspace.json atomic-rename window
@@ -229,13 +238,10 @@ func buildBackhaulCmd(ctx context.Context, p backhaulCmdParams) *exec.Cmd {
 		names.Flag(names.Context),
 		p.client.Context(),
 		p.client.Workspace(),
-		names.FlagValue(names.LogOutput, "raw"),
 		names.Flag(names.Command),
 		"while true; do sleep 6000000; done", // sleep infinity is not available on all systems
 	)
-	if log.DebugEnabled() {
-		cmd.Args = append(cmd.Args, names.Flag(names.Debug))
-	}
+	cmd.Args = append(cmd.Args, log.ForwardFlagArgs()...)
 	cmd.Stdout = p.writer
 	cmd.Stderr = p.writer
 	return cmd
@@ -281,7 +287,6 @@ func CreateSSHCommand(
 		clientContext: client.Context(),
 		workspace:     client.Workspace(),
 		user:          user,
-		debug:         log.DebugEnabled(),
 		extraArgs:     extraArgs,
 	})
 
@@ -295,7 +300,6 @@ type sshCommandArgsParams struct {
 	clientContext string
 	workspace     string
 	user          string
-	debug         bool
 	extraArgs     []string
 }
 
@@ -315,9 +319,7 @@ func buildSSHCommandArgs(p sshCommandArgsParams) []string {
 		p.clientContext,
 		p.workspace,
 	}
-	if p.debug {
-		args = append(args, names.Flag(names.Debug))
-	}
+	args = append(args, log.ForwardFlagArgs()...)
 	args = append(args, p.extraArgs...)
 	return args
 }

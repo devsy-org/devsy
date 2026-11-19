@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -183,19 +184,23 @@ func fetchRemoteDiagnostics(
 	opts diagnosticsFetchOptions,
 	result MachineDiagnostics,
 ) (MachineDiagnostics, error) {
-	command := shellescape.Quote(
-		mc.AgentPath(),
-	) + " internal agent daemon-diagnostics --limit " + strconv.Itoa(
-		opts.Limit,
-	)
+	var command strings.Builder
+	command.WriteString(shellescape.Quote(mc.AgentPath()))
+	command.WriteString(" internal agent daemon-diagnostics --limit ")
+	command.WriteString(strconv.Itoa(opts.Limit))
 	if opts.After != "" {
-		command += " --after " + shellescape.Quote(opts.After)
+		command.WriteString(" --after ")
+		command.WriteString(shellescape.Quote(opts.After))
+	}
+	for _, arg := range log.ForwardFlagArgs() {
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote(arg))
 	}
 	stdout := boundedDiagnosticsBuffer{max: maxRemoteDiagnosticsResponse}
 	stderr := boundedDiagnosticsBuffer{max: maxRemoteDiagnosticsResponse}
 	err := mc.Command(
 		ctx,
-		client.CommandOptions{Command: command, Stdout: &stdout, Stderr: &stderr},
+		client.CommandOptions{Command: command.String(), Stdout: &stdout, Stderr: &stderr},
 	)
 	if err != nil {
 		result.Source = CollectionSource{

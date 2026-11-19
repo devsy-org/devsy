@@ -8,7 +8,11 @@ import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
 import { isAppNavigationRequest } from "../shared/app-route.js"
-import type { CLIError, OperationStatus } from "../shared/cli-error.js"
+import type {
+  CLIError,
+  CliLogLine,
+  OperationStatus,
+} from "../shared/cli-error.js"
 import {
   normalizeOperationStatus,
   parseCliEnvelope,
@@ -27,7 +31,7 @@ import {
   type WorkspacePresentationReply,
   type WorkspacePresentationRequest,
 } from "../shared/workspace-presentation.js"
-import { hashWorkspaceRef, trackEvent } from "./analytics.js"
+import { hashWorkspaceUid, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
 import type { CliInvocationOptions, CliRunner, StreamLine } from "./cli.js"
@@ -40,6 +44,7 @@ import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderIconReader } from "./provider-icons.js"
 import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
+import { createRendererErrorHandler } from "./renderer-error.js"
 import { sendRendererEvent } from "./renderer-events.js"
 import { isTrustedSecretIpcSender } from "./secret-ipc-policy.js"
 import { SecretSession } from "./secret-session.js"
@@ -66,6 +71,12 @@ const execFileAsync = promisify(execFile)
 interface SecretIpcFailure {
   ok: false
   message: string
+}
+
+interface ProtectionActionArgs {
+  action: string
+  newPassphrase?: string
+  currentPassphrase?: string
 }
 
 type SecretUnlockResult = (SecretIpcFailure | { ok: true }) & {
@@ -245,7 +256,7 @@ function displayCliLine(line: string, meta?: StreamLine): string {
 }
 
 interface ProgressSink {
-  line(formatted: string): boolean
+  line(formatted: string, diagnostic?: CliLogLine): boolean
   done(
     finalLine: string,
     extra?: {
@@ -274,6 +285,23 @@ function redactSensitiveText(value: string): string {
   return redacted
     .replace(/(https?:\/\/)[^\s/@]+@/gi, "$1***@")
     .replace(/(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+/gi, "$1***")
+}
+
+function redactDiagnostic(value: CliLogLine): CliLogLine {
+  const redact = (input: unknown): unknown => {
+    if (typeof input === "string") return redactSensitiveText(input)
+    if (Array.isArray(input)) return input.map(redact)
+    if (input && typeof input === "object") {
+      return Object.fromEntries(
+        Object.entries(input).map(([key, item]) => [
+          redactSensitiveText(key),
+          redact(item),
+        ]),
+      )
+    }
+    return input
+  }
+  return redact(value) as CliLogLine
 }
 
 function redactCLIError(error: CLIError): CLIError {
@@ -342,7 +370,7 @@ function createLogSink(
     done: boolean,
     extra?: {
       message?: string
-      level?: "info" | "warn" | "error"
+      level?: CliLogLine["level"]
       cliError?: CLIError
       success?: boolean
     },
@@ -373,13 +401,24 @@ function createLogSink(
   }
 
   return {
-    line(formatted) {
+    line(formatted, diagnostic) {
       if (finished) return true
       const safeLine = redactSensitiveText(formatted)
       const ok = appendLog?.(safeLine) ?? true
-      buf.push(safeLine)
-      if (buf.length >= MAX_BATCH) post(false)
-      else if (!timer) timer = setTimeout(() => post(false), FLUSH_MS)
+      if (diagnostic) {
+        post(false)
+        sendRendererEvent(getWin, "command-progress", {
+          commandId,
+          message: safeLine,
+          level: diagnostic.level,
+          diagnostic: redactDiagnostic(diagnostic),
+          done: false,
+        })
+      } else {
+        buf.push(safeLine)
+        if (buf.length >= MAX_BATCH) post(false)
+        else if (!timer) timer = setTimeout(() => post(false), FLUSH_MS)
+      }
       return ok
     },
     async done(finalLine, extra) {
@@ -425,6 +464,51 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     machineDiagnosticsManager,
     getMainWindow,
   } = deps
+  function workspaceIdentity(
+    workspaceId: string,
+    context?: string,
+    expectedUid?: string,
+  ): Record<string, string> {
+    const entries = state
+      .workspaceList()
+      .filter((entry) => entry.id === workspaceId)
+    if (entries.length === 0) return {}
+    const scope = context || state.currentContext()
+    const workspace = entries.find((entry) => entry.context === scope)
+    const uid = workspace?.uid
+    if (
+      typeof uid !== "string" ||
+      !uid.trim() ||
+      (expectedUid !== undefined && uid !== expectedUid)
+    )
+      return {}
+    return { workspace_id: hashWorkspaceUid(uid) }
+  }
+  function workspaceProvider(name?: string): string | undefined {
+    if (!name) return undefined
+    const provider = state.providerList().find((entry) => entry.name === name)
+    const source = provider?.source
+    if (
+      source &&
+      typeof source === "object" &&
+      "internal" in source &&
+      source.internal === true &&
+      "raw" in source &&
+      typeof source.raw === "string"
+    ) {
+      return [
+        "apple",
+        "docker",
+        "kubernetes",
+        "microsandbox",
+        "podman",
+        "pro",
+      ].includes(source.raw)
+        ? source.raw
+        : "custom"
+    }
+    return "custom"
+  }
   const secretSession = new SecretSession(deps.secretSessionTimeoutMs)
   const providerIcons = new ProviderIconReader(cli)
   let providerIconContextRevision = -1
@@ -479,6 +563,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     !app.isPackaged && process.env.ELECTRON_RENDERER_URL
       ? process.env.ELECTRON_RENDERER_URL
       : pathToFileURL(join(__dirname, "../renderer/index.html")).href
+  ipcMain.on(
+    "renderer-error",
+    createRendererErrorHandler({
+      getWindow: getMainWindow,
+      expectedDocumentURL: secretDocumentURL,
+      log: (summary) => mainLog.error("Renderer error", summary),
+    }),
+  )
   const secretRequestDenied: SecretIpcFailure = {
     ok: false,
     message: "Secret operations require the main application window.",
@@ -571,7 +663,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (approvalFailure) return approvalFailure
       if (confirmation.response !== 1)
         return { ok: false, message: "Secret protection change canceled." }
-      await cli.runRaw(["secret", "protection", "remember"], {
+      await cli.runText(["secret", "protection", "remember"], {
         env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
         unlockRetried: true,
       })
@@ -745,37 +837,50 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     cli.setSessionPassphrase(value)
   }
 
+  function validateProtectionAction(
+    args: ProtectionActionArgs,
+  ): SecretIpcFailure | undefined {
+    const allowed = [
+      "set-passphrase",
+      "change-passphrase",
+      "remove-passphrase",
+      "remember",
+      "forget",
+    ]
+    if (!args || typeof args !== "object" || !allowed.includes(args.action))
+      return { ok: false, message: "Unknown protection action." }
+    return undefined
+  }
+
+  function validateProtectionPassphrases(
+    currentPassphrase: string | undefined,
+    newPassphrase: string | undefined,
+  ): SecretIpcFailure | undefined {
+    if (
+      currentPassphrase !== undefined &&
+      typeof currentPassphrase !== "string"
+    )
+      return { ok: false, message: "Enter a valid current passphrase." }
+    if (newPassphrase !== undefined && typeof newPassphrase !== "string")
+      return { ok: false, message: "Enter a non-empty passphrase." }
+    return undefined
+  }
+
   ipcMain.handle(
     "secret_protection_action",
-    async (
-      event,
-      args: {
-        action: string
-        newPassphrase?: string
-        currentPassphrase?: string
-      },
-    ) => {
+    async (event, args: ProtectionActionArgs) => {
       const win = getMainWindow()
       if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
         return secretRequestDenied
-      const allowed = [
-        "set-passphrase",
-        "change-passphrase",
-        "remove-passphrase",
-        "remember",
-        "forget",
-      ]
-      if (!args || typeof args !== "object" || !allowed.includes(args.action))
-        return { ok: false, message: "Unknown protection action." }
+      const inputFailure = validateProtectionAction(args)
+      if (inputFailure) return inputFailure
       const action = args.action
       const { newPassphrase, currentPassphrase } = args
-      if (
-        currentPassphrase !== undefined &&
-        typeof currentPassphrase !== "string"
+      const passphraseFailure = validateProtectionPassphrases(
+        currentPassphrase,
+        newPassphrase,
       )
-        return { ok: false, message: "Enter a valid current passphrase." }
-      if (newPassphrase !== undefined && typeof newPassphrase !== "string")
-        return { ok: false, message: "Enter a non-empty passphrase." }
+      if (passphraseFailure) return passphraseFailure
       const options: CliInvocationOptions = {
         allowUnlockPrompt: false,
         ...(currentPassphrase !== undefined
@@ -810,14 +915,17 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         )
         if (approvalFailure) return approvalFailure
         if (changesPassphrase && typeof newPassphrase === "string") {
-          await cli.runRawStdin([...command, "--stdin"], newPassphrase, options)
+          await cli.runText([...command, "--stdin"], {
+            ...options,
+            stdin: newPassphrase,
+          })
           updateProtectedSessionCredential(
             event,
             cacheGeneration,
             newPassphrase,
           )
         } else {
-          await cli.runRaw(command, options)
+          await cli.runText(command, options)
           if (action === "remove-passphrase")
             updateProtectedSessionCredential(event, cacheGeneration, undefined)
         }
@@ -1081,7 +1189,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         try {
           const versions = await cli.run<
             Array<{ tag: string; current?: boolean }>
-          >(["provider", "versions", p.name, "--json", "--no-cache"])
+          >(["provider", "versions", p.name, "--no-cache"])
           const list = versions ?? []
           const current = list.find((v) => v.current)?.tag ?? version
           const latest = list[0]?.tag ?? ""
@@ -1163,7 +1271,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "workspace_rename",
     async (_event, args: { workspaceId: string; newWorkspaceId: string }) => {
       trackEvent("workspace_rename", {
-        workspace_ref: hashWorkspaceRef(args.workspaceId),
+        ...workspaceIdentity(args.workspaceId),
       })
       await cli.runRaw([
         "workspace",
@@ -1183,7 +1291,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const invalid = validateWorkspacePresentationRequest(request)
       if (invalid) return { ok: false, ...invalid }
       trackEvent("workspace_edit", {
-        workspace_ref: hashWorkspaceRef(request.workspaceId),
+        ...workspaceIdentity(
+          request.workspaceId,
+          request.context,
+          request.expectedUid,
+        ),
       })
       const context =
         request.context || state.workspaceContext(request.workspaceId)
@@ -1239,7 +1351,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     async (_event, args: { workspaceId: string; ide: string }) => {
       trackEvent("workspace_set_ide", {
         ide: args.ide,
-        workspace_ref: hashWorkspaceRef(args.workspaceId),
+        ...workspaceIdentity(args.workspaceId),
       })
       await cli.runRaw(["workspace", "set-ide", args.workspaceId, args.ide])
     },
@@ -1418,6 +1530,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             commandId: cmdId,
             message: formatted,
             level: meta?.level,
+            diagnostic:
+              stream === "stderr" && meta?.parsed
+                ? redactDiagnostic(meta.parsed)
+                : undefined,
             done: false,
           })
         },
@@ -1481,13 +1597,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const win = deps.getMainWindow()
       providerJobs.start(args.name, "updating")
 
-      const sendProgress = (message: string, level?: string) => {
+      const sendProgress = (
+        message: string,
+        level?: CliLogLine["level"],
+        diagnostic?: CliLogLine,
+      ) => {
         const formatted = redactSensitiveText(formatLogLine(message))
         providerJobs.appendLog(args.name, formatted)
         win?.webContents.send("command-progress", {
           commandId: cmdId,
           message: formatted,
           level,
+          diagnostic: diagnostic ? redactDiagnostic(diagnostic) : undefined,
           done: false,
         })
       }
@@ -1508,7 +1629,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                     return
                   }
                 }
-                sendProgress(line, meta?.level)
+                sendProgress(
+                  line,
+                  meta?.level,
+                  stream === "stderr" ? meta?.parsed : undefined,
+                )
               },
               (code, cliError) => {
                 if (code === 0) {
@@ -1662,7 +1787,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "provider_list_versions",
     async (_event, args: { name: string; noCache?: boolean }) => {
-      const cliArgs = ["provider", "versions", args.name, "--json"]
+      const cliArgs = ["provider", "versions", args.name]
       if (args.noCache) cliArgs.push("--no-cache")
       try {
         const versions = await cli.run<unknown[]>(cliArgs)
@@ -1883,7 +2008,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         return secretRequestDenied
       trackEvent("secret_set")
       try {
-        await cli.runRawStdin(
+        await cli.runText(
           [
             ...variableContextArgs(args.context),
             "secret",
@@ -1891,7 +2016,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             args.name,
             "--stdin",
           ],
-          args.value,
+          { stdin: args.value },
         )
         return { ok: true } as const
       } catch (err) {
@@ -1909,7 +2034,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         return secretRequestDenied
       trackEvent("secret_delete")
       try {
-        await cli.runRaw([
+        await cli.runText([
           ...variableContextArgs(args.context),
           "secret",
           "delete",
@@ -1932,7 +2057,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("secret_attach")
       try {
         if (!args.context) throw new Error("context is required")
-        await cli.runRaw([
+        await cli.runText([
           "--context",
           args.context,
           "secret",
@@ -1956,7 +2081,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("secret_detach")
       try {
         if (!args.context) throw new Error("context is required")
-        await cli.runRaw([
+        await cli.runText([
           "--context",
           args.context,
           "secret",
@@ -1983,7 +2108,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     async (_event, args: { name: string; value: string; context?: string }) => {
       trackEvent("env_set")
       try {
-        await cli.runRaw([
+        await cli.runText([
           ...variableContextArgs(args.context),
           "env",
           "set",
@@ -2006,7 +2131,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("env_delete")
       try {
         if (!args.context) throw new Error("context is required")
-        await cli.runRaw([
+        await cli.runText([
           "--context",
           args.context,
           "env",
@@ -2028,7 +2153,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("env_attach")
       try {
         if (!args.context) throw new Error("context is required")
-        await cli.runRaw([
+        await cli.runText([
           "--context",
           args.context,
           "env",
@@ -2050,7 +2175,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("env_detach")
       try {
         if (!args.context) throw new Error("context is required")
-        await cli.runRaw([
+        await cli.runText([
           "--context",
           args.context,
           "env",
@@ -2182,10 +2307,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     recovery?: boolean
     commandId?: string
   }): { commandId: string; completion: Promise<void> } => {
-    trackEvent("workspace_create", {
-      provider: args.provider,
-      workspace_ref: hashWorkspaceRef(args.workspaceId ?? args.source),
-    })
+    const provider = workspaceProvider(args.provider)
+    trackEvent("workspace_create", provider ? { provider } : {})
     const cliArgs = ["workspace", "up", args.source]
     if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
     cliArgs.push(...buildWorkspaceUpPresentationArgs(args))
@@ -2377,7 +2500,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                 return
               }
 
-              if (!sink.line(formatted)) return logStore.onDrain(logPath)
+              if (
+                !sink.line(
+                  formatted,
+                  stream === "stderr" ? meta?.parsed : undefined,
+                )
+              )
+                return logStore.onDrain(logPath)
             },
             (_code, _cliError) => {
               // No releaseTask: the follower dying says nothing about the
@@ -2571,7 +2700,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       )
     trackEvent(
       `workspace_${{ stopping: "stop", deleting: "delete", rebuilding: "rebuild", resetting: "reset", starting: "up", creating: "create" }[activity]}`,
-      { workspace_ref: hashWorkspaceRef(args.workspaceId), source },
+      { ...workspaceIdentity(args.workspaceId), source },
     )
     timing("accepted")
     const completion = (async () => {
@@ -2613,7 +2742,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   )
                 )
                   return
-                if (!progressSink.line(displayCliLine(line, meta)))
+                if (
+                  !progressSink.line(
+                    displayCliLine(line, meta),
+                    stream === "stderr" ? meta?.parsed : undefined,
+                  )
+                )
                   return logStore.onDrain(logPath)
               },
               (code, cliError) => {
@@ -2684,7 +2818,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       commandId,
     )
     trackEvent(`workspace_${activity === "rebuilding" ? "rebuild" : "reset"}`, {
-      workspace_ref: hashWorkspaceRef(args.workspaceId),
+      ...workspaceIdentity(args.workspaceId),
       source: "renderer",
     })
     const completion = runDetachedUp({
@@ -3048,13 +3182,16 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       args: { name: string; properties?: Record<string, unknown> },
     ) => {
       if (
-        !args?.name ||
-        typeof args.name !== "string" ||
-        args.name.length > 64
-      ) {
+        !["page_view", "session_start", "session_end", "engagement"].includes(
+          args?.name,
+        )
+      )
         return
-      }
-      trackEvent(args.name, sanitizeAnalyticsProperties(args.properties))
+      const duration = args.properties?.duration_ms
+      trackEvent(
+        args.name,
+        typeof duration === "number" ? { duration_ms: duration } : undefined,
+      )
     },
   )
 
@@ -3090,17 +3227,4 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       },
     },
   }
-}
-
-function sanitizeAnalyticsProperties(
-  input?: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  if (!input || typeof input !== "object") return undefined
-  const entries = Object.entries(input).slice(0, 20)
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of entries) {
-    if (!k || k.length > 64) continue
-    out[k] = typeof v === "string" ? v.slice(0, 256) : v
-  }
-  return out
 }

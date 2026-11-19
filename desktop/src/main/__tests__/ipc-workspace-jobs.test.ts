@@ -7,6 +7,13 @@ import { ProviderJobs } from "../provider-jobs.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
 
 type Handler = (...args: unknown[]) => unknown
+const successResult = JSON.stringify({
+  kind: "result",
+  outcome: "success",
+  containerId: "container-1",
+  remoteUser: "dev",
+  remoteWorkspaceFolder: "/workspace",
+})
 
 const handlers = new Map<string, Handler>()
 let trustedEvent: unknown
@@ -23,7 +30,7 @@ vi.mock("electron", () => ({
   },
 }))
 vi.mock("../analytics.js", () => ({
-  hashWorkspaceRef: (value: string) => value,
+  hashWorkspaceUid: (value: string) => value,
   trackEvent: () => undefined,
 }))
 const { registerIpcHandlers } = await import("../ipc.js")
@@ -336,7 +343,7 @@ describe("workspace lifecycle IPC", () => {
     await flush()
     ctx.jobs.clear("ws")
     ctx.jobs.start("ws", "creating", "new")
-    resolve('{"kind":"result","outcome":"success"}')
+    resolve(successResult)
     await flush()
     expect(ctx.jobs.get("ws")).toMatchObject({
       commandId: "new",
@@ -358,7 +365,7 @@ describe("workspace lifecycle IPC", () => {
       await flush()
       ctx.line(
         outcome === "success"
-          ? '{"kind":"result","outcome":"success"}'
+          ? successResult
           : '{"kind":"error","outcome":"error","code":"invalid_id","message":"invalid ID","hint":"Use lowercase"}',
       )
       await flush()
@@ -404,7 +411,7 @@ describe("workspace lifecycle IPC", () => {
         })
         ctx.line(
           outcome === "success"
-            ? '{"kind":"result","outcome":"success"}'
+            ? successResult
             : '{"kind":"error","outcome":"error","code":"invalid_id","message":"invalid ID token=private-value","hint":"Use lowercase"}',
         )
         await flush()
@@ -456,7 +463,7 @@ describe("workspace lifecycle IPC", () => {
         ctx.getMainWindow.mockImplementation(() => {
           throw new Error("window unavailable")
         })
-      ctx.line('{"kind":"result","outcome":"success"}')
+      ctx.line(successResult)
       await flush()
       expect(ctx.jobs.get("ws")?.state).toBe("succeeded")
       expect(
@@ -486,7 +493,7 @@ describe("workspace lifecycle IPC", () => {
       expect(ctx.jobs.get("ws")).toMatchObject({ state: "running" })
       ctx.line(
         outcome === "success"
-          ? '{"kind":"result","outcome":"success"}'
+          ? successResult
           : '{"kind":"error","outcome":"error","code":"invalid_id","message":"invalid ID","hint":"Use lowercase"}',
       )
       await flush()

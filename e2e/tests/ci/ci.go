@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -115,17 +117,63 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			tempDir, f := setupCI(initialDir)
 			args := []string{ciCommand}
 			args = append(args, flags...)
-			args = append(args, tempDir, "--", "sh", "-c",
-				"printf 'child-out:[RUN] {\"kind\":\"status\"}'; printf 'child-err' >&2")
+			args = append(
+				args,
+				tempDir,
+				"--",
+				"sh",
+				"-c",
+				`printf 'child-out:{"kind":"status"}{"kind":"result"}{"kind":"error"}{"kind":"unlock"}'; printf 'child-err' >&2`,
+			)
 			stdout, stderr, err := f.ExecCommandCapture(ctx, args)
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal(`child-out:[RUN] {"kind":"status"}`))
-			gomega.Expect(stderr).To(gomega.ContainSubstring("child-err"))
-			if wantStatus {
+			gomega.Expect(stdout).To(gomega.Equal(
+				`child-out:{"kind":"status"}{"kind":"result"}{"kind":"error"}{"kind":"unlock"}`))
+			childMarkers := 0
+			scanner := bufio.NewScanner(strings.NewReader(stderr))
+			var statusEvents []status.Event
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				for strings.HasPrefix(line, "child-err") {
+					childMarkers++
+					line = strings.TrimPrefix(line, "child-err")
+				}
+				if !strings.HasPrefix(line, "{") {
+					continue
+				}
+				var envelope struct {
+					Kind          string `json:"kind"`
+					SchemaVersion int    `json:"schemaVersion"`
+					status.Event
+				}
+				framework.ExpectNoError(json.Unmarshal([]byte(line), &envelope))
+				if envelope.Kind == "status" {
+					gomega.Expect(envelope.SchemaVersion).To(gomega.Equal(1))
+					gomega.Expect(envelope.Pipeline).ToNot(gomega.BeEmpty())
+					gomega.Expect(envelope.Phase).ToNot(gomega.BeEmpty())
+					gomega.Expect(status.ValidState(envelope.State)).To(gomega.BeTrue())
+					statusEvents = append(statusEvents, envelope.Event)
+				}
+			}
+			framework.ExpectNoError(scanner.Err())
+			gomega.Expect(childMarkers).To(gomega.Equal(1))
+			if wantStatus && len(flags) == 0 {
+				var started, succeeded bool
+				for _, event := range statusEvents {
+					if event.Pipeline == status.PipelineWorkspaceUp &&
+						event.Phase == status.PhaseRunningCommand && event.Step == "CI command" {
+						started = started || event.State == status.StateStarted
+						succeeded = succeeded || event.State == status.StateSucceeded
+					}
+				}
+				gomega.Expect(started).To(gomega.BeTrue(), "missing CI command start status")
+				gomega.Expect(succeeded).To(gomega.BeTrue(), "missing CI command success status")
+			} else if wantStatus {
 				gomega.Expect(stderr).To(gomega.MatchRegexp(`\[RUN\]\s+ci:`))
 			} else {
 				gomega.Expect(stderr).
 					NotTo(gomega.MatchRegexp(`\[(RUN|OK|FAIL)\]\s+(ci|workspace):`))
+				gomega.Expect(statusEvents).To(gomega.BeEmpty())
 			}
 			if len(flags) > 0 && flags[0] == noStatusFlag && len(flags) == 2 {
 				gomega.Expect(stderr).To(gomega.Equal("child-err"))
@@ -145,8 +193,8 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 		ginkgo.Entry("disabled", []string{noStatusFlag, resultFormatPlainFlag}, false, false,
 			ginkgo.SpecTimeout(framework.TimeoutShort())),
 		ginkgo.Entry(
-			"quiet",
-			[]string{noStatusFlag, "--quiet", resultFormatPlainFlag},
+			"error level",
+			[]string{noStatusFlag, "--log-level=error", resultFormatPlainFlag},
 			false,
 			false,
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
@@ -159,8 +207,8 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			"debug",
 			[]string{
 				noStatusFlag,
-				"--debug",
-				"--log-output=json",
+				"--log-level=debug",
+				"--log-format=json",
 				resultFormatPlainFlag,
 			},
 			false,
@@ -206,7 +254,7 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 		},
 		ginkgo.Entry("warning level", []string{"--log-level=warn"}, true,
 			ginkgo.SpecTimeout(framework.TimeoutShort())),
-		ginkgo.Entry("quiet", []string{"--quiet"}, false,
+		ginkgo.Entry("error level", []string{"--log-level=error"}, false,
 			ginkgo.SpecTimeout(framework.TimeoutShort())),
 	)
 
@@ -247,7 +295,7 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 		func(ctx context.Context) {
 			tempDir, f := setupCI(initialDir)
 			_, stderr, err := f.ExecCommandCapture(ctx, []string{
-				ciCommand, noStatusFlag, "--log-output=json", resultFormatPlainFlag, tempDir,
+				ciCommand, noStatusFlag, "--log-format=json", "--result-format=json", tempDir,
 				"--", "sh", "-c", "printf 'machine-child-error' >&2; exit 7",
 			})
 			var exitErr *exec.ExitError

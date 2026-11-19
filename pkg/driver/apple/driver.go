@@ -9,8 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/apple"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -30,6 +32,7 @@ type appleDriver struct {
 	Rosetta     bool
 	command     string // binary path, retained for logging
 	containerID string // set when the workspace source is an existing container
+	workspaceID string
 }
 
 var (
@@ -45,9 +48,14 @@ var (
 // NewAppleDriver verifies the host is supported and constructs the driver;
 // Preflight validates the container system service.
 func NewAppleDriver(
-	_ context.Context,
+	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (driver.ImageDriver, error) {
+	workspaceID := ""
+	if workspaceInfo.Workspace != nil {
+		workspaceID = workspaceInfo.Workspace.ID
+	}
+	ctx = appleLogContext(ctx, workspaceID)
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		return nil, fmt.Errorf(
 			"the apple provider requires an Apple silicon Mac (found %s/%s)",
@@ -67,26 +75,33 @@ func NewAppleDriver(
 
 	rosetta, err := workspaceInfo.Agent.Apple.Rosetta.Bool()
 	if err != nil {
-		log.Warnf(
-			"invalid rosetta value %q, defaulting to false: %v",
-			workspaceInfo.Agent.Apple.Rosetta, err,
+		log.WarnContext(
+			ctx,
+			"invalid rosetta value, defaulting to false",
+			slog.String(
+				"value",
+				string(workspaceInfo.Agent.Apple.Rosetta),
+			),
+			slog.String("error", err.Error()),
 		)
 		rosetta = false
 	}
 
-	log.Debugf("using apple container command: command=%s, rosetta=%t", command, rosetta)
+	log.DebugContext(ctx, "using apple container driver", slog.Bool("rosetta", rosetta))
 	return &appleDriver{
 		Apple:       helper,
 		IDLabels:    workspaceInfo.CLIOptions.IDLabels,
 		Rosetta:     rosetta,
 		command:     command,
 		containerID: workspaceInfo.Workspace.Source.Container,
+		workspaceID: workspaceID,
 	}, nil
 }
 
 // Preflight checks the `container` binary is installed and the system service
 // running, starting it unless auto-start is disabled.
 func (d *appleDriver) Preflight(ctx context.Context, opts driver.PreflightOptions) error {
+	ctx = appleLogContext(ctx, d.workspaceID)
 	if _, err := exec.LookPath(d.command); err != nil {
 		return &driver.PreflightError{
 			Provider: provider.AppleDriver,
@@ -127,6 +142,7 @@ func (d *appleDriver) FindDevContainer(
 	ctx context.Context,
 	workspaceID string,
 ) (*config.ContainerDetails, error) {
+	ctx = appleLogContext(ctx, workspaceID)
 	var containerDetails *config.ContainerDetails
 	var err error
 	if d.containerID != "" {
@@ -158,3 +174,20 @@ func (d *appleDriver) RequiresMountStreaming() bool { return false }
 func (d *appleDriver) RecreateMode() driver.RecreateMode { return driver.RecreateDelete }
 
 func (d *appleDriver) RequiresWorkspaceChown() bool { return false }
+
+func appleLogContext(ctx context.Context, workspaceID string) context.Context {
+	return log.WithContext(ctx, log.AttrComponent("builtin-driver"),
+		log.AttrProvider(provider.AppleDriver), log.AttrWorkspaceID(workspaceID))
+}
+
+func logAppleCommand(ctx context.Context, started time.Time, err error) {
+	attrs := []slog.Attr{log.AttrDurationMs(time.Since(started).Milliseconds())}
+	if err == nil {
+		attrs = append(attrs, slog.Int("exit_code", 0))
+	} else {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			attrs = append(attrs, slog.Int("exit_code", exitErr.ExitCode()))
+		}
+	}
+	log.DebugContext(ctx, "apple runtime command completed", attrs...)
+}

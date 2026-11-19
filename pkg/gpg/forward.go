@@ -158,7 +158,7 @@ func signalOnce(ready chan<- struct{}) {
 }
 
 func buildForwardArgs(user, context, workspace string) []string {
-	return []string{
+	args := []string{
 		"workspace",
 		"ssh",
 		names.FlagTrue(names.SSHGPGForwarding),
@@ -169,7 +169,7 @@ func buildForwardArgs(user, context, workspace string) []string {
 		names.Flag(names.Context),
 		context,
 		workspace,
-		names.FlagValue(names.LogOutput, "raw"),
 		names.Flag(names.Command), "sleep infinity",
 	}
+	return append(args, log.ForwardFlagArgs()...)
 }

@@ -28,7 +28,7 @@ import { onCommandProgress } from "$lib/ipc/events.js"
 import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
-import { isCommandSuccess } from "$lib/utils/log-parser.js"
+import { isCommandSuccess, progressLogMessage } from "$lib/utils/log-parser.js"
 import {
   initialProviderOptionValue,
   normalizeProviderOptionEnums,
@@ -280,8 +280,9 @@ onMount(async () => {
       activeSession.commandId &&
       progress.commandId === activeSession.commandId
     ) {
-      if (progress.message) {
-        initLines = [...initLines, progress.message]
+      const message = progressLogMessage(progress)
+      if (message) {
+        initLines = [...initLines, message]
       }
       if (progress.done) {
         initRunning = false

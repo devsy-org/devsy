@@ -71,6 +71,7 @@ func New(devsyConfig *config.Config) (*Daemon, error) {
 }
 
 func (d *Daemon) Run(ctx context.Context) error {
+	ctx = log.WithContext(ctx, log.AttrComponent("local_daemon"), log.AttrOperation("serve"))
 	log.Infof("local daemon listening on %s", GetSocketPath())
 
 	errCh := make(chan error, 1)
@@ -90,7 +91,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			idle := time.Since(d.lastActivity) > idleTimeout
 			d.mu.RUnlock()
 			if idle {
-				log.Infof("idle timeout reached, shutting down")
+				log.InfoContext(ctx, "idle timeout reached, shutting down")
 				return d.shutdown()
 			}
 		}

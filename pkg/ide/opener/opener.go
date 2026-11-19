@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"strconv"
@@ -300,7 +301,11 @@ func makeDaemonStartFunc(
 				GitSSHSigningKey: params.GitSSHSigningKey,
 			},
 			func(status credentials.Readiness) {
-				pkglog.Debugw("browser credentials prepared", "status", status.GitHubState)
+				pkglog.DebugContext(
+					ctx,
+					"browser credentials prepared",
+					slog.String("status", status.GitHubState),
+				)
 				prepared()
 			},
 		)

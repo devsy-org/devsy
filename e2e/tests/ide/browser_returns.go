@@ -341,7 +341,7 @@ var _ = ginkgo.Describe(
 
 				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
 					"--ide=openvscode", "--ide-launch=headless",
-					names.Flag(names.SSHGPGForwarding), "--debug")
+					names.Flag(names.SSHGPGForwarding), "--log-level=debug")
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
 
@@ -416,7 +416,7 @@ var _ = ginkgo.Describe(
 				)
 
 				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
-					"--ide=openvscode", "--ide-launch=headless", "--debug")
+					"--ide=openvscode", "--ide-launch=headless", "--log-level=debug")
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
 				gomega.Expect(combined).
@@ -468,7 +468,7 @@ var _ = ginkgo.Describe(
 			func(ctx context.Context) {
 				f, tempDir := setupBrowserIDE(ctx, initialDir)
 				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
-					"--ide=openvscode", "--ide-launch=headless", "--debug")
+					"--ide=openvscode", "--ide-launch=headless", "--log-level=debug")
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
 

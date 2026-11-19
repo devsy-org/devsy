@@ -3,6 +3,7 @@ package dotfiles
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -73,12 +74,12 @@ func TestCollectDotfilesScriptEnvKeyValuePairs(t *testing.T) {
 }
 
 func TestBuildDotCmdAgentArguments(t *testing.T) {
+	const logLevelFlag = "--log-level"
 	tests := []struct {
 		name           string
 		dotfilesRepo   string
 		dotfilesScript string
 		strictHostKey  bool
-		debug          bool
 		expected       []string
 	}{
 		{
@@ -87,6 +88,7 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 			expected: []string{
 				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
 				repository, httpsGithubComUserDotfiles,
+				logLevelFlag, log.LevelString(),
 			},
 		},
 		{
@@ -96,6 +98,7 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 			expected: []string{
 				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
 				repository, httpsGithubComUserDotfiles,
+				logLevelFlag, log.LevelString(),
 				"--install-script", "install.sh",
 			},
 		},
@@ -104,11 +107,10 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 			dotfilesRepo:   httpsGithubComUserDotfiles,
 			dotfilesScript: "setup.sh",
 			strictHostKey:  true,
-			debug:          true,
 			expected: []string{
 				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
 				repository, httpsGithubComUserDotfiles,
-				"--strict-host-key-checking", "--debug",
+				"--strict-host-key-checking", logLevelFlag, log.LevelString(),
 				"--install-script", "setup.sh",
 			},
 		},
@@ -120,7 +122,6 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 				tt.dotfilesRepo,
 				tt.dotfilesScript,
 				tt.strictHostKey,
-				tt.debug,
 			)
 			assert.Equal(t, tt.expected, result)
 		})

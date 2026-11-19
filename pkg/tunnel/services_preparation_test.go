@@ -10,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/credentials"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 func TestServicePreparationWaitsForInstallAndServingWithoutEndingLifetime(t *testing.T) {
@@ -151,7 +150,7 @@ func TestServicePreparationReportsFailureThroughoutServiceLifetime(t *testing.T)
 		{name: cancelledPreparation, enabled: true, cancelled: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			logs := log.InitTestObserved(t, zapcore.WarnLevel)
+			logs := log.InitTestObserved(t, log.SlogLevelWarn)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			fail := make(chan struct{})

@@ -1,6 +1,7 @@
 package ci
 
 import (
+	"context"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -109,4 +110,22 @@ func TestNewCICmd_Flags(t *testing.T) {
 		assert.NotNil(t, ciCmd.Flags().Lookup(name), "expected flag %q to be registered", name)
 	}
 	assert.Equal(t, "false", ciCmd.Flags().Lookup("keep").DefValue)
+}
+
+func TestReleasePreservesContextAfterCancellation(t *testing.T) {
+	type key struct{}
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), key{}, "operation"))
+	cancel()
+	called := false
+	resolved := &resolvedWorkspace{
+		teardown: true,
+		cleanup: func(cleanupCtx context.Context) error {
+			called = true
+			assert.NoError(t, cleanupCtx.Err())
+			assert.Equal(t, "operation", cleanupCtx.Value(key{}))
+			return nil
+		},
+	}
+	require.NoError(t, resolved.release(ctx, nil))
+	assert.True(t, called)
 }

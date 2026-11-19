@@ -26,7 +26,7 @@ vi.mock("electron", () => ({
 }))
 
 vi.mock("../analytics.js", () => ({
-  hashWorkspaceRef: (v: string) => v,
+  hashWorkspaceUid: (v: string) => v,
   trackEvent: () => undefined,
 }))
 

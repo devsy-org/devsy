@@ -3,6 +3,7 @@
  * falls back to mock implementations for browser-only development.
  */
 
+import type { RendererErrorSummary } from "$shared/renderer-error.js"
 import type { UnlistenFn } from "./types.js"
 
 function isElectron(): boolean {
@@ -10,6 +11,7 @@ function isElectron(): boolean {
 }
 
 interface ElectronAPI {
+  reportRendererError: (summary: RendererErrorSummary) => void
   invoke: (channel: string, args?: Record<string, unknown>) => Promise<unknown>
   on: (channel: string, callback: (payload: unknown) => void) => () => void
 }

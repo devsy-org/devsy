@@ -346,7 +346,7 @@ var _ = ginkgo.Describe(
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-mounts",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 
@@ -397,7 +397,7 @@ var _ = ginkgo.Describe(
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-mounts-readonly",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 
@@ -467,7 +467,7 @@ var _ = ginkgo.Describe(
 			_, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-forward-ports",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 
@@ -530,7 +530,7 @@ var _ = ginkgo.Describe(
 			_, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-forward-ports",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 
@@ -598,7 +598,7 @@ var _ = ginkgo.Describe(
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-features",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 
@@ -903,7 +903,7 @@ var _ = ginkgo.Describe(
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-build-target-features",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 
@@ -970,7 +970,7 @@ var _ = ginkgo.Describe(
 				tempDirA, _, err := tc.setupAndStartWorkspace(
 					ctx,
 					projectAPath,
-					"--debug",
+					"--log-level=debug",
 				)
 				framework.ExpectNoError(err)
 
@@ -1004,7 +1004,7 @@ var _ = ginkgo.Describe(
 				tempDirB, _, err := tc.setupAndStartWorkspace(
 					ctx,
 					projectBPath,
-					"--debug",
+					"--log-level=debug",
 				)
 				framework.ExpectNoError(err)
 
@@ -1170,7 +1170,7 @@ var _ = ginkgo.Describe(
 			_, ws, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-v2-with-name",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 
@@ -1248,7 +1248,7 @@ var _ = ginkgo.Describe(
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-dockerfile-args",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 
@@ -1268,7 +1268,7 @@ var _ = ginkgo.Describe(
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
 				"tests/up-docker-compose/testdata/docker-compose-dockerfile-args-multistage",
-				"--debug",
+				"--log-level=debug",
 			)
 			framework.ExpectNoError(err)
 

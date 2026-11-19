@@ -23,7 +23,7 @@ func main() {
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ci <matrix|unit|e2e|setup|success> [args]")
+		_, _ = fmt.Fprintln(stderr, "usage: ci <matrix|unit|e2e|setup|success|lint-patch> [args]")
 		return 2
 	}
 	switch args[0] {
@@ -37,6 +37,8 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		return setupCLI(args[1:], stdout, stderr)
 	case "success":
 		return successCLI(args[1:], stdout, stderr)
+	case "lint-patch":
+		return lintPatchCLI(args[1:], stdout, stderr)
 	default:
 		_, _ = fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		return 2

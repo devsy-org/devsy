@@ -494,7 +494,7 @@ func executeBuild(params executeBuildParams) error {
 }
 
 func runRemoteSolve(params executeBuildParams, step *Step) error {
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(log.SlogLevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	pw, err := NewPrinter(params.Ctx, step.Tee(writer, workspacelogs.StreamCombined))

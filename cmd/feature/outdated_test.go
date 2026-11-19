@@ -1,8 +1,12 @@
 package feature
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -261,4 +265,24 @@ func TestNewOutdatedCmd_CreatesCommand(t *testing.T) {
 	cmd := NewOutdatedCmd(nil)
 	assert.Equal(t, "outdated", cmd.Use)
 	assert.NotEmpty(t, cmd.Short)
+}
+
+func TestOutdatedJSONWithoutFeatures(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "devcontainer.json")
+	require.NoError(t, os.WriteFile(configPath, []byte(`{"image":"example"}`), 0o600))
+	out, err := os.CreateTemp(dir, "out")
+	require.NoError(t, err)
+	defer func() { _ = out.Close() }()
+	previous := os.Stdout
+	os.Stdout = out
+	defer func() { os.Stdout = previous }()
+
+	cmd := &OutdatedCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "json"}, Config: configPath}
+	require.NoError(t, cmd.Run(context.Background()))
+	_, err = out.Seek(0, 0)
+	require.NoError(t, err)
+	data, err := os.ReadFile(out.Name())
+	require.NoError(t, err)
+	assert.JSONEq(t, `[]`, string(data))
 }

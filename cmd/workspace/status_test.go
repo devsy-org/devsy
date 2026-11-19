@@ -17,7 +17,7 @@ import (
 // emitted via log.Infof, which the default verbosity silenced, leaving the
 // command output empty.
 func TestStatusCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	cases := []struct {
 		name   string
@@ -46,7 +46,7 @@ func TestStatusCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
 }
 
 func TestStatusCmd_JSONOutput(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	cmd := &StatusCmd{
 		GlobalFlags: &flags.GlobalFlags{ResultFormat: formatJSON},

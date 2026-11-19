@@ -18,6 +18,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
@@ -210,7 +211,11 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	// workspace.
 	ctx, cancel := up.WithSignals(ctx)
 	defer cancel()
-	reporter, err := newStatusReporter(os.Stderr, cmd.Verbosity > 0 || cmd.Debug, cmd.NoStatus)
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	reporter, err := newStatusReporter(mode, os.Stderr, log.InfoEnabled(), cmd.NoStatus)
 	if err != nil {
 		return err
 	}
@@ -226,7 +231,7 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	}
 	// release tears down the workspace; join error with the result.
 	defer func() {
-		err = errors.Join(err, resolved.release(reporter))
+		err = errors.Join(err, resolved.release(ctx, reporter))
 	}()
 	workspaceClient := resolved.client
 
@@ -256,18 +261,19 @@ func (cmd *CICmd) loadConfig() (*config.Config, error) {
 
 type resolvedWorkspace struct {
 	client   client.BaseWorkspaceClient
-	cleanup  func() error
+	cleanup  func(context.Context) error
 	teardown bool
 }
 
-func (r *resolvedWorkspace) release(reporter status.Reporter) error {
+func (r *resolvedWorkspace) release(ctx context.Context, reporter status.Reporter) error {
+	ctx = context.WithoutCancel(ctx)
 	if !r.teardown {
-		return r.cleanup()
+		return r.cleanup(ctx)
 	}
-	return status.Run(context.Background(), reporter, status.Operation{
+	return status.Run(ctx, reporter, status.Operation{
 		Phase: status.PhaseDeletingWorkspace,
-	}, func(context.Context) error {
-		return r.cleanup()
+	}, func(ctx context.Context) error {
+		return r.cleanup(ctx)
 	})
 }
 
@@ -310,10 +316,10 @@ func (cmd *CICmd) resolveWorkspace(
 	}
 
 	teardown := exists == "" && !cmd.Keep
-	cleanup := func() error {
+	cleanup := func(ctx context.Context) error {
 		defer cleanupSSH()
 		if teardown {
-			return cmd.teardown(workspaceClient)
+			return cmd.teardown(ctx, workspaceClient)
 		}
 		return nil
 	}
@@ -330,9 +336,9 @@ func (cmd *CICmd) runInContainer(ctx context.Context, c client.BaseWorkspaceClie
 	return execCmd.Run(ctx, cmd.RunCmd)
 }
 
-func (cmd *CICmd) teardown(c client.BaseWorkspaceClient) error {
+func (cmd *CICmd) teardown(ctx context.Context, c client.BaseWorkspaceClient) error {
 	log.Debugf("tearing down workspace")
-	ctx, cancel := context.WithTimeout(context.Background(), teardownTimeout)
+	ctx, cancel := context.WithTimeout(ctx, teardownTimeout)
 	defer cancel()
 	if err := c.Delete(ctx, client.DeleteOptions{Force: true}); err != nil {
 		return fmt.Errorf("delete workspace: %w", err)

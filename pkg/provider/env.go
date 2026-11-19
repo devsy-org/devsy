@@ -171,6 +171,7 @@ func GetBaseEnvironment(context, provider string) map[string]string {
 	providerFolder, _ := GetProviderDir(context, provider)
 	retVars[config.EnvProviderFolder] = filepath.ToSlash(providerFolder)
 	retVars[config.EnvLogLevel] = log.LevelString()
+	retVars["DEVSY_LOG_FORMAT"] = "json"
 	return retVars
 }
 

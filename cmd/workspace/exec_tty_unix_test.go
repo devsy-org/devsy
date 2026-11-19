@@ -4,9 +4,13 @@ package workspace
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/creack/pty"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/require"
@@ -114,4 +118,73 @@ func isExecTTY(file *os.File) bool {
 	return term.IsTerminal(
 		int(file.Fd()),
 	) // #nosec G115 -- descriptor comes from an open test file.
+}
+
+func TestExecInContainerPreservesPipedChildBytesAndExit(t *testing.T) {
+	const secret = "raw-exec-secret-92815"
+	const stdoutPayload = "{\"kind\":\"status\",\"state\":\"failed\"}\x00" + secret + "\xfftail"
+	const stderrPayload = "{\"kind\":\"error\",\"message\":\"child\"}\x00" + secret + "\xfetail"
+	runRawExecHelper(stdoutPayload, stderrPayload)
+
+	t.Setenv("DEVSY_RAW_EXEC_HELPER", "1")
+	t.Setenv("DEVSY_RAW_EXEC_SECRET", secret)
+	wrapper := rawExecWrapper(t)
+	stdin, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+	defer func() { _ = stdin.Close() }()
+	stdoutRead, stdoutWrite, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() { _ = stdoutRead.Close() }()
+	defer func() { _ = stdoutWrite.Close() }()
+	stderrRead, stderrWrite, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() { _ = stderrRead.Close() }()
+	defer func() { _ = stderrWrite.Close() }()
+	originalStdin, originalStdout, originalStderr := os.Stdin, os.Stdout, os.Stderr
+	os.Stdin, os.Stdout, os.Stderr = stdin, stdoutWrite, stderrWrite
+	t.Cleanup(
+		func() { os.Stdin, os.Stdout, os.Stderr = originalStdin, originalStdout, originalStderr },
+	)
+
+	err = (&ExecCmd{}).execInContainer(t.Context(), execOpts{
+		runtime: workspace2.NewDockerRuntime(nil, wrapper),
+		target:  workspace2.ContainerTarget{ContainerID: sourceContainer},
+		envMap:  map[string]string{"TOKEN": secret},
+	}, []string{"ignored"})
+	os.Stdin, os.Stdout, os.Stderr = originalStdin, originalStdout, originalStderr
+	require.NoError(t, stdoutWrite.Close())
+	require.NoError(t, stderrWrite.Close())
+	var exitErr *workspace2.CommandExitError
+	require.True(t, errors.As(err, &exitErr))
+	require.Equal(t, 23, exitErr.Code)
+	gotStdout, err := io.ReadAll(stdoutRead)
+	require.NoError(t, err)
+	gotStderr, err := io.ReadAll(stderrRead)
+	require.NoError(t, err)
+	require.Equal(t, []byte(stdoutPayload), gotStdout)
+	require.Equal(t, []byte(stderrPayload), gotStderr)
+}
+
+func runRawExecHelper(stdoutPayload, stderrPayload string) {
+	if os.Getenv("DEVSY_RAW_EXEC_HELPER") != "1" {
+		return
+	}
+	if _, err := os.Stdout.Write([]byte(stdoutPayload)); err != nil {
+		os.Exit(97)
+	}
+	if _, err := os.Stderr.Write([]byte(stderrPayload)); err != nil {
+		os.Exit(98)
+	}
+	os.Exit(23)
+}
+
+func rawExecWrapper(t *testing.T) string {
+	t.Helper()
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	wrapper := filepath.Join(t.TempDir(), "docker-helper")
+	script := "#!/bin/sh\nexec " + shellescape.Quote(executable) +
+		" -test.run=^TestExecInContainerPreservesPipedChildBytesAndExit$ -- \"$@\"\n"
+	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o700))
+	return wrapper
 }

@@ -1,3 +1,14 @@
+import type { CommandProgress } from "$lib/types/index.js"
+import { isCliDiagnostic } from "$shared/cli-error.js"
+
+export function progressLogMessage(
+  progress: CommandProgress,
+): string | undefined {
+  return progress.diagnostic
+    ? JSON.stringify(progress.diagnostic)
+    : progress.message
+}
+
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping requires matching ESC (0x1b)
 const ANSI_RE = /\x1b\[[0-9;]*m/g
 const BRACKET_RE = /\[0[;0-9]*m/g
@@ -39,7 +50,7 @@ export function parseRecoveryContainer(
 
 export interface ParsedLogLine {
   time: string
-  level: "info" | "warn" | "fatal" | "debug" | "error" | ""
+  level: "trace" | "info" | "warn" | "fatal" | "debug" | "error" | ""
   message: string
   source: string
   origin: "cli" | "tunnel" | ""
@@ -98,6 +109,33 @@ export function parseLogLine(raw: string): ParsedLogLine {
 
 function parseLogLineUncached(raw: string): ParsedLogLine {
   const clean = stripAnsi(raw)
+
+  if (clean.startsWith("{")) {
+    try {
+      const diagnostic: unknown = JSON.parse(clean)
+      if (isCliDiagnostic(diagnostic)) {
+        const { ts, level, msg, ...attrs } = diagnostic
+        const suffix = Object.keys(attrs).length
+          ? ` ${JSON.stringify(attrs)}`
+          : ""
+        return {
+          time: ts.match(/T(\d{2}:\d{2}:\d{2})/)?.[1] ?? ts,
+          level,
+          message: `${msg}${suffix}`,
+          source: "",
+          origin: "cli",
+        }
+      }
+    } catch {
+      return {
+        time: "",
+        level: "",
+        message: clean.trim(),
+        source: "",
+        origin: "",
+      }
+    }
+  }
 
   // Zap console format (tab-separated): ISO8601\tLEVEL\tmessage\tsource.go:NNN
   const zapMatch = clean.match(

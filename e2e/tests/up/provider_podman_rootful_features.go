@@ -35,7 +35,7 @@ var _ = ginkgo.Describe(
 						ctx,
 						f,
 						workspaceSource{"tests/up/testdata/docker-mounts", initialDir},
-						"--debug",
+						"--log-level=debug",
 					)
 					framework.ExpectNoError(err)
 

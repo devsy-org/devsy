@@ -75,10 +75,7 @@ func (c *client) RecordEvent(event Event) {
 	properties := buildProperties(event)
 
 	if Dry {
-		log.Infof(
-			"analytics event: type=%s machine_id=%s properties=%v",
-			eventType, machineID, properties,
-		)
+		log.Infof("analytics event: type=%s", eventType)
 		return
 	}
 

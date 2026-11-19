@@ -16,7 +16,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 func writeHelperScript(t *testing.T, dir, name, output string) string {
@@ -285,7 +284,7 @@ func (s testBuildStrategy) build(
 func (testBuildStrategy) name() string { return "test build" }
 
 func TestExecuteBuildDecodesStructuredOutput(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, log.SlogLevelDebug)
 	driverUnderTest := &dockerDriver{}
 	strategy := testBuildStrategy{
 		output: "build starting\n" +
@@ -305,7 +304,7 @@ func TestExecuteBuildDecodesStructuredOutput(t *testing.T) {
 	require.Len(t, entries, 4)
 	assert.Equal(t, "build with test build", entries[0].Message)
 	assert.Equal(t, "build starting", entries[1].Message)
-	assert.Equal(t, zapcore.DebugLevel, entries[2].Level)
+	assert.Equal(t, log.SlogLevelDebug, entries[2].Level)
 	assert.Equal(t, "credential request received", entries[2].Message)
 	assert.Equal(t, "build complete", entries[3].Message)
 	assert.NotContains(t, entries[2].Message, `{"level":"debug"`)

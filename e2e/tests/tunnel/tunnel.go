@@ -46,7 +46,7 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 				})
 
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, "--log-level=debug")
 				framework.ExpectNoError(err)
 
 				out, err := f.DevsySSH(
@@ -90,7 +90,7 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 				})
 
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, "--log-level=debug")
 				framework.ExpectNoError(err)
 
 				out, err := f.DevsySSH(ctx, tempDir, "echo alive")

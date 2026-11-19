@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,6 +69,14 @@ func SetupContainerPreAttach(
 	if err := validateContainerSetupConfig(cfg); err != nil {
 		return DeferredHooks{}, err
 	}
+	ctx = log.WithContext(
+		ctx,
+		log.AttrComponent("devcontainer_setup"),
+		log.AttrOperation("pre_attach"),
+	)
+	if workspaceID := os.Getenv(pkgconfig.EnvWorkspaceID); workspaceID != "" {
+		ctx = log.WithContext(ctx, log.AttrWorkspaceID(workspaceID))
+	}
 
 	if cfg.Terminal != nil {
 		if err := ValidateInteractivePostStart(
@@ -85,7 +95,7 @@ func SetupContainerPreAttach(
 	}
 
 	if err := setupGitSafeDirectory(ctx, cfg.SetupInfo); err != nil {
-		log.Warnf("configure Git safe.directory: %v", err)
+		log.WarnContext(ctx, "configure Git safe.directory", slog.Any("error", err))
 	}
 
 	if err := setupEnvironment(cfg); err != nil {
@@ -98,7 +108,7 @@ func SetupContainerPreAttach(
 
 	setupOptionalFeatures(ctx, cfg)
 
-	log.Debugf("running pre-attach lifecycle hooks")
+	log.DebugContext(ctx, "running pre-attach lifecycle hooks")
 	deferred, err := RunPreAttachHooks(ctx, cfg.SetupInfo, PreAttachOptions{
 		Prebuild:     cfg.Prebuild,
 		Dotfiles:     cfg.Dotfiles,
@@ -116,14 +126,22 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, fmt.Errorf("lifecycle hooks pre-attach: %w", err)
 	}
 
-	log.Debugf("pre-attach setup completed")
+	log.DebugContext(ctx, "pre-attach setup completed")
 	return deferred, nil
 }
 
 // SetupContainerPostAttach runs postAttachCommand only.
 // Called after the IDE has been opened.
 func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) error {
-	log.Debugf("running post-attach lifecycle hooks")
+	ctx = log.WithContext(
+		ctx,
+		log.AttrComponent("devcontainer_setup"),
+		log.AttrOperation("post_attach"),
+	)
+	if workspaceID := os.Getenv(pkgconfig.EnvWorkspaceID); workspaceID != "" {
+		ctx = log.WithContext(ctx, log.AttrWorkspaceID(workspaceID))
+	}
+	log.DebugContext(ctx, "running post-attach lifecycle hooks")
 	if err := RunPostAttachHooks(ctx, cfg.SetupInfo, PostAttachOptions{
 		SecretsEnv:   cfg.SecretsEnv,
 		SecretsMount: cfg.SecretsMount,
@@ -132,7 +150,7 @@ func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) er
 		return fmt.Errorf("lifecycle hooks post-attach: %w", err)
 	}
 
-	log.Debugf("devcontainer setup completed")
+	log.DebugContext(ctx, "devcontainer setup completed")
 	return nil
 }
 
@@ -483,18 +501,39 @@ func writeSecrets(cfg *ContainerSetupConfig) error {
 func setupEnvironment(cfg *ContainerSetupConfig) error {
 	log.Debugf("patching etc environment")
 
-	if err := patchEtcEnvironment(cfg.SetupInfo.MergedConfig); err != nil {
-		return fmt.Errorf("patch etc environment: %w", err)
-	}
-
-	if err := patchEtcEnvironmentFlags(cfg.ExtraWorkspaceEnv); err != nil {
-		return fmt.Errorf("patch etc environment from flags: %w", err)
+	if err := applySetupEnvironment(cfg, envfile.MergeAndApply, markerFileExists); err != nil {
+		return err
 	}
 
 	if err := patchEtcProfile(); err != nil {
 		return fmt.Errorf("patch etc profile: %w", err)
 	}
 
+	return nil
+}
+
+func applySetupEnvironment(
+	cfg *ContainerSetupConfig,
+	merge func(map[string]string),
+	marker func(string, string) (bool, error),
+) error {
+	preserveTelemetry := os.Getenv(pkgconfig.EnvDisableTelemetry) == pkgconfig.BoolTrue
+	if err := patchEtcEnvironment(
+		cfg.SetupInfo.MergedConfig,
+		preserveTelemetry,
+		merge,
+		marker,
+	); err != nil {
+		return fmt.Errorf("patch etc environment: %w", err)
+	}
+	if err := patchEtcEnvironmentFlags(
+		cfg.ExtraWorkspaceEnv,
+		preserveTelemetry,
+		merge,
+		marker,
+	); err != nil {
+		return fmt.Errorf("patch etc environment from flags: %w", err)
+	}
 	return nil
 }
 
@@ -665,8 +704,13 @@ func patchEtcProfile() error {
 	return nil
 }
 
-func patchEtcEnvironmentFlags(workspaceEnv []string) error {
-	if len(workspaceEnv) == 0 {
+func patchEtcEnvironmentFlags(
+	workspaceEnv []string,
+	preserveTelemetry bool,
+	merge func(map[string]string),
+	marker func(string, string) (bool, error),
+) error {
+	if len(workspaceEnv) == 0 && !preserveTelemetry {
 		return nil
 	}
 
@@ -674,15 +718,18 @@ func patchEtcEnvironmentFlags(workspaceEnv []string) error {
 	if err != nil {
 		return err
 	}
+	if preserveTelemetry {
+		environment[pkgconfig.EnvDisableTelemetry] = pkgconfig.BoolTrue
+	}
 
-	exists, err := markerFileExists("patchEtcEnvironmentFlags", strings.Join(canonical, "\n"))
+	exists, err := marker("patchEtcEnvironmentFlags", strings.Join(canonical, "\n"))
 	if err != nil {
 		return err
-	} else if exists {
+	} else if exists && !preserveTelemetry {
 		return nil
 	}
 
-	envfile.MergeAndApply(environment)
+	merge(environment)
 	return nil
 }
 
@@ -711,22 +758,37 @@ func parseWorkspaceEnvironment(assignments []string) (map[string]string, []strin
 	return environment, canonical, nil
 }
 
-func patchEtcEnvironment(mergedConfig *config.MergedDevContainerConfig) error {
-	if len(mergedConfig.RemoteEnv) == 0 {
+func patchEtcEnvironment(
+	mergedConfig *config.MergedDevContainerConfig,
+	preserveTelemetry bool,
+	merge func(map[string]string),
+	marker func(string, string) (bool, error),
+) error {
+	if len(mergedConfig.RemoteEnv) == 0 && !preserveTelemetry {
 		return nil
 	}
 
 	setEnvs, unsetKeys := splitRemoteEnv(mergedConfig.RemoteEnv)
-	marker := buildEnvMarker(setEnvs, unsetKeys)
+	if preserveTelemetry {
+		setEnvs[pkgconfig.EnvDisableTelemetry] = pkgconfig.BoolTrue
+		unsetKeys = slices.DeleteFunc(unsetKeys, func(key string) bool {
+			return key == pkgconfig.EnvDisableTelemetry
+		})
+	}
+	markerText := buildEnvMarker(setEnvs, unsetKeys)
 
-	exists, err := markerFileExists("patchEtcEnvironment", marker)
+	exists, err := marker("patchEtcEnvironment", markerText)
 	if err != nil {
 		return err
-	} else if exists {
+	} else if exists && !preserveTelemetry {
 		return nil
 	}
 
-	envfile.MergeAndApply(setEnvs)
+	merge(setEnvs)
+	return unsetRemoteEnv(unsetKeys)
+}
+
+func unsetRemoteEnv(unsetKeys []string) error {
 	for _, k := range unsetKeys {
 		if err := os.Unsetenv(k); err != nil {
 			return fmt.Errorf("unset env %s: %w", k, err)

@@ -36,7 +36,7 @@ func TestProgressWriter_SplitsOnCarriageReturn(t *testing.T) {
 }
 
 func TestProgressWriter_ThinsIntermediatePercentages(t *testing.T) {
-	log.Init(log.Config{Verbosity: 2, Format: testLogFormatText})
+	log.Init(log.Config{Level: log.LevelDebugName, Format: testLogFormatText})
 	var sink bytes.Buffer
 	remove := log.AddSink(&sink)
 	defer remove()
@@ -69,7 +69,7 @@ func TestProgressWriter_ThinsIntermediatePercentages(t *testing.T) {
 }
 
 func TestProgressWriter_DropsExactDuplicateFrame(t *testing.T) {
-	log.Init(log.Config{Verbosity: 2, Format: testLogFormatText})
+	log.Init(log.Config{Level: log.LevelDebugName, Format: testLogFormatText})
 	var sink bytes.Buffer
 	remove := log.AddSink(&sink)
 	defer remove()
@@ -94,7 +94,7 @@ func TestProgressWriter_DropsExactDuplicateFrame(t *testing.T) {
 }
 
 func TestProgressWriter_TracksLabelsIndependently(t *testing.T) {
-	log.Init(log.Config{Verbosity: 2, Format: testLogFormatText})
+	log.Init(log.Config{Level: log.LevelDebugName, Format: testLogFormatText})
 	var sink bytes.Buffer
 	remove := log.AddSink(&sink)
 	defer remove()

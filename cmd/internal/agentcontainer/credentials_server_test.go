@@ -118,7 +118,7 @@ func TestCredentialsServerCmd_Run_SameOwnerCollisionIsSilentNoOp(t *testing.T) {
 	port := startFakeCredentialsServer(t, "alice")
 
 	var sink strings.Builder
-	log.Init(log.Config{Verbosity: 2, Format: "json"})
+	log.Init(log.Config{Level: "debug", Format: "json"})
 	remove := log.AddSink(&sink)
 	defer remove()
 
@@ -134,7 +134,7 @@ func TestCredentialsServerCmd_Run_DifferentOwnerCollisionWarnsButDoesNotError(t 
 	port := startFakeCredentialsServer(t, "alice")
 
 	var sink strings.Builder
-	log.Init(log.Config{Verbosity: 2, Format: "json"})
+	log.Init(log.Config{Level: "debug", Format: "json"})
 	remove := log.AddSink(&sink)
 	defer remove()
 

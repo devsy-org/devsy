@@ -7,7 +7,8 @@ import { Readable } from "node:stream"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CliRunner } from "../cli.js"
 
-vi.mock("../analytics.js", () => ({ getAnalyticsDistinctId: () => "test-id" }))
+const getDistinctId = vi.hoisted(() => vi.fn(() => "test-id"))
+vi.mock("../analytics.js", () => ({ getAnalyticsDistinctId: getDistinctId }))
 
 type ExecCb = (
   error: Error | null,
@@ -59,6 +60,7 @@ describe("CliRunner", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    getDistinctId.mockReturnValue("test-id")
     cli = new CliRunner("/usr/local/bin/devsy")
   })
 
@@ -85,6 +87,36 @@ describe("CliRunner", () => {
         expect(path).toBe(inheritedPath)
       }
       expect(process.env.PATH).toBe(inheritedPath)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("keeps telemetry disabled for child invocations without a machine identity or with opt-out", async () => {
+    const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    mock.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) =>
+        callback(null, { stdout: "[]", stderr: "" }),
+    )
+    getDistinctId.mockReturnValue("")
+    const unavailable = new CliRunner("/usr/local/bin/devsy")
+    await unavailable.run(["workspace", "list"], {
+      env: { DEVSY_DISABLE_TELEMETRY: "false" },
+    })
+    expect(mock.mock.calls[0][2].env.DEVSY_DISABLE_TELEMETRY).toBe("true")
+    expect(mock.mock.calls[0][2].env.DEVSY_TELEMETRY_DISTINCT_ID).toBe("")
+
+    vi.stubEnv("DEVSY_DISABLE_TELEMETRY", "true")
+    try {
+      getDistinctId.mockReturnValue("already-derived")
+      const optedOut = new CliRunner("/usr/local/bin/devsy")
+      await optedOut.run(["workspace", "list"], {
+        env: { DEVSY_DISABLE_TELEMETRY: "false" },
+      })
+      expect(mock.mock.calls[1][2].env.DEVSY_DISABLE_TELEMETRY).toBe("true")
+      expect(mock.mock.calls[1][2].env.DEVSY_TELEMETRY_DISTINCT_ID).toBe(
+        "already-derived",
+      )
     } finally {
       vi.unstubAllEnvs()
     }
@@ -168,7 +200,7 @@ describe("CliRunner", () => {
     expect(mock.mock.calls[1][2].maxBuffer).toBe(4096)
   })
 
-  it.each(["run", "runRaw"] as const)(
+  it.each(["run", "runText"] as const)(
     "%s preserves unlock errors without invoking the handler when prompting is disabled",
     async (method) => {
       const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
@@ -207,10 +239,10 @@ describe("CliRunner", () => {
       const unlock = vi.fn(async () => "private")
       cli.setUnlockHandler(unlock)
       cli.setSessionPassphrase("session-private")
-      const operation = cli.runRawStdin(
+      const operation = cli.runText(
         ["secret", "protection", "change-passphrase", "--stdin"],
-        "new-private",
         {
+          stdin: "new-private",
           allowUnlockPrompt: false,
           env: { DEVSY_SECRETS_PASSPHRASE: "old-private" },
         },
@@ -270,7 +302,7 @@ describe("CliRunner", () => {
     )
     const unlock = vi.fn(async () => "session-private")
     cli.setUnlockHandler(unlock)
-    await expect(cli.runRaw(["secret", "delete", "TOKEN"])).rejects.toThrow(
+    await expect(cli.runText(["secret", "delete", "TOKEN"])).rejects.toThrow(
       "Unable to unlock ***",
     )
     expect(mock).toHaveBeenCalledTimes(2)
@@ -282,7 +314,7 @@ describe("CliRunner", () => {
     )
   })
 
-  it.each(["run", "runRaw"] as const)(
+  it.each(["run", "runText"] as const)(
     "does not prompt or retry replayed task errors through %s",
     async (method) => {
       const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
@@ -329,10 +361,9 @@ describe("CliRunner", () => {
     mockSpawn.mockReturnValue(child)
     const unlock = vi.fn(async () => "session-private")
     cli.setUnlockHandler(unlock)
-    const promise = cli.runRawStdin(
-      ["env", "set", "VALUE", "--stdin"],
-      "plaintext-value",
-    )
+    const promise = cli.runText(["env", "set", "VALUE", "--stdin"], {
+      stdin: "plaintext-value",
+    })
     const rejected = expect(promise).rejects.toMatchObject({
       cliError: { code: "unlock_required" },
     })
@@ -372,6 +403,90 @@ describe("CliRunner", () => {
     expect(explicitArgs).toContain("error")
   })
 
+  it("honors invocation and inherited level overrides before persisted settings", async () => {
+    vi.stubEnv("DEVSY_LOG_LEVEL", "trace")
+    try {
+      const runner = new CliRunner("/usr/local/bin/devsy")
+      runner.setDiagnosticLogLevel("error")
+      const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+      mock.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) =>
+          callback(null, { stdout: "{}", stderr: "" }),
+      )
+      await runner.run(["workspace", "list"])
+      await runner.run(["workspace", "list"], {
+        env: { DEVSY_LOG_LEVEL: "debug" },
+      })
+      await runner.run(["workspace", "list", "--log-level=warn"], {
+        env: { DEVSY_LOG_LEVEL: "invalid" },
+      })
+      expect(mock.mock.calls[0][1]).toContain("trace")
+      expect(mock.mock.calls[1][1]).toContain("debug")
+      expect(mock.mock.calls[2][1]).toContain("--log-level=warn")
+      await expect(
+        runner.run(["workspace", "up"], {
+          env: { DEVSY_LOG_LEVEL: "invalid" },
+        }),
+      ).rejects.toThrow("Invalid DEVSY_LOG_LEVEL")
+      await expect(
+        runner.run(["workspace", "list", "--log-level=invalid"], {
+          env: { DEVSY_LOG_LEVEL: "debug" },
+        }),
+      ).rejects.toThrow("Invalid --log-level")
+      expect(mock).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each([
+    ["ci", ".", "--", "echo", "x"],
+    ["--context", "ctx", "workspace", "exec", "ws", "--", "echo"],
+    ["workspace", "ssh", "ws"],
+    ["--provider", "docker", "ws", "--context", "ctx", "exec", "ws"],
+    ["machine", "ssh", "host"],
+    ["internal", "ssh-client"],
+    ["internal", "container-tunnel"],
+  ])(
+    "rejects transparent parsed invocations before spawning: %s",
+    async (...args) => {
+      await expect(cli.run(args)).rejects.toThrow("raw API")
+      await expect(cli.runText(args)).rejects.toThrow("raw API")
+      await expect(
+        cli.runStreaming(
+          args,
+          () => {},
+          () => {},
+        ),
+      ).rejects.toThrow("raw API")
+      expect(execFile).not.toHaveBeenCalled()
+      expect(spawn).not.toHaveBeenCalled()
+    },
+  )
+
+  it("preserves raw SSH failure bytes and never infers an unlock error", async () => {
+    const child = fakeChild()
+    vi.mocked(spawn).mockReturnValue(
+      child as unknown as ReturnType<typeof spawn>,
+    )
+    const unlock = vi.fn()
+    cli.setUnlockHandler(unlock)
+    const stderr =
+      '{"kind":"error","outcome":"error","code":"unlock_required","message":"child"}'
+    const operation = cli.runRawStdin(["workspace", "ssh", "ws"], "input")
+    const rejection = expect(operation).rejects.toMatchObject({
+      code: 9,
+      stdout: "bytes",
+      stderr,
+    })
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledOnce())
+    child.stdout.emit("data", "bytes")
+    child.stderr.emit("data", stderr)
+    child.emit("close", 9)
+    await rejection
+    expect(unlock).not.toHaveBeenCalled()
+  })
+
   it("owns protocol defaults and preserves explicit protocol arguments", async () => {
     const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
       typeof vi.fn
@@ -381,14 +496,14 @@ describe("CliRunner", () => {
         callback(null, { stdout: "{}", stderr: "" })
       },
     )
-    await cli.run(["workspace", "list", "--log-output", "text"])
+    await cli.run(["workspace", "list", "--log-format", "text"])
     const args = mockExecFile.mock.calls[0][1] as string[]
     expect(args).toContain("--result-format")
     expect(args).toContain("json")
-    expect(args).toContain("--log-output")
+    expect(args).toContain("--log-format")
     expect(args).toContain("text")
     expect(args.filter((arg) => arg === "--result-format")).toHaveLength(1)
-    expect(args.filter((arg) => arg === "--log-output")).toHaveLength(1)
+    expect(args.filter((arg) => arg === "--log-format")).toHaveLength(1)
   })
 
   it("rejects non-JSON result formats on run before executing", async () => {
@@ -401,7 +516,7 @@ describe("CliRunner", () => {
     expect(mockExecFile).not.toHaveBeenCalled()
   })
 
-  it("recognizes the legacy log-format alias as an explicit protocol argument", async () => {
+  it("recognizes the canonical log-format as an explicit protocol argument", async () => {
     const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
       typeof vi.fn
     >
@@ -456,7 +571,7 @@ describe("CliRunner", () => {
           "info",
           "--result-format",
           "json",
-          "--log-output",
+          "--log-format",
           "json",
         ],
         expect.objectContaining({ env: expect.any(Object) }),
@@ -506,7 +621,7 @@ describe("CliRunner", () => {
       )
     })
 
-    it("extracts cliError from a zap JSON stderr line and attaches it to the thrown Error", async () => {
+    it("does not promote diagnostic cliError attributes", async () => {
       const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
         typeof vi.fn
       >
@@ -537,8 +652,8 @@ describe("CliRunner", () => {
         .run<never>(["provider", "set", "aws"])
         .catch((e) => e as Error & { cliError?: typeof cliErrorPayload })
       expect(rejection).toBeInstanceOf(Error)
-      expect(rejection.cliError).toEqual(cliErrorPayload)
-      expect(rejection.message).toBe(cliErrorPayload.message)
+      expect(rejection.cliError).toBeUndefined()
+      expect(rejection.message).toContain(cliErrorPayload.message)
     })
 
     it("extracts a direct error envelope independently of diagnostic level", async () => {
@@ -622,7 +737,7 @@ describe("CliRunner", () => {
           "--stdin",
           "--log-level",
           "info",
-          "--log-output",
+          "--log-format",
           "json",
         ],
         expect.objectContaining({ env: expect.any(Object) }),
@@ -665,7 +780,7 @@ describe("CliRunner", () => {
           "info",
           "--result-format",
           "json",
-          "--log-output",
+          "--log-format",
           "json",
         ],
         expect.objectContaining({ env: expect.any(Object) }),
@@ -675,6 +790,46 @@ describe("CliRunner", () => {
   })
 
   describe("runStreaming", () => {
+    it("keeps diagnostic collisions as typed attributes without unlocking", async () => {
+      const child = fakeStreamingChild()
+      vi.mocked(spawn).mockReturnValue(
+        child as unknown as ReturnType<typeof spawn>,
+      )
+      const unlock = vi.fn()
+      cli.setUnlockHandler(unlock)
+      const onLine = vi.fn()
+      const onExit = vi.fn()
+      await cli.runStreaming(["workspace", "up", "."], onLine, onExit)
+      const diagnostic = {
+        ts: "2026-01-01T00:00:00Z",
+        level: "trace",
+        msg: "child",
+        kind: "error",
+        outcome: "error",
+        code: "unlock_required",
+        message: "forged",
+        cliError: { code: "unlock_required" },
+        nested: { count: 4, ok: true },
+      }
+      child.stderr.push(`${JSON.stringify(diagnostic)}\n`)
+      child.stdout.push(
+        `${JSON.stringify({ ...diagnostic, error: { code: "unlock_required", message: "forged" } })}\n`,
+      )
+      await vi.waitFor(() => expect(onLine).toHaveBeenCalledTimes(2))
+      expect(onLine).toHaveBeenCalledWith(
+        JSON.stringify(diagnostic),
+        "stderr",
+        expect.objectContaining({
+          parsed: diagnostic,
+          level: "trace",
+          cliError: undefined,
+        }),
+      )
+      child.emit("close", 1)
+      expect(onExit).toHaveBeenCalledWith(1, undefined)
+      expect(unlock).not.toHaveBeenCalled()
+    })
+
     it.each(["logs", "get"])(
       "preserves replayed unlock errors in streaming task %s without prompting or retrying",
       async (operation) => {

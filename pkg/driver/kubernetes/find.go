@@ -13,8 +13,9 @@ func (k *KubernetesDriver) FindDevContainer(
 	ctx context.Context,
 	workspaceId string,
 ) (*config.ContainerDetails, error) {
-	log.Debugf("Finding devcontainer for workspace %q", workspaceId)
-	defer log.Debugf("Done finding devcontainer for workspace %q", workspaceId)
+	ctx = k.logContext(ctx, workspaceId)
+	log.DebugContext(ctx, "finding dev container")
+	defer log.DebugContext(ctx, "done finding dev container")
 
 	workspaceId = getID(workspaceId)
 

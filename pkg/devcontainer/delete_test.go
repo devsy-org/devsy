@@ -12,8 +12,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 )
 
 const (
@@ -267,7 +265,7 @@ func TestDelete_NonLocalSource_KeepsNothingToClean(t *testing.T) {
 }
 
 func TestTeardown_DeliveryVolumeFailure_WarnsButSucceeds(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.WarnLevel)
+	logs := log.InitTestObserved(t, log.SlogLevelWarn)
 
 	r := newTestRunner(&mockDriver{})
 	r.workspaceConfig.Agent.Driver = provider.DockerDriver
@@ -284,9 +282,9 @@ func TestTeardown_DeliveryVolumeFailure_WarnsButSucceeds(t *testing.T) {
 	}
 }
 
-func observedWarning(entries []observer.LoggedEntry, substr string) bool {
+func observedWarning(entries []log.LoggedEntry, substr string) bool {
 	for _, e := range entries {
-		if e.Level == zapcore.WarnLevel && searchString(e.Message, substr) {
+		if e.Level == log.SlogLevelWarn && searchString(e.Message, substr) {
 			return true
 		}
 	}
@@ -294,7 +292,7 @@ func observedWarning(entries []observer.LoggedEntry, substr string) bool {
 }
 
 func TestTeardown_ImportedMarkerFailure_WarnsButSucceeds(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.WarnLevel)
+	logs := log.InitTestObserved(t, log.SlogLevelWarn)
 
 	tmpDir := t.TempDir()
 	notADir := filepath.Join(tmpDir, importedProfileParent)

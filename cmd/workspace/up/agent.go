@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -151,7 +152,7 @@ func (cmd *UpCmd) runProxyUpCommand(
 
 	err := client.Up(ctx, client2.UpOptions{
 		CLIOptions: baseOptions,
-		Debug:      cmd.Debug,
+		LogLevel:   log.LevelString(),
 		Stdin:      stdin,
 		Stdout:     stdout,
 	})
@@ -170,7 +171,7 @@ func (cmd *UpCmd) devsyUpDaemon(
 
 	return client.Up(ctx, client2.UpOptions{
 		CLIOptions: baseOptions,
-		Debug:      cmd.Debug,
+		LogLevel:   log.LevelString(),
 		Reporter:   cmd.reporter(),
 	})
 }
@@ -252,15 +253,17 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		return nil, fmt.Errorf("get agent info: %w", err)
 	}
 
-	sshTunnelCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
-	if log.DebugEnabled() {
-		sshTunnelCmd += " --debug" //nolint:goconst
+	var sshTunnelCmd strings.Builder
+	sshTunnelCmd.WriteString(shellescape.Quote(client.AgentPath()))
+	sshTunnelCmd.WriteString(" internal ssh-server --stdio")
+	for _, arg := range log.ForwardFlagArgs() {
+		sshTunnelCmd.WriteByte(' ')
+		sshTunnelCmd.WriteString(shellescape.Quote(arg))
 	}
 
 	agentCommand := workspaceAgentCommand(
 		client.AgentPath(),
 		workspaceInfo,
-		log.DebugEnabled(),
 		cmd.LifecycleTerminal != nil,
 	)
 
@@ -282,7 +285,7 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 			config.ContextOptionSSHAddPrivateKeys,
 		) == config.BoolTrue,
 		AgentInject: newAgentInjectFunc(client, wInfo),
-		SSHCommand:  sshTunnelCmd,
+		SSHCommand:  sshTunnelCmd.String(),
 		Command:     agentCommand,
 		EnvVars:     environment,
 		TunnelServerFunc: func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error) {
@@ -298,19 +301,19 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 	})
 }
 
-func workspaceAgentCommand(agentPath, workspaceInfo string, debug, lifecycleTerminal bool) string {
-	command := fmt.Sprintf(
-		"%s internal agent workspace up --workspace-info %s",
-		shellescape.Quote(agentPath),
-		shellescape.Quote(workspaceInfo),
-	)
-	if debug {
-		command += " --debug"
+func workspaceAgentCommand(agentPath, workspaceInfo string, lifecycleTerminal bool) string {
+	var command strings.Builder
+	_, _ = fmt.Fprintf(&command, "%s internal agent workspace up --workspace-info %s",
+		shellescape.Quote(agentPath), shellescape.Quote(workspaceInfo))
+	for _, arg := range log.ForwardFlagArgs() {
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote(arg))
 	}
 	if lifecycleTerminal {
-		command += " " + shellescape.Quote("--lifecycle-terminal-protocol=1")
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote("--lifecycle-terminal-protocol=1"))
 	}
-	return command
+	return command.String()
 }
 
 func withoutSecretValues(options provider2.CLIOptions) provider2.CLIOptions {

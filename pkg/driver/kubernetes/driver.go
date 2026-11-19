@@ -3,8 +3,10 @@ package kubernetes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/driver"
@@ -39,12 +41,23 @@ func NewKubernetesDriver(
 	}
 	log.Debugf("Use Kubernetes Namespace %q", namespace)
 
+	workspaceID := ""
+	if workspaceInfo.Workspace != nil {
+		workspaceID = workspaceInfo.Workspace.ID
+	}
+	machineID := ""
+	if workspaceInfo.Machine != nil {
+		machineID = workspaceInfo.Machine.ID
+	}
+
 	return &KubernetesDriver{
 		client:        client,
 		namespace:     namespace,
 		options:       &options,
 		agentConfig:   &workspaceInfo.Agent,
 		disableDaemon: workspaceInfo.CLIOptions.DisableDaemon,
+		workspaceID:   workspaceID,
+		machineID:     machineID,
 	}, nil
 }
 
@@ -82,6 +95,25 @@ type KubernetesDriver struct {
 	disableDaemon     bool
 	shutdownAction    string
 	hasShutdownAction bool
+	workspaceID       string
+	machineID         string
+}
+
+func logExecResult(ctx context.Context, started time.Time, err error) {
+	attrs := []slog.Attr{
+		log.AttrOperation("exec"),
+		log.AttrDurationMs(time.Since(started).Milliseconds()),
+	}
+	if err == nil {
+		attrs = append(attrs, slog.Int("exit_code", 0))
+		log.DebugContext(ctx, "runtime command completed", attrs...)
+		return
+	}
+	var exitErr interface{ ExitStatus() int }
+	if errors.As(err, &exitErr) {
+		attrs = append(attrs, slog.Int("exit_code", exitErr.ExitStatus()))
+	}
+	log.DebugContext(ctx, "runtime command failed", attrs...)
 }
 
 func (k *KubernetesDriver) CanReprovision() bool {
@@ -103,8 +135,9 @@ func (k *KubernetesDriver) SupportsMountType(mountType string) bool {
 }
 
 func (k *KubernetesDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
-	log.Debugf("Stopping devcontainer for workspace %q", workspaceId)
-	defer log.Debugf("Done stopping devcontainer for workspace %q", workspaceId)
+	ctx = k.logContext(ctx, workspaceId)
+	log.DebugContext(ctx, "stopping dev container")
+	defer log.DebugContext(ctx, "done stopping dev container")
 
 	workspaceId = getID(workspaceId)
 
@@ -118,8 +151,9 @@ func (k *KubernetesDriver) StopDevContainer(ctx context.Context, workspaceId str
 }
 
 func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
-	log.Debugf("Deleting devcontainer for workspace %q", workspaceId)
-	defer log.Debugf("Done deleting devcontainer for workspace %q", workspaceId)
+	ctx = k.logContext(ctx, workspaceId)
+	log.DebugContext(ctx, "deleting dev container")
+	defer log.DebugContext(ctx, "done deleting dev container")
 
 	workspaceId = getID(workspaceId)
 
@@ -145,6 +179,7 @@ func (k *KubernetesDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
 ) error {
+	ctx = k.logContext(ctx, params.WorkspaceID)
 	workspaceId := getID(params.WorkspaceID)
 
 	var args []string
@@ -154,7 +189,8 @@ func (k *KubernetesDriver) CommandDevContainer(
 		args = []string{"sh", "-c", params.Command}
 	}
 
-	return k.client.Exec(ctx, &ExecStreamOptions{
+	started := time.Now()
+	err := k.client.Exec(ctx, &ExecStreamOptions{
 		Pod:       workspaceId,
 		Namespace: k.namespace,
 		Container: DevContainerName,
@@ -163,6 +199,8 @@ func (k *KubernetesDriver) CommandDevContainer(
 		Stdout:    params.Stdout,
 		Stderr:    params.Stderr,
 	})
+	logExecResult(ctx, started, err)
+	return err
 }
 
 // SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
@@ -178,7 +216,9 @@ func (k *KubernetesDriver) CommandContainerArgv(
 	argv []string,
 	streams driver.Streams,
 ) error {
-	return k.client.Exec(ctx, &ExecStreamOptions{
+	ctx = k.logContext(ctx, workspaceID)
+	started := time.Now()
+	err := k.client.Exec(ctx, &ExecStreamOptions{
 		Pod:       getID(workspaceID),
 		Namespace: k.namespace,
 		Container: DevContainerName,
@@ -187,6 +227,8 @@ func (k *KubernetesDriver) CommandContainerArgv(
 		Stdout:    streams.Stdout,
 		Stderr:    streams.Stderr,
 	})
+	logExecResult(ctx, started, err)
+	return err
 }
 
 func (k *KubernetesDriver) GetDevContainerLogs(
@@ -219,6 +261,24 @@ func (d *KubernetesDriver) RequiresMountStreaming() bool { return true }
 func (d *KubernetesDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
 
 func (d *KubernetesDriver) RequiresWorkspaceChown() bool { return true }
+
+func (k *KubernetesDriver) logContext(ctx context.Context, workspaceID string) context.Context {
+	ctx = log.WithContext(
+		ctx,
+		log.AttrComponent("kubernetes-driver"),
+		log.AttrProvider("kubernetes"),
+	)
+	if workspaceID == "" {
+		workspaceID = k.workspaceID
+	}
+	if workspaceID != "" {
+		ctx = log.WithContext(ctx, log.AttrWorkspaceID(workspaceID))
+	}
+	if k.machineID != "" {
+		ctx = log.WithContext(ctx, log.AttrMachineID(k.machineID))
+	}
+	return ctx
+}
 
 func (k *KubernetesDriver) getDevContainerPvc(
 	ctx context.Context,

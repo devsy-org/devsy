@@ -498,18 +498,15 @@ func resolveAgentConfig(workspaceClient client2.BaseWorkspaceClient) provider.Pr
 	return agentInfo.Agent
 }
 
-// setupTunnelWriter wires up the JSON log pipe and GPG agent tunnel shared by
-// both tunnel modes. buildSSHServerCommand runs `devsy internal ssh-server`,
-// which always logs structured JSON on stderr; PipeJSONStream re-emits each
-// line at its original level instead of double-wrapping it as another log
-// entry. The returned cleanup func stops the GPG tunnel before closing and
-// draining the writer, matching the original defer ordering.
 func (cmd *SSHCmd) setupTunnelWriter(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	containerClient *ssh.Client,
 ) (io.Writer, func()) {
-	writer, writerDone := log.PipeJSONStream()
+	writer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.SlogLevelWarn,
+		DetectLevelPrefixes: true,
+	})
 
 	gpgTunnel := newGPGTunnel(cmd, devsyConfig)
 	stopGPGTunnel := runGPGTunnelInBackground(ctx, gpgTunnel, containerClient)
@@ -517,7 +514,6 @@ func (cmd *SSHCmd) setupTunnelWriter(
 	return writer, func() {
 		stopGPGTunnel()
 		_ = writer.Close()
-		<-writerDone
 	}
 }
 
@@ -616,9 +612,7 @@ func (cmd *SSHCmd) buildSSHServerCommand(
 			cmd.ReuseSSHAuthSock,
 		)
 	}
-	if cmd.Debug {
-		commandArgs = append(commandArgs, names.Flag(names.Debug))
-	}
+	commandArgs = append(commandArgs, log.ForwardFlagArgs()...)
 	command := shellescape.QuoteCommand(commandArgs)
 	if cmd.User != "" && cmd.User != "root" && !agent.RunsFixedNonRootUser() {
 		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})

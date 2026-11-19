@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
@@ -133,15 +136,44 @@ func runProviderInit(
 	if cfg.SkipInit {
 		return nil
 	}
+	providerOptions := devsyConfig.ProviderOptions(cfg.Provider.Name)
+	environment := provider2.ToEnvironment(
+		nil, nil, providerOptions,
+		provider2.GetBaseEnvironment(devsyConfig.DefaultContext, cfg.Provider.Name),
+	)
+	var protected []string
+	for _, definitions := range []config.OptionDefinitions{
+		cfg.Provider.Options,
+		devsyConfig.DynamicProviderOptionDefinitions(cfg.Provider.Name),
+	} {
+		for name, definition := range definitions {
+			if definition != nil && (definition.Password || definition.Hidden) {
+				if value, ok := providerOptions[name]; ok {
+					protected = append(protected, name+"="+value.Value)
+				}
+			}
+		}
+	}
+	redactor := secrets.Combine(
+		secrets.NewEnvironmentRedactor(environment),
+		secrets.NewRedactor(protected),
+	)
+	attrs := []slog.Attr{log.AttrProvider(cfg.Provider.Name)}
 
 	stdout := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:       log.LevelInfo,
+		FallbackLevel:       log.SlogLevelInfo,
+		Redactor:            redactor,
+		DefaultAttrs:        attrs,
 		DetectLevelPrefixes: true,
 	})
 	defer func() { _ = stdout.Close() }()
 
 	stderr := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:       log.LevelError,
+		FallbackLevel:       log.SlogLevelError,
+		Redactor:            redactor,
+		DefaultAttrs:        attrs,
+		CaptureLines:        50,
+		CaptureBytes:        32 * 1024,
 		DetectLevelPrefixes: true,
 	})
 	defer func() { _ = stderr.Close() }()
@@ -151,12 +183,20 @@ func runProviderInit(
 		reporter,
 		status.Operation{Phase: status.PhaseRunningInit, Step: cfg.Provider.Name},
 		func(ctx context.Context) error {
-			return initProvider(
+			err := initProvider(
 				ctx,
 				devsyConfig,
 				cfg.Provider,
 				initIO{stdout: stdout, stderr: stderr},
 			)
+			_ = stdout.Close()
+			_ = stderr.Close()
+			if err != nil {
+				if output := stderr.ErrorOutput(); output != "" {
+					return clierr.WithContext(err, map[string]string{"stderr": output})
+				}
+			}
+			return err
 		},
 	)
 }

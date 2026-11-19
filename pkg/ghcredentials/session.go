@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -208,14 +209,14 @@ func (s *treeSnapshot) reserveBytes(size int64) error {
 func recoverSessions(ctx context.Context, root string) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		logFailure("gh relay: recovery pending", "recovery.list", err, true)
+		logFailure(ctx, err, failureLog{recoveryPending, "recovery.list"})
 		return
 	}
 	for _, e := range entries {
 		if e.IsDir() && strings.HasPrefix(e.Name(), "session-") {
 			dir := filepath.Join(root, e.Name())
 			if err := recoverSession(ctx, dir); err != nil {
-				logFailure("gh relay: recovery pending", "recovery.writeback", err, true)
+				logFailure(ctx, err, failureLog{recoveryPending, "recovery.writeback"})
 			}
 		}
 	}
@@ -400,7 +401,12 @@ func (s *session) overlay(
 		}
 		source := a.inject(ctx, binary, replaceEnv(env, "GH_CONFIG_DIR", probe), hosts)
 		_ = os.RemoveAll(probe)
-		log.Debugw("gh relay: authentication source", "host", a.Host, "source", source)
+		log.DebugContext(
+			ctx,
+			"gh relay: authentication source",
+			slog.String("host", a.Host),
+			slog.String("source", source),
+		)
 		if source == "forwarded" {
 			injected = append(injected, a)
 		}
@@ -625,14 +631,10 @@ func (a Account) inject(
 	}
 	token, err := resolveToken(ctx, binary, a.Host, env)
 	if err != nil && !noTokenResult(err) {
-		log.Warnw(
-			"gh relay: forwarding unavailable",
-			"operation",
-			"local.token_lookup",
-			"host",
-			a.Host,
-			"error_type",
-			errorKind(err),
+		log.WarnContext(ctx, "gh relay: forwarding unavailable",
+			slog.String("operation", "local.token_lookup"),
+			slog.String("host", a.Host),
+			slog.String("error_type", errorKind(err)),
 		)
 		return "local_lookup_failed"
 	}

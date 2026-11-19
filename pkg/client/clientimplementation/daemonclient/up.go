@@ -28,6 +28,11 @@ import (
 )
 
 func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Result, error) {
+	level, err := opt.EffectiveLogLevel()
+	if err != nil {
+		return nil, err
+	}
+	opt.LogLevel = level
 	baseClient, err := c.initPlatformClient(ctx)
 	if err != nil {
 		return nil, err
@@ -125,8 +130,10 @@ func startUpTask(
 	instance *managementv1.DevsyWorkspaceInstance,
 	opt clientpkg.UpOptions,
 ) (kube.Interface, string, error) {
-	// encode options
-	rawOptions, _ := json.Marshal(opt)
+	rawOptions, err := json.Marshal(opt)
+	if err != nil {
+		return nil, "", fmt.Errorf("encode up options: %w", err)
+	}
 	managementClient, err := baseClient.Management()
 	if err != nil {
 		return nil, "", fmt.Errorf("error getting management client: %w", err)
@@ -201,7 +208,6 @@ func createUpTask(ctx context.Context, params createUpTaskParams) (string, error
 		DevsyWorkspaceInstances(params.instance.Namespace).
 		Up(ctx, params.instance.Name, &managementv1.DevsyWorkspaceInstanceUp{
 			Spec: managementv1.DevsyWorkspaceInstanceUpSpec{
-				Debug:   params.opt.Debug,
 				Options: params.rawOptions,
 			},
 		}, metav1.CreateOptions{})
@@ -420,15 +426,19 @@ func newLogScanner(r io.Reader) *bufio.Scanner {
 // task logs, plus the status-sniffing writer wrapped around stdout.
 type logOutputStreams struct {
 	stdoutStreamer io.WriteCloser
-	stdoutDone     chan struct{}
 	stderrStreamer io.WriteCloser
-	stderrDone     chan struct{}
 	statusWriter   *statusSniffingWriter
 }
 
 func newLogOutputStreams(reporter status.Reporter) *logOutputStreams {
-	stdoutStreamer, stdoutDone := log.PipeJSONStream()
-	stderrStreamer, stderrDone := log.PipeJSONStream()
+	stdoutStreamer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.SlogLevelInfo,
+		DetectLevelPrefixes: true,
+	})
+	stderrStreamer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.SlogLevelWarn,
+		DetectLevelPrefixes: true,
+	})
 
 	// The remote task runs the same devsy CLI, so its stdout carries the
 	// same NDJSON status lines a local `up` does; sniff them out here.
@@ -436,9 +446,7 @@ func newLogOutputStreams(reporter status.Reporter) *logOutputStreams {
 
 	return &logOutputStreams{
 		stdoutStreamer: stdoutStreamer,
-		stdoutDone:     stdoutDone,
 		stderrStreamer: stderrStreamer,
-		stderrDone:     stderrDone,
 		statusWriter:   statusWriter,
 	}
 }
@@ -447,8 +455,6 @@ func (s *logOutputStreams) Close() {
 	_ = s.statusWriter.Close()
 	_ = s.stdoutStreamer.Close()
 	_ = s.stderrStreamer.Close()
-	<-s.stdoutDone
-	<-s.stderrDone
 }
 
 func (s *logOutputStreams) stdout() io.Writer {

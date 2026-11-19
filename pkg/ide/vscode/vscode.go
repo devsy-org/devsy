@@ -136,8 +136,8 @@ func (o *VsCodeServer) InstallExtensions() error {
 		return fmt.Errorf("unable to locate server binary")
 	}
 
-	writer := log.Writer(log.LevelInfo)
-	errWriter := log.Writer(log.LevelError)
+	writer := log.Writer(log.SlogLevelInfo)
+	errWriter := log.Writer(log.SlogLevelError)
 	defer func() { _ = writer.Close() }()
 	defer func() { _ = errWriter.Close() }()
 

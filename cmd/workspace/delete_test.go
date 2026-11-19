@@ -92,7 +92,7 @@ func TestDeleteCmd_Completion(t *testing.T) {
 }
 
 func TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -138,7 +138,7 @@ func TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace(t *testing.T) {
 }
 
 func TestDeleteCmd_DeleteMultipleReusesResolvedClients(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -194,7 +194,7 @@ func TestDeleteCmd_DeleteMultipleReusesResolvedClients(t *testing.T) {
 }
 
 func TestResolveDeleteTargets_FallsBackToRawArgument(t *testing.T) {
-	log.Init(log.Config{Verbosity: 0})
+	log.Init(log.Config{})
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)

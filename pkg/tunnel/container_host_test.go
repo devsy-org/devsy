@@ -8,10 +8,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,15 +31,21 @@ const hostTunnelStdioFlag = "--stdio"
 
 type localHostTunnelClient struct {
 	client.WorkspaceClient
-	path     string
-	info     string
-	dataPath string
-	refresh  func(context.Context) error
+	path      string
+	info      string
+	dataPath  string
+	refresh   func(context.Context) error
+	pathCalls *atomic.Int32
 }
 
-func (c localHostTunnelClient) AgentPath() string { return c.path }
-func (localHostTunnelClient) AgentURL() string    { return "" }
-func (localHostTunnelClient) AgentLocal() bool    { return true }
+func (c localHostTunnelClient) AgentPath() string {
+	if c.pathCalls != nil {
+		c.pathCalls.Add(1)
+	}
+	return c.path
+}
+func (localHostTunnelClient) AgentURL() string { return "" }
+func (localHostTunnelClient) AgentLocal() bool { return true }
 
 func (c localHostTunnelClient) AgentInfo(
 	provider.CLIOptions,
@@ -54,23 +62,73 @@ func (c localHostTunnelClient) RefreshOptions(ctx context.Context, _ []string, _
 func TestHostTunnelExecutesLiteralAgentPath(t *testing.T) {
 	for _, name := range []string{"agent space", "agent'quote", "agent '\\$-\u03bb;$(false)"} {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), name)
-			writeHostAgent(t, path, "#!/bin/sh\nprintf '%s\\000' \"$0\" \"$@\"\ncat\n")
+			dir := t.TempDir()
+			path := filepath.Join(dir, name)
+			events := filepath.Join(dir, "events")
+			stderr := filepath.Join(dir, "stderr")
+			t.Setenv("DEVSY_TEST_HOST_TUNNEL_EVENTS", events)
+			t.Setenv("DEVSY_TEST_HOST_TUNNEL_STDERR", stderr)
+			t.Setenv("DEVSY_TEST_HOST_TUNNEL_LEVEL", log.LevelString())
+			script := `#!/bin/sh
+exec 2>>"$DEVSY_TEST_HOST_TUNNEL_STDERR"
+printf 'child_started\n' >>"$DEVSY_TEST_HOST_TUNNEL_EVENTS"
+if [ "$#" -eq 5 ] && [ "$1" = internal ] && [ "$2" = ssh-server ] && [ "$3" = --stdio ] &&
+   [ "$4" = --log-level ] && [ "$5" = "$DEVSY_TEST_HOST_TUNNEL_LEVEL" ]; then
+  printf 'command_admitted\n' >>"$DEVSY_TEST_HOST_TUNNEL_EVENTS"
+else
+  printf 'command_mismatch\n' >>"$DEVSY_TEST_HOST_TUNNEL_EVENTS"
+fi
+printf '%s\000' "$0" "$@"
+printf 'child_stdout_written\n' >>"$DEVSY_TEST_HOST_TUNNEL_EVENTS"
+cat
+result=$?
+printf 'child_completed\n' >>"$DEVSY_TEST_HOST_TUNNEL_EVENTS"
+exit "$result"
+`
+			writeHostAgent(t, path, script)
 			var stdout bytes.Buffer
-			tunnel := NewContainerTunnel(localHostTunnelClient{path: path})
+			var pathCalls atomic.Int32
+			tunnel := NewContainerTunnel(localHostTunnelClient{path: path, pathCalls: &pathCalls})
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			require.NoError(
-				t,
-				tunnel.runHostTunnel(ctx, strings.NewReader("host-input\n"), &stdout, time.Second),
+			err := tunnel.runHostTunnel(
+				ctx,
+				strings.NewReader("host-input\n"),
+				&stdout,
+				time.Second,
 			)
-			args := []string{path, "internal", "ssh-server", hostTunnelStdioFlag}
-			if log.DebugEnabled() {
-				args = append(args, "--debug")
+			if err != nil {
+				t.Fatalf(
+					"host tunnel failed: %v; path lookups=%d; output bytes=%d; events=%q; child stderr=%q",
+					err,
+					pathCalls.Load(),
+					stdout.Len(),
+					readHostFixtureDiagnostic(events),
+					readHostFixtureDiagnostic(stderr),
+				)
 			}
+			phases := readHostFixtureDiagnostic(events)
+			require.Contains(t, phases, "command_admitted\n")
+			require.Contains(t, phases, "child_stdout_written\n")
+			require.Contains(t, phases, "child_completed\n")
+			args := []string{path, "internal", "ssh-server", hostTunnelStdioFlag}
+			args = append(args, log.ForwardFlagArgs()...)
 			require.Equal(t, strings.Join(args, "\x00")+"\x00host-input\n", stdout.String())
 		})
 	}
+}
+
+func readHostFixtureDiagnostic(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return "<unavailable>"
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, 4096))
+	if err != nil {
+		return "<unavailable>"
+	}
+	return string(data)
 }
 
 func TestContainerTunnelPreservesLiteralHostArguments(t *testing.T) {
@@ -115,15 +173,14 @@ func TestContainerTunnelPreservesLiteralHostArguments(t *testing.T) {
 					"--agent-dir",
 					workspace.dataPath,
 				)
+				args = append(args, log.ForwardFlagArgs()...)
 			} else {
 				_ = tunnel.runInContainer(ctx, client, func(context.Context, *ssh.Client) error {
 					t.Error("fixture does not serve an inner SSH connection")
 					return nil
 				}, nil)
 				args = append(args, mode, "--workspace-info", workspace.info)
-				if log.DebugEnabled() {
-					args = append(args, "--debug")
-				}
+				args = append(args, log.ForwardFlagArgs()...)
 			}
 			got, err := root.ReadFile("arguments")
 			require.NoError(t, err)

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -132,9 +133,12 @@ func (c *ContainerTunnel) runHostTunnel(
 	defer closeAndDrain()
 	defer log.Debugf("Tunnel to host closed")
 
-	command := shellescape.Quote(c.client.AgentPath()) + " internal ssh-server --stdio"
-	if log.DebugEnabled() {
-		command += " --debug"
+	var command strings.Builder
+	command.WriteString(shellescape.Quote(c.client.AgentPath()))
+	command.WriteString(" internal ssh-server --stdio")
+	for _, arg := range log.ForwardFlagArgs() {
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote(arg))
 	}
 	return agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
@@ -149,7 +153,7 @@ func (c *ContainerTunnel) runHostTunnel(
 		IsLocal:         c.client.AgentLocal(),
 		RemoteAgentPath: c.client.AgentPath(),
 		DownloadURL:     c.client.AgentURL(),
-		Command:         command,
+		Command:         command.String(),
 		Stdin:           stdinReader,
 		Stdout:          stdoutWriter,
 		Stderr:          writer,
@@ -188,19 +192,26 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 			}
 
 			buf := &containerTunnelOutput{}
-			command := fmt.Sprintf(
+			var command strings.Builder
+			_, _ = fmt.Fprintf(
+				&command,
 				"%s internal agent workspace update-config --workspace-info %s",
 				shellescape.Quote(c.client.AgentPath()),
 				shellescape.Quote(workspaceInfo),
 			)
 			if agentInfo.Agent.DataPath != "" {
-				command += " --agent-dir " + shellescape.Quote(agentInfo.Agent.DataPath)
+				command.WriteString(" --agent-dir ")
+				command.WriteString(shellescape.Quote(agentInfo.Agent.DataPath))
+			}
+			for _, arg := range log.ForwardFlagArgs() {
+				command.WriteByte(' ')
+				command.WriteString(shellescape.Quote(arg))
 			}
 
-			log.Debugf("Run command in container: %s", command)
+			log.Debugf("Run command in container: %s", command.String())
 			err = devssh.Run(ctx, devssh.RunOptions{
 				Client:  sshClient,
-				Command: command,
+				Command: command.String(),
 				Stdout:  buf,
 				Stderr:  buf,
 			})
@@ -228,16 +239,15 @@ func (c *ContainerTunnel) runInContainer(
 	writer, closeAndDrain := internalProcessStderr(log.PassthroughWriter())
 	defer closeAndDrain()
 
-	command := fmt.Sprintf(
-		"%s internal agent container-tunnel --workspace-info %s",
-		shellescape.Quote(c.client.AgentPath()),
-		shellescape.Quote(workspaceInfo),
-	)
-	if log.DebugEnabled() {
-		command += " --debug"
+	var command strings.Builder
+	_, _ = fmt.Fprintf(&command, "%s internal agent container-tunnel --workspace-info %s",
+		shellescape.Quote(c.client.AgentPath()), shellescape.Quote(workspaceInfo))
+	for _, arg := range log.ForwardFlagArgs() {
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote(arg))
 	}
 	containerConn, err := devssh.OpenSessionConn(ctx, sshClient, devssh.SessionConnOptions{
-		Command: command,
+		Command: command.String(),
 		Env:     envVars,
 		Stderr:  writer,
 	})

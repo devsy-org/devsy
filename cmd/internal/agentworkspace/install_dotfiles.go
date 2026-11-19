@@ -96,7 +96,7 @@ func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
 			ctx,
 			command,
 		) // #nosec G204 -- user-provided dotfile install script
-		writer := log.Writer(log.LevelInfo)
+		writer := log.Writer(log.SlogLevelInfo)
 		scriptCmd.Stdout = writer
 		scriptCmd.Stderr = writer
 
@@ -130,7 +130,7 @@ func setupDotfiles(ctx context.Context) error {
 	})
 
 	for _, installScriptPath := range scripts {
-		writer := log.Writer(log.LevelInfo)
+		writer := log.Writer(log.SlogLevelInfo)
 		err := ensureExecutable(ctx, installScriptPath)
 		if err != nil {
 			log.Debugf(

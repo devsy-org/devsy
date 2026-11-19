@@ -45,7 +45,7 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 				})
 
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, "--log-level=debug")
 				framework.ExpectNoError(err)
 
 				status, err := f.DevsyStatus(ctx, tempDir, "--container-status=false")

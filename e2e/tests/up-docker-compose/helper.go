@@ -28,7 +28,7 @@ const (
 	cmdSSH       = "ssh"
 	flagCommand  = "--command"
 	flagIDE      = "--ide"
-	flagDebug    = "--debug"
+	flagDebug    = "--log-level=debug"
 	ideNone      = "none"
 )
 

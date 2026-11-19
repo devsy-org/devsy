@@ -78,7 +78,7 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 	reporter, err := newStatusReporter(
 		cmd.ResultFormat,
 		os.Stdout,
-		cmd.Verbosity > 0 || cmd.Debug,
+		log.InfoEnabled(),
 		cmd.NoStatus,
 	)
 	if err != nil {
@@ -389,7 +389,7 @@ func (cmd *ApplyCmd) copyAndExecFeatures(
 		// Raw Docker output must never share stdout with status and result
 		// envelopes. The configured logger preserves the selected machine
 		// encoding on stderr instead.
-		outputWriter := log.Writer(log.LevelInfo)
+		outputWriter := log.Writer(log.SlogLevelInfo)
 		defer func() { _ = outputWriter.Close() }()
 		streams.LiveStdout = nil
 		streams.Stdout = outputWriter

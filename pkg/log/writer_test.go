@@ -3,7 +3,11 @@ package log
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/secrets"
@@ -15,13 +19,13 @@ const (
 )
 
 func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
-	Init(Config{Verbosity: 2, Format: testFormatJSON})
+	Init(Config{Level: LevelDebugName, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
 	defer remove()
 
-	w := Writer(LevelInfo)
+	w := Writer(SlogLevelInfo)
 	_, err := w.Write([]byte("Cloning into 'repo'...\n"))
 	if err != nil {
 		t.Fatalf("Write: %v", err)
@@ -48,7 +52,7 @@ func TestLoggerFormatsHaveStableRecords(t *testing.T) {
 
 func assertStableLogFormat(t *testing.T, format string) {
 	t.Helper()
-	Init(Config{Verbosity: 1, Format: format})
+	Init(Config{Level: LevelInfoName, Format: format})
 	var sink syncBuffer
 	remove := AddSink(&sink)
 	defer remove()
@@ -96,13 +100,13 @@ func assertTextLog(t *testing.T, line string) {
 }
 
 func TestWriter_SplitsMultipleLinesInOneWrite(t *testing.T) {
-	Init(Config{Verbosity: 2, Format: testFormatJSON})
+	Init(Config{Level: LevelDebugName, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
 	defer remove()
 
-	w := Writer(LevelInfo)
+	w := Writer(SlogLevelInfo)
 	_, err := w.Write([]byte("line one\nline two\n"))
 	if err != nil {
 		t.Fatalf("Write: %v", err)
@@ -148,13 +152,13 @@ func assertJSONLineMsg(t *testing.T, i int, line, wantMsg string) {
 }
 
 func TestWriter_FlushesTrailingPartialLineOnClose(t *testing.T) {
-	Init(Config{Verbosity: 2, Format: testFormatJSON})
+	Init(Config{Level: LevelDebugName, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
 	defer remove()
 
-	w := Writer(LevelInfo)
+	w := Writer(SlogLevelInfo)
 	_, _ = w.Write([]byte("no trailing newline"))
 	_ = Sync()
 	if sink.Len() != 0 {
@@ -172,13 +176,13 @@ func TestWriter_FlushesTrailingPartialLineOnClose(t *testing.T) {
 }
 
 func TestWriter_PreservesBlankLines(t *testing.T) {
-	Init(Config{Verbosity: 2, Format: testFormatJSON})
+	Init(Config{Level: LevelDebugName, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
 	defer remove()
 
-	w := Writer(LevelInfo)
+	w := Writer(SlogLevelInfo)
 	if _, err := w.Write([]byte("one\n\ntwo\n")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -194,7 +198,7 @@ func TestWriter_PreservesBlankLines(t *testing.T) {
 }
 
 func TestPassthroughWriter_WritesRawBytesUnformatted(t *testing.T) {
-	Init(Config{Quiet: true, Format: testFormatJSON})
+	Init(Config{Level: LevelErrorName, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
@@ -211,7 +215,7 @@ func TestPassthroughWriter_WritesRawBytesUnformatted(t *testing.T) {
 }
 
 func TestPassthroughWriterRedactsSplitSecrets(t *testing.T) {
-	Init(Config{Quiet: true, Format: testFormatJSON})
+	Init(Config{Level: LevelErrorName, Format: testFormatJSON})
 
 	var sink syncBuffer
 	remove := AddSink(&sink)
@@ -233,18 +237,119 @@ func TestPassthroughWriterRedactsSplitSecrets(t *testing.T) {
 }
 
 func TestWriter_DiscardsBelowConfiguredLevel(t *testing.T) {
-	Init(Config{Verbosity: 1, Format: testFormatJSON}) // info+ only, debug disabled
+	Init(Config{Level: LevelInfoName, Format: testFormatJSON})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
 	defer remove()
 
-	w := Writer(LevelDebug)
+	w := Writer(SlogLevelDebug)
 	_, _ = w.Write([]byte("should not appear\n"))
 	_ = w.Close()
 	_ = Sync()
 
 	if sink.Len() != 0 {
 		t.Errorf("expected debug output discarded below configured level, got %q", sink.String())
+	}
+}
+
+const testLongSecret = "TOKEN=long-secret-value"
+
+type failingPassthroughSink struct {
+	err    error
+	short  bool
+	calls  int
+	output strings.Builder
+}
+
+func (s *failingPassthroughSink) Write(p []byte) (int, error) {
+	_, _ = s.output.Write(p)
+	s.calls++
+	if s.short {
+		return len(p) / 2, nil
+	}
+	return 0, s.err
+}
+
+func TestPassthroughWriterReportsSinkErrors(t *testing.T) {
+	failure := errors.New("sink failed")
+	for _, tc := range []struct {
+		name string
+		sink *failingPassthroughSink
+		want error
+	}{
+		{"error", &failingPassthroughSink{err: failure}, failure},
+		{"short", &failingPassthroughSink{short: true}, io.ErrShortWrite},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			remove := AddSink(tc.sink)
+			defer remove()
+			w := PassthroughWriterWithRedactor(secrets.NewRedactor([]string{testLongSecret}))
+			input := []byte("long-secret-value canary\n")
+			n, err := w.Write(input)
+			if n != len(input) || !errors.Is(err, tc.want) || tc.sink.calls != 1 {
+				t.Fatalf("Write = %d, %v; calls = %d", n, err, tc.sink.calls)
+			}
+		})
+	}
+}
+
+func TestPassthroughWriterReportsBufferedCloseError(t *testing.T) {
+	failure := errors.New("flush failed")
+	sink := &failingPassthroughSink{err: failure}
+	remove := AddSink(sink)
+	defer remove()
+	w := PassthroughWriterWithRedactor(secrets.NewRedactor([]string{testLongSecret}))
+	input := []byte("long-secret")
+	if n, err := w.Write(input); n != len(input) || err != nil || sink.calls != 0 {
+		t.Fatalf("Write = %d, %v; calls = %d", n, err, sink.calls)
+	}
+	if err := w.Close(); !errors.Is(err, failure) || sink.calls != 1 {
+		t.Fatalf("Close = %v; calls = %d", err, sink.calls)
+	}
+}
+
+func TestPassthroughWriterReportsStderrError(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stderr
+	os.Stderr = writer
+	defer func() { os.Stderr = original; _ = writer.Close() }()
+	failure := errors.New("sink failed")
+	sink := &failingPassthroughSink{err: failure}
+	remove := AddSink(sink)
+	defer remove()
+	w := PassthroughWriterWithRedactor(nil)
+	input := []byte("canary\n")
+	n, err := w.Write(input)
+	if n != len(input) || !errors.Is(err, syscall.EPIPE) || !errors.Is(err, failure) ||
+		sink.calls != 1 {
+		t.Fatalf("Write = %d, %v; calls = %d", n, err, sink.calls)
+	}
+}
+
+func TestPassthroughWriterReportsFailureAfterSplitSecret(t *testing.T) {
+	failure := errors.New("sink failed")
+	sink := &failingPassthroughSink{err: failure}
+	remove := AddSink(sink)
+	defer remove()
+	w := PassthroughWriterWithRedactor(secrets.NewRedactor([]string{testLongSecret}))
+	first := []byte("long-secret")
+	if n, err := w.Write(first); n != len(first) || err != nil {
+		t.Fatalf("first Write = %d, %v", n, err)
+	}
+	second := []byte("-value canary\n")
+	if n, err := w.Write(second); n != len(second) || !errors.Is(err, failure) {
+		t.Fatalf("second Write = %d, %v", n, err)
+	}
+	if got := sink.output.String(); strings.Contains(got, "long-secret") ||
+		!strings.Contains(got, "canary") ||
+		sink.calls != 1 {
+		t.Fatalf("sink received %q in %d calls", got, sink.calls)
 	}
 }

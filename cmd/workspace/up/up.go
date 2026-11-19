@@ -369,7 +369,7 @@ func (cmd *UpCmd) configureRun(workspaceID string) (bool, io.Writer, error) {
 	cmd.statusReporter, err = newStatusReporter(
 		cmd.ResultFormat,
 		out,
-		cmd.Verbosity > 0 || cmd.Debug,
+		log.InfoEnabled(),
 		cmd.NoStatus && cmd.workerTask == nil,
 	)
 	if err == nil {

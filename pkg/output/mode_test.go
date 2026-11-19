@@ -1,20 +1,21 @@
 package output
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/terminal"
 )
 
-func TestResolveMode_DesktopAlwaysUsesJSON(t *testing.T) {
+func TestResolveMode_DesktopHonorsExplicitFormat(t *testing.T) {
 	t.Setenv("DEVSY_UI", "true")
-	for _, value := range []string{"auto", "plain", "json"} {
+	for value, want := range map[string]string{"auto": ModeJSON, "plain": ModePlain, "text": ModePlain, "json": ModeJSON} {
 		got, err := ResolveMode(value)
 		if err != nil {
 			t.Fatalf("ResolveMode(%q) returned error: %v", value, err)
 		}
-		if got != ModeJSON {
-			t.Errorf("ResolveMode(%q) = %q, want %q", value, got, ModeJSON)
+		if got != want {
+			t.Errorf("ResolveMode(%q) = %q, want %q", value, got, want)
 		}
 	}
 }
@@ -68,11 +69,15 @@ func TestResolveMode_Auto_TTY(t *testing.T) {
 }
 
 func TestResolveMode_InvalidValue(t *testing.T) {
-	got, err := ResolveMode("bogus")
+	const value = "private-result-format-canary-82496"
+	got, err := ResolveMode(value)
 	if err == nil {
-		t.Fatalf("ResolveMode(\"bogus\") expected error, got nil (value=%q)", got)
+		t.Fatalf("expected invalid result format error, got nil (value=%q)", got)
+	}
+	if strings.Contains(err.Error(), value) || !strings.Contains(err.Error(), "plain") {
+		t.Fatalf("invalid result format diagnostic = %q", err)
 	}
 	if got != "" {
-		t.Errorf("ResolveMode(\"bogus\") = %q, want empty string", got)
+		t.Errorf("ResolveMode returned %q, want empty string", got)
 	}
 }

@@ -21,7 +21,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/util/goleaktest"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap/zapcore"
 )
 
 // TestMain sets up the test environment and checks for goroutine leaks after tests.
@@ -294,7 +293,7 @@ type InjectTimingLogTestSuite struct {
 }
 
 func (s *InjectTimingLogTestSuite) TestInject_TimingLogs() {
-	logs := log.InitTestObserved(s.T(), zapcore.DebugLevel)
+	logs := log.InitTestObserved(s.T(), log.SlogLevelDebug)
 
 	ctx := context.Background()
 

@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/secrets"
-	"go.uber.org/zap/zapcore"
 )
 
 type Code string
@@ -48,6 +48,19 @@ func NewPanic(recovered any) *CLIError {
 	}
 }
 
+func ProviderFailure(err error, diagnostic string, code Code) error {
+	if err == nil {
+		return nil
+	}
+	if code == "" {
+		code = CodeUnknown
+	}
+	if diagnostic == "" {
+		diagnostic = "Provider operation failed."
+	}
+	return &CLIError{Code: code, Message: diagnostic, wrapped: err}
+}
+
 func (e *CLIError) Error() string {
 	if e == nil {
 		return ""
@@ -71,19 +84,18 @@ func (e *CLIError) MarshalJSON() ([]byte, error) {
 	}{Code: e.Code, Message: e.Message, Hint: e.Hint, Context: e.Context})
 }
 
-func (e *CLIError) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+func (e *CLIError) LogValue() slog.Value {
 	if e == nil {
-		return nil
+		return slog.GroupValue()
 	}
-	enc.AddString("code", string(e.Code))
-	enc.AddString("message", e.Message)
+	attrs := []slog.Attr{slog.String("code", string(e.Code)), slog.String("message", e.Message)}
 	if e.Hint != "" {
-		enc.AddString("hint", e.Hint)
+		attrs = append(attrs, slog.String("hint", e.Hint))
 	}
 	if len(e.Context) > 0 {
-		enc.AddString("context", fmt.Sprint(e.Context))
+		attrs = append(attrs, slog.Any("context", e.Context))
 	}
-	return nil
+	return slog.GroupValue(attrs...)
 }
 
 var ErrRateLimited = errors.New("rate limited")

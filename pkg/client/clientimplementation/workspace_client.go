@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -74,6 +75,18 @@ type workspaceClient struct {
 
 func (s *workspaceClient) Provider() string {
 	return s.providerConfig.Name
+}
+
+func (s *workspaceClient) TelemetryProviderKind() string {
+	if s.providerConfig == nil || !s.providerConfig.Source.Internal {
+		return "custom"
+	}
+	switch s.providerConfig.Source.Raw {
+	case "apple", "docker", "kubernetes", "microsandbox", "podman", "pro":
+		return s.providerConfig.Source.Raw
+	default:
+		return "custom"
+	}
 }
 
 func (s *workspaceClient) Context() string {
@@ -578,11 +591,11 @@ func (s *workspaceClient) deleteContainer(ctx context.Context, opt client.Delete
 		return nil
 	}
 
-	writer, done := log.PipeJSONStream()
-	defer func() {
-		_ = writer.Close()
-		<-done
-	}()
+	writer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.SlogLevelInfo,
+		DetectLevelPrefixes: true,
+	})
+	defer func() { _ = writer.Close() }()
 
 	log.Debug("deleting workspace container")
 	command, err := s.agentWorkspaceCommand("delete")
@@ -619,11 +632,11 @@ func (s *workspaceClient) deleteMachine(ctx context.Context, opt client.DeleteOp
 }
 
 func (s *workspaceClient) stopContainer(ctx context.Context) error {
-	writer, done := log.PipeJSONStream()
-	defer func() {
-		_ = writer.Close()
-		<-done
-	}()
+	writer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.SlogLevelInfo,
+		DetectLevelPrefixes: true,
+	})
+	defer func() { _ = writer.Close() }()
 
 	log.Debug("stopping container")
 	command, err := s.agentWorkspaceCommand("stop")
@@ -739,12 +752,14 @@ func (s *workspaceClient) agentWorkspaceCommand(subcommand string) (string, erro
 		return "", fmt.Errorf("agent info: %w", err)
 	}
 
-	return fmt.Sprintf(
-		"%s internal agent workspace %s --workspace-info %s",
-		shellescape.Quote(info.Agent.Path),
-		subcommand,
-		shellescape.Quote(compressed),
-	), nil
+	var command strings.Builder
+	_, _ = fmt.Fprintf(&command, "%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(info.Agent.Path), subcommand, shellescape.Quote(compressed))
+	for _, arg := range log.ForwardFlagArgs() {
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote(arg))
+	}
+	return command.String(), nil
 }
 
 func (s *workspaceClient) runProviderCommand(
@@ -865,9 +880,27 @@ func runCommandExecution(ctx context.Context, opts RunCommandOptions) (retErr er
 	if len(opts.Command) == 0 {
 		return nil
 	}
-
-	if log.DebugEnabled() {
-		opts.Environ = append(opts.Environ, config.EnvDebug+"="+config.BoolTrue)
+	if opts.Environ == nil {
+		opts.Environ = os.Environ()
+	}
+	var hasLevel, hasFormat bool
+	for _, entry := range opts.Environ {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case config.EnvLogLevel:
+			hasLevel = true
+		case "DEVSY_LOG_FORMAT":
+			hasFormat = true
+		}
+	}
+	if !hasLevel {
+		opts.Environ = append(opts.Environ, config.EnvLogLevel+"="+log.LevelString())
+	}
+	if !hasFormat {
+		opts.Environ = append(opts.Environ, "DEVSY_LOG_FORMAT=json")
 	}
 
 	redactor := secrets.NewEnvironmentRedactor(opts.Environ)
@@ -1342,18 +1375,25 @@ func runProviderArgvCommand(
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Env = opts.Environ
-	if opts.Cancellation == provider.ProviderCancellationFile {
+	var err error
+	if opts.Cancellation == provider.ProviderCancellationFile && opts.closeInputOnExit != nil {
 		cmd.WaitDelay = 2 * time.Second
-		if opts.closeInputOnExit != nil {
-			return runProviderArgvWithOwnedInput(
-				cmd, opts.Stdin, opts.closeInputOnExit, providerAction(opts.Environ),
-			)
+		err = runProviderArgvWithOwnedInput(
+			cmd, opts.Stdin, opts.closeInputOnExit, providerAction(opts.Environ),
+		)
+	} else {
+		if opts.Cancellation == provider.ProviderCancellationFile {
+			cmd.WaitDelay = 2 * time.Second
+		}
+		err = cmd.Run()
+		if err != nil {
+			err = fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
 		}
 	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
+	if err != nil && ctx.Err() != nil {
+		return errors.Join(err, ctx.Err())
 	}
-	return nil
+	return err
 }
 
 func runProviderArgvWithOwnedInput(
@@ -1662,16 +1702,21 @@ func buildAgentCommand(
 	workspaceClient client.WorkspaceClient,
 	agentCommand, workspaceInfo string,
 ) string {
-	command := fmt.Sprintf(
+	var command strings.Builder
+	_, _ = fmt.Fprintf(
+		&command,
 		"%s internal agent workspace %s --workspace-info %s",
-		shellescape.Quote(workspaceClient.AgentPath()),
+		shellescape.Quote(
+			workspaceClient.AgentPath(),
+		),
 		agentCommand,
 		shellescape.Quote(workspaceInfo),
 	)
-	if log.DebugEnabled() {
-		command += " --debug"
+	for _, arg := range log.ForwardFlagArgs() {
+		command.WriteByte(' ')
+		command.WriteString(shellescape.Quote(arg))
 	}
-	return command
+	return command.String()
 }
 
 type processIOPipes struct {
@@ -1722,17 +1767,17 @@ type workspaceInjectionConfig struct {
 func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan error {
 	errChan := make(chan error, 1)
 	go func() {
+		defer cfg.cancel()
 		streamer := log.NewJSONLogStreamer(log.StreamerOptions{
-			FallbackLevel:       log.LevelInfo,
+			FallbackLevel:       log.SlogLevelInfo,
 			DetectLevelPrefixes: true,
+			DefaultAttrs: []slog.Attr{
+				log.AttrComponent("agent"),
+				log.AttrProvider(cfg.workspaceClient.Provider()),
+				log.AttrWorkspaceID(cfg.workspaceClient.Workspace()),
+			},
 		})
-		defer func() {
-			log.Debugf("up command completed")
-			cfg.cancel()
-			_ = streamer.Close()
-		}()
-
-		errChan <- agent.InjectAgent(ctx, &agent.InjectOptions{
+		err := agent.InjectAgent(ctx, &agent.InjectOptions{
 			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 				return cfg.workspaceClient.Command(ctx, client.CommandOptions{
 					Command:   command,
@@ -1752,6 +1797,10 @@ func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan e
 			Stderr:           streamer,
 			Timeout:          cfg.timeout,
 		})
+		cfg.cancel()
+		_ = streamer.Close()
+		log.Debugf("up command completed")
+		errChan <- err
 	}()
 	return errChan
 }

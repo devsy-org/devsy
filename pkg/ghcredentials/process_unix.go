@@ -3,6 +3,8 @@
 package ghcredentials
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -22,7 +24,11 @@ func runGH(binary string, args, env []string, owner *os.File) int {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signals)
 	if err := cmd.Start(); err != nil {
-		log.Errorw("gh relay: executable unavailable", "error_type", errorKind(err))
+		log.ErrorContext(
+			context.Background(),
+			"gh relay: executable unavailable",
+			slog.String("error_type", errorKind(err)),
+		)
 		return 126
 	}
 	done := make(chan struct{})

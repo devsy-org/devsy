@@ -25,11 +25,12 @@ vi.mock("electron", () => ({
 }))
 
 vi.mock("../analytics.js", () => ({
-  hashWorkspaceRef: (v: string) => v,
-  trackEvent: () => undefined,
+  hashWorkspaceUid: (v: string) => v,
+  trackEvent: vi.fn(),
 }))
 
 const { registerIpcHandlers } = await import("../ipc.js")
+const { trackEvent } = await import("../analytics.js")
 
 async function invokeUp(workspaceId: string): Promise<string> {
   const handler = handlers.get("workspace_up")
@@ -127,6 +128,7 @@ function setup(
     cli,
     state: {
       workspaceContext: () => "ctx",
+      workspaceList: () => [],
       providerList: () => [],
     },
     logStore: {
@@ -168,6 +170,18 @@ describe("workspace_up detached task tracking", () => {
     vi.stubEnv("ELECTRON_RENDERER_URL", "")
     handlers.clear()
     vi.clearAllMocks()
+  })
+  it("does not derive a creation identity from the source or backend ID", async () => {
+    setup()
+    const handler = handlers.get("workspace_up")
+    if (!handler) throw new Error("workspace_up handler missing")
+    await handler(trustedEvent, {
+      source: "/private/source",
+      workspaceId: "backend",
+    })
+    expect(trackEvent).toHaveBeenCalledWith("workspace_create", {})
+    await handler(trustedEvent, { source: "https://example.invalid/private" })
+    expect(trackEvent).toHaveBeenLastCalledWith("workspace_create", {})
   })
 
   it("stop cancels an active start before launching", async () => {
@@ -379,13 +393,21 @@ describe("workspace_up detached task tracking", () => {
     const { calls, stream } = setup()
     await invokeUp("ws-1")
 
-    stream()?.onLine(
-      JSON.stringify({ kind: "result", outcome: "success" }),
+    const firstStream = stream()
+    if (!firstStream) throw new Error("workspace task stream missing")
+    firstStream.onLine(
+      JSON.stringify({
+        kind: "result",
+        outcome: "success",
+        containerId: "container-1",
+        remoteUser: "dev",
+        remoteWorkspaceFolder: "/workspace",
+      }),
       "stdout",
     )
-    stream()?.onExit(0)
     await new Promise((resolve) => setTimeout(resolve, 10))
     await invokeUp("ws-1")
+    firstStream.onExit(0)
 
     expect(calls.filter((a) => a.includes("cancel"))).toEqual([])
   })
