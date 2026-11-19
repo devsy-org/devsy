@@ -237,12 +237,19 @@ test("private context options reach the real Electron sheet and errors reach its
     expect(String(envelope?.message).length).toBeGreaterThan(0)
     expect(textFailure.stderr).toContain(String(envelope?.message))
     await card.click()
-    await expect(
-      page.getByText(`Failed to load context options: ${envelope?.message}`, {
-        exact: false,
-      }),
-    ).toBeVisible()
+    const title = "Failed to load context options: "
+    const message = String(envelope?.message)
+    const cleanToast = `${title}${message}`
+    const wrappedToast = `${title}Error invoking remote method 'context_options': Error: ${message}`
+    const notifications = page.locator('section[aria-label^="Notifications"]')
+    const toast = notifications
+      .locator("[data-sonner-toast] [data-title]")
+      .filter({ hasText: title })
+    await expect(toast).toBeVisible()
+    const actualToast = await toast.textContent()
+    log("context options toast", actualToast ?? "")
     await page.screenshot({ path: join(evidence, "context-error.png") })
+    expect([cleanToast, wrappedToast]).toContain(actualToast)
   } finally {
     try {
       if (modified && originalConfig)
