@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"bytes"
 	"encoding/json"
 	"slices"
 	"strconv"
@@ -8,23 +9,51 @@ import (
 )
 
 func (r *Redactor) redactJSON(text string) (string, bool) {
+	_, encoded, valid := r.sanitizeDocument(text)
+	return encoded, valid
+}
+
+func (r *Redactor) SanitizeJSON(data []byte) any {
+	value, _, valid := r.sanitizeDocument(string(data))
+	if !valid {
+		return r.Mask()
+	}
+	return value
+}
+
+func (r *Redactor) sanitizeDocument(text string) (any, string, bool) {
 	if !json.Valid([]byte(text)) {
-		return "", false
+		return nil, "", false
 	}
 	if r.literalCrossesJSONValues(text) {
-		return r.jsonMask(), true
+		return r.Mask(), r.jsonMask(), true
 	}
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.UseNumber()
 	var value any
 	if decoder.Decode(&value) != nil {
-		return r.jsonMask(), true
+		return r.Mask(), r.jsonMask(), true
 	}
-	result, err := json.Marshal(r.SanitizeJSON(value))
-	if err != nil || r.ContainsValue(string(result)) {
-		return r.jsonMask(), true
+	if r.unsafeUnescapedJSON(value, text, r.literalCrossesJSONValues) {
+		return r.Mask(), r.jsonMask(), true
 	}
-	return string(result), true
+	value = r.sanitizeJSONValue(value)
+	result, err := json.Marshal(value)
+	if err != nil || r.ContainsValue(string(result)) ||
+		r.unsafeUnescapedJSON(value, string(result), r.ContainsValue) {
+		return r.Mask(), r.jsonMask(), true
+	}
+	return value, string(result), true
+}
+
+func (r *Redactor) unsafeUnescapedJSON(value any, encoded string, matches func(string) bool) bool {
+	if r == nil || r.matcher == nil || !strings.Contains(encoded, `\u00`) {
+		return false
+	}
+	var rendered bytes.Buffer
+	encoder := json.NewEncoder(&rendered)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(value) != nil || matches(strings.TrimSuffix(rendered.String(), "\n"))
 }
 
 func (r *Redactor) jsonMask() string {
@@ -32,7 +61,7 @@ func (r *Redactor) jsonMask() string {
 	return string(encoded)
 }
 
-func (r *Redactor) SanitizeJSON(value any) any {
+func (r *Redactor) sanitizeJSONValue(value any) any {
 	switch value := value.(type) {
 	case string:
 		return r.sanitizeString(value)
@@ -129,7 +158,7 @@ func nextMatch(lengths []int, index int) int {
 func (r *Redactor) sanitizeArray(values []any) []any {
 	result := make([]any, len(values))
 	for i, value := range values {
-		result[i] = r.SanitizeJSON(value)
+		result[i] = r.sanitizeJSONValue(value)
 	}
 	return result
 }
@@ -141,7 +170,7 @@ func (r *Redactor) jsonScalar(value any, rendered string) any {
 	return value
 }
 
-func (r *Redactor) sanitizeObject(values map[string]any) map[string]any {
+func (r *Redactor) sanitizeObject(values map[string]any) any {
 	keys := make([]string, 0, len(values))
 	display := make(map[string]string, len(values))
 	reserved := make(map[string]bool, len(values))
@@ -158,11 +187,14 @@ func (r *Redactor) sanitizeObject(values map[string]any) map[string]any {
 		cleaned := display[key]
 		if _, exists := output[cleaned]; exists {
 			cleaned = unusedKey(cleaned, reserved, lastAlias)
+			if r.matchesString(cleaned) {
+				return r.Mask()
+			}
 		}
 		if mask, sensitive := r.MaskCredentialField(key); sensitive {
 			output[cleaned] = mask
 		} else {
-			output[cleaned] = r.SanitizeJSON(values[key])
+			output[cleaned] = r.sanitizeJSONValue(values[key])
 		}
 	}
 	return output

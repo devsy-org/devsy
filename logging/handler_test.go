@@ -725,3 +725,76 @@ func TestRegisteredWireFormsInHandler(t *testing.T) {
 		t.Fatalf("registered wire value was not masked: %#v", got)
 	}
 }
+
+func TestStructuredAttributesMaskRegisteredDocuments(t *testing.T) {
+	const (
+		large    = "9007199254740993"
+		ordinary = "ordinary_payload"
+	)
+	cases := map[string]string{
+		"standard JSON":  `{"credential":"synthetic-private-value"}`,
+		"unescaped HTML": `{"credential":"synthetic-private-<value>"}`,
+		"escaped HTML":   `{"credential":"synthetic-private-\u003cvalue\u003e"}`,
+		"separate match": `{"credential":"synthetic-private-<value>","other":"second-registration"}`,
+	}
+	for name, secret := range cases {
+		t.Run(name, func(t *testing.T) {
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(secret), &payload); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			logger := slog.New(NewHandler(&output, HandlerOptions{
+				Format: FormatJSON,
+				Redactor: redact.New(
+					redact.Options{Values: []string{secret, "second-registration"}},
+				),
+			}))
+			matching := slog.Any(nestedKey, payload)
+			preserved := slog.Any(ordinary, map[string]any{"number": json.Number(large)})
+			logger.Info("record", matching, preserved)
+			logger.With(matching, preserved).Info("bound")
+
+			decoder := json.NewDecoder(&output)
+			decoder.UseNumber()
+			for range 2 {
+				var got map[string]any
+				if err := decoder.Decode(&got); err != nil {
+					t.Fatal(err)
+				}
+				if got[nestedKey] != testMask {
+					t.Errorf("registered document was emitted: %#v", got[nestedKey])
+				}
+				regular := got[ordinary].(map[string]any)
+				if regular["number"] != json.Number(large) {
+					t.Fatalf("ordinary object lost integer precision: %#v", regular)
+				}
+			}
+		})
+	}
+}
+
+func TestNestedCollisionNeverCreatesARegisteredValue(t *testing.T) {
+	const alias = "synthetic-mask_1"
+	const mask = "synthetic-mask"
+	const sibling = "public_sibling"
+	const field = "aliased_object"
+	var output bytes.Buffer
+	logger := slog.New(NewHandler(&output, HandlerOptions{
+		Format:   FormatJSON,
+		Redactor: redact.New(redact.Options{Values: []string{alias}, Mask: mask}),
+	}))
+	logger.Info("record", slog.Any(nestedKey, map[string]any{
+		field:   map[string]any{"a-" + alias: true, "b-" + alias: false},
+		sibling: "visible",
+	}))
+	var got map[string]any
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	nested, ok := got[nestedKey].(map[string]any)
+	if !ok || nested[field] != mask || nested[sibling] != "visible" ||
+		strings.Contains(output.String(), alias) {
+		t.Fatalf("unsafe alias affected the surrounding record: %s", output.String())
+	}
+}

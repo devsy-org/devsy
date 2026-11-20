@@ -383,7 +383,7 @@ func (h *sanitizer) reservedAncestors(group, key string) int {
 func (h *sanitizer) cleanValue(value slog.Value) slog.Value {
 	switch value.Kind() {
 	case slog.KindString:
-		return slog.AnyValue(h.redactor.SanitizeJSON(value.String()))
+		return slog.StringValue(h.redactor.RedactField("", value.String()))
 	case slog.KindAny:
 		return slog.AnyValue(h.cleanAny(value.Any()))
 	default:
@@ -410,19 +410,13 @@ func (h *sanitizer) cleanAny(value any) (result any) {
 	}()
 	_, marshalsJSON := value.(json.Marshaler)
 	if err, ok := value.(error); ok && !marshalsJSON {
-		return h.redactor.SanitizeJSON(err.Error())
+		return h.redactor.RedactField("", err.Error())
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return "[unsupported value]"
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var decoded any
-	if decoder.Decode(&decoded) != nil {
-		return "[invalid value]"
-	}
-	return h.redactor.SanitizeJSON(decoded)
+	return h.redactor.SanitizeJSON(data)
 }
 
 func ParseTimestamp(value string) (time.Time, error) {

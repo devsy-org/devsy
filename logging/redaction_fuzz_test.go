@@ -104,7 +104,13 @@ func assertFuzzAttrs(t *testing.T, secret string) {
 	var out bytes.Buffer
 	when := time.Date(1984, 5, 17, 0, 0, 0, 0, time.UTC)
 	encoded := base64.StdEncoding.EncodeToString([]byte(secret))
-	r := redact.New(redact.Options{Values: []string{secret, encoded, testSecretDate, "731942"}})
+	const field = "private_document"
+	const second = "secondary"
+	const alias = testMask + "_1"
+	private := "<composite-" + strings.TrimPrefix(secret, "fixture-") + ">"
+	document := `{"` + field + `":"` + private + `","` + second + `":"` + secret + `"}`
+	registered := []string{secret, encoded, testSecretDate, "731942", document, alias}
+	r := redact.New(redact.Options{Values: registered})
 	logger := slog.New(NewHandler(&out, HandlerOptions{Format: FormatJSON, Redactor: r}))
 	logger.Info("record",
 		slog.Group("nested", slog.String("Authorization", secret), slog.String("visible", secret)),
@@ -112,11 +118,13 @@ func assertFuzzAttrs(t *testing.T, secret string) {
 		slog.Any("encoded", []byte(secret)),
 		slog.Time("date", when),
 		slog.Duration("elapsed", 731942*time.Nanosecond),
+		slog.Any("document", map[string]string{field: private, second: secret}),
+		slog.Any("collision", map[string]bool{"a-" + alias: true, "b-" + alias: false}),
 	)
 	if !json.Valid(out.Bytes()) {
 		t.Fatal("attribute redaction damaged JSON")
 	}
-	for _, value := range []string{secret, encoded, testSecretDate, "731942"} {
+	for _, value := range append(registered, private) {
 		if strings.Contains(out.String(), value) {
 			t.Fatal("attribute redaction leaked a registered value")
 		}
