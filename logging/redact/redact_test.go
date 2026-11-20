@@ -120,7 +120,10 @@ func TestRedactFieldAuthorization(t *testing.T) {
 		{"authorization", "  Basic\tfresh-token, safe", "  Basic\t[REDACTED], safe"},
 		{"AUTHORIZATION", "Bearer known-secret", testMaskedBearer},
 		{authorizationField, "Bearer " + testCredentialURL(), testMaskedBearer},
-		{authorizationField, "prefix Authorization: Basic fresh-token", "prefix Authorization: Basic [REDACTED]"},
+		{authorizationField, "prefix Authorization: Basic fresh-token", testProviderMask},
+		{authorizationField, "Digest example", testProviderMask},
+		{authorizationField, "custom example", testProviderMask},
+		{authorizationField, " \t", " \t"},
 		{
 			authorizationField,
 			"Bearer first, Authorization: Basic second",

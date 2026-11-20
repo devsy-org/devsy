@@ -27,7 +27,7 @@ type Redactor struct {
 }
 
 var (
-	credentialURL = regexp.MustCompile(`(?i)(https?://)[^\s/@?#]+@`)
+	urlAuthority  = regexp.MustCompile(`(?i)(https?://)[^\s/@?#"]+[@"]`)
 	authorization = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+`)
 )
 
@@ -109,8 +109,11 @@ func (r *Redactor) Redact(value string) string {
 }
 
 func (r *Redactor) RedactField(key, value string) string {
-	if !strings.EqualFold(key, authorizationField) {
+	if !strings.EqualFold(key, authorizationField) || strings.TrimSpace(value) == "" {
 		return r.Redact(value)
+	}
+	if !supportedAuthorizationScheme(value) {
+		return r.maskText()
 	}
 	urls, headers := formatMatches(value, 0)
 	fieldHeaders := scanAuthorization(
@@ -121,6 +124,15 @@ func (r *Redactor) RedactField(key, value string) string {
 	headers = mergeHeaderMatches(headers, fieldHeaders)
 	value, _, _ = r.known(value, matchState{cut: len(value), urls: urls, headers: headers})
 	return value
+}
+
+func supportedAuthorizationScheme(value string) bool {
+	const whitespace = " \t\n\r\f"
+	value = strings.TrimLeft(value, whitespace)
+	if end := strings.IndexAny(value, whitespace); end >= 0 {
+		value = value[:end]
+	}
+	return strings.EqualFold(value, "Basic") || strings.EqualFold(value, "Bearer")
 }
 
 func mergeHeaderMatches(first, second [][]int) [][]int {

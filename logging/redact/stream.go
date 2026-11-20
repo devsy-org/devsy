@@ -1,26 +1,32 @@
 package redact
 
 import (
+	"bytes"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 )
 
-const formatCarryLimit = 512
+const (
+	formatCarryLimit     = 512
+	pendingCapacityFloor = 1024
+)
 
-var incompleteURL = regexp.MustCompile(`(?i)(https?://)[^\s/@?#]*\z`)
+var incompleteURL = regexp.MustCompile(`(?i)(https?://)[^\s/@?#"]*\z`)
 
 type Stream struct {
-	mu        sync.Mutex
-	base      *Redactor
-	pending   []byte
-	search    *matchNode
-	lastMatch int
-	anchors   int
-	covered   int
-	markerEnd int
-	urlOpen   bool
-	auth      authorizationState
+	mu              sync.Mutex
+	base            *Redactor
+	pending         []byte
+	pendingCapacity int
+	search          *matchNode
+	lastMatch       int
+	anchors         int
+	covered         int
+	markerEnd       int
+	urlOpen         bool
+	auth            authorizationState
 }
 
 func NewStream(redactor *Redactor) *Stream {
@@ -52,7 +58,7 @@ func (s *Stream) Flush() string {
 		return ""
 	}
 	result := s.process(string(s.pending), true)
-	s.pending = nil
+	s.resetPending()
 	s.search = nil
 	s.lastMatch = 0
 	s.anchors = 0
@@ -86,8 +92,8 @@ func (s *Stream) process(value string, final bool) string {
 	frame := findURLFrame(value, s.urlOpen)
 	urls := frame.matches
 	headers := scanAuthorization(value, len(value), s.auth)
-	if frame.overflow {
-		urls = append(urls, []int{frame.start, len(value) + 1, frame.start, frame.authority})
+	if end := frame.maskingEnd(value, final); end >= 0 {
+		urls = append(urls, []int{frame.start, end + 1, frame.start, frame.authority})
 	}
 	cut := s.streamCut(value, frame, urls, final)
 	s.advanceURL(frame)
@@ -183,7 +189,7 @@ func (s *Stream) emitKnownSafe(chunk string) (string, bool) {
 	if s.search.proper > size {
 		return "", false
 	}
-	s.pending = append(s.pending, chunk...)
+	s.appendPending(chunk)
 	cut := len(s.pending) - s.search.proper
 	tailStart := max(0, len(s.pending)-len("http\u017f://")+1)
 	if start := partialSchemeStart(string(s.pending[tailStart:]), 0); start >= 0 {
@@ -194,12 +200,7 @@ func (s *Stream) emitKnownSafe(chunk string) (string, bool) {
 	}
 	result := string(s.pending[:cut])
 	s.pending = s.pending[cut:]
-	if len(s.pending) == 0 {
-		s.pending = nil
-	}
-	if cap(s.pending) > 1024 && len(s.pending) < cap(s.pending)/4 {
-		s.pending = append([]byte(nil), s.pending...)
-	}
+	s.compactPending()
 	return result, true
 }
 
@@ -212,7 +213,7 @@ func (s *Stream) deferUnresolved(chunk string) bool {
 	if tail > size || size-tail >= tail/2 || len(chunk) >= tail/2 {
 		return false
 	}
-	s.pending = append(s.pending, chunk...)
+	s.appendPending(chunk)
 	return true
 }
 
@@ -220,32 +221,78 @@ func (s *Stream) holdPrefix(chunk string) bool {
 	if s.search == nil || s.search.proper != len(s.pending)+len(chunk) {
 		return false
 	}
-	s.pending = append(s.pending, chunk...)
+	s.appendPending(chunk)
 	return true
 }
 
 func (s *Stream) retain(value string) {
 	if value == "" {
-		s.pending = nil
+		s.resetPending()
 		return
 	}
-	if cap(s.pending) > 1024 && len(value) < cap(s.pending)/4 {
-		s.pending = nil
+	if s.shouldCompactPending(len(value)) {
+		s.resetPending()
 	}
-	s.pending = append(s.pending[:0], value...)
+	s.pending = s.pending[:0]
+	s.appendPending(value)
+}
+
+func (s *Stream) appendPending(value string) {
+	available := cap(s.pending) - len(s.pending)
+	s.pending = append(s.pending, value...)
+	if len(value) > available {
+		s.pendingCapacity = cap(s.pending)
+	}
+}
+
+func (s *Stream) compactPending() {
+	if len(s.pending) == 0 {
+		s.resetPending()
+		return
+	}
+	if s.shouldCompactPending(len(s.pending)) {
+		s.pending = bytes.Clone(s.pending)
+		s.pendingCapacity = cap(s.pending)
+	}
+}
+
+func (s *Stream) shouldCompactPending(length int) bool {
+	return s.pendingCapacity > pendingCapacityFloor && length < s.pendingCapacity/4
+}
+
+func (s *Stream) resetPending() {
+	s.pending = nil
+	s.pendingCapacity = 0
 }
 
 func formatMatches(value string, offset int) ([][]int, [][]int) {
-	urls := credentialURL.FindAllStringSubmatchIndex(value[offset:], -1)
 	headers := authorization.FindAllStringSubmatchIndex(value[offset:], -1)
-	for _, matches := range [][][]int{urls, headers} {
-		for _, match := range matches {
-			for i := range match {
-				match[i] += offset
-			}
+	for _, header := range headers {
+		for i := range header {
+			header[i] += offset
 		}
 	}
-	return urls, headers
+	return urlMatches(value, offset), headers
+}
+
+func urlMatches(value string, offset int) [][]int {
+	matches := urlAuthority.FindAllStringSubmatchIndex(value[offset:], -1)
+	kept := matches[:0]
+	for _, match := range matches {
+		last := offset + match[1] - 1
+		if value[last] == '"' {
+			authority := trimURLPunctuation(value[offset+match[3] : last])
+			if !malformedURLAuthority(authority) {
+				continue
+			}
+			match[1] = match[3] + len(authority) + 1
+		}
+		for i := range match {
+			match[i] += offset
+		}
+		kept = append(kept, match)
+	}
+	return kept
 }
 
 func formatPrefixBoundary(cut int, groups ...[][]int) int {
@@ -288,18 +335,46 @@ func findURLFrame(value string, active bool) urlFrame {
 		}
 	}
 	offset := frame.continuation
-	frame.matches = credentialURL.FindAllStringSubmatchIndex(value[offset:], -1)
-	for _, match := range frame.matches {
-		for i := range match {
-			match[i] += offset
-		}
-	}
+	frame.matches = urlMatches(value, offset)
 	if match := incompleteURL.FindStringSubmatchIndex(value[offset:]); match != nil {
 		frame.start = offset + match[0]
 		frame.authority = offset + match[3]
 		frame.overflow = len(value)-frame.start > formatCarryLimit
 	}
 	return frame
+}
+
+func (f urlFrame) maskingEnd(value string, final bool) int {
+	if f.overflow {
+		return len(strings.TrimRight(value, "\\"))
+	}
+	if !final || f.start < 0 {
+		return -1
+	}
+	authority := trimURLPunctuation(value[f.authority:])
+	if malformedURLAuthority(authority) {
+		return f.authority + len(authority)
+	}
+	return -1
+}
+
+func malformedURLAuthority(authority string) bool {
+	if !strings.Contains(authority, ":") {
+		return false
+	}
+	parsed, err := url.Parse("http://" + authority)
+	return err != nil ||
+		(!strings.HasPrefix(authority, "[") && strings.Contains(parsed.Hostname(), ":"))
+}
+
+func trimURLPunctuation(value string) string {
+	tail := strings.TrimRight(value, "\"')}>],;.!\\")
+	if strings.HasPrefix(value, "[") {
+		if bracket := strings.IndexByte(value, ']'); bracket >= len(tail) {
+			return value[:bracket+1]
+		}
+	}
+	return tail
 }
 
 func (f urlFrame) activeAfter(cut, length int, active bool) bool {
@@ -310,7 +385,12 @@ func (f urlFrame) activeAfter(cut, length int, active bool) bool {
 }
 
 func urlAuthorityEnd(value byte) bool {
-	return value == '@' || value == '/' || value == '?' || value == '#' || formatSpace(value)
+	switch value {
+	case '@', '/', '?', '#', '"', '\\':
+		return true
+	default:
+		return formatSpace(value)
+	}
 }
 
 func partialSchemeStart(value string, skip int) int {

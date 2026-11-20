@@ -749,3 +749,44 @@ func benchmarkInput(prefix, mode string, r *Redactor) (string, string) {
 		return prefix, prefix
 	}
 }
+
+func TestStreamCompactsRetainedStorage(t *testing.T) {
+	stream := NewStream(New(Options{}))
+	const retained = "tail"
+	stream.appendPending(strings.Repeat("a", 4096) + retained)
+	stream.pending = stream.pending[len(stream.pending)-len(retained):]
+	stream.compactPending()
+	if string(stream.pending) != retained || stream.pendingCapacity > pendingCapacityFloor {
+		t.Fatalf("pending buffer = %q, backing capacity %d", stream.pending, stream.pendingCapacity)
+	}
+}
+
+func TestStreamFlushesTrailingURLAuthorities(t *testing.T) {
+	r := New(Options{})
+	const (
+		portURL      = testURLScheme + "host:443"
+		ipv6URL      = testURLScheme + "[::1]"
+		incomplete   = testURLScheme + "host:partial"
+		masked       = testURLScheme + defaultMask
+		recordPrefix = "{\"url\":\""
+		recordSuffix = "\"}"
+		adjacent     = "\",\"contact\":\"local@example.test\"}"
+		quotedText   = "\\\" note\"}"
+	)
+	for _, test := range []struct{ input, want string }{
+		{portURL, portURL},
+		{ipv6URL + ":443", ipv6URL + ":443"},
+		{incomplete, masked},
+		{recordPrefix + portURL + recordSuffix, recordPrefix + portURL + recordSuffix},
+		{recordPrefix + incomplete + recordSuffix, recordPrefix + masked + recordSuffix},
+		{recordPrefix + portURL + adjacent, recordPrefix + portURL + adjacent},
+		{recordPrefix + incomplete + adjacent, recordPrefix + masked + adjacent},
+		{recordPrefix + portURL + "." + recordSuffix, recordPrefix + portURL + "." + recordSuffix},
+		{recordPrefix + portURL + quotedText, recordPrefix + portURL + quotedText},
+		{recordPrefix + incomplete + quotedText, recordPrefix + masked + quotedText},
+		{ipv6URL + ")", ipv6URL + ")"},
+		{portURL + "]", portURL + "]"},
+	} {
+		assertAllStreamCuts(t, r, test.input, test.want)
+	}
+}
