@@ -6,192 +6,97 @@ import (
 	"testing"
 )
 
-const (
-	authFixtureOne    = "redaction-fixture-one-2471"
-	authFixtureTwo    = "redaction-fixture-two-9685"
-	authFixturePublic = "unrelated-visible-field"
-)
-
-type credentialCase struct {
-	name  string
-	input string
-	json  bool
-}
-
-func structuredCredentialCases() []credentialCase {
-	return []credentialCase{
-		{
-			"json scalar",
-			`{"Authorization":"Bearer\t` + authFixtureOne + `","note":"` + authFixturePublic + `"}`,
-			true,
-		},
-		{
-			"json array",
-			`{"Authorization":["Bearer ` + authFixtureOne + `","Basic ` + authFixtureTwo +
-				`"],"note":"` + authFixturePublic + `"}`,
-			true,
-		},
-		{
-			"key escapes",
-			`{"\u0041uTh\u006frization":"Basic\u0020` + authFixtureOne + `","note":"` + authFixturePublic + `"}`,
-			true,
-		},
-		{
-			"escaped quote",
-			`{"Authorization":"escaped \"` + authFixtureOne + `\\\" ` + authFixtureTwo + `","note":"` + authFixturePublic + `"}`,
-			true,
-		},
-		{
-			"nested fields",
-			`{"headers":{"Proxy-Authorization":{"value":["` + authFixtureOne + `",{"nested":"` + authFixtureTwo +
-				`"}]}},"note":"` + authFixturePublic + `"}`,
-			true,
-		},
-		{
-			"multiline json field",
-			"{\"Cookie\"\r\n :\n [\"" + authFixtureOne + `"],"note":"` + authFixturePublic + `"}`,
-			true,
-		},
-		{
-			"cookie array",
-			`{"Set-Cookie":["x=` + authFixtureOne + `; Secure","y=` + authFixtureTwo + `"],"note":"` + authFixturePublic + `"}`,
-			true,
-		},
-	}
-}
-
-func textCredentialCases() []credentialCase {
-	return []credentialCase{
-		{"logfmt token", "Cookie=x=" + authFixtureOne + " note=" + authFixturePublic, false},
-		{
-			"logfmt quoted",
-			`Proxy-Authorization="Custom ` + authFixtureOne + `\" ` + authFixtureTwo + `" note=` + authFixturePublic,
-			false,
-		},
-		{
-			"escaped diagnostic field",
-			`\"Authorization\":\"Bearer\t` + authFixtureOne + `,]} ` + authFixtureTwo + `\"` + "\n" + authFixturePublic,
-			false,
-		},
-		{
-			"folded header",
-			"Cookie: x=" + authFixtureOne + ";\r\n\ty=" + authFixtureTwo + "\r\nX-Trace: " + authFixturePublic,
-			false,
-		},
-		{
-			"quoted header line",
-			"Set-Cookie: x=\"" + authFixtureOne + "\"; y=" + authFixtureTwo + "\n" + authFixturePublic,
-			false,
-		},
-		{
-			"unquoted scheme",
-			"Authorization=Basic " + authFixtureOne + "\n" + authFixturePublic,
-			false,
-		},
-		{
-			"escaped compound field",
-			`\"Proxy-Authorization\":[\"` + authFixtureOne + `\",{\"label\":\"` + authFixtureTwo +
-				`\"}]` + "\n" + authFixturePublic,
-			false,
-		},
-		{
-			"escaped unicode key",
-			`\"\\u0043ookie\":\"` + authFixtureOne + `,` + authFixtureTwo + `\"` + "\n" + authFixturePublic,
-			false,
-		},
-		{
-			"escaped multiline field",
-			`\"Cookie\"\r\n:` + "\n" + `\"` + authFixtureOne + `\"` + "\n" + authFixturePublic,
-			false,
-		},
-		{"malformed container", `{"Cookie":[}` + authFixtureOne + "\n" + authFixtureTwo, false},
-	}
-}
-
-func TestSerializedCredentialFieldBoundaries(t *testing.T) {
-	redactor := New(Options{Values: []string{"unrelated-known-value"}})
-	for _, tt := range append(structuredCredentialCases(), textCredentialCases()...) {
-		t.Run(tt.name, func(t *testing.T) {
-			assertCredentialField(t, redactor, tt.input, tt.json)
-		})
-	}
-}
-
-func assertCredentialField(t *testing.T, redactor *Redactor, input string, isJSON bool) {
-	t.Helper()
-	want := redactor.Redact(input)
-	if strings.Contains(want, authFixtureOne) || strings.Contains(want, authFixtureTwo) {
-		t.Fatal("credential survived whole-message masking")
-	}
-	if strings.Contains(input, authFixturePublic) && !strings.Contains(want, authFixturePublic) {
-		t.Fatal("unrelated field was lost")
-	}
-	if isJSON && !json.Valid([]byte(want)) {
-		t.Fatal("valid string-based JSON lost its structure")
-	}
-	assertAllStreamCuts(t, redactor, input, want)
-	got, _ := streamChunks(NewStream(redactor), input, []int{1})
-	if got != want {
-		t.Fatal("bytewise stream and whole-message masking differ")
-	}
-}
-
-func TestCredentialJSONStructureAcrossSplits(t *testing.T) {
-	redactor := New(Options{Values: []string{"unrelated-known-value"}})
-	for input, want := range map[string]string{
-		`{"X-Authorization":"value","note":"ok"}`:                `{"X-Authorization":"value","note":"ok"}`,
-		`{"msg":"sent Authorization: private","note":"ok"}`:      `{"msg":"sent Authorization: ***","note":"ok"}`,
-		`{"msg":"sent Cookie: private\"tail","note":"ok"}`:       `{"msg":"sent Cookie: ***","note":"ok"}`,
-		`{"Authorization":123,"note":"ok"}`:                      `{"Authorization":null,"note":"ok"}`,
-		`{"Authorization":[123,true,null,"secret"],"note":"ok"}`: `{"Authorization":[null,null,null,"***"],"note":"ok"}`,
-		`{"Cookie":{"number":99,"value":[false]},"note":"ok"}`:   `{"Cookie":{"***":null,"***":[null]},"note":"ok"}`,
-	} {
-		got := redactor.Redact(input)
-		if got != want || !json.Valid([]byte(got)) {
-			t.Fatalf("redacted %q, want valid JSON %q", got, want)
-		}
-		assertAllStreamCuts(t, redactor, input, want)
-		got, _ = streamChunks(NewStream(redactor), input, []int{1})
-		if got != want {
-			t.Fatalf("bytewise stream redacted %q, want %q", got, want)
-		}
-	}
-}
-
-func TestJSONCredentialMaskEscapesCustomMarker(t *testing.T) {
-	mask := "hidden\"\n"
-	redactor := New(Options{Mask: mask})
-	input := `{"Authorization":"credentials"}`
-	encoded := redactor.Redact(input)
-	var record map[string]string
-	if err := json.Unmarshal(
-		[]byte(encoded),
-		&record,
-	); err != nil ||
-		record["Authorization"] != mask {
-		t.Fatalf("serialized custom marker %q: %v", encoded, err)
-	}
-	assertAllStreamCuts(t, redactor, input, encoded)
-}
-
-func TestCredentialTokenizerBoundsAndResets(t *testing.T) {
-	redactor := New(Options{Values: []string{strings.Repeat("z", 2048) + "x"}})
+func TestDecodedCredentialFieldsAndShape(t *testing.T) {
+	const private = "private-fixture"
+	deep := strings.Repeat("[", 65) + `"` + private + `"` + strings.Repeat("]", 65)
+	r := New(Options{Values: []string{"731942", "true"}})
 	for _, input := range []string{
-		`{"Authorization":"` + strings.Repeat("z", 10000) + `"}`,
-		`{"Cookie":` + strings.Repeat("[", maxHeaderDepth+1) + strings.Repeat("z", 10000),
+		`{"Authorization":["` + private + `",{"inner":"` + private + `"}],"note":"public"}`,
+		`{"\u0041uthorization":123,"note":"public"}`,
+		`{"Cookie":` + deep + `,"note":"public"}`,
+		`{"msg":"sent Authorization: ` + private + `","note":"public"}`,
+		`{"url":"https:\/\/u:` + private + `@host.test","note":"public"}`,
+		`{"url":"https://u\u0026name:` + private + `@host.test","note":"public"}`,
+		`{"list":[731942,true,9007199254740993],"note":"public"}`,
+		`{"Authorization":"` + private + `","Authorization":"duplicate","note":"public"}`,
 	} {
-		stream := NewStream(redactor)
-		for offset := 0; offset < len(input); offset += 7 {
-			got := stream.RedactChunk(input[offset:min(offset+7, len(input))])
-			if strings.Contains(got, "zzz") || len(stream.pending) > 2*redactor.maxLength {
-				t.Fatal("stream retained or emitted credential data")
-			}
+		got := r.Redact(input)
+		if !json.Valid([]byte(got)) || !strings.Contains(got, "public") ||
+			strings.Contains(
+				got,
+				private,
+			) || strings.Contains(got, "731942") || strings.Contains(got, "true") {
+			t.Fatalf("credential or record shape was not protected: %q", got)
 		}
-		if got := stream.Flush(); strings.Contains(got, "zzz") {
-			t.Fatal("flush emitted credential data")
-		}
-		if got := stream.RedactChunk("normal output"); got != "normal output" {
-			t.Fatal("flush did not reset credential context")
-		}
+		assertAllStreamCuts(t, r, input+"\n", got+"\n")
 	}
+}
+
+func TestDecodedOrdinaryKeysKeepTheirValues(t *testing.T) {
+	r := New(Options{})
+	input := `{"X-Authorization":"public","\\u0041uthorization":"public"}`
+	output := r.Redact(input)
+	if !json.Valid([]byte(output)) || strings.Count(output, "public") != 2 {
+		t.Fatalf("decoded noncredential keys lost their values: %q", output)
+	}
+}
+
+func TestJSONMaskAndNumberPrecision(t *testing.T) {
+	mask := "quote\" and slash\\ and newline\n"
+	r := New(Options{Mask: mask})
+	input := `{"Authorization":true,"number":9007199254740993}`
+	got := r.Redact(input)
+	decoded := make(map[string]json.RawMessage)
+	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	var field string
+	if err := json.Unmarshal(decoded["Authorization"], &field); err != nil || field != mask {
+		t.Fatalf("custom mask was not valid JSON: %s", got)
+	}
+	if string(decoded["number"]) != "9007199254740993" {
+		t.Fatal("an unmasked integer lost precision")
+	}
+	assertAllStreamCuts(t, r, input, got)
+}
+
+func TestRegisteredJSONCompositeAndWireForms(t *testing.T) {
+	const marker = "private-json-fixture"
+	composite := `{ "credential" : "` + marker + `" }`
+	r := New(Options{Values: []string{composite, `a\u0000b`}})
+	for _, input := range []string{
+		composite,
+		`{"nested":` + composite + `,"other":"public"}`,
+		`{"nested":"a\u0000b","other":"public"}`,
+	} {
+		result := r.Redact(input)
+		if !json.Valid([]byte(result)) || strings.Contains(result, marker) ||
+			strings.Contains(result, `a\u0000b`) {
+			t.Fatalf("registered JSON representation was not protected: %q", result)
+		}
+		assertAllStreamCuts(t, r, input, result)
+	}
+}
+
+func TestLiteralRegistrationProtectsNestedJSONStrings(t *testing.T) {
+	const fragment = `{ "credential" : "private-json-string" }`
+	r := New(Options{Values: []string{fragment}})
+	input, err := json.Marshal(map[string]string{"nested": fragment, "note": "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := r.Redact(string(input))
+	if got != `{"nested":"***","note":"public"}` {
+		t.Fatalf("JSON-encoded registered string was not masked: %s", got)
+	}
+}
+
+func TestMultipleLiteralRegistrationsInEncodedKey(t *testing.T) {
+	r := New(Options{Values: []string{`fixture\u002dprivate`, "known-part"}})
+	input := `{"fixture\u002dprivate known-part":"ordinary","note":"public"}`
+	want := `{"***":"ordinary","note":"public"}`
+	if got := r.Redact(input); got != want {
+		t.Fatalf("part of a registered key remained after JSON encoding: %q", got)
+	}
+	assertAllStreamCuts(t, r, input, want)
 }

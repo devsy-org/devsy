@@ -1,7 +1,6 @@
 package redact
 
 import (
-	"encoding/json"
 	"regexp"
 	"strings"
 )
@@ -27,12 +26,9 @@ type Redactor struct {
 	mask      string
 }
 
-const urlSchemePattern = `((?i:https?://)|[A-Za-z][A-Za-z0-9+.-]*://)`
-
-const urlAuthorityByte = `(?:[^\s/?#"\x5c]|\x5cu[0-9a-fA-F]{4})`
-
-var urlAuthority = regexp.MustCompile(
-	urlSchemePattern + `(?:` + urlAuthorityByte + `+@|` + urlAuthorityByte + `+["\x5c])`,
+var (
+	urlPattern    = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^\r\n]*@`)
+	headerPattern = regexp.MustCompile(`(?i)\b((?:proxy-)?authorization[ \t]*[:=][ \t]*)[^\r\n]*`)
 )
 
 func New(opts Options) *Redactor {
@@ -107,59 +103,43 @@ func Combine(redactors ...*Redactor) *Redactor {
 }
 
 func (r *Redactor) Redact(value string) string {
-	urls, headers := formatMatches(value)
-	value, _, _ = r.known(value, matchState{cut: len(value), urls: urls, headers: headers})
-	return value
+	if result, ok := r.redactJSON(value); ok {
+		return result
+	}
+	return r.redactText(value)
 }
 
 func (r *Redactor) MaskCredentialField(key string) (string, bool) {
-	if isCredentialField(key) {
-		return r.maskText(), true
+	for _, name := range []string{
+		authorizationField, "Proxy-Authorization", "Cookie", "Set-Cookie", "Cookie2", "Set-Cookie2",
+	} {
+		if strings.EqualFold(key, name) {
+			return r.Mask(), true
+		}
 	}
 	return "", false
 }
 
 func (r *Redactor) RedactField(key, value string) string {
-	if !isCredentialField(key) || strings.TrimSpace(value) == "" {
-		return r.Redact(value)
+	if mask, sensitive := r.MaskCredentialField(key); sensitive {
+		return mask
 	}
-	start, ok := explicitCredentialStart(key, value)
-	if !ok {
-		return r.maskText()
-	}
-	urls, headers := formatMatches(value)
-	if start < len(value) {
-		headers = insertCredentialSpan(headers, credentialSpan{start: start, end: len(value)})
-	}
-	value, _, _ = r.known(value, matchState{cut: len(value), urls: urls, headers: headers})
-	return value
+	return r.sanitizeString(value)
 }
 
-func explicitCredentialStart(key, value string) (int, bool) {
-	if !strings.EqualFold(key, authorizationField) &&
-		!strings.EqualFold(key, "Proxy-Authorization") {
-		return 0, false
+func (r *Redactor) ContainsValue(value string) bool {
+	if r == nil || r.matcher == nil {
+		return false
 	}
-	const whitespace = " \t\n\r\f"
-	trimmed := strings.TrimLeft(value, whitespace)
-	end := strings.IndexAny(trimmed, whitespace)
-	if end < 0 {
-		end = len(trimmed)
-	}
-	scheme := trimmed[:end]
-	if !strings.EqualFold(scheme, "Basic") && !strings.EqualFold(scheme, "Bearer") {
-		return 0, false
-	}
-	return len(value) - len(strings.TrimLeft(trimmed[end:], whitespace)), true
-}
-
-func insertCredentialSpan(spans []credentialSpan, mask credentialSpan) []credentialSpan {
-	for i, span := range spans {
-		if mask.start < span.start {
-			return append(append(spans[:i:i], mask), spans[i:]...)
+	root := r.matcher.forward
+	state := root
+	for i := range len(value) {
+		state = transition(root, state, value[i])
+		if state.longest > 0 {
+			return true
 		}
 	}
-	return append(spans, mask)
+	return false
 }
 
 func newRedactor(values []string, mask string) *Redactor {
@@ -192,112 +172,52 @@ func sensitiveKey(key string, additional []string) bool {
 	return false
 }
 
-func (r *Redactor) maskText() string {
+func (r *Redactor) Mask() string {
 	if r == nil || r.mask == "" {
 		return defaultMask
 	}
 	return r.mask
 }
 
-type matchState struct {
-	cut       int
-	covered   int
-	markerEnd int
-	urls      [][]int
-	headers   []credentialSpan
-}
-
-type formatCursor struct {
+type textMatches struct {
 	matches [][]int
-	index   int
 	trim    int
 }
 
-type maskWriter struct {
-	result    strings.Builder
-	redactor  *Redactor
-	cut       int
-	covered   int
-	markerEnd int
-	last      int
-	changed   bool
+func (m *textMatches) lengthAt(index int) int {
+	if len(m.matches) == 0 || m.matches[0][3] != index {
+		return 0
+	}
+	end := m.matches[0][1] - m.trim
+	m.matches = m.matches[1:]
+	return end - index
 }
 
-func (r *Redactor) known(value string, state matchState) (string, int, int) {
-	output := maskWriter{
-		redactor: r, cut: state.cut, covered: state.covered,
-		markerEnd: state.markerEnd, changed: state.covered > 0,
-	}
-	if output.changed {
-		output.result.Grow(state.cut)
-	}
-	urls := formatCursor{matches: state.urls, trim: 1}
-	headers := state.headers
-	lengths := r.matchLengths(value, state.cut)
-	for i := range state.cut {
-		length := 0
+func (r *Redactor) redactText(value string) string {
+	lengths := r.matchLengths(value, len(value))
+	urls := textMatches{matches: urlPattern.FindAllStringSubmatchIndex(value, -1), trim: 1}
+	headers := textMatches{matches: headerPattern.FindAllStringSubmatchIndex(value, -1)}
+	var result strings.Builder
+	covered := 0
+	for i := range len(value) {
+		length := max(urls.lengthAt(i), headers.lengthAt(i))
 		if i < len(lengths) {
-			length = lengths[i]
+			length = max(length, lengths[i])
 		}
-		length = max(length, urls.matchLength(i))
-		var style credentialMaskStyle
-		for len(headers) > 0 && headers[0].start == i {
-			length = max(length, headers[0].end-i)
-			style = max(style, headers[0].style)
-			headers = headers[1:]
-		}
-		output.consume(value, i, length, style)
-	}
-	if !output.changed {
-		return value[:state.cut], 0, 0
-	}
-	output.result.WriteString(value[output.last:state.cut])
-	return output.result.String(), max(
-			0,
-			output.covered-state.cut,
-		), max(
-			0,
-			output.markerEnd-state.cut,
-		)
-}
-
-func (r *Redactor) credentialMask(style credentialMaskStyle) string {
-	mask := r.maskText()
-	switch style {
-	case credentialBareJSON:
-		return "null"
-	case credentialInJSON:
-		encoded, _ := json.Marshal(mask)
-		return string(encoded[1 : len(encoded)-1])
-	default:
-		return mask
-	}
-}
-
-func (w *maskWriter) consume(value string, index, length int, style credentialMaskStyle) {
-	if length != 0 {
-		if index >= w.markerEnd {
-			if !w.changed {
-				w.result.Grow(w.cut)
-				w.changed = true
+		if length > 0 {
+			if i >= covered {
+				result.WriteString(value[covered:i])
+				result.WriteString(r.Mask())
 			}
-			w.result.WriteString(value[w.last:index])
-			w.result.WriteString(w.redactor.credentialMask(style))
-			w.markerEnd = index + length
+			covered = max(covered, i+length)
 		}
-		w.covered = max(w.covered, index+length)
 	}
-	if index < w.covered {
-		w.last = index + 1
+	if result.Len() != 0 {
+		result.WriteString(value[covered:])
+		value = result.String()
 	}
-}
-
-func (c *formatCursor) matchLength(index int) int {
-	length := 0
-	for c.index < len(c.matches) && c.matches[c.index][3] == index {
-		end := c.matches[c.index][1] - c.trim
-		length = max(length, end-index)
-		c.index++
+	if r.matchesString(value) {
+		return r.Mask()
 	}
-	return length
+	return value
 }

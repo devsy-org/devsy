@@ -65,6 +65,7 @@ jobs:
               - '.golangci.yaml'
             shared_logging:
               - 'logging/**'
+              - 'go.mod'
               - '.github/workflows/pr-ci.yml'
               - '.golangci.yaml'
             agent_skill:

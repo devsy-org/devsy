@@ -3,12 +3,9 @@ package logging
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -323,7 +320,7 @@ func (h *sanitizer) cleanAttrs(attrs []slog.Attr, group string, protect bool) []
 }
 
 func (h *sanitizer) clean(attr slog.Attr, group string, protect bool) (slog.Attr, bool) {
-	key := h.redactor.Redact(attr.Key)
+	key := h.redactor.RedactField("", attr.Key)
 	if protect && key != "" && (h.flatten || group == "") {
 		var ok bool
 		key, ok = h.protectedKey(group, attr.Key, key)
@@ -331,16 +328,16 @@ func (h *sanitizer) clean(attr slog.Attr, group string, protect bool) (slog.Attr
 			return slog.Attr{}, false
 		}
 	}
+	if mask, sensitive := h.redactor.MaskCredentialField(attr.Key); sensitive {
+		return slog.String(key, mask), true
+	}
 	attr.Value = attr.Value.Resolve()
 	if attr.Value.Kind() == slog.KindGroup {
-		if mask, secret := h.redactor.MaskCredentialField(attr.Key); secret {
-			return slog.String(key, mask), true
-		}
 		path := attributePath(group, key)
 		cleaned := h.cleanAttrs(attr.Value.Group(), path, protect)
 		return slog.Attr{Key: key, Value: slog.GroupValue(cleaned...)}, true
 	}
-	return slog.Attr{Key: key, Value: h.cleanValue(attr.Key, attr.Value)}, true
+	return slog.Attr{Key: key, Value: h.cleanValue(attr.Value)}, true
 }
 
 func attributePath(group, key string) string {
@@ -383,45 +380,29 @@ func (h *sanitizer) reservedAncestors(group, key string) int {
 	}
 }
 
-func (h *sanitizer) cleanValue(key string, value slog.Value) slog.Value {
+func (h *sanitizer) cleanValue(value slog.Value) slog.Value {
 	switch value.Kind() {
 	case slog.KindString:
-		return slog.StringValue(h.redactor.RedactField(key, value.String()))
+		return slog.AnyValue(h.redactor.SanitizeJSON(value.String()))
 	case slog.KindAny:
-		return slog.AnyValue(h.cleanAny(key, value.Any()))
-	case slog.KindInt64, slog.KindUint64, slog.KindFloat64, slog.KindDuration:
-		return h.cleanNumber(key, value)
+		return slog.AnyValue(h.cleanAny(value.Any()))
 	default:
-		if mask, secret := h.redactor.MaskCredentialField(key); secret {
-			return slog.StringValue(mask)
+		if h.secretScalar(value) {
+			return slog.StringValue(h.redactor.Mask())
 		}
 		return value
 	}
 }
 
-func (h *sanitizer) cleanNumber(key string, value slog.Value) slog.Value {
-	raw := value.String()
-	if cleaned := h.redactor.RedactField(key, raw); cleaned != raw {
-		return slog.StringValue(cleaned)
+func (h *sanitizer) secretScalar(value slog.Value) bool {
+	if h.redactor.ContainsValue(value.String()) {
+		return true
 	}
-	if value.Kind() == slog.KindDuration {
-		raw = strconv.FormatInt(value.Duration().Nanoseconds(), 10)
-		if cleaned := h.redactor.RedactField(key, raw); cleaned != raw {
-			return slog.StringValue(cleaned)
-		}
-	}
-	if value.Kind() == slog.KindFloat64 {
-		if data, err := json.Marshal(value.Float64()); err == nil {
-			raw = string(data)
-			if cleaned := h.redactor.RedactField(key, raw); cleaned != raw {
-				return slog.StringValue(cleaned)
-			}
-		}
-	}
-	return value
+	data, err := json.Marshal(value.Any())
+	return err == nil && h.redactor.ContainsValue(string(data))
 }
 
-func (h *sanitizer) cleanAny(key string, value any) (result any) {
+func (h *sanitizer) cleanAny(value any) (result any) {
 	defer func() {
 		if recover() != nil {
 			result = "[invalid value]"
@@ -429,7 +410,7 @@ func (h *sanitizer) cleanAny(key string, value any) (result any) {
 	}()
 	_, marshalsJSON := value.(json.Marshaler)
 	if err, ok := value.(error); ok && !marshalsJSON {
-		return h.redactor.RedactField(key, err.Error())
+		return h.redactor.SanitizeJSON(err.Error())
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -441,81 +422,7 @@ func (h *sanitizer) cleanAny(key string, value any) (result any) {
 	if decoder.Decode(&decoded) != nil {
 		return "[invalid value]"
 	}
-	return h.cleanJSON(key, decoded)
-}
-
-func (h *sanitizer) cleanJSON(key string, value any) any {
-	switch v := value.(type) {
-	case string:
-		return h.redactor.RedactField(key, h.cleanEncodedBytes(v))
-	case []any:
-		for i := range v {
-			v[i] = h.cleanJSON(key, v[i])
-		}
-		return v
-	}
-	if mask, secret := h.redactor.MaskCredentialField(key); secret {
-		return mask
-	}
-	switch v := value.(type) {
-	case json.Number:
-		if cleaned := h.redactor.Redact(v.String()); cleaned != v.String() {
-			return cleaned
-		}
-	case map[string]any:
-		return h.cleanObject(v)
-	}
-	return value
-}
-
-func (h *sanitizer) cleanEncodedBytes(value string) string {
-	if len(value) == 0 || len(value)%4 != 0 || strings.ContainsAny(value, "\r\n") {
-		return value
-	}
-	decoded, err := base64.StdEncoding.Strict().DecodeString(value)
-	if err != nil {
-		return value
-	}
-	raw := string(decoded)
-	cleaned := h.redactor.Redact(raw)
-	if cleaned == raw {
-		return value
-	}
-	return base64.StdEncoding.EncodeToString([]byte(cleaned))
-}
-
-func (h *sanitizer) cleanObject(values map[string]any) map[string]any {
-	keys := make([]string, 0, len(values))
-	keysByOriginal := make(map[string]string, len(values))
-	reserved := make(map[string]bool, len(values))
-	for key := range values {
-		keys = append(keys, key)
-		cleaned := h.redactor.Redact(key)
-		keysByOriginal[key] = cleaned
-		reserved[cleaned] = true
-	}
-	slices.Sort(keys)
-	out := make(map[string]any, len(values))
-	lastAlias := make(map[string]int)
-	for _, key := range keys {
-		cleaned := keysByOriginal[key]
-		if _, exists := out[cleaned]; exists {
-			cleaned = nextSanitizedKey(cleaned, reserved, lastAlias)
-		}
-		out[cleaned] = h.cleanJSON(key, values[key])
-	}
-	return out
-}
-
-func nextSanitizedKey(key string, reserved map[string]bool, lastAlias map[string]int) string {
-	for number := lastAlias[key] + 1; ; number++ {
-		alias := key + "_" + strconv.Itoa(number)
-		if !reserved[alias] {
-			lastAlias[key] = number
-			reserved[alias] = true
-			return alias
-		}
-	}
+	return h.redactor.SanitizeJSON(decoded)
 }
 
 func ParseTimestamp(value string) (time.Time, error) {

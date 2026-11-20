@@ -3,7 +3,6 @@ package logging
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -461,10 +460,8 @@ func TestStructuredAuthorizationRedaction(t *testing.T) {
 			t.Fatalf("structured credential leaked: %s", got)
 		}
 	}
-	for _, expected := range []string{`bAsIc\t***`, "Bearer ***", "Basic ***"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("expected %q in %s", expected, got)
-		}
+	if !json.Valid([]byte(got)) || strings.Count(got, `"***"`) != 3 {
+		t.Fatalf("credential values must be whole masks: %s", got)
 	}
 }
 
@@ -505,7 +502,7 @@ func TestStructuredCredentialContainers(t *testing.T) {
 		t.Fatalf("structured credential leaked: %s", got)
 	}
 	for _, want := range []string{
-		`"Cookie":"***"`, `"Proxy-Authorization":["***"]`, `"Authorization":"***"`, `"Set-Cookie":"***"`,
+		`"Cookie":"***"`, `"Proxy-Authorization":"***"`, `"Authorization":"***"`, `"Set-Cookie":"***"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in %s", want, got)
@@ -523,7 +520,7 @@ func TestStructuredAuthorizationKnownOverlap(t *testing.T) {
 	if err := handler.Handle(context.Background(), record); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), `"Authorization":"*** ***"`) {
+	if !strings.Contains(output.String(), `"Authorization":"***"`) {
 		t.Fatalf("overlapping redaction failed: %s", output.String())
 	}
 }
@@ -564,18 +561,18 @@ func TestStructuredErrorJSONAndPlainErrorRedaction(t *testing.T) {
 		t.Fatalf("structured error was not an object: %s", output.String())
 	}
 	if structured["code"] != "backend_failure" ||
-		structured["message"] != "failed ***" ||
-		structured["Authorization"] != "Bearer ***" {
+		structured["message"] != testMask ||
+		structured["Authorization"] != testMask {
 		t.Fatalf("unexpected structured error: %s", output.String())
 	}
-	if got["plain"] != "plain ***" {
+	if got["plain"] != testMask {
 		t.Fatalf("plain error was not redacted: %s", output.String())
 	}
 }
 
 func TestTrustedKeyUsesItsSanitizedName(t *testing.T) {
 	var output bytes.Buffer
-	const sanitized = "root-***"
+	const sanitized = testMask
 	logger := slog.New(NewHandler(&output, HandlerOptions{
 		Format: FormatJSON, Redactor: redact.New(redact.Options{Values: []string{testSecret}}),
 		TrustedAttrs: []slog.Attr{slog.String("root-"+testSecret, "trusted")},
@@ -666,7 +663,7 @@ func TestKnownNumbersAreRedactedWithoutChangingOtherTypes(t *testing.T) {
 	}
 }
 
-func TestNestedByteValuesAndCollidingKeysAreRedacted(t *testing.T) {
+func TestNestedValuesAndCollidingKeysAreRedacted(t *testing.T) {
 	var output bytes.Buffer
 	const otherSecret = "another-secret"
 	logger := slog.New(NewHandler(&output, HandlerOptions{
@@ -674,7 +671,7 @@ func TestNestedByteValuesAndCollidingKeysAreRedacted(t *testing.T) {
 		Redactor: redact.New(redact.Options{Values: []string{testSecret, otherSecret}}),
 	}))
 	logger.Info("record", slog.Any(nestedKey, map[string]any{
-		testSecret:      []byte("before-" + testSecret + "-after"),
+		testSecret:      "before-" + testSecret + "-after",
 		otherSecret:     "collision",
 		testMask + "_1": "existing",
 	}))
@@ -683,32 +680,48 @@ func TestNestedByteValuesAndCollidingKeysAreRedacted(t *testing.T) {
 		t.Fatal(err)
 	}
 	nested := got[nestedKey].(map[string]any)
-	encoded, ok := nested[testMask+"_2"].(string)
+	value, ok := nested[testMask+"_2"].(string)
 	if nested[testMask] != "collision" || nested[testMask+"_1"] != "existing" || !ok {
 		t.Fatalf("colliding object keys were lost: %#v", nested)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil || string(decoded) != "before-***-after" {
-		t.Fatalf("byte value was exposed or its safe context lost: %q %v", decoded, err)
+	if value != testMask {
+		t.Fatalf("nested string was not replaced by a whole mask: %q", value)
 	}
 }
 
-func TestKnownByteValuesAreRedactedBeforeEmission(t *testing.T) {
+const testSecretDate = "1984-05-17"
+
+func TestTimeAndBooleanAttributesMaskRegisteredValues(t *testing.T) {
 	var output bytes.Buffer
-	logger := slog.New(NewHandler(&output, HandlerOptions{
-		Format: FormatJSON, Redactor: redact.New(redact.Options{Values: []string{testSecret}}),
-	}))
-	logger.Info(
-		"record",
-		slog.Any("credential", []byte("prefix-"+testSecret)),
-		slog.Any("normal", []byte("plain")),
+	r := redact.New(redact.Options{Values: []string{testSecretDate, "true"}})
+	logger := slog.New(NewHandler(&output, HandlerOptions{Format: FormatJSON, Redactor: r}))
+	logger.Info("record",
+		slog.Time("date", time.Date(1984, 5, 17, 0, 0, 0, 0, time.UTC)),
+		slog.Time("ordinary_date", time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)),
+		slog.Bool("known", true),
+		slog.Bool("ordinary", false),
 	)
-	var got map[string]string
+	var got map[string]any
 	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["credential"] != base64.StdEncoding.EncodeToString([]byte("prefix-***")) ||
-		got["normal"] != base64.StdEncoding.EncodeToString([]byte("plain")) {
-		t.Fatalf("byte value did not preserve its sanitized encoding: %s", output.String())
+	if got["date"] != testMask || got["ordinary_date"] != "2025-02-01T00:00:00Z" ||
+		got["known"] != testMask || got["ordinary"] != false {
+		t.Fatalf("scalar masking lost the contract: %#v", got)
+	}
+}
+
+func TestRegisteredWireFormsInHandler(t *testing.T) {
+	const fragment = `{ "credential" : "private-json-string" }`
+	var output bytes.Buffer
+	r := redact.New(redact.Options{Values: []string{fragment, `a\u0000b`}})
+	logger := slog.New(NewHandler(&output, HandlerOptions{Format: FormatJSON, Redactor: r}))
+	logger.Info("a\x00b", "document", fragment, "wire", "a\x00b")
+	var got map[string]any
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["msg"] != testMask || got["document"] != testMask || got["wire"] != testMask {
+		t.Fatalf("registered wire value was not masked: %#v", got)
 	}
 }
