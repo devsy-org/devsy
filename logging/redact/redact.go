@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 )
@@ -28,7 +29,11 @@ type Redactor struct {
 
 const urlSchemePattern = `((?i:https?://)|[A-Za-z][A-Za-z0-9+.-]*://)`
 
-var urlAuthority = regexp.MustCompile(urlSchemePattern + `(?:[^\s/?#"]+@|[^\s/?#"]+")`)
+const urlAuthorityByte = `(?:[^\s/?#"\x5c]|\x5cu[0-9a-fA-F]{4})`
+
+var urlAuthority = regexp.MustCompile(
+	urlSchemePattern + `(?:` + urlAuthorityByte + `+@|` + urlAuthorityByte + `+["\x5c])`,
+)
 
 func New(opts Options) *Redactor {
 	mask := opts.Mask
@@ -102,7 +107,7 @@ func Combine(redactors ...*Redactor) *Redactor {
 }
 
 func (r *Redactor) Redact(value string) string {
-	urls, headers := formatMatches(value, 0)
+	urls, headers := formatMatches(value)
 	value, _, _ = r.known(value, matchState{cut: len(value), urls: urls, headers: headers})
 	return value
 }
@@ -122,9 +127,9 @@ func (r *Redactor) RedactField(key, value string) string {
 	if !ok {
 		return r.maskText()
 	}
-	urls, headers := formatMatches(value, 0)
+	urls, headers := formatMatches(value)
 	if start < len(value) {
-		headers = mergeHeaderMatches(headers, [][]int{{start, len(value), start, start}})
+		headers = insertCredentialSpan(headers, credentialSpan{start: start, end: len(value)})
 	}
 	value, _, _ = r.known(value, matchState{cut: len(value), urls: urls, headers: headers})
 	return value
@@ -148,26 +153,13 @@ func explicitCredentialStart(key, value string) (int, bool) {
 	return len(value) - len(strings.TrimLeft(trimmed[end:], whitespace)), true
 }
 
-func mergeHeaderMatches(first, second [][]int) [][]int {
-	if len(first) == 0 {
-		return second
-	}
-	if len(second) == 0 {
-		return first
-	}
-	result := make([][]int, 0, len(first)+len(second))
-	i, j := 0, 0
-	for i < len(first) && j < len(second) {
-		if first[i][3] <= second[j][3] {
-			result = append(result, first[i])
-			i++
-		} else {
-			result = append(result, second[j])
-			j++
+func insertCredentialSpan(spans []credentialSpan, mask credentialSpan) []credentialSpan {
+	for i, span := range spans {
+		if mask.start < span.start {
+			return append(append(spans[:i:i], mask), spans[i:]...)
 		}
 	}
-	result = append(result, first[i:]...)
-	return append(result, second[j:]...)
+	return append(spans, mask)
 }
 
 func newRedactor(values []string, mask string) *Redactor {
@@ -212,7 +204,7 @@ type matchState struct {
 	covered   int
 	markerEnd int
 	urls      [][]int
-	headers   [][]int
+	headers   []credentialSpan
 }
 
 type formatCursor struct {
@@ -223,7 +215,7 @@ type formatCursor struct {
 
 type maskWriter struct {
 	result    strings.Builder
-	mask      string
+	redactor  *Redactor
 	cut       int
 	covered   int
 	markerEnd int
@@ -233,22 +225,28 @@ type maskWriter struct {
 
 func (r *Redactor) known(value string, state matchState) (string, int, int) {
 	output := maskWriter{
-		mask: r.maskText(), cut: state.cut, covered: state.covered,
+		redactor: r, cut: state.cut, covered: state.covered,
 		markerEnd: state.markerEnd, changed: state.covered > 0,
 	}
 	if output.changed {
 		output.result.Grow(state.cut)
 	}
 	urls := formatCursor{matches: state.urls, trim: 1}
-	headers := formatCursor{matches: state.headers}
+	headers := state.headers
 	lengths := r.matchLengths(value, state.cut)
 	for i := range state.cut {
 		length := 0
 		if i < len(lengths) {
 			length = lengths[i]
 		}
-		length = max(length, urls.matchLength(i), headers.matchLength(i))
-		output.consume(value, i, length)
+		length = max(length, urls.matchLength(i))
+		var style credentialMaskStyle
+		for len(headers) > 0 && headers[0].start == i {
+			length = max(length, headers[0].end-i)
+			style = max(style, headers[0].style)
+			headers = headers[1:]
+		}
+		output.consume(value, i, length, style)
 	}
 	if !output.changed {
 		return value[:state.cut], 0, 0
@@ -263,7 +261,20 @@ func (r *Redactor) known(value string, state matchState) (string, int, int) {
 		)
 }
 
-func (w *maskWriter) consume(value string, index, length int) {
+func (r *Redactor) credentialMask(style credentialMaskStyle) string {
+	mask := r.maskText()
+	switch style {
+	case credentialBareJSON:
+		return "null"
+	case credentialInJSON:
+		encoded, _ := json.Marshal(mask)
+		return string(encoded[1 : len(encoded)-1])
+	default:
+		return mask
+	}
+}
+
+func (w *maskWriter) consume(value string, index, length int, style credentialMaskStyle) {
 	if length != 0 {
 		if index >= w.markerEnd {
 			if !w.changed {
@@ -271,7 +282,7 @@ func (w *maskWriter) consume(value string, index, length int) {
 				w.changed = true
 			}
 			w.result.WriteString(value[w.last:index])
-			w.result.WriteString(w.mask)
+			w.result.WriteString(w.redactor.credentialMask(style))
 			w.markerEnd = index + length
 		}
 		w.covered = max(w.covered, index+length)

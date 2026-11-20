@@ -136,6 +136,44 @@ func assertCredentialField(t *testing.T, redactor *Redactor, input string, isJSO
 	}
 }
 
+func TestCredentialJSONStructureAcrossSplits(t *testing.T) {
+	redactor := New(Options{Values: []string{"unrelated-known-value"}})
+	for input, want := range map[string]string{
+		`{"X-Authorization":"value","note":"ok"}`:                `{"X-Authorization":"value","note":"ok"}`,
+		`{"msg":"sent Authorization: private","note":"ok"}`:      `{"msg":"sent Authorization: ***","note":"ok"}`,
+		`{"msg":"sent Cookie: private\"tail","note":"ok"}`:       `{"msg":"sent Cookie: ***","note":"ok"}`,
+		`{"Authorization":123,"note":"ok"}`:                      `{"Authorization":null,"note":"ok"}`,
+		`{"Authorization":[123,true,null,"secret"],"note":"ok"}`: `{"Authorization":[null,null,null,"***"],"note":"ok"}`,
+		`{"Cookie":{"number":99,"value":[false]},"note":"ok"}`:   `{"Cookie":{"***":null,"***":[null]},"note":"ok"}`,
+	} {
+		got := redactor.Redact(input)
+		if got != want || !json.Valid([]byte(got)) {
+			t.Fatalf("redacted %q, want valid JSON %q", got, want)
+		}
+		assertAllStreamCuts(t, redactor, input, want)
+		got, _ = streamChunks(NewStream(redactor), input, []int{1})
+		if got != want {
+			t.Fatalf("bytewise stream redacted %q, want %q", got, want)
+		}
+	}
+}
+
+func TestJSONCredentialMaskEscapesCustomMarker(t *testing.T) {
+	mask := "hidden\"\n"
+	redactor := New(Options{Mask: mask})
+	input := `{"Authorization":"credentials"}`
+	encoded := redactor.Redact(input)
+	var record map[string]string
+	if err := json.Unmarshal(
+		[]byte(encoded),
+		&record,
+	); err != nil ||
+		record["Authorization"] != mask {
+		t.Fatalf("serialized custom marker %q: %v", encoded, err)
+	}
+	assertAllStreamCuts(t, redactor, input, encoded)
+}
+
 func TestCredentialTokenizerBoundsAndResets(t *testing.T) {
 	redactor := New(Options{Values: []string{strings.Repeat("z", 2048) + "x"}})
 	for _, input := range []string{

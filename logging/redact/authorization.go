@@ -19,6 +19,20 @@ const (
 
 const maxHeaderDepth = 64
 
+type credentialMaskStyle uint8
+
+const (
+	credentialText credentialMaskStyle = iota
+	credentialInJSON
+	credentialBareJSON
+)
+
+type credentialSpan struct {
+	start int
+	end   int
+	style credentialMaskStyle
+}
+
 var (
 	credentialFields = []string{
 		"authorization",
@@ -38,6 +52,10 @@ type authorizationState struct {
 	quote        byte
 	escaped      bool
 	quotedKey    bool
+	inQuote      bool
+	quoteEscape  bool
+	nameLength   int
+	json         bool
 	line         bool
 	afterSpacing bool
 	atom         [10]byte
@@ -151,10 +169,16 @@ func (s *authorizationState) step(value byte) bool {
 }
 
 func (s *authorizationState) readKey(raw byte) {
+	if s.readRawQuote(raw) {
+		return
+	}
 	escaped := s.keyEscape.phase != 0
 	value, ready := s.keyEscape.next(raw)
 	if !ready {
 		return
+	}
+	if s.inQuote {
+		s.nameLength++
 	}
 	if s.phase != headerSearch && s.readSeparator(value, escaped) {
 		return
@@ -165,9 +189,28 @@ func (s *authorizationState) readKey(raw byte) {
 	s.name = transition(credentialNames, s.name, asciiLower(value))
 	s.phase = headerSearch
 	s.line = false
+	s.json = false
 	if s.name.longest != 0 {
 		s.phase = headerAfterName
 	}
+}
+
+func (s *authorizationState) readRawQuote(raw byte) bool {
+	if raw == '\\' {
+		s.quoteEscape = !s.quoteEscape
+		return false
+	}
+	escaped := s.quoteEscape
+	s.quoteEscape = false
+	if raw != '"' || escaped {
+		return false
+	}
+	if s.inQuote && s.phase == headerAfterName && s.name.longest == s.nameLength {
+		*s = authorizationState{phase: headerAfterQuotedName, json: true}
+	} else {
+		*s = authorizationState{inQuote: !s.inQuote}
+	}
+	return true
 }
 
 func (s *authorizationState) readSeparator(value byte, escaped bool) bool {
@@ -176,6 +219,8 @@ func (s *authorizationState) readSeparator(value byte, escaped bool) bool {
 		*s = authorizationState{
 			phase:     headerBeforeValue,
 			quotedKey: quoted,
+			inQuote:   s.inQuote,
+			json:      s.inQuote || jsonFieldSeparator(value, s.json),
 			line:      s.line || escaped || plainHeaderSeparator(value, quoted),
 		}
 		return true
@@ -193,6 +238,10 @@ func keySpacing(phase headerPhase, value byte) bool {
 		return formatSpace(value)
 	}
 	return value == ' ' || value == '\t'
+}
+
+func jsonFieldSeparator(value byte, quoted bool) bool {
+	return value == ':' && quoted
 }
 
 func plainHeaderSeparator(value byte, quoted bool) bool {
@@ -223,9 +272,16 @@ func (s *authorizationState) readValue(value byte) bool {
 }
 
 func (s *authorizationState) startValue(value byte) bool {
+	if s.inQuote {
+		return s.startEnclosedValue(value)
+	}
 	if s.line {
 		return s.startLine(value)
 	}
+	return s.startDelimitedValue(value)
+}
+
+func (s *authorizationState) startDelimitedValue(value byte) bool {
 	switch {
 	case value == '\\':
 		s.phase = headerLine
@@ -241,6 +297,14 @@ func (s *authorizationState) startValue(value byte) bool {
 		return s.startAtom(value)
 	}
 	return false
+}
+
+func (s *authorizationState) startEnclosedValue(value byte) bool {
+	if formatSpace(value) {
+		return false
+	}
+	s.phase, s.quote = headerQuoted, '"'
+	return s.readQuoted(value, headerSearch)
 }
 
 func (s *authorizationState) startLine(value byte) bool {
@@ -274,8 +338,12 @@ func (s *authorizationState) readQuoted(value byte, resume headerPhase) bool {
 		return true
 	}
 	if value == s.quote {
-		s.quote = 0
-		s.phase = resume
+		if resume == headerSearch {
+			*s = authorizationState{}
+		} else {
+			s.quote = 0
+			s.phase = resume
+		}
 		return false
 	}
 	return true
@@ -388,22 +456,34 @@ func (s *authorizationState) finishValue(value byte) bool {
 	return false
 }
 
-func scanAuthorization(value string, limit int, initial authorizationState) [][]int {
+func (s authorizationState) maskStyle() credentialMaskStyle {
+	if !s.json {
+		return credentialText
+	}
+	if s.quote == '"' {
+		return credentialInJSON
+	}
+	return credentialBareJSON
+}
+
+func scanAuthorization(value string, initial authorizationState) []credentialSpan {
 	state := initial
-	var matches [][]int
-	start := -1
-	for i := range limit {
+	var matches []credentialSpan
+	span := credentialSpan{start: -1}
+	for i := range len(value) {
 		if state.step(value[i]) {
-			if start < 0 {
-				start = i
+			if span.start < 0 {
+				span = credentialSpan{start: i, style: state.maskStyle()}
 			}
-		} else if start >= 0 {
-			matches = append(matches, []int{start, i, start, start})
-			start = -1
+		} else if span.start >= 0 {
+			span.end = i
+			matches = append(matches, span)
+			span.start = -1
 		}
 	}
-	if start >= 0 {
-		matches = append(matches, []int{start, limit, start, start})
+	if span.start >= 0 {
+		span.end = len(value)
+		matches = append(matches, span)
 	}
 	return matches
 }

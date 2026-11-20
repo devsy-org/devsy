@@ -389,7 +389,7 @@ func (h *sanitizer) cleanValue(key string, value slog.Value) slog.Value {
 		return slog.StringValue(h.redactor.RedactField(key, value.String()))
 	case slog.KindAny:
 		return slog.AnyValue(h.cleanAny(key, value.Any()))
-	case slog.KindInt64, slog.KindUint64, slog.KindFloat64:
+	case slog.KindInt64, slog.KindUint64, slog.KindFloat64, slog.KindDuration:
 		return h.cleanNumber(key, value)
 	default:
 		if mask, secret := h.redactor.MaskCredentialField(key); secret {
@@ -403,6 +403,12 @@ func (h *sanitizer) cleanNumber(key string, value slog.Value) slog.Value {
 	raw := value.String()
 	if cleaned := h.redactor.RedactField(key, raw); cleaned != raw {
 		return slog.StringValue(cleaned)
+	}
+	if value.Kind() == slog.KindDuration {
+		raw = strconv.FormatInt(value.Duration().Nanoseconds(), 10)
+		if cleaned := h.redactor.RedactField(key, raw); cleaned != raw {
+			return slog.StringValue(cleaned)
+		}
 	}
 	if value.Kind() == slog.KindFloat64 {
 		if data, err := json.Marshal(value.Float64()); err == nil {

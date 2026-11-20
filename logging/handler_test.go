@@ -468,6 +468,23 @@ func TestStructuredAuthorizationRedaction(t *testing.T) {
 	}
 }
 
+func TestDurationAttributesMaskRegisteredRepresentations(t *testing.T) {
+	var out bytes.Buffer
+	redactor := redact.New(redact.Options{Values: []string{"731942"}})
+	h := NewHandler(&out, HandlerOptions{Redactor: redactor, Format: FormatJSON})
+	slog.New(h).Info("message",
+		slog.Duration("masked", 731942*time.Nanosecond),
+		slog.Duration("clear", 42*time.Nanosecond),
+	)
+	var attrs map[string]any
+	if err := json.Unmarshal(out.Bytes(), &attrs); err != nil {
+		t.Fatal(err)
+	}
+	if attrs["masked"] != "***" || attrs["clear"] != float64(42) {
+		t.Fatalf("unexpected serialized duration attributes: %s", out.String())
+	}
+}
+
 func TestStructuredCredentialContainers(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(NewHandler(&output, HandlerOptions{Format: FormatJSON}))

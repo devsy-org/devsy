@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -881,18 +882,93 @@ func TestStreamFlushesTrailingURLAuthorities(t *testing.T) {
 	}
 }
 
-func TestStreamEmittedBackslashEndsSuppression(t *testing.T) {
+func TestStreamBackslashEndsSuppressionAfterEscapeLookahead(t *testing.T) {
 	redactor := New(Options{})
 	authority := testURLScheme + strings.Repeat("a", formatCarryLimit-len(testURLScheme)+1)
 	stream := NewStream(redactor)
-	if got := stream.RedactChunk(authority + "\\"); got != testURLScheme+defaultMask+"\\" {
+	if got := stream.RedactChunk(authority + "\\"); got != testURLScheme+defaultMask {
 		t.Fatalf("overflow output = %q", got)
 	}
 	const next = "next message\n"
-	if got := stream.RedactChunk(next); got != next {
-		t.Fatalf("message after backslash = %q, want %q", got, next)
+	if got := stream.RedactChunk(next); got != "\\"+next {
+		t.Fatalf("message after backslash = %q, want backslash and %q", got, next)
 	}
 	if got := stream.Flush(); got != "" {
 		t.Fatalf("unexpected trailing output: %q", got)
+	}
+}
+
+func TestURLAuthorityStopsAtBackslashAcrossSplits(t *testing.T) {
+	redactor := New(Options{})
+	input := testURLScheme + `user:secret@host.test\contact@else.test`
+	want := testURLScheme + defaultMask + `@host.test\contact@else.test`
+	if got := redactor.Redact(input); got != want {
+		t.Fatalf("redacted %q, want %q", got, want)
+	}
+	assertAllStreamCuts(t, redactor, input, want)
+}
+
+func TestLongSchemeWithEmptyAuthorityKeepsCarryBounded(t *testing.T) {
+	redactor := New(Options{})
+	scheme := strings.Repeat("z", 2000) + "://"
+	for _, tail := range []string{"user:secret@host.test/path", "host.test/path", ""} {
+		stream := NewStream(redactor)
+		prefix := stream.RedactChunk(scheme)
+		if len(stream.pending) > formatCarryLimit+9 {
+			t.Fatalf("retained %d bytes after the authority separator", len(stream.pending))
+		}
+		got := prefix + stream.RedactChunk(tail) + stream.Flush()
+		if want := redactor.Redact(scheme + tail); got != want {
+			t.Fatalf("stream result differs from complete redaction for %q", tail)
+		}
+	}
+}
+
+func TestLongSchemeReleasesPrefixBeforeKnownSecretCarry(t *testing.T) {
+	const tail = "://user:secret@host.test/path"
+	redactor := New(Options{Values: []string{tail + "X"}})
+	value := strings.Repeat("z", 2000) + tail
+	stream := NewStream(redactor)
+	prefix := stream.RedactChunk(value)
+	if len(stream.pending) > formatCarryLimit+9 {
+		t.Fatalf("retained %d bytes before a possible known secret", len(stream.pending))
+	}
+	if got, want := prefix+stream.Flush(), redactor.Redact(value); got != want {
+		t.Fatal("URL redaction differed after a bounded scheme carry")
+	}
+}
+
+func TestUnicodeSchemeRetainedAcrossKnownSecretCarry(t *testing.T) {
+	const tail = "://user:secret@host.test/path"
+	redactor := New(Options{Values: []string{tail + "X"}})
+	for _, scheme := range []string{"http\u017f", "HTTP\u017f"} {
+		value := scheme + tail
+		want := scheme + "://***@host.test/path"
+		if got := redactor.Redact(value); got != want {
+			t.Fatalf("redacted %q, want %q", got, want)
+		}
+		assertAllStreamCuts(t, redactor, value, want)
+	}
+}
+
+func TestURLAuthorityKeepsSerializedEscapesAcrossSplits(t *testing.T) {
+	redactor := New(Options{})
+	const private = "private-fixture"
+	for _, length := range []int{0, formatCarryLimit, 2 * formatCarryLimit} {
+		authority := strings.Repeat("a", length) + "user&label:" + private + "@host.test"
+		data, err := json.Marshal(testURLScheme + authority + "/path")
+		if err != nil {
+			t.Fatal(err)
+		}
+		input := string(data)
+		const want = `"https://***@host.test/path"`
+		if got := redactor.Redact(input); got != want {
+			t.Fatalf("redacted %q, want %q", got, want)
+		}
+		assertAllStreamCuts(t, redactor, input, want)
+		got, _ := streamChunks(NewStream(redactor), input, []int{1})
+		if got != want {
+			t.Fatal("bytewise stream did not keep the escape inside the authority")
+		}
 	}
 }

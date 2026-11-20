@@ -13,7 +13,7 @@ const (
 	pendingCapacityFloor = 1024
 )
 
-var incompleteURL = regexp.MustCompile(urlSchemePattern + `[^\s/?#"]*\z`)
+var incompleteURL = regexp.MustCompile(urlSchemePattern + urlAuthorityByte + `*\z`)
 
 type Stream struct {
 	mu              sync.Mutex
@@ -93,9 +93,9 @@ func (s *Stream) processChunk(chunk string) string {
 func (s *Stream) process(value string, final bool) string {
 	frame := findURLFrame(value, s.urlOpen, final, s.schemeStarted)
 	urls := frame.matches
-	headers := scanAuthorization(value, len(value), s.auth)
+	headers := scanAuthorization(value, s.auth)
 	maskingEnd := frame.maskingEnd(value, final)
-	if maskingEnd >= 0 {
+	if maskingEnd > frame.authority {
 		urls = append(urls, []int{frame.start, maskingEnd + 1, frame.start, frame.authority})
 	}
 	cut := s.streamCut(value, frame, urls, final)
@@ -120,8 +120,8 @@ func (s *Stream) streamCut(value string, frame urlFrame, urls [][]int, final boo
 	if start := partialSchemeStart(value, frame.skip, s.schemeStarted); start >= 0 {
 		cut = min(cut, start)
 	}
-	if frame.start >= 0 && !frame.overflow {
-		cut = min(cut, frame.start)
+	if frame.start >= 0 {
+		cut = frame.cutAuthorityPrefix(cut, len(value))
 	}
 	if frame.hold >= 0 {
 		cut = min(cut, frame.hold)
@@ -139,8 +139,8 @@ func (s *Stream) advanceURL(frame urlFrame) {
 func (s *Stream) advanceAuthorization(
 	value string,
 	cut int,
-	headers [][]int,
-) (authorizationState, [][]int) {
+	headers []credentialSpan,
+) (authorizationState, []credentialSpan) {
 	authAtCut := s.auth
 	for i := range cut {
 		authAtCut.step(value[i])
@@ -150,8 +150,8 @@ func (s *Stream) advanceAuthorization(
 		}
 	}
 	s.lastMatch = max(0, s.lastMatch-cut)
-	if s.auth.masking && len(headers) != 0 && headers[0][0] == 0 {
-		continuation := headers[0][1]
+	if s.auth.masking && len(headers) != 0 && headers[0].start == 0 {
+		continuation := headers[0].end
 		s.covered = max(s.covered, continuation)
 		s.markerEnd = max(s.markerEnd, continuation)
 		headers = headers[1:]
@@ -189,7 +189,7 @@ func (s *Stream) noKnownMatchPending() bool {
 
 func (s *Stream) noFormatRisk() bool {
 	return s.anchors == 0 && !s.urlOpen && s.auth.phase <= headerAfterName &&
-		s.auth.keyEscape.phase == 0
+		!s.auth.inQuote && s.auth.keyEscape.phase == 0
 }
 
 func (s *Stream) emitKnownSafe(chunk string) (string, bool) {
@@ -274,14 +274,8 @@ func (s *Stream) resetPending() {
 	s.pendingCapacity = 0
 }
 
-func formatMatches(value string, offset int) ([][]int, [][]int) {
-	headers := scanAuthorization(value[offset:], len(value)-offset, authorizationState{})
-	for _, header := range headers {
-		for i := range header {
-			header[i] += offset
-		}
-	}
-	return urlMatches(value, offset), headers
+func formatMatches(value string) ([][]int, []credentialSpan) {
+	return urlMatches(value, 0), scanAuthorization(value, authorizationState{})
 }
 
 func urlMatches(value string, offset int) [][]int {
@@ -289,7 +283,7 @@ func urlMatches(value string, offset int) [][]int {
 	kept := matches[:0]
 	for _, match := range matches {
 		last := offset + match[1] - 1
-		if value[last] == '"' {
+		if value[last] == '"' || value[last] == '\\' {
 			authority := trimURLPunctuation(value[offset+match[3] : last])
 			if !malformedURLAuthority(authority) {
 				continue
@@ -310,7 +304,7 @@ func formatPrefixBoundary(cut int, groups ...[][]int) int {
 		for _, matches := range groups {
 			for _, match := range matches {
 				if match[0] < cut && cut <= match[3] {
-					cut = match[0]
+					cut = min(cut, schemeCarryStart(match[0], match[3]))
 				}
 			}
 		}
@@ -320,8 +314,15 @@ func formatPrefixBoundary(cut int, groups ...[][]int) int {
 	}
 }
 
+func schemeCarryStart(start, authority int) int {
+	if authority-start <= len("http\u017f://") {
+		return start
+	}
+	return authority - len("://")
+}
+
 func headerAnchor(value byte) bool {
-	return value == ':' || value == '=' || value == '\\'
+	return value == ':' || value == '=' || value == '\\' || value == '"'
 }
 
 func formatSpace(value byte) bool {
@@ -349,20 +350,21 @@ func findURLFrame(value string, active, final, schemeStarted bool) urlFrame {
 		input = "x" + value
 		bias = 1
 	}
-	frame.matches = urlMatches(input, frame.skip)
+	length := urlScanLimit(value, final)
+	frame.matches = urlMatches(input[:length+bias], frame.skip)
 	if bias != 0 {
 		shiftURLMatches(frame.matches, bias)
 	}
-	frame.findIncomplete(value, input, bias, final)
+	frame.findIncomplete(value[:length], input[:length+bias], bias, final)
+	if length < len(value) && frame.overflow {
+		frame.hold = minNonnegative(frame.hold, length)
+	}
 	return frame
 }
 
 func (f *urlFrame) continueAuthority(value string, final bool) {
-	for f.skip < len(value) && !urlAuthorityEnd(value[f.skip]) {
-		f.skip++
-	}
+	f.skip, f.continued, f.hold = continuationBoundary(value, final)
 	f.continuation = f.skip
-	f.continued = f.skip == len(value) && !final
 	lastAt := strings.LastIndexByte(value[:f.skip], '@')
 	if lastAt < 0 || (f.continued && f.skip-lastAt > formatCarryLimit) {
 		return
@@ -371,6 +373,24 @@ func (f *urlFrame) continueAuthority(value string, final bool) {
 	if f.continued {
 		f.hold = lastAt
 	}
+}
+
+func continuationBoundary(value string, final bool) (int, bool, int) {
+	end := urlAuthorityLength(value)
+	if final || end != urlScanLimit(value, final) {
+		return end, false, -1
+	}
+	if end < len(value) {
+		return end, true, end
+	}
+	return end, true, -1
+}
+
+func urlScanLimit(value string, final bool) int {
+	if final {
+		return len(value)
+	}
+	return incompleteURLEscapeStart(value)
 }
 
 func shiftURLMatches(matches [][]int, bias int) {
@@ -395,6 +415,16 @@ func (f *urlFrame) findIncomplete(value, input string, bias int, final bool) {
 			f.hold = f.authority + lastAt
 		}
 	}
+}
+
+func (f urlFrame) cutAuthorityPrefix(cut, length int) int {
+	if !f.overflow {
+		return min(cut, f.start)
+	}
+	if f.authority == length {
+		return min(cut, max(f.start, f.authority-3))
+	}
+	return cut
 }
 
 func (f urlFrame) maskingEnd(value string, final bool) int {
@@ -443,6 +473,55 @@ func (f urlFrame) activeAfter(cut, maskingEnd int, active bool) bool {
 		return cut <= maskingEnd
 	}
 	return active && (cut < f.continuation || f.continued)
+}
+
+const serializedURLEscapeLength = len(`\u0000`)
+
+func urlAuthorityLength(value string) int {
+	for i := 0; i < len(value); i++ {
+		if value[i] == '\\' && i+serializedURLEscapeLength <= len(value) &&
+			isURLEscapePrefix(value[i:i+serializedURLEscapeLength]) {
+			i += serializedURLEscapeLength - 1
+			continue
+		}
+		if urlAuthorityEnd(value[i]) {
+			return i
+		}
+	}
+	return len(value)
+}
+
+func incompleteURLEscapeStart(value string) int {
+	start := max(0, len(value)-serializedURLEscapeLength+1)
+	if slash := strings.LastIndexByte(value[start:], '\\'); slash >= 0 {
+		slash += start
+		if isURLEscapePrefix(value[slash:]) {
+			return slash
+		}
+	}
+	return len(value)
+}
+
+func isURLEscapePrefix(value string) bool {
+	if len(value) == 1 {
+		return value[0] == '\\'
+	}
+	if !strings.HasPrefix(value, `\u`) {
+		return false
+	}
+	for i := 2; i < len(value); i++ {
+		if _, ok := hexDigit(value[i]); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func minNonnegative(value, other int) int {
+	if value < 0 {
+		return other
+	}
+	return min(value, other)
 }
 
 func urlAuthorityEnd(value byte) bool {
