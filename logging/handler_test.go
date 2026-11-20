@@ -798,3 +798,127 @@ func TestNestedCollisionNeverCreatesARegisteredValue(t *testing.T) {
 		t.Fatalf("unsafe alias affected the surrounding record: %s", output.String())
 	}
 }
+
+func TestFlattenedAttributeKeysCannotRecreateRegisteredValues(t *testing.T) {
+	const group = "tenant"
+	const field = "private"
+	const joined = group + "." + field
+	for _, format := range []Format{FormatText, FormatLogfmt, FormatJSON} {
+		t.Run(string(format), func(t *testing.T) {
+			var output bytes.Buffer
+			logger := slog.New(NewHandler(&output, HandlerOptions{
+				Format: format, Redactor: redact.New(redact.Options{Values: []string{joined}}),
+			}))
+			hidden := slog.String(field, "attribute")
+			visible := slog.Int("public", 37)
+			logger.WithGroup(group).Info("record", hidden, visible)
+			logger.WithGroup(group).With(hidden, visible).Info("bound")
+			logger.Info("inline", slog.Group(group, hidden, visible))
+			got := output.String()
+			if format == FormatJSON {
+				if strings.Count(got, `"private":"attribute"`) != 3 || !jsonLinesValid(got) {
+					t.Fatalf("JSON object scope was changed: %s", got)
+				}
+			} else if strings.Contains(got, joined) || strings.Count(got, "tenant.public=37") != 3 {
+				t.Fatalf(
+					"flattening changed ordinary keys or introduced a registered value: %s",
+					got,
+				)
+			}
+		})
+	}
+}
+
+func jsonLinesValid(output string) bool {
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if !json.Valid([]byte(line)) {
+			return false
+		}
+	}
+	return true
+}
+
+func TestReservedAliasesCannotRecreateRegisteredValues(t *testing.T) {
+	const known = testUserPrefix + slog.LevelKey
+	for _, format := range []Format{FormatText, FormatLogfmt, FormatJSON} {
+		t.Run(string(format), func(t *testing.T) {
+			var output bytes.Buffer
+			logger := slog.New(NewHandler(&output, HandlerOptions{
+				Format: format, ReservedKeys: EscapeReserved,
+				Redactor: redact.New(redact.Options{Values: []string{known}}),
+			}))
+			hidden := slog.String(slog.LevelKey, "user severity")
+			visible := slog.String(slog.MessageKey, "ordinary alias")
+			logger.Info("record", hidden, visible)
+			logger.With(hidden, visible).Info("bound")
+			if got := output.String(); strings.Contains(got, known) ||
+				strings.Count(got, testUserPrefix+slog.MessageKey) != 2 {
+				t.Fatalf("safe alias was lost or registered alias was exposed: %s", got)
+			}
+		})
+	}
+}
+
+func TestUnencodableScalarsKeepJSONRecordsValid(t *testing.T) {
+	var output bytes.Buffer
+	outsideRange := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+	ordinary := time.Date(2027, 3, 5, 0, 0, 0, 0, time.UTC)
+	logger := slog.New(NewHandler(&output, HandlerOptions{Format: FormatJSON}))
+	logger.Info("record", slog.Time("outside", outsideRange), slog.Time("inside", ordinary))
+	var got map[string]any
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatalf("time attribute corrupted the JSON record: %v", err)
+	}
+	if got["outside"] != testMask || got["inside"] != "2027-03-05T00:00:00Z" {
+		t.Fatalf("masking changed a representable time: %#v", got)
+	}
+}
+
+func TestFlattenedEmptyKeyCannotRecreateARegisteredPath(t *testing.T) {
+	const group = "path-prefix"
+	const prefix = group + "."
+	for _, format := range []Format{FormatText, FormatLogfmt, FormatJSON} {
+		t.Run(string(format), func(t *testing.T) {
+			var output bytes.Buffer
+			logger := slog.New(NewHandler(&output, HandlerOptions{
+				Format: format, Redactor: redact.New(redact.Options{Values: []string{prefix}}),
+			}))
+			withoutKey := slog.String("", "without key")
+			logger.WithGroup(group).Info("record", withoutKey)
+			logger.WithGroup(group).With(withoutKey).Info("bound")
+			logger.Info("outside", "ordinary", "visible")
+			got := output.String()
+			if format == FormatJSON {
+				if strings.Count(got, `"":"without key"`) != 2 || !jsonLinesValid(got) {
+					t.Fatalf("JSON empty keys or object scope changed: %s", got)
+				}
+			} else if strings.Contains(got, prefix) || !strings.Contains(got, "ordinary=visible") {
+				t.Fatalf("unsafe prefix escaped masking or ordinary output was lost: %s", got)
+			}
+		})
+	}
+}
+
+func TestFlattenedInlineGroupPreservesUnmatchedSiblings(t *testing.T) {
+	const group = "inline group"
+	const known = `"inline group."`
+	for _, format := range []Format{FormatText, FormatLogfmt} {
+		t.Run(string(format), func(t *testing.T) {
+			var output bytes.Buffer
+			logger := slog.New(NewHandler(&output, HandlerOptions{
+				Format: format, Redactor: redact.New(redact.Options{Values: []string{known}}),
+			})).WithGroup(group)
+			inline := slog.Group(
+				"",
+				slog.String("", "empty key fixture"),
+				slog.String("public", "visible"),
+			)
+			logger.Info("record", inline)
+			logger.With(inline).Info("bound")
+			if got := output.String(); strings.Contains(got, known) ||
+				strings.Count(got, `"inline group.public"=visible`) != 2 {
+				t.Fatalf("inline group lost a safe sibling or emitted the registered key: %s", got)
+			}
+		})
+	}
+}

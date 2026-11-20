@@ -320,16 +320,12 @@ func (h *sanitizer) cleanAttrs(attrs []slog.Attr, group string, protect bool) []
 }
 
 func (h *sanitizer) clean(attr slog.Attr, group string, protect bool) (slog.Attr, bool) {
-	key := h.redactor.RedactField("", attr.Key)
-	if protect && key != "" && (h.flatten || group == "") {
-		var ok bool
-		key, ok = h.protectedKey(group, attr.Key, key)
-		if !ok {
-			return slog.Attr{}, false
-		}
+	key, ok := h.cleanKey(group, attr.Key, protect)
+	if !ok || !h.flatten && !h.safeKey("", key) {
+		return slog.Attr{}, false
 	}
 	if mask, sensitive := h.redactor.MaskCredentialField(attr.Key); sensitive {
-		return slog.String(key, mask), true
+		return slog.String(key, mask), h.safeFlattenedLeaf(group, key)
 	}
 	attr.Value = attr.Value.Resolve()
 	if attr.Value.Kind() == slog.KindGroup {
@@ -337,7 +333,29 @@ func (h *sanitizer) clean(attr slog.Attr, group string, protect bool) (slog.Attr
 		cleaned := h.cleanAttrs(attr.Value.Group(), path, protect)
 		return slog.Attr{Key: key, Value: slog.GroupValue(cleaned...)}, true
 	}
+	if !h.safeFlattenedLeaf(group, key) {
+		return slog.Attr{}, false
+	}
 	return slog.Attr{Key: key, Value: h.cleanValue(attr.Value)}, true
+}
+
+func (h *sanitizer) cleanKey(group, original string, protect bool) (string, bool) {
+	key := h.redactor.RedactField("", original)
+	if protect && key != "" && (h.flatten || group == "") {
+		return h.protectedKey(group, original, key)
+	}
+	return key, true
+}
+
+func (h *sanitizer) safeFlattenedLeaf(group, key string) bool {
+	return !h.flatten || h.safeKey(group, key)
+}
+
+func (h *sanitizer) safeKey(group, key string) bool {
+	if group != "" {
+		key = group + "." + key
+	}
+	return h.redactor.RedactField("", key) == key
 }
 
 func attributePath(group, key string) string {
@@ -387,19 +405,19 @@ func (h *sanitizer) cleanValue(value slog.Value) slog.Value {
 	case slog.KindAny:
 		return slog.AnyValue(h.cleanAny(value.Any()))
 	default:
-		if h.secretScalar(value) {
+		if h.unsafeScalar(value) {
 			return slog.StringValue(h.redactor.Mask())
 		}
 		return value
 	}
 }
 
-func (h *sanitizer) secretScalar(value slog.Value) bool {
+func (h *sanitizer) unsafeScalar(value slog.Value) bool {
 	if h.redactor.ContainsValue(value.String()) {
 		return true
 	}
 	data, err := json.Marshal(value.Any())
-	return err == nil && h.redactor.ContainsValue(string(data))
+	return err != nil || h.redactor.ContainsValue(string(data))
 }
 
 func (h *sanitizer) cleanAny(value any) (result any) {

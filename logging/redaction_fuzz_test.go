@@ -37,6 +37,7 @@ func FuzzCredentialRedaction(f *testing.F) {
 		input := fuzzInput(int(shape)%len(shapes), secret)
 		assertFuzzText(t, input, secret, int(split))
 		assertFuzzAttrs(t, secret)
+		assertFuzzDerivedKeys(t, secret)
 	})
 }
 
@@ -117,6 +118,7 @@ func assertFuzzAttrs(t *testing.T, secret string) {
 		slog.String(secret, "key"),
 		slog.Any("encoded", []byte(secret)),
 		slog.Time("date", when),
+		slog.Time("outside_time", time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)),
 		slog.Duration("elapsed", 731942*time.Nanosecond),
 		slog.Any("document", map[string]string{field: private, second: secret}),
 		slog.Any("collision", map[string]bool{"a-" + alias: true, "b-" + alias: false}),
@@ -127,6 +129,27 @@ func assertFuzzAttrs(t *testing.T, secret string) {
 	for _, value := range append(registered, private) {
 		if strings.Contains(out.String(), value) {
 			t.Fatal("attribute redaction leaked a registered value")
+		}
+	}
+}
+
+func assertFuzzDerivedKeys(t *testing.T, leaf string) {
+	t.Helper()
+	const group = "tenant"
+	const alias = testUserPrefix + slog.LevelKey
+	path := group + "." + leaf
+	prefix := leaf + "."
+	var out bytes.Buffer
+	logger := slog.New(NewHandler(&out, HandlerOptions{
+		Format: FormatText, ReservedKeys: EscapeReserved,
+		Redactor: redact.New(redact.Options{Values: []string{path, alias, prefix}}),
+	}))
+	logger.WithGroup(group).Info("record", slog.String(leaf, "attribute"))
+	logger.WithGroup(leaf).Info("record", slog.String("", "empty key"))
+	logger.Info("record", slog.String(slog.LevelKey, "attribute"))
+	for _, key := range []string{path, alias, prefix} {
+		if strings.Contains(out.String(), key) {
+			t.Fatal("a derived key recreated a registered value")
 		}
 	}
 }
