@@ -92,8 +92,9 @@ func (s *Stream) process(value string, final bool) string {
 	frame := findURLFrame(value, s.urlOpen)
 	urls := frame.matches
 	headers := scanAuthorization(value, len(value), s.auth)
-	if end := frame.maskingEnd(value, final); end >= 0 {
-		urls = append(urls, []int{frame.start, end + 1, frame.start, frame.authority})
+	maskingEnd := frame.maskingEnd(value, final)
+	if maskingEnd >= 0 {
+		urls = append(urls, []int{frame.start, maskingEnd + 1, frame.start, frame.authority})
 	}
 	cut := s.streamCut(value, frame, urls, final)
 	s.advanceURL(frame)
@@ -104,7 +105,7 @@ func (s *Stream) process(value string, final bool) string {
 	s.retain(value[cut:])
 	s.covered = covered
 	s.markerEnd = markerEnd
-	s.urlOpen = frame.activeAfter(cut, len(value), s.urlOpen)
+	s.urlOpen = frame.activeAfter(cut, len(value), maskingEnd, s.urlOpen)
 	s.auth = authAtCut
 	return result
 }
@@ -377,9 +378,9 @@ func trimURLPunctuation(value string) string {
 	return tail
 }
 
-func (f urlFrame) activeAfter(cut, length int, active bool) bool {
+func (f urlFrame) activeAfter(cut, length, maskingEnd int, active bool) bool {
 	if f.overflow && cut > f.authority {
-		return true
+		return cut <= maskingEnd
 	}
 	return active && (cut < f.continuation || (cut == f.continuation && f.continuation == length))
 }

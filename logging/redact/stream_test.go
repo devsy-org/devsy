@@ -790,3 +790,19 @@ func TestStreamFlushesTrailingURLAuthorities(t *testing.T) {
 		assertAllStreamCuts(t, r, test.input, test.want)
 	}
 }
+
+func TestStreamEmittedBackslashEndsSuppression(t *testing.T) {
+	redactor := New(Options{})
+	authority := testURLScheme + strings.Repeat("a", formatCarryLimit-len(testURLScheme)+1)
+	stream := NewStream(redactor)
+	if got := stream.RedactChunk(authority + "\\"); got != testURLScheme+defaultMask+"\\" {
+		t.Fatalf("overflow output = %q", got)
+	}
+	const next = "next message\n"
+	if got := stream.RedactChunk(next); got != next {
+		t.Fatalf("message after backslash = %q, want %q", got, next)
+	}
+	if got := stream.Flush(); got != "" {
+		t.Fatalf("unexpected trailing output: %q", got)
+	}
+}
