@@ -107,31 +107,45 @@ func (r *Redactor) Redact(value string) string {
 	return value
 }
 
+func (r *Redactor) MaskCredentialField(key string) (string, bool) {
+	if isCredentialField(key) {
+		return r.maskText(), true
+	}
+	return "", false
+}
+
 func (r *Redactor) RedactField(key, value string) string {
-	if !strings.EqualFold(key, authorizationField) || strings.TrimSpace(value) == "" {
+	if !isCredentialField(key) || strings.TrimSpace(value) == "" {
 		return r.Redact(value)
 	}
-	if !supportedAuthorizationScheme(value) {
+	start, ok := explicitCredentialStart(key, value)
+	if !ok {
 		return r.maskText()
 	}
 	urls, headers := formatMatches(value, 0)
-	fieldHeaders := scanAuthorization(
-		value,
-		len(value),
-		authorizationState{phase: authBeforeScheme},
-	)
-	headers = mergeHeaderMatches(headers, fieldHeaders)
+	if start < len(value) {
+		headers = mergeHeaderMatches(headers, [][]int{{start, len(value), start, start}})
+	}
 	value, _, _ = r.known(value, matchState{cut: len(value), urls: urls, headers: headers})
 	return value
 }
 
-func supportedAuthorizationScheme(value string) bool {
-	const whitespace = " \t\n\r\f"
-	value = strings.TrimLeft(value, whitespace)
-	if end := strings.IndexAny(value, whitespace); end >= 0 {
-		value = value[:end]
+func explicitCredentialStart(key, value string) (int, bool) {
+	if !strings.EqualFold(key, authorizationField) &&
+		!strings.EqualFold(key, "Proxy-Authorization") {
+		return 0, false
 	}
-	return strings.EqualFold(value, "Basic") || strings.EqualFold(value, "Bearer")
+	const whitespace = " \t\n\r\f"
+	trimmed := strings.TrimLeft(value, whitespace)
+	end := strings.IndexAny(trimmed, whitespace)
+	if end < 0 {
+		end = len(trimmed)
+	}
+	scheme := trimmed[:end]
+	if !strings.EqualFold(scheme, "Basic") && !strings.EqualFold(scheme, "Bearer") {
+		return 0, false
+	}
+	return len(value) - len(strings.TrimLeft(trimmed[end:], whitespace)), true
 }
 
 func mergeHeaderMatches(first, second [][]int) [][]int {

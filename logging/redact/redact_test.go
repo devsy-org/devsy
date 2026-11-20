@@ -101,7 +101,7 @@ func TestEntriesAndCombine(t *testing.T) {
 func TestFormatCredentialsAndNil(t *testing.T) {
 	var r *Redactor
 	input := testCredentialURL() + " Authorization: Bearer api-token, Basic"
-	want := "https://***@example.com Authorization: Bearer ***, Basic"
+	want := "https://***@example.com Authorization: ***"
 	if got := r.Redact(input); got != want {
 		t.Fatalf("nil Redact = %q, want %q", got, want)
 	}
@@ -117,7 +117,7 @@ func TestRedactFieldAuthorization(t *testing.T) {
 		key, value, want string
 	}{
 		{authorizationField, testBearerValue, testMaskedBearer},
-		{"authorization", "  Basic\tfresh-token, safe", "  Basic\t[REDACTED], safe"},
+		{"authorization", "  Basic\tfresh-token, safe", "  Basic\t[REDACTED]"},
 		{"AUTHORIZATION", "Bearer known-secret", testMaskedBearer},
 		{authorizationField, "Bearer " + testCredentialURL(), testMaskedBearer},
 		{authorizationField, "prefix Authorization: Basic fresh-token", testProviderMask},
@@ -127,9 +127,9 @@ func TestRedactFieldAuthorization(t *testing.T) {
 		{
 			authorizationField,
 			"Bearer first, Authorization: Basic second",
-			"Bearer [REDACTED], Authorization: Basic [REDACTED]",
+			"Bearer [REDACTED]",
 		},
-		{testOrdinary, "Authorization: Bearer fresh-token", "Authorization: Bearer [REDACTED]"},
+		{testOrdinary, "Authorization: Bearer fresh-token", "Authorization: [REDACTED]"},
 		{"X-Authorization", testBearerValue, testBearerValue},
 		{authorizationField, testBearer, testBearer},
 		{authorizationField, "Bearer ", "Bearer "},

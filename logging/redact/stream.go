@@ -145,12 +145,12 @@ func (s *Stream) advanceAuthorization(
 	for i := range cut {
 		authAtCut.step(value[i])
 		s.schemeStarted = stepSchemeName(s.schemeStarted, value[i])
-		if s.base.matcher != nil && (value[i] == ':' || value[i] == '=') {
+		if s.base.matcher != nil && headerAnchor(value[i]) {
 			s.anchors--
 		}
 	}
 	s.lastMatch = max(0, s.lastMatch-cut)
-	if s.auth.phase == authToken && len(headers) != 0 && headers[0][0] == 0 {
+	if s.auth.masking && len(headers) != 0 && headers[0][0] == 0 {
 		continuation := headers[0][1]
 		s.covered = max(s.covered, continuation)
 		s.markerEnd = max(s.markerEnd, continuation)
@@ -169,7 +169,7 @@ func (s *Stream) trackChunk(chunk string) {
 	}
 	offset := len(s.pending)
 	for i := range len(chunk) {
-		if chunk[i] == ':' || chunk[i] == '=' {
+		if headerAnchor(chunk[i]) {
 			s.anchors++
 		}
 		s.search = transition(root, s.search, chunk[i])
@@ -188,7 +188,8 @@ func (s *Stream) noKnownMatchPending() bool {
 }
 
 func (s *Stream) noFormatRisk() bool {
-	return s.anchors == 0 && !s.urlOpen && s.auth.phase <= authAfterName
+	return s.anchors == 0 && !s.urlOpen && s.auth.phase <= headerAfterName &&
+		s.auth.keyEscape.phase == 0
 }
 
 func (s *Stream) emitKnownSafe(chunk string) (string, bool) {
@@ -319,8 +320,8 @@ func formatPrefixBoundary(cut int, groups ...[][]int) int {
 	}
 }
 
-func authorizationEnd(value byte) bool {
-	return value == ',' || formatSpace(value)
+func headerAnchor(value byte) bool {
+	return value == ':' || value == '=' || value == '\\'
 }
 
 func formatSpace(value byte) bool {

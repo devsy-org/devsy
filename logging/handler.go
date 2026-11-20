@@ -286,9 +286,13 @@ func (h *handler) WithGroup(name string) slog.Handler {
 	}
 	group, ok := h.clean(slog.Attr{Key: name, Value: slog.GroupValue()}, h.group, true)
 	copyHandler := *h
-	if !ok {
+	switch {
+	case !ok:
 		copyHandler.blocked = true
-	} else if group.Key != "" {
+	case group.Value.Kind() != slog.KindGroup:
+		copyHandler.inner = h.inner.WithAttrs([]slog.Attr{group})
+		copyHandler.blocked = true
+	case group.Key != "":
 		copyHandler.inner = h.inner.WithGroup(group.Key)
 		copyHandler.group = attributePath(h.group, group.Key)
 	}
@@ -329,6 +333,9 @@ func (h *sanitizer) clean(attr slog.Attr, group string, protect bool) (slog.Attr
 	}
 	attr.Value = attr.Value.Resolve()
 	if attr.Value.Kind() == slog.KindGroup {
+		if mask, secret := h.redactor.MaskCredentialField(attr.Key); secret {
+			return slog.String(key, mask), true
+		}
 		path := attributePath(group, key)
 		cleaned := h.cleanAttrs(attr.Value.Group(), path, protect)
 		return slog.Attr{Key: key, Value: slog.GroupValue(cleaned...)}, true
@@ -385,6 +392,9 @@ func (h *sanitizer) cleanValue(key string, value slog.Value) slog.Value {
 	case slog.KindInt64, slog.KindUint64, slog.KindFloat64:
 		return h.cleanNumber(key, value)
 	default:
+		if mask, secret := h.redactor.MaskCredentialField(key); secret {
+			return slog.StringValue(mask)
+		}
 		return value
 	}
 }
@@ -432,13 +442,19 @@ func (h *sanitizer) cleanJSON(key string, value any) any {
 	switch v := value.(type) {
 	case string:
 		return h.redactor.RedactField(key, h.cleanEncodedBytes(v))
-	case json.Number:
-		if cleaned := h.redactor.RedactField(key, v.String()); cleaned != v.String() {
-			return cleaned
-		}
 	case []any:
 		for i := range v {
 			v[i] = h.cleanJSON(key, v[i])
+		}
+		return v
+	}
+	if mask, secret := h.redactor.MaskCredentialField(key); secret {
+		return mask
+	}
+	switch v := value.(type) {
+	case json.Number:
+		if cleaned := h.redactor.Redact(v.String()); cleaned != v.String() {
+			return cleaned
 		}
 	case map[string]any:
 		return h.cleanObject(v)

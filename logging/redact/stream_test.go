@@ -152,19 +152,24 @@ func referenceLongestMatch(input string, secrets []string) int {
 	return longest
 }
 
+const (
+	testMaskedAuthorization       = "Authorization: ***"
+	testBeforeMaskedAuthorization = "before " + testMaskedAuthorization
+)
+
 func TestStreamFormatCredentialsEverySplit(t *testing.T) {
 	r := New(Options{})
 	for _, test := range []struct{ input, want string }{
 		{"clone https://user:pass@example.com/repo done", "clone https://***@example.com/repo done"},
-		{"Authorization: Bearer api-token, safe", "Authorization: Bearer ***, safe"},
-		{"before authorization = Basic\tcredential after", "before authorization = Basic\t*** after"},
-		{"Authorization: Ba\u017fic opaque-token, safe", "Authorization: Ba\u017fic ***, safe"},
+		{"Authorization: Bearer api-token, safe", testMaskedAuthorization},
+		{"before authorization = Basic\tcredential after", "before authorization = ***"},
+		{"Authorization: Ba\u017fic opaque-token, safe", testMaskedAuthorization},
 		{"clone http\u017f://user:pass@example.com/repo done", "clone http\u017f://***@example.com/repo done"},
-		{"Authorization: Bearer a", "Authorization: Bearer ***"},
+		{"Authorization: Bearer a", testMaskedAuthorization},
 		{"https://example.com/path and ordinary output", "https://example.com/path and ordinary output"},
 		{
 			"first Authorization: Bearer token next https://user:pass@example.com/end",
-			"first Authorization: Bearer *** next https://***@example.com/end",
+			"first Authorization: ***",
 		},
 	} {
 		if got := r.Redact(test.input); got != test.want {
@@ -179,27 +184,27 @@ func TestStreamAuthorizationRecoversOverlappingNames(t *testing.T) {
 	for _, test := range []struct{ input, want string }{
 		{
 			"authorizAuthorization: Bearer canary-token, safe",
-			"authorizAuthorization: Bearer ***, safe",
+			"authorizAuthorization: ***",
 		},
 		{
 			"Authorization: BAuthorization: Basic nested-token, safe",
-			"Authorization: BAuthorization: Basic ***, safe",
+			testMaskedAuthorization,
 		},
 		{
 			"Authorization: BaAuthorization: Bearer nested-token, safe",
-			"Authorization: BaAuthorization: Bearer ***, safe",
+			testMaskedAuthorization,
 		},
 		{
 			"Authorization   Authorization: Bearer another-token, safe",
-			"Authorization   Authorization: Bearer ***, safe",
+			"Authorization   Authorization: ***",
 		},
 		{
 			"Authorization: Bearer abcAuthorization:def, safe",
-			"Authorization: Bearer ***, safe",
+			testMaskedAuthorization,
 		},
 		{
 			"Authorization: Bearer abcAuthorization:def, Authorization: Basic other-token",
-			"Authorization: Bearer ***, Authorization: Basic ***",
+			testMaskedAuthorization,
 		},
 	} {
 		if got := r.Redact(test.input); got != test.want {
@@ -215,7 +220,7 @@ func TestStreamCustomMaskAndIntersectingSecrets(t *testing.T) {
 		Mask:   testProviderMask,
 	})
 	input := "safe abc-secret-part-tail Authorization: Bearer api-token, visible"
-	want := "safe [REDACTED] Authorization: Bearer [REDACTED], visible"
+	want := "safe [REDACTED] Authorization: [REDACTED]"
 	if got := r.Redact(input); got != want {
 		t.Fatalf("complete redaction = %q, want %q", got, want)
 	}
@@ -230,13 +235,13 @@ func TestCredentialRecognitionUsesOriginalInput(t *testing.T) {
 			"authorization scheme",
 			"Bearer",
 			"before Authorization: Bearer unknown-token after",
-			"before Authorization: *** *** after",
+			testBeforeMaskedAuthorization,
 		},
 		{
 			"authorization spanning",
 			"Bearer unknown-token",
 			"before Authorization: Bearer unknown-token after",
-			"before Authorization: *** after",
+			testBeforeMaskedAuthorization,
 		},
 		{
 			"url scheme",
@@ -310,7 +315,7 @@ func TestStreamLongAuthorizationAndOrdinaryURL(t *testing.T) {
 	}
 	output.WriteString(stream.RedactChunk(", after"))
 	output.WriteString(stream.Flush())
-	if got, want := output.String(), "before Authorization: Bearer ***, after"; got != want {
+	if got, want := output.String(), testBeforeMaskedAuthorization; got != want {
 		t.Fatalf("authorization = %q, want %q", got, want)
 	}
 	ordinary := testURLScheme + strings.Repeat("a", 1024) + "/path"
@@ -522,7 +527,7 @@ func TestStreamURLAuthorityInsideAuthorizationToken(t *testing.T) {
 	first := "Authorization: Bearer https://user,"
 	second := strings.Repeat("x", 600) + "@example.test/x done"
 	got := stream.RedactChunk(first) + stream.RedactChunk(second) + stream.Flush()
-	want := "Authorization: Bearer ***@example.test/x done"
+	want := testMaskedAuthorization
 	if got != want {
 		t.Fatalf("nested URL = %q, want %q", got, want)
 	}
@@ -552,7 +557,7 @@ func TestStreamAuthorizationLongWhitespace(t *testing.T) {
 	spaces := strings.Repeat(" ", 1100)
 	input := "before Authorization" + spaces + ":" + spaces + "Bearer" + spaces + "unknown-token, after"
 	r := New(Options{Values: []string{"Bearer"}})
-	want := "before Authorization" + spaces + ":" + spaces + "***" + spaces + "***, after"
+	want := "before Authorization" + spaces + ":" + spaces + "***"
 	if got := r.Redact(input); got != want {
 		t.Fatal("complete authorization masking differs")
 	}
@@ -577,9 +582,9 @@ func TestSerializedAuthorizationAcrossEverySplit(t *testing.T) {
 	cases := []struct{ input, want string }{
 		{
 			`{"Authorization": "Bearer fixture-token", "message":"safe"}`,
-			`{"Authorization": "Bearer ***", "message":"safe"}`,
+			`{"Authorization": "***", "message":"safe"}`,
 		},
-		{`'authorization'='Basic fixture-token' after`, `'authorization'='Basic ***' after`},
+		{`'authorization'='Basic fixture-token' after`, `'authorization'='***' after`},
 	}
 	redactor := New(Options{})
 	for _, tc := range cases {

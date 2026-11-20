@@ -461,9 +461,37 @@ func TestStructuredAuthorizationRedaction(t *testing.T) {
 			t.Fatalf("structured credential leaked: %s", got)
 		}
 	}
-	for _, expected := range []string{`bAsIc\t***, safe`, "Bearer ***", "Basic ***"} {
+	for _, expected := range []string{`bAsIc\t***`, "Bearer ***", "Basic ***"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("expected %q in %s", expected, got)
+		}
+	}
+}
+
+func TestStructuredCredentialContainers(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(NewHandler(&output, HandlerOptions{Format: FormatJSON}))
+	logger.Info(
+		"message",
+		slog.Any("Cookie", map[string]string{"key": "fixture-map"}),
+		slog.Any(
+			"parent",
+			map[string]any{"Proxy-Authorization": []any{map[string]string{"key": "fixture-array"}}},
+		),
+		slog.Group("Authorization", slog.String("key", "fixture-group")),
+	)
+	logger.WithGroup("Set-Cookie").
+		With("secret", "fixture-bound").
+		Info("second", "key", "fixture-record")
+	got := output.String()
+	if strings.Contains(got, "fixture-") {
+		t.Fatalf("structured credential leaked: %s", got)
+	}
+	for _, want := range []string{
+		`"Cookie":"***"`, `"Proxy-Authorization":["***"]`, `"Authorization":"***"`, `"Set-Cookie":"***"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %s", want, got)
 		}
 	}
 }
