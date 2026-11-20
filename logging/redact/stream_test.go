@@ -372,6 +372,64 @@ func TestStreamURLOverflowChunkBoundaries(t *testing.T) {
 	}
 }
 
+func TestURLAuthorityMasksThroughLastAt(t *testing.T) {
+	const tail = "@example.test/x@path?x=@query#@fragment"
+	const placeholder = "user:fixture@part"
+	want := testURLScheme + defaultMask + tail
+	input := testURLScheme + placeholder + tail
+	redactor := New(Options{})
+	if got := redactor.Redact(input); got != want {
+		t.Fatalf("whole URL = %q, want %q", got, want)
+	}
+	for split := range len(input) + 1 {
+		stream := NewStream(redactor)
+		got := stream.RedactChunk(
+			input[:split],
+		) + stream.RedactChunk(
+			input[split:],
+		) + stream.Flush()
+		if got != want {
+			t.Fatalf("split %d = %q, want %q", split, got, want)
+		}
+	}
+	stream := NewStream(redactor)
+	got := stream.RedactChunk(testURLScheme+placeholder+strings.Repeat("x", 2*formatCarryLimit)) +
+		stream.RedactChunk("@another-part") + stream.RedactChunk(tail) + stream.Flush()
+	if got != want {
+		t.Fatalf("overflowing URL = %q, want %q", got, want)
+	}
+}
+
+func TestHierarchicalURLSchemesAcrossEverySplit(t *testing.T) {
+	const inputTail = "user:fixture@host.example/path"
+	const maskedTail = "***@host.example/path"
+	redactor := New(Options{})
+	for _, scheme := range []string{"git+ssh://", "postgresql://", "q-23://", strings.Repeat("z", 700) + "://"} {
+		input := scheme + inputTail
+		want := scheme + maskedTail
+		if got := redactor.Redact(input); got != want {
+			t.Fatalf("whole message did not mask authority in %q: %q", scheme, got)
+		}
+		for split := range len(input) + 1 {
+			stream := NewStream(redactor)
+			got := stream.RedactChunk(
+				input[:split],
+			) + stream.RedactChunk(
+				input[split:],
+			) + stream.Flush()
+			if got != want {
+				t.Fatalf(
+					"split %d of scheme length %d = %q, want %q",
+					split,
+					len(scheme),
+					got,
+					want,
+				)
+			}
+		}
+	}
+}
+
 func TestStreamURLQueryAndFragmentBoundaries(t *testing.T) {
 	r := New(Options{})
 	for _, suffix := range []string{"?next=@example.test/x", "#next=@example.test/x"} {
@@ -511,6 +569,33 @@ func TestStreamAuthorizationLongWhitespace(t *testing.T) {
 		output.WriteString(stream.Flush())
 		if got := output.String(); got != want {
 			t.Fatalf("chunk %d: authorization output differs", chunkSize)
+		}
+	}
+}
+
+func TestSerializedAuthorizationAcrossEverySplit(t *testing.T) {
+	cases := []struct{ input, want string }{
+		{
+			`{"Authorization": "Bearer fixture-token", "message":"safe"}`,
+			`{"Authorization": "Bearer ***", "message":"safe"}`,
+		},
+		{`'authorization'='Basic fixture-token' after`, `'authorization'='Basic ***' after`},
+	}
+	redactor := New(Options{})
+	for _, tc := range cases {
+		if got := redactor.Redact(tc.input); got != tc.want {
+			t.Fatalf("whole message = %q, want %q", got, tc.want)
+		}
+		for split := range len(tc.input) + 1 {
+			stream := NewStream(redactor)
+			got := stream.RedactChunk(
+				tc.input[:split],
+			) + stream.RedactChunk(
+				tc.input[split:],
+			) + stream.Flush()
+			if got != tc.want {
+				t.Fatalf("split %d = %q, want %q", split, got, tc.want)
+			}
 		}
 	}
 }

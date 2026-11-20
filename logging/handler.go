@@ -3,9 +3,12 @@ package logging
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,12 +45,13 @@ type sanitizer struct {
 	redactor *redact.Redactor
 	policy   ReservedKeys
 	reserved map[string]bool
+	flatten  bool
 }
 
 type handler struct {
 	sanitizer
 	inner   slog.Handler
-	grouped bool
+	group   string
 	blocked bool
 }
 
@@ -189,7 +193,7 @@ func originalWriteCount(n, start, end, inputLen int) int {
 func newSanitizer(
 	redactor *redact.Redactor,
 	policy ReservedKeys,
-	trustedAttrs []slog.Attr,
+	flatten bool,
 ) sanitizer {
 	if redactor == nil {
 		redactor = redact.New(redact.Options{})
@@ -201,16 +205,17 @@ func newSanitizer(
 		"msg":     true,
 		"message": true,
 	}
-	reserveTrustedKeys(reserved, trustedAttrs)
-	return sanitizer{redactor: redactor, policy: policy, reserved: reserved}
+	return sanitizer{redactor: redactor, policy: policy, reserved: reserved, flatten: flatten}
 }
 
-func reserveTrustedKeys(reserved map[string]bool, attrs []slog.Attr) {
+func (h *sanitizer) reserveTrustedKeys(attrs []slog.Attr, group string) {
 	for _, attr := range attrs {
+		key := attributePath(group, attr.Key)
 		if attr.Key != "" {
-			reserved[attr.Key] = true
-		} else if attr.Value.Kind() == slog.KindGroup {
-			reserveTrustedKeys(reserved, attr.Value.Group())
+			h.reserved[key] = true
+		}
+		if attr.Value.Kind() == slog.KindGroup && (h.flatten || attr.Key == "") {
+			h.reserveTrustedKeys(attr.Value.Group(), key)
 		}
 	}
 }
@@ -228,8 +233,8 @@ func resolveTrustedAttrs(attrs []slog.Attr) []slog.Attr {
 }
 
 func SanitizeAttrs(redactor *redact.Redactor, attrs []slog.Attr) []slog.Attr {
-	cleaner := newSanitizer(redactor, DropReserved, nil)
-	return cleaner.cleanAttrs(attrs, true)
+	cleaner := newSanitizer(redactor, DropReserved, false)
+	return cleaner.cleanAttrs(attrs, "", true)
 }
 
 func ProtectHandler(
@@ -239,12 +244,12 @@ func ProtectHandler(
 	trustedAttrs ...slog.Attr,
 ) slog.Handler {
 	trustedAttrs = resolveTrustedAttrs(trustedAttrs)
-	h := &handler{inner: next, sanitizer: newSanitizer(redactor, policy, trustedAttrs)}
+	_, flatten := next.(*slog.TextHandler)
+	h := &handler{inner: next, sanitizer: newSanitizer(redactor, policy, flatten)}
 	if len(trustedAttrs) != 0 {
-		cleaned := make([]slog.Attr, 0, len(trustedAttrs))
-		for _, attr := range trustedAttrs {
-			cleaned = append(cleaned, h.cleanTrusted(attr))
-		}
+		cleaned := h.cleanAttrs(trustedAttrs, "", false)
+		h.reserveTrustedKeys(trustedAttrs, "")
+		h.reserveTrustedKeys(cleaned, "")
 		h.inner = next.WithAttrs(cleaned)
 	}
 	return h
@@ -269,7 +274,7 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if h.blocked {
 		return h
 	}
-	cleaned := h.cleanAttrs(attrs, !h.grouped)
+	cleaned := h.cleanAttrs(attrs, h.group, true)
 	copyHandler := *h
 	copyHandler.inner = h.inner.WithAttrs(cleaned)
 	return &copyHandler
@@ -279,13 +284,13 @@ func (h *handler) WithGroup(name string) slog.Handler {
 	if name == "" || h.blocked {
 		return h
 	}
-	group, ok := h.clean(slog.Attr{Key: name, Value: slog.GroupValue()}, !h.grouped)
+	group, ok := h.clean(slog.Attr{Key: name, Value: slog.GroupValue()}, h.group, true)
 	copyHandler := *h
 	if !ok {
 		copyHandler.blocked = true
 	} else if group.Key != "" {
 		copyHandler.inner = h.inner.WithGroup(group.Key)
-		copyHandler.grouped = true
+		copyHandler.group = attributePath(h.group, group.Key)
 	}
 	return &copyHandler
 }
@@ -294,7 +299,7 @@ func (h *handler) Handle(ctx context.Context, record slog.Record) error {
 	out := slog.NewRecord(record.Time, record.Level, h.redactor.Redact(record.Message), record.PC)
 	if !h.blocked {
 		record.Attrs(func(attr slog.Attr) bool {
-			if cleaned, ok := h.clean(attr, !h.grouped); ok {
+			if cleaned, ok := h.clean(attr, h.group, true); ok {
 				out.AddAttrs(cleaned)
 			}
 			return true
@@ -303,88 +308,71 @@ func (h *handler) Handle(ctx context.Context, record slog.Record) error {
 	return h.inner.Handle(ctx, out)
 }
 
-func (h *sanitizer) cleanTrusted(attr slog.Attr) slog.Attr {
-	if attr.Key == "" && attr.Value.Kind() == slog.KindGroup {
-		children := attr.Value.Group()
-		cleaned := make([]slog.Attr, 0, len(children))
-		for _, child := range children {
-			cleaned = append(cleaned, h.cleanTrusted(child))
-		}
-		return slog.Attr{Value: slog.GroupValue(cleaned...)}
-	}
-	key := attr.Key
-	cleaned, _ := h.clean(attr, false)
-	cleaned.Key = key
-	return cleaned
-}
-
-func (h *sanitizer) cleanAttrs(attrs []slog.Attr, root bool) []slog.Attr {
+func (h *sanitizer) cleanAttrs(attrs []slog.Attr, group string, protect bool) []slog.Attr {
 	cleaned := make([]slog.Attr, 0, len(attrs))
 	for _, attr := range attrs {
-		if value, ok := h.clean(attr, root); ok {
+		if value, ok := h.clean(attr, group, protect); ok {
 			cleaned = append(cleaned, value)
 		}
 	}
 	return cleaned
 }
 
-func (h *sanitizer) clean(attr slog.Attr, root bool) (slog.Attr, bool) {
+func (h *sanitizer) clean(attr slog.Attr, group string, protect bool) (slog.Attr, bool) {
 	key := h.redactor.Redact(attr.Key)
-	if root && key != "" {
+	if protect && key != "" && (h.flatten || group == "") {
 		var ok bool
-		key, ok = h.rootKey(attr.Key, key)
+		key, ok = h.protectedKey(group, attr.Key, key)
 		if !ok {
 			return slog.Attr{}, false
 		}
 	}
 	attr.Value = attr.Value.Resolve()
 	if attr.Value.Kind() == slog.KindGroup {
-		children := attr.Value.Group()
-		cleaned := make([]slog.Attr, 0, len(children))
-		for _, child := range children {
-			if value, ok := h.clean(child, root && key == ""); ok {
-				cleaned = append(cleaned, value)
-			}
-		}
+		path := attributePath(group, key)
+		cleaned := h.cleanAttrs(attr.Value.Group(), path, protect)
 		return slog.Attr{Key: key, Value: slog.GroupValue(cleaned...)}, true
 	}
 	return slog.Attr{Key: key, Value: h.cleanValue(attr.Key, attr.Value)}, true
 }
 
-func (h *sanitizer) rootKey(original, key string) (string, bool) {
-	count := h.reservedAncestors(key)
-	if !h.isReservedRoot(original, key, count) {
+func attributePath(group, key string) string {
+	if group == "" || key == "" {
+		return group + key
+	}
+	return group + "." + key
+}
+
+const userKeyPrefix = "user_"
+
+func (h *sanitizer) protectedKey(group, original, key string) (string, bool) {
+	count := h.reservedAncestors(group, key)
+	if !h.reserved[attributePath(group, key)] && !h.reserved[attributePath(group, original)] &&
+		(h.policy != EscapeReserved || count == 0) {
 		return key, true
 	}
 	if h.policy != EscapeReserved {
 		return "", false
 	}
-	if count == 0 {
-		count = 1
+	shift := max(1, count)
+	for step := 1; step <= shift; step++ {
+		if h.reserved[attributePath(group, strings.Repeat(userKeyPrefix, step)+key)] {
+			shift++
+		}
 	}
-	for range count {
-		key = "user_" + key
-	}
-	for h.reserved[key] {
-		key = "user_" + key
-	}
-	return key, true
+	return strings.Repeat(userKeyPrefix, shift) + key, true
 }
 
-func (h *sanitizer) isReservedRoot(original, key string, count int) bool {
-	return h.reserved[key] || h.reserved[original] || (h.policy == EscapeReserved && count > 0)
-}
-
-func (h *sanitizer) reservedAncestors(key string) int {
+func (h *sanitizer) reservedAncestors(group, key string) int {
 	count := 0
 	for {
-		if h.reserved[key] {
+		if h.reserved[attributePath(group, key)] {
 			count++
 		}
-		if !strings.HasPrefix(key, "user_") {
+		if !strings.HasPrefix(key, userKeyPrefix) {
 			return count
 		}
-		key = strings.TrimPrefix(key, "user_")
+		key = strings.TrimPrefix(key, userKeyPrefix)
 	}
 }
 
@@ -394,9 +382,27 @@ func (h *sanitizer) cleanValue(key string, value slog.Value) slog.Value {
 		return slog.StringValue(h.redactor.RedactField(key, value.String()))
 	case slog.KindAny:
 		return slog.AnyValue(h.cleanAny(key, value.Any()))
+	case slog.KindInt64, slog.KindUint64, slog.KindFloat64:
+		return h.cleanNumber(key, value)
 	default:
 		return value
 	}
+}
+
+func (h *sanitizer) cleanNumber(key string, value slog.Value) slog.Value {
+	raw := value.String()
+	if cleaned := h.redactor.RedactField(key, raw); cleaned != raw {
+		return slog.StringValue(cleaned)
+	}
+	if value.Kind() == slog.KindFloat64 {
+		if data, err := json.Marshal(value.Float64()); err == nil {
+			raw = string(data)
+			if cleaned := h.redactor.RedactField(key, raw); cleaned != raw {
+				return slog.StringValue(cleaned)
+			}
+		}
+	}
+	return value
 }
 
 func (h *sanitizer) cleanAny(key string, value any) (result any) {
@@ -425,19 +431,69 @@ func (h *sanitizer) cleanAny(key string, value any) (result any) {
 func (h *sanitizer) cleanJSON(key string, value any) any {
 	switch v := value.(type) {
 	case string:
-		return h.redactor.RedactField(key, v)
+		return h.redactor.RedactField(key, h.cleanEncodedBytes(v))
+	case json.Number:
+		if cleaned := h.redactor.RedactField(key, v.String()); cleaned != v.String() {
+			return cleaned
+		}
 	case []any:
 		for i := range v {
 			v[i] = h.cleanJSON(key, v[i])
 		}
 	case map[string]any:
-		out := make(map[string]any, len(v))
-		for childKey, item := range v {
-			out[h.redactor.Redact(childKey)] = h.cleanJSON(childKey, item)
-		}
-		return out
+		return h.cleanObject(v)
 	}
 	return value
+}
+
+func (h *sanitizer) cleanEncodedBytes(value string) string {
+	if len(value) == 0 || len(value)%4 != 0 || strings.ContainsAny(value, "\r\n") {
+		return value
+	}
+	decoded, err := base64.StdEncoding.Strict().DecodeString(value)
+	if err != nil {
+		return value
+	}
+	raw := string(decoded)
+	cleaned := h.redactor.Redact(raw)
+	if cleaned == raw {
+		return value
+	}
+	return base64.StdEncoding.EncodeToString([]byte(cleaned))
+}
+
+func (h *sanitizer) cleanObject(values map[string]any) map[string]any {
+	keys := make([]string, 0, len(values))
+	keysByOriginal := make(map[string]string, len(values))
+	reserved := make(map[string]bool, len(values))
+	for key := range values {
+		keys = append(keys, key)
+		cleaned := h.redactor.Redact(key)
+		keysByOriginal[key] = cleaned
+		reserved[cleaned] = true
+	}
+	slices.Sort(keys)
+	out := make(map[string]any, len(values))
+	lastAlias := make(map[string]int)
+	for _, key := range keys {
+		cleaned := keysByOriginal[key]
+		if _, exists := out[cleaned]; exists {
+			cleaned = nextSanitizedKey(cleaned, reserved, lastAlias)
+		}
+		out[cleaned] = h.cleanJSON(key, values[key])
+	}
+	return out
+}
+
+func nextSanitizedKey(key string, reserved map[string]bool, lastAlias map[string]int) string {
+	for number := lastAlias[key] + 1; ; number++ {
+		alias := key + "_" + strconv.Itoa(number)
+		if !reserved[alias] {
+			lastAlias[key] = number
+			reserved[alias] = true
+			return alias
+		}
+	}
 }
 
 func ParseTimestamp(value string) (time.Time, error) {

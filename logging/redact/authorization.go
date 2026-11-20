@@ -3,6 +3,7 @@ package redact
 const (
 	authName = iota
 	authAfterName
+	authAfterQuotedName
 	authBeforeScheme
 	authScheme
 	authLongS
@@ -20,12 +21,14 @@ type authorizationState struct {
 	position     int
 	namePosition int
 	scheme       string
+	quote        byte
 }
 
 func (s *authorizationState) restart(_ byte) {
 	s.phase = authName
 	s.position = 0
 	s.scheme = ""
+	s.quote = 0
 }
 
 func asciiLower(value byte) byte {
@@ -40,11 +43,11 @@ func (s *authorizationState) step(value byte) bool {
 		s.phase = authAfterName
 		s.position = 0
 		s.scheme = ""
+		s.quote = 0
 		return false
 	}
 	switch s.phase {
-	case authName:
-	case authAfterName:
+	case authAfterName, authAfterQuotedName:
 		s.separatorByte(value)
 	case authBeforeScheme:
 		s.schemeStart(value)
@@ -54,6 +57,10 @@ func (s *authorizationState) step(value byte) bool {
 		return s.tokenByte(value)
 	}
 	return false
+}
+
+func isAuthorizationQuote(value byte) bool {
+	return value == '"' || value == '\''
 }
 
 func (s *authorizationState) nameByte(value byte) bool {
@@ -72,6 +79,10 @@ func (s *authorizationState) nameByte(value byte) bool {
 }
 
 func (s *authorizationState) separatorByte(value byte) {
+	if s.phase == authAfterName && isAuthorizationQuote(value) {
+		s.phase = authAfterQuotedName
+		return
+	}
 	if formatSpace(value) {
 		return
 	}
@@ -84,6 +95,10 @@ func (s *authorizationState) separatorByte(value byte) {
 
 func (s *authorizationState) schemeStart(value byte) {
 	if formatSpace(value) {
+		return
+	}
+	if s.quote == 0 && isAuthorizationQuote(value) {
+		s.quote = value
 		return
 	}
 	if asciiLower(value) == 'b' {
@@ -107,7 +122,7 @@ func (s *authorizationState) tokenByte(value byte) bool {
 	case authBeforeToken:
 		return s.tokenStart(value)
 	case authToken:
-		if authorizationEnd(value) {
+		if s.tokenEnd(value) {
 			s.restart(value)
 			return false
 		}
@@ -116,11 +131,15 @@ func (s *authorizationState) tokenByte(value byte) bool {
 	return false
 }
 
+func (s *authorizationState) tokenEnd(value byte) bool {
+	return authorizationEnd(value) || (s.quote != 0 && value == s.quote)
+}
+
 func (s *authorizationState) tokenStart(value byte) bool {
 	if formatSpace(value) {
 		return false
 	}
-	if value == ',' {
+	if s.tokenEnd(value) {
 		s.restart(value)
 		return false
 	}

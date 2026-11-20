@@ -26,10 +26,9 @@ type Redactor struct {
 	mask      string
 }
 
-var (
-	urlAuthority  = regexp.MustCompile(`(?i)(https?://)[^\s/@?#"]+[@"]`)
-	authorization = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+`)
-)
+const urlSchemePattern = `((?i:https?://)|[A-Za-z][A-Za-z0-9+.-]*://)`
+
+var urlAuthority = regexp.MustCompile(urlSchemePattern + `(?:[^\s/?#"]+@|[^\s/?#"]+")`)
 
 func New(opts Options) *Redactor {
 	mask := opts.Mask

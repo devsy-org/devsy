@@ -3,6 +3,7 @@ package logging
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -14,9 +15,11 @@ import (
 )
 
 const (
-	testSecret = "secret-value"
-	nestedKey  = "nested"
-	testDebug  = "DEBUG"
+	testUserPrefix = "user_"
+	testMask       = "***"
+	testSecret     = "secret-value"
+	nestedKey      = "nested"
+	testDebug      = "DEBUG"
 )
 
 func TestProviderConfiguration(t *testing.T) {
@@ -246,7 +249,7 @@ func checkSanitizedAttrs(t *testing.T, cleaned []slog.Attr) {
 	}
 	checkSanitizedGroup(t, cleaned[0].Value.Group())
 	nested := cleaned[1].Value.Any().(map[string]any)[nestedKey].([]any)
-	if nested[0] != "***" || nested[1] != json.Number("9007199254740993") {
+	if nested[0] != testMask || nested[1] != json.Number("9007199254740993") {
 		t.Fatalf("unnamed nested value was not preserved: %#v", nested)
 	}
 }
@@ -256,7 +259,7 @@ func checkSanitizedGroup(t *testing.T, group []slog.Attr) {
 	if len(group) != 1 {
 		t.Fatalf("inline group was not sanitized: %#v", group)
 	}
-	if group[0].Key != "safe" || group[0].Value.String() != "***" {
+	if group[0].Key != "safe" || group[0].Value.String() != testMask {
 		t.Fatalf("inline group was not sanitized: %#v", group)
 	}
 }
@@ -522,5 +525,145 @@ func TestStructuredErrorJSONAndPlainErrorRedaction(t *testing.T) {
 	}
 	if got["plain"] != "plain ***" {
 		t.Fatalf("plain error was not redacted: %s", output.String())
+	}
+}
+
+func TestTrustedKeyUsesItsSanitizedName(t *testing.T) {
+	var output bytes.Buffer
+	const sanitized = "root-***"
+	logger := slog.New(NewHandler(&output, HandlerOptions{
+		Format: FormatJSON, Redactor: redact.New(redact.Options{Values: []string{testSecret}}),
+		TrustedAttrs: []slog.Attr{slog.String("root-"+testSecret, "trusted")},
+	}))
+	logger.Info("record", slog.String(sanitized, "forged"))
+	var got map[string]any
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got[sanitized] != "trusted" || strings.Contains(output.String(), testSecret) {
+		t.Fatalf("trusted key was exposed or overwritten: %s", output.String())
+	}
+}
+
+func TestTextGroupsProtectFlattenedTrustedKeys(t *testing.T) {
+	for _, format := range []Format{FormatText, FormatLogfmt, FormatJSON} {
+		t.Run(string(format), func(t *testing.T) {
+			var output bytes.Buffer
+			const trusted = "meta.provider"
+			logger := slog.New(NewHandler(&output, HandlerOptions{
+				Format: format, TrustedAttrs: []slog.Attr{slog.String(trusted, "trusted")},
+			}))
+			logger.Info("record", slog.Group("meta", slog.String("provider", "forged")))
+			logger.WithGroup("meta").With("provider", "forged").Info("bound")
+			got := output.String()
+			if format == FormatJSON {
+				if strings.Count(got, `"meta":{"provider":"forged"}`) != 2 {
+					t.Fatalf("distinct JSON groups were discarded: %s", got)
+				}
+			} else if strings.Contains(got, "forged") || strings.Count(got, trusted+"=trusted") != 2 {
+				t.Fatalf("flattened trusted key was overwritten: %s", got)
+			}
+		})
+	}
+}
+
+func TestEscapedReservedAliasDoesNotOverwriteAnotherAlias(t *testing.T) {
+	var output bytes.Buffer
+	reserved := testUserPrefix + slog.LevelKey
+	logger := slog.New(NewHandler(&output, HandlerOptions{
+		Format:       FormatJSON,
+		ReservedKeys: EscapeReserved,
+		TrustedAttrs: []slog.Attr{
+			slog.String(reserved, "trusted one"),
+			slog.String(testUserPrefix+reserved, "trusted two"),
+		},
+	}))
+	logger.Info(
+		"record",
+		slog.String(slog.LevelKey, "emitted level"),
+		slog.String(reserved, "emitted alias"),
+	)
+	var got map[string]any
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got[strings.Repeat(testUserPrefix, 3)+slog.LevelKey] != "emitted level" ||
+		got[strings.Repeat(testUserPrefix, 4)+slog.LevelKey] != "emitted alias" {
+		t.Fatalf("escaped aliases collided: %s", output.String())
+	}
+}
+
+func TestKnownNumbersAreRedactedWithoutChangingOtherTypes(t *testing.T) {
+	var output bytes.Buffer
+	const code = 731942
+	const large = uint64(9007199254740993)
+	logger := slog.New(NewHandler(&output, HandlerOptions{
+		Format:   FormatJSON,
+		Redactor: redact.New(redact.Options{Values: []string{"731942", "1000000"}}),
+	}))
+	logger.Info(
+		"record",
+		slog.Int("number", code),
+		slog.Float64("float", 1e6),
+		slog.Uint64("unchanged", large),
+		slog.Any(nestedKey, []any{code, large}),
+	)
+	decoder := json.NewDecoder(&output)
+	decoder.UseNumber()
+	var got map[string]any
+	if err := decoder.Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	nested := got[nestedKey].([]any)
+	if got["number"] != testMask || got["float"] != testMask || nested[0] != testMask ||
+		got["unchanged"] != json.Number("9007199254740993") || nested[1] != got["unchanged"] {
+		t.Fatalf("numeric redaction or precision was lost: %#v", got)
+	}
+}
+
+func TestNestedByteValuesAndCollidingKeysAreRedacted(t *testing.T) {
+	var output bytes.Buffer
+	const otherSecret = "another-secret"
+	logger := slog.New(NewHandler(&output, HandlerOptions{
+		Format:   FormatJSON,
+		Redactor: redact.New(redact.Options{Values: []string{testSecret, otherSecret}}),
+	}))
+	logger.Info("record", slog.Any(nestedKey, map[string]any{
+		testSecret:      []byte("before-" + testSecret + "-after"),
+		otherSecret:     "collision",
+		testMask + "_1": "existing",
+	}))
+	var got map[string]any
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	nested := got[nestedKey].(map[string]any)
+	encoded, ok := nested[testMask+"_2"].(string)
+	if nested[testMask] != "collision" || nested[testMask+"_1"] != "existing" || !ok {
+		t.Fatalf("colliding object keys were lost: %#v", nested)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || string(decoded) != "before-***-after" {
+		t.Fatalf("byte value was exposed or its safe context lost: %q %v", decoded, err)
+	}
+}
+
+func TestKnownByteValuesAreRedactedBeforeEmission(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(NewHandler(&output, HandlerOptions{
+		Format: FormatJSON, Redactor: redact.New(redact.Options{Values: []string{testSecret}}),
+	}))
+	logger.Info(
+		"record",
+		slog.Any("credential", []byte("prefix-"+testSecret)),
+		slog.Any("normal", []byte("plain")),
+	)
+	var got map[string]string
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["credential"] != base64.StdEncoding.EncodeToString([]byte("prefix-***")) ||
+		got["normal"] != base64.StdEncoding.EncodeToString([]byte("plain")) {
+		t.Fatalf("byte value did not preserve its sanitized encoding: %s", output.String())
 	}
 }
