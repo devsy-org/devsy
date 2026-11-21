@@ -31,6 +31,7 @@ jobs:
       licenses: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.licenses == 'true' }}
       gh_credentials: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.gh_credentials == 'true' }}
       provider_update: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.provider_update == 'true' }}
+      shared_logging: ${{ github.event_name != 'pull_request' || steps.filter.outputs.shared_logging == 'true' }}
       mode: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
       changed_files: ${{ steps.filter.outputs.all_files || '[]' }}
     steps:
@@ -61,6 +62,11 @@ jobs:
               - 'hack/provider_update_ci/**'
               - 'hack/licenses/**'
               - 'hack/podman_ci/**'
+              - '.golangci.yaml'
+            shared_logging:
+              - 'logging/**'
+              - 'go.mod'
+              - '.github/workflows/pr-ci.yml'
               - '.golangci.yaml'
             agent_skill:
               - '.agents/skills/devsy/**'
@@ -170,6 +176,40 @@ jobs:
           go-version-file: go.mod
       - name: Validate skill and installer compatibility
         run: go run ./hack/validate_agent_skill
+
+  shared-logging:
+    name: Shared Logging
+    needs: [changes]
+    if: needs.changes.outputs.shared_logging == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: logging
+    env:
+      GOWORK: "off"
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: 1.23.x
+          cache-dependency-path: logging/go.mod
+      - name: Test Go floor
+        run: go test -race ./... && go vet ./... && test -z "$(gofmt -l .)"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: logging/go.mod
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
+        with:
+          version: v2.14.0
+          working-directory: logging
+          args: --config ../.golangci.yaml
+      - name: Check Go formatting
+        run: golangci-lint fmt --diff --config ../.golangci.yaml
 
   lint:
     name: Lint
@@ -989,6 +1029,7 @@ jobs:
       - plan
       - precommit
       - lint
+      - shared-logging
       - agent-skill
       - unit-tests
       - github-credential-host-tests
