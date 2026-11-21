@@ -14,6 +14,8 @@ import (
 	"gotest.tools/assert/cmp"
 )
 
+var lfsPullArgs = []string{"lfs", "pull"}
+
 const (
 	lfsFoldedFixtureValue = "synthetic-lfs-folded-value"
 	lfsDiagnosticDetail   = "public Git LFS detail"
@@ -43,7 +45,7 @@ type lfsCommandErrorRunner struct{ cause error }
 func (r lfsCommandErrorRunner) Run(context.Context, RunOptions) (RunResult, error) {
 	stderr := "Authorization:\n Bearer " + lfsFoldedFixtureValue + "\n\n" + lfsDiagnosticDetail
 	return RunResult{Stderr: []byte(stderr)}, &CommandError{
-		Args:     []string{"lfs", "pull"},
+		Args:     lfsPullArgs,
 		ExitCode: 2,
 		Stderr:   stderr,
 		Err:      r.cause,
@@ -75,7 +77,7 @@ func (r lfsJSONStderrRunner) Run(context.Context, RunOptions) (RunResult, error)
 func TestLFSFailureMasksJSONStderrRecordCarriedByTheCommandError(t *testing.T) {
 	const stderr = "{\"Cookie\":\"synthetic-lfs-cookie\"}\npublic lfs tail\n"
 	original := &CommandError{
-		Args:     []string{"lfs", "pull"},
+		Args:     lfsPullArgs,
 		ExitCode: 23,
 		Stderr:   stderr,
 		Err:      errors.New("exit status 23"),
@@ -96,7 +98,7 @@ func TestLFSFailureMasksJSONStderrRecordCarriedByTheCommandError(t *testing.T) {
 func TestLFSFailureKeepsRunnerStderrThatTheErrorDoesNotCarry(t *testing.T) {
 	repo := At(t.TempDir(), WithRunner(lfsJSONStderrRunner{
 		result: RunResult{Stderr: []byte("public runner detail")},
-		err:    &CommandError{Args: []string{"lfs", "pull"}, Err: errors.New("fixture")},
+		err:    &CommandError{Args: lfsPullArgs, Err: errors.New("fixture")},
 	}))
 	err := repo.lfs(t.Context(), "pull")
 	assert.Assert(t, cmp.Contains(err.Error(), "public runner detail"))
