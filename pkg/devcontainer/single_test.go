@@ -634,3 +634,62 @@ func TestOwnerIndependentReuseRefreshesDeveloperIdentity(t *testing.T) {
 	require.False(t, d.stopCalled)
 	require.False(t, d.deleteCalled)
 }
+
+func TestChildTelemetryEnvironment(t *testing.T) {
+	const derivedIdentity = "derived-identity"
+	tests := []struct {
+		name          string
+		hostDisabled  string
+		childDisabled string
+		distinctID    string
+		wantDisabled  string
+		wantID        string
+		wantLookup    bool
+	}{
+		{
+			name:       "identity is propagated",
+			distinctID: derivedIdentity,
+			wantID:     derivedIdentity,
+			wantLookup: true,
+		},
+		{
+			name:          "identity unavailable",
+			childDisabled: stringFalse,
+			wantDisabled:  pkgconfig.BoolTrue,
+			wantLookup:    true,
+		},
+		{
+			name: "host disabled", hostDisabled: pkgconfig.BoolTrue, distinctID: derivedIdentity,
+			wantDisabled: pkgconfig.BoolTrue,
+		},
+		{
+			name:          "workspace disabled",
+			childDisabled: pkgconfig.BoolTrue,
+			distinctID:    derivedIdentity,
+			wantDisabled:  pkgconfig.BoolTrue,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(pkgconfig.EnvDisableTelemetry, tt.hostDisabled)
+			env := map[string]string{
+				pkgconfig.EnvDisableTelemetry:    tt.childDisabled,
+				pkgconfig.EnvTelemetryDistinctID: "workspace-override",
+				"CANARY":                         "retained",
+			}
+			lookedUp := false
+			env = (&runner{}).addExtraEnvVars(env, func() string {
+				lookedUp = true
+				return tt.distinctID
+			})
+			require.Equal(t, tt.wantLookup, lookedUp)
+			if tt.wantDisabled != "" {
+				require.Equal(t, tt.wantDisabled, env[pkgconfig.EnvDisableTelemetry])
+				require.NotContains(t, env, pkgconfig.EnvTelemetryDistinctID)
+			} else {
+				require.Equal(t, tt.wantID, env[pkgconfig.EnvTelemetryDistinctID])
+			}
+			require.Equal(t, "retained", env["CANARY"])
+		})
+	}
+}

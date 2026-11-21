@@ -3,6 +3,7 @@ package setup
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
@@ -192,7 +193,7 @@ func ensureDotfileExecutable(ctx context.Context, path string) error {
 }
 
 func execDotfilesCmd(ctx context.Context, script, remoteUser string) error {
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 
 	currentUser, err := user.Current()
 	if err != nil {

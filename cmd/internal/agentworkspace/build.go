@@ -70,7 +70,7 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 	defer cancel()
 	tunnelClient, credentialsDir, err := initWorkspace(cancelCtx, initWorkspaceParams{
 		workspaceInfo:       workspaceInfo,
-		debug:               cmd.Debug,
+		debug:               log.DebugEnabled(),
 		shouldInstallDaemon: false,
 	})
 	if err != nil {

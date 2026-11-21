@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -113,7 +114,7 @@ func (r *runner) startComposeInstance(
 		return nil, err
 	}
 	args = r.onlyRunServices(append(args, "start"), params.runParams.parsedConfig)
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		args,

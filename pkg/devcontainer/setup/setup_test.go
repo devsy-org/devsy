@@ -3,7 +3,9 @@ package setup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -206,8 +208,56 @@ func (s *WorkspaceEnvironmentTestSuite) TestParseCanonicalizesWithoutChangingInp
 func (s *WorkspaceEnvironmentTestSuite) TestPatchRejectsDuplicatesWithoutMutatingInput() {
 	assignments := []string{"MODE=one", "MODE=two"}
 	original := slices.Clone(assignments)
-	s.Require().Error(patchEtcEnvironmentFlags(assignments))
+	s.Require().Error(patchEtcEnvironmentFlags(assignments, false, nil, nil))
 	s.Assert().Equal(original, assignments)
+}
+
+func TestSetupEnvironmentPreservesInheritedTelemetryOptOut(t *testing.T) {
+	const falseValue = "false"
+	for _, inherited := range []bool{true, false} {
+		t.Run(fmt.Sprintf("inherited_%t", inherited), func(t *testing.T) {
+			incoming := falseValue
+			if inherited {
+				incoming = pkgconfig.BoolTrue
+			}
+			t.Setenv(pkgconfig.EnvDisableTelemetry, incoming)
+			t.Setenv("DEVSY_ENV_CANARY", "")
+			remoteDisabled := falseValue
+			remoteCanary := "remote"
+			remote := map[string]*string{
+				pkgconfig.EnvDisableTelemetry: &remoteDisabled,
+				"DEVSY_ENV_CANARY":            &remoteCanary,
+			}
+			cfg := &ContainerSetupConfig{
+				SetupInfo: &config.Result{MergedConfig: &config.MergedDevContainerConfig{
+					DevContainerConfigBase: config.DevContainerConfigBase{RemoteEnv: remote},
+				}},
+				ExtraWorkspaceEnv: []string{
+					pkgconfig.EnvDisableTelemetry + "=false",
+					"DEVSY_ENV_CANARY=workspace",
+				},
+			}
+			persisted := map[string]string{pkgconfig.EnvDisableTelemetry: falseValue}
+			merge := func(values map[string]string) {
+				maps.Copy(persisted, values)
+				for key, value := range persisted {
+					require.NoError(t, os.Setenv(key, value))
+				}
+			}
+			marker := func(string, string) (bool, error) { return inherited, nil }
+			require.NoError(t, applySetupEnvironment(cfg, merge, marker))
+			expected := falseValue
+			if inherited {
+				expected = pkgconfig.BoolTrue
+			}
+			require.Equal(t, expected, os.Getenv(pkgconfig.EnvDisableTelemetry))
+			require.Equal(t, expected, persisted[pkgconfig.EnvDisableTelemetry])
+			require.Equal(t, "workspace", os.Getenv("DEVSY_ENV_CANARY"))
+			require.Equal(t, "workspace", persisted["DEVSY_ENV_CANARY"])
+			require.Equal(t, "false", *remote[pkgconfig.EnvDisableTelemetry])
+			require.Equal(t, pkgconfig.EnvDisableTelemetry+"=false", cfg.ExtraWorkspaceEnv[0])
+		})
+	}
 }
 
 func TestWriteResultFileTo_WidensExistingRestrictiveMode(t *testing.T) {
