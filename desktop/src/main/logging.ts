@@ -8,6 +8,10 @@ import {
 } from "node:fs"
 import { join } from "node:path"
 import type { LogLevel } from "../shared/app-settings.js"
+import {
+  credentialValueEnd,
+  skipWhitespace,
+} from "../shared/diagnostic-redaction.js"
 
 const rank: Record<LogLevel, number> = {
   error: 0,
@@ -17,7 +21,7 @@ const rank: Record<LogLevel, number> = {
   trace: 4,
 }
 const sensitiveKey =
-  /(password|passwd|token|secret|api.?key|authorization|credential|private.?key|access.?key|telemetry.?distinct.?id)/i
+  /(password|passwd|passphrase|token|secret|api.?key|authorization|credential|private.?key|access.?key|telemetry.?distinct.?id)/i
 const sensitiveLabel = new RegExp(`^(?:${sensitiveKey.source})$`, "i")
 const maxFileBytes = 5 * 1024 * 1024
 const maxRecordBytes = 64 * 1024
@@ -35,7 +39,7 @@ function redactLabels(value: string): string {
     if (!sensitiveKey.test(label)) continue
     const secretStart = labelValueStart(value, end)
     if (secretStart < 0) continue
-    const next = secretEnd(value, secretStart)
+    const next = credentialValueEnd(value, secretStart)
     if (next === secretStart) continue
     output += `${value.slice(copied, secretStart)}***`
     copied = next
@@ -59,43 +63,12 @@ function labelEnd(value: string, start: number, initialEnd: number): number {
   return end
 }
 
-function skipWhitespace(value: string, next: number): number {
-  while (next < value.length && /\s/.test(value[next])) next++
-  return next
-}
-
 function labelValueStart(value: string, end: number): number {
   let next = end
   if (value[next] === '"' || value[next] === "'") next++
   next = skipWhitespace(value, next)
   if (value[next] !== ":" && value[next] !== "=") return -1
   return skipWhitespace(value, next + 1)
-}
-
-function secretEnd(value: string, start: number): number {
-  let next = start
-  const scheme = value.slice(next, next + 6).toLowerCase()
-  const schemeLength = scheme.startsWith("bearer")
-    ? 6
-    : scheme.startsWith("basic")
-      ? 5
-      : 0
-  if (schemeLength && /\s/.test(value[next + schemeLength] ?? "")) {
-    next = skipWhitespace(value, next + schemeLength)
-  }
-  const quote = value[next] === '"' || value[next] === "'" ? value[next++] : ""
-  if (!quote) {
-    while (next < value.length && !/[\s,;]/.test(value[next])) next++
-    return next
-  }
-  while (next < value.length) {
-    if (value[next] === "\\") {
-      next = Math.min(next + 2, value.length)
-    } else if (value[next++] === quote) {
-      break
-    }
-  }
-  return next
 }
 
 function redactText(value: string): string {
@@ -115,18 +88,28 @@ function safeValue(
 ): unknown {
   if (typeof value === "string") return redactText(value)
   if (typeof value === "bigint") return value.toString()
+  if (typeof value === "function") return "[unavailable]"
   if (value === null || typeof value !== "object") return value
   if (value instanceof Error)
     return { name: redactText(value.name), message: redactText(value.message) }
   if (depth >= 8 || seen.has(value)) return "[unavailable]"
   seen.add(value)
   if (Array.isArray(value))
-    return value.map((item) => safeValue(item, seen, depth + 1))
-  const result: Record<string, unknown> = {}
-  for (const [key, item] of Object.entries(value)) {
+    return Array.from({ length: value.length }, (_, index) =>
+      safeValue(
+        Object.getOwnPropertyDescriptor(value, index)?.value,
+        seen,
+        depth + 1,
+      ),
+    )
+  const result: Record<string, unknown> = Object.create(null)
+  for (const [key, property] of Object.entries(
+    Object.getOwnPropertyDescriptors(value),
+  )) {
+    if (!property.enumerable || !Object.hasOwn(property, "value")) continue
     result[redactText(key)] = sensitiveKey.test(key)
       ? "***"
-      : safeValue(item, seen, depth + 1)
+      : safeValue(property.value, seen, depth + 1)
   }
   return result
 }

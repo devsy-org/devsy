@@ -52,6 +52,38 @@ describe("renderer error reporting", () => {
     expect(report).toHaveBeenCalledTimes(2)
   })
 
+  it.each([
+    [
+      String.raw`Request failed token="hidden\"escaped-canary" retry`,
+      "Request failed [redacted] retry",
+    ],
+    [
+      String.raw`Request failed token='hidden\'escaped-canary' retry`,
+      "Request failed [redacted] retry",
+    ],
+    [
+      `Request failed password="prefix truncated-canary ${"x".repeat(4096)}"`,
+      "Request failed [redacted]",
+    ],
+    [
+      String.raw`Request failed token=\"prefix encoded-canary\" retry`,
+      "Request failed [redacted]",
+    ],
+  ])(
+    "masks the whole quoted sensitive value before IPC",
+    (message, expected) => {
+      const target = new EventTarget()
+      const report = vi.fn()
+      installRendererErrorReporting(target as unknown as Window, report)
+      emit(target, "error", "error", new Error(message))
+      expect(report).toHaveBeenCalledWith({
+        kind: "error",
+        message: expected,
+        name: "Error",
+      })
+    },
+  )
+
   it("does not inspect arbitrary thrown objects and tolerates a failed bridge", () => {
     const target = new EventTarget()
     const report = vi.fn(() => {

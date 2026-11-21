@@ -94,6 +94,18 @@ describe("renderer error handler", () => {
     }
   })
 
+  it("masks passphrases in a trusted renderer report before logging", () => {
+    const f = fixture()
+    f.handle(f.event, {
+      ...summary,
+      message: "Unlock failed passphrase=report-canary retry",
+    })
+    expect(f.log).toHaveBeenCalledWith({
+      ...summary,
+      message: "Unlock failed [redacted] retry",
+    })
+  })
+
   it("limits valid reports and resets after a minute", () => {
     const f = fixture()
     for (let i = 0; i < 20; i++) f.handle(f.event, summary)

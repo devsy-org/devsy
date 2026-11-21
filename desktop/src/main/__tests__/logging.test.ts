@@ -113,6 +113,52 @@ describe("main logger", () => {
     }
   })
 
+  it("redacts passphrases and keeps caller serialization hooks out of both sinks", () => {
+    const dir = mkdtempSync(join(tmpdir(), "devsy-serialization-log-"))
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    const serialize = vi.fn(() => ({ token: "serialization-canary" }))
+    const array = [{ token: "array-value", count: 1 }]
+    const map = vi.fn(() => [{ token: "array-map-canary" }])
+    Object.defineProperty(array, "map", { value: map })
+    const readIndex = vi.fn(() => ({ token: "indexed-getter-canary" }))
+    Object.defineProperty(array, 1, { get: readIndex })
+    const accessor = { operation: "report" }
+    const readSerializer = vi.fn(() => serialize)
+    Object.defineProperty(accessor, "toJSON", {
+      get: readSerializer,
+      enumerable: true,
+    })
+    try {
+      initializeMainLog(dir)
+      mainLog.info(
+        "Unlock failed passphrase=message-canary",
+        {
+          toJSON: serialize,
+          passphrase: "attribute-canary",
+          operation: "unlock",
+        },
+        array,
+        accessor,
+      )
+      const file = readFileSync(join(dir, "main.log"), "utf8").trim()
+      expect(info.mock.calls[0][0]).toBe(file)
+      expect(serialize).not.toHaveBeenCalled()
+      expect(map).not.toHaveBeenCalled()
+      expect(readIndex).not.toHaveBeenCalled()
+      expect(readSerializer).not.toHaveBeenCalled()
+      expect(JSON.parse(file)).toMatchObject({
+        msg: "Unlock failed passphrase=***",
+        args: [
+          { operation: "unlock", passphrase: "***" },
+          [{ token: "***", count: 1 }, null],
+          { operation: "report" },
+        ],
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it("redacts structured values before both sinks and bounds rotation", () => {
     const dir = mkdtempSync(join(tmpdir(), "devsy-main-log-"))
     const info = vi.spyOn(console, "info").mockImplementation(() => {})
