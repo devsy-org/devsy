@@ -111,6 +111,25 @@ describe("renderer error message sanitization", () => {
     },
   )
 
+  it.each([
+    "password=private-canary",
+    "password is private-canary",
+    "client_secret=private-canary",
+    "Authorization: token private-canary",
+  ])(
+    "scans credentials in the record that remains after a registered value joins records (%s)",
+    (assignment) => {
+      const registered = "first-canary\nsecond-canary"
+      const result = sanitizeRendererErrorMessage(
+        `Failed ${registered} ${assignment} retry`,
+        [registered],
+      )
+      expect(result).not.toContain("private-canary")
+      expect(result).not.toContain("first-canary")
+      expect(result).toContain("Failed")
+    },
+  )
+
   it("masks a registered value that spans a record boundary", () => {
     const registered = "first-canary\nsecond-canary"
     const message = sanitizeRendererErrorMessage(

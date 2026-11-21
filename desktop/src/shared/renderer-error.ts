@@ -45,17 +45,21 @@ function registeredRanges(
   return ranges
 }
 
-function redactSecrets(value: string, registered: readonly string[]): string {
+function credentialRanges(value: string): [number, number][] {
   const bounded = value.slice(0, maxRendererErrorMessageLength)
   const firstRecord = bounded.split(/[\r\n\u2028\u2029]/, 1)[0]
   const cutByLimit =
     firstRecord.length === bounded.length && value.length > bounded.length
-  const ranges = registeredRanges(value, registered)
-  for (const { keyStart, end } of credentialAssignments(firstRecord, true))
-    ranges.push([
+  return Array.from(
+    credentialAssignments(firstRecord, true),
+    ({ keyStart, end }): [number, number] => [
       keyStart,
       cutByLimit && end >= firstRecord.length ? value.length : end,
-    ])
+    ],
+  )
+}
+
+function replaceRanges(value: string, ranges: [number, number][]): string {
   ranges.sort(([left], [right]) => left - right)
   let result = ""
   let copied = 0
@@ -71,6 +75,14 @@ function redactSecrets(value: string, registered: readonly string[]): string {
     }
   }
   return result + value.slice(copied)
+}
+
+function redactSecrets(value: string, registered: readonly string[]): string {
+  const joined = replaceRanges(value, [
+    ...registeredRanges(value, registered),
+    ...credentialRanges(value),
+  ])
+  return replaceRanges(joined, credentialRanges(joined))
 }
 
 export function sanitizeRendererErrorMessage(
