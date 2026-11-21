@@ -92,6 +92,10 @@ describe("renderer error reporting", () => {
     'token= access_token="prefix quoted-tail-canary"',
     "password is client_secret is prose-tail-canary",
     `${"token= ".repeat(256)}"access_token": ["prefix", "group-tail-canary"]`,
+    "Authorization: token auth-canary",
+    'pRoXy-aUtHoRiZaTiOn: Extension "first alternate-canary"',
+    "Authorization: 'first single-canary'",
+    "Authorization: Basic Y2FuYXJ5IQ==",
   ])(
     "keeps compound credential values out of the reported payload",
     (field) => {
@@ -116,26 +120,31 @@ describe("renderer error reporting", () => {
     },
   )
 
-  it("masks an incomplete structured credential field before forwarding", () => {
-    const target = new EventTarget()
-    const report = vi.fn()
-    const dispose = installRendererErrorReporting(
-      target as unknown as Window,
-      report,
-    )
-    emit(
-      target,
-      "unhandledrejection",
-      "reason",
-      'Request failed client_secret={"nested": ["hidden"], "note": "remaining-canary"',
-    )
-    expect(report).toHaveBeenCalledExactlyOnceWith({
-      kind: "unhandledrejection",
-      message: "Request failed [redacted]",
-      name: "UnknownError",
-    })
-    dispose()
-  })
+  it.each([
+    'client_secret={"nested": ["hidden"], "note": "remaining-canary"',
+    'Authorization: Extension keyId="private identity",signature=signed-canary',
+    'Authorization: Extension "complete" quoted-tail-canary',
+    'Proxy-Authorization: Extension ["complete"] field=group-tail-canary workspace=staging',
+    "Authorization: token auth-canary field=scalar-tail-canary workspace=staging",
+    "Authorization: token auth-canary workspace=staging field=ambiguous-tail-canary",
+  ])(
+    "masks an incomplete or opaque credential field before forwarding",
+    (field) => {
+      const target = new EventTarget()
+      const report = vi.fn()
+      const dispose = installRendererErrorReporting(
+        target as unknown as Window,
+        report,
+      )
+      emit(target, "unhandledrejection", "reason", `Request failed ${field}`)
+      expect(report).toHaveBeenCalledExactlyOnceWith({
+        kind: "unhandledrejection",
+        message: "Request failed [redacted]",
+        name: "UnknownError",
+      })
+      dispose()
+    },
+  )
 
   it("does not inspect arbitrary thrown objects and tolerates a failed bridge", () => {
     const target = new EventTarget()

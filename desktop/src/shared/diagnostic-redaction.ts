@@ -3,7 +3,7 @@ const credentialKey =
 const compoundCredentialKey = new RegExp(`^${credentialKey.source}$`, "i")
 
 function normalizeKey(key: string): string {
-  return key.replace(/[^a-z0-9]/gi, "")
+  return key.replace(/[^a-z0-9]/gi, "").toLowerCase()
 }
 
 export function isCredentialKey(key: string): boolean {
@@ -15,12 +15,14 @@ export function* credentialAssignments(value: string, allowProse = false) {
   for (let match = tokens.exec(value); match; match = tokens.exec(value)) {
     const assignment = credentialAssignment(value, match, allowProse)
     if (!assignment) continue
-    const end = credentialValueEnd(
+    const { start, authorizationStart } = credentialContent(
       value,
-      credentialContentStart(value, assignment.start, allowProse),
+      assignment,
+      allowProse,
     )
+    const end = credentialValueEnd(value, start, authorizationStart)
     if (end === assignment.start) continue
-    yield { ...assignment, end }
+    yield { keyStart: assignment.keyStart, start: assignment.start, end }
     tokens.lastIndex = end
   }
 }
@@ -32,30 +34,40 @@ function credentialAssignment(
 ) {
   const { index } = match
   const keyEnd = compoundKeyEnd(value, index, index + match[0].length)
-  if (!isCredentialKey(value.slice(index, keyEnd))) return
+  const key = normalizeKey(value.slice(index, keyEnd))
+  if (!credentialKey.test(key)) return
   const start = assignmentValueStart(value, keyEnd, allowProse)
   if (start < 0) return
   const quote = value[index - 1]
   const keyStart = isQuote(quote) && value[keyEnd] === quote ? index - 1 : index
-  return { keyStart, start }
+  const authorization = key === "authorization" || key === "proxyauthorization"
+  return {
+    keyStart,
+    start,
+    authorizationStart: authorization ? keyStart : undefined,
+  }
 }
 
-function credentialContentStart(
+function credentialContent(
   value: string,
-  start: number,
+  initial: { start: number; authorizationStart: number | undefined },
   allowProse: boolean,
-): number {
+) {
   const tokens = /[a-z0-9_.-]+/iy
-  let content = authorizationContentStart(value, start)
-  while (content < value.length) {
-    tokens.lastIndex = content + Number(isQuote(value[content]))
+  let { start, authorizationStart } = initial
+  while (start < value.length) {
+    const authorization = authorizationStart !== undefined
+    start = schemeContentStart(value, start, authorization)
+    if (authorization) break
+    tokens.lastIndex = start + Number(isQuote(value[start]))
     const match = tokens.exec(value)
     if (!match) break
     const assignment = credentialAssignment(value, match, allowProse)
-    if (!assignment || assignment.keyStart !== content) break
-    content = authorizationContentStart(value, assignment.start)
+    if (!assignment || assignment.keyStart !== start) break
+    start = assignment.start
+    authorizationStart = assignment.authorizationStart
   }
-  return content
+  return { start, authorizationStart }
 }
 
 function compoundKeyEnd(value: string, start: number, end: number): number {
@@ -98,31 +110,61 @@ function skipWhitespace(value: string, next: number): number {
   return next
 }
 
-function authorizationContentStart(value: string, start: number): number {
-  const scheme = value.slice(start, start + 6).toLowerCase()
-  const schemeLength = scheme.startsWith("bearer")
-    ? 6
-    : scheme.startsWith("basic")
-      ? 5
-      : 0
-  if (schemeLength && /\s/.test(value[start + schemeLength] ?? ""))
-    return skipWhitespace(value, start + schemeLength)
-  return start
+function schemeContentStart(
+  value: string,
+  start: number,
+  authorization: boolean,
+): number {
+  if (isQuote(value[start])) return start
+  const scheme = /[!#$%&'*+.^_`|~a-z0-9-]+/iy
+  scheme.lastIndex = start
+  const match = scheme.exec(value)
+  if (
+    !match ||
+    !/\s/.test(value[scheme.lastIndex] ?? "") ||
+    (!authorization && !/^(?:basic|bearer)$/i.test(match[0]))
+  )
+    return start
+  return skipWhitespace(value, scheme.lastIndex)
 }
 
-function credentialValueEnd(value: string, start: number): number {
+function credentialValueEnd(
+  value: string,
+  start: number,
+  authorizationStart: number | undefined,
+): number {
   let opener = start
   while (value[opener] === "\\") opener++
   const first = value[opener]
   if (isQuote(first) || first === "[" || first === "{") {
     if (opener !== start) return value.length
-    return isQuote(first)
+    const end = isQuote(first)
       ? quotedValueEnd(value, start)
       : structuredValueEnd(value, start)
+    return authorizationStart === undefined
+      ? end
+      : authorizationValueEnd(value, authorizationStart, end)
   }
   let next = start
   while (next < value.length && !/[\s,;]/.test(value[next])) next++
-  return next
+  if (authorizationStart === undefined) return next
+  return /^[a-z0-9._~+/-]+=*$/i.test(value.slice(start, next))
+    ? authorizationValueEnd(value, authorizationStart, next)
+    : value.length
+}
+
+function authorizationValueEnd(
+  value: string,
+  start: number,
+  end: number,
+): number {
+  if (skipWhitespace(value, end) === value.length) return end
+  const field = /[ \t]+workspace=[a-z0-9][a-z0-9._-]*\s*$/iy
+  field.lastIndex = end
+  return field.test(value) &&
+    !/[\r\n\u2028\u2029]/.test(value.slice(start, end))
+    ? end
+    : value.length
 }
 
 function quotedValueEnd(value: string, start: number): number {

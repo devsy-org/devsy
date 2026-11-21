@@ -270,4 +270,72 @@ describe("main logger", () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it("masks scheme credentials in both sinks and preserves following fields for complete values", () => {
+    const dir = mkdtempSync(join(tmpdir(), "devsy-authorization-log-"))
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    const fixtures = [
+      [
+        "Authorization: token auth-canary workspace=staging",
+        "Authorization: *** workspace=staging",
+      ],
+      [
+        'Proxy-Authorization: Extension "first alternate-canary" workspace=staging',
+        "Proxy-Authorization: *** workspace=staging",
+      ],
+      [
+        "Authorization: 'first single-canary' workspace=staging",
+        "Authorization: *** workspace=staging",
+      ],
+      [
+        "Authorization: Basic Y2FuYXJ5IQ== workspace=staging",
+        "Authorization: *** workspace=staging",
+      ],
+      [
+        'Authorization: Extension keyId="private identity",signature=signed-canary',
+        "Authorization: ***",
+      ],
+      [
+        'Proxy-Authorization: Extension ["complete"] field=group-tail-canary workspace=staging',
+        "Proxy-Authorization: ***",
+      ],
+      [
+        "Authorization: token auth-canary workspace=staging field=ambiguous-tail-canary",
+        "Authorization: ***",
+      ],
+      [
+        "Authorization: Basic Y2FuYXJ5IQ==\r\n workspace=folded-canary",
+        "Authorization: ***",
+      ],
+      [
+        'Proxy-Authorization: Extension "first"\n\tworkspace=folded-canary',
+        "Proxy-Authorization: ***",
+      ],
+      [
+        "Authorization:\r\n Bearer auth-canary workspace=folded-canary",
+        "Authorization:\r\n ***",
+      ],
+      [
+        "Authorization: Bearer\r\n auth-canary workspace=folded-canary",
+        "Authorization: ***",
+      ],
+      [
+        'Proxy-Authorization: Extension "first\u2028second" workspace=folded-canary',
+        "Proxy-Authorization: ***",
+      ],
+    ]
+    try {
+      initializeMainLog(dir)
+      for (const [input] of fixtures) mainLog.info(`Request failed ${input}`)
+      const file = readFileSync(join(dir, "main.log"), "utf8")
+        .trim()
+        .split("\n")
+      expect(info.mock.calls.map(([record]) => record)).toEqual(file)
+      expect(file.map((record) => JSON.parse(record).msg)).toEqual(
+        fixtures.map(([, output]) => `Request failed ${output}`),
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
