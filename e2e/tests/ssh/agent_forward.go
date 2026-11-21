@@ -123,7 +123,12 @@ var _ = ginkgo.Describe(
 					diagnosticredact.Record(redactor, errB),
 				)
 				framework.ExpectNoError(err, "session B: socket from session A must still work")
-				gomega.Expect(outAddB).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAddB,
+					strings.Fields(pubKey)[1],
+					"session B lists the forwarded key",
+					true,
+				)
 
 				// Session B's reported SSH_AUTH_SOCK should equal S1 too - the
 				// regression is that this used to differ session-to-session.
@@ -144,7 +149,12 @@ var _ = ginkgo.Describe(
 					"sh", "-c", "SSH_AUTH_SOCK="+s1+" ssh-add -L",
 				)
 				framework.ExpectNoError(err, "session C: S1 must still work")
-				gomega.Expect(outAddC).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAddC,
+					strings.Fields(pubKey)[1],
+					"session C lists the forwarded key",
+					true,
+				)
 			},
 		)
 
@@ -197,7 +207,12 @@ var _ = ginkgo.Describe(
 					err,
 					"connection 2 must remain functional after connection 1 closes",
 				)
-				gomega.Expect(outAdd).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAdd,
+					strings.Fields(pubKey)[1],
+					"session lists the forwarded key",
+					true,
+				)
 			},
 		)
 

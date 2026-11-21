@@ -67,6 +67,12 @@ func fixtureDiagnostic(env []string, value string) string {
 	return diagnosticredact.Record(redactor, value)
 }
 
+// expectFixtureOutput fails the spec when ok is false and prints only the redacted output.
+func expectFixtureOutput(ok bool, output, description string) {
+	gomega.Expect(ok).
+		To(gomega.BeTrue(), "%s\nOutput: %s", description, fixtureDiagnostic(nil, output))
+}
+
 // kubectlFixture runs kubectl with args, bounded by timeout, and fails the current spec on error.
 func kubectlFixture(ctx context.Context, timeout time.Duration, args ...string) string {
 	return fixtureCommand(ctx, timeout, nil, append([]string{"kubectl"}, args...)...)

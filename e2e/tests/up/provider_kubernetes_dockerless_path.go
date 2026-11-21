@@ -135,8 +135,12 @@ func (fixture *dockerlessPathFixture) up(
 		"%s first CLI attempt: stdout=%s stderr=%s", phase,
 		fixtureDiagnostic(nil, stdout), fixtureDiagnostic(nil, stderr))
 	output := stdout + stderr
-	gomega.Expect(output).NotTo(gomega.ContainSubstring("failed to configure docker credentials"))
-	gomega.Expect(output).NotTo(gomega.ContainSubstring("docker credentials disabled"))
+	expectFixtureOutput(
+		!strings.Contains(output, "failed to configure docker credentials"), output,
+		phase+" configures docker credentials")
+	expectFixtureOutput(
+		!strings.Contains(output, "docker credentials disabled"), output,
+		phase+" keeps docker credentials enabled")
 	helperPattern := regexp.MustCompile(
 		`Wrote docker credentials helper to ` +
 			`(/\.dockerless/\.docker/docker-credentials-[a-zA-Z0-9]{12})/`,
@@ -148,8 +152,16 @@ func (fixture *dockerlessPathFixture) up(
 	if mustBuild {
 		gomega.Expect(helpers).
 			NotTo(gomega.BeEmpty(), "%s must configure Dockerless credentials", phase)
-		gomega.Expect(output).To(gomega.ContainSubstring("starting dockerless build"), phase)
-		gomega.Expect(output).To(gomega.ContainSubstring("dockerless build completed"), phase)
+		expectFixtureOutput(
+			strings.Contains(output, "starting dockerless build"), output, phase+" starts a build")
+		expectFixtureOutput(
+			strings.Contains(
+				output,
+				"dockerless build completed",
+			),
+			output,
+			phase+" completes the build",
+		)
 	}
 }
 

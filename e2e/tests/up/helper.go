@@ -297,7 +297,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 		`if [ "$(cat `+tc.checkFile+`)" = expected-value ]; then printf present; else printf absent; fi`,
 	)
 	framework.ExpectNoError(err)
-	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+	expectPresent(out)
 	if tc.sessionCheck != "" {
 		fileCheck := `if [ -e /run/devsy/secrets-env/` + tc.sessionFile + ` ]; then ` +
 			`stat -c '%U:%a' /run/devsy/secrets-env/` + tc.sessionFile +
@@ -307,7 +307,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("vscode:600"))
 		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
 		framework.ExpectNoError(err)
-		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+		expectPresent(out)
 	}
 
 	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "detach", tc.name})
@@ -325,4 +325,12 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 	}
+}
+
+func expectPresent(out string) {
+	expectFixtureOutput(
+		strings.TrimSpace(out) == "present",
+		out,
+		"context binding supplies the secret file",
+	)
 }

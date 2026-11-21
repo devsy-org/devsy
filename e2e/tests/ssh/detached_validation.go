@@ -44,8 +44,8 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 					id,
 				)
 				gomega.Expect(err).To(gomega.HaveOccurred())
-				gomega.Expect(out).To(gomega.ContainSubstring("workspace name"))
-				gomega.Expect(out).NotTo(gomega.ContainSubstring(`"kind":"task"`))
+				expectSSHSubstring(out, "workspace name", "validation names the workspace", true)
+				expectSSHSubstring(out, `"kind":"task"`, "validation emits no task envelope", false)
 			}
 			out, err := cli.command(ctx, cmdWorkspace, "task", "list")
 			framework.ExpectNoError(err)
@@ -337,8 +337,8 @@ func (cli detachedValidationCLI) expectFailureEnvelope(ctx context.Context, id, 
 	}
 	framework.ExpectNoError(json.Unmarshal([]byte(strings.TrimSpace(out)), &envelope))
 	gomega.Expect(envelope.Kind).To(gomega.Equal("error"))
-	gomega.Expect(envelope.Message).To(gomega.ContainSubstring(diagnostic))
-	gomega.Expect(out).NotTo(gomega.ContainSubstring("missing-provider-1471"))
+	expectSSHSubstring(envelope.Message, diagnostic, "error envelope carries the diagnostic", true)
+	expectSSHSubstring(out, "missing-provider-1471", "output omits the provider name", false)
 }
 
 func detachedValidationEnvironment(home string) []string {

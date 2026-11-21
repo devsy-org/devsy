@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,23 @@ func TestFixtureCommandMasksFailureWithoutChangingCapturedOutput(t *testing.T) {
 	require.Contains(t, failures[0], "public command detail")
 	require.NotContains(t, failures[0], "fixture-command-placeholder")
 	require.Contains(t, failures[0], "***")
+}
+
+func TestExpectFixtureOutputFailureReportsRedactedOutput(t *testing.T) {
+	const output = "Authorization:\n Bearer assertion-output-fixture\npublic assertion detail\n"
+	previousGomega := gomega.Default
+	gomega.Default = gomega.NewWithT(t)
+	t.Cleanup(func() { gomega.Default = previousGomega })
+	failures := gomega.InterceptGomegaFailures(func() {
+		expectFixtureOutput(strings.Contains(output, "absent marker"), output, "marker present")
+	})
+	require.Len(t, failures, 1)
+	require.Contains(t, failures[0], "marker present")
+	require.Contains(t, failures[0], "public assertion detail")
+	require.NotContains(t, failures[0], "assertion-output-fixture")
+	require.Empty(t, gomega.InterceptGomegaFailures(func() {
+		expectFixtureOutput(strings.Contains(output, "public assertion"), output, "marker present")
+	}))
 }
 
 func TestMicrosandboxEgressIPMasksFoldedCommandError(t *testing.T) {

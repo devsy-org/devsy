@@ -148,23 +148,8 @@ func captureCommandOutput(
 		return tee, tee.Close
 	}
 	tee := livetee.New(io.Discard, live)
-	diagnostic := &liveDiagnosticCapture{tee: tee, stream: diagnosticredact.Stream(redactor)}
+	diagnostic := newLiveDiagnosticCapture(tee, redactor)
 	return io.MultiWriter(capture, diagnostic), diagnostic.close
-}
-
-type liveDiagnosticCapture struct {
-	tee    *livetee.Tee
-	stream *redact.Stream
-}
-
-func (w *liveDiagnosticCapture) Write(p []byte) (int, error) {
-	_, _ = io.WriteString(w.tee, w.stream.RedactChunk(string(p)))
-	return len(p), nil
-}
-
-func (w *liveDiagnosticCapture) close() int64 {
-	_, _ = io.WriteString(w.tee, w.stream.Flush())
-	return w.tee.Close()
 }
 
 func externalCommandDiagnostic(value string) string {
