@@ -292,7 +292,8 @@ func (c *microsandboxPerformanceCapture) captureUp(
 	additionalArgs ...string,
 ) (upPerformanceRun, error) {
 	started := time.Now()
-	stdout, stderr, err := c.framework.DevsyUpStreams(ctx, workspace, additionalArgs...)
+	args := append([]string{"--log-format=json"}, additionalArgs...)
+	stdout, stderr, err := c.framework.DevsyUpStreams(ctx, workspace, args...)
 	run := upPerformanceRun{
 		Phase:      phase,
 		Succeeded:  err == nil,
