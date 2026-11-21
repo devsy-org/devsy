@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
@@ -130,7 +130,7 @@ type hookRunParams struct {
 	ctx      context.Context
 	commands []types.LifecycleHook
 	env      lifecycleEnv
-	redactor *secrets.Redactor
+	redactor *redact.Redactor
 	name     string
 	content  string
 	// hook is the lifecycle property name recorded for retained history.
@@ -152,8 +152,8 @@ type lifecycleEnv struct {
 // mergeSecretsEnv injects secretsEnv into the hook env (config keys win) and
 // builds the log redactor. secretsMount values are added to the redactor only:
 // mount secrets are files, never injected into the env, but must still be masked.
-func mergeSecretsEnv(env map[string]string, secretsEnv, secretsMount []string) *secrets.Redactor {
-	redactor := secrets.NewRedactor(slices.Concat(secretsEnv, secretsMount))
+func mergeSecretsEnv(env map[string]string, secretsEnv, secretsMount []string) *redact.Redactor {
+	redactor := redact.FromEntries(slices.Concat(secretsEnv, secretsMount))
 	for _, entry := range secretsEnv {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
@@ -698,7 +698,7 @@ func runSingleHookCommand(
 type executeCaptureOptions struct {
 	binary, phaseName, key, dir string
 	args, command, env          []string
-	redactor                    *secrets.Redactor
+	redactor                    *redact.Redactor
 	inv                         invocationRef
 }
 

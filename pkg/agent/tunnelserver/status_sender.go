@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
@@ -44,7 +44,7 @@ func (r *tunnelStatusReporter) Report(e status.Event) {
 }
 
 func (r *tunnelStatusReporter) statusUpdate(e status.Event) *tunnel.StatusUpdate {
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	return &tunnel.StatusUpdate{
 		Phase:             redactor.Redact(string(e.Phase)),
 		Step:              redactor.Redact(e.Step),
@@ -72,7 +72,7 @@ func (r *tunnelStatusReporter) send(update *tunnel.StatusUpdate) {
 	_, _ = r.client.Status(ctx, update)
 }
 
-func redactContext(values map[string]string, redactor *secrets.Redactor) map[string]string {
+func redactContext(values map[string]string, redactor *redact.Redactor) map[string]string {
 	if len(values) == 0 {
 		return nil
 	}

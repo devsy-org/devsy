@@ -4,13 +4,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 )
 
-type Sanitizer struct{ redactor *secrets.Redactor }
+type Sanitizer struct{ redactor *redact.Redactor }
 
 func NewSanitizer(env []string) *Sanitizer {
-	return &Sanitizer{redactor: secrets.NewEnvironmentRedactor(env)}
+	return &Sanitizer{redactor: redact.New(redact.Options{Environment: env})}
 }
 
 func (s *Sanitizer) Message(value string) string {

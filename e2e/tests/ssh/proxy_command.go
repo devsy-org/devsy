@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -140,7 +140,7 @@ var _ = ginkgo.Describe(
 
 func proxyCommandOutputDiagnostic(traceRoot *os.Root, stdout, stderr string) string {
 	trace, err := traceRoot.ReadFile(proxyCommandTraceFile)
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	return fmt.Sprintf(
 		"stdout=%s stderr=%s traceReadError=%s trace=%s",
 		proxyCommandExcerpt(redactor, stdout),
@@ -158,7 +158,7 @@ const (
 	proxyCommandExcerptLimit = 8192
 )
 
-func proxyCommandExcerpt(redactor *secrets.Redactor, text string) string {
+func proxyCommandExcerpt(redactor *redact.Redactor, text string) string {
 	quoted := strconv.QuoteToASCII(redactor.Redact(text))
 	if len(quoted) <= proxyCommandExcerptLimit {
 		return quoted

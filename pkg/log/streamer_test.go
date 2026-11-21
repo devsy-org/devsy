@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -16,7 +16,7 @@ func TestJSONLogStreamerRedactsCapturedLines(t *testing.T) {
 	streamer := NewJSONLogStreamer(StreamerOptions{
 		FallbackLevel: LevelInfo,
 		CaptureLines:  2,
-		Redactor:      secrets.NewRedactor([]string{"TOKEN=DEVSY_STREAM_SECRET_846297"}),
+		Redactor:      redact.FromEntries([]string{"TOKEN=DEVSY_STREAM_SECRET_846297"}),
 	})
 	_, _ = streamer.Write([]byte("token=DEVSY_STREAM_SECRET_846297\n"))
 	if err := streamer.Close(); err != nil {
@@ -32,7 +32,7 @@ func TestJSONLogStreamerCombinesConfiguredAndEnvironmentRedaction(t *testing.T) 
 	streamer := NewJSONLogStreamer(StreamerOptions{
 		FallbackLevel: LevelInfo,
 		CaptureLines:  1,
-		Redactor:      secrets.NewRedactor([]string{"TOKEN=stream-config-secret-846300"}),
+		Redactor:      redact.FromEntries([]string{"TOKEN=stream-config-secret-846300"}),
 	})
 	_, _ = streamer.Write([]byte("stream-env-secret-846299 stream-config-secret-846300 canary\n"))
 	if err := streamer.Close(); err != nil {

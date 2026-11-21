@@ -6,6 +6,7 @@ import (
 	"os"
 
 	cmdflags "github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
@@ -18,7 +19,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
@@ -339,7 +339,7 @@ func (cmd *BuildCmd) startSetupRun(workspaceClient client.WorkspaceClient) *work
 
 	run := workspacelogs.StartSession(workspacelogs.SessionOptions{
 		Location: workspacelogs.LocationHost,
-		Redactor: secrets.NewEnvironmentRedactor(os.Environ()),
+		Redactor: redact.New(redact.Options{Environment: os.Environ()}),
 		Run: workspacelogs.RunSpec{
 			Context:            workspaceClient.Context(),
 			WorkspaceIDAtStart: workspaceClient.Workspace(),

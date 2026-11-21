@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/logging/redact"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,7 +64,7 @@ func seedRun(t *testing.T, s *workspacelogs.Store, uid string) *seededRun {
 	require.NoError(t, err)
 	rec, err := workspacelogs.NewRecorder(workspacelogs.RecorderOptions{
 		Backend: s, RunID: m.RunID, Location: workspacelogs.LocationContainer,
-		Redactor: secrets.NewRedactor([]string{"TOKEN=" + testSecret}),
+		Redactor: redact.FromEntries([]string{"TOKEN=" + testSecret}),
 	})
 	require.NoError(t, err)
 

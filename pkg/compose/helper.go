@@ -19,12 +19,12 @@ import (
 	composecli "github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/devsy-org/devsy/logging/redact"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/livetee"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/wslg"
 )
@@ -310,7 +310,7 @@ func (h *ComposeHelper) RunWithOutput(
 	cmd := h.buildCmd(ctx, args...)
 	cmd.Stdin = streams.Stdin
 	tee := livetee.NewWithClose(io.Discard, nil, output.Close)
-	redactor := secrets.NewEnvironmentRedactor(cmd.Environ())
+	redactor := redact.New(redact.Options{Environment: cmd.Environ()})
 	stdout, stderr := tee.Writer(streams.Stdout), tee.Writer(streams.Stderr)
 	if output.Capture != nil {
 		capture := &captureWriter{next: output.Capture}

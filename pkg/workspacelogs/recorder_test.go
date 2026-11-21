@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestRecorder(t *testing.T, s *Store, runID string, redactor *secrets.Redactor) *Recorder {
+func newTestRecorder(t *testing.T, s *Store, runID string, redactor *redact.Redactor) *Recorder {
 	t.Helper()
 	rec, err := NewRecorder(RecorderOptions{
 		Backend: s, RunID: runID, Location: LocationContainer, Redactor: redactor,
@@ -77,7 +77,7 @@ func TestRecorderRoundTripsInvocationOutputAndExit(t *testing.T) {
 func TestRecorderRedactsSecretsSplitAcrossWrites(t *testing.T) {
 	s, _ := newTestStore(t)
 	runID := newRun(t, s, "uid")
-	redactor := secrets.NewRedactor([]string{"API_TOKEN=hunter2-secret-value"})
+	redactor := redact.FromEntries([]string{"API_TOKEN=hunter2-secret-value"})
 	rec := newTestRecorder(t, s, runID, redactor)
 	inv := NewID()
 
@@ -100,7 +100,7 @@ func TestRecorderRedactsSecretsSplitAcrossWrites(t *testing.T) {
 func TestRecorderKeepsStreamsIndependent(t *testing.T) {
 	s, _ := newTestStore(t)
 	runID := newRun(t, s, "uid")
-	redactor := secrets.NewRedactor([]string{"API_TOKEN=abcdef-secret"})
+	redactor := redact.FromEntries([]string{"API_TOKEN=abcdef-secret"})
 	rec := newTestRecorder(t, s, runID, redactor)
 	inv := NewID()
 	out, errW := rec.Writer(inv, StreamStdout), rec.Writer(inv, StreamStderr)

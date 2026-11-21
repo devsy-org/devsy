@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -29,7 +29,7 @@ type Host struct {
 	supervisorArgs   []string
 	environment      []string
 	idLabels         []string
-	redactor         *secrets.Redactor
+	redactor         *redact.Redactor
 	redactions       *workspaceRedactions
 	info             *runtimev1.InfoResponse
 	timeout          time.Duration
@@ -86,7 +86,7 @@ func newHost(ctx context.Context, options hostOptions) (*Host, error) {
 		environment:      slices.Clone(options.environment),
 		idLabels:         slices.Clone(options.idLabels),
 		timeout:          options.timeout,
-		redactor:         secrets.NewEnvironmentRedactor(options.environment),
+		redactor:         redact.New(redact.Options{Environment: options.environment}),
 		redactions:       &workspaceRedactions{workspaces: make(map[string]*workspaceRedaction)},
 	}
 	// Freeze provider declarations so later caller mutation cannot change identity.

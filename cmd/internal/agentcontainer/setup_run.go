@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
@@ -79,10 +79,10 @@ func validParent(id string) string {
 	return ""
 }
 
-func runRedactor(secretEntries []string) *secrets.Redactor {
-	return secrets.Combine(
-		secrets.NewEnvironmentRedactor(os.Environ()),
-		secrets.NewRedactor(secretEntries),
+func runRedactor(secretEntries []string) *redact.Redactor {
+	return redact.Combine(
+		redact.New(redact.Options{Environment: os.Environ()}),
+		redact.FromEntries(secretEntries),
 	)
 }
 

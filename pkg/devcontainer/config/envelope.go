@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/clierr"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
@@ -96,7 +96,7 @@ func WriteResultJSON(w io.Writer, env ResultEnvelope) error {
 // WriteCLIErrorJSON serializes a normalized CLI error.
 func WriteCLIErrorJSON(w io.Writer, err error) error {
 	classified := clierr.Classify(err)
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	env := ErrorEnvelope{
 		Kind:    KindError,
 		Outcome: "error",
@@ -181,7 +181,7 @@ func WriteStatusJSON(w io.Writer, e status.Event) error {
 		(e.State == status.StateFailed && e.Error == nil) {
 		return fmt.Errorf("status event requires a phase and recognized state")
 	}
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	env := StatusEnvelope{
 		Kind:              KindStatus,
 		SchemaVersion:     1,
@@ -202,7 +202,7 @@ func WriteStatusJSON(w io.Writer, e status.Event) error {
 	return err
 }
 
-func redactError(info *status.ErrorInfo, redactor *secrets.Redactor) *status.ErrorInfo {
+func redactError(info *status.ErrorInfo, redactor *redact.Redactor) *status.ErrorInfo {
 	if info == nil {
 		return nil
 	}
@@ -214,7 +214,7 @@ func redactError(info *status.ErrorInfo, redactor *secrets.Redactor) *status.Err
 	}
 }
 
-func redactContext(values map[string]string, redactor *secrets.Redactor) map[string]string {
+func redactContext(values map[string]string, redactor *redact.Redactor) map[string]string {
 	if len(values) == 0 {
 		return nil
 	}

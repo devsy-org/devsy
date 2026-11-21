@@ -2,13 +2,14 @@ package log
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 )
 
 func TestColorEnabledHonorsNoColor(t *testing.T) {
@@ -224,7 +225,7 @@ func TestInitRedactsSecretsBeforeWritingSinks(t *testing.T) {
 	Init(
 		Config{
 			Verbosity: 2,
-			Redactor:  secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
+			Redactor:  redact.FromEntries([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
 		},
 	)
 
@@ -263,7 +264,7 @@ func TestRedactingWriterRedactsSecretSplitAcrossWrites(t *testing.T) {
 	var out syncBuffer
 	w := &redactingWriter{
 		next:     &out,
-		redactor: secrets.NewRedactor([]string{"TOKEN=DEVSY_LOG_SECRET_846297"}),
+		redactor: redact.FromEntries([]string{"TOKEN=DEVSY_LOG_SECRET_846297"}),
 	}
 	_, _ = w.Write([]byte("token=DEVSY_LOG_"))
 	_, _ = w.Write([]byte("SECRET_846297"))
@@ -329,5 +330,37 @@ func TestSuppressConsoleOutput(t *testing.T) {
 	}
 	if !strings.Contains(sink.String(), "during suppression") {
 		t.Fatal("suppressed sink output")
+	}
+}
+
+func TestMigrationKeepsOversizeStructuredEnvelope(t *testing.T) {
+	const registered = "synthetic-private-oversize-98970"
+	Init(
+		Config{
+			Verbosity: 2,
+			Format:    "json",
+			Redactor:  redact.FromEntries([]string{"TOKEN=" + registered}),
+		},
+	)
+	restore := SuppressConsoleOutput()
+	defer restore()
+	var sink syncBuffer
+	remove := AddSink(&sink)
+	defer remove()
+
+	Info(strings.Repeat("x", 17*1024) + registered)
+	if err := Sync(); err != nil {
+		t.Fatal(err)
+	}
+	got := sink.String()
+	if strings.Contains(got, registered) {
+		t.Fatal("registered fixture escaped masking")
+	}
+	var record map[string]any
+	if err := json.Unmarshal([]byte(got), &record); err != nil {
+		t.Fatalf("sink lost JSON object envelope: %.30q: %v", got, err)
+	}
+	if record["msg"] != "***" {
+		t.Fatalf("message not masked as a scalar")
 	}
 }

@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/livetee"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
@@ -87,7 +87,7 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	cmd.Dir = opts.Dir
 	cmd.Stdin = opts.Stdin
 
-	redactor := secrets.NewEnvironmentRedactor(cmd.Env)
+	redactor := redact.New(redact.Options{Environment: cmd.Env})
 	stdoutRedactor := redactor
 	if opts.UnredactedStdout {
 		stdoutRedactor = nil
@@ -137,7 +137,7 @@ func attachStream(
 	dst *io.Writer,
 	buf *subprocess.Buffer,
 	live io.Writer,
-	redactor *secrets.Redactor,
+	redactor *redact.Redactor,
 ) *subprocess.StreamingRedactingWriter {
 	if live == nil {
 		*dst = buf

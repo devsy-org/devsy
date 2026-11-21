@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/docker"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/onsi/ginkgo/v2"
 )
 
@@ -512,8 +512,8 @@ func recoverPodmanCleanup(
 
 // Redact before truncation so a clipped URL cannot expose partial credentials.
 func redactPodmanDiagnostics(text string) string {
-	return secrets.Combine(secrets.NewRedactor(podmanEndpointSecrets(os.Getenv("DOCKER_HOST"))),
-		secrets.NewEnvironmentRedactor(os.Environ())).Redact(text)
+	return redact.Combine(redact.FromEntries(podmanEndpointSecrets(os.Getenv("DOCKER_HOST"))),
+		redact.New(redact.Options{Environment: os.Environ()})).Redact(text)
 }
 
 func podmanEndpointSecrets(value string) []string {

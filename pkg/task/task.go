@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/gofrs/flock"
 )
@@ -541,7 +541,7 @@ func (t *Task) recordFailure(err error, failedLaunch bool) error {
 		}
 		message = classified.Message
 	}
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	var runContext map[string]string
 	if current, readErr := t.store.readState(t.id); readErr == nil {
 		runContext = runFailureContext(current.RunID)
@@ -595,7 +595,7 @@ type taskReporter struct {
 }
 
 func (r taskReporter) Report(e status.Event) {
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	_ = r.task.store.update(r.task.id, func(s *State) {
 		// A terminal task is done being described; late events from a worker
 		// still unwinding must not resurrect it or rewrite its outcome.
@@ -642,7 +642,7 @@ func recoverableFailure(phase status.Phase) bool {
 	}
 }
 
-func redactContext(values map[string]string, redactor *secrets.Redactor) map[string]string {
+func redactContext(values map[string]string, redactor *redact.Redactor) map[string]string {
 	if len(values) == 0 {
 		return nil
 	}

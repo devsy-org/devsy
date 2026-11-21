@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 )
 
 // Backend is the persistence a Recorder writes to. *Store implements it.
@@ -33,7 +33,7 @@ type RecorderOptions struct {
 	ParentProducerID string
 	// Redactor masks known secrets before anything is persisted. Nil keeps text
 	// as written.
-	Redactor *secrets.Redactor
+	Redactor *redact.Redactor
 	// Now overrides the clock in tests.
 	Now func() time.Time
 }
@@ -205,15 +205,15 @@ func (r *Recorder) Writer(invocationID string, stream Stream) *DiagnosticWriter 
 func (r *Recorder) WriterRedacting(
 	invocationID string,
 	stream Stream,
-	extra *secrets.Redactor,
+	extra *redact.Redactor,
 ) *DiagnosticWriter {
 	redactor := r.opts.Redactor
 	if extra != nil {
-		redactor = secrets.Combine(redactor, extra)
+		redactor = redact.Combine(redactor, extra)
 	}
 	return &DiagnosticWriter{
 		rec: r, invocationID: invocationID, stream: stream,
-		redactor: secrets.NewStreamingRedactor(redactor),
+		redactor: redact.NewStream(redactor),
 	}
 }
 
@@ -273,7 +273,7 @@ type DiagnosticWriter struct {
 	rec          *Recorder
 	invocationID string
 	stream       Stream
-	redactor     *secrets.StreamingRedactor
+	redactor     *redact.Stream
 
 	mu      sync.Mutex
 	partial []byte

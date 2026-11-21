@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 )
 
 // SessionOptions describes the run an entry point records into.
@@ -22,7 +22,7 @@ type SessionOptions struct {
 	Resumed  bool
 	Run      RunSpec
 	Location Location
-	Redactor *secrets.Redactor
+	Redactor *redact.Redactor
 }
 
 // Session is one process's handle on a run: the local store, the run, and a

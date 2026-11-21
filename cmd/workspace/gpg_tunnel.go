@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"golang.org/x/crypto/ssh"
 )
@@ -203,7 +203,7 @@ func writeGPGForwardDiagnostic(err error) bool {
 }
 
 func marshalGPGForwardDiagnostic(err error) ([]byte, error) {
-	message := secrets.NewEnvironmentRedactor(os.Environ()).Redact(err.Error())
+	message := redact.New(redact.Options{Environment: os.Environ()}).Redact(err.Error())
 	if runes := []rune(message); len(runes) > 2048 {
 		message = string(runes[:2048])
 	}

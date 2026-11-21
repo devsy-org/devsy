@@ -16,13 +16,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/livetee"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/scanner"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -502,7 +502,7 @@ func (w synchronizedCapture) Write(p []byte) (int, error) {
 func attachDockerStream(
 	capture, live io.Writer,
 	tee *livetee.Tee,
-	redactor *secrets.Redactor,
+	redactor *redact.Redactor,
 ) (io.Writer, *subprocess.StreamingRedactingWriter) {
 	if live == nil {
 		return capture, nil
@@ -595,7 +595,9 @@ func runStreams(ctx context.Context, cmd *exec.Cmd, streams Streams) error {
 	streams = synchronizedStreams(streams)
 	cmd.Stdin = streams.Stdin
 	tee := livetee.New(io.Discard, nil)
-	redactor := secrets.NewEnvironmentRedactor(append(cmd.Environ(), streams.RedactionEnv...))
+	redactor := redact.New(
+		redact.Options{Environment: append(cmd.Environ(), streams.RedactionEnv...)},
+	)
 	var stdout, stderr *subprocess.StreamingRedactingWriter
 	cmd.Stdout, stdout = attachDockerStream(streams.Stdout, streams.LiveStdout, tee, redactor)
 	cmd.Stderr, stderr = attachDockerStream(streams.Stderr, streams.LiveStderr, tee, redactor)

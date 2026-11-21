@@ -13,8 +13,8 @@ import (
 	sdkplugin "github.com/devsy-org/devsy-runtime-sdk/plugin"
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
 	"github.com/devsy-org/devsy-runtime-sdk/supervisor"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/hashicorp/go-hclog"
 	hplugin "github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/go-plugin/runner"
@@ -38,7 +38,7 @@ func (h *Host) call(
 	output := log.Writer(log.LevelDebug)
 	diagnostic := &diagnosticWriter{
 		writer: output,
-		stream: secrets.NewStreamingRedactor(h.redactor),
+		stream: redact.NewStream(h.redactor),
 	}
 	defer func() { diagnostic.close(); _ = output.Close() }()
 	client := h.newPluginClient(ctx, binary, diagnostic)
@@ -84,7 +84,7 @@ func (r *contextRunner) Start(ctx context.Context) error {
 type diagnosticWriter struct {
 	mu     sync.Mutex
 	writer io.Writer
-	stream *secrets.StreamingRedactor
+	stream *redact.Stream
 }
 
 func (w *diagnosticWriter) Write(data []byte) (int, error) {

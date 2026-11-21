@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/gofrs/flock"
 )
@@ -63,7 +63,7 @@ type Journal struct {
 	dir                       string
 	maxBytes, maxSegmentBytes int
 	now                       func() time.Time
-	redactor                  *secrets.Redactor
+	redactor                  *redact.Redactor
 }
 
 func DefaultDir() (string, error) {
@@ -101,7 +101,7 @@ func New(opts Options) (*Journal, error) {
 		maxBytes:        opts.MaxBytes,
 		maxSegmentBytes: opts.MaxSegmentBytes,
 		now:             opts.Now,
-		redactor:        secrets.NewEnvironmentRedactor(opts.Env),
+		redactor:        redact.New(redact.Options{Environment: opts.Env}),
 	}, nil
 }
 
@@ -218,7 +218,7 @@ func (j *Journal) appendLocked(b []byte) error {
 	return j.prune()
 }
 
-func redactError(r *secrets.Redactor, in *status.ErrorInfo) *status.ErrorInfo {
+func redactError(r *redact.Redactor, in *status.ErrorInfo) *status.ErrorInfo {
 	if in == nil {
 		return nil
 	}

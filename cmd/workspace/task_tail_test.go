@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/stretchr/testify/require"
@@ -454,7 +454,7 @@ func TestFollowTaskReconciliationDiagnostics(t *testing.T) {
 				log.Config{
 					Level:    level,
 					Format:   formatJSON,
-					Redactor: secrets.NewRedactor([]string{"TOKEN=" + secret}),
+					Redactor: redact.FromEntries([]string{"TOKEN=" + secret}),
 				},
 			)
 			var diagnostics bytes.Buffer
