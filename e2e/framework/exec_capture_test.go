@@ -14,12 +14,24 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	captureChildArg = "-test.run=^TestCaptureChild$"
+	capturePrefix   = "Authorization:\n Bearer "
+	captureSuffix   = "\npublic capture detail\n"
+)
+
 func TestCaptureChild(t *testing.T) {
 	switch os.Getenv("DEVSY_CAPTURE_CHILD") {
 	case "exit":
 		_, _ = fmt.Fprint(os.Stdout, "stdout")
 		_, _ = fmt.Fprint(os.Stderr, "stderr")
 		os.Exit(3)
+	case "folded":
+		_, _ = fmt.Fprint(os.Stdout, capturePrefix)
+		_, _ = fmt.Fprint(os.Stdout, "framework-stdout-fixture"+captureSuffix)
+		_, _ = fmt.Fprint(os.Stderr, capturePrefix)
+		_, _ = fmt.Fprint(os.Stderr, "framework-stderr-fixture"+captureSuffix)
+		os.Exit(0)
 	case "blocked":
 		_, _ = fmt.Fprint(os.Stdout, strings.Repeat("x", 2<<20))
 		_, _ = fmt.Fprint(os.Stderr, "ready")
@@ -34,12 +46,45 @@ func TestCaptureSuite(t *testing.T) { suite.Run(t, new(captureSuite)) }
 func (s *captureSuite) TestExit() {
 	s.T().Setenv("DEVSY_CAPTURE_CHILD", "exit")
 	out, stderr, err := s.framework().
-		ExecCommandCapture(context.Background(), []string{"-test.run=^TestCaptureChild$"})
+		ExecCommandCapture(context.Background(), []string{captureChildArg})
 	var exit *exec.ExitError
 	s.Require().ErrorAs(err, &exit)
 	s.Equal(3, exit.ExitCode())
 	s.Equal("stdout", out)
 	s.Equal("stderr", stderr)
+}
+
+func (s *captureSuite) TestCaptureMasksOnlyLiveDiagnosticCopies() {
+	s.T().Setenv("DEVSY_CAPTURE_CHILD", "folded")
+	outRead, outWrite, err := os.Pipe()
+	s.Require().NoError(err)
+	defer func() { _ = outRead.Close() }()
+	defer func() { _ = outWrite.Close() }()
+	errRead, errWrite, err := os.Pipe()
+	s.Require().NoError(err)
+	defer func() { _ = errRead.Close() }()
+	defer func() { _ = errWrite.Close() }()
+	oldOut, oldErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = outWrite, errWrite
+	defer func() { os.Stdout, os.Stderr = oldOut, oldErr }()
+
+	out, stderr, err := s.framework().
+		ExecCommandDiagnosticCapture(s.T().Context(), []string{captureChildArg})
+	s.Require().NoError(err)
+	s.Equal(capturePrefix+"framework-stdout-fixture"+captureSuffix, out)
+	s.Equal(capturePrefix+"framework-stderr-fixture"+captureSuffix, stderr)
+	s.Require().NoError(outWrite.Close())
+	s.Require().NoError(errWrite.Close())
+	liveOut, err := io.ReadAll(outRead)
+	s.Require().NoError(err)
+	liveErr, err := io.ReadAll(errRead)
+	s.Require().NoError(err)
+	for _, value := range [][]byte{liveOut, liveErr} {
+		s.Contains(string(value), "public capture detail")
+		s.NotContains(string(value), "framework-stdout-fixture")
+		s.NotContains(string(value), "framework-stderr-fixture")
+		s.Contains(string(value), "***")
+	}
 }
 
 func (s *captureSuite) TestBlockedLiveOutput() {
@@ -66,7 +111,7 @@ func (s *captureSuite) TestBlockedLiveOutput() {
 	}
 	done := make(chan result, 1)
 	go func() {
-		out, stderr, err := f.ExecCommandCapture(ctx, []string{"-test.run=^TestCaptureChild$"})
+		out, stderr, err := f.ExecCommandCapture(ctx, []string{captureChildArg})
 		done <- result{out, stderr, err}
 	}()
 	ready := make(chan error, 1)

@@ -8,7 +8,6 @@ import (
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 )
 
 const (
@@ -64,7 +63,7 @@ var _ = ginkgo.Describe(
 							time.Now().Add(30*time.Second),
 						)
 						defer cancelSSH()
-						_, stderr, sshErr := f.ExecCommandCapture(sshCtx, []string{
+						_, stderr, sshErr := f.ExecCommandDiagnosticCapture(sshCtx, []string{
 							cmdWorkspace, cmdSSH, tempDir, flagCommand, "sleep 2",
 						})
 						stderrs[i] = stderr
@@ -74,9 +73,24 @@ var _ = ginkgo.Describe(
 				wg.Wait()
 
 				for i := range sessions {
-					framework.ExpectNoError(runErrs[i], "ssh session %d stderr: %s", i, stderrs[i])
-					gomega.Expect(stderrs[i]).NotTo(gomega.ContainSubstring("not available"))
-					gomega.Expect(stderrs[i]).NotTo(gomega.ContainSubstring("credentials server"))
+					framework.ExpectNoError(
+						runErrs[i],
+						"ssh session %d stderr: %s",
+						i,
+						sshDiagnostic(stderrs[i]),
+					)
+					expectSSHSubstring(
+						stderrs[i],
+						"not available",
+						"SSH session should be available",
+						false,
+					)
+					expectSSHSubstring(
+						stderrs[i],
+						"credentials server",
+						"SSH session should have no server warning",
+						false,
+					)
 				}
 			},
 		)

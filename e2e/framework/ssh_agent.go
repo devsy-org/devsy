@@ -86,7 +86,7 @@ func generateAgentKey(keyPath string) error {
 	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-q").
 		CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ssh-keygen: %w: %s", err, out)
+		return fmt.Errorf("ssh-keygen: %w: %s", err, externalCommandDiagnostic(string(out)))
 	}
 	return nil
 }
@@ -128,7 +128,7 @@ func addKeyToAgent(sockPath, keyPath string) error {
 	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+sockPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ssh-add: %w: %s", err, out)
+		return fmt.Errorf("ssh-add: %w: %s", err, externalCommandDiagnostic(string(out)))
 	}
 	return nil
 }

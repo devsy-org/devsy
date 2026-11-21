@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -130,8 +131,8 @@ var _ = ginkgo.Describe(
 					ginkgo.ReportEntryVisibilityFailureOrVerbose,
 				)
 				framework.ExpectNoError(err, "OpenSSH should launch ProxyCommand; %s", diagnostic)
-				gomega.Expect(strings.TrimSpace(stdout.String())).To(
-					gomega.Equal("proxy-command-ok"),
+				gomega.Expect(strings.TrimSpace(stdout.String()) == "proxy-command-ok").To(
+					gomega.BeTrue(), "OpenSSH should return the expected stdout; %s", diagnostic,
 				)
 			},
 		)
@@ -140,7 +141,7 @@ var _ = ginkgo.Describe(
 
 func proxyCommandOutputDiagnostic(traceRoot *os.Root, stdout, stderr string) string {
 	trace, err := traceRoot.ReadFile(proxyCommandTraceFile)
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	return fmt.Sprintf(
 		"stdout=%s stderr=%s traceReadError=%s trace=%s",
 		proxyCommandExcerpt(redactor, stdout),
@@ -158,8 +159,8 @@ const (
 	proxyCommandExcerptLimit = 8192
 )
 
-func proxyCommandExcerpt(redactor *secrets.Redactor, text string) string {
-	quoted := strconv.QuoteToASCII(redactor.Redact(text))
+func proxyCommandExcerpt(redactor *redact.Redactor, text string) string {
+	quoted := strconv.QuoteToASCII(diagnosticredact.Record(redactor, text))
 	if len(quoted) <= proxyCommandExcerptLimit {
 		return quoted
 	}

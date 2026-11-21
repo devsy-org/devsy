@@ -15,9 +15,13 @@ import (
 // DevsySetupLogs runs `workspace logs --source setup` and returns stdout and stderr.
 func (f *Framework) DevsySetupLogs(ctx context.Context, args ...string) (string, string, error) {
 	full := append([]string{cmdWorkspace, "logs", "--source", "setup"}, args...)
-	stdout, stderr, err := f.ExecCommandCapture(ctx, full)
+	stdout, stderr, err := f.ExecCommandDiagnosticCapture(ctx, full)
 	if err != nil {
-		return stdout, stderr, fmt.Errorf("devsy setup logs failed: %w (stderr: %s)", err, stderr)
+		return stdout, stderr, fmt.Errorf(
+			"devsy setup logs failed: %w (stderr: %s)",
+			err,
+			externalCommandDiagnostic(stderr),
+		)
 	}
 
 	return stdout, stderr, nil

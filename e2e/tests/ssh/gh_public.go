@@ -53,7 +53,7 @@ func setPublicForwarding(
 	if enabled {
 		value = "true"
 	}
-	_, _, err := f.ExecCommandCapture(ctx, []string{
+	_, _, err := f.ExecCommandDiagnosticCapture(ctx, []string{
 		"context", "set", "default", "-o", "SSH_INJECT_GITHUB_CREDENTIALS=" + value,
 		"-o", "SSH_AGENT_FORWARDING=false",
 		"-o", "SSH_INJECT_GIT_CREDENTIALS=false", "-o", "SSH_INJECT_DOCKER_CREDENTIALS=false",
@@ -95,7 +95,7 @@ exit 1`,
 	p.registerDiagnostics(t, workspace, &deleted)
 	// No services start during this check, leaving the first enabled SSH call
 	// responsible for both preparing the relay and running the first gh command.
-	_, _, err = p.f.ExecCommandCapture(ctx, []string{
+	_, _, err = p.f.ExecCommandDiagnosticCapture(ctx, []string{
 		cmdWorkspace, cmdSSH, workspace, flagNoServices, flagCommand,
 		"test ! -e /usr/local/bin/gh.devsy-original",
 	})
@@ -139,7 +139,7 @@ func (p *publicGHFixture) testMissingCLI(
 	workspace string,
 ) {
 	t.Helper()
-	_, _, err := p.f.ExecCommandCapture(ctx, []string{
+	_, _, err := p.f.ExecCommandDiagnosticCapture(ctx, []string{
 		cmdWorkspace, cmdSSH, workspace,
 		flagNoServices, flagCommand,
 		"sudo -n rm -f /usr/local/bin/gh /usr/local/bin/gh.devsy-original /usr/bin/gh",

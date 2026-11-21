@@ -197,6 +197,17 @@ func (s *ExecSuite) TestRedact() {
 	s.Equal("short x stays", Redact("short x stays", "x"), "tiny secrets ignored")
 }
 
+func (s *ExecSuite) TestRedactMasksFoldedHeaderAndKeepsExtraFilters() {
+	input := "Authorization:\n Bearer primary-fixture\n  continuation-fixture\n" +
+		"public detail\n" + `{"auth":"registry-fixture"}`
+	got := Redact(input)
+	s.NotContains(got, "primary-fixture")
+	s.NotContains(got, "continuation-fixture")
+	s.NotContains(got, "registry-fixture")
+	s.Contains(got, "public detail")
+	s.Contains(got, `{"auth":"`+redacted+`"}`)
+}
+
 type blockedWriter struct {
 	entered chan struct{}
 	release chan struct{}

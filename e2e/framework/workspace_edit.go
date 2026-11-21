@@ -17,9 +17,13 @@ func (f *Framework) DevsyWorkspaceEditJSON(
 ) (string, error) {
 	baseArgs := []string{cmdWorkspace, "edit", id, flagResultFormat, formatJSON}
 	baseArgs = append(baseArgs, args...)
-	stdout, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
+	stdout, stderr, err := f.ExecCommandDiagnosticCapture(ctx, baseArgs)
 	if err != nil {
-		return "", fmt.Errorf("devsy workspace edit failed: %w (stderr: %s)", err, stderr)
+		return "", fmt.Errorf(
+			"devsy workspace edit failed: %w (stderr: %s)",
+			err,
+			externalCommandDiagnostic(stderr),
+		)
 	}
 
 	return stdout, nil
@@ -39,7 +43,11 @@ func (f *Framework) DevsyWorkspaceEditResult(
 
 	result := &workspace.PresentationResult{}
 	if err := json.Unmarshal([]byte(stdout), result); err != nil {
-		return nil, fmt.Errorf("decode workspace edit result %q: %w", stdout, err)
+		return nil, fmt.Errorf(
+			"decode workspace edit result %q: %w",
+			externalCommandDiagnostic(stdout),
+			err,
+		)
 	}
 
 	return result, nil
