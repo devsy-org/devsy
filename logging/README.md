@@ -56,3 +56,26 @@ Use `NewDiagnosticStream` to preserve long plain diagnostic tails for a bounded 
 The diagnostic stream masks nonblank indented Authorization continuations and recognizes Basic or Bearer immediately after an empty assignment. It preserves the original delimiters and checks decoded strings in complete JSON records. An oversized opaque record can suppress a following possible continuation as a precaution.
 
 Use a separate channel for interactive prompts, protocol stdout, or raw business data. Pretty-printed JSON requires a complete input. The redactor does not decode other secret representations such as base64, hex, or percent encoding. Register the emitted representation or supply a parsed structured field. Never log secrets intentionally.
+
+## Desktop diagnostic scanner
+
+`desktop/diagnostic-redaction.ts` identifies credential assignments in
+diagnostic text before Desktop forwards or writes it. The scanner returns
+ordered, half-open UTF-16 ranges. Consumers choose the replacement marker and
+apply their separate registered-value policy.
+
+The scanner recognizes credential names after ASCII normalization. Bare
+`Authorization` and `Proxy-Authorization` names, including terminal
+dot-qualified properties, use authorization value rules. Unquoted values
+include punctuation up to whitespace. Quoted and grouped values keep their
+complete framing. Incomplete framing or an ambiguous authorization tail masks
+through the end of the input. A separated terminal `workspace=<identifier>`
+field remains visible only after a complete authorization value on the same
+physical line.
+
+Unlabeled values require registration by the consumer. The scanner does
+not inspect environment variables, decode arbitrary encodings, or modify raw
+protocol, terminal, or application data.
+
+Run the fixtures and deterministic fuzz seeds with
+`node --test logging/desktop/*.test.ts` from the repository root.
