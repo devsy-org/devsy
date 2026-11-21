@@ -117,7 +117,16 @@ func bypassesDiagnosticHelper(path, alias string, selector *ast.SelectorExpr) bo
 		return true
 	case "Redact":
 		switch path {
-		case "cmd/workspace/gpg_tunnel.go", "pkg/log/logger.go", "pkg/subprocess/capture.go":
+		case "cmd/workspace/gpg_tunnel.go",
+			"pkg/driver/external/session.go",
+			"pkg/log/logger.go",
+			"pkg/log/writer.go",
+			"pkg/machinediagnostics/sanitize.go",
+			"pkg/status/render.go",
+			"pkg/subprocess/capture.go",
+			"pkg/task/task.go",
+			"pkg/workspacejournal/journal.go",
+			"pkg/workspacelogs/recorder.go":
 			return true
 		}
 	}

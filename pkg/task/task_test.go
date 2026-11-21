@@ -236,6 +236,73 @@ func TestReporterRedactsPersistedFailureMetadata(t *testing.T) {
 	}
 }
 
+func TestTaskMasksFoldedFailureDetails(t *testing.T) {
+	const continuation = "synthetic-task-folded-value"
+	const diagnostic = "Authorization: Bearer synthetic-task-initial\n " + continuation
+	details := &status.ErrorInfo{
+		Code: diagnostic, Message: diagnostic, Hint: diagnostic,
+		Context: map[string]string{"detail": diagnostic, "stage": "workspace"},
+	}
+	t.Run("failure", func(t *testing.T) {
+		store := newTestStore(t)
+		item, err := store.Create(CreateOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = item.Fail(&clierr.CLIError{
+			Code: clierr.Code(
+				details.Code,
+			),
+			Message: details.Message,
+			Hint:    details.Hint,
+			Context: details.Context,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertTaskFoldedFailure(t, store, item.ID(), continuation)
+	})
+	t.Run("reported", func(t *testing.T) {
+		store := newTestStore(t)
+		item, err := store.Create(CreateOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		item.Reporter().Report(status.Event{
+			Phase: status.PhaseBuildingImage,
+			State: status.StateFailed,
+			Step:  diagnostic,
+			Error: details,
+		})
+		assertTaskFoldedFailure(t, store, item.ID(), continuation)
+		state, err := store.Get(item.ID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.Step != "***" {
+			t.Error("reported step was not masked")
+		}
+	})
+}
+
+func assertTaskFoldedFailure(t *testing.T, store *Store, id string, continuation string) {
+	t.Helper()
+	state, err := store.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{state.Error, state.ErrorCode, state.ErrorHint, state.ErrorContext["detail"]} {
+		if strings.Contains(value, continuation) {
+			t.Error("folded fixture value was retained in task state")
+		} else if value != "***" {
+			t.Error("persisted field did not contain the whole-field mask")
+		}
+	}
+	if state.Status != StatusFailed || state.ErrorContext["stage"] != "workspace" {
+		t.Error("task status or ordinary context was lost")
+	}
+}
+
 func assertCurrentStatusMetadata(t *testing.T, state *State) {
 	t.Helper()
 	if state.OperationID != "op-17" || state.ParentOperationID != "op-9" ||
