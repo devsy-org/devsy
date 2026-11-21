@@ -6,10 +6,11 @@ import (
 )
 
 const (
-	defaultMask        = "***"
-	authorizationField = "Authorization"
-	headerStart        = `(?i)\b((?:proxy-)?authorization[ \t]*[:=][ \t]*)`
-	lineBreak          = `(?:\r\n|\r|\n)`
+	defaultMask         = "***"
+	authorizationField  = "Authorization"
+	headerStart         = `(?i)\b((?:proxy-)?authorization[ \t]*[:=][ \t]*)`
+	lineBreak           = `(?:\r\n|\r|\n)`
+	authorizationScheme = `(?:basic|bearer)\b`
 )
 
 type Options struct {
@@ -22,11 +23,12 @@ type Options struct {
 }
 
 type Redactor struct {
-	values     []string
-	matcher    *byteMatcher
-	maxLength  int
-	mask       string
-	diagnostic bool
+	values        []string
+	matcher       *byteMatcher
+	maxLength     int
+	mask          string
+	authorityURLs bool
+	foldedHeaders bool
 }
 
 var (
@@ -34,7 +36,7 @@ var (
 	authorityURLPattern = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/\s\x0b\x85\pZ?#"<>]*@`)
 	headerPattern       = regexp.MustCompile(headerStart + `[^\r\n]*`)
 	foldedHeaderPattern = regexp.MustCompile(
-		headerStart + `(?:` + lineBreak + `[ \t]*(?:basic|bearer)\b)?[^\r\n]*` +
+		headerStart + `(?:` + lineBreak + `[ \t]*` + authorizationScheme + `)?[^\r\n]*` +
 			`(?:` + lineBreak + `[ \t]+[^ \t\r\n][^\r\n]*)*`,
 	)
 )
@@ -128,7 +130,7 @@ func (r *Redactor) RedactDiagnostic(value string) string {
 	if r != nil {
 		diagnostic = *r
 	}
-	diagnostic.diagnostic = true
+	diagnostic.authorityURLs, diagnostic.foldedHeaders = true, true
 	return diagnostic.Redact(value)
 }
 
@@ -218,8 +220,11 @@ func (m *textMatches) lengthAt(index int) int {
 
 func (r *Redactor) textPatterns(value string) (urls, headers textMatches) {
 	url, header := urlPattern, headerPattern
-	if r != nil && r.diagnostic {
-		url, header = authorityURLPattern, foldedHeaderPattern
+	if r != nil && r.authorityURLs {
+		url = authorityURLPattern
+	}
+	if r != nil && r.foldedHeaders {
+		header = foldedHeaderPattern
 	}
 	return textMatches{matches: url.FindAllStringSubmatchIndex(value, -1), trim: 1},
 		textMatches{matches: header.FindAllStringSubmatchIndex(value, -1)}
