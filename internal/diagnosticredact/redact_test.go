@@ -101,3 +101,37 @@ func TestRecordsMaskRegisteredMultilineValueBeforeSplittingRecords(t *testing.T)
 		})
 	}
 }
+
+func TestRecordsMaskJSONFieldsBeforeTextPatternsCrossFieldBoundaries(t *testing.T) {
+	cases := map[string]struct{ input, canary string }{
+		"cookie after a URL field": {
+			input: `pull failed` + "\n" +
+				`{"url":"https://api.example.test/v1","Cookie":"email=bob@example.test; session=synthetic-cookie-tail"}` + "\n",
+			canary: "synthetic-cookie-tail",
+		},
+		"authorization after a git URL field": {
+			input:  "x\n" + `{"u":"git://host.test/r","Authorization":"Bearer abc@synthetic-auth-tail"}`,
+			canary: "synthetic-auth-tail",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			redactor := redact.FromEntries(nil)
+			assert.NotContains(t, Record(redactor, tc.input), tc.canary)
+			assert.NotContains(t, Records(redactor, tc.input), tc.canary)
+			assert.NotContains(t, RecordWithEnvironment(nil, tc.input), tc.canary)
+		})
+	}
+}
+
+func TestRecordsKeepFieldMaskingWhenARegisteredValueIsPresent(t *testing.T) {
+	const canary = "synthetic-registered-present-tail"
+	redactor := redact.New(redact.Options{
+		Environment: []string{"DEVSY_FIXTURE_TOKEN=synthetic-registered-present"},
+	})
+	input := "synthetic-registered-present\n" +
+		`{"url":"https://api.example.test/v1","Cookie":"email=bob@example.test; session=` + canary + `"}` + "\n"
+	output := Record(redactor, input)
+	assert.NotContains(t, output, "synthetic-registered-present\n")
+	assert.NotContains(t, output, canary)
+}

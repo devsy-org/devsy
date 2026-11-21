@@ -16,7 +16,9 @@ func Records(redactor *redact.Redactor, value string) string {
 	if json.Valid([]byte(value)) {
 		return wholeRecord(redactor, value)
 	}
-	value = wholeRecord(redactor, value)
+	if registeredValueSpansRecords(redactor, value) {
+		value = wholeRecord(redactor, value)
+	}
 	var output strings.Builder
 	for value != "" {
 		if LooksLikeStructuredJSON(value) {
@@ -34,6 +36,20 @@ func Records(redactor *redact.Redactor, value string) string {
 		value = rest
 	}
 	return output.String()
+}
+
+func registeredValueSpansRecords(redactor *redact.Redactor, value string) bool {
+	if !redactor.ContainsValue(value) {
+		return false
+	}
+	for rest := value; rest != ""; {
+		record, _, next := splitDiagnosticRecord(rest)
+		if redactor.ContainsValue(record) {
+			return false
+		}
+		rest = next
+	}
+	return true
 }
 
 func splitDiagnosticRecord(value string) (record, separator, rest string) {
