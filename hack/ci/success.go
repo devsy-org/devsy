@@ -193,6 +193,8 @@ func domainOutputForJob(job string) (string, bool) {
 		return "gh_credentials", true
 	case "provider-update-windows":
 		return "provider_update", true
+	case "shared-logging":
+		return "shared_logging", true
 	default:
 		return "", false
 	}
