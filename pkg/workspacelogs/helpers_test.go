@@ -49,6 +49,24 @@ func newTestStore(t *testing.T) (*Store, *fakeClock) {
 	return s, clock
 }
 
+const (
+	smallRunBytes        = 1024 * 1024
+	smallGenerationBytes = 5 * 1024 * 1024
+)
+
+func newSmallBudgetStore(t *testing.T) *Store {
+	t.Helper()
+	s, err := Open(Options{
+		Root:               t.TempDir(),
+		Now:                newClock().Now,
+		MaxRunBytes:        smallRunBytes,
+		MaxGenerationBytes: smallGenerationBytes,
+	})
+	require.NoError(t, err)
+
+	return s
+}
+
 func newRun(t *testing.T, s *Store, uid string) string {
 	t.Helper()
 	m, err := s.CreateRun(RunSpec{Context: testContext, WorkspaceUID: uid, Command: "up"})

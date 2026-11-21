@@ -134,7 +134,7 @@ func (s *Store) pruneGenerations(runs []runInfo) []runInfo {
 		}
 		count[key]++
 
-		return (count[key] > MaxCompletedRuns || size[key] > MaxGenerationBytes) && s.remove(r)
+		return (count[key] > MaxCompletedRuns || size[key] > s.maxGenerationBytes) && s.remove(r)
 	})
 }
 

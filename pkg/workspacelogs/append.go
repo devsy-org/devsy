@@ -95,7 +95,12 @@ func (s *Store) appendLocked(dir string, records []Record) (AppendResult, []Reco
 		return AppendResult{}, nil, err
 	}
 	runDir := filepath.Dir(filepath.Dir(dir))
-	w := &batchWriter{dir: dir, t: t, runBytes: dirBytes(runDir)}
+	w := &batchWriter{
+		dir:         dir,
+		t:           t,
+		runBytes:    dirBytes(runDir),
+		maxRunBytes: s.maxRunBytes,
+	}
 	defer w.close()
 
 	res := AppendResult{Accepted: t.lastSeq}
@@ -132,10 +137,11 @@ func (s *Store) appendLocked(dir string, records []Record) (AppendResult, []Reco
 
 // batchWriter appends encoded lines to the producer's current segment.
 type batchWriter struct {
-	dir      string
-	t        tail
-	runBytes int64
-	f        *os.File
+	dir         string
+	t           tail
+	runBytes    int64
+	maxRunBytes int64
+	f           *os.File
 }
 
 func (w *batchWriter) write(rec Record) (Record, error) {
@@ -181,13 +187,13 @@ func (w *batchWriter) encode(rec Record) ([]byte, Record, error) {
 }
 
 func (w *batchWriter) fitOutput(line []byte, rec Record) ([]byte, Record, error) {
-	if w.runBytes+int64(len(line)) > MaxRunBytes-metadataReserve {
+	if w.runBytes+int64(len(line)) > w.maxRunBytes-metadataReserve {
 		rec.Text, rec.Elided = "", true
 		var err error
 		if line, err = marshalLine(rec); err != nil {
 			return nil, Record{}, err
 		}
-		if w.runBytes+int64(len(line)) > MaxRunBytes-finalStateReserve {
+		if w.runBytes+int64(len(line)) > w.maxRunBytes-finalStateReserve {
 			return nil, Record{}, ErrCapacity
 		}
 	}
@@ -196,7 +202,7 @@ func (w *batchWriter) fitOutput(line []byte, rec Record) ([]byte, Record, error)
 }
 
 func (w *batchWriter) checkCapacity(line []byte, rec Record) ([]byte, Record, error) {
-	if w.runBytes+int64(len(line)) > MaxRunBytes {
+	if w.runBytes+int64(len(line)) > w.maxRunBytes {
 		return nil, Record{}, ErrCapacity
 	}
 

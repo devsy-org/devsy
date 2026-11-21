@@ -38,13 +38,19 @@ type Options struct {
 	Root string
 	// Now overrides the clock in tests.
 	Now func() time.Time
+	// MaxRunBytes overrides MaxRunBytes. Zero keeps the default.
+	MaxRunBytes int64
+	// MaxGenerationBytes overrides MaxGenerationBytes. Zero keeps the default.
+	MaxGenerationBytes int64
 }
 
 // Store is a file-backed archive of workspace run output. It is safe for use
 // by several goroutines and several processes sharing one Root.
 type Store struct {
-	root string
-	now  func() time.Time
+	root               string
+	now                func() time.Time
+	maxRunBytes        int64
+	maxGenerationBytes int64
 
 	mu    sync.Mutex
 	tails map[string]tail
@@ -62,7 +68,19 @@ func Open(opts Options) (*Store, error) {
 	if err := os.MkdirAll(opts.Root, dirPerm); err != nil {
 		return nil, fmt.Errorf("create workspace logs root: %w", err)
 	}
-	s := &Store{root: opts.Root, now: opts.Now, tails: map[string]tail{}}
+	if opts.MaxRunBytes <= 0 {
+		opts.MaxRunBytes = MaxRunBytes
+	}
+	if opts.MaxGenerationBytes <= 0 {
+		opts.MaxGenerationBytes = MaxGenerationBytes
+	}
+	s := &Store{
+		root:               opts.Root,
+		now:                opts.Now,
+		maxRunBytes:        opts.MaxRunBytes,
+		maxGenerationBytes: opts.MaxGenerationBytes,
+		tails:              map[string]tail{},
+	}
 	_ = s.Prune()
 
 	return s, nil
