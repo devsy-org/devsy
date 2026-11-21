@@ -34,7 +34,8 @@ func TestRenderCLIErrorRedactsMalformedURLCredentials(t *testing.T) {
 	})
 	assert.Equal(
 		t,
-		"Error: could not connect to https://***@example.test/\nContext:\n  response: ***\nTry: Proxy-Authorization:***\nretry later\n",
+		"Error: could not connect to https://***@example.test/\nContext:\n  response: ***\n"+
+			"Try: Proxy-Authorization:***\nretry later\n",
 		data,
 	)
 }
