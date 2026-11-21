@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
@@ -45,7 +46,7 @@ func Run(ctx context.Context, cfg Options) ([]byte, error) {
 
 	stderr := cfg.Stderr
 	if stderr == nil {
-		stderr = log.Writer(log.LevelError)
+		stderr = log.Writer(slog.LevelError)
 	}
 
 	var stdout bytes.Buffer

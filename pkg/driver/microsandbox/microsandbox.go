@@ -46,6 +46,7 @@ type microsandboxDriver struct {
 	defaults             specDefaults
 	workspaceMountPolicy workspaceMountPolicy
 	userResolver         imageUserResolver
+	workspaceID          string
 }
 
 var (
@@ -89,6 +90,7 @@ func parseMicrosandboxVersion(output string) (semver.Version, error) {
 // Preflight verifies the runtime is installed. Provisioning compatibility is
 // checked when creating a sandbox so older runtimes can manage existing ones.
 func (d *microsandboxDriver) Preflight(ctx context.Context, _ driver.PreflightOptions) error {
+	ctx = microsandboxLogContext(ctx, d.workspaceID)
 	if err := d.client.EnsureInstalled(ctx); err != nil {
 		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
 	}
@@ -102,9 +104,14 @@ func (d *microsandboxDriver) CanReprovision() bool {
 }
 
 func NewMicrosandboxDriver(
-	_ context.Context,
+	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (driver.Driver, error) {
+	workspaceID := ""
+	if workspaceInfo.Workspace != nil {
+		workspaceID = workspaceInfo.Workspace.ID
+	}
+	ctx = microsandboxLogContext(ctx, workspaceID)
 	client := cliClient{dockerPath: workspaceInfo.Agent.Docker.Path}
 
 	cfg := workspaceInfo.Agent.Microsandbox
@@ -123,11 +130,9 @@ func NewMicrosandboxDriver(
 		return nil, err
 	}
 
-	log.Debugf(
-		"using microsandbox driver: memory=%dMiB cpus=%d ephemeral=%t idleTimeout=%s",
-		defaults.memory, defaults.cpus, defaults.ephemeral, defaults.idleTimeout,
-	)
+	log.DebugContext(ctx, "using microsandbox driver")
 	d := newDriver(client, workspaceInfo.CLIOptions.IDLabels, defaults)
+	d.workspaceID = workspaceID
 	d.workspaceMountPolicy = workspacePolicy
 	d.dockerPath = workspaceInfo.Agent.Docker.Path
 	d.userResolver = filesystemUserResolver{dockerPath: d.dockerPath}
@@ -150,6 +155,7 @@ func (d *microsandboxDriver) RunDevContainer(
 	workspaceID string,
 	options *driver.RunOptions,
 ) error {
+	ctx = microsandboxLogContext(ctx, workspaceID)
 	return d.runFromOptions(ctx, workspaceID, options, nil)
 }
 
@@ -157,6 +163,7 @@ func (d *microsandboxDriver) RunImageDevContainer(
 	ctx context.Context,
 	params *driver.RunImageDevContainerParams,
 ) error {
+	ctx = microsandboxLogContext(ctx, params.WorkspaceID)
 	if err := checkGPURequirement(params.ParsedConfig); err != nil {
 		return err
 	}
@@ -191,6 +198,7 @@ func (d *microsandboxDriver) FindDevContainer(
 	ctx context.Context,
 	workspaceID string,
 ) (*config.ContainerDetails, error) {
+	ctx = microsandboxLogContext(ctx, workspaceID)
 	info, err := d.client.Find(ctx, sandboxName(workspaceID))
 	if err != nil || info == nil {
 		return nil, err
@@ -202,6 +210,7 @@ func (d *microsandboxDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
 ) error {
+	ctx = microsandboxLogContext(ctx, params.WorkspaceID)
 	return d.client.Exec(ctx, sandboxName(params.WorkspaceID), execRequest{
 		Command: params.Command,
 		User:    params.User,
@@ -219,6 +228,7 @@ func (d *microsandboxDriver) CommandContainerArgv(
 	argv []string,
 	streams driver.Streams,
 ) error {
+	ctx = microsandboxLogContext(ctx, workspaceID)
 	return d.client.Exec(ctx, sandboxName(workspaceID), execRequest{
 		Argv:   argv,
 		User:   "root",
@@ -286,6 +296,7 @@ func (d *microsandboxDriver) RequiresWorkspaceChown() bool {
 }
 
 func (d *microsandboxDriver) StartDevContainer(ctx context.Context, workspaceID string) error {
+	ctx = microsandboxLogContext(ctx, workspaceID)
 	if err := d.client.Start(ctx, sandboxName(workspaceID)); err != nil {
 		return fmt.Errorf("start microsandbox VM: %w", err)
 	}
@@ -293,6 +304,7 @@ func (d *microsandboxDriver) StartDevContainer(ctx context.Context, workspaceID 
 }
 
 func (d *microsandboxDriver) StopDevContainer(ctx context.Context, workspaceID string) error {
+	ctx = microsandboxLogContext(ctx, workspaceID)
 	if err := d.client.Stop(ctx, sandboxName(workspaceID)); err != nil {
 		return fmt.Errorf("stop microsandbox VM: %w", err)
 	}
@@ -302,6 +314,7 @@ func (d *microsandboxDriver) StopDevContainer(ctx context.Context, workspaceID s
 // DeleteDevContainer stops before removing; the runtime only removes stopped
 // sandboxes.
 func (d *microsandboxDriver) DeleteDevContainer(ctx context.Context, workspaceID string) error {
+	ctx = microsandboxLogContext(ctx, workspaceID)
 	name := sandboxName(workspaceID)
 	info, err := d.client.Find(ctx, name)
 	if err != nil {
@@ -316,10 +329,17 @@ func (d *microsandboxDriver) GetDevContainerLogs(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
+	ctx = microsandboxLogContext(ctx, workspaceID)
 	return d.client.Logs(ctx, sandboxName(workspaceID), stdout)
 }
 
+func microsandboxLogContext(ctx context.Context, workspaceID string) context.Context {
+	return log.WithContext(ctx, log.AttrComponent("builtin-driver"),
+		log.AttrProvider(provider.MicrosandboxDriver), log.AttrWorkspaceID(workspaceID))
+}
+
 func (d *microsandboxDriver) ProvisioningPreflight(ctx context.Context) error {
+	ctx = microsandboxLogContext(ctx, d.workspaceID)
 	if d.workspaceMountPolicy.StatVirtualization == statVirtOff {
 		return nil
 	}

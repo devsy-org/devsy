@@ -27,6 +27,7 @@ type Host struct {
 	binariesDir      string
 	supervisorBinary string
 	supervisorArgs   []string
+	providerName     string
 	environment      []string
 	idLabels         []string
 	redactor         *redact.Redactor
@@ -55,8 +56,13 @@ func New(ctx context.Context, workspace *provider.AgentWorkspaceInfo) (*Host, er
 		workspace.Options,
 		nil,
 	)
+	providerName := ""
+	if workspace.Workspace != nil {
+		providerName = workspace.Workspace.Provider.Name
+	}
 	return newHost(ctx, hostOptions{
 		config:           workspace.Agent,
+		providerName:     providerName,
 		directory:        binariesDir,
 		supervisorBinary: executable,
 		supervisorArgs: []string{
@@ -72,6 +78,7 @@ func New(ctx context.Context, workspace *provider.AgentWorkspaceInfo) (*Host, er
 type hostOptions struct {
 	config                      provider.ProviderAgentConfig
 	directory, supervisorBinary string
+	providerName                string
 	supervisorArgs, environment []string
 	idLabels                    []string
 	timeout                     time.Duration
@@ -83,6 +90,7 @@ func newHost(ctx context.Context, options hostOptions) (*Host, error) {
 		binariesDir:      options.directory,
 		supervisorBinary: options.supervisorBinary,
 		supervisorArgs:   slices.Clone(options.supervisorArgs),
+		providerName:     options.providerName,
 		environment:      slices.Clone(options.environment),
 		idLabels:         slices.Clone(options.idLabels),
 		timeout:          options.timeout,

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -569,6 +571,7 @@ func TestStartContainerPreservesEngineError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires a POSIX shell")
 	}
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 	source := filepath.Join(t.TempDir(), "missing.sock")
 	bin := filepath.Join(t.TempDir(), "engine")
 	require.NoError(t, os.WriteFile(bin, []byte(`#!/bin/sh
@@ -587,7 +590,7 @@ fi
 	}
 	var streamed engineOutputBuffer
 	err := d.startContainer(
-		context.Background(),
+		d.logContext(context.Background(), "workspace-canary"),
 		t.TempDir(),
 		[]string{testRunArg, source},
 		&streamed,
@@ -600,6 +603,15 @@ fi
 	var exitErr *exec.ExitError
 	require.True(t, errors.As(err, &exitErr))
 	assert.Equal(t, 17, exitErr.ExitCode())
+	entries := logs.FilterMessage("runtime command failed").All()
+	require.Len(t, entries, 1)
+	attrs := entries[0].AttrsMap()
+	assert.Equal(t, "docker-driver", attrs["component"])
+	assert.Equal(t, "docker", attrs["provider"])
+	assert.Equal(t, "workspace-canary", attrs["workspace_id"])
+	assert.Equal(t, "run", attrs["operation"])
+	assert.Equal(t, int64(17), attrs["exit_code"])
+	assert.Contains(t, attrs, "duration_ms")
 }
 
 func TestStartContainerBoundsEngineError(t *testing.T) {

@@ -148,6 +148,22 @@ func TestExecuteBuildWithoutRecorderLogsOnly(t *testing.T) {
 	assert.Equal(t, []string{"plain"}, messages)
 }
 
+func TestExecuteBuildLogsRuntimeContext(t *testing.T) {
+	logs := log.InitTestObserved(t, slog.LevelDebug)
+	d := &appleDriver{Apple: &streamingClient{}, workspaceID: "workspace-1"}
+	ctx := appleLogContext(t.Context(), d.workspaceID)
+
+	require.NoError(t, d.executeBuild(ctx, &build.BuildOptions{}, ""))
+	entries := logs.FilterMessage("apple runtime command completed").All()
+	require.Len(t, entries, 1)
+	attrs := entries[0].AttrsMap()
+	assert.Equal(t, "builtin-driver", attrs["component"])
+	assert.Equal(t, "apple", attrs["provider"])
+	assert.Equal(t, "workspace-1", attrs["workspace_id"])
+	assert.EqualValues(t, 0, attrs["exit_code"])
+	assert.Contains(t, attrs, "duration_ms")
+}
+
 func TestResolveExistingImageRecordsReuse(t *testing.T) {
 	ctx, store, runID := recordedContext(t)
 	d := &appleDriver{Apple: &mockClient{}}

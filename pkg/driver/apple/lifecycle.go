@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/apple"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -16,6 +18,7 @@ func (d *appleDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
 ) error {
+	ctx = appleLogContext(ctx, params.WorkspaceID)
 	container, err := d.FindDevContainer(ctx, params.WorkspaceID)
 	if err != nil {
 		return err
@@ -39,9 +42,12 @@ func (d *appleDriver) CommandDevContainer(
 		args = append(args, "-u", params.User)
 	}
 	args = append(args, container.ID, "sh", "-c", params.Command)
-	return d.Apple.Run(ctx, args, apple.Streams{
+	started := time.Now()
+	err = d.Apple.Run(ctx, args, apple.Streams{
 		Stdin: params.Stdin, Stdout: params.Stdout, Stderr: params.Stderr,
 	})
+	logAppleCommand(ctx, started, err)
+	return err
 }
 
 // SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
@@ -74,6 +80,7 @@ func (d *appleDriver) requireDevContainer(
 }
 
 func (d *appleDriver) StartDevContainer(ctx context.Context, workspaceID string) error {
+	ctx = appleLogContext(ctx, workspaceID)
 	container, err := d.requireDevContainer(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -82,6 +89,7 @@ func (d *appleDriver) StartDevContainer(ctx context.Context, workspaceID string)
 }
 
 func (d *appleDriver) StopDevContainer(ctx context.Context, workspaceID string) error {
+	ctx = appleLogContext(ctx, workspaceID)
 	container, err := d.requireDevContainer(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -90,6 +98,7 @@ func (d *appleDriver) StopDevContainer(ctx context.Context, workspaceID string) 
 }
 
 func (d *appleDriver) DeleteDevContainer(ctx context.Context, workspaceID string) error {
+	ctx = appleLogContext(ctx, workspaceID)
 	container, err := d.FindDevContainer(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -101,7 +110,7 @@ func (d *appleDriver) DeleteDevContainer(ctx context.Context, workspaceID string
 	// container is genuinely still running).
 	if container.State.Status == config.ContainerStatusRunning {
 		if err := d.Apple.Stop(ctx, container.ID); err != nil {
-			log.Warnf("stop before delete failed for %s: %v", container.ID, err)
+			log.WarnContext(ctx, "stop before delete failed", slog.String("error", err.Error()))
 		}
 	}
 	return d.Apple.Remove(ctx, container.ID)
@@ -113,6 +122,7 @@ func (d *appleDriver) GetDevContainerLogs(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
+	ctx = appleLogContext(ctx, workspaceID)
 	container, err := d.requireDevContainer(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -132,7 +142,7 @@ func (d *appleDriver) GetImageTag(ctx context.Context, imageID string) (string, 
 }
 
 func (d *appleDriver) PushDevContainer(ctx context.Context, image string) error {
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	if err := d.Apple.Push(ctx, image, writer, writer); err != nil {
 		return fmt.Errorf("push image: %w", err)
@@ -161,6 +171,7 @@ func (d *appleDriver) RunImageDevContainer(
 	ctx context.Context,
 	params *driver.RunImageDevContainerParams,
 ) error {
+	ctx = appleLogContext(ctx, params.WorkspaceID)
 	if err := d.ValidateRunImageDevContainer(params); err != nil {
 		return err
 	}
@@ -171,15 +182,17 @@ func (d *appleDriver) RunImageDevContainer(
 
 	args := d.buildRunArgs(params)
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	log.Infof(
 		"running apple container command: command=%s, args=%s",
 		d.command, redactArgs(args),
 	)
+	started := time.Now()
 	err := d.Apple.RunWithDir(ctx, params.LocalWorkspaceFolder, args,
 		apple.Streams{Stdout: writer, Stderr: writer})
+	logAppleCommand(ctx, started, err)
 	if err != nil {
 		return fmt.Errorf("failed to start dev container: %w", err)
 	}
@@ -199,7 +212,7 @@ func (d *appleDriver) EnsureImage(ctx context.Context, options *driver.RunOption
 	}
 
 	log.Debugf("image not found, pulling image: image=%s", options.Image)
-	writer := log.Writer(log.LevelDebug)
+	writer := log.Writer(slog.LevelDebug)
 	defer func() { _ = writer.Close() }()
 	return d.Apple.Pull(ctx, apple.PullOptions{
 		Image:    options.Image,

@@ -48,7 +48,8 @@ func (k *KubernetesDriver) RunDevContainer(
 	workspaceId string,
 	options *driver.RunOptions,
 ) error {
-	log.Debugf("Running devcontainer for workspace %q", workspaceId)
+	ctx = k.logContext(ctx, workspaceId)
+	log.DebugContext(ctx, "running dev container")
 	workspaceId = getID(workspaceId)
 
 	initialize, options, err := k.ensureDevContainerPvc(ctx, workspaceId, options)

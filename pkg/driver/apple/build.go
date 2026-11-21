@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os/exec"
 	"sort"
 	"strings"
@@ -23,6 +24,7 @@ func (d *appleDriver) BuildDevContainer(
 	ctx context.Context,
 	req driver.BuildRequest,
 ) (*config.BuildInfo, error) {
+	ctx = appleLogContext(ctx, d.workspaceID)
 	imageName := build.GetImageName(req.LocalWorkspaceFolder, req.PrebuildHash)
 	if req.Options.ImageName != "" {
 		imageName = req.Options.ImageName
@@ -108,7 +110,7 @@ func (d *appleDriver) executeBuild(
 	args := buildArgs(options, platform)
 	log.Debugf("building image with: container %s", redactArgs(args))
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	stderrBuf := &bytes.Buffer{}
 
@@ -117,7 +119,9 @@ func (d *appleDriver) executeBuild(
 		Stdout: run.tee(writer, workspacelogs.StreamStdout),
 		Stderr: io.MultiWriter(run.tee(writer, workspacelogs.StreamStderr), stderrBuf),
 	}
+	started := time.Now()
 	err := d.Apple.Run(ctx, args, streams)
+	logAppleCommand(ctx, started, err)
 	run.finish(ctx, err)
 	if err != nil {
 		if stderrBuf.Len() > 0 {

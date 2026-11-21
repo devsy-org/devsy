@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -13,7 +15,9 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/devsy-org/api/pkg/devsy"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
@@ -311,40 +315,80 @@ func (s *proxyClient) Status(
 	defer s.m.Unlock()
 
 	stdout := &bytes.Buffer{}
-	buf := &bytes.Buffer{}
-	err := RunCommandWithBinaries(ctx, WorkspaceCommandConfig{
-		Command:              s.config.Exec.Proxy.Status,
-		WorkspaceContextName: s.workspace.Context,
-		Workspace:            s.workspace,
-		Machine:              nil,
-		Options:              s.devsyConfig.ProviderOptions(s.config.Name),
-		Config:               s.config,
-		ExtraEnv:             EncodeOptions(options, config.EnvFlagsStatus),
-		Stdin:                nil,
-		Stdout:               io.MultiWriter(stdout, buf),
-		Stderr:               buf,
+	providerOptions := s.devsyConfig.ProviderOptions(s.config.Name)
+	resolvedOptions := provider.CombineOptions(s.workspace, nil, providerOptions)
+	extraEnv := EncodeOptions(options, config.EnvFlagsStatus)
+	environment := provider.ToEnvironment(s.workspace, nil, providerOptions, extraEnv)
+	var protected []string
+	for _, definitions := range []config.OptionDefinitions{
+		s.config.Options,
+		s.devsyConfig.DynamicProviderOptionDefinitions(s.config.Name),
+	} {
+		for name, definition := range definitions {
+			if definition != nil && (definition.Password || definition.Hidden) {
+				if value, ok := resolvedOptions[name]; ok {
+					protected = append(protected, name+"="+value.Value)
+				}
+			}
+		}
+	}
+	stderr := log.NewJSONLogStreamer(log.StreamerOptions{
+		Redactor: redact.Combine(
+			redact.New(redact.Options{Environment: environment}),
+			redact.FromEntries(protected),
+		),
+		FallbackLevel:       slog.LevelError,
+		DetectLevelPrefixes: true,
+		CaptureLines:        50,
+		CaptureBytes:        32 * 1024,
+		DefaultAttrs:        []slog.Attr{log.AttrProvider(s.config.Name)},
 	})
+	defer func() { _ = stderr.Close() }()
+	err := s.executor.execute(ctx, execParams{
+		command:   s.config.Exec.Proxy.Status,
+		extraEnv:  extraEnv,
+		stdout:    stdout,
+		stderr:    stderr,
+		rawStdout: true,
+	})
+	_ = stderr.Close()
 	if err != nil {
-		return client.StatusNotFound, fmt.Errorf(
-			"error retrieving container status: %s%w",
-			buf.String(),
-			err,
-		)
+		cause := fmt.Errorf("error retrieving container status: %w", err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return client.StatusNotFound, cause
+		}
+		message := "error retrieving container status"
+		if tail := stderr.ErrorOutput(); tail != "" {
+			message += ": " + tail
+		}
+		code := clierr.CodeUnknown
+		var classified *clierr.CLIError
+		if errors.As(err, &classified) && classified != nil {
+			code = classified.Code
+		}
+		return client.StatusNotFound, clierr.ProviderFailure(cause, message, code)
 	}
 
-	log.ReadJSONStream(bytes.NewReader(buf.Bytes()))
 	status := &client.WorkspaceStatus{}
-	err = json.Unmarshal(stdout.Bytes(), status)
+	if err := json.Unmarshal(stdout.Bytes(), status); err != nil {
+		cause := fmt.Errorf("error parsing proxy command response: %w", err)
+		if tail := stderr.ErrorOutput(); tail != "" {
+			return client.StatusNotFound, clierr.WithContext(
+				cause,
+				map[string]string{"stderr": tail},
+			)
+		}
+		return client.StatusNotFound, cause
+	}
+	parsed, err := client.ParseStatus(status.State)
 	if err != nil {
-		return client.StatusNotFound, fmt.Errorf(
-			"error parsing proxy command response: %s%w",
-			stdout.String(),
+		return client.StatusNotFound, clierr.ProviderFailure(
 			err,
+			"unrecognized proxy status",
+			clierr.CodeUnknown,
 		)
 	}
-
-	// parse status
-	return client.ParseStatus(status.State)
+	return parsed, nil
 }
 
 func (s *proxyClient) lockIDs() (string, string, string) {

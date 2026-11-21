@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ func (d *dockerDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
 ) error {
+	ctx = d.logContext(ctx, params.WorkspaceID)
 	container, err := d.requireDevContainer(ctx, params.WorkspaceID)
 	if err != nil {
 		return err
@@ -61,11 +63,13 @@ func (d *dockerDriver) CommandDevContainer(
 		args = append(args, "-i")
 	}
 	args = append(args, "-u", params.User, container.ID, "sh", "-c", params.Command)
+	started := time.Now()
 	err = d.Docker.Run(ctx, args, docker.Streams{
 		Stdin:  params.Stdin,
 		Stdout: params.Stdout,
 		Stderr: params.Stderr,
 	})
+	logDockerCommandResult(ctx, "exec", started, err)
 	if err != nil {
 		return fmt.Errorf("run command in container: %w", err)
 	}
@@ -199,7 +203,7 @@ func (d *dockerDriver) runLoggedDockerCommand(
 	subcommand string,
 	args []string,
 ) error {
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	log.Debugf(
@@ -237,6 +241,7 @@ func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) e
 }
 
 func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag string) error {
+	ctx = d.logContext(ctx, workspaceID)
 	container, err := d.FindDevContainer(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -255,6 +260,7 @@ func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag str
 // DeleteDevContainer stops a still-running container before removing it,
 // since podman/docker refuse to `rm` a running container.
 func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
+	ctx = d.logContext(ctx, workspaceId)
 	container, err := d.FindDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
@@ -272,6 +278,7 @@ func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 }
 
 func (d *dockerDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
+	ctx = d.logContext(ctx, workspaceId)
 	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
@@ -281,6 +288,7 @@ func (d *dockerDriver) StartDevContainer(ctx context.Context, workspaceId string
 }
 
 func (d *dockerDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
+	ctx = d.logContext(ctx, workspaceId)
 	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
@@ -328,6 +336,7 @@ func (d *dockerDriver) RunImageDevContainer(
 	ctx context.Context,
 	params *driver.RunImageDevContainerParams,
 ) error {
+	ctx = d.logContext(ctx, params.WorkspaceID)
 	if err := d.ValidateRunImageDevContainer(params); err != nil {
 		return err
 	}
@@ -346,7 +355,7 @@ func (d *dockerDriver) RunImageDevContainer(
 		return err
 	}
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	if err := d.startContainer(ctx, params.LocalWorkspaceFolder, args, writer); err != nil {
@@ -382,7 +391,7 @@ func (d *dockerDriver) EnsureImage(
 	}
 
 	log.Debugf("image not found, pulling image: image=%s", options.Image)
-	writer := log.Writer(log.LevelDebug)
+	writer := log.Writer(slog.LevelDebug)
 	defer func() { _ = writer.Close() }()
 
 	return d.Docker.Pull(ctx, docker.PullOptions{
@@ -450,12 +459,14 @@ func (d *dockerDriver) startContainer(
 	stderr := subprocess.NewBuffer(
 		redact.New(redact.Options{Environment: append(os.Environ(), d.Docker.Environment...)}),
 	)
+	started := time.Now()
 	err := d.Docker.RunWithDir(
 		ctx,
 		dir,
 		args,
 		docker.Streams{Stdout: writer, Stderr: io.MultiWriter(writer, stderr)},
 	)
+	logDockerCommandResult(ctx, "run", started, err)
 	if err != nil {
 		log.Errorf(
 			"docker container failed to start: error=%v, command=%s, args=%s, cwd=%s",
@@ -470,4 +481,21 @@ func (d *dockerDriver) startContainer(
 		return fmt.Errorf("failed to start dev container: %w", err)
 	}
 	return nil
+}
+
+func logDockerCommandResult(ctx context.Context, operation string, started time.Time, err error) {
+	attrs := []slog.Attr{
+		log.AttrOperation(operation),
+		log.AttrDurationMs(time.Since(started).Milliseconds()),
+	}
+	if err == nil {
+		attrs = append(attrs, slog.Int("exit_code", 0))
+		log.DebugContext(ctx, "runtime command completed", attrs...)
+		return
+	}
+	var exitErr interface{ ExitCode() int }
+	if errors.As(err, &exitErr) {
+		attrs = append(attrs, slog.Int("exit_code", exitErr.ExitCode()))
+	}
+	log.DebugContext(ctx, "runtime command failed", attrs...)
 }

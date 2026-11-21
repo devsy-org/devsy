@@ -54,6 +54,15 @@ func serve(mode, state string, delay time.Duration, nonce string) {
 			" Bearer folded-runtime-fixture-value\npublic runtime detail",
 		)
 	}
+	if mode == "stream-structured-stderr" {
+		_, _ = fmt.Fprint(os.Stderr,
+			`{"level":"warn","msg":"structured runtime canary","detail":{"credential":"`)
+		secret := os.Getenv("FIXTURE_TOKEN")
+		middle := len(secret) / 2
+		_, _ = fmt.Fprint(os.Stderr, secret[:middle])
+		_, _ = fmt.Fprint(os.Stderr, secret[middle:])
+		_, _ = fmt.Fprintln(os.Stderr, `"}}`)
+	}
 	if mode == fake.CrashBeforeHandshake {
 		os.Exit(22)
 	}
