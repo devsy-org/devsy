@@ -190,7 +190,7 @@ func TestRunReportsLifecycleAndParent(t *testing.T) {
 		context.Background(), r,
 		Operation{Phase: PhaseBuildingImage, Step: "image"},
 		func(ctx context.Context) error {
-			if ParentOperationID(ctx) == "" {
+			if OperationID(ctx) == "" || ParentOperationID(ctx) != "" {
 				t.Fatal("child context has no operation ID")
 			}
 			return nil

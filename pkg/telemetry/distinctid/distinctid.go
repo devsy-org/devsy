@@ -6,13 +6,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/machineid"
-	"github.com/devsy-org/devsy/pkg/util"
 )
 
 var (
@@ -20,29 +19,24 @@ var (
 	fallbackID     string
 )
 
-// Get returns the analytics distinct ID: the DEVSY_TELEMETRY_DISTINCT_ID
-// override when set, otherwise HMAC(machine-id, $HOME) hex-encoded.
 func Get() string {
 	if injected := os.Getenv(config.EnvTelemetryDistinctID); injected != "" {
 		return injected
 	}
 
 	id, err := machineid.ID()
-	if err != nil {
-		// Random fallback prevents every failure-path user from collapsing
-		// into a single HMAC bucket. Cached so repeated calls within one
-		// process agree.
-		id = cachedFallbackID()
-	}
+	return derive(id, err, cachedFallbackID)
+}
 
-	home, err := util.UserHomeDir()
-	if err != nil {
-		home = ""
+func derive(id string, err error, fallback func() string) string {
+	id = strings.TrimSpace(id)
+	if err != nil || id == "" || strings.EqualFold(id, "unknown") {
+		id = fallback()
 	}
-
-	mac := hmac.New(sha256.New, []byte(id))
-	mac.Write([]byte(home))
-	return fmt.Sprintf("%x", mac.Sum(nil))
+	if id == "" {
+		return ""
+	}
+	return Hash("machine", id)
 }
 
 func cachedFallbackID() string {
@@ -53,9 +47,17 @@ func cachedFallbackID() string {
 }
 
 func randomFallbackID() string {
-	var b [16]byte
+	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "rand-error"
+		return ""
 	}
 	return hex.EncodeToString(b[:])
+}
+
+func Hash(domain, value string) string {
+	mac := hmac.New(sha256.New, []byte("devsy-telemetry-v1"))
+	mac.Write([]byte(domain))
+	mac.Write([]byte{0})
+	mac.Write([]byte(value))
+	return hex.EncodeToString(mac.Sum(nil))
 }

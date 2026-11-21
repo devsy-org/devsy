@@ -1,37 +1,65 @@
-import { execSync } from "node:child_process"
-import { createHash } from "node:crypto"
+import { execFileSync } from "node:child_process"
+import { randomBytes } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { platform } from "node:os"
 
+let cached: string | undefined
+
+function valid(value: string): string {
+  const trimmed = value.trim()
+  return trimmed.toLowerCase() === "unknown" ? "" : trimmed
+}
+
 export function machineIdSync(): string {
-  try {
-    const os = platform()
-    let raw: string
-
-    if (os === "linux") {
-      raw = execSync("cat /etc/machine-id || cat /var/lib/dbus/machine-id", {
-        encoding: "utf-8",
-        timeout: 3000,
-      }).trim()
-    } else if (os === "darwin") {
-      const output = execSync(
-        "ioreg -rd1 -c IOPlatformExpertDevice | awk '/IOPlatformUUID/'",
-        { encoding: "utf-8", timeout: 3000 },
-      )
-      const match = output.match(/"([^"]+)"$/)
-      raw = match?.[1] ?? "unknown"
-    } else if (os === "win32") {
-      const output = execSync(
-        "reg query HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography /v MachineGuid",
-        { encoding: "utf-8", timeout: 3000 },
-      )
-      const match = output.match(/REG_SZ\s+(.+)/)
-      raw = match?.[1]?.trim() ?? "unknown"
-    } else {
-      raw = "unknown"
+  if (cached !== undefined) return cached
+  const os = platform()
+  if (os === "linux") {
+    for (const path of ["/var/lib/dbus/machine-id", "/etc/machine-id"]) {
+      try {
+        const id = readFileSync(path, "utf8").trim()
+        if (id) {
+          if (valid(id)) {
+            cached = id
+            return cached
+          }
+          break
+        }
+      } catch {}
     }
-
-    return createHash("sha256").update(raw).digest("hex")
-  } catch {
-    return "unknown"
+  } else if (os === "darwin" || os === "win32") {
+    try {
+      const output =
+        os === "darwin"
+          ? execFileSync("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], {
+              encoding: "utf8",
+              timeout: 3000,
+            })
+          : execFileSync(
+              "reg",
+              [
+                "query",
+                "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography",
+                "/v",
+                "MachineGuid",
+                "/reg:64",
+              ],
+              { encoding: "utf8", timeout: 3000 },
+            )
+      const match =
+        os === "darwin"
+          ? output.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/)
+          : output.match(/MachineGuid\s+REG_SZ\s+([^\r\n]+)/i)
+      const id = valid(match?.[1] ?? "")
+      if (id) {
+        cached = id
+        return cached
+      }
+    } catch {}
   }
+  try {
+    cached = randomBytes(32).toString("hex")
+  } catch {
+    cached = ""
+  }
+  return cached
 }

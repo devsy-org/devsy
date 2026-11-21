@@ -149,13 +149,18 @@ func Execute() {
 
 func run() (code int) {
 	machineMode := false
+	recordInvocation := true
+	metrics := telemetry.NewMetricsReporter()
+	var finalErr error
 	collector := telemetry.FromContext(gocontext.Background()) // noop until BootstrapCLI
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorf("panic: %v\n%s", r, debug.Stack())
-			panicErr := clierr.NewPanic(r)
-			collector.RecordCLI(panicErr)
-			code = exitCodeForError(panicErr, machineMode)
+			finalErr = clierr.NewPanic(r)
+			code = exitCodeForError(finalErr, machineMode)
+		}
+		if recordInvocation {
+			recordCLIMetrics(collector, metrics.Finish(finalErr), finalErr)
 		}
 		collector.Flush()
 	}()
@@ -163,21 +168,23 @@ func run() (code int) {
 	rootCmd, globalFlags := BuildRoot()
 	target := resolveTarget(rootCmd)
 	collector = telemetry.BootstrapCLI(target)
-	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
+	ctx := telemetry.WithCollector(gocontext.Background(), collector)
+	rootCmd.SetContext(telemetry.WithMetrics(ctx, metrics))
 
 	isInternal := topLevelCommand(target) == internalCommand
 	machineMode = configureOutput(rootCmd, globalFlags, isInternal)
 
 	if !isInternal {
 		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
-			collector.RecordCLI(err)
-			return exitCodeForError(err, machineMode)
+			finalErr = err
+			return exitCodeForError(finalErr, machineMode)
 		} else if shouldExit {
+			recordInvocation = false
 			return 0
 		}
 	}
 
-	err := rootCmd.Execute()
+	finalErr = rootCmd.Execute()
 	if devsyConfig, cfgErr := config.LoadConfig(
 		globalFlags.Context,
 		globalFlags.Provider,
@@ -185,11 +192,22 @@ func run() (code int) {
 		collector = telemetry.ApplyCLIConfig(devsyConfig, collector)
 	}
 
-	collector.RecordCLI(err)
-	if err != nil {
-		return exitCodeForError(err, machineMode)
+	if finalErr != nil {
+		return exitCodeForError(finalErr, machineMode)
 	}
 	return 0
+}
+
+func recordCLIMetrics(
+	collector telemetry.CLICollector,
+	snapshot telemetry.MetricsSnapshot,
+	err error,
+) {
+	collector.RecordCLI(err, snapshot)
+	if err := telemetry.ExportMetrics(snapshot); err != nil {
+		log.WithAttrs(log.AttrErrorCode("metrics_export_failed")).
+			Error("local metrics export failed")
+	}
 }
 
 func resolveTarget(rootCmd *cobra.Command) *cobra.Command {

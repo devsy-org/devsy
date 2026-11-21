@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os/exec"
 	"slices"
 	"sync"
@@ -16,9 +17,11 @@ import (
 	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/hashicorp/go-hclog"
 	hplugin "github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/go-plugin/runner"
+	"google.golang.org/grpc/status"
 )
 
 func (h *Host) call(
@@ -33,10 +36,33 @@ func (h *Host) call(
 	if err != nil {
 		return fmt.Errorf("external runtime %s: %w", operation, err)
 	}
-	// Normalize after owned cleanup so caller deadlines win over transport
-	// cancellation reported just before the local context timer fires.
-	defer func() { err = h.operationError(ctx, operation, err) }()
-	output := log.Writer(log.LevelDebug)
+	var rpcDuration time.Duration
+	var called bool
+	defer func() {
+		metricErr := err
+		if err != nil && ctx.Err() != nil {
+			metricErr = ctx.Err()
+		}
+		code := runtimeMetricCode(metricErr)
+		err = h.operationError(ctx, operation, err)
+		if called {
+			telemetry.RecordProviderOperation(ctx, telemetry.ProviderOperation{
+				ProviderType: telemetry.ProviderTypeExternalSDK,
+				Operation:    operation,
+				Duration:     rpcDuration,
+				ErrorCode:    code,
+			})
+		}
+	}()
+	attrs := []slog.Attr{log.AttrComponent("external-driver")}
+	if h.providerName != "" {
+		attrs = append(attrs, log.AttrProvider(h.providerName))
+	}
+	output := log.NewJSONLogStreamer(log.StreamerOptions{
+		Redactor:      h.redactor,
+		FallbackLevel: slog.LevelDebug,
+		DefaultAttrs:  attrs,
+	})
 	diagnostic := &diagnosticWriter{
 		writer: output,
 		stream: diagnosticredact.Stream(h.redactor),
@@ -57,8 +83,73 @@ func (h *Host) call(
 	if !ok {
 		return errors.New("invalid gRPC client")
 	}
-	log.Debugf("External runtime %s startup completed in %s", operation, time.Since(started))
-	return rpc(runtimeClient)
+	log.DebugContext(ctx, "External runtime startup completed",
+		log.AttrOperation(operation), log.AttrDurationMs(time.Since(started).Milliseconds()))
+	called = true
+	rpcStart := time.Now()
+	err = rpc(runtimeClient)
+	rpcDuration = time.Since(rpcStart)
+	return err
+}
+
+func runtimeMetricCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	var category runtimev1.RuntimeErrorCode
+	if runtimeErr, ok := errors.AsType[*RuntimeError](err); ok {
+		category = runtimeErr.Category
+	} else if rpcStatus, ok := status.FromError(err); ok {
+		for _, detail := range rpcStatus.Details() {
+			if runtimeErr, ok := detail.(*runtimev1.RuntimeError); ok {
+				category = runtimeErr.Code
+				break
+			}
+		}
+	}
+	return runtimeCategoryMetricCode(category)
+}
+
+func runtimeCategoryMetricCode(category runtimev1.RuntimeErrorCode) string {
+	switch category {
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_NOT_FOUND:
+		return "not_found"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_ALREADY_EXISTS:
+		return "already_exists"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_INVALID_ARGUMENT:
+		return "invalid_argument"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_UNSUPPORTED:
+		return "unsupported"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_UNAVAILABLE:
+		return "unavailable"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_FAILED_PRECONDITION:
+		return "failed_precondition"
+	default:
+		return runtimeCategoryMetricCodeOther(category)
+	}
+}
+
+func runtimeCategoryMetricCodeOther(category runtimev1.RuntimeErrorCode) string {
+	switch category {
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_PERMISSION_DENIED:
+		return "permission_denied"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_TIMEOUT:
+		return "timeout"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_CANCELLED:
+		return "cancelled"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_RUNTIME_FAILURE:
+		return "runtime_failure"
+	case runtimev1.RuntimeErrorCode_RUNTIME_ERROR_CODE_INCOMPATIBLE_VERSION:
+		return "incompatible_version"
+	default:
+		return "unknown"
+	}
 }
 
 // go-plugin holds its client lock throughout handshake, so Client.Kill cannot
@@ -115,7 +206,7 @@ func (h *Host) newPluginClient(
 	// Routine helper lifecycle diagnostics belong at trace; runtime stderr is
 	// preserved independently below, including unstructured backend failures.
 	frameworkLogLevel := hclog.Warn
-	if log.LevelString() == log.LevelTraceName {
+	if log.LevelString() == "trace" {
 		frameworkLogLevel = hclog.Trace
 	}
 	return hplugin.NewClient(&hplugin.ClientConfig{

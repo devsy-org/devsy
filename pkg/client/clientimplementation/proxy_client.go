@@ -24,6 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/options/resolver"
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -61,6 +62,7 @@ type proxyExecutor struct {
 }
 
 type execParams struct {
+	operation        string
 	command          types.StrArray
 	extraEnv         map[string]string
 	stdin            io.Reader
@@ -72,7 +74,11 @@ type execParams struct {
 
 // execute runs a proxy command with common settings.
 func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
-	return RunCommandWithBinaries(ctx, WorkspaceCommandConfig{
+	var started time.Time
+	if telemetry.MetricsFromContext(ctx) != nil {
+		started = time.Now()
+	}
+	err := RunCommandWithBinaries(ctx, WorkspaceCommandConfig{
 		Command:              params.command,
 		WorkspaceContextName: e.client.workspace.Context,
 		Workspace:            e.client.workspace,
@@ -85,17 +91,26 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 		Stderr:               params.stderr,
 		RawStdout:            params.rawStdout,
 	})
+	if !started.IsZero() {
+		code := ""
+		if err != nil {
+			code = string(clierr.Classify(err).Code)
+		}
+		telemetry.RecordProviderOperation(ctx, telemetry.ProviderOperation{
+			ProviderType: telemetry.ProviderTypeScriptProxy,
+			Operation:    params.operation,
+			Duration:     time.Since(started),
+			ErrorCode:    code,
+		})
+	}
+	return err
 }
 
-// executeWithJSONLog runs a command with JSON log streaming. After the
-// sub-process exits we close the pipe and block on the scanner goroutine
-// so every buffered log line is forwarded through zap before the caller
-// can observe completion. Without this drain, callers that propagate the
-// error and exit (e.g. cmd/root.go calls os.Exit on failure) race the
-// goroutine and can lose the tail of the sub-process stderr - which is
-// where the actionable error message usually lives.
 func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParams) error {
-	writer, done := log.PipeJSONStream()
+	writer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       slog.LevelWarn,
+		DetectLevelPrefixes: true,
+	})
 	if params.stderr == nil {
 		params.stderr = writer
 	} else {
@@ -103,7 +118,6 @@ func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParam
 	}
 	err := e.execute(ctx, params)
 	_ = writer.Close()
-	<-done
 	return err
 }
 
@@ -198,10 +212,11 @@ func (s *proxyClient) Create(
 	stderr io.Writer,
 ) error {
 	err := s.executor.execute(ctx, execParams{
-		command: s.config.Exec.Proxy.Create.Workspace,
-		stdin:   stdin,
-		stdout:  stdout,
-		stderr:  stderr,
+		operation: "create",
+		command:   s.config.Exec.Proxy.Create.Workspace,
+		stdin:     stdin,
+		stdout:    stdout,
+		stderr:    stderr,
 	})
 	if err != nil {
 		return fmt.Errorf("create remote workspace : %w", err)
@@ -211,6 +226,7 @@ func (s *proxyClient) Create(
 
 func (s *proxyClient) Ssh(ctx context.Context, opt client.SshOptions) error {
 	return s.executor.executeWithJSONLog(ctx, execParams{
+		operation: "command",
 		command:   s.config.Exec.Proxy.Ssh,
 		extraEnv:  EncodeOptions(opt, config.EnvFlagsSSH),
 		stdin:     opt.Stdin,
@@ -227,7 +243,8 @@ func (s *proxyClient) OpenSSHTransport(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return s.executor.executeWithJSONLog(ctx, execParams{
-				command: s.config.Exec.Proxy.Ssh,
+				operation: "command",
+				command:   s.config.Exec.Proxy.Ssh,
 				extraEnv: EncodeOptions(
 					client.SshOptions{User: opt.User},
 					config.EnvFlagsSSH,
@@ -250,8 +267,9 @@ func (s *proxyClient) Stop(ctx context.Context, opt client.StopOptions) error {
 	defer s.m.Unlock()
 
 	return s.executor.executeWithJSONLog(ctx, execParams{
-		command: s.config.Exec.Proxy.Stop,
-		stdout:  io.Discard,
+		operation: "stop",
+		command:   s.config.Exec.Proxy.Stop,
+		stdout:    io.Discard,
 	})
 }
 
@@ -267,6 +285,7 @@ func (s *proxyClient) Up(ctx context.Context, opt client.UpOptions) error {
 	}
 
 	return s.executor.executeWithJSONLog(ctx, execParams{
+		operation: "start",
 		command:   s.config.Exec.Proxy.Up,
 		extraEnv:  opts,
 		stdin:     opt.Stdin,
@@ -288,9 +307,10 @@ func (s *proxyClient) Delete(ctx context.Context, opt client.DeleteOptions) erro
 	}
 
 	err := s.executor.executeWithJSONLog(ctx, execParams{
-		command:  s.config.Exec.Proxy.Delete,
-		extraEnv: EncodeOptions(opt, config.EnvFlagsDelete),
-		stdout:   io.Discard,
+		operation: "delete",
+		command:   s.config.Exec.Proxy.Delete,
+		extraEnv:  EncodeOptions(opt, config.EnvFlagsDelete),
+		stdout:    io.Discard,
 	})
 	if err != nil && !opt.Force {
 		return fmt.Errorf("error deleting workspace: %w", err)
@@ -345,6 +365,7 @@ func (s *proxyClient) Status(
 	})
 	defer func() { _ = stderr.Close() }()
 	err := s.executor.execute(ctx, execParams{
+		operation: "status",
 		command:   s.config.Exec.Proxy.Status,
 		extraEnv:  extraEnv,
 		stdout:    stdout,
@@ -439,10 +460,11 @@ func (s *proxyClient) updateInstance(ctx context.Context) error {
 	}
 
 	return s.executor.execute(ctx, execParams{
-		command: s.config.Exec.Proxy.Update.Workspace,
-		stdin:   os.Stdin,
-		stdout:  os.Stdout,
-		stderr:  os.Stderr,
+		operation: "other",
+		command:   s.config.Exec.Proxy.Update.Workspace,
+		stdin:     os.Stdin,
+		stdout:    os.Stdout,
+		stderr:    os.Stderr,
 	})
 }
 

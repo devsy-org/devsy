@@ -6,12 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/clierr"
+	"github.com/devsy-org/devsy/pkg/log"
 )
 
 // Pipeline identifies which command's progress an Event describes.
@@ -84,6 +86,11 @@ const (
 	PhaseInstallingProvider Phase = "installing_provider"
 	PhaseResolvingOptions   Phase = "resolving_options"
 	PhaseRunningInit        Phase = "running_init"
+	PhaseMachineCreate      Phase = "machine_create"
+	PhaseMachineStart       Phase = "machine_start"
+	PhaseMachineStop        Phase = "machine_stop"
+	PhaseMachineDelete      Phase = "machine_delete"
+	PhaseMachineStatus      Phase = "machine_status"
 )
 
 // Event is one phase transition.
@@ -96,6 +103,7 @@ type Event struct {
 	State             State         `json:"state,omitempty"`
 	Duration          time.Duration `json:"-"`
 	Error             *ErrorInfo    `json:"error,omitempty"`
+	Cause             error         `json:"-"`
 }
 
 // Reporter receives status events as they occur. Implementations must be
@@ -131,7 +139,13 @@ func Fail(r Reporter, phase Phase, err error) {
 		return
 	}
 	r.Report(
-		Event{Phase: PhaseFailed, Step: string(phase), State: StateFailed, Error: ErrorFrom(err)},
+		Event{
+			Phase: PhaseFailed,
+			Step:  string(phase),
+			State: StateFailed,
+			Error: ErrorFrom(err),
+			Cause: err,
+		},
 	)
 }
 
@@ -151,6 +165,17 @@ func ErrorFrom(err error) *ErrorInfo {
 }
 
 type operationContextKey struct{}
+
+type operationContext struct {
+	id     string
+	parent string
+}
+
+type observerContextKey struct{}
+
+func WithObserver(ctx context.Context, observer Reporter) context.Context {
+	return context.WithValue(ctx, observerContextKey{}, observer)
+}
 
 var operationSequence atomic.Uint64
 
@@ -180,7 +205,10 @@ func Run(
 		reporter = Nop()
 	}
 	id := fmt.Sprintf("op-%d", operationSequence.Add(1))
-	parent, _ := ctx.Value(operationContextKey{}).(string)
+	parent := OperationID(ctx)
+	if observer, ok := ctx.Value(observerContextKey{}).(Reporter); ok && observer != nil {
+		reporter = Tee(reporter, observer)
+	}
 	started := Event{
 		Pipeline:          operation.Pipeline,
 		OperationID:       id,
@@ -190,7 +218,16 @@ func Run(
 		State:             StateStarted,
 	}
 	reporter.Report(started)
-	childCtx := context.WithValue(ctx, operationContextKey{}, id)
+	childCtx := context.WithValue(
+		ctx,
+		operationContextKey{},
+		operationContext{id: id, parent: parent},
+	)
+	childCtx = log.WithContext(
+		childCtx,
+		slog.String("operation_id", id),
+		slog.String("parent_operation_id", parent),
+	)
 	start := time.Now()
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -218,6 +255,7 @@ func Run(
 	if err != nil {
 		done.State = StateFailed
 		done.Error = ErrorFrom(err)
+		done.Cause = err
 	} else {
 		done.State = StateSucceeded
 	}
@@ -225,13 +263,12 @@ func Run(
 	return err
 }
 
-// ParentOperationID returns the current operation ID, if any.
 func ParentOperationID(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	id, _ := ctx.Value(operationContextKey{}).(string)
-	return id
+	operation, _ := ctx.Value(operationContextKey{}).(operationContext)
+	return operation.parent
 }
 
 // OperationID returns the current operation ID, if any.
@@ -239,8 +276,8 @@ func OperationID(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	id, _ := ctx.Value(operationContextKey{}).(string)
-	return id
+	operation, _ := ctx.Value(operationContextKey{}).(operationContext)
+	return operation.id
 }
 
 // ForPipeline stamps every event a reporter receives with pipeline, so the
