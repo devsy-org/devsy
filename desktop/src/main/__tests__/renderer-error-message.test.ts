@@ -97,6 +97,20 @@ describe("renderer error message sanitization", () => {
     expect(message).not.toContain("regi")
   })
 
+  it.each([
+    ["token", "Failed token=private-canary retry"],
+    ["secret", "Failed client_secret=private-canary retry"],
+    ["password", "Failed password: private-canary retry"],
+  ])(
+    "masks the credential value when the registered value %s overlaps its label",
+    (registered, message) => {
+      const result = sanitizeRendererErrorMessage(message, [registered])
+      expect(result).not.toContain("private-canary")
+      expect(result).toContain("Failed")
+      expect(result).toContain("retry")
+    },
+  )
+
   it("masks a registered value that spans a record boundary", () => {
     const registered = "first-canary\nsecond-canary"
     const message = sanitizeRendererErrorMessage(

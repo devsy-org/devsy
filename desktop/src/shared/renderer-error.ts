@@ -26,22 +26,12 @@ export interface RendererErrorSummary {
   name: RendererErrorName
 }
 
-function redactCredentialAssignments(value: string): string {
-  let result = ""
-  let copied = 0
-  for (const { keyStart, end } of credentialAssignments(value, true)) {
-    result += `${value.slice(copied, keyStart)}[redacted]`
-    copied = end
-  }
-  return result + value.slice(copied)
-}
-
 export const maxRendererErrorMessageLength = 4096
 
-function redactRegisteredValues(
+function registeredRanges(
   value: string,
   registered: readonly string[],
-): string {
+): [number, number][] {
   const ranges: [number, number][] = []
   for (const secret of registered) {
     if (!secret) continue
@@ -52,6 +42,20 @@ function redactRegisteredValues(
     )
       ranges.push([start, start + secret.length])
   }
+  return ranges
+}
+
+function redactSecrets(value: string, registered: readonly string[]): string {
+  const bounded = value.slice(0, maxRendererErrorMessageLength)
+  const firstRecord = bounded.split(/[\r\n\u2028\u2029]/, 1)[0]
+  const cutByLimit =
+    firstRecord.length === bounded.length && value.length > bounded.length
+  const ranges = registeredRanges(value, registered)
+  for (const { keyStart, end } of credentialAssignments(firstRecord, true))
+    ranges.push([
+      keyStart,
+      cutByLimit && end >= firstRecord.length ? value.length : end,
+    ])
   ranges.sort(([left], [right]) => left - right)
   let result = ""
   let copied = 0
@@ -73,11 +77,9 @@ export function sanitizeRendererErrorMessage(
   value: string,
   registered: readonly string[] = [],
 ): string {
-  return redactCredentialAssignments(
-    redactRegisteredValues(value, registered)
-      .slice(0, maxRendererErrorMessageLength)
-      .split(/[\r\n\u2028\u2029]/, 1)[0],
-  )
+  return redactSecrets(value, registered)
+    .slice(0, maxRendererErrorMessageLength)
+    .split(/[\r\n\u2028\u2029]/, 1)[0]
     .replace(/\b(?:bearer|basic)\s+[a-z0-9._~+/=-]+/gi, "[redacted]")
     .replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, "[redacted]")
     .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi, "[url]")
