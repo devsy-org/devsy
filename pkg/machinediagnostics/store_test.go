@@ -42,6 +42,32 @@ func TestStoreRecordsAndReadsEvents(t *testing.T) {
 	assert.Equal(t, "token=secret-token", response.Events[0].Message)
 }
 
+func TestStoreMasksFoldedAuthorization(t *testing.T) {
+	const continuation = "folded-machine-fixture-value"
+	const before = "public before diagnostic"
+	const after = "public after diagnostic"
+	store, err := NewRecorder(Options{
+		Dir:    t.TempDir(),
+		Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
+	})
+	require.NoError(t, err)
+	store.Record(Event{
+		Type:    EventDaemonStarted,
+		Level:   LevelInfo,
+		Message: before + "\nAuthorization: Bearer first-fixture\n  " + continuation + "\n" + after,
+	})
+
+	events, err := readEvents(store.eventsDir)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	message := events[0].Message
+	assert.NotContains(t, message, "first-fixture")
+	assert.NotContains(t, message, continuation)
+	assert.NotContains(t, message, "\n")
+	assert.Contains(t, message, before)
+	assert.Contains(t, message, after)
+}
+
 func TestReadWithoutCursorReturnsMostRecentEvents(t *testing.T) {
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	store, err := NewRecorder(Options{
