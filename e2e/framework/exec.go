@@ -154,7 +154,7 @@ func captureCommandOutput(
 
 func externalCommandDiagnostic(value string) string {
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
-	return diagnosticredact.Record(redactor, value)
+	return diagnosticredact.Record(redactor, maskRecordText(redactor, value))
 }
 
 // ExecCommandJSON runs the devsy test binary and decodes its stdout as a JSON object.
