@@ -26,6 +26,7 @@ jobs:
           filters: |
             desktop:
               - 'desktop/**'
+              - 'logging/desktop/**'
               - '.github/workflows/desktop-ci.yml'
 
   lint-and-test:
