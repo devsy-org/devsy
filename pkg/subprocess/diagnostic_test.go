@@ -6,6 +6,7 @@ import (
 	"errors"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,29 @@ type failingWriter struct{ calls int }
 func (w *failingWriter) Write([]byte) (int, error) {
 	w.calls++
 	return 0, errors.New("sink unavailable")
+}
+
+type cancelOnOutput struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	marker string
+	cancel context.CancelFunc
+}
+
+func (w *cancelOnOutput) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.buf.Write(p)
+	if strings.Contains(w.buf.String(), w.marker) {
+		w.cancel()
+	}
+	return n, err
+}
+
+func (w *cancelOnOutput) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
 }
 
 func skipWithoutShell(t *testing.T) {
@@ -125,13 +149,19 @@ func TestDiagnosticSinkOnStartFailureAndCancellation(t *testing.T) {
 		t.Fatal("start failure should return an error")
 	}
 	skipWithoutShell(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	result, err := Run(ctx, "sh", []string{"-c", "echo before; sleep 5"}, opts)
-	if !errors.Is(err, context.DeadlineExceeded) || result.Signal == "" {
+	canceling := &cancelOnOutput{marker: "before", cancel: cancel}
+	result, err := Run(
+		ctx,
+		"sh",
+		[]string{"-c", "echo before; exec sleep 5"},
+		Options{Diagnostic: DiagnosticSink{Stdout: canceling, Stderr: canceling}},
+	)
+	if !errors.Is(err, context.Canceled) || result.Signal == "" {
 		t.Fatalf("result = %+v, err = %v, want a canceled signaled command", result, err)
 	}
-	if !strings.Contains(sink.String(), "before") {
-		t.Fatalf("sink = %q, want output written before cancellation", sink.String())
+	if !strings.Contains(canceling.String(), "before") {
+		t.Fatalf("sink = %q, want output written before cancellation", canceling.String())
 	}
 }
