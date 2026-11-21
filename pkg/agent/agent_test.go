@@ -12,7 +12,7 @@ func TestSSHServerCommand_EscapesAgentPath(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "pwned")
 	malicious := "/tmp/devsy'; touch " + marker + "; echo 'still-quoted"
 
-	command := sshServerCommand(malicious, false)
+	command := sshServerCommand(malicious)
 
 	// The built command names a nonexistent binary, so it's expected to
 	// fail; only the absence of the marker file matters here.
@@ -26,18 +26,18 @@ func TestSSHServerCommand_EscapesAgentPath(t *testing.T) {
 	}
 }
 
-func TestSSHServerCommand_AppendsDebugFlag(t *testing.T) {
-	command := sshServerCommand("/usr/local/bin/devsy", true)
+func TestSSHServerCommand_AppendsCanonicalLevel(t *testing.T) {
+	command := sshServerCommand("/usr/local/bin/devsy", "--log-level", "trace")
 
-	if !strings.HasSuffix(command, "--log-level=debug") {
-		t.Fatalf("expected trailing --debug flag, got: %s", command)
+	if !strings.HasSuffix(command, "--log-level trace") {
+		t.Fatalf("expected trailing trace flag, got: %s", command)
 	}
 }
 
-func TestSSHServerCommand_OmitsDebugFlagWhenDisabled(t *testing.T) {
-	command := sshServerCommand("/usr/local/bin/devsy", false)
+func TestSSHServerCommand_OmitsLevelWhenUnspecified(t *testing.T) {
+	command := sshServerCommand("/usr/local/bin/devsy")
 
-	if strings.Contains(command, "--log-level=debug") {
-		t.Fatalf("did not expect --debug flag, got: %s", command)
+	if strings.Contains(command, "--log-level") {
+		t.Fatalf("did not expect a log level flag, got: %s", command)
 	}
 }

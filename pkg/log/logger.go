@@ -239,7 +239,13 @@ func Sync() error {
 	return nil
 }
 
-func ForwardFlagArgs() []string { return []string{"--log-level", LevelString()} }
+func ForwardFlagArgs() []string {
+	level := LevelString()
+	if level == DefaultLevel {
+		return nil
+	}
+	return []string{"--log-level", level}
+}
 
 func emit(level Level, message string) {
 	if enabled(level) {

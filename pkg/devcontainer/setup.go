@@ -466,7 +466,7 @@ func (r *runner) addSetupFlags(args *[]string) {
 	r.addPlatformFlags(args)
 	r.addDotfilesFlags(args)
 	r.addPrebuildFlag(args)
-	r.addDebugFlag(args)
+	*args = append(*args, log.ForwardFlagArgs()...)
 }
 
 func (r *runner) addChownFlag(args *[]string) {
@@ -553,16 +553,6 @@ func (r *runner) addPrebuildFlag(args *[]string) {
 	if r.workspaceConfig.CLIOptions.Prebuild {
 		*args = append(*args, names.Flag(names.Prebuild))
 	}
-}
-
-func (r *runner) addDebugFlag(args *[]string) {
-	if r.isDebugMode() {
-		*args = append(*args, names.FlagValue(names.LogLevel, log.LevelDebugName))
-	}
-}
-
-func (r *runner) isDebugMode() bool {
-	return log.DebugEnabled()
 }
 
 // setupSecrets are the secret env vars and mount paths passed to lifecycle commands.
@@ -687,10 +677,7 @@ func (r *runner) buildSSHTunnelArgv() []string {
 			r.workspaceConfig.CLIOptions.SSHAuthSockID,
 		)
 	}
-	if r.isDebugMode() {
-		args = append(args, names.FlagValue(names.LogLevel, log.LevelDebugName))
-	}
-	return args
+	return append(args, log.ForwardFlagArgs()...)
 }
 
 func getRelativeDevContainerJson(origin, localWorkspaceFolder string) string {

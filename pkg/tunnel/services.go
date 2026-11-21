@@ -33,7 +33,6 @@ import (
 )
 
 const (
-	debugFlag          = " --debug"
 	defaultExitTimeout = 5 * time.Second
 	maxRetrySteps      = 10
 	retryDuration      = 1 * time.Second
@@ -198,8 +197,8 @@ func formatCredentialsCommand(opts RunServicesOptions, gitSSHSigningKey string) 
 	if opts.ForwardPorts {
 		command += " --forward-ports"
 	}
-	if log.DebugEnabled() {
-		command += debugFlag
+	if args := log.ForwardFlagArgs(); len(args) != 0 {
+		command += " " + shellescape.QuoteCommand(args)
 	}
 	return command
 }

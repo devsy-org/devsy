@@ -253,14 +253,14 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 	}
 
 	sshTunnelCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
-	if log.DebugEnabled() {
-		sshTunnelCmd += " --debug" //nolint:goconst
+	if args := log.ForwardFlagArgs(); len(args) != 0 {
+		sshTunnelCmd += " " + shellescape.QuoteCommand(args)
 	}
 
 	agentCommand := workspaceAgentCommand(
 		client.AgentPath(),
 		workspaceInfo,
-		log.DebugEnabled(),
+		log.ForwardFlagArgs(),
 		cmd.LifecycleTerminal != nil,
 	)
 
@@ -298,14 +298,18 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 	})
 }
 
-func workspaceAgentCommand(agentPath, workspaceInfo string, debug, lifecycleTerminal bool) string {
+func workspaceAgentCommand(
+	agentPath, workspaceInfo string,
+	logArgs []string,
+	lifecycleTerminal bool,
+) string {
 	command := fmt.Sprintf(
 		"%s internal agent workspace up --workspace-info %s",
 		shellescape.Quote(agentPath),
 		shellescape.Quote(workspaceInfo),
 	)
-	if debug {
-		command += " --debug"
+	if len(logArgs) != 0 {
+		command += " " + shellescape.QuoteCommand(logArgs)
 	}
 	if lifecycleTerminal {
 		command += " " + shellescape.Quote("--lifecycle-terminal-protocol=1")

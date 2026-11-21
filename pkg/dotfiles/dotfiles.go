@@ -62,9 +62,7 @@ func Setup(p SetupParams) error {
 	if err != nil {
 		return err
 	}
-	if log.DebugEnabled() {
-		dotCmd.Args = append(dotCmd.Args, names.FlagValue(names.LogLevel, log.LevelDebugName))
-	}
+	dotCmd.Args = append(dotCmd.Args, log.ForwardFlagArgs()...)
 
 	log.Debugf("Running dotfiles setup command: %v", dotCmd.Args)
 
@@ -85,7 +83,8 @@ func Setup(p SetupParams) error {
 
 func buildDotCmdAgentArguments(
 	dotfilesRepo, dotfilesScript string,
-	strictHostKey, debug bool,
+	strictHostKey bool,
+	logArgs []string,
 ) []string {
 	agentArguments := []string{
 		cmdInternal,
@@ -100,9 +99,7 @@ func buildDotCmdAgentArguments(
 		agentArguments = append(agentArguments, names.Flag(names.StrictHostKeyChecking))
 	}
 
-	if debug {
-		agentArguments = append(agentArguments, names.FlagValue(names.LogLevel, log.LevelDebugName))
-	}
+	agentArguments = append(agentArguments, logArgs...)
 
 	if dotfilesScript != "" {
 		agentArguments = append(
@@ -157,9 +154,8 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 	strictHostKey := p.devsyConfig.ContextOption(
 		config.ContextOptionSSHStrictHostKeyChecking,
 	) == config.BoolTrue
-	debug := log.DebugEnabled()
 	agentArguments := buildDotCmdAgentArguments(
-		p.dotfilesRepo, p.dotfilesScript, strictHostKey, debug,
+		p.dotfilesRepo, p.dotfilesScript, strictHostKey, log.ForwardFlagArgs(),
 	)
 
 	if p.dotfilesScript != "" {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -53,6 +54,21 @@ func TestLevelFromString(t *testing.T) {
 	}
 	if _, ok := logging.ParseLevel("verbose"); ok {
 		t.Fatal("LevelFromString accepted invalid level")
+	}
+}
+
+func TestForwardFlagArgs(t *testing.T) {
+	previous := current.Load()
+	t.Cleanup(func() { current.Store(previous) })
+	Init(Config{DefaultLevel: DefaultLevel})
+	if got := ForwardFlagArgs(); len(got) != 0 {
+		t.Fatalf("default level forwarded as %v", got)
+	}
+	for _, level := range []string{LevelInfoName, LevelDebugName, LevelTraceName, LevelErrorName} {
+		Init(Config{Level: level})
+		if got := ForwardFlagArgs(); !slices.Equal(got, []string{"--log-level", level}) {
+			t.Fatalf("level %q forwarded as %v", level, got)
+		}
 	}
 }
 

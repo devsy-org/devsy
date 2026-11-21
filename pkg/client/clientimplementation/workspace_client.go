@@ -867,8 +867,8 @@ func runCommandExecution(ctx context.Context, opts RunCommandOptions) (retErr er
 		return nil
 	}
 
-	if log.DebugEnabled() {
-		opts.Environ = append(opts.Environ, config.EnvDebug+"="+config.BoolTrue)
+	if level := log.LevelString(); level != log.DefaultLevel {
+		opts.Environ = append(opts.Environ, config.EnvLogLevel+"="+level)
 	}
 
 	redactor := redact.New(redact.Options{Environment: opts.Environ})
@@ -1669,8 +1669,8 @@ func buildAgentCommand(
 		agentCommand,
 		shellescape.Quote(workspaceInfo),
 	)
-	if log.DebugEnabled() {
-		command += " --debug"
+	if args := log.ForwardFlagArgs(); len(args) != 0 {
+		command += " " + shellescape.QuoteCommand(args)
 	}
 	return command
 }

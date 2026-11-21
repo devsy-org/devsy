@@ -46,9 +46,11 @@ func agentPreRunE(globalFlags *flags.GlobalFlags) func(*cobra.Command, []string)
 		root.Annotations[config.AgentExecutedAnnotation] = "true"
 
 		log.Init(log.Config{
-			Quiet:  globalFlags.Quiet,
-			Debug:  globalFlags.Debug,
-			Format: "json",
+			Quiet:        globalFlags.Quiet,
+			Debug:        globalFlags.Debug,
+			Level:        globalFlags.LogLevel,
+			DefaultLevel: log.LevelInfoName,
+			Format:       "json",
 		})
 
 		if globalFlags.DevsyHome != "" {

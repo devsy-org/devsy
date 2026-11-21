@@ -78,7 +78,7 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 		dotfilesRepo   string
 		dotfilesScript string
 		strictHostKey  bool
-		debug          bool
+		logArgs        []string
 		expected       []string
 	}{
 		{
@@ -104,11 +104,11 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 			dotfilesRepo:   httpsGithubComUserDotfiles,
 			dotfilesScript: "setup.sh",
 			strictHostKey:  true,
-			debug:          true,
+			logArgs:        []string{"--log-level", "trace"},
 			expected: []string{
 				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
 				repository, httpsGithubComUserDotfiles,
-				"--strict-host-key-checking", "--log-level=debug",
+				"--strict-host-key-checking", "--log-level", "trace",
 				"--install-script", "setup.sh",
 			},
 		},
@@ -120,7 +120,7 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 				tt.dotfilesRepo,
 				tt.dotfilesScript,
 				tt.strictHostKey,
-				tt.debug,
+				tt.logArgs,
 			)
 			assert.Equal(t, tt.expected, result)
 		})

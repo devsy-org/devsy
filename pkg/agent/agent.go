@@ -487,7 +487,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		return err
 	}
 
-	command := sshServerCommand(remoteAgentPath, log.DebugEnabled())
+	command := sshServerCommand(remoteAgentPath, log.ForwardFlagArgs()...)
 	user := opts.User
 	if user == "" {
 		user = "root"
@@ -505,12 +505,9 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 
 // sshServerCommand builds the remote command that runs the ssh-server
 // subcommand at agentPath.
-func sshServerCommand(agentPath string, debug bool) string {
+func sshServerCommand(agentPath string, logArgs ...string) string {
 	args := []string{agentPath, "internal", "ssh-server", "--stdio"}
-	if debug {
-		args = append(args, "--log-level="+log.LevelDebugName)
-	}
-	return shellescape.QuoteCommand(args)
+	return shellescape.QuoteCommand(append(args, logArgs...))
 }
 
 func dockerReachable(dockerOverride string, envs map[string]string) (bool, error) {
