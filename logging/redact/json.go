@@ -6,11 +6,67 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 func (r *Redactor) redactJSON(text string) (string, bool) {
-	_, encoded, valid := r.sanitizeDocument(text)
+	value, encoded, valid := r.sanitizeDocument(text)
+	if valid && text != encoded && utf8.ValidString(text) && !r.ContainsValue(text) {
+		decoder := json.NewDecoder(strings.NewReader(text))
+		decoder.UseNumber()
+		if sameJSONValue(decoder, value) {
+			return text, true
+		}
+	}
 	return encoded, valid
+}
+
+func sameJSONValue(decoder *json.Decoder, value any) bool {
+	token, err := decoder.Token()
+	if err != nil {
+		return false
+	}
+	switch token {
+	case json.Delim('{'):
+		object, ok := value.(map[string]any)
+		return ok && sameJSONObject(decoder, object)
+	case json.Delim('['):
+		array, ok := value.([]any)
+		return ok && sameJSONArray(decoder, array)
+	default:
+		return token == value
+	}
+}
+
+func sameJSONObject(decoder *json.Decoder, object map[string]any) bool {
+	seen := make(map[string]bool, len(object))
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || seen[key] {
+			return false
+		}
+		child, exists := object[key]
+		if !exists || !sameJSONValue(decoder, child) {
+			return false
+		}
+		seen[key] = true
+	}
+	return len(seen) == len(object) && closeJSONValue(decoder, '}')
+}
+
+func sameJSONArray(decoder *json.Decoder, array []any) bool {
+	for _, child := range array {
+		if !decoder.More() || !sameJSONValue(decoder, child) {
+			return false
+		}
+	}
+	return closeJSONValue(decoder, ']')
+}
+
+func closeJSONValue(decoder *json.Decoder, end json.Delim) bool {
+	token, err := decoder.Token()
+	return err == nil && token == end
 }
 
 func (r *Redactor) SanitizeJSON(data []byte) any {
