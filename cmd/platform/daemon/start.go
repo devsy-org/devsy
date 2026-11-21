@@ -78,7 +78,7 @@ func (cmd *StartCmd) Run(
 		Context:        devsyConfig.DefaultContext,
 		UserName:       userName,
 		PlatformClient: baseClient,
-		Debug:          cmd.Debug,
+		Debug:          log.DebugEnabled(),
 	})
 	if err != nil {
 		return fmt.Errorf("init daemon: %w", err)

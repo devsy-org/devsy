@@ -9,7 +9,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-const testLogFormatText = "text"
+const (
+	testLogFormatText = "text"
+	testLevelDebug    = "debug"
+)
 
 func TestProgressWriter_SplitsOnCarriageReturn(t *testing.T) {
 	var out bytes.Buffer
@@ -36,7 +39,7 @@ func TestProgressWriter_SplitsOnCarriageReturn(t *testing.T) {
 }
 
 func TestProgressWriter_ThinsIntermediatePercentages(t *testing.T) {
-	log.Init(log.Config{Verbosity: 2, Format: testLogFormatText})
+	log.Init(log.Config{Level: testLevelDebug, Format: testLogFormatText})
 	var sink bytes.Buffer
 	remove := log.AddSink(&sink)
 	defer remove()
@@ -69,7 +72,7 @@ func TestProgressWriter_ThinsIntermediatePercentages(t *testing.T) {
 }
 
 func TestProgressWriter_DropsExactDuplicateFrame(t *testing.T) {
-	log.Init(log.Config{Verbosity: 2, Format: testLogFormatText})
+	log.Init(log.Config{Level: testLevelDebug, Format: testLogFormatText})
 	var sink bytes.Buffer
 	remove := log.AddSink(&sink)
 	defer remove()
@@ -94,7 +97,7 @@ func TestProgressWriter_DropsExactDuplicateFrame(t *testing.T) {
 }
 
 func TestProgressWriter_TracksLabelsIndependently(t *testing.T) {
-	log.Init(log.Config{Verbosity: 2, Format: testLogFormatText})
+	log.Init(log.Config{Level: testLevelDebug, Format: testLogFormatText})
 	var sink bytes.Buffer
 	remove := log.AddSink(&sink)
 	defer remove()

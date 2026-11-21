@@ -4,6 +4,8 @@ package ghcredentials
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,6 +55,11 @@ func TestBackendDiscoveryToleratesLoginShellOutput(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			result, err := discoverWithLoginShell(ctx, binary, "guest-user")
+			if err != nil && (!tc.invalid || errors.Is(err, context.DeadlineExceeded)) {
+				data, readErr := readLoginTrace(record)
+				t.Logf("fixture trace: %q (read error: %v)", data, readErr)
+			}
+			require.NotErrorIs(t, err, context.DeadlineExceeded)
 			if tc.invalid {
 				require.Error(t, err)
 			} else {
@@ -66,19 +73,39 @@ func TestBackendDiscoveryToleratesLoginShellOutput(t *testing.T) {
 	}
 }
 
+func readLoginTrace(record string) ([]byte, error) {
+	root, err := os.OpenRoot(filepath.Dir(record))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	trace, err := root.Open(filepath.Base(record) + ".trace")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = trace.Close() }()
+	return io.ReadAll(io.LimitReader(trace, 4096))
+}
+
 func loginShellFixture(t *testing.T) (binary, record string) {
 	t.Helper()
 	dir := t.TempDir()
 	record = filepath.Join(dir, "su-args")
 	writeTestExecutable(t, filepath.Join(dir, "su"), []byte(`#!/bin/sh
+printf '%s\n' 'su started' >> "$DEVSY_TEST_SU_ARGS.trace"
 printf '%s\n' "$@" > "$DEVSY_TEST_SU_ARGS"
+printf '%s\n' 'su arguments recorded' >> "$DEVSY_TEST_SU_ARGS.trace"
 printf '%s' "$DEVSY_TEST_PROFILE_OUTPUT"
+printf '%s\n' 'su profile written' >> "$DEVSY_TEST_SU_ARGS.trace"
 exec /bin/sh -c "$4"
 `))
 	binary = filepath.Join(dir, "agent's binary")
 	writeTestExecutable(t, binary, []byte(`#!/bin/sh
+printf '%s\n' 'agent started' >> "$DEVSY_TEST_SU_ARGS.trace"
 test "$#" = 2 && test "$1" = internal && test "$2" = gh-backend || exit 42
+printf '%s\n' 'agent arguments validated' >> "$DEVSY_TEST_SU_ARGS.trace"
 printf '%s\n' "$DEVSY_TEST_BACKEND_OUTPUT"
+printf '%s\n' 'agent output written' >> "$DEVSY_TEST_SU_ARGS.trace"
 exit "${DEVSY_TEST_BACKEND_EXIT:-0}"
 `))
 	t.Setenv("PATH", dir)

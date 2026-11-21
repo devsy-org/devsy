@@ -39,10 +39,6 @@ func TestTestCmd_FlagDefaults(t *testing.T) {
 	require.NotNil(t, skipScenariosFlag)
 	assert.Equal(t, "false", skipScenariosFlag.DefValue)
 
-	quietFlag := cmd.Flags().Lookup(names.Quiet)
-	require.NotNil(t, quietFlag)
-	assert.Equal(t, "false", quietFlag.DefValue)
-
 	preserveFlag := cmd.Flags().Lookup(names.PreserveTestContainers)
 	require.NotNil(t, preserveFlag)
 	assert.Equal(t, "false", preserveFlag.DefValue)
@@ -56,7 +52,6 @@ func TestTestCmd_AllFlagsRegistered(t *testing.T) {
 		"base-image",
 		"remote-user",
 		"skip-scenarios",
-		"quiet",
 		"preserve-test-containers",
 	}
 	for _, name := range expected {

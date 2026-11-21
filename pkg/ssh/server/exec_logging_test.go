@@ -59,7 +59,7 @@ func (b *synchronizedLogBuffer) String() string {
 }
 
 func TestCommandExecutionDoesNotLogShellArguments(t *testing.T) {
-	log.Init(log.Config{Verbosity: 2})
+	log.Init(log.Config{Level: "debug"})
 	t.Cleanup(func() { log.Init(log.Config{}) })
 
 	debugLog := &synchronizedLogBuffer{}

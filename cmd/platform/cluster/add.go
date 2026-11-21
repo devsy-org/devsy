@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"time"
@@ -368,8 +369,8 @@ func installAgent(
 		//nolint:gosec // command is a fixed CLI with arguments built internally
 		helmCmd := exec.CommandContext(ctx, "helm", helmArgs...)
 
-		helmCmd.Stdout = log.Writer(log.LevelDebug)
-		helmCmd.Stderr = log.Writer(log.LevelDebug)
+		helmCmd.Stdout = log.Writer(slog.LevelDebug)
+		helmCmd.Stderr = log.Writer(slog.LevelDebug)
 		helmCmd.Stdin = os.Stdin
 
 		log.Info("installing agent")

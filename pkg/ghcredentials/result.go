@@ -3,6 +3,7 @@ package ghcredentials
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"syscall"
@@ -76,12 +77,32 @@ func describeError(name string, err error) (string, string) {
 	return name, errorKind(err)
 }
 
-func logFailure(message, operation string, err error, saving bool) {
-	operation, kind := describeError(operation, err)
-	if saving {
-		log.Errorw(message, "operation", operation, "error_type", kind)
-	} else {
-		log.Warnw(message, "operation", operation, "error_type", kind)
+type failureKind uint8
+
+const (
+	recoveryPending failureKind = iota
+	recoveryUnavailable
+	forwardingFailure
+	writebackPending
+)
+
+type failureLog struct {
+	kind      failureKind
+	operation string
+}
+
+func logFailure(ctx context.Context, err error, details failureLog) {
+	operation, kind := describeError(details.operation, err)
+	operationAttr, kindAttr := slog.String("operation", operation), slog.String("error_type", kind)
+	switch details.kind {
+	case recoveryPending:
+		log.ErrorContext(ctx, "gh relay: recovery pending", operationAttr, kindAttr)
+	case recoveryUnavailable:
+		log.WarnContext(ctx, "gh relay: recovery unavailable", operationAttr, kindAttr)
+	case forwardingFailure:
+		log.WarnContext(ctx, forwardingUnavailable, operationAttr, kindAttr)
+	case writebackPending:
+		log.ErrorContext(ctx, "gh relay: configuration writeback pending", operationAttr, kindAttr)
 	}
 }
 

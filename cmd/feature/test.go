@@ -3,6 +3,7 @@ package feature
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +30,6 @@ type TestCmd struct {
 	BaseImage              string
 	RemoteUser             string
 	SkipScenarios          bool
-	Quiet                  bool
 	PreserveTestContainers bool
 }
 
@@ -67,7 +68,6 @@ directory.`,
 			"User to run tests as"),
 		cliflags.Bool(&cmd.SkipScenarios, names.SkipScenarios, false,
 			"Only run the global test script, skip per-feature scenario tests"),
-		cliflags.Bool(&cmd.Quiet, names.Quiet, false, "Suppress verbose build output"),
 		cliflags.Bool(&cmd.PreserveTestContainers, names.PreserveTestContainers, false,
 			"Don't remove test containers after run (for debugging)"),
 	)
@@ -282,9 +282,11 @@ func (cmd *TestCmd) dockerBuild(dockerfile, contextDir, imageName string) error 
 	dockerCmd := exec.Command("docker", args...) // #nosec G204 -- args built from trusted inputs
 	dockerCmd.Stdin = strings.NewReader(dockerfile)
 
-	if !cmd.Quiet {
-		dockerCmd.Stdout = os.Stdout
-		dockerCmd.Stderr = os.Stderr
+	if log.InfoEnabled() {
+		writer := log.Writer(slog.LevelInfo)
+		defer func() { _ = writer.Close() }()
+		dockerCmd.Stdout = writer
+		dockerCmd.Stderr = writer
 	}
 
 	return dockerCmd.Run()
@@ -299,9 +301,11 @@ func (cmd *TestCmd) dockerRun(imageName, containerName string) error {
 
 	dockerCmd := exec.Command("docker", args...) // #nosec G204 -- args built from trusted inputs
 
-	if !cmd.Quiet {
-		dockerCmd.Stdout = os.Stdout
-		dockerCmd.Stderr = os.Stderr
+	if log.InfoEnabled() {
+		writer := log.Writer(slog.LevelInfo)
+		defer func() { _ = writer.Close() }()
+		dockerCmd.Stdout = writer
+		dockerCmd.Stderr = writer
 	}
 
 	return dockerCmd.Run()

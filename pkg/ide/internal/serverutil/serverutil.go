@@ -4,6 +4,7 @@ package serverutil
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,7 +119,7 @@ func (e ExtensionInstall) Run() error {
 		quote = func(name string) string { return name }
 	}
 
-	out := log.Writer(log.LevelInfo)
+	out := log.Writer(slog.LevelInfo)
 	defer func() { _ = out.Close() }()
 
 	var failed []string

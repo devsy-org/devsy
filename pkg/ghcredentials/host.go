@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +68,7 @@ func collectHostAccounts(
 	ctx, cancel := context.WithTimeout(ctx, hostCollectionTimeout)
 	defer cancel()
 	result := HostResult{Status: hostNoActiveAccounts}
-	accounts, truncated := registeredHostAccounts(hosts)
+	accounts, truncated := registeredHostAccounts(ctx, hosts)
 	if truncated {
 		result.Status = "account_limit"
 	}
@@ -85,13 +86,13 @@ func collectHostAccounts(
 	return result
 }
 
-func registeredHostAccounts(hosts *yaml.Node) ([]Account, bool) {
+func registeredHostAccounts(ctx context.Context, hosts *yaml.Node) ([]Account, bool) {
 	var accounts []Account
 	for i := 0; i+1 < len(hosts.Content); i += 2 {
 		host := hosts.Content[i].Value
 		u := get(hosts.Content[i+1], "user")
 		if u == nil || u.Value == "" {
-			log.Debugw("gh relay: host account unavailable", "host", host)
+			log.DebugContext(ctx, "gh relay: host account unavailable", slog.String("host", host))
 			continue
 		}
 		if len(accounts) == maxHostAccounts {
@@ -192,15 +193,12 @@ func (a Account) resolveHostToken(
 	token, err := resolveToken(ctx, binary, a.Host, env)
 	if err != nil {
 		if noTokenResult(err) {
-			log.Debugw("gh relay: host account unavailable", "host", a.Host)
+			log.DebugContext(ctx, "gh relay: host account unavailable", slog.String("host", a.Host))
 			return Account{}, nil
 		}
-		log.Warnw(
-			"gh relay: host token lookup failed",
-			"host",
-			a.Host,
-			"error_type",
-			errorKind(err),
+		log.WarnContext(ctx, "gh relay: host token lookup failed",
+			slog.String("host", a.Host),
+			slog.String("error_type", errorKind(err)),
 		)
 		return Account{}, err
 	}

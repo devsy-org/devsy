@@ -2,14 +2,20 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/yaml"
 )
@@ -45,4 +51,66 @@ func TestInitProviderReceivesBaseEnvironment(t *testing.T) {
 	got, err := os.ReadFile(captured)
 	require.NoError(t, err)
 	require.Equal(t, filepath.ToSlash(executable)+"\n"+testProviderFoo, string(got))
+}
+
+func TestProviderInitFailureRetainsRedactedStderrAndExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell")
+	}
+	t.Setenv(config.EnvHome, t.TempDir())
+	const optionCanary = "opaque-provider-fixture-78153"
+	const dynamicCanary = "dynamic-provider-fixture-78155"
+	const hostCanary = "host-provider-fixture-78154"
+	t.Setenv("EXTERNAL_TOKEN", hostCanary)
+	cfg := setupProviderOperationTest(t)
+	cfg.Current().Providers[testProviderFoo] = &config.ProviderConfig{
+		Options: map[string]config.OptionValue{
+			"OPAQUE":         {Value: optionCanary},
+			"DYNAMIC_OPAQUE": {Value: dynamicCanary},
+		},
+		DynamicOptions: config.OptionDefinitions{"DYNAMIC_OPAQUE": {Password: true}},
+	}
+	require.NoError(t, config.SaveConfig(cfg))
+	definition := &provider2.ProviderConfig{
+		Name: testProviderFoo,
+		Options: map[string]*types.Option{
+			"OPAQUE": {Password: true},
+		},
+		Exec: provider2.ProviderCommands{
+			Init: []string{
+				"/bin/sh", "-c",
+				`printf 'stdout-only-canary'; ` +
+					`printf 'stderr-canary %s %s %s' "$OPAQUE" "$DYNAMIC_OPAQUE" "$EXTERNAL_TOKEN" >&2; exit 23`,
+			},
+		},
+	}
+	err := runProviderInit(
+		context.Background(),
+		ProviderOptionsConfig{Provider: definition},
+		cfg,
+		nil,
+	)
+	require.Error(t, err)
+	var exitErr *exec.ExitError
+	require.True(t, errors.As(err, &exitErr))
+	require.Equal(t, 23, exitErr.ExitCode())
+	diagnostic := clierr.Classify(err).Context["stderr"]
+	assert.Contains(t, diagnostic, "stderr-canary")
+	assert.NotContains(t, diagnostic, "stdout-only-canary")
+	assert.NotContains(t, diagnostic, optionCanary)
+	assert.NotContains(t, diagnostic, dynamicCanary)
+	assert.NotContains(t, diagnostic, hostCanary)
+	assert.Contains(t, diagnostic, "***")
+
+	definition.Exec.Init = []string{"/bin/sh", "-c", "exit 19"}
+	err = runProviderInit(
+		context.Background(),
+		ProviderOptionsConfig{Provider: definition},
+		cfg,
+		nil,
+	)
+	require.Error(t, err)
+	assert.Empty(t, clierr.Classify(err).Context)
+	require.True(t, errors.As(err, &exitErr))
+	assert.Equal(t, 19, exitErr.ExitCode())
 }

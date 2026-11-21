@@ -330,8 +330,8 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("git %v: %v", args, err)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, output)
 	}
 }
 
@@ -347,6 +347,7 @@ func TestChangedFilesDetectsWorkingTree(t *testing.T) {
 	gitRun(t, dir, "init", "--quiet")
 	gitRun(t, dir, "config", "user.email", "t@t.com")
 	gitRun(t, dir, "config", "user.name", "test")
+	gitRun(t, dir, "config", "--local", "commit.gpgsign", "false")
 	gitRun(t, dir, "checkout", "-b", testMainBranch)
 	writeFile(t, filepath.Join(dir, "committed.txt"), "x")
 	writeFile(t, filepath.Join(dir, "staged.txt"), "s")

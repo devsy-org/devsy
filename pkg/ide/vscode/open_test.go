@@ -329,13 +329,13 @@ func (s *OpenSuite) TestMacAppPathIsCandidateOnlyOnDarwin() {
 	}
 	config := openConfigs[FlavorCodium]
 
-	_, err := s.launcher.resolveCLI(config, nil)
+	_, err := s.launcher.resolveCLI(context.Background(), config, nil)
 	s.Require().Error(err)
 	s.Equal([]string{"codium"}, looked)
 
 	looked = nil
 	s.launcher.goos = "darwin"
-	_, err = s.launcher.resolveCLI(config, nil)
+	_, err = s.launcher.resolveCLI(context.Background(), config, nil)
 	s.Require().Error(err)
 	s.Equal([]string{"codium", config.macAppPath}, looked)
 }

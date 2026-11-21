@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -124,7 +125,7 @@ func newLocalServer(
 		handlers.RecoveryLogger(panicLogger{}),
 		handlers.PrintRecoveryStack(true),
 	)(mux)
-	handler = handlers.LoggingHandler(log.Writer(log.LevelDebug), handler)
+	handler = handlers.LoggingHandler(log.Writer(slog.LevelDebug), handler)
 	l.httpServer = &http.Server{Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
 
 	return l

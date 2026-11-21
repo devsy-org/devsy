@@ -10,7 +10,6 @@ import (
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/devsy/cmd/platform/flags"
-	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
@@ -106,8 +105,8 @@ func (cmd *UpCmd) up(
 	client client.Client,
 ) error {
 	options := platform.OptionsFromEnv(storagev1.DevsyFlagsUp)
-	if options != nil && os.Getenv(config.EnvDebug) == config.BoolTrue {
-		options.Add("debug", config.BoolTrue)
+	if options != nil {
+		options.Add("log-level", log.LevelString())
 	}
 
 	conn, err := platform.DialInstance(client, workspace, "up", options)

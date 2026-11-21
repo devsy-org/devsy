@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,8 +137,8 @@ func (o *VsCodeServer) InstallExtensions() error {
 		return fmt.Errorf("unable to locate server binary")
 	}
 
-	writer := log.Writer(log.LevelInfo)
-	errWriter := log.Writer(log.LevelError)
+	writer := log.Writer(slog.LevelInfo)
+	errWriter := log.Writer(slog.LevelError)
 	defer func() { _ = writer.Close() }()
 	defer func() { _ = errWriter.Close() }()
 

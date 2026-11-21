@@ -34,7 +34,6 @@ require (
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/getsops/sops/v3 v3.13.3
 	github.com/go-logr/logr v1.4.4
-	github.com/go-logr/zapr v1.3.0
 	github.com/gofrs/flock v0.13.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
@@ -72,7 +71,6 @@ require (
 	github.com/zalando/go-keyring v0.2.8
 	go.uber.org/atomic v1.12.0
 	go.uber.org/goleak v1.3.0
-	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.41.0
 	golang.org/x/mod v0.42.0
@@ -97,6 +95,8 @@ require (
 	sigs.k8s.io/yaml v1.6.0
 	tailscale.com v1.102.4
 )
+
+require go.uber.org/zap v1.28.0 // indirect
 
 require (
 	cel.dev/expr v0.25.2 // indirect

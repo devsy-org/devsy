@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -100,7 +101,7 @@ func (cmd *WatchWorkspacesCmd) Run(
 			Options:              opts,
 			Config:               providerConfig,
 			Stdout:               os.Stdout,
-			Stderr:               log.Writer(log.LevelError),
+			Stderr:               log.Writer(slog.LevelError),
 		},
 	)
 	if err != nil {

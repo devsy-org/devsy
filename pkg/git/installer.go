@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/devsy-org/devsy/pkg/command"
@@ -118,7 +119,7 @@ func (s *pkgManagerStrategy) usable() bool {
 func (s *pkgManagerStrategy) install(ctx context.Context, t tool) error {
 	log.Debugf("installing %s with %s", t.pkg, s.manager)
 	for _, args := range s.installArgs(t.pkg) {
-		w := log.Writer(log.LevelInfo)
+		w := log.Writer(slog.LevelInfo)
 		if _, err := s.runner.Run(ctx, RunOptions{
 			Binary:      s.manager,
 			Args:        args,
