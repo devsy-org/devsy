@@ -500,7 +500,7 @@ func requireReconciliationDiagnostics(t *testing.T, level, diagnostics, secret s
 		if i%3 == 1 {
 			require.Contains(t, record["msg"], "lock unavailable")
 		} else {
-			require.Contains(t, record["msg"], "cleanup ***")
+			require.Equal(t, "***", record["msg"])
 		}
 	}
 }
