@@ -154,10 +154,7 @@ func terminateLegacyRefWithoutIdentity(ref ProcessRef) error {
 	cmd := exec.Command("taskkill", "/PID", strconv.Itoa(ref.PID), "/T", "/F")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf(
-			"taskkill /PID %d /T /F: %w: %s",
-			ref.PID, err, truncateOutput(string(output)),
-		)
+		return formatTaskkillDiagnostic(ref.PID, err, output)
 	}
 	return verifyTerminated(ref.PID)
 }
@@ -270,12 +267,7 @@ func killTree(pid, treeName string) error {
 		if checkErr == nil && !stillRunning {
 			return nil
 		}
-		return fmt.Errorf(
-			"taskkill /PID %d /T /F: %w: %s",
-			parsed,
-			runErr,
-			truncateOutput(string(output)),
-		)
+		return formatTaskkillDiagnostic(parsed, runErr, output)
 	}
 
 	if jobErr != nil {
@@ -395,16 +387,6 @@ func parsePID(pid string) (int, error) {
 		return 0, fmt.Errorf("invalid PID %d: must be positive", parsed)
 	}
 	return parsed, nil
-}
-
-// truncateOutput bounds captured taskkill output, which is localized and
-// never parsed.
-func truncateOutput(output string) string {
-	const maxOutput = 256
-	if len(output) > maxOutput {
-		return output[:maxOutput] + "..."
-	}
-	return output
 }
 
 func processRefExited(ref ProcessRef) (bool, error) {

@@ -68,7 +68,11 @@ var imageNotFoundMarkers = []string{
 }
 
 func isImageNotFoundError(err error) bool {
-	msg := strings.ToLower(err.Error())
+	return command.MatchErrorOutput(err, imageNotFoundMessage)
+}
+
+func imageNotFoundMessage(message string) bool {
+	msg := strings.ToLower(message)
 	for _, marker := range imageNotFoundMarkers {
 		if strings.Contains(msg, marker) {
 			return true

@@ -70,13 +70,12 @@ func (r *DockerHelper) inspectPlatformOrFallback(
 			return nil, fmt.Errorf("inspect image platform: %w", ctx.Err())
 		}
 		wrapped := command.WrapCommandError(nil, err)
-		message := strings.ToLower(wrapped.Error())
-		if platformInspectionUnsupported(message) {
+		if command.MatchErrorOutput(wrapped, platformInspectionUnsupported) {
 			// Older engines and compatible runtimes have a single-platform local
 			// image store. The caller still verifies that cached configuration.
 			return base, nil
 		}
-		if platformInspectionMiss(message) {
+		if command.MatchErrorOutput(wrapped, platformInspectionMiss) {
 			return nil, fmt.Errorf("%s: %w", image, ErrImageNotFound)
 		}
 		return nil, classifyImageError(image, fmt.Errorf("inspect image platform: %w", wrapped))
@@ -92,11 +91,13 @@ func (r *DockerHelper) inspectPlatformOrFallback(
 }
 
 func platformInspectionUnsupported(message string) bool {
+	message = strings.ToLower(message)
 	return strings.Contains(message, "unknown flag: --platform") ||
 		(strings.Contains(message, "--platform") && strings.Contains(message, "requires api version"))
 }
 
 func platformInspectionMiss(message string) bool {
+	message = strings.ToLower(message)
 	return strings.Contains(message, "does not match the specified platform") ||
 		strings.Contains(message, "no matching manifest for") ||
 		strings.Contains(message, "no image found for platform")

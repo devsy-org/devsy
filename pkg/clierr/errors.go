@@ -9,6 +9,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap/zapcore"
 )
@@ -191,9 +192,7 @@ func classifyContextError(err error) *CLIError {
 }
 
 func classifyDockerDaemonError(err error) *CLIError {
-	message := strings.ToLower(err.Error())
-	if !strings.Contains(message, "cannot connect to the docker daemon") &&
-		!strings.Contains(message, "is the docker daemon running") {
+	if !command.MatchErrorOutput(err, matchesDockerDaemonError) {
 		return nil
 	}
 	return &CLIError{
@@ -202,6 +201,12 @@ func classifyDockerDaemonError(err error) *CLIError {
 		Hint:    "Start the Docker daemon for the selected context and retry.",
 		wrapped: err,
 	}
+}
+
+func matchesDockerDaemonError(message string) bool {
+	message = strings.ToLower(message)
+	return strings.Contains(message, "cannot connect to the docker daemon") ||
+		strings.Contains(message, "is the docker daemon running")
 }
 
 func classifySecretError(err error) *CLIError {
