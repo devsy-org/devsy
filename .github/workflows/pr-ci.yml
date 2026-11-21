@@ -338,7 +338,7 @@ jobs:
         run: go run ./hack/ci unit
 
       - name: save Go caches
-        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true' }}
+        if: always() && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
