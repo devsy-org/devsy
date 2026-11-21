@@ -26,6 +26,7 @@ jobs:
           filters: |
             desktop:
               - 'desktop/**'
+              - 'logging/desktop/**'
               - '.github/workflows/desktop-ci.yml'
 
   lint-and-test:
@@ -67,6 +68,10 @@ jobs:
         if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
         run: npm run test
+
+      - name: Shared scanner tests
+        if: needs.changes.outputs.desktop == 'true'
+        run: node --test logging/desktop/*.test.ts
 
   build-desktop:
     needs: [changes, lint-and-test]

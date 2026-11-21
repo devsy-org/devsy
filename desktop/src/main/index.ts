@@ -28,7 +28,7 @@ import {
   updateDesktopDatabase,
 } from "./linux-desktop-integration.js"
 import { LogStore } from "./log-store.js"
-import { mainLog, setMainLogLevel } from "./logging.js"
+import { initializeMainLog, mainLog, setMainLogLevel } from "./logging.js"
 import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
 import { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderJobs } from "./provider-jobs.js"
@@ -155,7 +155,14 @@ app.whenReady().then(async () => {
     join(app.getPath("userData"), "app-settings.json"),
   )
   appSettingsStore.load()
-  setMainLogLevel(appSettingsStore.get().desktopLogLevel)
+  try {
+    setMainLogLevel(appSettingsStore.get().desktopLogLevel)
+  } catch {
+    console.error("Desktop logging configuration failed")
+    app.exit(1)
+    return
+  }
+  initializeMainLog(app.getPath("logs"))
 
   initAnalytics()
   trackEvent("app_open")
