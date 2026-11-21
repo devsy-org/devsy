@@ -3,6 +3,7 @@ package agentworkspace
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,7 +97,7 @@ func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
 			ctx,
 			command,
 		) // #nosec G204 -- user-provided dotfile install script
-		writer := log.Writer(log.LevelInfo)
+		writer := log.Writer(slog.LevelInfo)
 		scriptCmd.Stdout = writer
 		scriptCmd.Stderr = writer
 
@@ -130,7 +131,7 @@ func setupDotfiles(ctx context.Context) error {
 	})
 
 	for _, installScriptPath := range scripts {
-		writer := log.Writer(log.LevelInfo)
+		writer := log.Writer(slog.LevelInfo)
 		err := ensureExecutable(ctx, installScriptPath)
 		if err != nil {
 			log.Debugf(

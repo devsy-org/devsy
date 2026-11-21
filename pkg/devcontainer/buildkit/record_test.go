@@ -74,7 +74,7 @@ func invocations(recs []workspacelogs.Record) []workspacelogs.Record {
 func TestStepRetainsOutputBelowLogLevel(t *testing.T) {
 	logs := log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
-	logWriter := log.Writer(log.LevelInfo)
+	logWriter := log.Writer(slog.LevelInfo)
 	step := StartStep(ctx, "buildkit")
 
 	w := step.Tee(logWriter, workspacelogs.StreamCombined)
@@ -186,7 +186,10 @@ func TestPrinterDrainKeepsFinalBytes(t *testing.T) {
 	dgst := digest.FromString("vertex")
 	now := time.Now()
 
-	pw, err := NewPrinter(ctx, step.Tee(log.Writer(log.LevelInfo), workspacelogs.StreamCombined))
+	pw, err := NewPrinter(
+		ctx,
+		step.Tee(log.Writer(slog.LevelInfo), workspacelogs.StreamCombined),
+	)
 	require.NoError(t, err)
 	pw.Status() <- &client.SolveStatus{
 		Vertexes: []*client.Vertex{{Digest: dgst, Name: "RUN make", Started: &now}},

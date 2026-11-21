@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -576,7 +577,7 @@ func (r *runner) updateContainerUserUID(
 	if !ok {
 		return nil
 	}
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	if err := dockerDriver.UpdateContainerUserUID(
 		ctx,
@@ -676,7 +677,7 @@ func (r *runner) composeUpExistingProject(
 	upArgs = append(upArgs, "up", "-d")
 	upArgs = r.onlyRunServices(upArgs, params.parsedConfig)
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		upArgs,
@@ -1413,7 +1414,7 @@ func (r *runner) composeUpAndFindContainer(
 	}
 	upArgs = r.onlyRunServices(upArgs, params.parsedConfig)
 
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	if err := params.composeHelper.RunWithOutput(
 		ctx,
 		upArgs,

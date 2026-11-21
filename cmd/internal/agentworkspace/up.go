@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -101,7 +103,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 
 	tunnelClient, credentialsDir, err := initWorkspace(cancelCtx, initWorkspaceParams{
 		workspaceInfo:       workspaceInfo,
-		debug:               cmd.Debug,
+		debug:               log.DebugEnabled(),
 		shouldInstallDaemon: cmd.shouldInstallDaemon(workspaceInfo),
 	})
 	defer cmd.cleanupCredentials(credentialsDir)
@@ -923,11 +925,15 @@ func configureCredentials(ctx context.Context, cfg credentialsConfig) (string, s
 
 	gitCredentials := ""
 	if cfg.workspaceInfo.Agent.InjectGitCredentials == config.BoolTrue {
-		gitCredentials = fmt.Sprintf(
-			"!'%s' internal agent git-credentials --port %d",
+		helperArgs := []string{
 			binaryPath,
-			serverPort,
-		)
+			"internal",
+			"agent",
+			"git-credentials",
+			"--port",
+			strconv.Itoa(serverPort),
+		}
+		gitCredentials = "!" + shellescape.QuoteCommand(helperArgs)
 		_ = os.Setenv(config.EnvGitHelperPort, strconv.Itoa(serverPort))
 	}
 
@@ -1014,7 +1020,7 @@ func prepareImage(workspaceDir, image string) error {
 // installDocker installs Docker and returns the path to the docker binary.
 // This function assumes docker does not already exist - the caller should check first.
 func installDocker(ctx context.Context) (dockerPath string, err error) {
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	log.Debug("installing docker")
 	return dockerinstall.Install(ctx, writer, writer)

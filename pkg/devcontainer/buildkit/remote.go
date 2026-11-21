@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -494,7 +495,7 @@ func executeBuild(params executeBuildParams) error {
 }
 
 func runRemoteSolve(params executeBuildParams, step *Step) error {
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
 	pw, err := NewPrinter(params.Ctx, step.Tee(writer, workspacelogs.StreamCombined))

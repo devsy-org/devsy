@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -95,8 +96,8 @@ func (c *initializeCommand) run(ctx context.Context, name string, cmd []string) 
 		strings.Join(args, " "),
 	)
 
-	stdout := log.Writer(log.LevelInfo)
-	stderr := log.Writer(log.LevelError)
+	stdout := log.Writer(slog.LevelInfo)
+	stderr := log.Writer(slog.LevelError)
 	defer func() { _ = stdout.Close() }()
 	defer func() { _ = stderr.Close() }()
 

@@ -326,7 +326,7 @@ func (fixture *microsandboxDockerlessFixtureState) upOutput(
 	args := []string{
 		cmdWorkspace,
 		"up",
-		names.Flag(names.Debug),
+		debugFlag,
 		names.Flag(names.IDE),
 		string(devsyconfig.IDENone),
 		fixture.workspace,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -328,7 +329,7 @@ func prepareComposeServiceImage(
 	if !pull {
 		return details, inspectErr
 	}
-	writer := log.Writer(log.LevelInfo)
+	writer := log.Writer(slog.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	if err := helper.Pull(ctx, docker.PullOptions{
 		Image: service.Image, Platform: platform, Stdout: writer, Stderr: writer,
@@ -419,7 +420,7 @@ func (r *runner) runComposeBuild(
 	composeHelper *compose.ComposeHelper,
 	buildArgs []string,
 ) error {
-	logWriter := log.Writer(log.LevelInfo)
+	logWriter := log.Writer(slog.LevelInfo)
 	step := buildkit.StartStep(ctx, "compose")
 	writer := step.Tee(io.Discard, workspacelogs.StreamCombined)
 	log.Debugf("Run %s %s", composeHelper.Command, strings.Join(buildArgs, " "))
