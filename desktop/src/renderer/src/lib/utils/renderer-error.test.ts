@@ -84,6 +84,59 @@ describe("renderer error reporting", () => {
     },
   )
 
+  it.each([
+    "access_token=access-canary",
+    "client_secret is client-canary",
+    "private key: private-canary",
+    'accessToken=["array-canary", {"nested": ["nested-canary"]}]',
+    'token= access_token="prefix quoted-tail-canary"',
+    "password is client_secret is prose-tail-canary",
+    `${"token= ".repeat(256)}"access_token": ["prefix", "group-tail-canary"]`,
+  ])(
+    "keeps compound credential values out of the reported payload",
+    (field) => {
+      const target = new EventTarget()
+      const report = vi.fn()
+      const dispose = installRendererErrorReporting(
+        target as unknown as Window,
+        report,
+      )
+      emit(
+        target,
+        "error",
+        "error",
+        new TypeError(`Request failed ${field} workspace=staging`),
+      )
+      expect(report).toHaveBeenCalledExactlyOnceWith({
+        kind: "error",
+        message: "Request failed [redacted] workspace=staging",
+        name: "TypeError",
+      })
+      dispose()
+    },
+  )
+
+  it("masks an incomplete structured credential field before forwarding", () => {
+    const target = new EventTarget()
+    const report = vi.fn()
+    const dispose = installRendererErrorReporting(
+      target as unknown as Window,
+      report,
+    )
+    emit(
+      target,
+      "unhandledrejection",
+      "reason",
+      'Request failed client_secret={"nested": ["hidden"], "note": "remaining-canary"',
+    )
+    expect(report).toHaveBeenCalledExactlyOnceWith({
+      kind: "unhandledrejection",
+      message: "Request failed [redacted]",
+      name: "UnknownError",
+    })
+    dispose()
+  })
+
   it("does not inspect arbitrary thrown objects and tolerates a failed bridge", () => {
     const target = new EventTarget()
     const report = vi.fn(() => {

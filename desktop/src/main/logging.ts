@@ -9,8 +9,8 @@ import {
 import { join } from "node:path"
 import type { LogLevel } from "../shared/app-settings.js"
 import {
-  credentialValueEnd,
-  skipWhitespace,
+  credentialAssignments,
+  isCredentialKey,
 } from "../shared/diagnostic-redaction.js"
 
 const rank: Record<LogLevel, number> = {
@@ -20,9 +20,6 @@ const rank: Record<LogLevel, number> = {
   debug: 3,
   trace: 4,
 }
-const sensitiveKey =
-  /(password|passwd|passphrase|token|secret|api.?key|authorization|credential|private.?key|access.?key|telemetry.?distinct.?id)/i
-const sensitiveLabel = new RegExp(`^(?:${sensitiveKey.source})$`, "i")
 const maxFileBytes = 5 * 1024 * 1024
 const maxRecordBytes = 64 * 1024
 let current: LogLevel = "info"
@@ -30,49 +27,11 @@ let logPath: string | undefined
 
 type RedactionRange = [start: number, end: number]
 
-function labelRanges(value: string): RedactionRange[] {
-  const tokens = /[a-z0-9_.-]+/gi
-  const ranges: RedactionRange[] = []
-  for (let match = tokens.exec(value); match; match = tokens.exec(value)) {
-    const start = match.index
-    const end = labelEnd(value, start, tokens.lastIndex)
-    const label = end === tokens.lastIndex ? match[0] : value.slice(start, end)
-    if (!sensitiveKey.test(label)) continue
-    const secretStart = labelValueStart(value, end)
-    if (secretStart < 0) continue
-    const next = credentialValueEnd(value, secretStart)
-    if (next === secretStart) continue
-    ranges.push([secretStart, next])
-    tokens.lastIndex = next
-  }
-  return ranges
-}
-
-function labelEnd(value: string, start: number, initialEnd: number): number {
-  let end = initialEnd
-  let candidateEnd = end
-  for (let parts = 0; parts < 2; parts++) {
-    const suffix = /^[ \t]+[a-z0-9_.-]+/i.exec(
-      value.slice(candidateEnd, candidateEnd + 64),
-    )
-    if (!suffix) break
-    candidateEnd += suffix[0].length
-    const candidate = value.slice(start, candidateEnd)
-    if (sensitiveLabel.test(candidate)) end = candidateEnd
-  }
-  return end
-}
-
-function labelValueStart(value: string, end: number): number {
-  let next = end
-  if (value[next] === '"' || value[next] === "'") next++
-  next = skipWhitespace(value, next)
-  if (value[next] !== ":" && value[next] !== "=") return -1
-  return skipWhitespace(value, next + 1)
-}
-
 function redactText(value: string): string {
-  const ranges = labelRanges(value)
+  const ranges = Array.from(
+    credentialAssignments(value),
+    ({ start, end }): RedactionRange => [start, end],
+  )
   for (const match of value.matchAll(/(https?:\/\/)[^\s/@]+@/gi)) {
     ranges.push([
       match.index + match[1].length,
@@ -80,7 +39,7 @@ function redactText(value: string): string {
     ])
   }
   for (const [name, secret] of Object.entries(process.env)) {
-    if (!secret || !sensitiveKey.test(name)) continue
+    if (!secret || !isCredentialKey(name)) continue
     for (
       let start = value.indexOf(secret);
       start >= 0;
@@ -147,7 +106,7 @@ function safeValue(
     Object.getOwnPropertyDescriptors(value),
   )) {
     if (!property.enumerable || !Object.hasOwn(property, "value")) continue
-    result[redactText(key)] = sensitiveKey.test(key)
+    result[redactText(key)] = isCredentialKey(key)
       ? "***"
       : safeValue(property.value, seen, depth + 1)
   }

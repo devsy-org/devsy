@@ -1,4 +1,4 @@
-import { credentialValueEnd } from "./diagnostic-redaction.js"
+import { credentialAssignments } from "./diagnostic-redaction.js"
 
 export const rendererErrorMessages = {
   error: "Uncaught renderer error",
@@ -27,16 +27,11 @@ export interface RendererErrorSummary {
 }
 
 function redactCredentialAssignments(value: string): string {
-  const labels =
-    /\b(?:authorization|password|passwd|passphrase|token|secret|api[_-]?key|credential|private[_-]?key|access[_-]?key)\b\s*["']?\s*(?::|=|\bis\b)\s*/gi
   let result = ""
   let copied = 0
-  for (let match = labels.exec(value); match; match = labels.exec(value)) {
-    const end = credentialValueEnd(value, labels.lastIndex)
-    if (end === labels.lastIndex) continue
-    result += `${value.slice(copied, match.index)}[redacted]`
+  for (const { keyStart, end } of credentialAssignments(value, true)) {
+    result += `${value.slice(copied, keyStart)}[redacted]`
     copied = end
-    labels.lastIndex = end
   }
   return result + value.slice(copied)
 }

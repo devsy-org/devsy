@@ -252,4 +252,22 @@ describe("main logger", () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it("masks chained assignments in both sinks and preserves the next field", () => {
+    const dir = mkdtempSync(join(tmpdir(), "devsy-chained-log-"))
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    try {
+      initializeMainLog(dir)
+      mainLog.info(
+        'Request failed token= access_token="prefix quoted-tail-canary" workspace=staging',
+      )
+      const file = readFileSync(join(dir, "main.log"), "utf8").trim()
+      expect(info.mock.calls[0][0]).toBe(file)
+      expect(JSON.parse(file).msg).toBe(
+        "Request failed token= *** workspace=staging",
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
