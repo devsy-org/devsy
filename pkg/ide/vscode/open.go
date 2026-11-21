@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -273,28 +274,25 @@ func (l hostLauncher) open(ctx context.Context, params OpenParams) error {
 		return newStageError(stageResolve, errors.New("unsupported editor flavor"))
 	}
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
-	fields := []any{
-		"operation", redactor.Redact(status.OperationID(ctx)),
-		"flavor", redactor.Redact(string(params.Flavor)),
+	fields := []slog.Attr{
+		slog.String("operation", redactor.Redact(status.OperationID(ctx))),
+		slog.String("flavor", redactor.Redact(string(params.Flavor))),
 	}
 
 	cliErr := l.openViaCLI(ctx, params, fields)
 	if cliErr != nil {
-		log.Warnw(
-			"editor CLI launch failed",
-			append(
-				fields,
-				"route",
-				routeCLI,
-				"stage",
-				stageOf(cliErr),
-				"class",
-				classOf(cliErr),
-			)...,
-		)
+		log.WarnContext(ctx, "editor CLI launch failed",
+			append(fields,
+				slog.String("route", routeCLI),
+				slog.String("stage", stageOf(cliErr)),
+				slog.String("class", classOf(cliErr)),
+			)...)
 	}
 	if cliErr == nil {
-		log.Infow("launch request dispatched", append(fields, "route", routeCLI)...)
+		log.InfoContext(
+			ctx,
+			"launch request dispatched",
+			append(fields, slog.String("route", routeCLI))...)
 		return nil
 	}
 
@@ -302,17 +300,18 @@ func (l hostLauncher) open(ctx context.Context, params OpenParams) error {
 		return ctx.Err()
 	}
 
-	log.Debugw("dispatching launch request",
-		append(fields, "route", routeURI, "stage", stageURIDispatch)...)
+	log.DebugContext(ctx, "dispatching launch request",
+		append(fields, slog.String("route", routeURI), slog.String("stage", stageURIDispatch))...)
 	uriErr := l.openViaURI(params)
 	if uriErr == nil {
-		log.Infow("launch request dispatched",
-			append(fields, "route", routeURI, "after_cli_failure", true)...)
+		log.InfoContext(ctx, "launch request dispatched",
+			append(fields, slog.String("route", routeURI), slog.Bool("after_cli_failure", true))...)
 		return nil
 	}
 
-	log.Warnw("URI launch failed",
-		append(fields, "route", routeURI, "stage", stageOf(uriErr), "class", classOf(uriErr))...)
+	log.WarnContext(ctx, "URI launch failed",
+		append(fields, slog.String("route", routeURI), slog.String("stage", stageOf(uriErr)),
+			slog.String("class", classOf(uriErr)))...)
 	return errors.Join(cliErr, uriErr)
 }
 
@@ -357,19 +356,25 @@ func (l hostLauncher) openViaURI(params OpenParams) error {
 	return nil
 }
 
-func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams, fields []any) error {
+func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams, fields []slog.Attr) error {
 	config, ok := openConfigs[params.Flavor]
 	if !ok {
 		return fmt.Errorf("unknown flavor %s", params.Flavor)
 	}
 
-	cliPath, err := l.resolveCLI(config, fields)
+	cliPath, err := l.resolveCLI(ctx, config, fields)
 	if err != nil {
 		return err
 	}
 
-	log.Debugw("enumerating editor extensions",
-		append(fields, "route", routeCLI, "stage", stageListExtensions)...)
+	log.DebugContext(
+		ctx,
+		"enumerating editor extensions",
+		append(
+			fields,
+			slog.String("route", routeCLI),
+			slog.String("stage", stageListExtensions),
+		)...)
 	hasSSHExtension, hasContainersExtension, err := l.listInstalledExtensions(
 		ctx,
 		cliPath,
@@ -380,16 +385,22 @@ func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams, fields 
 	}
 
 	if !hasSSHExtension {
-		log.Debugw("installing editor SSH extension",
-			append(fields, "route", routeCLI, "stage", stageInstallSSHExt)...)
+		log.DebugContext(
+			ctx,
+			"installing editor SSH extension",
+			append(
+				fields,
+				slog.String("route", routeCLI),
+				slog.String("stage", stageInstallSSHExt),
+			)...)
 		if err := l.ensureSSHExtension(ctx, cliPath, config.sshExtension); err != nil {
 			return err
 		}
 	}
 
 	args := buildOpenArgs(params.SSHHost, params.Folder, params.NewWindow, hasContainersExtension)
-	log.Debugw("dispatching launch request",
-		append(fields, "route", routeCLI, "stage", stageCLIDispatch)...)
+	log.DebugContext(ctx, "dispatching launch request",
+		append(fields, slog.String("route", routeCLI), slog.String("stage", stageCLIDispatch))...)
 	if _, err := l.run(ctx, cliPath, args...); err != nil {
 		return newStageError(stageCLIDispatch, err)
 	}
@@ -400,7 +411,11 @@ func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams, fields 
 // resolveCLI finds the editor CLI. It logs only the file kind, not the path: on
 // Windows a .cmd wrapper and a native executable fail in different ways, while
 // the path itself usually contains the user's name.
-func (l hostLauncher) resolveCLI(config openConfig, fields []any) (string, error) {
+func (l hostLauncher) resolveCLI(
+	ctx context.Context,
+	config openConfig,
+	fields []slog.Attr,
+) (string, error) {
 	candidates := []string{config.cliName}
 	if l.goos == "darwin" {
 		candidates = append(candidates, config.macAppPath)
@@ -415,16 +430,11 @@ func (l hostLauncher) resolveCLI(config openConfig, fields []any) (string, error
 				lookupErrs = append(lookupErrs, err)
 				continue
 			}
-			log.Debugw(
-				"editor CLI resolved",
-				append(
-					fields,
-					"route",
-					routeCLI,
-					"stage",
-					stageResolve,
-					"cli_kind",
-					cliKind(path),
+			log.DebugContext(ctx, "editor CLI resolved",
+				append(fields,
+					slog.String("route", routeCLI),
+					slog.String("stage", stageResolve),
+					slog.String("cli_kind", cliKind(path)),
 				)...)
 			return path, nil
 		}

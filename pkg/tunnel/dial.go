@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
@@ -45,7 +46,7 @@ func (d *WorkspaceDialer) Dial(ctx context.Context) (io.ReadWriteCloser, error) 
 	// #nosec G204 -- binary is self-referencing executable
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.WaitDelay = 5 * time.Second
-	cmd.Stderr = log.Writer(log.LevelDebug)
+	cmd.Stderr = log.Writer(slog.LevelDebug)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
