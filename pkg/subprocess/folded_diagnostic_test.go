@@ -31,3 +31,25 @@ func TestDiagnosticCaptureMasksFoldedAuthorization(t *testing.T) {
 		assert.Equal(t, want, live.String(), "live diagnostics for chunk size %d", size)
 	}
 }
+
+func TestCompleteSubprocessDiagnosticsMaskFoldedAuthorization(t *testing.T) {
+	const canary = "synthetic-folded-argument-value"
+	const input = "Authorization:\n Bearer " + canary + "\n\npublic diagnostic"
+	redactor := redact.FromEntries(nil)
+
+	t.Run("display command", func(t *testing.T) {
+		text := displayCommand("fixture-command", []string{input, "public argument"}, redactor)
+		assert.NotContains(t, text, canary)
+		assert.Contains(t, text, "public diagnostic")
+		assert.Contains(t, text, `"public argument"`)
+	})
+	t.Run("complete writer", func(t *testing.T) {
+		var destination bytes.Buffer
+		writer := RedactingWriter{Next: &destination, Redactor: redactor}
+		count, err := io.WriteString(writer, input)
+		require.NoError(t, err)
+		assert.Equal(t, len(input), count)
+		assert.NotContains(t, destination.String(), canary)
+		assert.Contains(t, destination.String(), "public diagnostic")
+	})
+}
