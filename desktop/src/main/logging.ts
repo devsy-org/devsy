@@ -77,11 +77,7 @@ function errorField(
   return fallback
 }
 
-function safeValue(
-  value: unknown,
-  seen = new WeakSet<object>(),
-  depth = 0,
-): unknown {
+function safeScalar(value: unknown): unknown {
   if (typeof value === "string") return redactText(value)
   if (typeof value === "number" || typeof value === "bigint") {
     const rendered = String(value)
@@ -89,7 +85,15 @@ function safeValue(
     return typeof value === "bigint" ? rendered : value
   }
   if (typeof value === "function") return "[unavailable]"
-  if (value === null || typeof value !== "object") return value
+  return value
+}
+
+function safeValue(
+  value: unknown,
+  seen = new WeakSet<object>(),
+  depth = 0,
+): unknown {
+  if (value === null || typeof value !== "object") return safeScalar(value)
   if (value instanceof Error)
     return {
       name: redactText(errorField(value, "name", "Error")),
