@@ -418,8 +418,8 @@ github.com/devsy-org/apiserver v1.5.4 h1:/bEPrSRSlfii2QHxc9qAiXlQawNJfIaPLraR3bY
 github.com/devsy-org/apiserver v1.5.4/go.mod h1:sDFCTjCN13wAHhno4KX0Z756gCI8ttW/c7NwTzo16K0=
 github.com/devsy-org/devsy-runtime-sdk v1.6.0 h1:iEV4Y0Sc3LJNkTLadJSKcWcAf/oCXvC/AkHilrg/KyM=
 github.com/devsy-org/devsy-runtime-sdk v1.6.0/go.mod h1:MiBP/fiY83DAS0TueEiJZSHYZ1vq85UR4KJTMfHIM+E=
-github.com/devsy-org/devsy/logging v0.0.0-20261121002232-42213a6fbc3f h1:ZEosyV/3ln3ofOJLSbzwAbS4+m/1vstAabv/I2L+lyk=
-github.com/devsy-org/devsy/logging v0.0.0-20261121002232-42213a6fbc3f/go.mod h1:kpwoMhSdrhnJfTJ014ht04BLw0DS7FyF33RqIIe8CKs=
+github.com/devsy-org/devsy/logging v0.0.0-20261121035644-aca6818446f2 h1:sXPAIxvv62YeXlpnNHU3247gaY/TU4szZAefRwDaP4M=
+github.com/devsy-org/devsy/logging v0.0.0-20261121035644-aca6818446f2/go.mod h1:kpwoMhSdrhnJfTJ014ht04BLw0DS7FyF33RqIIe8CKs=
 github.com/devsy-org/ssh v1.2.10 h1:fCxyqx8ti6qzKhVts55q0zDpx72q1YHNM7VK6TGkAps=
 github.com/devsy-org/ssh v1.2.10/go.mod h1:IiIPdjt/ilk08Z+I6ofwUaH52I/1PmVnp+0pOVQXlwI=
 github.com/devsy-org/tailscale v1.102.2 h1:9SB6htvO+HmG8alal8WGCshHapfHR7dUFRSMYiFIzIM=
