@@ -59,10 +59,10 @@ Use a separate channel for interactive prompts, protocol stdout, or raw business
 
 ## Desktop diagnostic scanner
 
-`desktop/diagnostic-redaction.ts` identifies credential assignments in
-diagnostic text before Desktop forwards or writes it. The scanner returns
-ordered, half-open UTF-16 ranges. Consumers choose the replacement marker and
-apply their separate registered-value policy.
+This module provides `desktop/diagnostic-redaction.ts` to identify credential
+assignments in diagnostic text. Desktop will adopt the scanner in a follow-up
+change. The scanner returns ordered, half-open UTF-16 ranges. Consumers choose
+the replacement marker and apply their separate registered-value policy.
 
 Text assignment labels use ASCII letters, digits, dots, underscores, and
 hyphens. Quoted labels and recognized bare compound names such as `private key`
