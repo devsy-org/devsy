@@ -35,15 +35,38 @@ func WrapCommandErrorWithEnvironment(stdout []byte, err error, environment []str
 	return wrapped
 }
 
+func WrapCombinedOutputError(output string, err error, environment []string) error {
+	if err == nil || output == "" {
+		return err
+	}
+	redactor := redact.New(redact.Options{Environment: environment})
+	masked := strings.TrimSpace(
+		diagnosticredact.Record(redactor, maskJSONRecords(redactor, output)),
+	)
+	if masked == "" {
+		return err
+	}
+	return &Error{
+		captured:      output,
+		maskedCapture: masked,
+		err:           err,
+	}
+}
+
 type Error struct {
-	stdout       []byte
-	err          error
-	maskedOutput *string
+	stdout        []byte
+	captured      string
+	maskedCapture string
+	maskedOutput  *string
+	err           error
 }
 
 func (e *Error) Error() string {
 	if e.maskedOutput != nil {
 		return *e.maskedOutput
+	}
+	if e.captured != "" {
+		return e.maskedCapture + ": " + e.err.Error()
 	}
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	return e.display(redactor, maskJSONRecords(redactor, e.stderr()))
@@ -73,6 +96,9 @@ func matchOriginalCommandOutput(err error, match func(string) bool) bool {
 }
 
 func (e *Error) output() string {
+	if e.captured != "" {
+		return e.captured + ": " + e.err.Error()
+	}
 	return commandErrorOutput(string(e.stdout), e.stderr(), e.err.Error())
 }
 

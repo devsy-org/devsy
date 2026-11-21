@@ -1,7 +1,10 @@
 package microsandbox
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -10,8 +13,54 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCLIClientMasksFailureOutput(t *testing.T) {
+	installRecreateCLIExecutable(t)
+	t.Setenv(recreateCLIFixtureEnv, diagnosticCLIFailure)
+	client := cliClient{}
+	for name, run := range map[string]func(context.Context) error{
+		"version": func(ctx context.Context) error {
+			_, err := client.Version(ctx)
+			return err
+		},
+		"volume": func(ctx context.Context) error {
+			return client.PrepareVolumes(ctx, []volumeMount{{Volume: "fixture-volume"}})
+		},
+		"start sandbox": func(ctx context.Context) error { return client.Start(ctx, "fixture-workspace") },
+		"load":          func(ctx context.Context) error { return loadImageSnapshot(ctx, testImg, empty.Image) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			err := run(ctx)
+			var exitErr *exec.ExitError
+			require.ErrorAs(t, err, &exitErr)
+			require.Equal(t, 23, exitErr.ExitCode())
+			require.Contains(t, err.Error(), diagnosticCLIDetail)
+			require.NotContains(t, err.Error(), diagnosticCLIValue)
+		})
+	}
+}
+
+func TestCLIClientPreservesSuccessfulOutput(t *testing.T) {
+	installRecreateCLIExecutable(t)
+	t.Setenv(recreateCLIFixtureEnv, diagnosticCLISuccess)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	client := cliClient{}
+	version, err := client.Version(ctx)
+	require.NoError(t, err)
+	require.Equal(t, diagnosticCLIOutput, version)
+	var out bytes.Buffer
+	require.NoError(t, client.Exec(ctx, "fixture-workspace", execRequest{Stdout: &out}))
+	require.Equal(t, diagnosticCLIOutput, out.String())
+	out.Reset()
+	require.NoError(t, client.Logs(ctx, "fixture-workspace", &out))
+	require.Equal(t, diagnosticCLIOutput, out.String())
+}
 
 func runPrefix() []string {
 	return []string{msbCmdRun, msbFlagDetach, names.Flag(names.Name), wsName}

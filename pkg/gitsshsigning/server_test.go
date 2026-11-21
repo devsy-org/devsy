@@ -2,6 +2,7 @@ package gitsshsigning
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -22,7 +23,54 @@ const (
 	testEd25519Prefix    = "ssh-ed25519 "
 	testSignerPrincipal  = "test@example.com"
 	envSSHAuthSock       = "SSH_AUTH_SOCK"
+	signingFixtureFail   = "signing-output-failure"
+	signingFixturePass   = "signing-output-success"
+	signingFoldedValue   = "synthetic-signing-folded-value"
+	signingPublicDetail  = "public signing detail"
 )
+
+func TestSigningMasksOnlyFailureOutput(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	for _, mode := range []string{signingFixturePass, signingFixtureFail} {
+		t.Run(mode, func(t *testing.T) {
+			cmd := &exec.Cmd{
+				Path: executable,
+				Args: []string{executable, "-test.run=^TestSigningOutputFixture$", "--", mode},
+			}
+			resp, err := runSigningCommand(cmd, signingFixtureOutput())
+			if mode == signingFixturePass {
+				require.NoError(t, err)
+				require.Equal(t, []byte(signingFixtureOutput()), resp.Signature)
+				return
+			}
+			var exitErr *exec.ExitError
+			require.ErrorAs(t, err, &exitErr)
+			require.Equal(t, 23, exitErr.ExitCode())
+			require.Nil(t, resp)
+			require.Contains(t, err.Error(), signingPublicDetail)
+			require.NotContains(t, err.Error(), signingFoldedValue)
+		})
+	}
+}
+
+func signingFixtureOutput() string {
+	return "Authorization:\n Bearer " + signingFoldedValue + "\n\n" + signingPublicDetail
+}
+
+func TestSigningOutputFixture(t *testing.T) {
+	switch os.Args[len(os.Args)-1] {
+	case signingFixturePass:
+		_, err := io.Copy(os.Stdout, os.Stdin)
+		if err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	case signingFixtureFail:
+		_, _ = fmt.Fprint(os.Stderr, signingFixtureOutput())
+		os.Exit(23)
+	}
+}
 
 func TestSign_WithPublicKeyContent_WritesToTempFile(t *testing.T) {
 	req := &GitSSHSignatureRequest{

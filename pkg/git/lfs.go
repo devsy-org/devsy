@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/log"
 )
@@ -95,7 +96,11 @@ func ensureLFSBinary(ctx context.Context, allowInstall bool) bool {
 func (r *Repo) lfs(ctx context.Context, args ...string) error {
 	res, err := r.run(ctx, append([]string{"lfs"}, args...)...)
 	if err != nil {
-		return fmt.Errorf("%w: %s%s", err, res.Stdout, res.Stderr)
+		return fmt.Errorf(
+			"%w: %s",
+			err,
+			diagnosticredact.EnvironmentRecord(string(res.Stdout)+string(res.Stderr)),
+		)
 	}
 	return nil
 }

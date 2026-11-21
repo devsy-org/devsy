@@ -11,7 +11,32 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/command"
 	"gotest.tools/assert"
+	"gotest.tools/assert/cmp"
 )
+
+const (
+	lfsFoldedFixtureValue = "synthetic-lfs-folded-value"
+	lfsDiagnosticDetail   = "public Git LFS detail"
+)
+
+type lfsSplitRunner struct{ err error }
+
+func (r lfsSplitRunner) Run(context.Context, RunOptions) (RunResult, error) {
+	return RunResult{
+		Stdout: []byte("Authorization:\n"),
+		Stderr: []byte(" Bearer " + lfsFoldedFixtureValue + "\n\n" + lfsDiagnosticDetail),
+	}, r.err
+}
+
+func TestLFSFailureMasksFoldedOutputAcrossStreams(t *testing.T) {
+	cause := errors.New("fixture LFS process failure")
+	repo := At(t.TempDir(), WithRunner(lfsSplitRunner{err: cause}))
+	err := repo.lfs(t.Context(), "pull")
+	assert.Assert(t, errors.Is(err, cause))
+	assert.Assert(t, cmp.Contains(err.Error(), lfsDiagnosticDetail))
+	assert.Assert(t, !strings.Contains(err.Error(), lfsFoldedFixtureValue))
+	assert.NilError(t, At(t.TempDir(), WithRunner(lfsSplitRunner{})).lfs(t.Context(), "pull"))
+}
 
 func TestLFSModeResolution(t *testing.T) {
 	cases := []struct {
