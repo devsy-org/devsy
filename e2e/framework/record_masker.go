@@ -93,8 +93,7 @@ func (m *recordMasker) maskRecord(start string, final bool) bool {
 	case err == nil:
 		lead := m.pending[:len(m.pending)-len(start)]
 		end := int(decoder.InputOffset())
-		m.emit(m.stream.Flush())
-		m.emit(lead + diagnosticredact.Record(m.redactor, start[:end]))
+		m.plain(lead + diagnosticredact.Record(m.redactor, start[:end]))
 		m.pending = start[end:]
 		return true
 	case errors.Is(err, io.ErrUnexpectedEOF):

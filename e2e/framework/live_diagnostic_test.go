@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/livetee"
 	"github.com/stretchr/testify/assert"
@@ -95,4 +96,25 @@ func TestExternalCommandDiagnosticMasksEmbeddedJSONRecords(t *testing.T) {
 	assert.Contains(t, out, "public log line")
 	assert.Contains(t, out, "public json detail")
 	assert.Contains(t, out, "public tail")
+}
+
+func TestRecordMaskerMatchesTheDiagnosticStreamForFoldedHeaders(t *testing.T) {
+	cases := map[string]string{
+		"indented compact JSON continuation": "Authorization:\n  {\"note\":\"fold-json-fixture\"}\npublic tail\n",
+		"indented pretty JSON continuation": "Authorization: Bearer\n  {\n" +
+			"    \"note\": \"fold-pretty-fixture\"\n  }\npublic tail\n",
+		"unindented JSON after header": "Authorization:\n{\"note\":\"public json\"}\npublic tail\n",
+		"plain continuation":           "Authorization:\n  fold-plain-fixture\npublic tail\n",
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			redactor := redact.New(redact.Options{})
+			stream := diagnosticredact.Stream(redactor)
+			want := stream.RedactChunk(input) + stream.Flush()
+			got := maskRecordText(redactor, input)
+			assert.Equal(t, want, got)
+			assert.NotContains(t, got, "fold-")
+			assert.Contains(t, got, "public tail")
+		})
+	}
 }
