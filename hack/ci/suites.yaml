@@ -59,7 +59,7 @@ unit:
   runners:
     - { runner: ubuntu-latest, timeout_minutes: 30 }
     - { runner: macos-latest, timeout_minutes: 45 }
-    - { runner: windows-latest, timeout_minutes: 30 }
+    - { runner: windows-latest, timeout_minutes: 40 }
 
   # Steps run in order on each runner. `os` uses GOOS values; empty means all.
   steps:
