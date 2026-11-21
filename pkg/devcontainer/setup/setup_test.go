@@ -3,6 +3,7 @@ package setup
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +17,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 )
 
@@ -77,7 +77,7 @@ func (f *fakeTunnelClient) KubeConfig(
 // e2e substring-absence check is brittle to log renames; this is the
 // direct guard for the demotion to Debug.
 func TestSetupKubeConfig_EmptyPayloadSuppressesInfoLog(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 
 	client := &fakeTunnelClient{kubeConfigPayload: ""}
 	if err := setupKubeConfig(context.Background(), nil, client); err != nil {
@@ -85,7 +85,7 @@ func TestSetupKubeConfig_EmptyPayloadSuppressesInfoLog(t *testing.T) {
 	}
 
 	for _, entry := range logs.All() {
-		if entry.Level >= zapcore.InfoLevel {
+		if entry.Level >= slog.LevelInfo {
 			// "setup KubeConfig" specifically must not appear at Info+.
 			if entry.Message == "setup KubeConfig" {
 				t.Errorf("expected no 'setup KubeConfig' log; got: %+v", entry)
@@ -102,7 +102,7 @@ func TestSetupKubeConfig_EmptyPayloadSuppressesInfoLog(t *testing.T) {
 // kubeconfig payload. writeKubeConfig may fail in the test environment, but
 // the log is emitted BEFORE that call so we still expect to see it.
 func TestSetupKubeConfig_NonEmptyPayloadEmitsInfoLog(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 
 	client := &fakeTunnelClient{
 		kubeConfigPayload: "apiVersion: v1\nclusters: []",
@@ -386,7 +386,7 @@ func TestChownWorkspaceIgnoresForeignMarkerWithoutWorkspaceID(t *testing.T) {
 	t.Cleanup(func() {
 		_ = os.Remove(filepath.Join(pkgconfig.ContainerDataDir, "chownWorkspace.marker"))
 	})
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 
 	result := &config.Result{
 		SubstitutionContext: &config.SubstitutionContext{

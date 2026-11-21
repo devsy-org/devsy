@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -134,7 +135,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:       log.LevelInfo,
+		FallbackLevel:       slog.LevelInfo,
 		DetectLevelPrefixes: true,
 	})
 	defer func() { _ = streamer.Close() }()

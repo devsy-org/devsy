@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 type failingArchitectureDriver struct {
@@ -31,7 +31,7 @@ func (d *failingArchitectureDriver) TargetArchitecture(context.Context, string) 
 }
 
 func TestAttemptPreStartDeliveryLogsPlannedPostStartPhase(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 	r := newTestRunner(&mockDriver{})
 
 	// A nil configuration would fail if pre-start options were built. A
@@ -47,7 +47,7 @@ func TestAttemptPreStartDeliveryLogsPlannedPostStartPhase(t *testing.T) {
 }
 
 func TestAttemptPreStartDeliveryLogsFailureAndContinues(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 	failure := errors.New("architecture unavailable")
 	r := newTestRunner(&failingArchitectureDriver{err: failure})
 	r.workspaceConfig.Agent.Driver = provider.DockerDriver

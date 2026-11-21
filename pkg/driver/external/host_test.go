@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,7 +25,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/shirou/gopsutil/v4/process"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -231,7 +231,7 @@ func (s *HostSuite) TestSplitDiagnosticRedaction() {
 
 func (s *HostSuite) TestWorkspaceEnvironmentRedactedFromRuntimeErrors() {
 	host := s.host("env-error")
-	observed := log.InitTestObserved(s.T(), zapcore.DebugLevel)
+	observed := log.InitTestObserved(s.T(), slog.LevelDebug)
 	err := host.RunImage(context.Background(), &runtimev1.RunImageRequest{
 		WorkspaceId: fixtureWorkspace,
 		Image:       "fixture",

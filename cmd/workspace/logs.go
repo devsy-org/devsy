@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"time"
 
@@ -144,7 +145,7 @@ func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 	}
 
 	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:       log.LevelDebug,
+		FallbackLevel:       slog.LevelDebug,
 		DetectLevelPrefixes: true,
 	})
 	defer func() { _ = streamer.Close() }()

@@ -3,6 +3,7 @@ package setup
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
@@ -15,7 +16,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -639,7 +639,7 @@ func (s *LifecycleHookTestSuite) TestPhaseHasCommandsTrueRunFunc() {
 
 func (s *LifecycleHookTestSuite) TestWaitForEmptyPhaseLogsWarning() {
 	t := s.T()
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 
 	all := makeTestPhaseHooks()
 	phase := PhaseUpdateContent

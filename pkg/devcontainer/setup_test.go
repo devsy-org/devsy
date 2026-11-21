@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"reflect"
 	"testing"
@@ -23,7 +24,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -573,9 +573,9 @@ func setupSSHArgvRunner(d driver.Driver) *runner {
 
 func TestBuildSSHTunnelArgvPreservesLiteralArguments(t *testing.T) {
 	for _, debug := range []bool{false, true} {
-		level := zapcore.InfoLevel
+		level := slog.LevelInfo
 		if debug {
-			level = zapcore.DebugLevel
+			level = slog.LevelDebug
 		}
 		log.InitTestObserved(t, level)
 		r := setupSSHArgvRunner(&mockDriver{})

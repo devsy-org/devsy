@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"context"
+	"log/slog"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -21,7 +22,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -95,7 +95,7 @@ func composeScript(t *testing.T, body string) *compose.ComposeHelper {
 }
 
 func TestRunComposeBuildRetainsOutputAtWarnLevel(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.WarnLevel)
+	logs := log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	helper := composeScript(t, "echo 'compose out'; echo 'compose err' >&2")
 
@@ -116,7 +116,7 @@ func TestRunComposeBuildRetainsOutputAtWarnLevel(t *testing.T) {
 }
 
 func TestRunComposeBuildFailureKeepsErrorAndExitCode(t *testing.T) {
-	log.InitTestObserved(t, zapcore.WarnLevel)
+	log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	helper := composeScript(t, "echo 'service failed' >&2; exit 4")
 
@@ -136,7 +136,7 @@ func TestRunComposeBuildFailureKeepsErrorAndExitCode(t *testing.T) {
 }
 
 func TestRunComposeBuildCanceledIsRecorded(t *testing.T) {
-	log.InitTestObserved(t, zapcore.WarnLevel)
+	log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
@@ -150,7 +150,7 @@ func TestRunComposeBuildCanceledIsRecorded(t *testing.T) {
 }
 
 func TestRunComposeBuildWithoutRecorderLogsOnly(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.InfoLevel)
+	logs := log.InitTestObserved(t, slog.LevelInfo)
 
 	err := (&runner{}).runComposeBuild(
 		t.Context(), composeScript(t, "echo plain"), testComposeArgs,
@@ -162,7 +162,7 @@ func TestRunComposeBuildWithoutRecorderLogsOnly(t *testing.T) {
 }
 
 func TestBuildImageRecordsPrebuildReuseWithoutOutput(t *testing.T) {
-	log.InitTestObserved(t, zapcore.WarnLevel)
+	log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	server := httptest.NewServer(registry.New())
 	t.Cleanup(server.Close)

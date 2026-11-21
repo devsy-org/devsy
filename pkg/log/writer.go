@@ -2,13 +2,14 @@ package log
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"sync"
 
 	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
-	"go.uber.org/zap/zapcore"
 )
 
 // maxPendingLine bounds how much unterminated output levelWriter buffers
@@ -16,8 +17,18 @@ import (
 // can't grow the pending line without limit.
 const maxPendingLine = 64 * 1024
 
-func Writer(level int) io.WriteCloser {
-	return &levelWriter{level: verbosityConstToZapLevel(level)}
+func Writer[T int | slog.Level](level T) io.WriteCloser {
+	severity := slog.Level(level)
+	if verbosity, legacy := any(level).(int); legacy {
+		severity = slog.LevelInfo
+		switch verbosity {
+		case LevelDebug:
+			severity = slog.LevelDebug
+		case LevelError:
+			severity = slog.LevelError
+		}
+	}
+	return &levelWriter{level: severity, stream: diagnosticredact.Stream(current.Load().redactor)}
 }
 
 // PassthroughWriter writes bytes exactly as received, with no level
@@ -46,11 +57,10 @@ func (w *passthroughWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	redacted := []byte(w.stream.RedactChunk(string(p)))
-	if len(redacted) > 0 {
-		_, _ = os.Stderr.Write(redacted)
-		_, _ = extraSinks.Write(redacted)
+	if len(redacted) == 0 {
+		return len(p), nil
 	}
-	return len(p), nil
+	return len(p), writePassthrough(redacted)
 }
 
 func (w *passthroughWriter) Close() error {
@@ -61,28 +71,24 @@ func (w *passthroughWriter) Close() error {
 	defer w.mu.Unlock()
 	if w.stream != nil {
 		if pending := w.stream.Flush(); pending != "" {
-			_, _ = os.Stderr.Write([]byte(pending))
-			_, _ = extraSinks.Write([]byte(pending))
+			return writePassthrough([]byte(pending))
 		}
 	}
 	return nil
 }
 
-func verbosityConstToZapLevel(level int) zapcore.Level {
-	switch level {
-	case LevelDebug:
-		return zapcore.DebugLevel
-	case LevelInfo: // LevelWarn has the same value
-		return zapcore.InfoLevel
-	case LevelError:
-		return zapcore.ErrorLevel
-	default:
-		return zapcore.InfoLevel
+func writePassthrough(p []byte) error {
+	n, err := os.Stderr.Write(p)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
 	}
+	_, sinkErr := extraSinks.Write(p)
+	return errors.Join(err, sinkErr)
 }
 
 type levelWriter struct {
-	level zapcore.Level
+	level  Level
+	stream *redact.Stream
 
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -92,11 +98,28 @@ func (w *levelWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if !sugar.Load().Desugar().Core().Enabled(w.level) {
-		return len(p), nil // discard if below current level
+	if !enabled(w.level) {
+		return len(p), nil
 	}
 
 	total := len(p)
+	p = []byte(w.stream.RedactChunk(string(p)))
+	w.writeLines(p)
+	return total, nil
+}
+
+func (w *levelWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.writeLines([]byte(w.stream.Flush()))
+	if w.buf.Len() > 0 {
+		w.logLine(w.buf.String())
+		w.buf.Reset()
+	}
+	return nil
+}
+
+func (w *levelWriter) writeLines(p []byte) {
 	for {
 		i := bytes.IndexByte(p, '\n')
 		if i < 0 {
@@ -112,26 +135,8 @@ func (w *levelWriter) Write(p []byte) (int, error) {
 		w.logLine(w.buf.String())
 		w.buf.Reset()
 	}
-	return total, nil
-}
-
-func (w *levelWriter) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.buf.Len() > 0 {
-		w.logLine(w.buf.String())
-		w.buf.Reset()
-	}
-	return nil
 }
 
 func (w *levelWriter) logLine(line string) {
-	switch w.level {
-	case zapcore.DebugLevel:
-		Debug(line)
-	case zapcore.ErrorLevel:
-		Error(line)
-	default:
-		Info(line)
-	}
+	emit(w.level, line)
 }

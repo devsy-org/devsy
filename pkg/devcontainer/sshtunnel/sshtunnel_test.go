@@ -5,17 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/logging"
 	"github.com/devsy-org/devsy/pkg/agent"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 func TestExecuteSSHServerHelperPreservesStartupSilenceError(t *testing.T) {
@@ -36,42 +37,42 @@ func TestLogLine_JSONPassthrough(t *testing.T) {
 		name      string
 		input     string
 		wantMsg   string
-		wantLevel zapcore.Level
+		wantLevel slog.Level
 	}{
 		{
 			name:      "json with message field",
 			input:     `{"level":"info","message":"agent started"}`,
 			wantMsg:   "agent started",
-			wantLevel: zapcore.InfoLevel,
+			wantLevel: slog.LevelInfo,
 		},
 		{
 			name:      "json with msg field",
 			input:     `{"level":"warn","msg":"disk nearly full"}`,
 			wantMsg:   "disk nearly full",
-			wantLevel: zapcore.WarnLevel,
+			wantLevel: slog.LevelWarn,
 		},
 		{
 			name:      "json error level",
 			input:     `{"level":"error","message":"connection lost"}`,
 			wantMsg:   "connection lost",
-			wantLevel: zapcore.ErrorLevel,
+			wantLevel: slog.LevelError,
 		},
 		{
 			name:      "unknown JSON level keeps tunnel debug fallback",
 			input:     `{"level":"notice","msg":"legacy tunnel output"}`,
 			wantMsg:   "legacy tunnel output",
-			wantLevel: zapcore.DebugLevel,
+			wantLevel: slog.LevelDebug,
 		},
 		{
 			name:      "json debug level",
 			input:     `{"level":"debug","message":"heartbeat sent"}`,
 			wantMsg:   "heartbeat sent",
-			wantLevel: zapcore.DebugLevel,
+			wantLevel: slog.LevelDebug,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logs := log.InitTestObserved(t, zapcore.DebugLevel)
+			logs := log.InitTestObserved(t, slog.LevelDebug)
 			streamer := newSSHTunnelJSONLogStreamer()
 			defer func() { _ = streamer.Close() }()
 			streamer.LogLine(tt.input)
@@ -89,31 +90,31 @@ func TestLogLine_JSONLevelNormalization(t *testing.T) {
 		name      string
 		input     string
 		wantMsg   string
-		wantLevel zapcore.Level
+		wantLevel slog.Level
 	}{
 		{
-			name:      "trace maps to debug",
+			name:      "trace preserves trace",
 			input:     `{"level":"trace","message":"trace event"}`,
 			wantMsg:   "trace event",
-			wantLevel: zapcore.DebugLevel,
+			wantLevel: logging.LevelTrace,
 		},
 		{
 			name:      "warning maps to warn",
 			input:     `{"level":"warning","message":"deprecated call"}`,
 			wantMsg:   "deprecated call",
-			wantLevel: zapcore.WarnLevel,
+			wantLevel: slog.LevelWarn,
 		},
 		{
-			name:      "fatal maps to error",
+			name:      "fatal preserves fatal",
 			input:     `{"level":"fatal","message":"panic recovered"}`,
 			wantMsg:   "panic recovered",
-			wantLevel: zapcore.ErrorLevel,
+			wantLevel: logging.LevelFatal,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logs := log.InitTestObserved(t, zapcore.DebugLevel)
+			logs := log.InitTestObserved(t, logging.LevelTrace)
 			streamer := newSSHTunnelJSONLogStreamer()
 			defer func() { _ = streamer.Close() }()
 			streamer.LogLine(tt.input)
@@ -131,25 +132,25 @@ func TestLogLine_PlainText(t *testing.T) {
 		name      string
 		input     string
 		wantMsg   string
-		wantLevel zapcore.Level
+		wantLevel slog.Level
 	}{
 		{
 			name:      "timestamped text with level",
 			input:     "2024-01-01T00:00:00Z info some message here",
 			wantMsg:   "2024-01-01T00:00:00Z info some message here",
-			wantLevel: zapcore.InfoLevel,
+			wantLevel: slog.LevelInfo,
 		},
 		{
 			name:      "plain text without level falls back to debug",
 			input:     "just a plain line",
 			wantMsg:   "just a plain line",
-			wantLevel: zapcore.DebugLevel,
+			wantLevel: slog.LevelDebug,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logs := log.InitTestObserved(t, zapcore.DebugLevel)
+			logs := log.InitTestObserved(t, slog.LevelDebug)
 			streamer := newSSHTunnelJSONLogStreamer()
 			defer func() { _ = streamer.Close() }()
 			streamer.LogLine(tt.input)
@@ -163,7 +164,7 @@ func TestLogLine_PlainText(t *testing.T) {
 }
 
 func TestLogLine_EmptyAndWhitespace(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 	streamer := newSSHTunnelJSONLogStreamer()
 	defer func() { _ = streamer.Close() }()
 
@@ -175,7 +176,7 @@ func TestLogLine_EmptyAndWhitespace(t *testing.T) {
 }
 
 func TestLogLine_JSONWithoutMessage(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 	streamer := newSSHTunnelJSONLogStreamer()
 	defer func() { _ = streamer.Close() }()
 
@@ -183,7 +184,7 @@ func TestLogLine_JSONWithoutMessage(t *testing.T) {
 
 	entries := logs.All()
 	require.Len(t, entries, 1)
-	assert.Equal(t, zapcore.DebugLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelDebug, entries[0].Level)
 }
 
 func TestExecuteCommand_PipeBridgeIntegration(t *testing.T) {

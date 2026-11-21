@@ -3,6 +3,7 @@ package setup
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os/user"
 	"slices"
@@ -16,7 +17,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 type recordedRun struct {
@@ -234,7 +234,7 @@ func TestRecordsSilentSuccessHasNoOutput(t *testing.T) {
 }
 
 func TestRecordsOutputAtQuietLogLevel(t *testing.T) {
-	log.InitTestObserved(t, zapcore.ErrorLevel)
+	log.InitTestObserved(t, slog.LevelError)
 	run := newRecordedRun(t)
 	p := testParams(t, run.ctx, types.LifecycleHook{"": {"echo kept"}})
 

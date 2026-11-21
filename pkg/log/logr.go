@@ -1,11 +1,7 @@
 package log
 
-import (
-	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
-)
+import "github.com/go-logr/logr"
 
-// LogrSink returns a logr.LogSink for Kubernetes client-go compatibility.
 func LogrSink() logr.LogSink {
-	return zapr.NewLogger(Underlying()).GetSink()
+	return logr.FromSlogHandler(Slog().Handler()).GetSink()
 }

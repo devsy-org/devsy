@@ -41,13 +41,13 @@ func TestPassthroughSinksMaskFoldedAuthorization(t *testing.T) {
 
 func captureFoldedStderr(t *testing.T) *os.File {
 	t.Helper()
-	oldStderr, oldLogger := os.Stderr, sugar.Load()
+	oldStderr, oldLogger := os.Stderr, current.Load()
 	file, err := os.CreateTemp(t.TempDir(), "stderr-*.log")
 	require.NoError(t, err)
 	os.Stderr = file
 	t.Cleanup(func() {
 		os.Stderr = oldStderr
-		sugar.Store(oldLogger)
+		current.Store(oldLogger)
 		require.NoError(t, file.Close())
 	})
 	return file

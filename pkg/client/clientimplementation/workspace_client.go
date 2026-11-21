@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -1723,7 +1724,7 @@ func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan e
 	errChan := make(chan error, 1)
 	go func() {
 		streamer := log.NewJSONLogStreamer(log.StreamerOptions{
-			FallbackLevel:       log.LevelInfo,
+			FallbackLevel:       slog.LevelInfo,
 			DetectLevelPrefixes: true,
 		})
 		defer func() {
