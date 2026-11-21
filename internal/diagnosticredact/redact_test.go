@@ -46,3 +46,24 @@ func TestRecordKeepsOrdinaryPrefixAtTerminalFold(t *testing.T) {
 	assert.NotContains(t, output, canary)
 	assert.Contains(t, output, detail)
 }
+
+func TestEnvironmentRecordsMaskJSONRecordsAfterPlainLines(t *testing.T) {
+	const canary = "synthetic-record-bearer"
+	for name, separator := range map[string]string{"LF": "\n", "CR": "\r", "CRLF": "\r\n"} {
+		t.Run(name, func(t *testing.T) {
+			input := "public diagnostic" + separator +
+				`{"Authorization":"Bearer ` + canary + `"}` + separator + "public tail"
+			for label, output := range map[string]string{
+				"EnvironmentRecord":       EnvironmentRecord(input),
+				"RecordWithEnvironment":   RecordWithEnvironment(nil, input),
+				"RecordsThenRecord":       Record(redact.FromEntries(nil), Records(redact.FromEntries(nil), input)),
+				"RecordsWithOnlyPlainEOL": Records(redact.FromEntries(nil), "plain"+separator+"text"),
+			} {
+				assert.NotContains(t, output, canary, label)
+			}
+			output := RecordWithEnvironment(nil, input)
+			assert.Contains(t, output, "public diagnostic"+separator)
+			assert.Contains(t, output, separator+"public tail")
+		})
+	}
+}

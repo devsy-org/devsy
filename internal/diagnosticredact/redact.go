@@ -14,7 +14,8 @@ func EnvironmentRecord(value string) string {
 }
 
 func RecordWithEnvironment(environment []string, value string) string {
-	return Record(redact.New(redact.Options{Environment: environment}), value)
+	redactor := redact.New(redact.Options{Environment: environment})
+	return Record(redactor, Records(redactor, value))
 }
 
 func Record(redactor *redact.Redactor, value string) string {

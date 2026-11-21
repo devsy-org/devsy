@@ -38,6 +38,31 @@ func TestLFSFailureMasksFoldedOutputAcrossStreams(t *testing.T) {
 	assert.NilError(t, At(t.TempDir(), WithRunner(lfsSplitRunner{})).lfs(t.Context(), "pull"))
 }
 
+type lfsCommandErrorRunner struct{ cause error }
+
+func (r lfsCommandErrorRunner) Run(context.Context, RunOptions) (RunResult, error) {
+	stderr := "Authorization:\n Bearer " + lfsFoldedFixtureValue + "\n\n" + lfsDiagnosticDetail
+	return RunResult{Stderr: []byte(stderr)}, &CommandError{
+		Args:     []string{"lfs", "pull"},
+		ExitCode: 2,
+		Stderr:   stderr,
+		Err:      r.cause,
+	}
+}
+
+func TestLFSFailureMasksStderrCarriedByTheCommandError(t *testing.T) {
+	cause := errors.New("fixture LFS process failure")
+	repo := At(t.TempDir(), WithRunner(lfsCommandErrorRunner{cause: cause}))
+	err := repo.lfs(t.Context(), "pull")
+	assert.Assert(t, errors.Is(err, cause))
+	var commandErr *CommandError
+	assert.Assert(t, errors.As(err, &commandErr))
+	assert.Equal(t, 2, commandErr.ExitCode)
+	assert.Equal(t, 1, strings.Count(err.Error(), lfsDiagnosticDetail))
+	assert.Assert(t, cmp.Contains(err.Error(), lfsDiagnosticDetail))
+	assert.Assert(t, !strings.Contains(err.Error(), lfsFoldedFixtureValue))
+}
+
 func TestLFSModeResolution(t *testing.T) {
 	cases := []struct {
 		name string

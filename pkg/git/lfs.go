@@ -3,13 +3,13 @@ package git
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/log"
 )
@@ -96,10 +96,14 @@ func ensureLFSBinary(ctx context.Context, allowInstall bool) bool {
 func (r *Repo) lfs(ctx context.Context, args ...string) error {
 	res, err := r.run(ctx, append([]string{"lfs"}, args...)...)
 	if err != nil {
-		return fmt.Errorf(
-			"%w: %s",
+		output := slices.Clone(res.Stdout)
+		if _, carriesStderr := errors.AsType[*CommandError](err); !carriesStderr {
+			output = append(output, res.Stderr...)
+		}
+		return command.WrapCommandErrorWithEnvironment(
+			output,
 			err,
-			diagnosticredact.EnvironmentRecord(string(res.Stdout)+string(res.Stderr)),
+			append(os.Environ(), r.env...),
 		)
 	}
 	return nil
