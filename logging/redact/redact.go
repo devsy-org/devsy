@@ -8,6 +8,8 @@ import (
 const (
 	defaultMask        = "***"
 	authorizationField = "Authorization"
+	headerStart        = `(?i)\b((?:proxy-)?authorization[ \t]*[:=][ \t]*)`
+	lineBreak          = `(?:\r\n|\r|\n)`
 )
 
 type Options struct {
@@ -20,15 +22,21 @@ type Options struct {
 }
 
 type Redactor struct {
-	values    []string
-	matcher   *byteMatcher
-	maxLength int
-	mask      string
+	values     []string
+	matcher    *byteMatcher
+	maxLength  int
+	mask       string
+	diagnostic bool
 }
 
 var (
-	urlPattern    = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^\r\n]*@`)
-	headerPattern = regexp.MustCompile(`(?i)\b((?:proxy-)?authorization[ \t]*[:=][ \t]*)[^\r\n]*`)
+	urlPattern          = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^\r\n]*@`)
+	authorityURLPattern = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/\s\x0b\x85\pZ?#"<>]*@`)
+	headerPattern       = regexp.MustCompile(headerStart + `[^\r\n]*`)
+	foldedHeaderPattern = regexp.MustCompile(
+		headerStart + `(?:` + lineBreak + `[ \t]*(?:basic|bearer)\b)?[^\r\n]*` +
+			`(?:` + lineBreak + `[ \t]+[^ \t\r\n][^\r\n]*)*`,
+	)
 )
 
 func New(opts Options) *Redactor {
@@ -107,6 +115,21 @@ func (r *Redactor) Redact(value string) string {
 		return result
 	}
 	return r.redactText(value)
+}
+
+func (r *Redactor) RedactDiagnostic(value string) string {
+	if len(value) > streamLineLimit && !strings.ContainsAny(value, "\r\n:=") {
+		stream := NewDiagnosticStream(r)
+		if stream.keepPlain && isPlainStart("", value[:streamLineLimit]) {
+			return stream.RedactChunk(value) + stream.Flush()
+		}
+	}
+	var diagnostic Redactor
+	if r != nil {
+		diagnostic = *r
+	}
+	diagnostic.diagnostic = true
+	return diagnostic.Redact(value)
 }
 
 func (r *Redactor) MaskCredentialField(key string) (string, bool) {
@@ -193,10 +216,18 @@ func (m *textMatches) lengthAt(index int) int {
 	return end - index
 }
 
+func (r *Redactor) textPatterns(value string) (urls, headers textMatches) {
+	url, header := urlPattern, headerPattern
+	if r != nil && r.diagnostic {
+		url, header = authorityURLPattern, foldedHeaderPattern
+	}
+	return textMatches{matches: url.FindAllStringSubmatchIndex(value, -1), trim: 1},
+		textMatches{matches: header.FindAllStringSubmatchIndex(value, -1)}
+}
+
 func (r *Redactor) redactText(value string) string {
 	lengths := r.matchLengths(value, len(value))
-	urls := textMatches{matches: urlPattern.FindAllStringSubmatchIndex(value, -1), trim: 1}
-	headers := textMatches{matches: headerPattern.FindAllStringSubmatchIndex(value, -1)}
+	urls, headers := r.textPatterns(value)
 	var result strings.Builder
 	covered := 0
 	for i := range len(value) {

@@ -93,7 +93,7 @@ func TestRedactor_MasksCredentialBearingURLsAndAuthorizationHeaders(t *testing.T
 		t.Fatalf("credential escaped format redaction: %q", got)
 	}
 	if !strings.Contains(got, "https://***@example.com/repo") ||
-		!strings.Contains(got, "Authorization: Bearer ***") {
+		!strings.Contains(got, "Authorization: ***") {
 		t.Fatalf("format redaction = %q", got)
 	}
 }
@@ -134,7 +134,7 @@ func TestStreamingRedactor_MasksCredentialsSplitInsideFormatPrefix(t *testing.T)
 			name:   "authorization header",
 			first:  "Authorization: Bearer ",
 			second: "api-token",
-			want:   "Authorization: Bearer ***",
+			want:   "Authorization: ***",
 		},
 	}
 	for _, tt := range tests {
