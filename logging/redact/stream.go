@@ -8,22 +8,25 @@ import (
 const streamLineLimit = 16 * 1024
 
 type Stream struct {
-	mu        sync.Mutex
-	base      *Redactor
-	line      []byte
-	lineStart int64
-	offset    int64
-	search    *matchNode
-	records   []streamRecord
-	secrets   []byteSpan
-	keepPlain bool
-	plain     *plainRecord
+	mu            sync.Mutex
+	base          *Redactor
+	line          []byte
+	lineStart     int64
+	offset        int64
+	search        *matchNode
+	records       []streamRecord
+	secrets       []byteSpan
+	keepPlain     bool
+	plain         *plainRecord
+	authorization authorizationFold
+	lastCR        bool
 }
 
 type streamRecord struct {
 	data       []byte
 	start, end int64
 	delimiter  byte
+	folded     bool
 }
 
 type byteSpan struct {
@@ -36,7 +39,12 @@ func NewStream(redactor *Redactor) *Stream {
 }
 
 func NewDiagnosticStream(redactor *Redactor) *Stream {
-	return &Stream{base: redactor, keepPlain: redactor != nil && redactor.canKeepPlain()}
+	if redactor == nil {
+		return NewStream(nil)
+	}
+	diagnostic := *redactor
+	diagnostic.foldedHeaders = true
+	return &Stream{base: &diagnostic, keepPlain: redactor.canKeepPlain()}
 }
 
 func (r *Redactor) canKeepPlain() bool {
@@ -99,6 +107,7 @@ func (s *Stream) Flush() string {
 	s.search = nil
 	s.offset, s.lineStart = 0, 0
 	s.secrets = nil
+	s.authorization, s.lastCR = noAuthorizationFold, false
 	return output.String()
 }
 
@@ -128,7 +137,8 @@ func (s *Stream) startPlain(text string, output *strings.Builder) bool {
 	const protected = ":="
 	prefix := text[:streamLineLimit-len(s.line)]
 	if strings.ContainsAny(string(s.line), protected) || strings.ContainsAny(prefix, protected) ||
-		!isPlainStart(string(s.line), prefix) {
+		!isPlainStart(string(s.line), prefix) ||
+		(s.authorization != noAuthorizationFold && s.authorization.masks(string(s.line)+prefix)) {
 		return false
 	}
 	s.plain = &plainRecord{}
@@ -153,6 +163,10 @@ func (s *Stream) writePlain(text string, delimiter byte, output *strings.Builder
 	}
 	s.plain.emit(output, s.plain.end, s.base.Mask())
 	output.WriteByte(delimiter)
+	s.authorization, s.lastCR = noAuthorizationFold, delimiter == '\r'
+	if s.plain.suppressed {
+		s.authorization = emptyAuthorizationFold
+	}
 	s.plain = nil
 	s.search = nil
 	s.offset++
@@ -212,9 +226,11 @@ func appendSpan(spans []byteSpan, span byteSpan) []byteSpan {
 }
 
 func (s *Stream) finishLine(delimiter byte) {
-	s.records = append(s.records, streamRecord{
-		data: s.line, start: s.lineStart, end: s.offset, delimiter: delimiter,
-	})
+	record := streamRecord{data: s.line, start: s.lineStart, end: s.offset, delimiter: delimiter}
+	if s.base.foldedHeaders {
+		record.folded = s.foldedRecord(record)
+	}
+	s.records = append(s.records, record)
 	s.line = nil
 	s.lineStart = s.offset
 }
@@ -259,6 +275,8 @@ func (s *Stream) recordText(record streamRecord) string {
 		return s.base.jsonMask()
 	case len(s.secrets) > 0 && s.secrets[0].start < record.end:
 		return s.base.jsonMask()
+	case record.folded:
+		return s.maskFoldedRecord(record.data)
 	default:
 		return s.base.Redact(string(record.data))
 	}
