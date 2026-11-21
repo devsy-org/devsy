@@ -387,3 +387,27 @@ func TestPlainReporterRedactsEnvironmentSecrets(t *testing.T) {
 		t.Fatalf("secret escaped plain status output: %q", buf.String())
 	}
 }
+
+func TestPlainReporterMasksFoldedFailureDetails(t *testing.T) {
+	const continuation = "synthetic-status-folded-value"
+	const diagnostic = "Authorization: Bearer synthetic-status-value\n " + continuation
+	var out bytes.Buffer
+	NewPlainReporter(&out, "up", nil).Report(Event{
+		Phase: PhaseFailed, State: StateFailed, Step: "Build image",
+		Error: &ErrorInfo{
+			Code: diagnostic, Message: diagnostic, Hint: diagnostic,
+			Context: map[string]string{"detail": diagnostic, "stage": "workspace"},
+		},
+	})
+	text := out.String()
+	if strings.Contains(text, continuation) {
+		t.Fatal("folded fixture value reached the status output")
+	}
+	for _, line := range []string{
+		"[FAIL] up: Build image", "Error code: ***", "Try: ***", "detail: ***", "stage: workspace",
+	} {
+		if !strings.Contains(text, line) {
+			t.Errorf("status output is missing %q", line)
+		}
+	}
+}
