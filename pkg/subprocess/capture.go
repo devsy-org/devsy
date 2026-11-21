@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/status"
 )
@@ -91,7 +92,7 @@ func (w RedactingWriter) Write(p []byte) (int, error) {
 	if w.Redactor == nil {
 		return w.Next.Write(p)
 	}
-	redacted := []byte(w.Redactor.Redact(string(p)))
+	redacted := []byte(diagnosticredact.Record(w.Redactor, string(p)))
 	n, err := w.Next.Write(redacted)
 	if err != nil {
 		return 0, err
@@ -115,7 +116,7 @@ func (w *StreamingRedactingWriter) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	if w.stream == nil {
-		w.stream = redact.NewDiagnosticStream(w.Redactor)
+		w.stream = diagnosticredact.Stream(w.Redactor)
 	}
 	redacted := []byte(w.stream.RedactChunk(string(p)))
 	if len(redacted) == 0 {
@@ -328,9 +329,7 @@ func processSignal(state *os.ProcessState) string {
 func displayCommand(binary string, args []string, redactor *redact.Redactor) string {
 	parts := append([]string{binary}, args...)
 	for i := range parts {
-		if redactor != nil {
-			parts[i] = redactor.Redact(parts[i])
-		}
+		parts[i] = diagnosticredact.Record(redactor, parts[i])
 		if strings.ContainsAny(parts[i], " \t\n\"") {
 			parts[i] = fmt.Sprintf("%q", parts[i])
 		}
@@ -350,7 +349,7 @@ type Buffer struct {
 // NewBuffer creates a bounded output buffer.
 func NewBuffer(redactor *redact.Redactor) *Buffer {
 	return &Buffer{
-		stream: redact.NewDiagnosticStream(redactor),
+		stream: diagnosticredact.Stream(redactor),
 		data:   make([]byte, 0, 4096),
 	}
 }

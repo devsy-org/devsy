@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 )
 
@@ -213,7 +214,7 @@ func (r *Recorder) WriterRedacting(
 	}
 	return &DiagnosticWriter{
 		rec: r, invocationID: invocationID, stream: stream,
-		redactor: redact.NewStream(redactor),
+		redactor: diagnosticredact.Stream(redactor),
 	}
 }
 
