@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -52,6 +53,7 @@ func (c localHostTunnelClient) RefreshOptions(ctx context.Context, _ []string, _
 }
 
 func TestHostTunnelExecutesLiteralAgentPath(t *testing.T) {
+	log.InitTestObserved(t, slog.LevelDebug)
 	for _, name := range []string{"agent space", "agent'quote", "agent '\\$-\u03bb;$(false)"} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), name)
@@ -64,9 +66,13 @@ func TestHostTunnelExecutesLiteralAgentPath(t *testing.T) {
 				t,
 				tunnel.runHostTunnel(ctx, strings.NewReader("host-input\n"), &stdout, time.Second),
 			)
-			args := []string{path, "internal", "ssh-server", hostTunnelStdioFlag}
-			if log.DebugEnabled() {
-				args = append(args, "--debug")
+			args := []string{
+				path,
+				"internal",
+				"ssh-server",
+				hostTunnelStdioFlag,
+				testTunnelLogLevelFlag,
+				"debug",
 			}
 			require.Equal(t, strings.Join(args, "\x00")+"\x00host-input\n", stdout.String())
 		})
@@ -74,6 +80,7 @@ func TestHostTunnelExecutesLiteralAgentPath(t *testing.T) {
 }
 
 func TestContainerTunnelPreservesLiteralHostArguments(t *testing.T) {
+	log.InitTestObserved(t, slog.LevelDebug)
 	for _, mode := range []string{"container-tunnel", "update-config"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
@@ -120,10 +127,14 @@ func TestContainerTunnelPreservesLiteralHostArguments(t *testing.T) {
 					t.Error("fixture does not serve an inner SSH connection")
 					return nil
 				}, nil)
-				args = append(args, mode, "--workspace-info", workspace.info)
-				if log.DebugEnabled() {
-					args = append(args, "--debug")
-				}
+				args = append(
+					args,
+					mode,
+					"--workspace-info",
+					workspace.info,
+					testTunnelLogLevelFlag,
+					"debug",
+				)
 			}
 			got, err := root.ReadFile("arguments")
 			require.NoError(t, err)

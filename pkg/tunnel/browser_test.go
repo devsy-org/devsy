@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	testUserRoot      = "root"
-	testUserVSCode    = "vscode"
-	testWorkspaceName = "my-workspace"
+	testUserRoot           = "root"
+	testUserVSCode         = "vscode"
+	testWorkspaceName      = "my-workspace"
+	testTunnelLogLevelFlag = "--log-level"
 )
 
 type fakeWorkspaceClient struct{}
@@ -101,30 +102,42 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 			name: "with debug",
 			params: sshCommandArgsParams{
 				clientContext: testCtxName, workspace: testWorkspaceName,
-				user: testUserVSCode, debug: true,
+				user: testUserVSCode, logArgs: []string{testTunnelLogLevelFlag, "trace"},
 			},
 			expected: append(
-				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug",
+				baseSSHArgs(
+					testCtxName,
+					testUserVSCode,
+					testWorkspaceName,
+				),
+				testTunnelLogLevelFlag,
+				"trace",
 			),
 		},
 		{
 			name: "with extra args",
 			params: sshCommandArgsParams{
 				clientContext: "prod", workspace: "ws", user: testUserVSCode,
-				extraArgs: []string{"--stdio", "--log-output=raw"},
+				extraArgs: []string{"--stdio", "--log-format=text"},
 			},
 			expected: append(
-				baseSSHArgs("prod", testUserVSCode, "ws"), "--stdio", "--log-output=raw",
+				baseSSHArgs("prod", testUserVSCode, "ws"), "--stdio", "--log-format=text",
 			),
 		},
 		{
 			name: "with debug and extra args",
 			params: sshCommandArgsParams{
 				clientContext: testCtxName, workspace: testWorkspaceName, user: testUserVSCode,
-				debug: true, extraArgs: []string{"--stdio"},
+				logArgs: []string{testTunnelLogLevelFlag, "debug"}, extraArgs: []string{"--stdio"},
 			},
 			expected: append(
-				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug", "--stdio",
+				baseSSHArgs(
+					testCtxName,
+					testUserVSCode,
+					testWorkspaceName,
+				),
+				testTunnelLogLevelFlag, "debug",
+				"--stdio",
 			),
 		},
 	}

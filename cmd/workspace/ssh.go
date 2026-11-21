@@ -616,9 +616,7 @@ func (cmd *SSHCmd) buildSSHServerCommand(
 			cmd.ReuseSSHAuthSock,
 		)
 	}
-	if cmd.Debug {
-		commandArgs = append(commandArgs, names.Flag(names.Debug))
-	}
+	commandArgs = append(commandArgs, log.ForwardFlagArgs()...)
 	command := shellescape.QuoteCommand(commandArgs)
 	if cmd.User != "" && cmd.User != "root" && !agent.RunsFixedNonRootUser() {
 		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})

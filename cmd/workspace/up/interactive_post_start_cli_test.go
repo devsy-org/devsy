@@ -57,9 +57,9 @@ func (s *InteractivePostStartCLISuite) TestInteractivePostStartFlagDefaultsFalse
 
 func (s *InteractivePostStartCLISuite) TestWorkspaceAgentCommandLifecycleGuard() {
 	t := s.T()
-	base := workspaceAgentCommand("/agent", "workspace", false, false)
+	base := workspaceAgentCommand("/agent", "workspace", nil, false)
 	require.NotContains(t, base, "lifecycle-terminal-protocol")
-	interactive := workspaceAgentCommand("/agent", "workspace", false, true)
+	interactive := workspaceAgentCommand("/agent", "workspace", nil, true)
 	require.Contains(t, interactive, shellescape.Quote("--lifecycle-terminal-protocol=1"))
 	require.Equal(t, base+" "+shellescape.Quote("--lifecycle-terminal-protocol=1"), interactive)
 }

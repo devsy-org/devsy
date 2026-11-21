@@ -133,8 +133,8 @@ func (c *ContainerTunnel) runHostTunnel(
 	defer log.Debugf("Tunnel to host closed")
 
 	command := shellescape.Quote(c.client.AgentPath()) + " internal ssh-server --stdio"
-	if log.DebugEnabled() {
-		command += " --debug"
+	if args := log.ForwardFlagArgs(); len(args) != 0 {
+		command += " " + shellescape.QuoteCommand(args)
 	}
 	return agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
@@ -233,8 +233,8 @@ func (c *ContainerTunnel) runInContainer(
 		shellescape.Quote(c.client.AgentPath()),
 		shellescape.Quote(workspaceInfo),
 	)
-	if log.DebugEnabled() {
-		command += " --debug"
+	if args := log.ForwardFlagArgs(); len(args) != 0 {
+		command += " " + shellescape.QuoteCommand(args)
 	}
 	containerConn, err := devssh.OpenSessionConn(ctx, sshClient, devssh.SessionConnOptions{
 		Command: command,

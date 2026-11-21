@@ -74,7 +74,7 @@ func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
 			defer func() { _ = writer.Close() }()
 
 			sshCmd, err := CreateSSHCommand(ctx, p.Client, p.User, []string{
-				names.FlagValue(names.LogOutput, "raw"),
+				names.FlagValue(names.LogFormat, "text"),
 				names.FlagValue(names.ReuseSSHAuthSock, p.AuthSockID),
 				names.Flag(names.Stdio),
 			})
@@ -229,13 +229,11 @@ func buildBackhaulCmd(ctx context.Context, p backhaulCmdParams) *exec.Cmd {
 		names.Flag(names.Context),
 		p.client.Context(),
 		p.client.Workspace(),
-		names.FlagValue(names.LogOutput, "raw"),
+		names.FlagValue(names.LogFormat, "text"),
 		names.Flag(names.Command),
 		"while true; do sleep 6000000; done", // sleep infinity is not available on all systems
 	)
-	if log.DebugEnabled() {
-		cmd.Args = append(cmd.Args, names.Flag(names.Debug))
-	}
+	cmd.Args = append(cmd.Args, log.ForwardFlagArgs()...)
 	cmd.Stdout = p.writer
 	cmd.Stderr = p.writer
 	return cmd
@@ -281,7 +279,7 @@ func CreateSSHCommand(
 		clientContext: client.Context(),
 		workspace:     client.Workspace(),
 		user:          user,
-		debug:         log.DebugEnabled(),
+		logArgs:       log.ForwardFlagArgs(),
 		extraArgs:     extraArgs,
 	})
 
@@ -295,7 +293,7 @@ type sshCommandArgsParams struct {
 	clientContext string
 	workspace     string
 	user          string
-	debug         bool
+	logArgs       []string
 	extraArgs     []string
 }
 
@@ -315,9 +313,7 @@ func buildSSHCommandArgs(p sshCommandArgsParams) []string {
 		p.clientContext,
 		p.workspace,
 	}
-	if p.debug {
-		args = append(args, names.Flag(names.Debug))
-	}
+	args = append(args, p.logArgs...)
 	args = append(args, p.extraArgs...)
 	return args
 }

@@ -167,8 +167,8 @@ func (cmd *SSHCmd) injectExec(
 			"%s internal ssh-server --stdio",
 			shellescape.Quote(machineClient.AgentPath()),
 		)
-		if cmd.Debug {
-			_, _ = c.WriteString(" --debug")
+		if args := log.ForwardFlagArgs(); len(args) != 0 {
+			_, _ = c.WriteString(" " + shellescape.QuoteCommand(args))
 		}
 		command := c.String()
 		return devagent.InjectAgent(ctx, &devagent.InjectOptions{

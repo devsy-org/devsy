@@ -82,8 +82,8 @@ func (cmd *LogsCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	sshServerCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
-	if log.DebugEnabled() {
-		sshServerCmd += " --debug"
+	if args := log.ForwardFlagArgs(); len(args) != 0 {
+		sshServerCmd += " " + shellescape.QuoteCommand(args)
 	}
 
 	timeout := config.ParseTimeOption(devsyConfig, config.ContextOptionAgentInjectTimeout)
@@ -226,8 +226,8 @@ func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) er
 		shellescape.Quote(client.Context()),
 		shellescape.Quote(client.Workspace()),
 	)
-	if log.DebugEnabled() {
-		agentCommand += " --debug"
+	if args := log.ForwardFlagArgs(); len(args) != 0 {
+		agentCommand += " " + shellescape.QuoteCommand(args)
 	}
 
 	session.Stdout = os.Stdout

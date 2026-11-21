@@ -34,6 +34,7 @@ const (
 const (
 	testDockerHostEnvKey      = "DOCKER_HOST"
 	testSetupSSHServerCommand = "ssh-server --stdio"
+	testSetupDebugLevel       = "debug"
 )
 
 type setupSSHDriver struct {
@@ -572,27 +573,24 @@ func setupSSHArgvRunner(d driver.Driver) *runner {
 }
 
 func TestBuildSSHTunnelArgvPreservesLiteralArguments(t *testing.T) {
-	for _, debug := range []bool{false, true} {
-		level := slog.LevelInfo
-		if debug {
-			level = slog.LevelDebug
-		}
-		log.InitTestObserved(t, level)
+	for _, test := range []struct {
+		level slog.Level
+		flags []string
+	}{
+		{slog.LevelWarn, nil},
+		{slog.LevelInfo, []string{"--log-level", "info"}},
+		{slog.LevelDebug, []string{"--log-level", testSetupDebugLevel}},
+	} {
+		log.InitTestObserved(t, test.level)
 		r := setupSSHArgvRunner(&mockDriver{})
 		want := []string{
 			r.agentContainerPath(), "internal", "ssh-server", "--stdio",
 			"--reuse-ssh-auth-sock", r.workspaceConfig.CLIOptions.SSHAuthSockID,
 		}
-		if debug {
-			want = append(want, "--debug")
-		}
-		assert.Equal(t, want, r.buildSSHTunnelArgv())
+		assert.Equal(t, append(want, test.flags...), r.buildSSHTunnelArgv())
 		r.workspaceConfig.Workspace.IDE.Name = none
 		want = []string{r.agentContainerPath(), "internal", "ssh-server", "--stdio"}
-		if debug {
-			want = append(want, "--debug")
-		}
-		assert.Equal(t, want, r.buildSSHTunnelArgv())
+		assert.Equal(t, append(want, test.flags...), r.buildSSHTunnelArgv())
 	}
 }
 
