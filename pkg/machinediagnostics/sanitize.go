@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 )
 
@@ -14,7 +15,7 @@ func NewSanitizer(env []string) *Sanitizer {
 }
 
 func (s *Sanitizer) Message(value string) string {
-	value = s.redactor.Redact(value)
+	value = diagnosticredact.Record(s.redactor, value)
 	value = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r == '\t' {
 			return ' '
