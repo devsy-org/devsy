@@ -230,6 +230,38 @@ describe("main logger", () => {
     }
   })
 
+  it.each([
+    [
+      "https://alice:pw@private-canary@example.test/root",
+      "https://***@example.test/root",
+    ],
+    [
+      "https://alice:pw@private-canary@example.test",
+      "https://***@example.test",
+    ],
+    [
+      "https://alice:pw@private-canary@example.test?q=1",
+      "https://***@example.test?q=1",
+    ],
+    ["https://alice@example.test/root", "https://***@example.test/root"],
+    ["https://example.test/root@public", "https://example.test/root@public"],
+  ])(
+    "masks URL credentials through the last @ in the authority",
+    (input, expected) => {
+      const dir = mkdtempSync(join(tmpdir(), "devsy-authority-log-"))
+      const info = vi.spyOn(console, "info").mockImplementation(() => {})
+      try {
+        initializeMainLog(dir)
+        mainLog.info(`visit ${input} now`)
+        const file = readFileSync(join(dir, "main.log"), "utf8").trim()
+        expect(info.mock.calls[0][0]).toBe(file)
+        expect(JSON.parse(file).msg).toBe(`visit ${expected} now`)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
+
   it("keeps Error diagnostics without reading own or inherited accessors", () => {
     const dir = mkdtempSync(join(tmpdir(), "devsy-error-accessors-"))
     const info = vi.spyOn(console, "info").mockImplementation(() => {})

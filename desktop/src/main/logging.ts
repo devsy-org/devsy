@@ -38,7 +38,7 @@ function redactText(value: string): string {
     credentialAssignments(value),
     ({ start, end }): RedactionRange => [start, end],
   )
-  for (const match of value.matchAll(/(https?:\/\/)[^\s/@]+@/gi)) {
+  for (const match of value.matchAll(/(https?:\/\/)[^\s/?#]+@/gi)) {
     ranges.push([
       match.index + match[1].length,
       match.index + match[0].length - 1,
