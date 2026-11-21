@@ -335,16 +335,26 @@ jobs:
 
       - name: run unit tests
         shell: bash
+        timeout-minutes: ${{ matrix.test_timeout_minutes }}
         run: go run ./hack/ci unit
 
       - name: save Go caches
-        if: always() && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true'
+        if: success() && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
           key: ${{ steps.gocache-restore.outputs.cache-primary-key }}
+
+      - name: save partial Go caches
+        if: (failure() || cancelled()) && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-partial-${{ github.run_id }}
 
   provider-update-windows:
     name: Provider Update Tests (windows-latest)
