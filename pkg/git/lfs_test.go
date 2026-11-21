@@ -63,6 +63,46 @@ func TestLFSFailureMasksStderrCarriedByTheCommandError(t *testing.T) {
 	assert.Assert(t, !strings.Contains(err.Error(), lfsFoldedFixtureValue))
 }
 
+type lfsJSONStderrRunner struct {
+	result RunResult
+	err    error
+}
+
+func (r lfsJSONStderrRunner) Run(context.Context, RunOptions) (RunResult, error) {
+	return r.result, r.err
+}
+
+func TestLFSFailureMasksJSONStderrRecordCarriedByTheCommandError(t *testing.T) {
+	const stderr = "{\"Cookie\":\"synthetic-lfs-cookie\"}\npublic lfs tail\n"
+	original := &CommandError{
+		Args:     []string{"lfs", "pull"},
+		ExitCode: 23,
+		Stderr:   stderr,
+		Err:      errors.New("exit status 23"),
+	}
+	repo := At(t.TempDir(), WithRunner(lfsJSONStderrRunner{
+		result: RunResult{Stderr: []byte(stderr)},
+		err:    original,
+	}))
+	err := repo.lfs(t.Context(), "pull")
+	assert.Assert(t, !strings.Contains(err.Error(), "synthetic-lfs-cookie"))
+	assert.Assert(t, cmp.Contains(err.Error(), "public lfs tail"))
+	assert.Assert(t, cmp.Contains(err.Error(), "exit status 23"))
+	var commandErr *CommandError
+	assert.Assert(t, errors.As(err, &commandErr))
+	assert.Equal(t, stderr, commandErr.Stderr)
+}
+
+func TestLFSFailureKeepsRunnerStderrThatTheErrorDoesNotCarry(t *testing.T) {
+	repo := At(t.TempDir(), WithRunner(lfsJSONStderrRunner{
+		result: RunResult{Stderr: []byte("public runner detail")},
+		err:    &CommandError{Args: []string{"lfs", "pull"}, Err: errors.New("fixture")},
+	}))
+	err := repo.lfs(t.Context(), "pull")
+	assert.Assert(t, cmp.Contains(err.Error(), "public runner detail"))
+	assert.Assert(t, cmp.Contains(err.Error(), "fixture"))
+}
+
 func TestLFSModeResolution(t *testing.T) {
 	cases := []struct {
 		name string

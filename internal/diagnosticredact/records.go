@@ -69,12 +69,12 @@ func LooksLikeStructuredJSON(value string) bool {
 	if value == "" {
 		return false
 	}
-	rest := strings.TrimLeft(value[1:], " \t\r\n")
 	switch value[0] {
 	case '{':
+		rest := strings.TrimLeft(value[1:], " \t\r\n")
 		return rest == "" || rest[0] == '"' || rest[0] == '}'
 	case '[':
-		return looksLikeJSONList(rest)
+		return looksLikeJSONList(strings.TrimLeft(value[1:], " \t\r\n"))
 	case '"':
 		return true
 	default:
