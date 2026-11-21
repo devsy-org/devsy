@@ -29,7 +29,7 @@ func TestSSHServerCommand_EscapesAgentPath(t *testing.T) {
 func TestSSHServerCommand_AppendsDebugFlag(t *testing.T) {
 	command := sshServerCommand("/usr/local/bin/devsy", true)
 
-	if !strings.HasSuffix(command, "--debug") {
+	if !strings.HasSuffix(command, "--log-level=debug") {
 		t.Fatalf("expected trailing --debug flag, got: %s", command)
 	}
 }
@@ -37,7 +37,7 @@ func TestSSHServerCommand_AppendsDebugFlag(t *testing.T) {
 func TestSSHServerCommand_OmitsDebugFlagWhenDisabled(t *testing.T) {
 	command := sshServerCommand("/usr/local/bin/devsy", false)
 
-	if strings.Contains(command, "--debug") {
+	if strings.Contains(command, "--log-level=debug") {
 		t.Fatalf("did not expect --debug flag, got: %s", command)
 	}
 }

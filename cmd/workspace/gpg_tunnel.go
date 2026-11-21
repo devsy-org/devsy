@@ -327,7 +327,7 @@ func (t *gpgTunnel) buildSetupCommand(ctx context.Context) (string, error) {
 		gpg.ContainerSocketPath,
 	}
 	if log.DebugEnabled() {
-		forwardAgent = append(forwardAgent, names.Flag(names.Debug))
+		forwardAgent = append(forwardAgent, names.FlagValue(names.LogLevel, log.LevelDebugName))
 	}
 	if gitKey != "" {
 		forwardAgent = append(forwardAgent, names.Flag(names.GitKey), gitKey)

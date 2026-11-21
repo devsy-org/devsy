@@ -25,7 +25,7 @@ func TestBuildForwardArgs(t *testing.T) {
 		"--user", "root",
 		"--context", "test-context",
 		"test-workspace",
-		"--log-output=raw",
+		"--log-format=text",
 		"--command", "sleep infinity",
 	}
 	assert.Equal(t, expected, got)
@@ -42,7 +42,7 @@ func TestBuildForwardArgs_NonRootUser(t *testing.T) {
 		"--user", "vscode",
 		"--context", "test-context",
 		"test-workspace",
-		"--log-output=raw",
+		"--log-format=text",
 		"--command", "sleep infinity",
 	}
 	assert.Equal(t, expected, got)

@@ -169,7 +169,7 @@ func buildForwardArgs(user, context, workspace string) []string {
 		names.Flag(names.Context),
 		context,
 		workspace,
-		names.FlagValue(names.LogOutput, "raw"),
+		names.FlagValue(names.LogFormat, "text"),
 		names.Flag(names.Command), "sleep infinity",
 	}
 }

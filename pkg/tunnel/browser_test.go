@@ -104,17 +104,17 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 				user: testUserVSCode, debug: true,
 			},
 			expected: append(
-				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug",
+				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--log-level=debug",
 			),
 		},
 		{
 			name: "with extra args",
 			params: sshCommandArgsParams{
 				clientContext: "prod", workspace: "ws", user: testUserVSCode,
-				extraArgs: []string{"--stdio", "--log-output=raw"},
+				extraArgs: []string{"--stdio", "--log-format=text"},
 			},
 			expected: append(
-				baseSSHArgs("prod", testUserVSCode, "ws"), "--stdio", "--log-output=raw",
+				baseSSHArgs("prod", testUserVSCode, "ws"), "--stdio", "--log-format=text",
 			),
 		},
 		{
@@ -124,7 +124,13 @@ func TestBuildSSHCommandArgs(t *testing.T) {
 				debug: true, extraArgs: []string{"--stdio"},
 			},
 			expected: append(
-				baseSSHArgs(testCtxName, testUserVSCode, testWorkspaceName), "--debug", "--stdio",
+				baseSSHArgs(
+					testCtxName,
+					testUserVSCode,
+					testWorkspaceName,
+				),
+				"--log-level=debug",
+				"--stdio",
 			),
 		},
 	}

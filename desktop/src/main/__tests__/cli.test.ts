@@ -401,7 +401,7 @@ describe("CliRunner", () => {
     expect(mockExecFile).not.toHaveBeenCalled()
   })
 
-  it("recognizes the legacy log-format alias as an explicit protocol argument", async () => {
+  it("preserves an explicit canonical log format", async () => {
     const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
       typeof vi.fn
     >
@@ -413,7 +413,35 @@ describe("CliRunner", () => {
     await cli.run(["workspace", "list", "--log-format=logfmt"])
     const args = mockExecFile.mock.calls[0][1] as string[]
     expect(args).toContain("--log-format=logfmt")
+    expect(args.filter((arg) => arg === "--log-format")).toHaveLength(0)
     expect(args.filter((arg) => arg === "--log-output")).toHaveLength(0)
+  })
+
+  it("sets canonical flags before the child command separator", async () => {
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+      typeof vi.fn
+    >
+    mockExecFile.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+        callback(null, { stdout: "{}", stderr: "" })
+      },
+    )
+    const payload = ["--", "echo", "--log-level=error", "--result-format=text"]
+    await cli.run(["workspace", "exec", "dev", ...payload])
+    const args = mockExecFile.mock.calls[0][1] as string[]
+    const separator = args.indexOf("--")
+    expect(args.slice(0, separator)).toEqual([
+      "workspace",
+      "exec",
+      "dev",
+      "--log-level",
+      "info",
+      "--result-format",
+      "json",
+      "--log-format",
+      "json",
+    ])
+    expect(args.slice(separator)).toEqual(payload)
   })
 
   it("defaults desktop-launched CLI diagnostics to info", async () => {
@@ -456,7 +484,7 @@ describe("CliRunner", () => {
           "info",
           "--result-format",
           "json",
-          "--log-output",
+          "--log-format",
           "json",
         ],
         expect.objectContaining({ env: expect.any(Object) }),
@@ -622,7 +650,7 @@ describe("CliRunner", () => {
           "--stdin",
           "--log-level",
           "info",
-          "--log-output",
+          "--log-format",
           "json",
         ],
         expect.objectContaining({ env: expect.any(Object) }),
@@ -665,7 +693,7 @@ describe("CliRunner", () => {
           "info",
           "--result-format",
           "json",
-          "--log-output",
+          "--log-format",
           "json",
         ],
         expect.objectContaining({ env: expect.any(Object) }),

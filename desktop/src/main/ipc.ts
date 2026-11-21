@@ -1081,7 +1081,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         try {
           const versions = await cli.run<
             Array<{ tag: string; current?: boolean }>
-          >(["provider", "versions", p.name, "--json", "--no-cache"])
+          >([
+            "provider",
+            "versions",
+            p.name,
+            "--result-format=json",
+            "--no-cache",
+          ])
           const list = versions ?? []
           const current = list.find((v) => v.current)?.tag ?? version
           const latest = list[0]?.tag ?? ""
@@ -1662,7 +1668,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "provider_list_versions",
     async (_event, args: { name: string; noCache?: boolean }) => {
-      const cliArgs = ["provider", "versions", args.name, "--json"]
+      const cliArgs = [
+        "provider",
+        "versions",
+        args.name,
+        "--result-format=json",
+      ]
       if (args.noCache) cliArgs.push("--no-cache")
       try {
         const versions = await cli.run<unknown[]>(cliArgs)

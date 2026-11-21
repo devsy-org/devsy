@@ -508,7 +508,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 func sshServerCommand(agentPath string, debug bool) string {
 	args := []string{agentPath, "internal", "ssh-server", "--stdio"}
 	if debug {
-		args = append(args, "--debug")
+		args = append(args, "--log-level="+log.LevelDebugName)
 	}
 	return shellescape.QuoteCommand(args)
 }

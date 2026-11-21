@@ -188,13 +188,23 @@ function buildEnv(): NodeJS.ProcessEnv {
   }
 }
 
+function commandArguments(args: string[]): [string[], string[]] {
+  const separator = args.indexOf("--")
+  return separator < 0
+    ? [[...args], []]
+    : [args.slice(0, separator), args.slice(separator)]
+}
+
 function requestedResultFormat(args: string[]): string | undefined {
-  const index = args.findIndex(
+  const [command] = commandArguments(args)
+  const index = command.findLastIndex(
     (arg) => arg === "--result-format" || arg.startsWith("--result-format="),
   )
-  if (index === -1) return undefined
-  const arg = args[index]
-  return arg.includes("=") ? arg.split("=", 2)[1] : args[index + 1]
+  if (index < 0) return undefined
+  const arg = command[index]
+  return arg === "--result-format"
+    ? command[index + 1]
+    : arg.slice("--result-format=".length)
 }
 
 export class CliRunner {
@@ -307,31 +317,23 @@ export class CliRunner {
     this.policy.diagnosticLogLevel = level
   }
 
-  private argsWithLogLevel(args: string[]): string[] {
-    const explicit = args.some(
-      (arg) => arg === "--log-level" || arg.startsWith("--log-level="),
-    )
-    return [
-      ...this.prefixArgs,
-      ...args,
-      ...(explicit ? [] : ["--log-level", this.policy.diagnosticLogLevel]),
-    ]
-  }
-
   private argsWithProtocol(
     args: string[],
     includeResultFormat = false,
   ): string[] {
-    const fullArgs = this.argsWithLogLevel(args)
+    const [command, payload] = commandArguments(args)
     const hasFlag = (flag: string) =>
-      fullArgs.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
+      command.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
+    if (!hasFlag("--log-level")) {
+      command.push("--log-level", this.policy.diagnosticLogLevel)
+    }
     if (includeResultFormat && !hasFlag("--result-format")) {
-      fullArgs.push("--result-format", this.policy.resultFormat)
+      command.push("--result-format", this.policy.resultFormat)
     }
     if (!hasFlag("--log-output") && !hasFlag("--log-format")) {
-      fullArgs.push("--log-output", this.policy.logOutput)
+      command.push("--log-format", this.policy.logOutput)
     }
-    return fullArgs
+    return [...this.prefixArgs, ...command, ...payload]
   }
 
   private acquire(): Promise<void> {

@@ -557,7 +557,7 @@ func (r *runner) addPrebuildFlag(args *[]string) {
 
 func (r *runner) addDebugFlag(args *[]string) {
 	if r.isDebugMode() {
-		*args = append(*args, names.Flag(names.Debug))
+		*args = append(*args, names.FlagValue(names.LogLevel, log.LevelDebugName))
 	}
 }
 
@@ -688,7 +688,7 @@ func (r *runner) buildSSHTunnelArgv() []string {
 		)
 	}
 	if r.isDebugMode() {
-		args = append(args, names.Flag(names.Debug))
+		args = append(args, names.FlagValue(names.LogLevel, log.LevelDebugName))
 	}
 	return args
 }

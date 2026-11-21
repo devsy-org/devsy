@@ -63,7 +63,7 @@ func Setup(p SetupParams) error {
 		return err
 	}
 	if log.DebugEnabled() {
-		dotCmd.Args = append(dotCmd.Args, names.Flag(names.Debug))
+		dotCmd.Args = append(dotCmd.Args, names.FlagValue(names.LogLevel, log.LevelDebugName))
 	}
 
 	log.Debugf("Running dotfiles setup command: %v", dotCmd.Args)
@@ -101,7 +101,7 @@ func buildDotCmdAgentArguments(
 	}
 
 	if debug {
-		agentArguments = append(agentArguments, names.Flag(names.Debug))
+		agentArguments = append(agentArguments, names.FlagValue(names.LogLevel, log.LevelDebugName))
 	}
 
 	if dotfilesScript != "" {
@@ -172,7 +172,7 @@ func buildDotCmd(p buildDotCmdParams) (*exec.Cmd, error) {
 		names.Flag(names.Context),
 		p.client.Context(),
 		p.client.Workspace(),
-		names.FlagValue(names.LogOutput, "raw"),
+		names.FlagValue(names.LogFormat, "text"),
 		names.Flag(names.Command),
 		config.ContainerDevsyHelperLocation+" "+strings.Join(agentArguments, " "),
 	)

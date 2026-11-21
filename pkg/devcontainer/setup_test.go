@@ -584,13 +584,13 @@ func TestBuildSSHTunnelArgvPreservesLiteralArguments(t *testing.T) {
 			"--reuse-ssh-auth-sock", r.workspaceConfig.CLIOptions.SSHAuthSockID,
 		}
 		if debug {
-			want = append(want, "--debug")
+			want = append(want, "--log-level=debug")
 		}
 		assert.Equal(t, want, r.buildSSHTunnelArgv())
 		r.workspaceConfig.Workspace.IDE.Name = none
 		want = []string{r.agentContainerPath(), "internal", "ssh-server", "--stdio"}
 		if debug {
-			want = append(want, "--debug")
+			want = append(want, "--log-level=debug")
 		}
 		assert.Equal(t, want, r.buildSSHTunnelArgv())
 	}

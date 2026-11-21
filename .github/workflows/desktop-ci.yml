@@ -167,6 +167,22 @@ jobs:
           npm run electron:build
           npx playwright test
 
+      - name: Run real CLI e2e test (Linux)
+        if: runner.os == 'Linux'
+        working-directory: desktop
+        env:
+          REAL_CLI_EVIDENCE: ${{ runner.temp }}/real-cli-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash e2e/run-real-cli-linux.sh
+
+      - name: Upload real CLI evidence (Linux)
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: desktop-real-cli-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/real-cli-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Package with electron-builder
         working-directory: desktop
         run: npx electron-builder ${{ matrix.builder-args }} --config electron-builder.yml

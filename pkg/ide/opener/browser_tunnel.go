@@ -413,7 +413,7 @@ func buildHelperArgs(
 		args = append(args, names.Flag(names.OpenBrowser))
 	}
 	if pkglog.DebugEnabled() {
-		args = append(args, names.Flag(names.Debug))
+		args = append(args, names.FlagValue(names.LogLevel, pkglog.LevelDebugName))
 	}
 	return args
 }

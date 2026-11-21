@@ -108,7 +108,7 @@ func TestBuildDotCmdAgentArguments(t *testing.T) {
 			expected: []string{
 				cmdInternal, cmdAgent, cmdWorkspace, cmdInstallDotfs,
 				repository, httpsGithubComUserDotfiles,
-				"--strict-host-key-checking", "--debug",
+				"--strict-host-key-checking", "--log-level=debug",
 				"--install-script", "setup.sh",
 			},
 		},

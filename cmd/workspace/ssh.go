@@ -617,7 +617,7 @@ func (cmd *SSHCmd) buildSSHServerCommand(
 		)
 	}
 	if cmd.Debug {
-		commandArgs = append(commandArgs, names.Flag(names.Debug))
+		commandArgs = append(commandArgs, names.FlagValue(names.LogLevel, log.LevelDebugName))
 	}
 	command := shellescape.QuoteCommand(commandArgs)
 	if cmd.User != "" && cmd.User != "root" && !agent.RunsFixedNonRootUser() {
