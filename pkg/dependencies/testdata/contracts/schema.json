@@ -1,0 +1,506 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devsy.sh/schemas/dependencies/report-v1.json",
+  "title": "DevsyProviderDependencyReportV1",
+  "description": "Frozen T00a contract schema for provider dependency survey and probe reports.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "surveyMode",
+    "executed",
+    "target",
+    "host",
+    "availability",
+    "compatibility",
+    "reachability",
+    "policy",
+    "reasonCode",
+    "message",
+    "items",
+    "actions"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "devsy.dependencies.report.v1"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "surveyMode": {
+      "type": "string",
+      "enum": ["passive", "active_probe"]
+    },
+    "executed": {
+      "type": "boolean"
+    },
+    "target": {
+      "$ref": "#/$defs/targetIdentity"
+    },
+    "host": {
+      "$ref": "#/$defs/hostIdentity"
+    },
+    "availability": {
+      "$ref": "#/$defs/availabilityState"
+    },
+    "compatibility": {
+      "$ref": "#/$defs/compatibilityState"
+    },
+    "reachability": {
+      "$ref": "#/$defs/reachabilityState"
+    },
+    "policy": {
+      "$ref": "#/$defs/policyState"
+    },
+    "reasonCode": {
+      "$ref": "#/$defs/reasonCode"
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hint": {
+      "type": "string"
+    },
+    "managedRecipe": {
+      "$ref": "#/$defs/managedRecipeStatus"
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/dependencyItemReport"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/remediationAction"
+      }
+    }
+  },
+  "$defs": {
+    "availabilityState": {
+      "type": "string",
+      "enum": ["available", "missing", "incomplete", "unknown"]
+    },
+    "compatibilityState": {
+      "type": "string",
+      "enum": ["compatible", "incompatible", "unknown"]
+    },
+    "reachabilityState": {
+      "type": "string",
+      "enum": ["reachable", "unreachable", "not_checked", "not_applicable"]
+    },
+    "policyState": {
+      "type": "string",
+      "enum": [
+        "external_only",
+        "managed_allowed",
+        "managed_selected",
+        "unmanaged_custom_source",
+        "unsupported"
+      ]
+    },
+    "reasonCode": {
+      "description": "Canonical reason code vocabulary: dependency_ready for verified ready state, plus the 16 SPEC.md Section 6.3 and 3 REVIEW_ADDENDUM.md Section 6 error codes.",
+      "type": "string",
+      "enum": [
+        "dependency_ready",
+        "dependency_missing",
+        "dependency_incomplete",
+        "dependency_path_invalid",
+        "dependency_version_incompatible",
+        "dependency_version_unknown",
+        "dependency_platform_unsupported",
+        "dependency_policy_blocked",
+        "dependency_runtime_unreachable",
+        "dependency_auth_required",
+        "dependency_probe_timeout",
+        "dependency_integrity_failed",
+        "dependency_store_unwritable",
+        "dependency_recipe_unqualified",
+        "dependency_selection_stale",
+        "dependency_in_use",
+        "dependency_operation_interrupted",
+        "dependency_configuration_conflict",
+        "dependency_offline_asset_missing",
+        "dependency_indirect_launcher"
+      ]
+    },
+    "providerSourceKind": {
+      "type": "string",
+      "enum": [
+        "builtin_internal",
+        "canonical_external_release",
+        "custom_github",
+        "custom_local",
+        "custom_url"
+      ]
+    },
+    "candidateSourceKind": {
+      "type": "string",
+      "enum": [
+        "explicit_option",
+        "explicit_env",
+        "managed_store",
+        "external_path",
+        "well_known_path",
+        "app_bundle",
+        "indirect_launcher"
+      ]
+    },
+    "actionKind": {
+      "type": "string",
+      "enum": ["install", "repair", "select", "remove", "open_docs"]
+    },
+    "gateId": {
+      "type": "string",
+      "enum": ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09"]
+    },
+    "targetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contextName",
+        "providerName",
+        "providerType",
+        "providerSourceId",
+        "providerSourceKind",
+        "trustedBuiltinIdentity",
+        "configRevision",
+        "providerConfigRevision",
+        "evaluatedAt"
+      ],
+      "properties": {
+        "contextName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerSourceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerSourceKind": {
+          "$ref": "#/$defs/providerSourceKind"
+        },
+        "adapterVersion": {
+          "type": "string"
+        },
+        "trustedBuiltinIdentity": {
+          "type": "boolean"
+        },
+        "configRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerConfigRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "staleAgainstRevision": {
+          "type": "string"
+        },
+        "evaluatedAt": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "hostIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goos", "goarch", "virtualizationCapability"],
+      "properties": {
+        "goos": {
+          "type": "string",
+          "enum": ["linux", "darwin", "windows"]
+        },
+        "goarch": {
+          "type": "string",
+          "enum": ["amd64", "arm64"]
+        },
+        "osVersion": {
+          "type": "string"
+        },
+        "virtualizationCapability": {
+          "type": "string",
+          "enum": [
+            "kvm_available",
+            "kvm_unavailable",
+            "hypervisor_framework",
+            "not_required",
+            "unsupported"
+          ]
+        }
+      }
+    },
+    "managedRecipeStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recipeId",
+        "tuple",
+        "enabled",
+        "qualificationState",
+        "blockingGates",
+        "archiveLayout",
+        "expectedFiles"
+      ],
+      "properties": {
+        "recipeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tuple": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidateVersion": {
+          "type": "string"
+        },
+        "illustrativeBundleRoot": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "qualificationState": {
+          "type": "string",
+          "enum": ["not_run", "blocked", "qualified"]
+        },
+        "blockingGates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/gateId"
+          }
+        },
+        "archiveLayout": {
+          "type": "string",
+          "const": "flat_verbatim_no_links"
+        },
+        "expectedFiles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "candidateFileObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileIdentity"],
+      "properties": {
+        "fileIdentity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observedVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "candidateObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component",
+        "sourceKind",
+        "lexicalPath",
+        "resolvedPath",
+        "executed",
+        "selected",
+        "availability",
+        "compatibility",
+        "reasonCode"
+      ],
+      "properties": {
+        "component": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceKind": {
+          "$ref": "#/$defs/candidateSourceKind"
+        },
+        "optionName": {
+          "type": "string"
+        },
+        "lexicalPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolvedPath": {
+          "type": "string"
+        },
+        "isSymlink": {
+          "type": "boolean"
+        },
+        "observation": {
+          "$ref": "#/$defs/candidateFileObservation"
+        },
+        "executed": {
+          "type": "boolean"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "availability": {
+          "$ref": "#/$defs/availabilityState"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/compatibilityState"
+        },
+        "reasonCode": {
+          "$ref": "#/$defs/reasonCode"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "selectedMicroSandboxPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "msbLexicalPath",
+        "msbResolvedPath",
+        "libkrunfwLexicalPath",
+        "libkrunfwResolvedPath",
+        "sourceKind"
+      ],
+      "properties": {
+        "msbLexicalPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "msbResolvedPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "libkrunfwLexicalPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "libkrunfwResolvedPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceKind": {
+          "$ref": "#/$defs/candidateSourceKind"
+        }
+      }
+    },
+    "dependencyItemReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "required",
+        "executed",
+        "availability",
+        "compatibility",
+        "reachability",
+        "policy",
+        "reasonCode",
+        "candidates"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "executed": {
+          "type": "boolean"
+        },
+        "availability": {
+          "$ref": "#/$defs/availabilityState"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/compatibilityState"
+        },
+        "reachability": {
+          "$ref": "#/$defs/reachabilityState"
+        },
+        "policy": {
+          "$ref": "#/$defs/policyState"
+        },
+        "reasonCode": {
+          "$ref": "#/$defs/reasonCode"
+        },
+        "selectedPair": {
+          "$ref": "#/$defs/selectedMicroSandboxPair"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/candidateObservation"
+          }
+        }
+      }
+    },
+    "remediationAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "label",
+        "enabled",
+        "requiresEffectAuthorization",
+        "requiresConfirmation"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/actionKind"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "disabledReasonCode": {
+          "$ref": "#/$defs/reasonCode"
+        },
+        "requiresEffectAuthorization": {
+          "type": "boolean"
+        },
+        "requiresConfirmation": {
+          "type": "boolean"
+        },
+        "cliCommand": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

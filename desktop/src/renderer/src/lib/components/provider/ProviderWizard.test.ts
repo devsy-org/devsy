@@ -12,6 +12,7 @@ import type { Provider, ProviderOption } from "$lib/types/index.js"
 
 const {
   providerAdd,
+  dependencyInspect,
   providerAvailable,
   providerInitStreaming,
   providerList,
@@ -22,6 +23,7 @@ const {
   onCommandProgress,
 } = vi.hoisted(() => ({
   providerAdd: vi.fn(),
+  dependencyInspect: vi.fn(),
   providerAvailable: vi.fn(),
   providerInitStreaming: vi.fn(),
   providerList: vi.fn(),
@@ -34,6 +36,7 @@ const {
 
 vi.mock("$lib/ipc/commands.js", () => ({
   providerAdd,
+  dependencyInspect,
   providerAvailable,
   providerInitStreaming,
   providerList,
@@ -79,6 +82,7 @@ describe("ProviderWizard", () => {
     vi.clearAllMocks()
     providers.set([])
     providerAdd.mockResolvedValue(undefined)
+    dependencyInspect.mockResolvedValue(null)
     providerAvailable.mockResolvedValue([])
     providerInitStreaming.mockResolvedValue("init-command")
     providerOptions.mockResolvedValue({})
@@ -377,6 +381,107 @@ describe("ProviderWizard", () => {
     )
     expect(providerOptions).toHaveBeenCalledTimes(2)
     expect(providerSetOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+    page.unmount()
+  })
+
+  it("saves a corrected visible tool path before retrying inspection and init", async () => {
+    providerOptions.mockResolvedValue({
+      DOCKER_PATH: { name: "DOCKER_PATH", default: "docker" },
+    })
+    dependencyInspect
+      .mockResolvedValueOnce({
+        schema: "devsy.dependencies.report.v1",
+        schemaVersion: 1,
+        surveyMode: "passive",
+        executed: false,
+        availability: "missing",
+        reasonCode: "dependency_missing",
+        message: "Passive inspection does not establish readiness.",
+      })
+      .mockResolvedValueOnce({
+        schema: "devsy.dependencies.report.v1",
+        schemaVersion: 1,
+        surveyMode: "passive",
+        executed: false,
+        availability: "unknown",
+        reasonCode: "dependency_policy_blocked",
+        message: "Passive inspection does not establish readiness.",
+      })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await fireEvent.input(
+      await screen.findByRole("textbox", { name: "DOCKER_PATH" }),
+      { target: { value: "/opt/docker/bin/docker" } },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        { DOCKER_PATH: "/opt/docker/bin/docker" },
+        false,
+      )
+      expect(dependencyInspect).toHaveBeenCalledTimes(2)
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+    })
+    expect(providerSetOptions.mock.invocationCallOrder[0]).toBeLessThan(
+      dependencyInspect.mock.invocationCallOrder[1],
+    )
+    page.unmount()
+  })
+
+  it("blocks init on a missing dependency and allows a retry after external setup", async () => {
+    providerOptions.mockResolvedValue({})
+    dependencyInspect
+      .mockResolvedValueOnce({
+        schema: "devsy.dependencies.report.v1",
+        schemaVersion: 1,
+        surveyMode: "passive",
+        executed: false,
+        availability: "missing",
+        reasonCode: "dependency_missing",
+        message: "Passive inspection does not establish readiness.",
+      })
+      .mockResolvedValueOnce({
+        schema: "devsy.dependencies.report.v1",
+        schemaVersion: 1,
+        surveyMode: "passive",
+        executed: false,
+        availability: "unknown",
+        reasonCode: "dependency_policy_blocked",
+        message: "Passive inspection does not establish readiness.",
+      })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByText(
+        "Check the saved tool path or configuration outside Devsy, then retry inspection.",
+      ),
+    ).toBeDefined()
+    expect(dependencyInspect).toHaveBeenCalledWith("docker", "docker")
+    expect(
+      screen.getByRole("heading", { name: "Configure docker" }),
+    ).toBeDefined()
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Retry inspection" }),
+    )
+    expect(dependencyInspect).toHaveBeenCalledTimes(2)
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "Continue" })
+          .hasAttribute("disabled"),
+      ).toBe(false),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
     page.unmount()
   })
@@ -919,6 +1024,31 @@ describe("ProviderWizard", () => {
     expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
     expect(providerInitStreaming).not.toHaveBeenCalled()
     expect(providerSetOptions).not.toHaveBeenCalled()
+    page.unmount()
+  })
+
+  it("does not let abandoned inspection change a reopened wizard", async () => {
+    const inspection = deferred<unknown | null>()
+    providerOptions.mockResolvedValue({})
+    dependencyInspect.mockReturnValueOnce(inspection.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(dependencyInspect).toHaveBeenCalledOnce())
+
+    await page.rerender({ open: false })
+    await page.rerender({ open: true })
+    inspection.resolve(null)
+
+    expect(
+      await screen.findByRole("heading", { name: "Select a Provider" }),
+    ).toBeDefined()
+    expect(
+      screen.queryByRole("heading", { name: "Configure docker" }),
+    ).toBeNull()
+    expect(providerInitStreaming).not.toHaveBeenCalled()
     page.unmount()
   })
 

@@ -1,0 +1,64 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "active_probe",
+  "executed": true,
+  "target": {
+    "contextName": "default",
+    "providerName": "docker",
+    "providerType": "docker",
+    "providerSourceId": "internal:docker",
+    "providerSourceKind": "builtin_internal",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-102",
+    "providerConfigRevision": "prov-rev-docker-02",
+    "evaluatedAt": "2026-10-19T05:01:00Z"
+  },
+  "host": {
+    "goos": "darwin",
+    "goarch": "arm64",
+    "osVersion": "macos-15.4",
+    "virtualizationCapability": "not_required"
+  },
+  "availability": "available",
+  "compatibility": "compatible",
+  "reachability": "reachable",
+  "policy": "external_only",
+  "reasonCode": "dependency_ready",
+  "message": "External Docker CLI and daemon are available and reachable.",
+  "items": [
+    {
+      "id": "docker-cli",
+      "displayName": "Docker CLI & Engine",
+      "required": true,
+      "executed": true,
+      "availability": "available",
+      "compatibility": "compatible",
+      "reachability": "reachable",
+      "policy": "external_only",
+      "reasonCode": "dependency_ready",
+      "candidates": [
+        {
+          "component": "docker",
+          "sourceKind": "external_path",
+          "optionName": "DOCKER_PATH",
+          "lexicalPath": "/opt/homebrew/bin/docker",
+          "resolvedPath": "/opt/homebrew/Cellar/docker/28.0.1/bin/docker",
+          "isSymlink": true,
+          "observation": {
+            "fileIdentity": "illustrative-fid:darwin-arm64:docker-28.0.1-cellar-9f2a",
+            "platform": "darwin/arm64",
+            "observedVersion": "28.0.1"
+          },
+          "executed": true,
+          "selected": true,
+          "availability": "available",
+          "compatibility": "compatible",
+          "reasonCode": "dependency_ready",
+          "detail": "Illustrative active probe: Docker version 28.0.1, daemon API 1.48 reachable"
+        }
+      ]
+    }
+  ],
+  "actions": []
+}
