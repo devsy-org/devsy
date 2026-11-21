@@ -138,21 +138,36 @@ func maskJSONRecords(redactor *redact.Redactor, value string) string {
 	var output strings.Builder
 	for value != "" {
 		if looksLikeStructuredJSON(value) {
-			value = value[maskStructuredRecord(redactor, value, &output):]
-			continue
+			if consumed := maskStructuredRecord(redactor, value, &output); consumed > 0 {
+				value = value[consumed:]
+				continue
+			}
 		}
-		line, rest, newline := strings.Cut(value, "\n")
-		output.WriteString(maskJSONLine(redactor, line))
-		if newline {
-			output.WriteByte('\n')
+		record, separator, rest := splitDiagnosticRecord(value)
+		if json.Valid([]byte(record)) {
+			record = diagnosticredact.Record(redactor, record)
 		}
+		output.WriteString(record)
+		output.WriteString(separator)
 		value = rest
 	}
 	return output.String()
 }
 
+func splitDiagnosticRecord(value string) (record, separator, rest string) {
+	end := strings.IndexAny(value, "\r\n")
+	if end < 0 {
+		return value, "", ""
+	}
+	next := end + 1
+	if strings.HasPrefix(value[end:], "\r\n") {
+		next++
+	}
+	return value[:end], value[end:next], value[next:]
+}
+
 func looksLikeStructuredJSON(value string) bool {
-	value = strings.TrimLeft(value, " \t\r")
+	value = strings.TrimLeft(value, " \t")
 	if value == "" {
 		return false
 	}
@@ -162,6 +177,8 @@ func looksLikeStructuredJSON(value string) bool {
 		return rest == "" || rest[0] == '"' || rest[0] == '}'
 	case '[':
 		return looksLikeJSONList(rest)
+	case '"':
+		return true
 	default:
 		return false
 	}
@@ -187,23 +204,16 @@ func maskStructuredRecord(redactor *redact.Redactor, value string, output *strin
 	decoder := json.NewDecoder(strings.NewReader(value))
 	var record json.RawMessage
 	if err := decoder.Decode(&record); err != nil {
+		if strings.HasPrefix(strings.TrimLeft(value, " \t"), `"`) {
+			return 0
+		}
 		output.WriteString(redactor.Mask())
 		return len(value)
 	}
+	end := int(decoder.InputOffset())
+	output.WriteString(value[:end-len(record)])
 	output.WriteString(diagnosticredact.Record(redactor, string(record)))
-	return int(decoder.InputOffset())
-}
-
-func maskJSONLine(redactor *redact.Redactor, line string) string {
-	if json.Valid([]byte(line)) {
-		body, cr := strings.CutSuffix(line, "\r")
-		masked := diagnosticredact.Record(redactor, body)
-		if cr {
-			return masked + "\r"
-		}
-		return masked
-	}
-	return line
+	return end
 }
 
 func formatTaskkillDiagnostic(pid int, err error, output []byte) error {
@@ -214,7 +224,7 @@ func formatTaskkillDiagnostic(pid int, err error, output []byte) error {
 func truncateOutput(output string) string {
 	const maxOutput = 256
 	if len(output) > maxOutput {
-		return output[:maxOutput] + "..."
+		return string(completeUTF8Prefix([]byte(output[:maxOutput]))) + "..."
 	}
 	return output
 }

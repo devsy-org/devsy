@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"unicode/utf8"
 
 	"github.com/devsy-org/devsy/logging/redact"
 )
@@ -65,7 +66,7 @@ func (c *stderrCapture) finish(cause error, redactor *redact.Redactor) string {
 		return redactor.Mask()
 	}
 	c.masked.append(c.stream.Flush())
-	return c.masked.text()
+	return c.masked.displayText()
 }
 
 type structuredLineStart struct {
@@ -98,7 +99,7 @@ func (s *structuredLineStart) take(value byte) {
 		switch value {
 		case ' ', '\t':
 			return
-		case '[', '{':
+		case '[', '{', '"':
 		default:
 			s.skip = true
 			return
@@ -139,8 +140,36 @@ func (c *boundedCapture) append(text string) {
 }
 
 func (c *boundedCapture) text() string {
+	return captureText(c.prefix, c.tail, c.omitted)
+}
+
+func (c *boundedCapture) displayText() string {
 	if c.omitted == 0 {
-		return string(c.prefix) + string(c.tail)
+		return c.text()
 	}
-	return fmt.Sprintf("%s\n... omitting %d bytes ...\n%s", c.prefix, c.omitted, c.tail)
+	prefix := completeUTF8Prefix(c.prefix)
+	tail := c.tail
+	for len(tail) != 0 && !utf8.RuneStart(tail[0]) {
+		tail = tail[1:]
+	}
+	omitted := c.omitted + int64(len(c.prefix)-len(prefix)+len(c.tail)-len(tail))
+	return captureText(prefix, tail, omitted)
+}
+
+func completeUTF8Prefix(prefix []byte) []byte {
+	start := len(prefix) - 1
+	for start >= 0 && !utf8.RuneStart(prefix[start]) {
+		start--
+	}
+	if start >= 0 && !utf8.FullRune(prefix[start:]) {
+		return prefix[:start]
+	}
+	return prefix
+}
+
+func captureText(prefix, tail []byte, omitted int64) string {
+	if omitted == 0 {
+		return string(prefix) + string(tail)
+	}
+	return fmt.Sprintf("%s\n... omitting %d bytes ...\n%s", prefix, omitted, tail)
 }

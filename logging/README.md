@@ -56,3 +56,33 @@ Use `NewDiagnosticStream` to preserve long plain diagnostic tails for a bounded 
 The diagnostic stream masks nonblank indented Authorization continuations and recognizes Basic or Bearer immediately after an empty assignment. It preserves the original delimiters and checks decoded strings in complete JSON records. An oversized opaque record can suppress a following possible continuation as a precaution.
 
 Use a separate channel for interactive prompts, protocol stdout, or raw business data. Pretty-printed JSON requires a complete input. The redactor does not decode other secret representations such as base64, hex, or percent encoding. Register the emitted representation or supply a parsed structured field. Never log secrets intentionally.
+
+## Desktop diagnostic scanner
+
+This module provides `desktop/diagnostic-redaction.ts` to identify credential
+assignments in diagnostic text. Desktop will adopt the scanner in a follow-up
+change. The scanner returns ordered, half-open UTF-16 ranges. Consumers choose
+the replacement marker and apply their separate registered-value policy.
+
+Text assignment labels use ASCII letters, digits, dots, underscores, and
+hyphens. Quoted labels and recognized bare compound names such as `private key`
+can also contain spaces and tabs. For classification, the scanner lowercases
+the label and removes separators. It recognizes labels containing `password`, `passwd`,
+`passphrase`, `token`, `secret`, `apikey`, `authorization`, `credential`,
+`privatekey`, `accesskey`, or `telemetrydistinctid` after normalization.
+`Authorization` and `Proxy-Authorization` names, including terminal
+dot-qualified properties, use authorization value rules. Unquoted values
+include punctuation up to whitespace. Quoted and grouped values keep their
+complete framing. Incomplete framing or an ambiguous authorization tail masks
+through the end of the input. A separated terminal `workspace=<identifier>`
+field remains visible only after a complete authorization value on the same
+physical line.
+
+Consumers must register unlabeled credentials, values under other names such
+as `Cookie` or `pwd`, and credentials whose labels fall outside this syntax.
+The scanner does not inspect environment variables, decode arbitrary encodings,
+or modify raw protocol, terminal, or application data.
+
+Run `node --test logging/desktop/*.test.ts` from the repository root with
+Node.js 24 or newer. Local development uses Node.js 24 through mise and CI
+uses Node.js 26. No TypeScript flags are required.
