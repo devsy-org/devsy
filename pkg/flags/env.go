@@ -48,7 +48,7 @@ func BindEnv(fs *pflag.FlagSet, flagName string) {
 		return
 	}
 	if err := fs.Set(flagName, value); err != nil {
-		log.Fatalf("invalid value %q for %s (flag --%s): %v", value, envName, flagName, err)
+		log.Fatalf("invalid value for %s (flag --%s)", envName, flagName)
 	}
 	f.DefValue = value
 }

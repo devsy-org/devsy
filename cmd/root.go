@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/ci"
@@ -29,6 +30,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/template"
 	"github.com/devsy-org/devsy/cmd/update"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/logging"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/clihelp"
@@ -39,6 +41,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/flatpak"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -90,17 +93,25 @@ func isMachineLogFormat(format string) bool {
 }
 
 func logOutputFromArgs(args []string) string {
-	for i, arg := range args {
+	var format string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			break
+		}
 		for _, name := range []string{flagLogOutput, flagLogFormat} {
 			if val, ok := strings.CutPrefix(arg, name+"="); ok {
-				return val
+				format = val
+				break
 			}
 			if arg == name && i+1 < len(args) {
-				return args[i+1]
+				i++
+				format = args[i]
+				break
 			}
 		}
 	}
-	return ""
+	return format
 }
 
 func defaultLogLevel(globalFlags *flags.GlobalFlags) string {
@@ -120,8 +131,7 @@ func validateLogLevel(level string) error {
 	}
 	if _, ok := log.LevelFromString(level); !ok {
 		return fmt.Errorf(
-			"invalid log level %q, expected one of: %s",
-			level,
+			"invalid log level, expected one of: %s",
 			strings.Join(log.ValidLevels(), ", "),
 		)
 	}
@@ -222,6 +232,10 @@ func configureOutput(
 	isInternal bool,
 ) bool {
 	logOutput := logOutputFromArgs(os.Args[1:])
+	if logOutput == "" && rootCmd.PersistentFlags().Changed(names.LogFormat) {
+		logOutput = globalFlags.LogOutput
+	}
+	logOutput = normalizeLogOutput(logOutput)
 	machineMode := isMachineConsumer(logOutput, isInternal)
 	rootCmd.SilenceErrors = true
 	rootCmd.SilenceUsage = machineMode
@@ -451,6 +465,9 @@ func rootPreRun(
 	if err := validateLogLevel(globalFlags.LogLevel); err != nil {
 		return err
 	}
+	if err := applyOutputControls(cobraCmd, globalFlags, persistentFlags); err != nil {
+		return err
+	}
 	if globalFlags.DevsyHome != "" {
 		_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
 	}
@@ -482,6 +499,34 @@ func rootPreRun(
 	return nil
 }
 
+func applyOutputControls(
+	cmd *cobra.Command,
+	globals *flags.GlobalFlags,
+	flags *pflag.FlagSet,
+) error {
+	if flags.Changed(names.LogFormat) && !flags.Changed(names.LogOutput) {
+		if _, ok := logging.ParseFormat(globals.LogOutput); !ok {
+			return errors.New("invalid log format, expected auto, text, plain, json, or logfmt")
+		}
+	}
+	if !flags.Changed(names.ResultFormat) {
+		return nil
+	}
+	mode, err := output.ResolveMode(globals.ResultFormat)
+	if err != nil {
+		return err
+	}
+	return setLegacyJSONOutput(cmd, mode == output.ModeJSON)
+}
+
+func setLegacyJSONOutput(cmd *cobra.Command, jsonOutput bool) error {
+	legacy := cmd.Flags().Lookup(names.JSON)
+	if legacy == nil || legacy.Changed || legacy.Value.Type() != "bool" {
+		return nil
+	}
+	return legacy.Value.Set(strconv.FormatBool(jsonOutput))
+}
+
 // checkPendingContextDeletion blocks commands until a crashed deletion is
 // resumed, because its stores are only partially cleaned. It reads only
 // recovery metadata; the matching delete command validates and resumes under
@@ -497,6 +542,7 @@ func checkPendingContextDeletion(cobraCmd *cobra.Command) error {
 }
 
 func resolveLogFormat(cobraCmd *cobra.Command, logFormat string) string {
+	logFormat = normalizeLogOutput(logFormat)
 	if logFormat != "" {
 		return logFormat
 	}
@@ -504,4 +550,15 @@ func resolveLogFormat(cobraCmd *cobra.Command, logFormat string) string {
 		return logOutputJSON
 	}
 	return logOutputText
+}
+
+func normalizeLogOutput(value string) string {
+	switch strings.ToLower(value) {
+	case "auto":
+		return ""
+	case "plain":
+		return logOutputText
+	default:
+		return strings.ToLower(value)
+	}
 }
