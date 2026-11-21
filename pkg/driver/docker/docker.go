@@ -83,10 +83,21 @@ func NewDockerDriver(
 		return nil, err
 	}
 
+	workspaceID := ""
+	if workspaceInfo.Workspace != nil {
+		workspaceID = workspaceInfo.Workspace.ID
+	}
+	machineID := ""
+	if workspaceInfo.Machine != nil {
+		machineID = workspaceInfo.Machine.ID
+	}
+
 	return &dockerDriver{
 		Docker:                     dockerHelper,
 		IDLabels:                   workspaceInfo.CLIOptions.IDLabels,
 		UpdateRemoteUserUIDDefault: workspaceInfo.CLIOptions.UpdateRemoteUserUIDDefault,
+		workspaceID:                workspaceID,
+		machineID:                  machineID,
 	}, nil
 }
 
@@ -95,6 +106,8 @@ type dockerDriver struct {
 	Compose                    *compose.ComposeHelper
 	IDLabels                   []string
 	UpdateRemoteUserUIDDefault string
+	workspaceID                string
+	machineID                  string
 }
 
 // The docker driver supports the full image, compose, docker-helper, and
@@ -429,3 +442,21 @@ func (d *dockerDriver) RequiresMountStreaming() bool { return false }
 func (d *dockerDriver) RecreateMode() driver.RecreateMode { return driver.RecreateDelete }
 
 func (d *dockerDriver) RequiresWorkspaceChown() bool { return false }
+
+func (d *dockerDriver) logContext(ctx context.Context, workspaceID string) context.Context {
+	providerName := "docker"
+	if d.Docker != nil && d.Docker.Runtime != nil {
+		providerName = string(d.Docker.Runtime.Name())
+	}
+	ctx = log.WithContext(ctx, log.AttrComponent("docker-driver"), log.AttrProvider(providerName))
+	if workspaceID == "" {
+		workspaceID = d.workspaceID
+	}
+	if workspaceID != "" {
+		ctx = log.WithContext(ctx, log.AttrWorkspaceID(workspaceID))
+	}
+	if d.machineID != "" {
+		ctx = log.WithContext(ctx, log.AttrMachineID(d.machineID))
+	}
+	return ctx
+}

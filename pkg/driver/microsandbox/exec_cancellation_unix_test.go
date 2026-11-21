@@ -57,7 +57,9 @@ func cancellationMSB(t *testing.T, exitImmediately bool) string {
 	t.Helper()
 	dir := t.TempDir()
 	ready := filepath.Join(dir, "ready")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$$\" > \"$DEVSY_CANCEL_READY\"\n"
+	script := "#!/bin/sh\nprintf 'fixture:start\\n' >&2\n" +
+		"if ! printf '%s\\n' \"$$\" > \"$DEVSY_CANCEL_READY\"; then " +
+		"printf 'fixture:ready-write-failed\\n' >&2; exit 2; fi\nprintf 'fixture:ready-written\\n' >&2\n"
 	if exitImmediately {
 		script += "exit 0\n"
 	} else {
@@ -73,19 +75,35 @@ func cancellationMSB(t *testing.T, exitImmediately bool) string {
 func awaitCancellationPID(t *testing.T, path string) int {
 	t.Helper()
 	var pid int
+	started := time.Now()
+	var state atomic.Value
+	state.Store("not checked")
+	defer func() { t.Logf("child readiness: state=%s elapsed=%s", state.Load().(string), time.Since(started)) }()
 	require.Eventually(t, func() bool {
 		data, err := os.ReadFile(path) // #nosec G304 -- Only the test-owned readiness file is read.
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				state.Store("missing")
+			} else {
+				state.Store("read error")
+			}
 			return false
 		}
 		pid, err = strconv.Atoi(strings.TrimSpace(string(data)))
-		return err == nil && pid > 1
+		if err != nil || pid <= 1 {
+			state.Store("invalid pid")
+			return false
+		}
+		state.Store("ready")
+		return true
 	}, execCancellationTestBound, time.Millisecond, "child readiness absent")
 	return pid
 }
 
 func awaitCancellationSignal(t *testing.T, signal <-chan struct{}, message string) {
 	t.Helper()
+	started := time.Now()
+	defer func() { t.Logf("checkpoint %q elapsed=%s", message, time.Since(started)) }()
 	select {
 	case <-signal:
 	case <-time.After(execCancellationTestBound):
@@ -94,33 +112,85 @@ func awaitCancellationSignal(t *testing.T, signal <-chan struct{}, message strin
 }
 
 type cancellationCall struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	err    error
+	cancel  context.CancelFunc
+	done    chan struct{}
+	err     error
+	started time.Time
+	capture *os.File
 }
 
 func startCancellationCall(t *testing.T, input io.Reader, cleanup func()) *cancellationCall {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	call := &cancellationCall{cancel: cancel, done: make(chan struct{})}
+	capture, err := os.CreateTemp(t.TempDir(), "fixture-output")
+	require.NoError(t, err)
+	output := struct{ io.Writer }{capture}
+	call := &cancellationCall{
+		cancel:  cancel,
+		done:    make(chan struct{}),
+		started: time.Now(),
+		capture: capture,
+	}
 	t.Cleanup(func() {
+		call.logState(t, "before cleanup", input)
 		cancel()
 		if cleanup != nil {
 			cleanup()
 		}
 		select {
 		case <-call.done:
+			call.logState(t, "after cleanup", input)
 		case <-time.After(execCancellationTestBound):
+			call.logState(t, "cleanup timeout", input)
 			t.Error("Exec failed to join after explicit input cleanup")
 		}
+		_ = capture.Close()
 	})
 	go func() {
 		defer close(call.done)
 		call.err = (cliClient{}).Exec(ctx, "owned-cancellation-test", execRequest{
-			Stdin: input, Stdout: io.Discard, Stderr: io.Discard,
+			Stdin: input, Stdout: output, Stderr: output,
 		})
 	}()
 	return call
+}
+
+func (call *cancellationCall) logState(t *testing.T, phase string, input io.Reader) {
+	t.Helper()
+	done := false
+	var errType any
+	select {
+	case <-call.done:
+		done = true
+		errType = call.err
+	default:
+	}
+	var closes int32
+	if tracked, ok := input.(*cancellationInput); ok {
+		closes = tracked.closes.Load()
+	}
+	t.Logf("fixture %s: elapsed=%s done=%t error_type=%T input_closes=%d output=%s",
+		phase, time.Since(call.started), done, errType, closes, fixtureOutput(call.capture))
+}
+
+func fixtureOutput(file *os.File) string {
+	data := make([]byte, 512)
+	n, err := file.ReadAt(data, 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "read error"
+	}
+	text := string(data[:n])
+	if text == "" {
+		return "empty"
+	}
+	for line := range strings.SplitSeq(strings.TrimSuffix(text, "\n"), "\n") {
+		switch line {
+		case "fixture:start", "fixture:ready-written", "fixture:ready-write-failed", "complete":
+		default:
+			return "other output"
+		}
+	}
+	return text
 }
 
 func TestExecCancellationClosesBlockedInput(t *testing.T) {

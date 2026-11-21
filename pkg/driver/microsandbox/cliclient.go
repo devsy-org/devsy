@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -39,7 +41,9 @@ func (cliClient) EnsureInstalled(_ context.Context) error {
 	)
 }
 
-func (cliClient) Version(ctx context.Context) (string, error) {
+func (cliClient) Version(ctx context.Context) (_ string, resultErr error) {
+	started := time.Now()
+	defer func() { logMicrosandboxCommand(ctx, "version", started, resultErr) }()
 	// #nosec G204 -- args are a resolved binary path and fixed version command
 	out, err := exec.CommandContext(ctx, msbBinary(), "--version").CombinedOutput()
 	if err != nil {
@@ -85,9 +89,11 @@ func (c cliClient) Create(ctx context.Context, sandbox string, spec sandboxSpec)
 }
 
 func (cliClient) Find(ctx context.Context, sandbox string) (*sandboxInfo, error) {
+	started := time.Now()
 	// #nosec G204 -- args are a resolved binary path and a derived sandbox name
 	out, err := exec.CommandContext(ctx, msbBinary(), "inspect", sandbox, "--format", "json").
 		Output()
+	logMicrosandboxCommand(ctx, "inspect", started, err)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("inspect microsandbox VM %q: %w", sandbox, ctx.Err())
@@ -155,7 +161,9 @@ func (cliClient) Remove(ctx context.Context, sandbox string) error {
 // injection and the SSH-over-stdio tunnel require it; a PTY stalls the tunnel.
 // Cancellation closes non-file ReadCloser input; Close must unblock Read.
 // File input and input after normal completion remain caller-owned.
-func (cliClient) Exec(ctx context.Context, sandbox string, req execRequest) error {
+func (cliClient) Exec(ctx context.Context, sandbox string, req execRequest) (resultErr error) {
+	started := time.Now()
+	defer func() { logMicrosandboxCommand(ctx, "exec", started, resultErr) }()
 	args := []string{"exec", "--stream"}
 	if req.User != "" {
 		args = append(args, names.Flag(names.User), req.User)
@@ -194,7 +202,9 @@ func (cliClient) Exec(ctx context.Context, sandbox string, req execRequest) erro
 	return cmd.Wait()
 }
 
-func (cliClient) Logs(ctx context.Context, sandbox string, w io.Writer) error {
+func (cliClient) Logs(ctx context.Context, sandbox string, w io.Writer) (resultErr error) {
+	started := time.Now()
+	defer func() { logMicrosandboxCommand(ctx, "logs", started, resultErr) }()
 	// #nosec G204 -- args are a resolved binary path and a derived sandbox name
 	cmd := exec.CommandContext(ctx, msbBinary(), "logs", sandbox)
 	cmd.Stdout = w
@@ -312,7 +322,9 @@ func namedVolumes(mounts []volumeMount) []string {
 	return vols
 }
 
-func msbRun(ctx context.Context, args ...string) error {
+func msbRun(ctx context.Context, args ...string) (resultErr error) {
+	started := time.Now()
+	defer func() { logMicrosandboxCommand(ctx, args[0], started, resultErr) }()
 	// #nosec G204 -- args are a resolved binary path and controlled config values
 	out, err := exec.CommandContext(ctx, msbBinary(), args...).CombinedOutput()
 	if err != nil {
@@ -324,6 +336,21 @@ func msbRun(ctx context.Context, args ...string) error {
 		)
 	}
 	return nil
+}
+
+func logMicrosandboxCommand(ctx context.Context, operation string, started time.Time, err error) {
+	attrs := []slog.Attr{
+		log.AttrOperation(operation),
+		log.AttrDurationMs(time.Since(started).Milliseconds()),
+	}
+	if err == nil {
+		attrs = append(attrs, slog.Int("exit_code", 0))
+	} else {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			attrs = append(attrs, slog.Int("exit_code", exitErr.ExitCode()))
+		}
+	}
+	log.DebugContext(ctx, "microsandbox runtime command completed", attrs...)
 }
 
 // redactArgs joins args for an error message while masking --env values, which

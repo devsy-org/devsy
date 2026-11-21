@@ -25,6 +25,8 @@ func (d *dockerDriver) BuildDevContainer(
 	ctx context.Context,
 	req driver.BuildRequest,
 ) (*config.BuildInfo, error) {
+	ctx = d.logContext(ctx, "")
+	log.DebugContext(ctx, "building dev container")
 	imageName := build.GetImageName(req.LocalWorkspaceFolder, req.PrebuildHash)
 	if req.Options.ImageName != "" {
 		imageName = req.Options.ImageName

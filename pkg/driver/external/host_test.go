@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -102,10 +103,59 @@ func (s *HostSuite) TestNegotiationFailures() {
 func (s *HostSuite) TestCancellationDuringHandshake() {
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
+	expired := make(chan time.Time, 1)
+	stop := context.AfterFunc(ctx, func() { expired <- time.Now() })
+	defer stop()
 	started := time.Now()
-	_, err := s.newHost(ctx, delayedMode, startupTimeout)
+	directory := s.T().TempDir()
+	_, err := s.newHostInDirectory(ctx, delayedMode, startupTimeout, directory)
+	returned := time.Since(started)
+	deadlineEvent := "not observed"
+	select {
+	case at := <-expired:
+		deadlineEvent = at.Sub(started).String()
+	default:
+	}
+	s.T().
+		Logf("handshake cancellation: deadline_callback=%s returned=%s context_deadline=%t "+
+			"error_deadline=%t supervisor=%s plugin=%s",
+			deadlineEvent, returned, errors.Is(ctx.Err(), context.DeadlineExceeded),
+			errors.Is(err, context.DeadlineExceeded),
+			fixtureProcessSummary(directory, "supervisor"),
+			fixtureProcessSummary(directory, "plugin"))
 	s.ErrorIs(err, context.DeadlineExceeded)
-	s.Less(time.Since(started), 5*time.Second)
+	s.Less(returned, 5*time.Second)
+}
+
+func fixtureProcessSummary(directory, kind string) string {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return fmt.Sprintf("open error %T", err)
+	}
+	defer func() { _ = root.Close() }()
+	data, err := root.ReadFile(kind + "-pids")
+	if errors.Is(err, os.ErrNotExist) {
+		return "not recorded"
+	}
+	if err != nil {
+		return fmt.Sprintf("read error %T", err)
+	}
+	var alive, unknown int
+	records := strings.Fields(string(data))
+	for _, value := range records {
+		pid, err := strconv.ParseInt(value, 10, 32)
+		if err != nil {
+			unknown++
+			continue
+		}
+		exists, err := process.PidExists(int32(pid))
+		if err != nil {
+			unknown++
+		} else if exists {
+			alive++
+		}
+	}
+	return fmt.Sprintf("records=%d alive=%d unknown=%d", len(records), alive, unknown)
 }
 
 func (s *HostSuite) TestStartupTimeout() {
@@ -300,7 +350,15 @@ func (s *HostSuite) newHost(
 	mode string,
 	timeout time.Duration,
 ) (*Host, error) {
-	directory := s.T().TempDir()
+	return s.newHostInDirectory(ctx, mode, timeout, s.T().TempDir())
+}
+
+func (s *HostSuite) newHostInDirectory(
+	ctx context.Context,
+	mode string,
+	timeout time.Duration,
+	directory string,
+) (*Host, error) {
 	s.T().Cleanup(func() { s.assertReaped(directory) })
 	args := []string{"--mode", mode, "--state-dir", directory}
 	if mode == delayedMode {
