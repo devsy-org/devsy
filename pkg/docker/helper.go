@@ -721,11 +721,11 @@ func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string,
 	}
 	args = append(args, imageID)
 	cmd := r.buildCmd(ctx, args...)
-	out, err := cmd.Output()
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
 		return "", fmt.Errorf(
 			"inspect image: %w",
-			command.WrapCommandErrorWithEnvironment(out, err, cmd.Environ()),
+			err,
 		)
 	}
 
@@ -817,12 +817,12 @@ func (r *DockerHelper) Inspect(
 	args := []string{"inspect", "--type", inspectType}
 	args = append(args, ids...)
 	cmd := r.buildCmd(ctx, args...)
-	out, err := cmd.Output()
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
 		return fmt.Errorf(
 			"inspect %s: %w",
 			inspectType,
-			command.WrapCommandErrorWithEnvironment(out, err, cmd.Environ()),
+			err,
 		)
 	}
 
@@ -863,9 +863,9 @@ func (r *DockerHelper) FindContainer(ctx context.Context, labels []string) ([]st
 func (r *DockerHelper) FindContainerJSON(ctx context.Context, labels []string) ([]string, error) {
 	args := []string{"ps", "-q", "-a"}
 	cmd := r.buildCmd(ctx, args...)
-	out, err := cmd.Output()
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return nil, command.WrapCommandErrorWithEnvironment(out, err, cmd.Environ())
+		return nil, err
 	}
 
 	result := []string{}

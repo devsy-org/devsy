@@ -19,6 +19,7 @@ const (
 	wantEndpoint      = "ssh://devsyci@" + testAlias
 	envLineSSHHost    = envSSHDockerHost + "=" + wantEndpoint + "\n"
 	envLineDaemon     = envWSLDaemonID + "=" + testDaemonID + "\n"
+	envLineSSHHostLog = envSSHDockerHost + "=ssh://[REDACTED]@" + testAlias + "\n"
 )
 
 type DockerWSLSetupSuite struct {
@@ -185,7 +186,8 @@ func (s *DockerWSLSetupSuite) TestLocalModeNeedsNoGitHubFiles() {
 	s.Require().
 		NoError(s.rig.controller(func(o *dockerWSLOptions) { o.RunID = testRunID }).setup(context.Background()))
 
-	s.Contains(s.rig.out.String(), "local env: "+envLineSSHHost)
+	s.Contains(s.rig.out.String(), "local env: "+envLineSSHHostLog)
+	s.NotContains(s.rig.out.String(), "ssh://devsyci@")
 	s.Contains(s.rig.out.String(), "local path: "+fixtureFile("docker-cli", "docker"))
 	s.Empty(s.rig.files.Text(testGHEnv))
 }
