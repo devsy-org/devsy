@@ -64,12 +64,13 @@ func (r *DockerHelper) inspectPlatformOrFallback(
 	image, platform string,
 	base *config.ImageDetails,
 ) (*config.ImageDetails, error) {
-	out, err := r.buildCmd(ctx, "image", "inspect", "--platform", platform, image).Output()
+	cmd := r.buildCmd(ctx, "image", "inspect", "--platform", platform, image)
+	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("inspect image platform: %w", ctx.Err())
 		}
-		wrapped := command.WrapCommandError(nil, err)
+		wrapped := command.WrapCommandErrorWithEnvironment(nil, err, cmd.Environ())
 		if command.MatchErrorOutput(wrapped, platformInspectionUnsupported) {
 			// Older engines and compatible runtimes have a single-platform local
 			// image store. The caller still verifies that cached configuration.

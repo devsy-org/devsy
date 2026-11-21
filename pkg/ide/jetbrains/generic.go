@@ -227,7 +227,7 @@ func runPluginInstaller(cmd *exec.Cmd, plugins []string) error {
 		return fmt.Errorf(
 			"failed to install JetBrains plugins %v: %w",
 			plugins,
-			command.WrapCommandError(out, err),
+			command.WrapCommandErrorWithEnvironment(out, err, cmd.Environ()),
 		)
 	}
 
