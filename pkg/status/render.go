@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/terminal"
 )
@@ -257,10 +258,7 @@ func (r PlainReporter) reportFailureDetails(info *ErrorInfo) {
 }
 
 func (r PlainReporter) redact(value string) string {
-	if r.redactor == nil {
-		return value
-	}
-	return r.redactor.Redact(value)
+	return diagnosticredact.Field(r.redactor, value)
 }
 
 func (r PlainReporter) message(e Event) string {

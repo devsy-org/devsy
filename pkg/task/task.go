@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/command"
@@ -554,11 +555,10 @@ func (t *Task) recordFailure(err error, failedLaunch bool) error {
 			return
 		}
 		s.Status = StatusFailed
-		s.Error = message
+		s.Error = diagnosticredact.Field(redactor, message)
 		if classified != nil {
-			s.Error = redactor.Redact(message)
-			s.ErrorCode = redactor.Redact(string(classified.Code))
-			s.ErrorHint = redactor.Redact(classified.Hint)
+			s.ErrorCode = diagnosticredact.Field(redactor, string(classified.Code))
+			s.ErrorHint = diagnosticredact.Field(redactor, classified.Hint)
 			s.ErrorContext = redactContext(classified.Context, redactor)
 		}
 		s.ErrorContext = withRunContext(s.ErrorContext, runContext)
@@ -602,17 +602,17 @@ func (r taskReporter) Report(e status.Event) {
 		if s.Status.Terminal() || s.CancelRequested {
 			return
 		}
-		s.Phase = redactor.Redact(string(e.Phase))
-		s.Step = redactor.Redact(e.Step)
-		s.OperationID = redactor.Redact(e.OperationID)
-		s.ParentOperationID = redactor.Redact(e.ParentOperationID)
+		s.Phase = diagnosticredact.Field(redactor, string(e.Phase))
+		s.Step = diagnosticredact.Field(redactor, e.Step)
+		s.OperationID = diagnosticredact.Field(redactor, e.OperationID)
+		s.ParentOperationID = diagnosticredact.Field(redactor, e.ParentOperationID)
 		if e.State == status.StateFailed {
 			s.Status = StatusFailed
 			s.DurationMs = e.Duration.Milliseconds()
 			if e.Error != nil {
-				s.Error = redactor.Redact(e.Error.Message)
-				s.ErrorCode = redactor.Redact(e.Error.Code)
-				s.ErrorHint = redactor.Redact(e.Error.Hint)
+				s.Error = diagnosticredact.Field(redactor, e.Error.Message)
+				s.ErrorCode = diagnosticredact.Field(redactor, e.Error.Code)
+				s.ErrorHint = diagnosticredact.Field(redactor, e.Error.Hint)
 				s.ErrorContext = redactContext(e.Error.Context, redactor)
 			}
 			if recoverableFailure(e.Phase) {
@@ -648,7 +648,7 @@ func redactContext(values map[string]string, redactor *redact.Redactor) map[stri
 	}
 	redacted := make(map[string]string, len(values))
 	for key, value := range values {
-		redacted[redactor.Redact(key)] = redactor.Redact(value)
+		redacted[diagnosticredact.Field(redactor, key)] = diagnosticredact.Field(redactor, value)
 	}
 	return redacted
 }
