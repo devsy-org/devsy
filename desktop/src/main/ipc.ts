@@ -40,6 +40,7 @@ import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderIconReader } from "./provider-icons.js"
 import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
+import { createRendererErrorHandler } from "./renderer-error.js"
 import { sendRendererEvent } from "./renderer-events.js"
 import { isTrustedSecretIpcSender } from "./secret-ipc-policy.js"
 import { SecretSession } from "./secret-session.js"
@@ -479,6 +480,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     !app.isPackaged && process.env.ELECTRON_RENDERER_URL
       ? process.env.ELECTRON_RENDERER_URL
       : pathToFileURL(join(__dirname, "../renderer/index.html")).href
+  ipcMain.on(
+    "renderer-error",
+    createRendererErrorHandler({
+      getWindow: getMainWindow,
+      expectedDocumentURL: secretDocumentURL,
+      log: (summary) => mainLog.error("Renderer error", summary),
+    }),
+  )
   const secretRequestDenied: SecretIpcFailure = {
     ok: false,
     message: "Secret operations require the main application window.",
