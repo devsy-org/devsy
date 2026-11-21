@@ -83,7 +83,11 @@ function safeValue(
   depth = 0,
 ): unknown {
   if (typeof value === "string") return redactText(value)
-  if (typeof value === "bigint") return value.toString()
+  if (typeof value === "number" || typeof value === "bigint") {
+    const rendered = String(value)
+    if (redactText(rendered) !== rendered) return "***"
+    return typeof value === "bigint" ? rendered : value
+  }
   if (typeof value === "function") return "[unavailable]"
   if (value === null || typeof value !== "object") return value
   if (value instanceof Error)

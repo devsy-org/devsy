@@ -159,6 +159,24 @@ describe("main logger", () => {
     }
   })
 
+  it("masks registered numeric values before writing either sink", () => {
+    const dir = mkdtempSync(join(tmpdir(), "devsy-numeric-log-"))
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    process.env.TEST_LOG_SECRET = "731946"
+    try {
+      initializeMainLog(dir)
+      mainLog.info(731946, { nested: [731946n, 819, 132n] })
+      const file = readFileSync(join(dir, "main.log"), "utf8").trim()
+      expect(info.mock.calls[0][0]).toBe(file)
+      expect(JSON.parse(file)).toMatchObject({
+        value: "***",
+        args: [{ nested: ["***", 819, "132"] }],
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it("redacts structured values before both sinks and bounds rotation", () => {
     const dir = mkdtempSync(join(tmpdir(), "devsy-main-log-"))
     const info = vi.spyOn(console, "info").mockImplementation(() => {})
