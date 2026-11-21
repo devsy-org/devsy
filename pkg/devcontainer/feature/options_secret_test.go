@@ -2,6 +2,7 @@ package feature
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap/zapcore"
 )
 
 type mockPrompter struct {
@@ -381,7 +381,7 @@ func (s *SecretOptionsTestSuite) TestPrompterNotCalledWhenEnvVarSet() {
 }
 
 func (s *SecretOptionsTestSuite) TestTerminalPrompterNonInteractiveEmitsWarning() {
-	logs := log.InitTestObserved(s.T(), zapcore.WarnLevel)
+	logs := log.InitTestObserved(s.T(), slog.LevelWarn)
 
 	prompter := &TerminalSecretPrompter{
 		IsTerminal: func() bool { return false },
@@ -393,7 +393,7 @@ func (s *SecretOptionsTestSuite) TestTerminalPrompterNonInteractiveEmitsWarning(
 
 	s.Require().Equal(1, logs.Len())
 	entry := logs.All()[0]
-	s.Equal(zapcore.WarnLevel, entry.Level)
+	s.Equal(slog.LevelWarn, entry.Level)
 	s.Contains(entry.Message, testFeatureID)
 	s.Contains(entry.Message, testOptionToken)
 	s.Contains(entry.Message, "stdin is not a terminal")

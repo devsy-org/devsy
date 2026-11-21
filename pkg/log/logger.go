@@ -1,64 +1,87 @@
 package log
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/devsy-org/devsy/logging"
 	"github.com/devsy-org/devsy/logging/redact"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
 )
 
+type loggerState struct {
+	logger   *slog.Logger
+	level    Level
+	writer   *redactingWriter
+	redactor *redact.Redactor
+	previous *loggerState
+	removed  bool
+}
+
 var (
-	sugar atomic.Pointer[zap.SugaredLogger]
-	// extraSinks fans every log line out to writers added by AddSink. The
-	// stderr core remains the primary destination; sinks are additive.
+	current    atomic.Pointer[loggerState]
+	stateMu    sync.Mutex
 	extraSinks = &writerFanout{}
 )
 
-func init() {
-	sugar.Store(zap.NewNop().Sugar())
-}
+func init() { Init(Config{}) }
 
-// Config holds logger configuration parsed from CLI flags.
 type Config struct {
-	Verbosity    int    // 0=error, 1=info+warn, 2=debug, 3=trace
-	Quiet        bool   // error only
-	Debug        bool   // backwards compat, equivalent to Verbosity=2
-	Level        string // explicit --log-level override
-	DefaultLevel string // persisted default when no explicit verbosity flag is set
+	Verbosity    int
+	Quiet        bool
+	Debug        bool
 	VerbositySet bool
-	Format       string // "text", "json", "logfmt"
+	Level        string
+	DefaultLevel string
+	Format       string
 	Redactor     *redact.Redactor
 }
 
-// Init configures the global logger. Called once in root command PersistentPreRunE.
 func Init(cfg Config) {
-	cfg.Redactor = redact.Combine(
-		cfg.Redactor,
-		redact.New(redact.Options{Environment: os.Environ()}),
-	)
+	redactor := redact.Combine(cfg.Redactor, redact.New(redact.Options{Environment: os.Environ()}))
 	level := resolveLevel(cfg)
-	encoder := resolveEncoder(cfg.Format)
-	stderrWriter := zapcore.Lock(
-		&redactingWriter{next: os.Stderr, redactor: cfg.Redactor, completeRecords: true},
+	writer := &redactingWriter{next: outputWriter{}}
+	format := logging.FormatText
+	style := logging.TextUppercase
+	switch cfg.Format {
+	case "json":
+		format = logging.FormatJSON
+	case "logfmt":
+		format = logging.FormatLogfmt
+	default:
+		if colorEnabled() {
+			style = logging.TextColored
+		}
+	}
+	handler := logging.NewHandler(writer, logging.HandlerOptions{
+		Level: level, Format: format, TextStyle: style, Redactor: redactor,
+	})
+	stateMu.Lock()
+	if old := current.Load(); old != nil && old.writer != nil {
+		_ = old.writer.Sync()
+	}
+	current.Store(
+		&loggerState{logger: slog.New(handler), level: level, writer: writer, redactor: redactor},
 	)
-	stderrCore := zapcore.NewCore(encoder, consoleWriter{next: stderrWriter}, level)
-	// A separate core writes to the fanout sink with the same level/encoder
-	// so AddSink consumers see the same output stderr does.
-	sinkCore := zapcore.NewCore(
-		resolveEncoder(cfg.Format),
-		&redactingWriter{next: extraSinks, redactor: cfg.Redactor, completeRecords: true},
-		level,
-	)
-	core := zapcore.NewTee(stderrCore, sinkCore)
+	stateMu.Unlock()
+}
 
-	logger := zap.New(core, zap.AddStacktrace(zapcore.FatalLevel))
-	sugar.Store(logger.Sugar())
+type outputWriter struct{}
+
+func (outputWriter) Write(p []byte) (int, error) {
+	consoleOutput.RLock()
+	if consoleOutput.suppressed == 0 {
+		_, _ = os.Stderr.Write(p)
+	}
+	consoleOutput.RUnlock()
+	return extraSinks.Write(p)
 }
 
 var consoleOutput = struct {
@@ -66,25 +89,7 @@ var consoleOutput = struct {
 	suppressed int
 }{}
 
-type consoleWriter struct{ next zapcore.WriteSyncer }
-
-func (w consoleWriter) Write(p []byte) (int, error) {
-	consoleOutput.RLock()
-	defer consoleOutput.RUnlock()
-	if consoleOutput.suppressed > 0 {
-		return len(p), nil
-	}
-	return w.next.Write(p)
-}
-
-func (w consoleWriter) Sync() error {
-	consoleOutput.RLock()
-	defer consoleOutput.RUnlock()
-	if consoleOutput.suppressed > 0 {
-		return nil
-	}
-	return w.next.Sync()
-}
+func enabled(level Level) bool { return level >= current.Load().level }
 
 func SuppressConsoleOutput() func() {
 	consoleOutput.Lock()
@@ -95,11 +100,10 @@ func SuppressConsoleOutput() func() {
 }
 
 type redactingWriter struct {
-	mu              sync.Mutex
-	next            io.Writer
-	redactor        *redact.Redactor
-	stream          *redact.Stream
-	completeRecords bool
+	mu       sync.Mutex
+	next     io.Writer
+	redactor *redact.Redactor
+	stream   *redact.Stream
 }
 
 func (w *redactingWriter) Write(p []byte) (int, error) {
@@ -108,11 +112,14 @@ func (w *redactingWriter) Write(p []byte) (int, error) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	redacted := w.redactOutput(string(p))
+	if w.stream == nil {
+		w.stream = redact.NewStream(w.redactor)
+	}
+	redacted := []byte(w.stream.RedactChunk(string(p)))
 	if len(redacted) == 0 {
 		return len(p), nil
 	}
-	_, err := io.WriteString(w.next, redacted)
+	_, err := w.next.Write(redacted)
 	if err != nil {
 		return 0, err
 	}
@@ -138,23 +145,6 @@ func (w *redactingWriter) Sync() error {
 	return nil
 }
 
-func (w *redactingWriter) redactOutput(input string) string {
-	if w.completeRecords {
-		if w.redactor == nil {
-			return input
-		}
-		result := w.redactor.Redact(input)
-		if strings.HasSuffix(input, "\n") && !strings.HasSuffix(result, "\n") {
-			return result + "\n"
-		}
-		return result
-	}
-	if w.stream == nil {
-		w.stream = redact.NewStream(w.redactor)
-	}
-	return w.stream.RedactChunk(input)
-}
-
 // AddSink attaches w as an additional destination for log output for the
 // duration of the returned remove func. Each line of log output is written to
 // w in addition to stderr. Multiple concurrent sinks are supported.
@@ -166,18 +156,30 @@ func AddSink(w io.Writer) (remove func()) {
 	return extraSinks.add(w)
 }
 
-// writerFanout is a zapcore.WriteSyncer that dispatches every Write to a
-// dynamic set of writers. Safe for concurrent use.
+type sinkRegistration struct {
+	writer io.Writer
+}
+
 type writerFanout struct {
 	mu      sync.RWMutex
-	writers []io.Writer
+	writers []*sinkRegistration
 }
 
 func (f *writerFanout) Write(p []byte) (int, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	for _, w := range f.writers {
-		_, _ = w.Write(p)
+	var result error
+	for _, registration := range f.writers {
+		n, err := registration.writer.Write(p)
+		if err == nil && n != len(p) {
+			err = io.ErrShortWrite
+		}
+		if err != nil {
+			result = errors.Join(result, err)
+		}
+	}
+	if result != nil {
+		return 0, result
 	}
 	return len(p), nil
 }
@@ -185,14 +187,15 @@ func (f *writerFanout) Write(p []byte) (int, error) {
 func (*writerFanout) Sync() error { return nil }
 
 func (f *writerFanout) add(w io.Writer) (remove func()) {
+	registration := &sinkRegistration{writer: w}
 	f.mu.Lock()
-	f.writers = append(f.writers, w)
+	f.writers = append(f.writers, registration)
 	f.mu.Unlock()
 	return func() {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		for i, x := range f.writers {
-			if x == w {
+			if x == registration {
 				f.writers = append(f.writers[:i], f.writers[i+1:]...)
 				return
 			}
@@ -200,110 +203,112 @@ func (f *writerFanout) add(w io.Writer) (remove func()) {
 	}
 }
 
-func resolveLevel(cfg Config) zapcore.Level {
-	if level, ok := resolveExplicitLevel(cfg); ok {
+func resolveLevel(cfg Config) Level {
+	switch {
+	case cfg.Quiet:
+		return slog.LevelError
+	case cfg.Debug:
+		return slog.LevelDebug
+	case cfg.VerbositySet || cfg.Verbosity > 0:
+		return VerbosityToLevel(cfg.Verbosity)
+	default:
+		return resolveNamedLevel(cfg)
+	}
+}
+
+func resolveNamedLevel(cfg Config) Level {
+	name, fallback := cfg.DefaultLevel, slog.LevelWarn
+	if cfg.Level != "" {
+		name, fallback = cfg.Level, VerbosityToLevel(cfg.Verbosity)
+	}
+	level, ok := LevelFromString(name)
+	if ok {
 		return level
 	}
-	return VerbosityToLevel(cfg.Verbosity)
-}
-
-// Precedence: --quiet > --debug > explicitly supplied -v > --log-level > persisted default.
-// This ordering is compatibility-sensitive: earlier flags must keep winning over
-// later configuration, so do not reorder it.
-func resolveExplicitLevel(cfg Config) (zapcore.Level, bool) {
-	if cfg.Quiet {
-		return zapcore.ErrorLevel, true
-	}
-	if cfg.Debug {
-		return zapcore.DebugLevel, true
-	}
-	if cfg.VerbositySet || cfg.Verbosity > 0 {
-		return VerbosityToLevel(cfg.Verbosity), true
-	}
-	return resolveConfiguredLevel(cfg.Level, cfg.DefaultLevel)
-}
-
-func resolveConfiguredLevel(explicit, fallback string) (zapcore.Level, bool) {
-	if explicit != "" {
-		return LevelFromString(explicit)
-	}
-	if fallback != "" {
-		if level, ok := LevelFromString(fallback); ok {
-			return level, true
-		}
-	}
-	level, _ := LevelFromString(DefaultLevel)
-	return level, true
-}
-
-func resolveEncoder(format string) zapcore.Encoder {
-	switch format {
-	case "json":
-		return zapcore.NewJSONEncoder(jsonEncoderConfig())
-	case "logfmt":
-		return newLogfmtEncoder()
-	default:
-		// "text" - use console encoder, with color if stderr is a terminal
-		if colorEnabled() {
-			return zapcore.NewConsoleEncoder(colorEncoderConfig())
-		}
-		return zapcore.NewConsoleEncoder(plainEncoderConfig())
-	}
+	return fallback
 }
 
 func colorEnabled() bool {
-	if os.Getenv("NO_COLOR") != "" {
-		return false
-	}
-	return term.IsTerminal(int(os.Stderr.Fd())) //nolint:gosec // fd fits in int
+	return os.Getenv("NO_COLOR") == "" && term.IsTerminal(int(os.Stderr.Fd()))
 }
 
-func jsonEncoderConfig() zapcore.EncoderConfig {
-	cfg := zap.NewProductionEncoderConfig()
-	cfg.TimeKey = "ts"
-	cfg.EncodeTime = zapcore.ISO8601TimeEncoder
-	return cfg
-}
-
-func colorEncoderConfig() zapcore.EncoderConfig {
-	cfg := zap.NewDevelopmentEncoderConfig()
-	cfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	cfg.EncodeTime = zapcore.ISO8601TimeEncoder
-	return cfg
-}
-
-func plainEncoderConfig() zapcore.EncoderConfig {
-	cfg := zap.NewDevelopmentEncoderConfig()
-	cfg.EncodeLevel = zapcore.CapitalLevelEncoder
-	cfg.EncodeTime = zapcore.ISO8601TimeEncoder
-	return cfg
-}
-
-// Underlying returns the raw *zap.Logger for advanced use cases.
-func Underlying() *zap.Logger {
-	return sugar.Load().Desugar()
-}
-
-// Sync flushes any buffered log entries. Call before process exit.
 func Sync() error {
-	return sugar.Load().Desugar().Sync()
+	if writer := current.Load().writer; writer != nil {
+		return writer.Sync()
+	}
+	return nil
 }
 
-// --- Package-level logging functions ---
+func ForwardFlagArgs() []string { return []string{"--log-level", LevelString()} }
 
-func Debugf(format string, args ...any) { sugar.Load().Debugf(format, args...) }
-func Infof(format string, args ...any)  { sugar.Load().Infof(format, args...) }
-func Warnf(format string, args ...any)  { sugar.Load().Warnf(format, args...) }
-func Errorf(format string, args ...any) { sugar.Load().Errorf(format, args...) }
-func Fatalf(format string, args ...any) { sugar.Load().Fatalf(format, args...) }
+func emit(level Level, message string) {
+	if enabled(level) {
+		Slog().Log(context.Background(), level, message)
+	}
+}
 
-func Debug(args ...any) { sugar.Load().Debug(args...) }
-func Info(args ...any)  { sugar.Load().Info(args...) }
-func Warn(args ...any)  { sugar.Load().Warn(args...) }
-func Error(args ...any) { sugar.Load().Error(args...) }
-func Fatal(args ...any) { sugar.Load().Fatal(args...) }
+func emitf(level Level, format string, args ...any) {
+	if enabled(level) {
+		emit(level, fmt.Sprintf(format, args...))
+	}
+}
 
-func Debugw(msg string, keysAndValues ...any) { sugar.Load().Debugw(msg, keysAndValues...) }
-func Infow(msg string, keysAndValues ...any)  { sugar.Load().Infow(msg, keysAndValues...) }
-func Warnw(msg string, keysAndValues ...any)  { sugar.Load().Warnw(msg, keysAndValues...) }
-func Errorw(msg string, keysAndValues ...any) { sugar.Load().Errorw(msg, keysAndValues...) }
+func Tracef(format string, args ...any) { emitf(logging.LevelTrace, format, args...) }
+func Debugf(format string, args ...any) { emitf(slog.LevelDebug, format, args...) }
+func Infof(format string, args ...any)  { emitf(slog.LevelInfo, format, args...) }
+func Warnf(format string, args ...any)  { emitf(slog.LevelWarn, format, args...) }
+func Errorf(format string, args ...any) { emitf(slog.LevelError, format, args...) }
+func Fatalf(format string, args ...any) {
+	emitf(logging.LevelFatal, format, args...)
+	_ = Sync()
+	os.Exit(1)
+}
+
+func Trace(args ...any) {
+	if enabled(logging.LevelTrace) {
+		emit(logging.LevelTrace, fmt.Sprint(args...))
+	}
+}
+
+func Debug(args ...any) {
+	if enabled(slog.LevelDebug) {
+		emit(slog.LevelDebug, fmt.Sprint(args...))
+	}
+}
+
+func Info(args ...any) {
+	if enabled(slog.LevelInfo) {
+		emit(slog.LevelInfo, fmt.Sprint(args...))
+	}
+}
+
+func Warn(args ...any) {
+	if enabled(slog.LevelWarn) {
+		emit(slog.LevelWarn, fmt.Sprint(args...))
+	}
+}
+
+func Error(args ...any) {
+	if enabled(slog.LevelError) {
+		emit(slog.LevelError, fmt.Sprint(args...))
+	}
+}
+func Fatal(args ...any) { emit(logging.LevelFatal, fmt.Sprint(args...)); _ = Sync(); os.Exit(1) }
+
+func emitRecord(level Level, timestamp time.Time, message string, attrs []slog.Attr) {
+	logger := Slog()
+	if !logger.Enabled(context.Background(), level) {
+		return
+	}
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+	record := slog.NewRecord(timestamp, level, message, 0)
+	record.AddAttrs(attrs...)
+	_ = logger.Handler().Handle(context.Background(), record)
+}
+
+func Debugw(msg string, args ...any) { Slog().Debug(msg, args...) }
+func Infow(msg string, args ...any)  { Slog().Info(msg, args...) }
+func Warnw(msg string, args ...any)  { Slog().Warn(msg, args...) }
+func Errorw(msg string, args ...any) { Slog().Error(msg, args...) }

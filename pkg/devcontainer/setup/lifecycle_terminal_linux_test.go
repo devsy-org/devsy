@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -24,7 +25,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -424,7 +424,7 @@ func (s *terminalTestSuite) TestArgvAndLargeInput() {
 }
 
 func (s *terminalTestSuite) TestParentCancelAndExitAckSuccess() {
-	logs := log.InitTestObserved(s.T(), zapcore.WarnLevel)
+	logs := log.InitTestObserved(s.T(), slog.LevelWarn)
 	a := newTestTerminal()
 	ctx, cancel := context.WithCancel(context.Background())
 	p := s.params(ctx, a, `printf 'ready:'; exec sleep 30`)
@@ -483,7 +483,7 @@ func (b *blockedTerminalOutput) Write(p []byte) (int, error) {
 }
 
 func (s *terminalTestSuite) TestBackgroundOutputDrain() {
-	logs := log.InitTestObserved(s.T(), zapcore.WarnLevel)
+	logs := log.InitTestObserved(s.T(), slog.LevelWarn)
 	a := newTestTerminal()
 	p := s.params(
 		context.Background(),

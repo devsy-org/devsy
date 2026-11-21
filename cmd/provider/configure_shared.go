@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -135,13 +136,13 @@ func runProviderInit(
 	}
 
 	stdout := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:       log.LevelInfo,
+		FallbackLevel:       slog.LevelInfo,
 		DetectLevelPrefixes: true,
 	})
 	defer func() { _ = stdout.Close() }()
 
 	stderr := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel:       log.LevelError,
+		FallbackLevel:       slog.LevelError,
 		DetectLevelPrefixes: true,
 	})
 	defer func() { _ = stderr.Close() }()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -11,8 +12,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util/goleaktest"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestMain(m *testing.M) {
@@ -323,9 +322,9 @@ func TestRunPairLogsParentCancellationDetails(t *testing.T) {
 	}
 }
 
-func capturePipeBridgeLogs(t *testing.T) *observer.ObservedLogs {
+func capturePipeBridgeLogs(t *testing.T) *log.ObservedLogs {
 	t.Helper()
-	return log.InitTestObserved(t, zapcore.DebugLevel)
+	return log.InitTestObserved(t, slog.LevelDebug)
 }
 
 func TestRunPairPipesClosedAfterReturn(t *testing.T) {

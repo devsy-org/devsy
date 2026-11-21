@@ -18,7 +18,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/types"
-	"go.uber.org/zap/zapcore"
 )
 
 func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo) driver.Driver {
@@ -310,7 +309,7 @@ func (c *customDriver) runCommand(
 	environ = append(environ, pkgconfig.EnvDevcontainerID+"="+runOpts.workspaceId)
 	environ = append(environ, runOpts.extraEnv...)
 
-	if log.Underlying().Core().Enabled(zapcore.DebugLevel) {
+	if log.DebugEnabled() {
 		environ = append(environ, pkgconfig.EnvDebug+"="+pkgconfig.BoolTrue)
 	}
 

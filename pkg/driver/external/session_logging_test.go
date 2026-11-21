@@ -2,16 +2,17 @@ package external
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/devsy-org/devsy-runtime-sdk/conformance/fake"
+	"github.com/devsy-org/devsy/logging"
 	"github.com/devsy-org/devsy/pkg/log"
-	"go.uber.org/zap/zapcore"
 )
 
 func (s *HostSuite) TestDebugKeepsRuntimeDiagnosticsWithoutHelperShutdownNoise() {
 	s.T().Setenv("FIXTURE_TOKEN", "private-startup-canary")
-	observed := log.InitTestObserved(s.T(), zapcore.DebugLevel)
+	observed := log.InitTestObserved(s.T(), slog.LevelDebug)
 	host := s.host("stream-startup-stderr")
 	s.NotEmpty(host.Info().RuntimeName)
 
@@ -25,7 +26,7 @@ func (s *HostSuite) TestDebugKeepsRuntimeDiagnosticsWithoutHelperShutdownNoise()
 }
 
 func (s *HostSuite) TestTraceKeepsHelperLifecycleDiagnostics() {
-	observed := log.InitTestObserved(s.T(), zapcore.DebugLevel-1)
+	observed := log.InitTestObserved(s.T(), logging.LevelTrace)
 	host := s.host(fake.Normal)
 	s.NotEmpty(host.Info().RuntimeName)
 
@@ -37,7 +38,7 @@ func (s *HostSuite) TestTraceKeepsHelperLifecycleDiagnostics() {
 }
 
 func (s *HostSuite) TestDebugKeepsUnexpectedHelperExitDiagnostics() {
-	observed := log.InitTestObserved(s.T(), zapcore.DebugLevel)
+	observed := log.InitTestObserved(s.T(), slog.LevelDebug)
 	_, err := s.newHost(context.Background(), fake.CrashBeforeHandshake, startupTimeout)
 	s.Require().Error(err)
 	s.Positive(observed.FilterMessageSnippet("plugin process exited").Len())

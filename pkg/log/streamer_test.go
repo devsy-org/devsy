@@ -2,19 +2,22 @@ package log
 
 import (
 	"bytes"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
+
+const streamNextMode = "next"
 
 func TestJSONLogStreamerRedactsCapturedLines(t *testing.T) {
 	streamer := NewJSONLogStreamer(StreamerOptions{
-		FallbackLevel: LevelInfo,
+		FallbackLevel: slog.LevelInfo,
 		CaptureLines:  2,
 		Redactor:      redact.FromEntries([]string{"TOKEN=DEVSY_STREAM_SECRET_846297"}),
 	})
@@ -30,7 +33,7 @@ func TestJSONLogStreamerRedactsCapturedLines(t *testing.T) {
 func TestJSONLogStreamerCombinesConfiguredAndEnvironmentRedaction(t *testing.T) {
 	t.Setenv("DEVSY_STREAM_ENV_SECRET", "stream-env-secret-846299")
 	streamer := NewJSONLogStreamer(StreamerOptions{
-		FallbackLevel: LevelInfo,
+		FallbackLevel: slog.LevelInfo,
 		CaptureLines:  1,
 		Redactor:      redact.FromEntries([]string{"TOKEN=stream-config-secret-846300"}),
 	})
@@ -49,7 +52,7 @@ func TestJSONLogStreamerCombinesConfiguredAndEnvironmentRedaction(t *testing.T) 
 
 func streamTestOutput(t *testing.T, input string, options StreamerOptions) []observerEntry {
 	t.Helper()
-	logs := InitTestObserved(t, zapcore.DebugLevel)
+	logs := InitTestObserved(t, slog.LevelDebug)
 	streamer := NewJSONLogStreamer(options)
 	_, err := streamer.Write([]byte(input))
 	require.NoError(t, err)
@@ -64,7 +67,7 @@ func streamTestOutput(t *testing.T, input string, options StreamerOptions) []obs
 }
 
 type observerEntry struct {
-	Level   zapcore.Level
+	Level   Level
 	Message string
 }
 
@@ -72,10 +75,10 @@ func TestJSONLogStreamerStructuredLogPreservesLevel(t *testing.T) {
 	entries := streamTestOutput(
 		t,
 		`{"level":"debug","ts":"2026-09-01T08:27:30.002Z","msg":"received docker credentials post data: bytes=23"}`+"\n",
-		StreamerOptions{FallbackLevel: LevelInfo},
+		StreamerOptions{FallbackLevel: slog.LevelInfo},
 	)
 	require.Len(t, entries, 1)
-	assert.Equal(t, zapcore.DebugLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelDebug, entries[0].Level)
 	assert.Equal(t, "received docker credentials post data: bytes=23", entries[0].Message)
 	assert.NotContains(t, entries[0].Message, `{"level":"debug"`)
 }
@@ -85,12 +88,12 @@ func TestJSONLogStreamerSupportsMessageField(t *testing.T) {
 		t,
 		`{"level":"warn","message":"example warning"}`+"\n",
 		StreamerOptions{
-			FallbackLevel: LevelInfo,
+			FallbackLevel: slog.LevelInfo,
 		},
 	)
 
 	require.Len(t, entries, 1)
-	assert.Equal(t, zapcore.WarnLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelWarn, entries[0].Level)
 	assert.Equal(t, "example warning", entries[0].Message)
 }
 
@@ -99,11 +102,11 @@ func TestJSONLogStreamerUnknownLevelUsesFallback(t *testing.T) {
 	entries := streamTestOutput(
 		t,
 		line+"\n",
-		StreamerOptions{FallbackLevel: LevelInfo},
+		StreamerOptions{FallbackLevel: slog.LevelInfo},
 	)
 
 	require.Len(t, entries, 1)
-	assert.Equal(t, zapcore.InfoLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelInfo, entries[0].Level)
 	assert.Equal(t, line, entries[0].Message)
 }
 
@@ -112,11 +115,11 @@ func TestJSONLogStreamerPlainTextUsesFallbackLevel(t *testing.T) {
 		t,
 		"#12 [4/8] RUN apt-get update\n",
 		StreamerOptions{
-			FallbackLevel: LevelInfo,
+			FallbackLevel: slog.LevelInfo,
 		},
 	)
 	require.Len(t, entries, 1)
-	assert.Equal(t, zapcore.InfoLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelInfo, entries[0].Level)
 	assert.Equal(t, "#12 [4/8] RUN apt-get update", entries[0].Message)
 }
 
@@ -125,11 +128,11 @@ func TestJSONLogStreamerMalformedJSONUsesFallbackLevel(t *testing.T) {
 	entries := streamTestOutput(
 		t,
 		line+"\n",
-		StreamerOptions{FallbackLevel: LevelInfo},
+		StreamerOptions{FallbackLevel: slog.LevelInfo},
 	)
 
 	require.Len(t, entries, 1)
-	assert.Equal(t, zapcore.InfoLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelInfo, entries[0].Level)
 	assert.Equal(t, line, entries[0].Message)
 }
 
@@ -142,15 +145,15 @@ func TestJSONLogStreamerMixedStream(t *testing.T) {
 			"#2 building image",
 			"",
 		}, "\n"),
-		StreamerOptions{FallbackLevel: LevelInfo},
+		StreamerOptions{FallbackLevel: slog.LevelInfo},
 	)
 
 	require.Len(t, entries, 3)
-	assert.Equal(t, zapcore.InfoLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelInfo, entries[0].Level)
 	assert.Equal(t, "#1 loading build definition", entries[0].Message)
-	assert.Equal(t, zapcore.DebugLevel, entries[1].Level)
+	assert.Equal(t, slog.LevelDebug, entries[1].Level)
 	assert.Equal(t, "received docker credentials post data: bytes=23", entries[1].Message)
-	assert.Equal(t, zapcore.InfoLevel, entries[2].Level)
+	assert.Equal(t, slog.LevelInfo, entries[2].Level)
 	assert.Equal(t, "#2 building image", entries[2].Message)
 }
 
@@ -159,12 +162,12 @@ func TestJSONLogStreamerNoDoubleWrappedStructuredOutput(t *testing.T) {
 		t,
 		`{"level":"debug","msg":"credential request received"}`+"\n",
 		StreamerOptions{
-			FallbackLevel: LevelInfo,
+			FallbackLevel: slog.LevelInfo,
 		},
 	)
 
 	require.Len(t, entries, 1)
-	assert.Equal(t, zapcore.DebugLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelDebug, entries[0].Level)
 	assert.NotContains(t, entries[0].Message, `{"level":"debug"`)
 }
 
@@ -173,13 +176,13 @@ func TestJSONLogStreamerTabDelimitedLevelPrefix(t *testing.T) {
 		t,
 		"2026-09-01T08:27:30.002Z\tDEBUG\tcredential request received\n",
 		StreamerOptions{
-			FallbackLevel:       LevelInfo,
+			FallbackLevel:       slog.LevelInfo,
 			DetectLevelPrefixes: true,
 		},
 	)
 
 	require.Len(t, entries, 1)
-	assert.Equal(t, zapcore.DebugLevel, entries[0].Level)
+	assert.Equal(t, slog.LevelDebug, entries[0].Level)
 	assert.Equal(
 		t,
 		"2026-09-01T08:27:30.002Z\tDEBUG\tcredential request received",
@@ -188,9 +191,9 @@ func TestJSONLogStreamerTabDelimitedLevelPrefix(t *testing.T) {
 }
 
 func TestJSONLogStreamerCaptureLinesIsBounded(t *testing.T) {
-	logs := InitTestObserved(t, zapcore.DebugLevel)
+	logs := InitTestObserved(t, slog.LevelDebug)
 	streamer := NewJSONLogStreamer(StreamerOptions{
-		FallbackLevel: LevelInfo,
+		FallbackLevel: slog.LevelInfo,
 		CaptureLines:  1,
 	})
 	_, err := streamer.Write([]byte("first\nsecond\n"))
@@ -226,23 +229,86 @@ func TestJSONLogStreamerCaptureBytesTruncatesOversizedLine(t *testing.T) {
 }
 
 func TestJSONLogStreamerFormattedOutputHasNoNestedEnvelope(t *testing.T) {
+	Init(Config{Level: LevelDebugName, Format: testFormatJSON})
 	var output bytes.Buffer
-	previous := sugar.Load()
-	encoderConfig := zap.NewDevelopmentEncoderConfig()
-	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig),
-		zapcore.AddSync(&output),
-		zapcore.DebugLevel,
-	)
-	sugar.Store(zap.New(core).Sugar())
-	t.Cleanup(func() { sugar.Store(previous) })
-
-	streamer := NewJSONLogStreamer(StreamerOptions{FallbackLevel: LevelInfo})
+	remove := AddSink(&output)
+	defer remove()
+	streamer := NewJSONLogStreamer(StreamerOptions{FallbackLevel: slog.LevelInfo})
 	_, err := streamer.Write([]byte(`{"level":"debug","msg":"credential request received"}` + "\n"))
 	require.NoError(t, err)
 	require.NoError(t, streamer.Close())
+	require.NoError(t, Sync())
+	assert.Contains(t, output.String(), `"msg":"credential request received"`)
+}
 
-	assert.NotContains(t, output.String(), `INFO {"level":"debug"`)
-	assert.Contains(t, output.String(), "DEBUG\tcredential request received")
+func TestJSONLogStreamerDrainsOversizedOutput(t *testing.T) {
+	for _, mode := range []string{streamNextMode, "eof"} {
+		t.Run(mode, func(t *testing.T) {
+			logs := InitTestObserved(t, slog.LevelDebug)
+			streamer := NewJSONLogStreamer(StreamerOptions{
+				FallbackLevel: slog.LevelInfo,
+				CaptureLines:  2,
+				CaptureBytes:  256,
+				Redactor:      redact.FromEntries([]string{"TOKEN=stream-boundary-secret"}),
+			})
+			streamer.LogLine(`{"level":"error","msg":"old","error_code":"old-code"}`)
+			written := make(chan error, 1)
+			go func() { written <- writeOversizedOutput(streamer, mode) }()
+			select {
+			case err := <-written:
+				require.NoError(t, err)
+			case <-time.After(15 * time.Second):
+				_ = streamer.Close()
+				<-written
+				t.Fatal("oversized writer blocked")
+			}
+			require.NoError(t, streamer.Close())
+			require.Empty(t, streamer.ErrorCode())
+			entries := logs.All()
+			require.GreaterOrEqual(t, len(entries), 2)
+			require.Equal(t, "[oversized subprocess output truncated]", entries[1].Message)
+			require.NotContains(t, entries[1].Message, "stream-boundary-")
+			require.LessOrEqual(t, len(streamer.ErrorOutput()), 256)
+			require.NotContains(t, streamer.ErrorOutput(), "stream-boundary-secret")
+			require.NotContains(t, streamer.ErrorOutput(), "stream-boundary-")
+			if mode == streamNextMode {
+				require.Len(t, entries, 3)
+				require.Equal(t, "next record", entries[2].Message)
+				require.Equal(t, "canary", entries[2].AttrsMap()["component"])
+				require.Equal(t, "***", entries[2].AttrsMap()["sensitive"])
+			}
+		})
+	}
+}
+
+func writeOversizedOutput(writer io.Writer, mode string) error {
+	chunk := strings.Repeat("x", 64*1024)
+	for range 20 {
+		if _, err := io.WriteString(writer, chunk); err != nil {
+			return err
+		}
+	}
+	for _, part := range []string{"stream-boundary-", "secret canary"} {
+		if _, err := io.WriteString(writer, part); err != nil {
+			return err
+		}
+	}
+	if mode == streamNextMode {
+		_, err := io.WriteString(writer, "\n"+`{"level":"info","msg":"next record",`+
+			`"component":"canary","sensitive":"stream-boundary-secret"}`+"\n")
+		return err
+	}
+	return nil
+}
+
+func TestJSONLogStreamerDrainsNormalUnterminatedRecord(t *testing.T) {
+	logs := InitTestObserved(t, slog.LevelInfo)
+	streamer := NewJSONLogStreamer(StreamerOptions{FallbackLevel: slog.LevelInfo, CaptureLines: 1})
+	_, err := streamer.Write([]byte(`{"level":"info","msg":"unterminated","component":"canary"}`))
+	require.NoError(t, err)
+	require.NoError(t, streamer.Close())
+	entries := logs.All()
+	require.Len(t, entries, 1)
+	require.Equal(t, "unterminated", entries[0].Message)
+	require.Equal(t, "canary", entries[0].AttrsMap()["component"])
 }

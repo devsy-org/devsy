@@ -1,6 +1,12 @@
 package log
 
-import "go.uber.org/zap/zapcore"
+import (
+	"log/slog"
+
+	"github.com/devsy-org/devsy/logging"
+)
+
+type Level = slog.Level
 
 const DefaultLevel = LevelWarnName
 
@@ -12,34 +18,11 @@ const (
 	LevelTraceName = "trace"
 )
 
-var validLevels = [...]string{
-	LevelErrorName,
-	LevelWarnName,
-	LevelInfoName,
-	LevelDebugName,
-	LevelTraceName,
-}
+func TraceEnabled() bool  { return enabled(logging.LevelTrace) }
+func DebugEnabled() bool  { return enabled(slog.LevelDebug) }
+func InfoEnabled() bool   { return enabled(slog.LevelInfo) }
+func LevelString() string { return logging.LevelName(current.Load().level) }
 
-func LevelFromString(value string) (zapcore.Level, bool) {
-	switch value {
-	case LevelErrorName:
-		return zapcore.ErrorLevel, true
-	case LevelWarnName:
-		return zapcore.WarnLevel, true
-	case LevelInfoName:
-		return zapcore.InfoLevel, true
-	case LevelDebugName:
-		return zapcore.DebugLevel, true
-	case LevelTraceName:
-		return zapcore.DebugLevel - 1, true
-	default:
-		return zapcore.ErrorLevel, false
-	}
-}
-
-func ValidLevels() []string { return append([]string(nil), validLevels[:]...) }
-
-// Verbosity levels mapped from CLI flags.
 const (
 	LevelTrace = 3
 	LevelDebug = 2
@@ -49,44 +32,28 @@ const (
 	LevelFatal = 0
 )
 
-// DebugEnabled reports whether debug-level messages are currently logged.
-func DebugEnabled() bool {
-	return sugar.Load().Desugar().Core().Enabled(zapcore.DebugLevel)
+func LevelFromString(value string) (Level, bool) {
+	switch value {
+	case LevelErrorName, LevelWarnName, LevelInfoName, LevelDebugName, LevelTraceName:
+		return logging.ParseLevel(value)
+	default:
+		return slog.LevelError, false
+	}
 }
 
-// LevelString returns the lowest enabled log level as a lowercase string
-// (e.g. "debug", "info", "warn", "error", "fatal").
-func LevelString() string {
-	core := sugar.Load().Desugar().Core()
-	if core.Enabled(zapcore.DebugLevel - 1) {
-		return LevelTraceName
-	}
-	for _, l := range []zapcore.Level{
-		zapcore.DebugLevel,
-		zapcore.InfoLevel,
-		zapcore.WarnLevel,
-		zapcore.ErrorLevel,
-		zapcore.FatalLevel,
-	} {
-		if core.Enabled(l) {
-			return l.String()
-		}
-	}
-	return "info"
+func ValidLevels() []string {
+	return []string{LevelErrorName, LevelWarnName, LevelInfoName, LevelDebugName, LevelTraceName}
 }
 
-// VerbosityToLevel converts a -v count (0-3) to a zapcore.Level.
-// 0 = error+fatal only, 1 = +warn+info, 2 = +debug, 3 = trace (mapped to zap Debug-1).
-func VerbosityToLevel(verbosity int) zapcore.Level {
+func VerbosityToLevel(verbosity int) Level {
 	switch {
 	case verbosity >= 3:
-		// Trace: use a custom level below Debug
-		return zapcore.DebugLevel - 1
+		return logging.LevelTrace
 	case verbosity >= 2:
-		return zapcore.DebugLevel
+		return slog.LevelDebug
 	case verbosity >= 1:
-		return zapcore.InfoLevel
+		return slog.LevelInfo
 	default:
-		return zapcore.ErrorLevel
+		return slog.LevelError
 	}
 }

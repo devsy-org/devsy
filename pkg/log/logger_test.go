@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/devsy-org/devsy/logging"
 	"github.com/devsy-org/devsy/logging/redact"
 )
 
@@ -29,140 +31,33 @@ func TestColorEnabledHonorsNoColor(t *testing.T) {
 
 func TestResolveLevelPrecedence(t *testing.T) {
 	tests := []struct {
-		name string
 		cfg  Config
-		want string
+		want Level
 	}{
-		{name: "persisted default", cfg: Config{DefaultLevel: LevelWarnName}, want: LevelWarnName},
-		{
-			name: "explicit log level",
-			cfg:  Config{Level: LevelDebugName, DefaultLevel: LevelWarnName}, want: LevelDebugName,
-		},
-		{
-			name: "verbosity beats log level",
-			cfg: Config{
-				Verbosity:    1,
-				VerbositySet: true,
-				Level:        LevelDebugName,
-			},
-			want: LevelInfoName,
-		},
-		{
-			name: "debug beats verbosity",
-			cfg:  Config{Verbosity: 1, VerbositySet: true, Debug: true}, want: LevelDebugName,
-		},
-		{
-			name: "quiet beats debug",
-			cfg:  Config{Debug: true, Quiet: true}, want: LevelErrorName,
-		},
-		{
-			name: "log level beats persisted default",
-			cfg:  Config{Level: LevelWarnName, DefaultLevel: LevelInfoName}, want: LevelWarnName,
-		},
-		{
-			name: "explicit verbosity beats log level",
-			cfg: Config{
-				Verbosity:    1,
-				VerbositySet: true,
-				Level:        LevelErrorName,
-			},
-			want: LevelInfoName,
-		},
-		{
-			name: "debug beats log level",
-			cfg:  Config{Debug: true, Level: LevelErrorName}, want: LevelDebugName,
-		},
-		{
-			name: "quiet beats log level",
-			cfg:  Config{Quiet: true, Level: LevelTraceName}, want: LevelErrorName,
-		},
+		{Config{DefaultLevel: LevelWarnName}, slog.LevelWarn},
+		{Config{Level: LevelDebugName, DefaultLevel: LevelWarnName}, slog.LevelDebug},
+		{Config{DefaultLevel: "invalid"}, slog.LevelWarn},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := resolveLevel(tt.cfg).String(); got != tt.want {
-				t.Fatalf("resolveLevel() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestResolveLevelExplicitFalseValues(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  Config
-		want string
-	}{
-		{
-			name: "explicit debug=false falls through to log level",
-			cfg: Config{
-				Debug:        false,
-				Level:        LevelDebugName,
-				DefaultLevel: LevelWarnName,
-			},
-			want: LevelDebugName,
-		},
-		{
-			name: "explicit quiet=false falls through to log level",
-			cfg: Config{
-				Quiet:        false,
-				Level:        LevelInfoName,
-				DefaultLevel: LevelWarnName,
-			},
-			want: LevelInfoName,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := resolveLevel(tt.cfg).String(); got != tt.want {
-				t.Fatalf("resolveLevel() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestResolveLevelDefaultsToWarn(t *testing.T) {
-	if got := resolveLevel(Config{DefaultLevel: DefaultLevel}).String(); got != LevelWarnName {
-		t.Fatalf("resolveLevel() = %q, want %q", got, LevelWarnName)
-	}
-}
-
-func TestResolveLevelInvalidPersistedDefaultFallsBackToWarn(t *testing.T) {
-	if got := resolveLevel(Config{DefaultLevel: "verbose"}).String(); got != LevelWarnName {
-		t.Fatalf("resolveLevel() = %q, want %q", got, LevelWarnName)
-	}
-}
-
-func TestQuietKeepsErrorsVisible(t *testing.T) {
-	Init(Config{Quiet: true})
-	var sink syncBuffer
-	remove := AddSink(&sink)
-	defer remove()
-
-	Warn("hidden warning")
-	Error("visible error")
-	_ = Sync()
-
-	if got := sink.String(); strings.Contains(got, "hidden warning") {
-		t.Fatalf("quiet logger emitted warning: %q", got)
-	}
-	if got := sink.String(); !strings.Contains(got, "visible error") {
-		t.Fatalf("quiet logger hid error: %q", got)
+		if got := resolveLevel(tt.cfg); got != tt.want {
+			t.Fatalf("resolveLevel(%+v) = %v, want %v", tt.cfg, got, tt.want)
+		}
 	}
 }
 
 func TestLevelFromString(t *testing.T) {
-	for _, level := range ValidLevels() {
-		if _, ok := LevelFromString(level); !ok {
+	for _, level := range logging.LevelNames() {
+		if _, ok := logging.ParseLevel(level); !ok {
 			t.Errorf("LevelFromString(%q) rejected valid level", level)
 		}
 	}
-	if _, ok := LevelFromString("verbose"); ok {
+	if _, ok := logging.ParseLevel("verbose"); ok {
 		t.Fatal("LevelFromString accepted invalid level")
 	}
 }
 
 func TestAddSink_ForwardsLogLines(t *testing.T) {
-	Init(Config{Verbosity: 2}) // info+
+	Init(Config{Level: LevelDebugName})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
@@ -177,7 +72,7 @@ func TestAddSink_ForwardsLogLines(t *testing.T) {
 }
 
 func TestAddSink_RemoveStopsForwarding(t *testing.T) {
-	Init(Config{Verbosity: 2})
+	Init(Config{Level: LevelDebugName})
 
 	var sink bytes.Buffer
 	remove := AddSink(&sink)
@@ -198,7 +93,7 @@ func TestAddSink_RemoveStopsForwarding(t *testing.T) {
 }
 
 func TestAddSink_ConcurrentSinksAreIndependent(t *testing.T) {
-	Init(Config{Verbosity: 2})
+	Init(Config{Level: LevelDebugName})
 
 	// Production callers (the MCP layer's io.Pipe writer) are thread-safe;
 	// AddSink doesn't serialize the per-sink Write. Wrap bytes.Buffer for the test.
@@ -224,8 +119,8 @@ func TestAddSink_ConcurrentSinksAreIndependent(t *testing.T) {
 func TestInitRedactsSecretsBeforeWritingSinks(t *testing.T) {
 	Init(
 		Config{
-			Verbosity: 2,
-			Redactor:  redact.FromEntries([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
+			Level:    LevelDebugName,
+			Redactor: redact.FromEntries([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
 		},
 	)
 
@@ -247,7 +142,7 @@ func TestInitRedactsSecretsBeforeWritingSinks(t *testing.T) {
 
 func TestInitDefaultsToEnvironmentRedaction(t *testing.T) {
 	t.Setenv("DEVSY_LOG_DEFAULT_SECRET", "default-secret-846297")
-	Init(Config{Verbosity: 2})
+	Init(Config{Level: LevelDebugName})
 
 	var sink syncBuffer
 	remove := AddSink(&sink)
@@ -296,14 +191,16 @@ func (s *syncBuffer) String() string {
 }
 
 func TestSuppressConsoleOutput(t *testing.T) {
-	previous := sugar.Load()
+	previous := current.Load()
 	oldStderr := os.Stderr
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	os.Stderr = w
-	t.Cleanup(func() { os.Stderr = oldStderr; sugar.Store(previous); _ = r.Close(); _ = w.Close() })
+	t.Cleanup(
+		func() { os.Stderr = oldStderr; current.Store(previous); _ = r.Close(); _ = w.Close() },
+	)
 	Init(Config{})
 	var sink syncBuffer
 	remove := AddSink(&sink)
@@ -330,6 +227,33 @@ func TestSuppressConsoleOutput(t *testing.T) {
 	}
 	if !strings.Contains(sink.String(), "during suppression") {
 		t.Fatal("suppressed sink output")
+	}
+}
+
+type sliceSink []*syncBuffer
+
+func (s sliceSink) Write(p []byte) (int, error) { return s[0].Write(p) }
+
+func TestAddSinkRemovesNonComparableRegistrationsIndependently(t *testing.T) {
+	var output syncBuffer
+	sink := sliceSink{&output}
+	removeFirst := AddSink(sink)
+	removeSecond := AddSink(sink)
+	defer removeSecond()
+	removeFirst()
+	removeFirst()
+	if _, err := extraSinks.Write([]byte("one")); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); got != "one" {
+		t.Fatalf("got %q", got)
+	}
+	removeSecond()
+	if _, err := extraSinks.Write([]byte("two")); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); got != "one" {
+		t.Fatalf("got %q", got)
 	}
 }
 
@@ -360,7 +284,7 @@ func TestMigrationKeepsOversizeStructuredEnvelope(t *testing.T) {
 	if err := json.Unmarshal([]byte(got), &record); err != nil {
 		t.Fatalf("sink lost JSON object envelope: %.30q: %v", got, err)
 	}
-	if record["msg"] != "***" {
-		t.Fatalf("message not masked as a scalar")
+	if record["msg"] != strings.Repeat("x", 17*1024)+"***" {
+		t.Fatal("oversized message did not retain its safe prefix and mask the registered value")
 	}
 }

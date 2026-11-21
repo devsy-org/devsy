@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -510,7 +511,7 @@ func (d *dockerDriver) executeBuild(
 ) error {
 	log.Debugf("build with %s", strategy.name())
 	writer := log.NewJSONLogStreamer(log.StreamerOptions{
-		FallbackLevel: log.LevelInfo,
+		FallbackLevel: slog.LevelInfo,
 	})
 	defer func() { _ = writer.Close() }()
 

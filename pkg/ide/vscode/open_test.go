@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,9 +15,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 )
 
 const (
@@ -35,7 +33,7 @@ func (c call) isListExtensions() bool {
 
 type OpenSuite struct {
 	suite.Suite
-	logs     *observer.ObservedLogs
+	logs     *log.ObservedLogs
 	calls    []call
 	uris     []string
 	launcher hostLauncher
@@ -48,7 +46,7 @@ func TestOpenSuite(t *testing.T) {
 }
 
 func (s *OpenSuite) SetupTest() {
-	s.logs = log.InitTestObserved(s.T(), zapcore.DebugLevel)
+	s.logs = log.InitTestObserved(s.T(), slog.LevelDebug)
 	s.calls = nil
 	s.uris = nil
 	s.uriErr = nil
@@ -115,14 +113,14 @@ func (s *OpenSuite) TestCLISuccessDispatchesOnceWithCorrelation() {
 	s.Require().NotEmpty(operationID)
 	s.Len(s.calls, 2)
 	s.Empty(s.uris)
-	dispatched := s.records(zapcore.InfoLevel)
+	dispatched := s.records(slog.LevelInfo)
 	s.Require().Len(dispatched, 1)
-	s.Equal(operationID, dispatched[0].ContextMap()["operation"])
-	s.Equal(string(FlavorCodium), dispatched[0].ContextMap()["flavor"])
-	s.Equal(routeCLI, dispatched[0].ContextMap()["route"])
-	resolved := s.logs.FilterField(zap.String("cli_kind", "no extension")).All()
+	s.Equal(operationID, dispatched[0].AttrsMap()["operation"])
+	s.Equal(string(FlavorCodium), dispatched[0].AttrsMap()["flavor"])
+	s.Equal(routeCLI, dispatched[0].AttrsMap()["route"])
+	resolved := s.logs.FilterAttr(slog.String("cli_kind", "no extension")).All()
 	s.Require().Len(resolved, 1)
-	s.Equal(stageResolve, resolved[0].ContextMap()["stage"])
+	s.Equal(stageResolve, resolved[0].AttrsMap()["stage"])
 }
 
 func (s *OpenSuite) TestCLIFailureFallsBackAndKeepsCauseAndCorrelation() {
@@ -140,17 +138,17 @@ func (s *OpenSuite) TestCLIFailureFallsBackAndKeepsCauseAndCorrelation() {
 	s.Require().Len(s.uris, 1)
 	s.Contains(s.uris[0], "codium://vscode-remote/")
 
-	failed := s.records(zapcore.WarnLevel)
+	failed := s.records(slog.LevelWarn)
 	s.Require().Len(failed, 1)
-	s.Equal(operationID, failed[0].ContextMap()["operation"])
-	s.Equal(routeCLI, failed[0].ContextMap()["route"])
-	s.Equal(stageCLIDispatch, failed[0].ContextMap()["stage"])
+	s.Equal(operationID, failed[0].AttrsMap()["operation"])
+	s.Equal(routeCLI, failed[0].AttrsMap()["route"])
+	s.Equal(stageCLIDispatch, failed[0].AttrsMap()["stage"])
 
-	dispatched := s.records(zapcore.InfoLevel)
+	dispatched := s.records(slog.LevelInfo)
 	s.Require().Len(dispatched, 1)
-	s.Equal(operationID, dispatched[0].ContextMap()["operation"])
-	s.Equal(routeURI, dispatched[0].ContextMap()["route"])
-	s.Equal(true, dispatched[0].ContextMap()["after_cli_failure"])
+	s.Equal(operationID, dispatched[0].AttrsMap()["operation"])
+	s.Equal(routeURI, dispatched[0].AttrsMap()["route"])
+	s.Equal(true, dispatched[0].AttrsMap()["after_cli_failure"])
 }
 
 func (s *OpenSuite) TestBothRoutesFailingKeepsCausesAndLogsBothFailures() {
@@ -164,14 +162,14 @@ func (s *OpenSuite) TestBothRoutesFailingKeepsCausesAndLogsBothFailures() {
 	s.Require().Error(err)
 	s.ErrorIs(err, cliCause)
 	s.ErrorIs(err, uriCause)
-	failed := s.records(zapcore.WarnLevel)
+	failed := s.records(slog.LevelWarn)
 	s.Require().Len(failed, 2)
 	for _, entry := range failed {
-		s.Equal(operationID, entry.ContextMap()["operation"])
+		s.Equal(operationID, entry.AttrsMap()["operation"])
 	}
-	s.Equal(stageListExtensions, failed[0].ContextMap()["stage"])
-	s.Equal(stageURIDispatch, failed[1].ContextMap()["stage"])
-	s.Empty(s.records(zapcore.InfoLevel))
+	s.Equal(stageListExtensions, failed[0].AttrsMap()["stage"])
+	s.Equal(stageURIDispatch, failed[1].AttrsMap()["stage"])
+	s.Empty(s.records(slog.LevelInfo))
 }
 
 func (s *OpenSuite) TestCancelledCLIDoesNotOpenURI() {
@@ -195,9 +193,9 @@ func (s *OpenSuite) TestMissingCLIFallsBackToURI() {
 	s.Require().NoError(err)
 	s.Empty(s.calls)
 	s.Len(s.uris, 1)
-	failed := s.records(zapcore.WarnLevel)
+	failed := s.records(slog.LevelWarn)
 	s.Require().Len(failed, 1)
-	s.Equal(stageResolve, failed[0].ContextMap()["stage"])
+	s.Equal(stageResolve, failed[0].AttrsMap()["stage"])
 }
 
 func (s *OpenSuite) TestMissingSSHExtensionIsInstalledBeforeDispatch() {
@@ -281,10 +279,10 @@ func (s *OpenSuite) TestLogsAndErrorsOmitEditorOutputPathsAndErrorText() {
 			s.NotContains(logged, "Alice")
 			s.NotContains(logged, "alice")
 			s.ErrorIs(err, leaky)
-			failed := s.records(zapcore.WarnLevel)
+			failed := s.records(slog.LevelWarn)
 			s.Require().Len(failed, 2)
-			s.Equal(failedStage, failed[0].ContextMap()["stage"])
-			s.Equal(stageURIDispatch, failed[1].ContextMap()["stage"])
+			s.Equal(failedStage, failed[0].AttrsMap()["stage"])
+			s.Equal(stageURIDispatch, failed[1].AttrsMap()["stage"])
 		})
 	}
 }
@@ -408,7 +406,7 @@ printf '%s\n' "$@" > "$DEVSY_TEST_ARGV_FILE"
 	s.Require().NoError(err)
 	s.Equal("--disable-extension\nms-vscode-remote.remote-containers\n--new-window\n"+
 		"--folder-uri\nvscode-remote://ssh-remote+ws.devsy/workspaces/a%20b/%E9%9B%AA\n", string(argv))
-	s.Empty(s.records(zapcore.WarnLevel))
+	s.Empty(s.records(slog.LevelWarn))
 }
 
 // openInOperation runs the launcher inside a real status operation, the way
@@ -425,13 +423,13 @@ func (s *OpenSuite) openInOperation(params OpenParams) (operationID string, err 
 	)
 	s.Require().NotEmpty(operationID)
 	for _, entry := range s.logs.AllUntimed() {
-		s.Equal(operationID, entry.ContextMap()["operation"])
-		s.Equal(string(params.Flavor), entry.ContextMap()["flavor"])
+		s.Equal(operationID, entry.AttrsMap()["operation"])
+		s.Equal(string(params.Flavor), entry.AttrsMap()["flavor"])
 	}
 	return operationID, err
 }
 
-func (s *OpenSuite) records(level zapcore.Level) []observer.LoggedEntry {
+func (s *OpenSuite) records(level slog.Level) []log.LoggedEntry {
 	return s.logs.FilterLevelExact(level).AllUntimed()
 }
 
@@ -441,7 +439,7 @@ func (s *OpenSuite) everythingLogged() string {
 	var b strings.Builder
 	for _, entry := range s.logs.AllUntimed() {
 		b.WriteString(entry.Message + "\n")
-		for key, value := range entry.ContextMap() {
+		for key, value := range entry.AttrsMap() {
 			fmt.Fprintf(&b, "%s=%v\n", key, value)
 		}
 	}

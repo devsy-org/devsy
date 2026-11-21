@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 func recordedInitContext(t *testing.T) (context.Context, func() []workspacelogs.Record) {
@@ -83,7 +83,7 @@ func summarizeInit(recs []workspacelogs.Record) map[string]*initSummary {
 }
 
 func TestInitializeCommandRecordsOutputAtErrorLevel(t *testing.T) {
-	log.InitTestObserved(t, zapcore.ErrorLevel)
+	log.InitTestObserved(t, slog.LevelError)
 	ctx, records := recordedInitContext(t)
 	conf := initConf(map[string][]string{
 		"a": {"echo a-out; echo a-err >&2"},

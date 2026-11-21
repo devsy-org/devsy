@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"testing"
@@ -15,7 +16,6 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 func recordedContext(t *testing.T) (context.Context, *workspacelogs.Store, string) {
@@ -72,7 +72,7 @@ func invocations(recs []workspacelogs.Record) []workspacelogs.Record {
 }
 
 func TestStepRetainsOutputBelowLogLevel(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.WarnLevel)
+	logs := log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	logWriter := log.Writer(log.LevelInfo)
 	step := StartStep(ctx, "buildkit")
@@ -180,7 +180,7 @@ func TestRecordSkippedWritesReason(t *testing.T) {
 // The printer renders on its own goroutine, so the last status must be drained
 // before the recorder writer closes.
 func TestPrinterDrainKeepsFinalBytes(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.WarnLevel)
+	logs := log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	step := StartStep(ctx, "buildkit-remote")
 	dgst := digest.FromString("vertex")

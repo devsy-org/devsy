@@ -76,7 +76,7 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 	}
 
 	if cfg.startMsg != "" {
-		log.Infof(cfg.startMsg)
+		log.Info(cfg.startMsg)
 	}
 
 	err := RunCommandWithBinaries(ctx, WorkspaceCommandConfig{
@@ -97,7 +97,7 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 	}
 
 	if cfg.doneMsg != "" {
-		log.Infof(cfg.doneMsg)
+		log.Info(cfg.doneMsg)
 	}
 
 	return nil

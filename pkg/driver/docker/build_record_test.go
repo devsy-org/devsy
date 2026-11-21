@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 )
 
 func recordedContext(t *testing.T) (context.Context, *workspacelogs.Store, string) {
@@ -116,7 +116,7 @@ func (s streamedFake) buildStreamed(
 }
 
 func TestExecuteBuildRetainsOutputAtWarnLevel(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.WarnLevel)
+	logs := log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 
 	err := (&dockerDriver{}).executeBuild(
@@ -142,7 +142,7 @@ func TestExecuteBuildRetainsOutputAtWarnLevel(t *testing.T) {
 }
 
 func TestExecuteBuildFailureKeepsErrorAndRecordsFailed(t *testing.T) {
-	log.InitTestObserved(t, zapcore.WarnLevel)
+	log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	cause := errors.New("solve exploded")
 
@@ -161,7 +161,7 @@ func TestExecuteBuildFailureKeepsErrorAndRecordsFailed(t *testing.T) {
 }
 
 func TestExecuteBuildCanceledIsRecorded(t *testing.T) {
-	log.InitTestObserved(t, zapcore.WarnLevel)
+	log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
@@ -182,7 +182,7 @@ func TestExecuteBuildCanceledIsRecorded(t *testing.T) {
 }
 
 func TestExecuteBuildWithoutRecorderUsesLoggerOnly(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	logs := log.InitTestObserved(t, slog.LevelDebug)
 
 	err := (&dockerDriver{}).executeBuild(
 		t.Context(),
@@ -216,7 +216,7 @@ func writeBuildxScript(t *testing.T) string {
 }
 
 func TestBuildxKeepsStreamsSeparateAndErrorTail(t *testing.T) {
-	log.InitTestObserved(t, zapcore.WarnLevel)
+	log.InitTestObserved(t, slog.LevelWarn)
 	ctx, store, runID := recordedContext(t)
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: writeBuildxScript(t)}}
 
