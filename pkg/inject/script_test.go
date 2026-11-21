@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,13 +71,15 @@ func runBootstrap(
 			script, installerAssignment, "installer_code="+quotedHooks+"\"$1\"", 1,
 		)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
 	cmd.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err = cmd.Run()
+	if err = cmd.Run(); err != nil {
+		err = errors.Join(err, ctx.Err())
+	}
 	return stdout.String(), stderr.String(), err
 }
 
