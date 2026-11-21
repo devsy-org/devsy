@@ -64,7 +64,12 @@ diagnostic text before Desktop forwards or writes it. The scanner returns
 ordered, half-open UTF-16 ranges. Consumers choose the replacement marker and
 apply their separate registered-value policy.
 
-The scanner recognizes credential names after ASCII normalization. Bare
+Text assignment labels use ASCII letters, digits, dots, underscores, and
+hyphens. Quoted labels and recognized bare compound names such as `private key`
+can also contain spaces and tabs. For classification, the scanner lowercases
+the label and removes separators. It recognizes labels containing `password`, `passwd`,
+`passphrase`, `token`, `secret`, `apikey`, `authorization`, `credential`,
+`privatekey`, `accesskey`, or `telemetrydistinctid` after normalization.
 `Authorization` and `Proxy-Authorization` names, including terminal
 dot-qualified properties, use authorization value rules. Unquoted values
 include punctuation up to whitespace. Quoted and grouped values keep their
@@ -73,9 +78,11 @@ through the end of the input. A separated terminal `workspace=<identifier>`
 field remains visible only after a complete authorization value on the same
 physical line.
 
-Unlabeled values require registration by the consumer. The scanner does
-not inspect environment variables, decode arbitrary encodings, or modify raw
-protocol, terminal, or application data.
+Consumers must register unlabeled credentials, values under other names such
+as `Cookie` or `pwd`, and credentials whose labels fall outside this syntax.
+The scanner does not inspect environment variables, decode arbitrary encodings,
+or modify raw protocol, terminal, or application data.
 
-Run the fixtures and deterministic fuzz seeds with
-`node --test logging/desktop/*.test.ts` from the repository root.
+Run `node --test logging/desktop/*.test.ts` from the repository root with
+Node.js 24 or newer. Local development uses Node.js 24 through mise and CI
+uses Node.js 26. No TypeScript flags are required.

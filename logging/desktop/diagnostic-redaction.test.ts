@@ -44,6 +44,27 @@ test("includes embedded and trailing punctuation in unquoted values", () => {
   assertAssignment("Authorization: ", `token auth-canary;${workspace}`)
 })
 
+test("recognizes qualified assignments with space-separated credential names", () => {
+  for (const key of [
+    '"request.private key"',
+    "'response.headers.Access\tKey'",
+    '"request.encrypted private key"',
+    '"telemetry.request.telemetry distinct id"',
+    "request.private key",
+  ]) {
+    assertAssignment(`${key}=`, '"qualified canary"', workspace)
+  }
+  assertAssignment(
+    '"request.headers.Proxy Authorization": ',
+    "Extension qualified-canary",
+    workspace,
+  )
+  assert.deepEqual(
+    [...credentialAssignments('"request.workspace name"="staging"')],
+    [],
+  )
+})
+
 test("keeps complete quoted, grouped and chained credential boundaries", () => {
   assertAssignment("token=", '"prefix \\"quoted-canary"', workspace)
   assertAssignment(

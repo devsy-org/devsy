@@ -37,7 +37,12 @@ function credentialAssignment(
   allowProse: boolean,
 ) {
   const { index } = match
-  const keyEnd = compoundKeyEnd(value, index, index + match[0].length)
+  const keyEnd = assignmentKeyEnd(
+    value,
+    index,
+    index + match[0].length,
+    allowProse,
+  )
   const label = value.slice(index, keyEnd)
   const key = normalizeKey(label)
   if (!credentialKey.test(key)) return
@@ -76,13 +81,35 @@ function credentialContent(
   return { start, authorizationStart }
 }
 
+function assignmentKeyEnd(
+  value: string,
+  start: number,
+  end: number,
+  allowProse: boolean,
+): number {
+  const quote = value[start - 1]
+  if (isQuote(quote)) {
+    const suffix = /[a-z0-9_. \t-]*(["'])/iy
+    suffix.lastIndex = end
+    const closing = suffix.exec(value)
+    if (closing?.[1] === quote) {
+      const quotedEnd = suffix.lastIndex - 1
+      if (assignmentValueStart(value, quotedEnd, allowProse) >= 0) {
+        return quotedEnd
+      }
+    }
+  }
+  return compoundKeyEnd(value, start, end)
+}
+
 function compoundKeyEnd(value: string, start: number, end: number): number {
+  const leafStart = start + value.slice(start, end).lastIndexOf(".") + 1
   const suffix = /[ \t]+[a-z0-9_.-]+/iy
   suffix.lastIndex = end
   for (let part = 0; part < 2 && suffix.exec(value); part++) {
     if (
       compoundCredentialKey.test(
-        normalizeKey(value.slice(start, suffix.lastIndex)),
+        normalizeKey(value.slice(leafStart, suffix.lastIndex)),
       )
     ) {
       end = suffix.lastIndex
