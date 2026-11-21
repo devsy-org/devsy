@@ -77,5 +77,5 @@ func (s *StreamingBoundarySuite) TestRepeatedOutputDoesNotBufferWholeStream() {
 	stream := redact.NewDiagnosticStream(redactor)
 	emitted := stream.RedactChunk(input)
 	s.GreaterOrEqual(len(emitted), 3*(count-1))
-	s.Equal(redactor.RedactDiagnostic(input), emitted+stream.Flush())
+	s.Equal(strings.Repeat("***", count), emitted+stream.Flush())
 }
