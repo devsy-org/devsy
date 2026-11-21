@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/completion"
@@ -28,6 +29,11 @@ const (
 type DeleteCmd struct {
 	*flags.GlobalFlags
 	client2.DeleteOptions
+
+	SkipPlatform bool
+
+	// Out receives platform gateway output. Nil selects stdout.
+	Out io.Writer
 }
 
 // NewDeleteCmd creates a new command.
@@ -44,8 +50,14 @@ func NewDeleteCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 Aliases "rm" and "down" perform the same full Devsy workspace teardown.
 For Docker Compose workspaces, teardown uses Docker/Podman Compose down.
 
-Use --ignore-not-found to treat a missing workspace as success.`,
+Use --ignore-not-found to treat a missing workspace as success.
+
+When you are logged in to a platform gateway ('devsy login'), the named
+workspaces are deleted on the gateway. The gateway accepts the request and the
+workspaces are removed in the background. Use --skip-platform to delete a local
+workspace instead.`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			cmd.Out = cobraCmd.OutOrStdout()
 			return cmd.Run(cobraCmd, args)
 		},
 		ValidArgsFunction: func(
@@ -74,6 +86,8 @@ Use --ignore-not-found to treat a missing workspace as success.`,
 		cliflags.Bool(&cmd.RemoveVolumes, names.RemoveVolumes, false,
 			"Remove named volumes associated with the workspace "+
 				"(docker compose only)"),
+		cliflags.Bool(&cmd.SkipPlatform, names.SkipPlatform, false,
+			"Don't delete on the platform gateway, even when logged in"),
 	)
 	return deleteCmd
 }
@@ -81,6 +95,9 @@ Use --ignore-not-found to treat a missing workspace as success.`,
 // Run runs the command logic.
 func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	ctx := cobraCmd.Context()
+	if handled, err := cmd.runPlatform(ctx, args); handled {
+		return err
+	}
 	reporter, err := newWorkspaceStatusReporter(
 		cmd.ResultFormat,
 		os.Stdout,
@@ -127,6 +144,34 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	recordWorkspaceCount(ctx, devsyConfig)
 
 	return deleteErr
+}
+
+// runPlatform deletes the named workspaces on the platform gateway when there
+// is a gateway login. It reports handled=false when the delete is local: no
+// gateway config, --skip-platform, or no names (the interactive picker lists
+// local workspaces). A logged-out config is refused rather than deleted
+// locally, because the name was meant for the gateway.
+func (cmd *DeleteCmd) runPlatform(ctx context.Context, args []string) (bool, error) {
+	if cmd.SkipPlatform || len(args) == 0 {
+		return false, nil
+	}
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return false, nil
+	}
+	if loggedOut(devsyConfig) {
+		return true, errLoggedOut
+	}
+	creds := platformCredentials(devsyConfig)
+	if creds == nil {
+		return false, nil
+	}
+	target, err := newLifecycleTarget(cmd.GlobalFlags, creds, cmd.Out)
+	if err != nil {
+		return true, err
+	}
+	target.ignoreNotFound = cmd.IgnoreNotFound
+	return true, runPlatformLifecycle(ctx, target, deleteAction, args)
 }
 
 // deleteInteractively resolves the deletion target with a single interactive

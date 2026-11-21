@@ -25,11 +25,34 @@ type Config struct {
 	// Contexts holds the config contexts
 	Contexts map[string]*ContextConfig `json:"contexts,omitempty"`
 
+	// Gateway holds the managed platform gateway login written by `devsy login`.
+	Gateway *GatewayCredentials `json:"gateway,omitempty"`
+
 	// Origin holds the path where this config was loaded from
 	Origin string `json:"-"`
 
 	// OriginalContext is the original default context
 	OriginalContext string `json:"-"`
+}
+
+// GatewayCredentials is the platform gateway login. It holds an org-scoped API
+// key, never the account password or a session token.
+type GatewayCredentials struct {
+	// URL is the gateway base URL without a trailing slash.
+	URL string `json:"url"`
+
+	// OrgID and OrgName identify the org the key belongs to.
+	OrgID   string `json:"orgId"`
+	OrgName string `json:"orgName"`
+
+	// KeyID is the public key identifier (api_keys.key_id).
+	KeyID string `json:"keyId"`
+
+	// KeyRecordID is the key's record ID (api_keys.id), used to revoke it.
+	KeyRecordID string `json:"keyRecordId"`
+
+	// APIKey is the full secret key. It must never be printed or logged.
+	APIKey string `json:"apiKey"`
 }
 
 type ContextConfig struct {
