@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"go.uber.org/zap/zapcore"
 )
@@ -29,7 +30,7 @@ func PassthroughWriter() io.WriteCloser {
 // supplied streaming redactor before anything leaves the process.
 func PassthroughWriterWithRedactor(redactor *redact.Redactor) io.WriteCloser {
 	return &passthroughWriter{
-		stream: redact.NewStream(redactor),
+		stream: diagnosticredact.Stream(redactor),
 	}
 }
 

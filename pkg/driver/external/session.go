@@ -13,6 +13,7 @@ import (
 	sdkplugin "github.com/devsy-org/devsy-runtime-sdk/plugin"
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
 	"github.com/devsy-org/devsy-runtime-sdk/supervisor"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/hashicorp/go-hclog"
@@ -38,7 +39,7 @@ func (h *Host) call(
 	output := log.Writer(log.LevelDebug)
 	diagnostic := &diagnosticWriter{
 		writer: output,
-		stream: redact.NewStream(h.redactor),
+		stream: diagnosticredact.Stream(h.redactor),
 	}
 	defer func() { diagnostic.close(); _ = output.Close() }()
 	client := h.newPluginClient(ctx, binary, diagnostic)

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -140,17 +141,14 @@ func (w *redactingWriter) Sync() error {
 
 func (w *redactingWriter) redactOutput(input string) string {
 	if w.completeRecords {
-		if w.redactor == nil {
-			return input
-		}
-		result := w.redactor.Redact(input)
+		result := diagnosticredact.Record(w.redactor, input)
 		if strings.HasSuffix(input, "\n") && !strings.HasSuffix(result, "\n") {
 			return result + "\n"
 		}
 		return result
 	}
 	if w.stream == nil {
-		w.stream = redact.NewStream(w.redactor)
+		w.stream = diagnosticredact.Stream(w.redactor)
 	}
 	return w.stream.RedactChunk(input)
 }
