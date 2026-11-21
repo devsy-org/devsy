@@ -368,13 +368,26 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 
 func writeCLIErrorText(cliErr *clierr.CLIError) {
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
-	fmt.Fprintf(os.Stderr, "Error: %s\n", redactor.RedactDiagnostic(cliErr.Message))
+	fmt.Fprintf(os.Stderr, "Error: %s\n", redactCLIErrorValue(redactor, cliErr.Message))
 	if cliErr.Code != "" && cliErr.Code != clierr.CodeUnknown {
 		fmt.Fprintf(os.Stderr, "Error code: %s\n", redactor.Redact(string(cliErr.Code)))
 	}
 	writeCLIErrorContext(cliErr.Context, redactor)
 	if cliErr.Hint != "" {
-		fmt.Fprintf(os.Stderr, "Try: %s\n", redactor.RedactDiagnostic(cliErr.Hint))
+		fmt.Fprintf(os.Stderr, "Try: %s\n", redactCLIErrorValue(redactor, cliErr.Hint))
+	}
+}
+
+func redactCLIErrorValue(redactor *redact.Redactor, value string) string {
+	conservative := redactor.Redact(value)
+	diagnostic := redactor.RedactDiagnostic(value)
+	switch {
+	case conservative == value || conservative == diagnostic:
+		return diagnostic
+	case diagnostic == value:
+		return conservative
+	default:
+		return redactor.Mask()
 	}
 }
 
@@ -393,7 +406,7 @@ func writeCLIErrorContext(errContext map[string]string, redactor *redact.Redacto
 			os.Stderr,
 			"  %s: %s\n",
 			redactor.Redact(key),
-			redactor.RedactDiagnostic(errContext[key]),
+			redactCLIErrorValue(redactor, errContext[key]),
 		)
 	}
 }
