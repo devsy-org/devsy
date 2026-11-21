@@ -34,6 +34,7 @@ const (
 const (
 	testDockerHostEnvKey      = "DOCKER_HOST"
 	testSetupSSHServerCommand = "ssh-server --stdio"
+	testSetupDebugLevel       = "debug"
 )
 
 type setupSSHDriver struct {
@@ -578,7 +579,7 @@ func TestBuildSSHTunnelArgvPreservesLiteralArguments(t *testing.T) {
 	}{
 		{slog.LevelWarn, nil},
 		{slog.LevelInfo, []string{"--log-level", "info"}},
-		{slog.LevelDebug, []string{"--log-level", "debug"}},
+		{slog.LevelDebug, []string{"--log-level", testSetupDebugLevel}},
 	} {
 		log.InitTestObserved(t, test.level)
 		r := setupSSHArgvRunner(&mockDriver{})

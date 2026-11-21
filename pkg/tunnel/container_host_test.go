@@ -71,7 +71,7 @@ func TestHostTunnelExecutesLiteralAgentPath(t *testing.T) {
 				"internal",
 				"ssh-server",
 				hostTunnelStdioFlag,
-				"--log-level",
+				testTunnelLogLevelFlag,
 				"debug",
 			}
 			require.Equal(t, strings.Join(args, "\x00")+"\x00host-input\n", stdout.String())
@@ -132,7 +132,7 @@ func TestContainerTunnelPreservesLiteralHostArguments(t *testing.T) {
 					mode,
 					"--workspace-info",
 					workspace.info,
-					"--log-level",
+					testTunnelLogLevelFlag,
 					"debug",
 				)
 			}
