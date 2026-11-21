@@ -68,7 +68,7 @@ diagnostics or the command's own output.
 | Output | Effect of `--no-status` |
 | --- | --- |
 | Devsy progress | Hidden, including progress from the nested workspace command |
-| Devsy diagnostics | Still controlled by `--quiet`, `--log-level`, and diagnostic format |
+| Devsy diagnostics | Controlled by `--log-level` and `--log-format` |
 | Command stdout and stderr | Preserved on their original streams |
 | Recorded events | Still recorded where the command already records them |
 
@@ -78,11 +78,10 @@ For example, keep warnings and errors while hiding progress:
 devsy ci --no-status --result-format=plain --log-level=warn . -- bash .tools/test.sh
 ```
 
-To show only errors, use `--quiet` instead. It takes precedence over
-`--log-level=warn` and suppresses warnings too:
+To show only errors, set the diagnostic level to `error`.
 
 ```sh
-devsy ci --no-status --result-format=plain --quiet . -- bash .tools/test.sh
+devsy ci --no-status --result-format=plain --log-level=error . -- bash .tools/test.sh
 ```
 
 When stdout is redirected, use `--result-format=plain` to keep the success

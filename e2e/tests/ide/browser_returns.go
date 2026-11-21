@@ -22,6 +22,8 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const debugLevelFlag = "--log-level=debug"
+
 const gpgTestKeyFingerprint = "07F681B9FD6C3411F679BFD1F51769DB572DDD3F"
 
 // setupBrowserIDE prepares a docker provider and workspace tempdir and registers
@@ -341,7 +343,7 @@ var _ = ginkgo.Describe(
 
 				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
 					"--ide=openvscode", "--ide-launch=headless",
-					names.Flag(names.SSHGPGForwarding), "--debug")
+					names.Flag(names.SSHGPGForwarding), debugLevelFlag)
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
 
@@ -416,7 +418,7 @@ var _ = ginkgo.Describe(
 				)
 
 				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
-					"--ide=openvscode", "--ide-launch=headless", "--debug")
+					"--ide=openvscode", "--ide-launch=headless", debugLevelFlag)
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
 				gomega.Expect(combined).
@@ -468,7 +470,7 @@ var _ = ginkgo.Describe(
 			func(ctx context.Context) {
 				f, tempDir := setupBrowserIDE(ctx, initialDir)
 				stdout, stderr, err := f.DevsyUpStreamsRaw(ctx, tempDir,
-					"--ide=openvscode", "--ide-launch=headless", "--debug")
+					"--ide=openvscode", "--ide-launch=headless", debugLevelFlag)
 				framework.ExpectNoError(err)
 				combined := stdout + stderr
 

@@ -250,7 +250,6 @@ export class CliRunner {
       "--context",
       "-c",
       "--log-level",
-      "--log-output",
       "--log-format",
       "--result-format",
       "--config",
@@ -330,7 +329,7 @@ export class CliRunner {
     if (includeResultFormat && !hasFlag("--result-format")) {
       command.push("--result-format", this.policy.resultFormat)
     }
-    if (!hasFlag("--log-output") && !hasFlag("--log-format")) {
+    if (!hasFlag("--log-format")) {
       command.push("--log-format", this.policy.logOutput)
     }
     return [...this.prefixArgs, ...command, ...payload]

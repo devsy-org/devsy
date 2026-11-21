@@ -18,6 +18,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
@@ -210,7 +211,11 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	// workspace.
 	ctx, cancel := up.WithSignals(ctx)
 	defer cancel()
-	reporter, err := newStatusReporter(os.Stderr, cmd.Verbosity > 0 || cmd.Debug, cmd.NoStatus)
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return err
+	}
+	reporter, err := newStatusReporter(mode, os.Stderr, log.InfoEnabled(), cmd.NoStatus)
 	if err != nil {
 		return err
 	}

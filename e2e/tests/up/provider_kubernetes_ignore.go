@@ -145,7 +145,7 @@ var _ = ginkgo.Describe(
 						[]string{
 							"workspace",
 							"up",
-							"--debug",
+							debugFlag,
 							"--ide",
 							kubernetesIgnoreIDE,
 							workspace,

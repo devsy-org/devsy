@@ -84,7 +84,7 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	reporter, err := newWorkspaceStatusReporter(
 		cmd.ResultFormat,
 		os.Stdout,
-		cmd.Verbosity > 0 || cmd.Debug,
+		log.InfoEnabled(),
 		cmd.NoStatus,
 	)
 	if err != nil {

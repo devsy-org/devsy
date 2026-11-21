@@ -3,12 +3,18 @@ package ci
 import (
 	"io"
 
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
-func newStatusReporter(out io.Writer, verbose bool, noStatus bool) (status.Reporter, error) {
+func newStatusReporter(
+	format string,
+	out io.Writer,
+	verbose bool,
+	noStatus bool,
+) (status.Reporter, error) {
 	return status.NewCLIReporter(status.CLIOptions{
-		Format:   "plain",
+		Format:   format,
 		Out:      out,
 		Prefix:   "ci",
 		Verbose:  verbose,
@@ -28,6 +34,6 @@ func newStatusReporter(out io.Writer, verbose bool, noStatus bool) (status.Repor
 			status.PhaseRunningCommand:        "running command",
 			status.PhaseDeletingWorkspace:     "tearing down workspace",
 		},
-		Envelope: func(status.Event) error { return nil },
+		Envelope: func(e status.Event) error { return config2.WriteStatusJSON(out, e) },
 	})
 }

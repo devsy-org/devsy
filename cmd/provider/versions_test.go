@@ -11,7 +11,7 @@ func TestNewVersionsCmd_Wiring(t *testing.T) {
 	if cmd.Use != "versions [name]" {
 		t.Errorf("Use: got %q want %q", cmd.Use, "versions [name]")
 	}
-	for _, name := range []string{"json", "prerelease", "no-cache"} {
+	for _, name := range []string{"prerelease", "no-cache"} {
 		if cmd.Flag(name) == nil {
 			t.Errorf("missing flag %q", name)
 		}

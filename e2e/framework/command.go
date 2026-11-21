@@ -26,7 +26,7 @@ const (
 var (
 	flagResultFormat = names.Flag(names.ResultFormat)
 	flagIDE          = names.Flag(names.IDE)
-	flagDebug        = names.Flag(names.Debug)
+	flagDebug        = names.FlagValue(names.LogLevel, "debug")
 	flagCommand      = names.Flag(names.Command)
 )
 

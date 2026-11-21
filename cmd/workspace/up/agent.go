@@ -151,7 +151,7 @@ func (cmd *UpCmd) runProxyUpCommand(
 
 	err := client.Up(ctx, client2.UpOptions{
 		CLIOptions: baseOptions,
-		Debug:      cmd.Debug,
+		Debug:      log.DebugEnabled(),
 		Stdin:      stdin,
 		Stdout:     stdout,
 	})
@@ -170,7 +170,7 @@ func (cmd *UpCmd) devsyUpDaemon(
 
 	return client.Up(ctx, client2.UpOptions{
 		CLIOptions: baseOptions,
-		Debug:      cmd.Debug,
+		Debug:      log.DebugEnabled(),
 		Reporter:   cmd.reporter(),
 	})
 }

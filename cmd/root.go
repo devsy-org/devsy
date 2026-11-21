@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"runtime/debug"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/ci"
@@ -47,7 +46,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 	"k8s.io/klog/v2"
@@ -58,7 +56,6 @@ const (
 	logOutputLogfmt = "logfmt"
 	logOutputText   = "text"
 
-	flagLogOutput = "--" + names.LogOutput
 	flagLogFormat = "--" + names.LogFormat
 
 	internalCommand = "internal"
@@ -85,30 +82,22 @@ func platformEnabled() bool {
 	return config.IsPlatformEnabled()
 }
 
-// isMachineLogFormat reports whether the configured --log-output mode produces
-// a structured, machine-parseable stream (json or logfmt). Callers use this to
-// suppress decorative human-readable affordances that would corrupt the stream.
 func isMachineLogFormat(format string) bool {
 	return format == logOutputJSON || format == logOutputLogfmt
 }
 
-func logOutputFromArgs(args []string) string {
+func logFormatFromArgs(args []string) string {
 	var format string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
 			break
 		}
-		for _, name := range []string{flagLogOutput, flagLogFormat} {
-			if val, ok := strings.CutPrefix(arg, name+"="); ok {
-				format = val
-				break
-			}
-			if arg == name && i+1 < len(args) {
-				i++
-				format = args[i]
-				break
-			}
+		if val, ok := strings.CutPrefix(arg, flagLogFormat+"="); ok {
+			format = val
+		} else if arg == flagLogFormat && i+1 < len(args) {
+			i++
+			format = args[i]
 		}
 	}
 	return format
@@ -231,9 +220,9 @@ func configureOutput(
 	globalFlags *flags.GlobalFlags,
 	isInternal bool,
 ) bool {
-	logOutput := logOutputFromArgs(os.Args[1:])
+	logOutput := logFormatFromArgs(os.Args[1:])
 	if logOutput == "" && rootCmd.PersistentFlags().Changed(names.LogFormat) {
-		logOutput = globalFlags.LogOutput
+		logOutput = globalFlags.LogFormat
 	}
 	logOutput = normalizeLogOutput(logOutput)
 	machineMode := isMachineConsumer(logOutput, isInternal)
@@ -249,12 +238,8 @@ func configureOutput(
 		}
 	}
 	log.Init(log.Config{
-		Verbosity:    globalFlags.Verbosity,
-		Quiet:        globalFlags.Quiet,
-		Debug:        globalFlags.Debug,
 		Level:        globalFlags.LogLevel,
 		DefaultLevel: defaultLogLevel(globalFlags),
-		VerbositySet: rootCmd.PersistentFlags().Changed(names.Verbose),
 		Format:       format,
 		Redactor:     redact.New(redact.Options{Environment: os.Environ()}),
 	})
@@ -419,7 +404,7 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
 	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
-		return rootPreRun(cobraCmd, globalFlags, persistentFlags)
+		return rootPreRun(cobraCmd, globalFlags)
 	}
 	rootCmd.PersistentPostRunE = func(_ *cobra.Command, _ []string) error {
 		if globalFlags.DevsyHome != "" {
@@ -460,12 +445,11 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 func rootPreRun(
 	cobraCmd *cobra.Command,
 	globalFlags *flags.GlobalFlags,
-	persistentFlags *pflag.FlagSet,
 ) error {
 	if err := validateLogLevel(globalFlags.LogLevel); err != nil {
 		return err
 	}
-	if err := applyOutputControls(cobraCmd, globalFlags, persistentFlags); err != nil {
+	if err := validateOutputModes(globalFlags); err != nil {
 		return err
 	}
 	if globalFlags.DevsyHome != "" {
@@ -477,13 +461,9 @@ func rootPreRun(
 	cobraCmd.SilenceUsage = true
 
 	log.Init(log.Config{
-		Verbosity:    globalFlags.Verbosity,
-		Quiet:        globalFlags.Quiet,
-		Debug:        globalFlags.Debug,
 		Level:        globalFlags.LogLevel,
 		DefaultLevel: defaultLogLevel(globalFlags),
-		VerbositySet: persistentFlags.Changed(names.Verbose),
-		Format:       resolveLogFormat(cobraCmd, globalFlags.LogOutput),
+		Format:       resolveLogFormat(cobraCmd, globalFlags.LogFormat),
 		Redactor:     redact.New(redact.Options{Environment: os.Environ()}),
 	})
 	klog.SetLogger(logr.New(log.LogrSink()))
@@ -499,32 +479,12 @@ func rootPreRun(
 	return nil
 }
 
-func applyOutputControls(
-	cmd *cobra.Command,
-	globals *flags.GlobalFlags,
-	flags *pflag.FlagSet,
-) error {
-	if flags.Changed(names.LogFormat) && !flags.Changed(names.LogOutput) {
-		if _, ok := logging.ParseFormat(globals.LogOutput); !ok {
-			return errors.New("invalid log format, expected auto, text, plain, json, or logfmt")
-		}
+func validateOutputModes(globals *flags.GlobalFlags) error {
+	if _, ok := logging.ParseFormat(globals.LogFormat); !ok {
+		return errors.New("invalid log format, expected auto, text, plain, json, or logfmt")
 	}
-	if !flags.Changed(names.ResultFormat) {
-		return nil
-	}
-	mode, err := output.ResolveMode(globals.ResultFormat)
-	if err != nil {
-		return err
-	}
-	return setLegacyJSONOutput(cmd, mode == output.ModeJSON)
-}
-
-func setLegacyJSONOutput(cmd *cobra.Command, jsonOutput bool) error {
-	legacy := cmd.Flags().Lookup(names.JSON)
-	if legacy == nil || legacy.Changed || legacy.Value.Type() != "bool" {
-		return nil
-	}
-	return legacy.Value.Set(strconv.FormatBool(jsonOutput))
+	_, err := output.ResolveMode(globals.ResultFormat)
+	return err
 }
 
 // checkPendingContextDeletion blocks commands until a crashed deletion is

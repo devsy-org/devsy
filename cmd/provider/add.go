@@ -171,7 +171,7 @@ func (cmd *AddCmd) install(
 }
 
 func (cmd *AddCmd) verbose() bool {
-	return cmd.Verbosity > 0 || cmd.Debug
+	return log.InfoEnabled()
 }
 
 type resolvedAddSource struct {

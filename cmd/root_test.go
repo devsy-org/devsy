@@ -123,36 +123,35 @@ func TestTopLevelCommand(t *testing.T) {
 	}
 }
 
-func TestLogOutputFromArgs(t *testing.T) {
+func TestLogFormatFromArgs(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
 		want string
 	}{
 		{"absent returns empty", []string{cmdProvider, cmdList}, ""},
-		{"space-separated log-output", []string{"up", flagLogOutput, logOutputJSON}, logOutputJSON},
+		{"space-separated log-format", []string{"up", flagLogFormat, logOutputJSON}, logOutputJSON},
 		{
-			"equals-form log-output",
-			[]string{"up", flagLogOutput + "=" + logOutputJSON},
+			"equals-form log-format",
+			[]string{"up", flagLogFormat + "=" + logOutputJSON},
 			logOutputJSON,
 		},
-		{"log-format alias", []string{"up", flagLogFormat, logOutputLogfmt}, logOutputLogfmt},
 		{
-			"equals-form log-format alias",
+			"log-format before command",
 			[]string{flagLogFormat + "=" + logOutputJSON, "up"},
 			logOutputJSON,
 		},
 		{
 			"flag before unknown command",
-			[]string{flagLogOutput, logOutputJSON, "bogus"},
+			[]string{flagLogFormat, logOutputJSON, "bogus"},
 			logOutputJSON,
 		},
-		{"trailing flag with no value returns empty", []string{"up", flagLogOutput}, ""},
+		{"trailing flag with no value returns empty", []string{"up", flagLogFormat}, ""},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, logOutputFromArgs(tc.args))
+			assert.Equal(t, tc.want, logFormatFromArgs(tc.args))
 		})
 	}
 }
@@ -202,9 +201,9 @@ func TestConfigureOutput_SilencesCobra(t *testing.T) {
 		isInternal bool
 		wantSilent bool
 	}{
-		{"json machine", []string{"up", flagLogOutput, logOutputJSON}, false, true},
-		{"logfmt machine", []string{"up", flagLogOutput, logOutputLogfmt}, false, true},
-		{"explicit text is human", []string{"up", flagLogOutput, logOutputText}, false, false},
+		{"json machine", []string{"up", flagLogFormat, logOutputJSON}, false, true},
+		{"logfmt machine", []string{"up", flagLogFormat, logOutputLogfmt}, false, true},
+		{"explicit text is human", []string{"up", flagLogFormat, logOutputText}, false, false},
 		{"internal stays silent", []string{internalCommand}, true, true},
 	}
 
@@ -240,8 +239,8 @@ func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rootCmd, globalFlags := BuildRoot()
-			globalFlags.Verbosity = 1
-			os.Args = []string{devsy, flagLogOutput, tc.flag}
+			globalFlags.LogLevel = "info"
+			os.Args = []string{devsy, flagLogFormat, tc.flag}
 			configureOutput(rootCmd, globalFlags, false)
 
 			var sink bytes.Buffer
@@ -298,7 +297,7 @@ func TestConfigureOutput_DefaultMachineModeUsesJSONLogs(t *testing.T) {
 	originalArgs := os.Args
 	t.Cleanup(func() { os.Args = originalArgs })
 	rootCmd, globalFlags := BuildRoot()
-	globalFlags.Verbosity = 1
+	globalFlags.LogLevel = "info"
 	os.Args = []string{devsy, internalCommand}
 	assert.True(t, configureOutput(rootCmd, globalFlags, true))
 

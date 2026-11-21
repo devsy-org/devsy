@@ -7,7 +7,6 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,12 +16,12 @@ const (
 	flagHelp   = "--help"
 )
 
-func TestGlobalFlags_LogFormatAlias(t *testing.T) {
+func TestGlobalFlags_LogFormat(t *testing.T) {
 	rootCmd, globalFlags := BuildRoot()
 	rootCmd.SetArgs([]string{flagLogFormat, formatJSON, "--version"})
 	err := rootCmd.Execute()
 	require.NoError(t, err)
-	assert.Equal(t, formatJSON, globalFlags.LogOutput)
+	assert.Equal(t, formatJSON, globalFlags.LogFormat)
 }
 
 func TestGlobalFlags_NoStatus(t *testing.T) {
@@ -68,7 +67,7 @@ func TestCanonicalOutputEnvironmentAndExplicitFlags(t *testing.T) {
 	t.Setenv(config.EnvNoStatus, config.BoolTrue)
 	root, globals := BuildRoot()
 	assert.Equal(t, "debug", globals.LogLevel)
-	assert.Equal(t, logOutputLogfmt, globals.LogOutput)
+	assert.Equal(t, logOutputLogfmt, globals.LogFormat)
 	assert.Equal(t, "text", globals.ResultFormat)
 	assert.True(t, globals.NoStatus)
 	root.SetArgs([]string{
@@ -77,19 +76,19 @@ func TestCanonicalOutputEnvironmentAndExplicitFlags(t *testing.T) {
 	})
 	require.NoError(t, root.Execute())
 	assert.Equal(t, "error", globals.LogLevel)
-	assert.Equal(t, formatJSON, globals.LogOutput)
+	assert.Equal(t, formatJSON, globals.LogFormat)
 	assert.Equal(t, formatJSON, globals.ResultFormat)
 	assert.False(t, globals.NoStatus)
 }
 
-func TestCanonicalResultControlBridgesLegacyCommand(t *testing.T) {
-	t.Setenv(config.EnvResultFormat, formatJSON)
-	root, globals := BuildRoot()
-	legacy := &cobra.Command{Use: "legacy-test"}
-	legacyJSON := legacy.Flags().Bool(names.JSON, false, "Output JSON")
-	require.NoError(t, applyOutputControls(legacy, globals, root.PersistentFlags()))
-	assert.True(t, *legacyJSON)
-	require.NoError(t, legacy.Flags().Set(names.JSON, config.BoolFalse))
-	require.NoError(t, applyOutputControls(legacy, globals, root.PersistentFlags()))
-	assert.False(t, *legacyJSON)
+func TestRetiredFlagsAreAbsent(t *testing.T) {
+	root, _ := BuildRoot()
+	for _, name := range []string{"verbose", "quiet", "debug", "log-output"} {
+		assert.Nil(t, root.PersistentFlags().Lookup(name))
+	}
+	assert.Nil(t, root.PersistentFlags().ShorthandLookup("v"))
+	assert.Nil(t, root.PersistentFlags().ShorthandLookup("q"))
+	versions, _, err := root.Find([]string{"provider", "versions"})
+	require.NoError(t, err)
+	assert.Nil(t, versions.Flags().Lookup("json"))
 }

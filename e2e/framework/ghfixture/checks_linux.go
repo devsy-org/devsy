@@ -274,7 +274,7 @@ func (c *checks) checkDispatch() bool {
 		{commandAPI, "--devsy-unknown-fixture-flag"},
 		{commandAPI, "--context", "sample"},
 		{commandAPI, "--log-level", "invalid"},
-		{commandAPI, "--log-output", "json"},
+		{commandAPI, "--log-format", "json"},
 	} {
 		expected := execute(c.ctx, processOptions{env: c.env, input: ""}, realGH, args...)
 		actual := c.gh("", nil, args...)
