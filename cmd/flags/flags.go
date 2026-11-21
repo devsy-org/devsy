@@ -68,7 +68,7 @@ func registerOutputFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 		&globalFlags.ResultFormat,
 		names.ResultFormat,
 		"auto",
-		"The result output format. Can be json, plain, or auto (auto picks plain on a TTY and json when piped)",
+		"The result output format. Can be auto, text, plain, or json",
 	)
 	flags.StringVar(
 		&globalFlags.LogOutput,
@@ -76,8 +76,12 @@ func registerOutputFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 		"text",
 		"The log format to use. Can be text, json, or logfmt",
 	)
-	flags.StringVar(&globalFlags.LogOutput, names.LogFormat, "text", "Alias for --log-output")
-	_ = flags.MarkHidden(names.LogFormat)
+	flags.StringVar(
+		&globalFlags.LogOutput,
+		names.LogFormat,
+		"text",
+		"The log format. Can be auto, text, plain, json, or logfmt",
+	)
 }
 
 func registerVerbosityFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
@@ -121,4 +125,8 @@ func bindGlobalEnvVars(flags *flag.FlagSet) {
 	pkgflags.BindEnv(flags, names.Context)
 	pkgflags.BindEnv(flags, names.Provider)
 	pkgflags.BindEnv(flags, names.Debug)
+	pkgflags.BindEnv(flags, names.LogLevel)
+	pkgflags.BindEnv(flags, names.LogFormat)
+	pkgflags.BindEnv(flags, names.ResultFormat)
+	pkgflags.BindEnv(flags, names.NoStatus)
 }

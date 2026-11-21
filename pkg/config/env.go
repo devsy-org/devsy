@@ -83,7 +83,10 @@ const (
 	EnvArch = "DEVSY_ARCH"
 
 	// EnvLogLevel is set to the current log level.
-	EnvLogLevel = "DEVSY_LOG_LEVEL"
+	EnvLogLevel     = "DEVSY_LOG_LEVEL"
+	EnvLogFormat    = "DEVSY_LOG_FORMAT"
+	EnvResultFormat = "DEVSY_RESULT_FORMAT"
+	EnvNoStatus     = "DEVSY_NO_STATUS"
 
 	// EnvWorkspaceID is the current workspace identifier.
 	EnvWorkspaceID = "DEVSY_WORKSPACE_ID"
