@@ -10,6 +10,10 @@ export function isCredentialKey(key: string): boolean {
   return credentialKey.test(normalizeKey(key))
 }
 
+function isAuthorizationName(normalized: string): boolean {
+  return normalized === "authorization" || normalized === "proxyauthorization"
+}
+
 export function* credentialAssignments(value: string, allowProse = false) {
   const tokens = /[a-z0-9_.-]+/gi
   for (let match = tokens.exec(value); match; match = tokens.exec(value)) {
@@ -33,14 +37,21 @@ function credentialAssignment(
   allowProse: boolean,
 ) {
   const { index } = match
-  const keyEnd = compoundKeyEnd(value, index, index + match[0].length)
-  const key = normalizeKey(value.slice(index, keyEnd))
+  const keyEnd = assignmentKeyEnd(
+    value,
+    index,
+    index + match[0].length,
+    allowProse,
+  )
+  const label = value.slice(index, keyEnd)
+  const key = normalizeKey(label)
   if (!credentialKey.test(key)) return
   const start = assignmentValueStart(value, keyEnd, allowProse)
   if (start < 0) return
   const quote = value[index - 1]
   const keyStart = isQuote(quote) && value[keyEnd] === quote ? index - 1 : index
-  const authorization = key === "authorization" || key === "proxyauthorization"
+  const leaf = normalizeKey(label.slice(label.lastIndexOf(".") + 1))
+  const authorization = isAuthorizationName(key) || isAuthorizationName(leaf)
   return {
     keyStart,
     start,
@@ -70,13 +81,35 @@ function credentialContent(
   return { start, authorizationStart }
 }
 
+function assignmentKeyEnd(
+  value: string,
+  start: number,
+  end: number,
+  allowProse: boolean,
+): number {
+  const quote = value[start - 1]
+  if (isQuote(quote)) {
+    const suffix = /[a-z0-9_. \t-]*(["'])/iy
+    suffix.lastIndex = end
+    const closing = suffix.exec(value)
+    if (closing?.[1] === quote) {
+      const quotedEnd = suffix.lastIndex - 1
+      if (assignmentValueStart(value, quotedEnd, allowProse) >= 0) {
+        return quotedEnd
+      }
+    }
+  }
+  return compoundKeyEnd(value, start, end)
+}
+
 function compoundKeyEnd(value: string, start: number, end: number): number {
+  const leafStart = start + value.slice(start, end).lastIndexOf(".") + 1
   const suffix = /[ \t]+[a-z0-9_.-]+/iy
   suffix.lastIndex = end
   for (let part = 0; part < 2 && suffix.exec(value); part++) {
     if (
       compoundCredentialKey.test(
-        normalizeKey(value.slice(start, suffix.lastIndex)),
+        normalizeKey(value.slice(leafStart, suffix.lastIndex)),
       )
     ) {
       end = suffix.lastIndex
@@ -146,7 +179,7 @@ function credentialValueEnd(
       : authorizationValueEnd(value, authorizationStart, end)
   }
   let next = start
-  while (next < value.length && !/[\s,;]/.test(value[next])) next++
+  while (next < value.length && !/\s/.test(value[next])) next++
   if (authorizationStart === undefined) return next
   return /^[a-z0-9._~+/-]+=*$/i.test(value.slice(start, next))
     ? authorizationValueEnd(value, authorizationStart, next)

@@ -41,7 +41,7 @@ Register secrets as literal values or supply the environment entries that contai
 
 The handler masks the whole value of any Authorization, Proxy-Authorization, Cookie, Set-Cookie, Cookie2, or Set-Cookie2 field. Name matching is exact and case insensitive at every attribute and decoded JSON depth. A structured scalar becomes a mask string when it matches a registered value or cannot be encoded as JSON. The redactor checks string leaves and rendered representations of other scalars, including duration nanoseconds and JSON representations of numbers and times. Nonmatching scalars that can be encoded keep their type. The handler drops an attribute if flattening its group path or generating a reserved-key alias would expose a registered value.
 
-An input accepted by Go’s JSON validator is decoded before redaction and emitted as valid JSON. This includes JSON escapes in names and URL values. Object order, whitespace, duplicate keys, and the precise text around secrets can change. A noncredential key remains independent of a similarly named credential key. Registered values can also mask keys or match an escaped Go string representation. If a registered literal spans JSON syntax or cannot be accounted for by a decoded scalar, the redactor replaces the document with a JSON mask string. A JSON-looking string inside a JSON value is also checked.
+An input accepted by Go’s JSON validator is decoded before redaction and emitted as valid JSON. This includes JSON escapes in names and URL values. A record can keep its original bytes when every decoded key and value survives redaction and no keys are repeated. When a record needs rewriting, object order, whitespace, duplicate keys, and the precise text around secrets can change. A noncredential key remains independent of a similarly named credential key. Registered values can also mask keys or match an escaped Go string representation. If a registered literal spans JSON syntax or cannot be accounted for by a decoded scalar, the redactor replaces the document with a JSON mask string. A JSON-looking string inside a JSON value is also checked.
 
 For unstructured text, the redactor masks registered values and uses two conservative patterns. A hierarchical URL with a literal scheme separator can mask everything between that separator and the last `@` on the same line. An Authorization or Proxy-Authorization assignment masks its value to the end of that line. A line ends at LF or CR. Pass other credential fields as structured attributes. Incomplete URLs without an `@` require a registered value or a structured credential field.
 
@@ -53,4 +53,36 @@ Use `RedactDiagnostic` for a complete diagnostic that may contain folded Authori
 
 Use `NewDiagnosticStream` to preserve long plain diagnostic tails for a bounded capture. It can emit parts of a record longer than 16 KiB when its first nonblank byte is outside the set of possible JSON starting bytes and its first 16 KiB contain neither `:` nor `=`. It retains possible registered-value prefixes across writes. If a `:` or `=` later appears, the stream masks the unresolved suffix through the next record delimiter. Long sequences of overlapping matches can emit multiple masks so that output continues during the record. If the mask includes a record separator, or a registered value contains a record separator or a byte present in the mask, the stream uses the conservative record buffering described above. `RedactDiagnostic` uses the same overlapping-match behavior for a complete long plain record.
 
-Use a separate channel for interactive prompts, protocol stdout, or raw business data. Pretty-printed JSON and folded credentials require a complete input. The redactor does not decode other secret representations such as base64, hex, or percent encoding. Register the emitted representation or supply a parsed structured field. Never log secrets intentionally.
+The diagnostic stream masks nonblank indented Authorization continuations and recognizes Basic or Bearer immediately after an empty assignment. It preserves the original delimiters and checks decoded strings in complete JSON records. An oversized opaque record can suppress a following possible continuation as a precaution.
+
+Use a separate channel for interactive prompts, protocol stdout, or raw business data. Pretty-printed JSON requires a complete input. The redactor does not decode other secret representations such as base64, hex, or percent encoding. Register the emitted representation or supply a parsed structured field. Never log secrets intentionally.
+
+## Desktop diagnostic scanner
+
+This module provides `desktop/diagnostic-redaction.ts` to identify credential
+assignments in diagnostic text. Desktop will adopt the scanner in a follow-up
+change. The scanner returns ordered, half-open UTF-16 ranges. Consumers choose
+the replacement marker and apply their separate registered-value policy.
+
+Text assignment labels use ASCII letters, digits, dots, underscores, and
+hyphens. Quoted labels and recognized bare compound names such as `private key`
+can also contain spaces and tabs. For classification, the scanner lowercases
+the label and removes separators. It recognizes labels containing `password`, `passwd`,
+`passphrase`, `token`, `secret`, `apikey`, `authorization`, `credential`,
+`privatekey`, `accesskey`, or `telemetrydistinctid` after normalization.
+`Authorization` and `Proxy-Authorization` names, including terminal
+dot-qualified properties, use authorization value rules. Unquoted values
+include punctuation up to whitespace. Quoted and grouped values keep their
+complete framing. Incomplete framing or an ambiguous authorization tail masks
+through the end of the input. A separated terminal `workspace=<identifier>`
+field remains visible only after a complete authorization value on the same
+physical line.
+
+Consumers must register unlabeled credentials, values under other names such
+as `Cookie` or `pwd`, and credentials whose labels fall outside this syntax.
+The scanner does not inspect environment variables, decode arbitrary encodings,
+or modify raw protocol, terminal, or application data.
+
+Run `node --test logging/desktop/*.test.ts` from the repository root with
+Node.js 24 or newer. Local development uses Node.js 24 through mise and CI
+uses Node.js 26. No TypeScript flags are required.

@@ -276,6 +276,14 @@ describe("main logger", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {})
     const fixtures = [
       [
+        "request.headers.authorization=Extension qualified-canary workspace=staging",
+        "request.headers.authorization=*** workspace=staging",
+      ],
+      [
+        "password=alpha,beta;gamma workspace=staging",
+        "password=*** workspace=staging",
+      ],
+      [
         "Authorization: token auth-canary workspace=staging",
         "Authorization: *** workspace=staging",
       ],

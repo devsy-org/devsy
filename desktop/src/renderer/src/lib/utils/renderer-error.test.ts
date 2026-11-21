@@ -96,6 +96,8 @@ describe("renderer error reporting", () => {
     'pRoXy-aUtHoRiZaTiOn: Extension "first alternate-canary"',
     "Authorization: 'first single-canary'",
     "Authorization: Basic Y2FuYXJ5IQ==",
+    "request.headers.authorization=Extension qualified-canary",
+    "password=alpha,beta;gamma",
   ])(
     "keeps compound credential values out of the reported payload",
     (field) => {

@@ -7,11 +7,11 @@ import {
   statSync,
 } from "node:fs"
 import { join } from "node:path"
-import type { LogLevel } from "../shared/app-settings.js"
 import {
   credentialAssignments,
   isCredentialKey,
-} from "../shared/diagnostic-redaction.js"
+} from "../../../logging/desktop/diagnostic-redaction.js"
+import type { LogLevel } from "../shared/app-settings.js"
 
 const rank: Record<LogLevel, number> = {
   error: 0,

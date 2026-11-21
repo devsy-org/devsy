@@ -1,4 +1,4 @@
-import { credentialAssignments } from "./diagnostic-redaction.js"
+import { credentialAssignments } from "../../../logging/desktop/diagnostic-redaction.js"
 
 export const rendererErrorMessages = {
   error: "Uncaught renderer error",
