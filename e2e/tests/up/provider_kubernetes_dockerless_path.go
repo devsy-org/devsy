@@ -127,12 +127,13 @@ func (fixture *dockerlessPathFixture) up(
 		names.Flag(names.IDE),
 		kubernetesIgnoreIDE,
 	}
-	stdout, stderr, upErr := fixture.framework.ExecCommandCapture(
+	stdout, stderr, upErr := fixture.framework.ExecCommandDiagnosticCapture(
 		commandCtx,
 		append(baseArgs, args...),
 	)
 	gomega.Expect(upErr).NotTo(gomega.HaveOccurred(),
-		"%s first CLI attempt: stdout=%s stderr=%s", phase, stdout, stderr)
+		"%s first CLI attempt: stdout=%s stderr=%s", phase,
+		fixtureDiagnostic(nil, stdout), fixtureDiagnostic(nil, stderr))
 	output := stdout + stderr
 	gomega.Expect(output).NotTo(gomega.ContainSubstring("failed to configure docker credentials"))
 	gomega.Expect(output).NotTo(gomega.ContainSubstring("docker credentials disabled"))

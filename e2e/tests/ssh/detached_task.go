@@ -62,7 +62,7 @@ func startDetachedTunnelUp(
 	args = append(args, workspace)
 	before := detachedTaskIDs()
 
-	out, err := f.ExecCommandOutput(ctx, args)
+	out, _, err := f.ExecCommandDiagnosticCapture(ctx, args)
 	if err != nil {
 		reportDetachedLaunchFailure(before, workspace)
 		return "", err
@@ -73,10 +73,17 @@ func startDetachedTunnelUp(
 	}
 	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
 	if err := json.Unmarshal([]byte(line), &env); err != nil {
-		return "", fmt.Errorf("parse task envelope %q: %w", out, err)
+		return "", fmt.Errorf(
+			"parse task envelope %q: %w",
+			sshDiagnostic(out),
+			err,
+		)
 	}
 	if env.Kind != "task" || env.ID == "" {
-		return "", fmt.Errorf("unexpected task envelope %q", line)
+		return "", fmt.Errorf(
+			"unexpected task envelope %q",
+			sshDiagnostic(line),
+		)
 	}
 	return env.ID, nil
 }

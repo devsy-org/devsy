@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/livetee"
 )
@@ -150,6 +152,8 @@ func LookupEnv(env []string, name string, foldCase bool) (string, bool) {
 	return val, found
 }
 
+var diagnosticRedactor = redact.New(redact.Options{Mask: redacted})
+
 var redactions = []struct {
 	re   *regexp.Regexp
 	with string
@@ -196,5 +200,5 @@ func Redact(s string, secrets ...string) string {
 	for _, r := range redactions {
 		s = r.re.ReplaceAllString(s, r.with)
 	}
-	return s
+	return diagnosticredact.Record(diagnosticRedactor, s)
 }

@@ -43,7 +43,7 @@ func (p *publicGHFixture) registerDiagnostics(
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		out, _, err := p.f.ExecCommandCapture(ctx, []string{
+		out, _, err := p.f.ExecCommandDiagnosticCapture(ctx, []string{
 			cmdWorkspace,
 			cmdSSH,
 			workspace,
@@ -51,6 +51,6 @@ func (p *publicGHFixture) registerDiagnostics(
 			flagCommand,
 			"head -c 4096 /tmp/fixture-api.log; pgrep -a ghfixture; stat -c '%a %u %g %n' /fixture/api-ready /fixture/cert.pem",
 		})
-		t.Logf("public API fixture diagnostics: %s (error: %v)", out, err)
+		t.Logf("public API fixture diagnostics: %s (error: %v)", sshDiagnostic(out), err)
 	})
 }

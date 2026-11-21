@@ -104,12 +104,13 @@ var _ = ginkgo.Describe(
 						"workspace", "up", "--debug", "--ide", "none",
 						"--pull-from-inside-container=true",
 					}
-					stdout, stderr, err := f.ExecCommandCapture(
+					stdout, stderr, err := f.ExecCommandDiagnosticCapture(
 						commandCtx,
 						append(baseArgs, args...),
 					)
 					gomega.Expect(err).
-						NotTo(gomega.HaveOccurred(), "%s first CLI attempt: stdout=%s stderr=%s", phase, stdout, stderr)
+						NotTo(gomega.HaveOccurred(), "%s first CLI attempt: stdout=%s stderr=%s", phase,
+							fixtureDiagnostic(nil, stdout), fixtureDiagnostic(nil, stderr))
 					for _, failure := range []string{
 						"chown ssh agent sock file",
 						"fatal: Unable to read current working directory",
@@ -214,10 +215,14 @@ func privateSSHGitFixture(
 			"refs/heads/main",
 		)
 		if err != nil {
-			return fmt.Errorf("authenticated fixture readiness: %w: %s", err, out)
+			return fmt.Errorf(
+				"authenticated fixture readiness: %w: %s",
+				err,
+				fixtureDiagnostic(env, out),
+			)
 		}
 		if !strings.Contains(out, sha) {
-			return fmt.Errorf("fixture HEAD mismatch: %s", out)
+			return fmt.Errorf("fixture HEAD mismatch: %s", fixtureDiagnostic(env, out))
 		}
 		return nil
 	}).WithTimeout(time.Minute).WithPolling(time.Second).Should(gomega.Succeed())
@@ -238,7 +243,8 @@ func expectUnauthenticatedDenied(ctx context.Context, source, sshOptions string)
 		source,
 	)
 	gomega.Expect(err).
-		To(gomega.HaveOccurred(), "private repository must deny unauthenticated ls-remote: %s", out)
+		To(gomega.HaveOccurred(), "private repository must deny unauthenticated ls-remote: %s",
+			fixtureDiagnostic(nil, out))
 	gomega.Expect(out).
 		To(gomega.ContainSubstring("Permission denied"), "unauthenticated failure must be authentication rejection")
 }
@@ -306,7 +312,8 @@ func startKindSSHGitServer(ctx context.Context, buildDir, id string) string {
 		defer cancel()
 		if ginkgo.CurrentSpecReport().Failed() {
 			out, err := runFixtureCommand(cleanupCtx, 2*time.Minute, nil, "docker", "logs", id)
-			ginkgo.GinkgoWriter.Printf("private SSH Git service logs:\n%s\nerror: %v\n", out, err)
+			ginkgo.GinkgoWriter.Printf("private SSH Git service logs:\n%s\nerror: %s\n",
+				fixtureDiagnostic(nil, out), fixtureDiagnostic(nil, fmt.Sprint(err)))
 		}
 		fixtureCommand(cleanupCtx, 2*time.Minute, nil, "docker", "rm", "-f", id)
 	})

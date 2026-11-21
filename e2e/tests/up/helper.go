@@ -89,10 +89,10 @@ func probeSSH(
 	out, err := f.DevsySSHOnce(probeCtx, workspace, command)
 	if err != nil {
 		ginkgo.GinkgoWriter.Printf(
-			"ssh readiness probe failed for %s (%s): %v\n",
+			"ssh readiness probe failed for %s (%s): %s\n",
 			workspace,
 			command,
-			err,
+			fixtureDiagnostic(nil, err.Error()),
 		)
 	}
 	return out, err

@@ -334,7 +334,7 @@ func microsandboxSSHAsRootOnce(
 	f *framework.Framework,
 	workspace, command string,
 ) (string, error) {
-	stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+	stdout, stderr, err := f.ExecCommandDiagnosticCapture(ctx, []string{
 		cmdWorkspace,
 		cmdSSH,
 		workspace,
@@ -345,7 +345,11 @@ func microsandboxSSHAsRootOnce(
 		names.Flag(names.Debug),
 	})
 	if err != nil {
-		return "", fmt.Errorf("devsy ssh as root failed: %w (stderr: %s)", err, stderr)
+		return "", fmt.Errorf(
+			"devsy ssh as root failed: %w (stderr: %s)",
+			err,
+			fixtureDiagnostic(nil, stderr),
+		)
 	}
 	return stdout, nil
 }
@@ -353,5 +357,6 @@ func microsandboxSSHAsRootOnce(
 func microsandboxMountCommand(ctx context.Context, args ...string) {
 	// #nosec G204 -- fixed runtime executable and test-owned volume arguments.
 	out, err := exec.CommandContext(ctx, "msb", args...).CombinedOutput()
-	gomega.Expect(err).NotTo(gomega.HaveOccurred(), fmt.Sprintf("msb %v: %s", args, out))
+	gomega.Expect(err).
+		NotTo(gomega.HaveOccurred(), fmt.Sprintf("msb %v: %s", args, fixtureDiagnostic(nil, string(out))))
 }
