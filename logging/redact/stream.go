@@ -16,6 +16,8 @@ type Stream struct {
 	search    *matchNode
 	records   []streamRecord
 	secrets   []byteSpan
+	keepPlain bool
+	plain     *plainRecord
 }
 
 type streamRecord struct {
@@ -26,10 +28,35 @@ type streamRecord struct {
 
 type byteSpan struct {
 	start, end int64
+	width      int64
 }
 
 func NewStream(redactor *Redactor) *Stream {
 	return &Stream{base: redactor}
+}
+
+func NewDiagnosticStream(redactor *Redactor) *Stream {
+	return &Stream{base: redactor, keepPlain: redactor != nil && redactor.canKeepPlain()}
+}
+
+func (r *Redactor) canKeepPlain() bool {
+	mask := r.Mask()
+	if strings.ContainsAny(mask, "\r\n") {
+		return false
+	}
+	var forbidden [256]bool
+	forbidden['\r'], forbidden['\n'] = true, true
+	for index := range len(mask) {
+		forbidden[mask[index]] = true
+	}
+	for _, value := range r.values {
+		for index := range len(value) {
+			if forbidden[value[index]] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *Stream) RedactChunk(chunk string) string {
@@ -43,10 +70,10 @@ func (s *Stream) RedactChunk(chunk string) string {
 	for chunk != "" {
 		i := strings.IndexAny(chunk, "\r\n")
 		if i < 0 {
-			s.ingest(chunk, 0)
+			s.ingest(chunk, 0, &output)
 			break
 		}
-		s.ingest(chunk[:i], chunk[i])
+		s.ingest(chunk[:i], chunk[i], &output)
 		chunk = chunk[i+1:]
 		s.drain(&output, s.safeOffset())
 	}
@@ -61,10 +88,13 @@ func (s *Stream) Flush() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.offset > s.lineStart {
+	var output strings.Builder
+	if s.plain != nil {
+		s.plain.emit(&output, s.plain.end, s.base.Mask())
+		s.plain = nil
+	} else if s.offset > s.lineStart {
 		s.finishLine(0)
 	}
-	var output strings.Builder
 	s.drain(&output, s.offset)
 	s.search = nil
 	s.offset, s.lineStart = 0, 0
@@ -72,7 +102,11 @@ func (s *Stream) Flush() string {
 	return output.String()
 }
 
-func (s *Stream) ingest(text string, delimiter byte) {
+func (s *Stream) ingest(text string, delimiter byte, output *strings.Builder) {
+	if s.keepPlain && (s.plain != nil || s.startPlain(text, output)) {
+		s.writePlain(text, delimiter, output)
+		return
+	}
 	if s.offset-s.lineStart <= streamLineLimit {
 		if len(text) > streamLineLimit-len(s.line) {
 			s.line = nil
@@ -85,6 +119,44 @@ func (s *Stream) ingest(text string, delimiter byte) {
 		s.scanDelimiter(delimiter)
 		s.finishLine(delimiter)
 	}
+}
+
+func (s *Stream) startPlain(text string, output *strings.Builder) bool {
+	if s.offset-s.lineStart > streamLineLimit || len(text) <= streamLineLimit-len(s.line) {
+		return false
+	}
+	const protected = ":="
+	prefix := text[:streamLineLimit-len(s.line)]
+	if strings.ContainsAny(string(s.line), protected) || strings.ContainsAny(prefix, protected) ||
+		!isPlainStart(string(s.line), prefix) {
+		return false
+	}
+	s.plain = &plainRecord{}
+	s.plain.write(output, string(s.line), s.base)
+	s.line = nil
+	return true
+}
+
+func isPlainStart(buffer, prefix string) bool {
+	start := strings.TrimLeft(buffer, " \t")
+	if start == "" {
+		start = strings.TrimLeft(prefix, " \t")
+	}
+	return start != "" && !strings.ContainsRune(`{["-0123456789tfn`, rune(start[0]))
+}
+
+func (s *Stream) writePlain(text string, delimiter byte, output *strings.Builder) {
+	s.plain.write(output, text, s.base)
+	s.offset += int64(len(text))
+	if delimiter == 0 {
+		return
+	}
+	s.plain.emit(output, s.plain.end, s.base.Mask())
+	output.WriteByte(delimiter)
+	s.plain = nil
+	s.search = nil
+	s.offset++
+	s.lineStart = s.offset
 }
 
 func (s *Stream) scan(text string) {
@@ -119,15 +191,24 @@ func (s *Stream) scanByte(value byte, delimiter bool) {
 }
 
 func (s *Stream) addSecret(span byteSpan) {
-	for len(s.secrets) != 0 {
-		previous := s.secrets[len(s.secrets)-1]
+	s.secrets = appendSpan(s.secrets, span)
+}
+
+func appendSpan(spans []byteSpan, span byteSpan) []byteSpan {
+	for len(spans) != 0 {
+		previous := spans[len(spans)-1]
 		if previous.end <= span.start {
 			break
 		}
-		span.start = min(span.start, previous.start)
-		s.secrets = s.secrets[:len(s.secrets)-1]
+		if previous.start < span.start {
+			span.start = previous.start
+			span.width = previous.width
+		} else if previous.start == span.start {
+			span.width = max(previous.width, span.width)
+		}
+		spans = spans[:len(spans)-1]
 	}
-	s.secrets = append(s.secrets, span)
+	return append(spans, span)
 }
 
 func (s *Stream) finishLine(delimiter byte) {
