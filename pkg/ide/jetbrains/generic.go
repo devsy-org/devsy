@@ -222,7 +222,7 @@ func (o *GenericJetBrainsServer) installPlugins(
 		return fmt.Errorf(
 			"failed to install JetBrains plugins %v: %w",
 			plugins,
-			command.WrapCommandError(out, err),
+			command.WrapCommandErrorWithEnvironment(out, err, installPluginsCommand.Environ()),
 		)
 	}
 

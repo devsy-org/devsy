@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
@@ -57,6 +58,17 @@ esac
 	require.NoError(t, err)
 	_, err = helper.InspectImageForPlatform(context.Background(), "test:base", "linux/arm64")
 	require.ErrorIs(t, err, ErrImageNotFound)
+	t.Setenv("DEVSY_TEST_PLATFORM_TOKEN", "unknown flag: --platform")
+	_, err = helper.InspectImageForPlatform(t.Context(), "test:base", "linux/amd64")
+	require.NoError(t, err)
+}
+
+func TestImageMissClassificationSurvivesOutputMasking(t *testing.T) {
+	const marker = "no such image"
+	t.Setenv("DEVSY_TEST_IMAGE_TOKEN", marker)
+	err := command.WrapCommandError([]byte(marker), errors.New("inspect failed"))
+	require.NotContains(t, err.Error(), marker)
+	require.ErrorIs(t, classifyImageError("fixture", err), ErrImageNotFound)
 }
 
 func TestValidateImagePlatform(t *testing.T) {

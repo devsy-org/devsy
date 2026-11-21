@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -34,6 +35,16 @@ func TestClassifyCancellation(t *testing.T) {
 }
 
 const testRateLimited = "rate limited"
+
+func TestClassifyDockerDaemonSurvivesOutputMasking(t *testing.T) {
+	const marker = "cannot connect to the docker daemon"
+	t.Setenv("DEVSY_TEST_DOCKER_TOKEN", marker)
+	err := command.WrapCommandError([]byte(marker), stderrs.New("inspect failed"))
+	got := Classify(fmt.Errorf("command failed: %w", err))
+	if got.Code != CodeDockerDaemonUnreachable || got.Message != dockerDaemonUnavailableMessage {
+		t.Fatalf("Classify masked Docker output = %+v", got)
+	}
+}
 
 func TestClassify_NilReturnsNil(t *testing.T) {
 	if got := Classify(nil); got != nil {

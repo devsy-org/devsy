@@ -12,10 +12,12 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	dockerclient "github.com/docker/docker/client"
 	"github.com/stretchr/testify/require"
@@ -23,11 +25,18 @@ import (
 )
 
 const (
-	helperModeEnv   = "DEVSY_TEST_DIAL_STDIO_MODE"
-	helperEchoMode  = "echo"
-	helperHangMode  = "hang"
-	shortShutdown   = 150 * time.Millisecond
-	boundedInterval = 5 * time.Second
+	helperModeEnv      = "DEVSY_TEST_DIAL_STDIO_MODE"
+	helperEchoMode     = "echo"
+	helperHangMode     = "hang"
+	shortShutdown      = 150 * time.Millisecond
+	boundedInterval    = 5 * time.Second
+	outputFixtureEnv   = "DEVSY_DOCKER_EFFECTIVE_OUTPUT_TOKEN"
+	stderrFixtureEnv   = "DEVSY_DOCKER_EFFECTIVE_STDERR_TOKEN"
+	jsonFixtureMode    = "fail-json-stderr"
+	jsonFixtureSizeEnv = "DEVSY_DOCKER_JSON_FIXTURE_SIZE"
+	bracketFixtureMode = "fail-bracketed-stderr"
+	utf8FixtureMode    = "fail-utf8-stderr"
+	inspectFixture     = "fixture"
 )
 
 var helperModes = map[string]func(){
@@ -39,6 +48,46 @@ var helperModes = map[string]func(){
 	"fail-secret": func() {
 		_, _ = fmt.Fprintln(os.Stderr, "auth failed for hunter2-token")
 		os.Exit(4)
+	},
+	"fail-effective-environment": func() {
+		_, _ = fmt.Fprintln(os.Stdout, "public output", os.Getenv(outputFixtureEnv))
+		_, _ = fmt.Fprintln(os.Stderr, "public diagnostic", os.Getenv(stderrFixtureEnv))
+		os.Exit(23)
+	},
+	"fail-long-stderr": func() {
+		value := os.Getenv(stderrFixtureEnv)
+		_, _ = fmt.Fprint(os.Stderr, strings.Repeat("a", (32<<10)-len(value)+1), value)
+		_, _ = fmt.Fprint(os.Stderr, strings.Repeat("b", 64<<10), "\npublic diagnostic tail\n")
+		os.Exit(23)
+	},
+	jsonFixtureMode: func() {
+		size, _ := strconv.Atoi(os.Getenv(jsonFixtureSizeEnv))
+		encoder := json.NewEncoder(os.Stderr)
+		encoder.SetIndent("", "  ")
+		_ = encoder.Encode(map[string]string{
+			"detail":  "public JSON diagnostic",
+			"filler":  strings.Repeat("x", size),
+			"message": os.Getenv(stderrFixtureEnv),
+		})
+		os.Exit(23)
+	},
+	bracketFixtureMode: func() {
+		size, _ := strconv.Atoi(os.Getenv(jsonFixtureSizeEnv))
+		_, _ = fmt.Fprintln(os.Stderr, "[task] operation blocked\n[1/3] checking runtime")
+		_, _ = fmt.Fprintln(os.Stderr, strings.Repeat("a", size))
+		_, _ = fmt.Fprintln(os.Stderr, "public diagnostic tail")
+		os.Exit(23)
+	},
+	utf8FixtureMode: func() {
+		_, _ = fmt.Fprint(
+			os.Stderr,
+			strings.Repeat("a\n", (16<<10)-1),
+			"a€\n",
+			strings.Repeat("m\n", 16<<10),
+			"€\n",
+			strings.Repeat("b\n", (16<<10)-1),
+		)
+		os.Exit(23)
 	},
 	helperHangMode: func() { time.Sleep(time.Minute) },
 	"lingering": func() {
@@ -62,6 +111,142 @@ func TestMain(m *testing.M) {
 		run()
 	}
 	os.Exit(0)
+}
+
+func TestDockerInspectMasksEffectiveEnvironment(t *testing.T) {
+	const privateOutput = "synthetic-docker-output-value"
+	const privateDiagnostic = "synthetic-docker-diagnostic-value"
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	helper := &DockerHelper{
+		DockerCommand: executable,
+		Environment: []string{
+			helperModeEnv + "=fail-effective-environment",
+			outputFixtureEnv + "=" + privateOutput,
+			stderrFixtureEnv + "=" + privateDiagnostic,
+		},
+	}
+	err = helper.Inspect(t.Context(), []string{inspectFixture}, "image", &[]map[string]any{})
+	require.Error(t, err)
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.Equal(t, 23, exit.ExitCode())
+	for _, text := range []string{"public output", "public diagnostic"} {
+		require.ErrorContains(t, err, text)
+	}
+	for _, text := range []string{privateOutput, privateDiagnostic} {
+		require.NotContains(t, err.Error(), text)
+	}
+}
+
+func TestDockerInspectMasksBeforeBoundingStderr(t *testing.T) {
+	const value = "synthetic-stderr-boundary-value"
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	helper := &DockerHelper{
+		DockerCommand: executable,
+		Environment: []string{
+			helperModeEnv + "=fail-long-stderr",
+			stderrFixtureEnv + "=" + value,
+		},
+	}
+	err = helper.Inspect(t.Context(), []string{inspectFixture}, "image", &[]map[string]any{})
+	require.Error(t, err)
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.Equal(t, 23, exit.ExitCode())
+	message := err.Error()
+	require.False(
+		t,
+		strings.Contains(message, "synthetic-stderr-boundary"),
+		"partial value reached the display",
+	)
+	require.True(t, strings.Contains(message, "public diagnostic tail"), "public tail missing")
+	require.Less(t, len(message), 66<<10)
+}
+
+func TestDockerInspectMasksPrettyJSONStderr(t *testing.T) {
+	const value = `synthetic"pretty-json-value`
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name string
+		size int
+	}{
+		{"complete", 0},
+		{"oversized", 96 << 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			helper := &DockerHelper{
+				DockerCommand: executable,
+				Environment: []string{
+					helperModeEnv + "=" + jsonFixtureMode,
+					jsonFixtureSizeEnv + "=" + strconv.Itoa(tc.size),
+					stderrFixtureEnv + "=" + value,
+				},
+			}
+			err := helper.Inspect(
+				t.Context(),
+				[]string{inspectFixture},
+				"image",
+				&[]map[string]any{},
+			)
+			require.Error(t, err)
+			message := err.Error()
+			require.False(
+				t,
+				strings.Contains(message, "pretty-json-value"),
+				"escaped value reached the display",
+			)
+			require.Contains(t, message, "***")
+			if tc.size == 0 {
+				require.Contains(t, message, "public JSON diagnostic")
+			}
+		})
+	}
+}
+
+func TestDockerInspectKeepsBracketedDiagnostics(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	for _, size := range []int{0, 96 << 10} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			helper := &DockerHelper{
+				DockerCommand: executable,
+				Environment: []string{
+					helperModeEnv + "=" + bracketFixtureMode,
+					jsonFixtureSizeEnv + "=" + strconv.Itoa(size),
+					"DEVSY_DOCKER_MULTILINE_TOKEN=first-line\nsecond-line",
+				},
+			}
+			err := helper.Inspect(
+				t.Context(),
+				[]string{inspectFixture},
+				"image",
+				&[]map[string]any{},
+			)
+			require.Error(t, err)
+			for _, detail := range []string{"[task] operation blocked", "[1/3] checking runtime", "public diagnostic tail"} {
+				require.True(t, strings.Contains(err.Error(), detail), "missing detail %q", detail)
+			}
+		})
+	}
+}
+
+func TestDockerInspectKeepsBoundedDiagnosticUTF8(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	helper := &DockerHelper{
+		DockerCommand: executable,
+		Environment:   []string{helperModeEnv + "=" + utf8FixtureMode},
+	}
+	err = helper.Inspect(t.Context(), []string{inspectFixture}, "image", &[]map[string]any{})
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.Equal(t, 23, exit.ExitCode())
+	require.False(t, utf8.Valid(exit.Stderr), "raw capture keeps its byte boundaries")
+	require.True(t, utf8.ValidString(err.Error()), "display contains an incomplete rune")
+	require.ErrorContains(t, err, "omitting ")
 }
 
 // spawnChild starts a long-lived descendant immediately and reports its pid,
