@@ -39,7 +39,7 @@ func WrapCombinedOutputError(output string, err error, environment []string) err
 	}
 	redactor := redact.New(redact.Options{Environment: environment})
 	masked := strings.TrimSpace(
-		diagnosticredact.Record(redactor, diagnosticredact.Records(redactor, output)),
+		diagnosticredact.Record(redactor, output),
 	)
 	if masked == "" {
 		return err

@@ -10,8 +10,11 @@ import (
 )
 
 func Records(redactor *redact.Redactor, value string) string {
+	if redactor == nil {
+		return value
+	}
 	if json.Valid([]byte(value)) {
-		return Record(redactor, value)
+		return wholeRecord(redactor, value)
 	}
 	var output strings.Builder
 	for value != "" {
@@ -23,7 +26,7 @@ func Records(redactor *redact.Redactor, value string) string {
 		}
 		record, separator, rest := splitDiagnosticRecord(value)
 		if json.Valid([]byte(record)) {
-			record = Record(redactor, record)
+			record = wholeRecord(redactor, record)
 		}
 		output.WriteString(record)
 		output.WriteString(separator)
@@ -90,6 +93,6 @@ func maskStructuredRecord(redactor *redact.Redactor, value string, output *strin
 	}
 	end := int(decoder.InputOffset())
 	output.WriteString(value[:end-len(record)])
-	output.WriteString(Record(redactor, string(record)))
+	output.WriteString(wholeRecord(redactor, string(record)))
 	return end
 }

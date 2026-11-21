@@ -67,3 +67,15 @@ func TestEnvironmentRecordsMaskJSONRecordsAfterPlainLines(t *testing.T) {
 		})
 	}
 }
+
+func TestRecordMasksJSONCredentialRecordsBeforePublicText(t *testing.T) {
+	const canary = "synthetic-cookie-record"
+	for name, separator := range map[string]string{"LF": "\n", "CR": "\r", "CRLF": "\r\n"} {
+		t.Run(name, func(t *testing.T) {
+			input := `{"Cookie":"` + canary + `"}` + separator + "public text"
+			output := Record(redact.FromEntries(nil), input)
+			assert.NotContains(t, output, canary)
+			assert.Contains(t, output, separator+"public text")
+		})
+	}
+}

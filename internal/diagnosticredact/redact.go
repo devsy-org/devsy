@@ -14,11 +14,20 @@ func EnvironmentRecord(value string) string {
 }
 
 func RecordWithEnvironment(environment []string, value string) string {
-	redactor := redact.New(redact.Options{Environment: environment})
-	return Record(redactor, Records(redactor, value))
+	return Record(redact.New(redact.Options{Environment: environment}), value)
 }
 
 func Record(redactor *redact.Redactor, value string) string {
+	if redactor == nil {
+		return value
+	}
+	if json.Valid([]byte(value)) {
+		return wholeRecord(redactor, value)
+	}
+	return wholeRecord(redactor, Records(redactor, value))
+}
+
+func wholeRecord(redactor *redact.Redactor, value string) string {
 	if redactor == nil {
 		return value
 	}

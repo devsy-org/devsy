@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,5 +195,15 @@ func TestEnsureBuilderRunning(t *testing.T) {
 	alreadyHelper := &AppleHelper{Command: stubContainer(t, "builder already running", 1)}
 	if err := alreadyHelper.EnsureBuilderRunning(context.Background()); err != nil {
 		t.Errorf("already-running must be tolerated, got %v", err)
+	}
+}
+
+func TestAppleCommandDiagnosticMasksJSONCredentialRecordBeforePublicText(t *testing.T) {
+	const canary = "synthetic-apple-cookie"
+	cmd := exec.Command("container", "list")
+	out := []byte(`{"Cookie":"` + canary + `"}` + "\n" + "public apple detail")
+	got := appleCommandDiagnostic(cmd, out)
+	if strings.Contains(got, canary) || !strings.Contains(got, "public apple detail") {
+		t.Fatalf("unexpected diagnostic %q", got)
 	}
 }
