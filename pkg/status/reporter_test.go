@@ -103,6 +103,17 @@ func TestNewReporter_AutoRequiresEnvelopeWhenNonInteractive(t *testing.T) {
 	}
 }
 
+func TestNewReporter_TextProducesPlainProgress(t *testing.T) {
+	for _, desktop := range []string{"", "true"} {
+		t.Setenv("DEVSY_UI", desktop)
+		var out bytes.Buffer
+		reporter, err := NewReporter(ReporterOptions{Format: "text", Out: &out})
+		require.NoError(t, err)
+		reporter.Report(Event{Phase: PhaseReady, State: StateSucceeded})
+		require.Equal(t, "[OK]   ready\n", out.String())
+	}
+}
+
 func TestNewReporter_DesktopForcesEnvelope(t *testing.T) {
 	t.Setenv("DEVSY_UI", "true")
 	var events []Event

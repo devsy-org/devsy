@@ -1,6 +1,7 @@
 package status
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,15 +32,21 @@ const (
 	formatAuto  = "auto"
 	formatJSON  = "json"
 	formatPlain = "plain"
+	formatText  = "text"
 )
 
 // NewReporter selects a status presentation.
 func NewReporter(opts ReporterOptions) (Reporter, error) {
-	r, err := newReporter(resolveFormat(opts), opts)
+	format := resolveFormat(opts)
+	desktop := os.Getenv("DEVSY_UI") == "true"
+	if opts.NoStatus && desktop && (format == formatPlain || format == formatText) {
+		format = formatJSON
+	}
+	r, err := newReporter(format, opts)
 	if err != nil {
 		return nil, err
 	}
-	if opts.NoStatus && os.Getenv("DEVSY_UI") != "true" {
+	if opts.NoStatus && !desktop {
 		return Nop(), nil
 	}
 	return r, nil
@@ -82,11 +89,11 @@ func resolveFormat(opts ReporterOptions) string {
 	if format == "" {
 		format = formatAuto
 	}
-	if os.Getenv("DEVSY_UI") == "true" {
-		return formatJSON
-	}
 	if format != formatAuto {
 		return format
+	}
+	if os.Getenv("DEVSY_UI") == "true" {
+		return formatJSON
 	}
 	return resolveAutomaticFormat(opts)
 }
@@ -114,7 +121,7 @@ func newReporter(format string, opts ReporterOptions) (Reporter, error) {
 			return nil, fmt.Errorf("JSON status output requires an envelope encoder")
 		}
 		return NewEnvelopeReporter(opts.Envelope), nil
-	case formatPlain:
+	case formatPlain, formatText:
 		config := reporterConfig{
 			out:                    opts.Out,
 			prefix:                 opts.Prefix,
@@ -127,10 +134,7 @@ func newReporter(format string, opts ReporterOptions) (Reporter, error) {
 		}
 		return newPlainReporter(config), nil
 	default:
-		return nil, fmt.Errorf(
-			"unexpected status output format %q; choose json, plain, or auto",
-			format,
-		)
+		return nil, errors.New("unexpected status output format; choose auto, text, plain, or json")
 	}
 }
 
