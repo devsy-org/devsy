@@ -17,6 +17,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	dockerclient "github.com/docker/docker/client"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,7 @@ const (
 	jsonFixtureMode    = "fail-json-stderr"
 	jsonFixtureSizeEnv = "DEVSY_DOCKER_JSON_FIXTURE_SIZE"
 	bracketFixtureMode = "fail-bracketed-stderr"
+	utf8FixtureMode    = "fail-utf8-stderr"
 	inspectFixture     = "fixture"
 )
 
@@ -72,7 +74,19 @@ var helperModes = map[string]func(){
 	bracketFixtureMode: func() {
 		size, _ := strconv.Atoi(os.Getenv(jsonFixtureSizeEnv))
 		_, _ = fmt.Fprintln(os.Stderr, "[task] operation blocked\n[1/3] checking runtime")
-		_, _ = fmt.Fprintln(os.Stderr, strings.Repeat("a", size), "public diagnostic tail")
+		_, _ = fmt.Fprintln(os.Stderr, strings.Repeat("a", size))
+		_, _ = fmt.Fprintln(os.Stderr, "public diagnostic tail")
+		os.Exit(23)
+	},
+	utf8FixtureMode: func() {
+		_, _ = fmt.Fprint(
+			os.Stderr,
+			strings.Repeat("a\n", (16<<10)-1),
+			"a€\n",
+			strings.Repeat("m\n", 16<<10),
+			"€\n",
+			strings.Repeat("b\n", (16<<10)-1),
+		)
 		os.Exit(23)
 	},
 	helperHangMode: func() { time.Sleep(time.Minute) },
@@ -202,6 +216,7 @@ func TestDockerInspectKeepsBracketedDiagnostics(t *testing.T) {
 				Environment: []string{
 					helperModeEnv + "=" + bracketFixtureMode,
 					jsonFixtureSizeEnv + "=" + strconv.Itoa(size),
+					"DEVSY_DOCKER_MULTILINE_TOKEN=first-line\nsecond-line",
 				},
 			}
 			err := helper.Inspect(
@@ -216,6 +231,22 @@ func TestDockerInspectKeepsBracketedDiagnostics(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDockerInspectKeepsBoundedDiagnosticUTF8(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	helper := &DockerHelper{
+		DockerCommand: executable,
+		Environment:   []string{helperModeEnv + "=" + utf8FixtureMode},
+	}
+	err = helper.Inspect(t.Context(), []string{inspectFixture}, "image", &[]map[string]any{})
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.Equal(t, 23, exit.ExitCode())
+	require.False(t, utf8.Valid(exit.Stderr), "raw capture keeps its byte boundaries")
+	require.True(t, utf8.ValidString(err.Error()), "display contains an incomplete rune")
+	require.ErrorContains(t, err, "omitting ")
 }
 
 // spawnChild starts a long-lived descendant immediately and reports its pid,

@@ -112,8 +112,10 @@ func maskJSONRecords(redactor *redact.Redactor, value string) string {
 	var output strings.Builder
 	for value != "" {
 		if looksLikeStructuredJSON(value) {
-			value = value[maskStructuredRecord(redactor, value, &output):]
-			continue
+			if consumed := maskStructuredRecord(redactor, value, &output); consumed > 0 {
+				value = value[consumed:]
+				continue
+			}
 		}
 		line, rest, newline := strings.Cut(value, "\n")
 		output.WriteString(maskJSONLine(redactor, line))
@@ -136,6 +138,8 @@ func looksLikeStructuredJSON(value string) bool {
 		return rest == "" || rest[0] == '"' || rest[0] == '}'
 	case '[':
 		return looksLikeJSONList(rest)
+	case '"':
+		return true
 	default:
 		return false
 	}
@@ -161,11 +165,16 @@ func maskStructuredRecord(redactor *redact.Redactor, value string, output *strin
 	decoder := json.NewDecoder(strings.NewReader(value))
 	var record json.RawMessage
 	if err := decoder.Decode(&record); err != nil {
+		if strings.HasPrefix(strings.TrimLeft(value, " \t\r"), `"`) {
+			return 0
+		}
 		output.WriteString(redactor.Mask())
 		return len(value)
 	}
+	end := int(decoder.InputOffset())
+	output.WriteString(value[:end-len(record)])
 	output.WriteString(diagnosticredact.Record(redactor, string(record)))
-	return int(decoder.InputOffset())
+	return end
 }
 
 func maskJSONLine(redactor *redact.Redactor, line string) string {

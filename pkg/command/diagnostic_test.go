@@ -68,6 +68,24 @@ func TestCommandErrorMasksEscapedJSONValues(t *testing.T) {
 	assert.Equal(t, 2, strings.Count(wrapped.Error(), "public JSON detail"))
 }
 
+func TestCommandErrorMasksLeadingJSONString(t *testing.T) {
+	const fixture = `synthetic"scalar-canary`
+	const plain = `  "waiting for input" from child`
+	stdout, err := json.Marshal(fixture)
+	require.NoError(t, err)
+	stdout = append(stdout, " trailing detail\n"+plain...)
+	cause := errors.New("fixture exit")
+	wrapped := WrapCommandErrorWithEnvironment(
+		stdout,
+		cause,
+		[]string{"DEVSY_FIXTURE_TOKEN=" + fixture},
+	)
+	require.ErrorIs(t, wrapped, cause)
+	assert.NotContains(t, wrapped.Error(), "scalar-canary")
+	assert.Contains(t, wrapped.Error(), `"***" trailing detail`)
+	assert.Contains(t, wrapped.Error(), plain)
+}
+
 func TestWindowsCapturedOutputUsesDiagnosticFormatter(t *testing.T) {
 	file, err := parser.ParseFile(
 		token.NewFileSet(),
