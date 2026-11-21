@@ -186,4 +186,70 @@ describe("main logger", () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it("masks labeled, URL, and registered credentials when their ranges overlap", () => {
+    const dir = mkdtempSync(join(tmpdir(), "devsy-overlapping-log-"))
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    vi.stubEnv("TEST_LOG_SECRET", "token")
+    vi.stubEnv("TEST_LOG_URL_SECRET", "https://user")
+    vi.stubEnv(
+      "TEST_LOG_OVERLAP_SECRET",
+      "registered-head password=overlap-canary",
+    )
+    try {
+      initializeMainLog(dir)
+      mainLog.info(
+        "visible token=labeled-canary https://user:url-canary@example.test/root registered-head password=overlap-canary visible-tail",
+      )
+      const file = readFileSync(join(dir, "main.log"), "utf8").trim()
+      expect(info.mock.calls[0][0]).toBe(file)
+      expect(JSON.parse(file).msg).toBe(
+        "visible ***=*** ***@example.test/root *** visible-tail",
+      )
+    } finally {
+      vi.unstubAllEnvs()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps Error diagnostics without reading own or inherited accessors", () => {
+    const dir = mkdtempSync(join(tmpdir(), "devsy-error-accessors-"))
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    const readName = vi.fn(() => {
+      throw new Error("name accessor ran")
+    })
+    const readMessage = vi.fn(() => "message access should be skipped")
+    const own = new Error("ordinary")
+    Object.defineProperties(own, {
+      name: { get: readName },
+      message: { get: readMessage },
+    })
+    class InheritedError extends Error {}
+    Object.defineProperty(InheritedError.prototype, "message", {
+      get: readMessage,
+    })
+    try {
+      initializeMainLog(dir)
+      mainLog.info(
+        "operation failed",
+        own,
+        new InheritedError(),
+        new TypeError("details token=type-error-canary"),
+      )
+      const file = readFileSync(join(dir, "main.log"), "utf8").trim()
+      expect(info.mock.calls[0][0]).toBe(file)
+      expect(readName).not.toHaveBeenCalled()
+      expect(readMessage).not.toHaveBeenCalled()
+      expect(JSON.parse(file)).toMatchObject({
+        msg: "operation failed",
+        args: [
+          { name: "Error", message: "" },
+          { name: "Error", message: "" },
+          { name: "TypeError", message: "details token=***" },
+        ],
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

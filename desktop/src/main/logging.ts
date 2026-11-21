@@ -28,10 +28,11 @@ const maxRecordBytes = 64 * 1024
 let current: LogLevel = "info"
 let logPath: string | undefined
 
-function redactLabels(value: string): string {
+type RedactionRange = [start: number, end: number]
+
+function labelRanges(value: string): RedactionRange[] {
   const tokens = /[a-z0-9_.-]+/gi
-  let output = ""
-  let copied = 0
+  const ranges: RedactionRange[] = []
   for (let match = tokens.exec(value); match; match = tokens.exec(value)) {
     const start = match.index
     const end = labelEnd(value, start, tokens.lastIndex)
@@ -41,11 +42,10 @@ function redactLabels(value: string): string {
     if (secretStart < 0) continue
     const next = credentialValueEnd(value, secretStart)
     if (next === secretStart) continue
-    output += `${value.slice(copied, secretStart)}***`
-    copied = next
+    ranges.push([secretStart, next])
     tokens.lastIndex = next
   }
-  return output + value.slice(copied)
+  return ranges
 }
 
 function labelEnd(value: string, start: number, initialEnd: number): number {
@@ -72,13 +72,50 @@ function labelValueStart(value: string, end: number): number {
 }
 
 function redactText(value: string): string {
-  let result = value
-  const secrets = Object.entries(process.env)
-    .filter(([name, secret]) => sensitiveKey.test(name) && secret)
-    .map(([, secret]) => secret as string)
-    .sort((a, b) => b.length - a.length)
-  for (const secret of secrets) result = result.split(secret).join("***")
-  return redactLabels(result.replace(/(https?:\/\/)[^\s/@]+@/gi, "$1***@"))
+  const ranges = labelRanges(value)
+  for (const match of value.matchAll(/(https?:\/\/)[^\s/@]+@/gi)) {
+    ranges.push([
+      match.index + match[1].length,
+      match.index + match[0].length - 1,
+    ])
+  }
+  for (const [name, secret] of Object.entries(process.env)) {
+    if (!secret || !sensitiveKey.test(name)) continue
+    for (
+      let start = value.indexOf(secret);
+      start >= 0;
+      start = value.indexOf(secret, start + 1)
+    ) {
+      ranges.push([start, start + secret.length])
+    }
+  }
+  ranges.sort(([left], [right]) => left - right)
+  let output = ""
+  let copied = 0
+  for (const [start, end] of ranges) {
+    if (start >= copied) output += `${value.slice(copied, start)}***`
+    copied = Math.max(copied, end)
+  }
+  return output + value.slice(copied)
+}
+
+function errorField(
+  value: Error,
+  key: "name" | "message",
+  fallback: string,
+): string {
+  for (
+    let object: object | null = value;
+    object !== null;
+    object = Object.getPrototypeOf(object)
+  ) {
+    const field = Object.getOwnPropertyDescriptor(object, key)
+    if (!field) continue
+    return Object.hasOwn(field, "value") && typeof field.value === "string"
+      ? field.value
+      : fallback
+  }
+  return fallback
 }
 
 function safeValue(
@@ -91,7 +128,10 @@ function safeValue(
   if (typeof value === "function") return "[unavailable]"
   if (value === null || typeof value !== "object") return value
   if (value instanceof Error)
-    return { name: redactText(value.name), message: redactText(value.message) }
+    return {
+      name: redactText(errorField(value, "name", "Error")),
+      message: redactText(errorField(value, "message", "")),
+    }
   if (depth >= 8 || seen.has(value)) return "[unavailable]"
   seen.add(value)
   if (Array.isArray(value))
