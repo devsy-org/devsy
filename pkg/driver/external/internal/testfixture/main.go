@@ -47,6 +47,13 @@ func serve(mode, state string, delay time.Duration, nonce string) {
 	if mode == "stream-startup-stderr" {
 		_, _ = fmt.Fprintln(os.Stderr, "runtime startup diagnostic "+os.Getenv("FIXTURE_TOKEN"))
 	}
+	if mode == "stream-folded-startup-stderr" {
+		_, _ = fmt.Fprintln(os.Stderr, "Authorization:")
+		_, _ = fmt.Fprintln(
+			os.Stderr,
+			" Bearer folded-runtime-fixture-value\npublic runtime detail",
+		)
+	}
 	if mode == "stream-structured-stderr" {
 		_, _ = fmt.Fprint(os.Stderr,
 			`{"level":"warn","msg":"structured runtime canary","detail":{"credential":"`)
