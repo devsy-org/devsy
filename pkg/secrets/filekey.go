@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"filippo.io/age"
+	"github.com/devsy-org/devsy/pkg/secrets/internal/scryptcost"
 	keyring "github.com/zalando/go-keyring"
 )
 
@@ -42,7 +43,7 @@ type fileKey struct {
 // resolveFileKey resolves the age key by precedence: passphrase, keyring, file.
 func resolveFileKey(dir, passphrase string) (*fileKey, error) {
 	if passphrase != "" {
-		recipient, err := age.NewScryptRecipient(passphrase)
+		recipient, err := scryptcost.Recipient(passphrase)
 		if err != nil {
 			return nil, fmt.Errorf("derive secrets key: %w", err)
 		}
