@@ -316,7 +316,6 @@ func cancelHelperOptions(behavior string) RunCommandOptions {
 			"DEVSY_CANCEL_BEHAVIOR="+behavior,
 		),
 		Cancellation: provider.ProviderCancellationFile,
-		cancelTiming: testProviderCancelTiming,
 	}
 }
 
@@ -369,6 +368,7 @@ func (w *readyWriter) Write(p []byte) (int, error) {
 
 func TestProviderCancellationForcedAfterGrace(t *testing.T) {
 	opts := cancelHelperOptions("ignore")
+	opts.cancelTiming = testProviderCancelTiming
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
 	opts.Stdout = &readyWriter{ready: ready}
@@ -1048,6 +1048,7 @@ func TestProviderCancellationOwnedOutputStopsAfterForcedCancellation(t *testing.
 	t.Setenv("DEVSY_CANCEL_HOLDER_PID_PATH", holderPath)
 	t.Cleanup(func() { cleanupTestCancellationOutputHolder(holderPath) })
 	opts := cancelHelperOptions("orphan-output")
+	opts.cancelTiming = testProviderCancelTiming
 	opts.Command = types.StrArray{
 		fmt.Sprintf("'%s' -test.run=^TestProviderCancellationHelper$", binary),
 	}
