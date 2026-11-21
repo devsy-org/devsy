@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 )
 
 const (
@@ -217,7 +217,7 @@ func TestPassthroughWriterRedactsSplitSecrets(t *testing.T) {
 	remove := AddSink(&sink)
 	defer remove()
 
-	w := PassthroughWriterWithRedactor(secrets.NewRedactor([]string{
+	w := PassthroughWriterWithRedactor(redact.FromEntries([]string{
 		"TOKEN=DEVSY_PASSTHROUGH_SECRET_846301",
 	}))
 	_, _ = w.Write([]byte("token=DEVSY_PASSTHROUGH_"))

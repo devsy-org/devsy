@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
@@ -536,7 +536,7 @@ func dockerReachable(dockerOverride string, envs map[string]string) (bool, error
 	redactionEnv := append(os.Environ(), env...)
 	result, err := subprocess.Run(context.Background(), docker, args, subprocess.Options{
 		Env:      env,
-		Redactor: secrets.NewEnvironmentRedactor(redactionEnv),
+		Redactor: redact.New(redact.Options{Environment: redactionEnv}),
 	})
 	if err != nil {
 		return dockerPSError(docker, dockerOverride, result.DiagnosticOutput(), err)

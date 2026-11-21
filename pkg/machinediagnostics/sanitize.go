@@ -4,17 +4,18 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 )
 
-type Sanitizer struct{ redactor *secrets.Redactor }
+type Sanitizer struct{ redactor *redact.Redactor }
 
 func NewSanitizer(env []string) *Sanitizer {
-	return &Sanitizer{redactor: secrets.NewEnvironmentRedactor(env)}
+	return &Sanitizer{redactor: redact.New(redact.Options{Environment: env})}
 }
 
 func (s *Sanitizer) Message(value string) string {
-	value = s.redactor.Redact(value)
+	value = diagnosticredact.Record(s.redactor, value)
 	value = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r == '\t' {
 			return ' '

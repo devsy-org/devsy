@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
@@ -22,7 +22,7 @@ const (
 
 func TestBoundedBufferRedactsAndCapsLines(t *testing.T) {
 	b := NewBuffer(
-		secrets.NewRedactor([]string{"TOKEN=" + captureTestSecret}),
+		redact.FromEntries([]string{"TOKEN=" + captureTestSecret}),
 	) //nolint:gosec // test-only redaction fixture
 	for range MaxCapturedLines + 5 {
 		_, _ = b.Write([]byte("DEVSY_SECRET_TEST_846297\n"))
@@ -45,7 +45,7 @@ func TestBoundedBufferRedactsAndCapsLines(t *testing.T) {
 }
 
 func TestDisplayCommandRedactsAndQuotes(t *testing.T) {
-	redactor := secrets.NewRedactor([]string{captureToken + captureTestSecret})
+	redactor := redact.FromEntries([]string{captureToken + captureTestSecret})
 	got := displayCommand(
 		"docker",
 		[]string{"run", "token=DEVSY_SECRET_TEST_846297", "hello world"},
@@ -61,7 +61,7 @@ func TestRedactingWriterRedactsStreamedOutput(t *testing.T) {
 	var out bytes.Buffer
 	w := &StreamingRedactingWriter{
 		Next:     &out,
-		Redactor: secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
+		Redactor: redact.FromEntries([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
 	}
 	_, _ = w.Write([]byte("token=DEVSY_SECRET_TEST_846297"))
 	_ = w.Flush()
@@ -74,7 +74,7 @@ func TestRedactingWriterRedactsSecretSplitAcrossWrites(t *testing.T) {
 	var out bytes.Buffer
 	w := &StreamingRedactingWriter{
 		Next:     &out,
-		Redactor: secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
+		Redactor: redact.FromEntries([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
 	}
 	secret := captureTestSecret
 	_, _ = w.Write([]byte("token=" + secret[:7]))
@@ -97,7 +97,7 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 }
 
 func TestRedactingWritersReportShortWrites(t *testing.T) {
-	redactor := secrets.NewRedactor(nil)
+	redactor := redact.FromEntries(nil)
 	writers := []struct {
 		name   string
 		writer io.Writer
@@ -107,7 +107,7 @@ func TestRedactingWritersReportShortWrites(t *testing.T) {
 	}
 	for _, tt := range writers {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.writer.Write([]byte("plain text"))
+			_, err := tt.writer.Write([]byte("plain text\n"))
 			if !errors.Is(err, io.ErrShortWrite) {
 				t.Fatalf("Write error = %v, want ErrShortWrite", err)
 			}
@@ -117,7 +117,7 @@ func TestRedactingWritersReportShortWrites(t *testing.T) {
 
 func TestStreamingRedactingWriterFlushOnlyWritesPendingBytes(t *testing.T) {
 	var next countingWriter
-	w := &StreamingRedactingWriter{Next: &next, Redactor: secrets.NewRedactor(nil)}
+	w := &StreamingRedactingWriter{Next: &next, Redactor: redact.FromEntries(nil)}
 	_, err := w.Write([]byte("plain text"))
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +133,7 @@ func TestStreamingRedactingWriterFlushOnlyWritesPendingBytes(t *testing.T) {
 func TestStreamingRedactingWriterFlushReportsShortWrite(t *testing.T) {
 	w := &StreamingRedactingWriter{
 		Next:     shortWriter{},
-		Redactor: secrets.NewRedactor([]string{"hidden"}),
+		Redactor: redact.FromEntries([]string{"hidden"}),
 	}
 	_, err := w.Write([]byte("h"))
 	if err != nil {
@@ -146,7 +146,7 @@ func TestStreamingRedactingWriterFlushReportsShortWrite(t *testing.T) {
 
 func TestBoundedBufferRedactsSecretSplitAcrossWrites(t *testing.T) {
 	secret := captureTestSecret
-	b := NewBuffer(secrets.NewRedactor([]string{"TOKEN=" + secret}))
+	b := NewBuffer(redact.FromEntries([]string{"TOKEN=" + secret}))
 	_, _ = b.Write([]byte("prefix=" + secret[:8]))
 	_, _ = b.Write([]byte(secret[8:] + " suffix"))
 
@@ -190,7 +190,7 @@ func TestRunKeepsFunctionalStdoutIndependentOfDiagnosticLimits(t *testing.T) {
 	result, err := Run(context.Background(), "sh", []string{"-c", "cat"}, Options{
 		Stdin:    strings.NewReader(payload),
 		Stdout:   &stdout,
-		Redactor: secrets.NewRedactor([]string{captureToken + captureTestSecret}),
+		Redactor: redact.FromEntries([]string{captureToken + captureTestSecret}),
 	})
 	if err != nil {
 		t.Fatal(err)

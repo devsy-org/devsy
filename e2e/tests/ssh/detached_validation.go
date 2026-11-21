@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
@@ -85,7 +85,9 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 				reportDetachedLaunchFailure(before, source)
 			}
 			gomega.Expect(err).NotTo(gomega.HaveOccurred(), "CLI output: %s",
-				secrets.NewEnvironmentRedactor(detachedValidationEnvironment(home)).Redact(out))
+				redact.New(redact.Options{Environment: detachedValidationEnvironment(home)}).
+					Redact(out),
+			)
 			var envelope struct {
 				Kind string `json:"kind"`
 				ID   string `json:"id"`

@@ -16,9 +16,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/gofrs/flock"
 )
@@ -63,7 +64,7 @@ type Journal struct {
 	dir                       string
 	maxBytes, maxSegmentBytes int
 	now                       func() time.Time
-	redactor                  *secrets.Redactor
+	redactor                  *redact.Redactor
 }
 
 func DefaultDir() (string, error) {
@@ -101,7 +102,7 @@ func New(opts Options) (*Journal, error) {
 		maxBytes:        opts.MaxBytes,
 		maxSegmentBytes: opts.MaxSegmentBytes,
 		now:             opts.Now,
-		redactor:        secrets.NewEnvironmentRedactor(opts.Env),
+		redactor:        redact.New(redact.Options{Environment: opts.Env}),
 	}, nil
 }
 
@@ -139,7 +140,7 @@ func (j *Journal) Append(workspaceID string, e status.Event) error {
 		OperationID:       e.OperationID,
 		ParentOperationID: e.ParentOperationID,
 		Phase:             e.Phase,
-		Step:              j.redactor.Redact(e.Step),
+		Step:              diagnosticredact.Field(j.redactor, e.Step),
 		State:             e.State,
 		DurationMillis:    e.Duration.Milliseconds(),
 		Error:             redactError(j.redactor, e.Error),
@@ -218,15 +219,19 @@ func (j *Journal) appendLocked(b []byte) error {
 	return j.prune()
 }
 
-func redactError(r *secrets.Redactor, in *status.ErrorInfo) *status.ErrorInfo {
+func redactError(r *redact.Redactor, in *status.ErrorInfo) *status.ErrorInfo {
 	if in == nil {
 		return nil
 	}
-	out := &status.ErrorInfo{Code: in.Code, Message: r.Redact(in.Message), Hint: r.Redact(in.Hint)}
+	out := &status.ErrorInfo{
+		Code:    in.Code,
+		Message: diagnosticredact.Field(r, in.Message),
+		Hint:    diagnosticredact.Field(r, in.Hint),
+	}
 	if in.Context != nil {
 		out.Context = map[string]string{}
 		for k, v := range in.Context {
-			out.Context[k] = r.Redact(v)
+			out.Context[k] = diagnosticredact.Field(r, v)
 		}
 	}
 	return out

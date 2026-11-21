@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
@@ -27,7 +28,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/status"
@@ -870,7 +870,7 @@ func runCommandExecution(ctx context.Context, opts RunCommandOptions) (retErr er
 		opts.Environ = append(opts.Environ, config.EnvDebug+"="+config.BoolTrue)
 	}
 
-	redactor := secrets.NewEnvironmentRedactor(opts.Environ)
+	redactor := redact.New(redact.Options{Environment: opts.Environ})
 	stdout := opts.Stdout
 	var redactingStdout *subprocess.StreamingRedactingWriter
 	if !opts.RawStdout {

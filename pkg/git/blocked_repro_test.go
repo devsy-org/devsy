@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/livetee"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/stretchr/testify/suite"
 )
@@ -68,7 +68,7 @@ func (s *liveOutputSuite) TestBlockedCancellation() {
 
 func (s *liveOutputSuite) TestSplitSecretBeforeDroppedQueue() {
 	secret := strings.Join([]string{"privateprefix", "privatesuffix"}, "")
-	redactor := secrets.NewEnvironmentRedactor([]string{"DEVSY_TEST_TOKEN=" + secret})
+	redactor := redact.New(redact.Options{Environment: []string{"DEVSY_TEST_TOKEN=" + secret}})
 	captured := subprocess.NewBuffer(redactor)
 	w := &blockedLiveWriter{entered: make(chan struct{}), release: make(chan struct{})}
 	released := make(chan struct{})

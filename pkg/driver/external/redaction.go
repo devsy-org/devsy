@@ -3,7 +3,7 @@ package external
 import (
 	"sync"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 )
 
 // Shared through a pointer so operation snapshots never copy a live mutex.
@@ -17,7 +17,7 @@ type workspaceRedactions struct {
 type workspaceRedaction struct {
 	mu       sync.Mutex
 	values   map[string]struct{}
-	redactor *secrets.Redactor
+	redactor *redact.Redactor
 }
 
 func (h *Host) forWorkspace(workspaceID string, environment map[string]string) *Host {
@@ -36,9 +36,9 @@ func (h *Host) forWorkspace(workspaceID string, environment map[string]string) *
 }
 
 func (w *workspaceRedaction) snapshot(
-	base *secrets.Redactor,
+	base *redact.Redactor,
 	environment map[string]string,
-) *secrets.Redactor {
+) *redact.Redactor {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	changed := false
@@ -53,7 +53,7 @@ func (w *workspaceRedaction) snapshot(
 		for value := range w.values {
 			entries = append(entries, "WORKSPACE_VALUE="+value)
 		}
-		w.redactor = secrets.Combine(base, secrets.NewRedactor(entries))
+		w.redactor = redact.Combine(base, redact.FromEntries(entries))
 	}
 	return w.redactor
 }

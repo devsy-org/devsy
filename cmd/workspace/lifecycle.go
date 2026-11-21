@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
@@ -71,8 +71,8 @@ type LifecycleExecParams struct {
 }
 
 // EnvArgsRedactor masks sensitive values passed to docker exec as -e entries.
-func EnvArgsRedactor(envArgs []string) *secrets.Redactor {
-	return secrets.NewEnvironmentRedactor(envArgsEntries(envArgs))
+func EnvArgsRedactor(envArgs []string) *redact.Redactor {
+	return redact.New(redact.Options{Environment: envArgsEntries(envArgs)})
 }
 
 func envArgsEntries(envArgs []string) []string {

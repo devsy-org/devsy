@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestRecorder(t *testing.T, s *Store, runID string, redactor *secrets.Redactor) *Recorder {
+func newTestRecorder(t *testing.T, s *Store, runID string, redactor *redact.Redactor) *Recorder {
 	t.Helper()
 	rec, err := NewRecorder(RecorderOptions{
 		Backend: s, RunID: runID, Location: LocationContainer, Redactor: redactor,
@@ -77,7 +77,7 @@ func TestRecorderRoundTripsInvocationOutputAndExit(t *testing.T) {
 func TestRecorderRedactsSecretsSplitAcrossWrites(t *testing.T) {
 	s, _ := newTestStore(t)
 	runID := newRun(t, s, "uid")
-	redactor := secrets.NewRedactor([]string{"API_TOKEN=hunter2-secret-value"})
+	redactor := redact.FromEntries([]string{"API_TOKEN=hunter2-secret-value"})
 	rec := newTestRecorder(t, s, runID, redactor)
 	inv := NewID()
 
@@ -97,10 +97,41 @@ func TestRecorderRedactsSecretsSplitAcrossWrites(t *testing.T) {
 	assert.NotContains(t, raw, "hunter2", "the secret is absent from files on disk")
 }
 
+func TestRecorderMasksFoldedAuthorization(t *testing.T) {
+	const foldedCredential = "folded-workspace-fixture-value"
+	const publicDetail = "public workspace detail"
+	const header = "Authorization:\n"
+	const continuation = " Bearer " + foldedCredential
+	for _, test := range []struct {
+		name   string
+		writes []string
+	}{
+		{name: "one write", writes: []string{header + continuation + "\n" + publicDetail}},
+		{name: "split writes", writes: []string{header, " Bearer ", foldedCredential, "\n", publicDetail}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store, _ := newTestStore(t)
+			runID := newRun(t, store, "uid")
+			rec := newTestRecorder(t, store, runID, redact.FromEntries(nil))
+			writer := rec.Writer(NewID(), StreamStderr)
+			for _, part := range test.writes {
+				n, err := writer.Write([]byte(part))
+				require.NoError(t, err)
+				require.Equal(t, len(part), n)
+			}
+			require.NoError(t, writer.Close())
+			got := texts(readAll(t, store, ReadRequest{RunID: runID}))
+			assert.Contains(t, got, publicDetail)
+			assert.NotContains(t, got, foldedCredential)
+			assert.NotContains(t, rawRunFiles(t, store, runID), foldedCredential)
+		})
+	}
+}
+
 func TestRecorderKeepsStreamsIndependent(t *testing.T) {
 	s, _ := newTestStore(t)
 	runID := newRun(t, s, "uid")
-	redactor := secrets.NewRedactor([]string{"API_TOKEN=abcdef-secret"})
+	redactor := redact.FromEntries([]string{"API_TOKEN=abcdef-secret"})
 	rec := newTestRecorder(t, s, runID, redactor)
 	inv := NewID()
 	out, errW := rec.Writer(inv, StreamStdout), rec.Writer(inv, StreamStderr)

@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/driver"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +23,7 @@ func (d *protocolCommandDriver) CommandDevContainer(
 	params *driver.CommandParams,
 ) error {
 	redacted := &subprocess.StreamingRedactingWriter{
-		Next: params.Stdout, Redactor: secrets.NewRedactor([]string{"TOKEN=private-canary-value"}),
+		Next: params.Stdout, Redactor: redact.FromEntries([]string{"TOKEN=private-canary-value"}),
 	}
 	output := params.Stdout
 	if !params.RawStdout {

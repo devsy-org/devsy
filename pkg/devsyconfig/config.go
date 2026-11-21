@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os/exec"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
@@ -19,7 +19,7 @@ func AuthDevsyCliToPlatform(config *client.Config) error {
 		pkgconfig.BinaryName,
 		args,
 		subprocess.Options{
-			Redactor: secrets.NewRedactor([]string{"ACCESS_KEY=" + config.AccessKey}),
+			Redactor: redact.FromEntries([]string{"ACCESS_KEY=" + config.AccessKey}),
 		},
 	)
 	if err != nil {
@@ -50,7 +50,7 @@ func AuthVClusterCliToPlatform(config *client.Config) error {
 	result, err := subprocess.Run(context.Background(), "vcluster", []string{
 		"login", "--access-key", config.AccessKey, config.Host,
 	}, subprocess.Options{
-		Redactor: secrets.NewRedactor([]string{"ACCESS_KEY=" + config.AccessKey}),
+		Redactor: redact.FromEntries([]string{"ACCESS_KEY=" + config.AccessKey}),
 	})
 	if err != nil {
 		log.Debugf("Failed executing `vcluster login` : %v, output: %s", err, result.Stderr)

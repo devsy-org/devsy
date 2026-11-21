@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -22,7 +22,7 @@ func (s *StreamingBoundarySuite) TestKnownSecretsAcrossEverySplit() {
 		{"A=aba", "B=bab"},
 		{"TOKEN=abc\x00\xffabc"},
 	} {
-		redactor := secrets.NewRedactor(entries)
+		redactor := redact.FromEntries(entries)
 		var values []string
 		for _, entry := range entries {
 			_, value, _ := strings.Cut(entry, "=")
@@ -31,7 +31,7 @@ func (s *StreamingBoundarySuite) TestKnownSecretsAcrossEverySplit() {
 		input := "ordinary " + strings.Join(values, " ")
 		want := redactor.Redact(input)
 		for split := 0; split <= len(input); split++ {
-			stream := secrets.NewStreamingRedactor(redactor)
+			stream := redact.NewStream(redactor)
 			got := stream.RedactChunk(
 				input[:split],
 			) + stream.RedactChunk(
@@ -39,7 +39,7 @@ func (s *StreamingBoundarySuite) TestKnownSecretsAcrossEverySplit() {
 			) + stream.Flush()
 			s.Equal(want, got, "entries %v, split %d", entries, split)
 		}
-		stream := secrets.NewStreamingRedactor(redactor)
+		stream := redact.NewStream(redactor)
 		var output strings.Builder
 		for index := range len(input) {
 			output.WriteString(stream.RedactChunk(input[index : index+1]))
@@ -56,13 +56,13 @@ func BenchmarkStreamingBoundaryRetainedValues(b *testing.B) {
 			for index := range count {
 				entries[index] = fmt.Sprintf("TOKEN=private-%d-value", index)
 			}
-			redactor := secrets.NewRedactor(entries)
+			redactor := redact.FromEntries(entries)
 			input := strings.Repeat("ordinary output ", 2048) + "private-"
 			b.SetBytes(int64(len(input)))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				stream := secrets.NewStreamingRedactor(redactor)
+				stream := redact.NewStream(redactor)
 				_ = stream.RedactChunk(input)
 				_ = stream.Flush()
 			}
@@ -73,9 +73,9 @@ func BenchmarkStreamingBoundaryRetainedValues(b *testing.B) {
 func (s *StreamingBoundarySuite) TestRepeatedOutputDoesNotBufferWholeStream() {
 	const count = 1 << 14
 	input := strings.Repeat("abcabc", count)
-	redactor := secrets.NewRedactor([]string{"TOKEN=abcabc"})
-	stream := secrets.NewStreamingRedactor(redactor)
+	redactor := redact.FromEntries([]string{"TOKEN=abcabc"})
+	stream := redact.NewDiagnosticStream(redactor)
 	emitted := stream.RedactChunk(input)
 	s.GreaterOrEqual(len(emitted), 3*(count-1))
-	s.Equal(redactor.Redact(input), emitted+stream.Flush())
+	s.Equal(strings.Repeat("***", count), emitted+stream.Flush())
 }

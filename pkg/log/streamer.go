@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -16,7 +16,7 @@ import (
 type StreamerOptions struct {
 	// Redactor is applied before subprocess lines are logged or retained.
 	// When omitted, sensitive values from the current environment are masked.
-	Redactor *secrets.Redactor
+	Redactor *redact.Redactor
 	// FallbackLevel is used for non-structured subprocess output.
 	FallbackLevel int
 	// CaptureLines retains this many raw lines for ErrorOutput.
@@ -43,7 +43,7 @@ type JSONLogStreamer struct {
 	treatUnknownJSONAsDebug bool
 	captureLines            int
 	captureBytes            int
-	redactor                *secrets.Redactor
+	redactor                *redact.Redactor
 
 	mu            sync.Mutex
 	lastLines     []string
@@ -66,9 +66,9 @@ func NewJSONLogStreamer(options StreamerOptions) *JSONLogStreamer {
 		captureBytes:            options.CaptureBytes,
 		redactor:                options.Redactor,
 	}
-	streamer.redactor = secrets.Combine(
+	streamer.redactor = redact.Combine(
 		streamer.redactor,
-		secrets.NewEnvironmentRedactor(os.Environ()),
+		redact.New(redact.Options{Environment: os.Environ()}),
 	)
 	if options.CaptureLines > 0 {
 		streamer.lastLines = make([]string, 0, options.CaptureLines)

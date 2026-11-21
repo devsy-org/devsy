@@ -9,7 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/terminal"
 )
 
@@ -143,7 +144,7 @@ type PlainReporter struct {
 	labels                 map[Phase]string
 	showDurations          bool
 	suppressFailureDetails bool
-	redactor               *secrets.Redactor
+	redactor               *redact.Redactor
 }
 
 // HumanReporter is the interactive human presentation.
@@ -182,7 +183,7 @@ func newPlainReporter(config reporterConfig) PlainReporter {
 		labels:                 config.labels,
 		showDurations:          config.verbose,
 		suppressFailureDetails: config.suppressFailureDetails,
-		redactor:               secrets.NewEnvironmentRedactor(os.Environ()),
+		redactor:               redact.New(redact.Options{Environment: os.Environ()}),
 	}
 }
 
@@ -257,10 +258,7 @@ func (r PlainReporter) reportFailureDetails(info *ErrorInfo) {
 }
 
 func (r PlainReporter) redact(value string) string {
-	if r.redactor == nil {
-		return value
-	}
-	return r.redactor.Redact(value)
+	return diagnosticredact.Field(r.redactor, value)
 }
 
 func (r PlainReporter) message(e Event) string {

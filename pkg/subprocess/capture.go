@@ -13,7 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
@@ -36,7 +37,7 @@ type Options struct {
 	// retained history. Its writers are best effort: errors are ignored and
 	// never change the command result. Unlike Stdout it may be a log sink.
 	Diagnostic DiagnosticSink
-	Redactor   *secrets.Redactor
+	Redactor   *redact.Redactor
 	// SensitiveValues contains secret values that may appear in argv or in
 	// subprocess output but are not represented by a sensitive environment
 	// variable. Values are masked before capture and command rendering.
@@ -69,7 +70,7 @@ func (w bestEffortWriter) Write(p []byte) (int, error) {
 
 // diagnosticWriter wraps sink so it receives redacted text and reports its
 // final suffix on flush. It returns nil when there is no sink.
-func diagnosticWriter(sink io.Writer, redactor *secrets.Redactor) *StreamingRedactingWriter {
+func diagnosticWriter(sink io.Writer, redactor *redact.Redactor) *StreamingRedactingWriter {
 	if sink == nil {
 		return nil
 	}
@@ -81,7 +82,7 @@ func diagnosticWriter(sink io.Writer, redactor *secrets.Redactor) *StreamingReda
 // as captured output.
 type RedactingWriter struct {
 	Next     io.Writer
-	Redactor *secrets.Redactor
+	Redactor *redact.Redactor
 }
 
 func (w RedactingWriter) Write(p []byte) (int, error) {
@@ -91,7 +92,7 @@ func (w RedactingWriter) Write(p []byte) (int, error) {
 	if w.Redactor == nil {
 		return w.Next.Write(p)
 	}
-	redacted := []byte(w.Redactor.Redact(string(p)))
+	redacted := []byte(diagnosticredact.Record(w.Redactor, string(p)))
 	n, err := w.Next.Write(redacted)
 	if err != nil {
 		return 0, err
@@ -106,8 +107,8 @@ func (w RedactingWriter) Write(p []byte) (int, error) {
 // retains a short suffix between writes and must be flushed at stream end.
 type StreamingRedactingWriter struct {
 	Next     io.Writer
-	Redactor *secrets.Redactor
-	stream   *secrets.StreamingRedactor
+	Redactor *redact.Redactor
+	stream   *redact.Stream
 }
 
 func (w *StreamingRedactingWriter) Write(p []byte) (int, error) {
@@ -115,7 +116,7 @@ func (w *StreamingRedactingWriter) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	if w.stream == nil {
-		w.stream = secrets.NewStreamingRedactor(w.Redactor)
+		w.stream = diagnosticredact.Stream(w.Redactor)
 	}
 	redacted := []byte(w.stream.RedactChunk(string(p)))
 	if len(redacted) == 0 {
@@ -216,10 +217,10 @@ func nonNilContext(ctx context.Context) context.Context {
 	return ctx
 }
 
-func commandRedactor(options Options) *secrets.Redactor {
+func commandRedactor(options Options) *redact.Redactor {
 	redactor := options.Redactor
 	if len(options.Env) > 0 {
-		redactor = secrets.Combine(redactor, secrets.NewEnvironmentRedactor(options.Env))
+		redactor = redact.Combine(redactor, redact.New(redact.Options{Environment: options.Env}))
 	}
 	if len(options.SensitiveValues) == 0 {
 		return redactor
@@ -228,7 +229,7 @@ func commandRedactor(options Options) *secrets.Redactor {
 	for i, value := range options.SensitiveValues {
 		entries = append(entries, fmt.Sprintf("DEVSY_SENSITIVE_%d=%s", i, value))
 	}
-	return secrets.Combine(redactor, secrets.NewRedactor(entries))
+	return redact.Combine(redactor, redact.FromEntries(entries))
 }
 
 func withContextError(ctx context.Context, err error) error {
@@ -241,11 +242,11 @@ func withContextError(ctx context.Context, err error) error {
 // RunCommand executes an already-configured command with bounded, redacted
 // stdout and stderr capture. Existing command setup such as an explicit
 // environment, working directory, or stdin is preserved.
-func RunCommand(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
+func RunCommand(cmd *exec.Cmd, redactor *redact.Redactor) (Result, error) {
 	return runCommand(cmd, redactor, streams{})
 }
 
-func runCommand(cmd *exec.Cmd, redactor *secrets.Redactor, dest streams) (Result, error) {
+func runCommand(cmd *exec.Cmd, redactor *redact.Redactor, dest streams) (Result, error) {
 	if cmd == nil {
 		return Result{}, errors.New("subprocess command is nil")
 	}
@@ -325,12 +326,10 @@ func processSignal(state *os.ProcessState) string {
 	return ""
 }
 
-func displayCommand(binary string, args []string, redactor *secrets.Redactor) string {
+func displayCommand(binary string, args []string, redactor *redact.Redactor) string {
 	parts := append([]string{binary}, args...)
 	for i := range parts {
-		if redactor != nil {
-			parts[i] = redactor.Redact(parts[i])
-		}
+		parts[i] = diagnosticredact.Record(redactor, parts[i])
 		if strings.ContainsAny(parts[i], " \t\n\"") {
 			parts[i] = fmt.Sprintf("%q", parts[i])
 		}
@@ -341,16 +340,16 @@ func displayCommand(binary string, args []string, redactor *secrets.Redactor) st
 // Buffer is a bounded, redacting io.Writer for subprocess output.
 type Buffer struct {
 	mu        sync.Mutex
-	stream    *secrets.StreamingRedactor
+	stream    *redact.Stream
 	data      []byte
 	lines     int
 	truncated bool
 }
 
 // NewBuffer creates a bounded output buffer.
-func NewBuffer(redactor *secrets.Redactor) *Buffer {
+func NewBuffer(redactor *redact.Redactor) *Buffer {
 	return &Buffer{
-		stream: secrets.NewStreamingRedactor(redactor),
+		stream: diagnosticredact.Stream(redactor),
 		data:   make([]byte, 0, 4096),
 	}
 }

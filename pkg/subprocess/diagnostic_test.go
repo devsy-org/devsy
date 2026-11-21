@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 )
 
 type failingWriter struct{ calls int }
@@ -69,7 +69,7 @@ func TestDiagnosticSinkMasksSecretSplitAcrossWrites(t *testing.T) {
 	var out bytes.Buffer
 	script := "printf 'key=DEVSY_SECRET_TEST_'; sleep 0.1; printf '846297 done\\n'"
 	_, err := Run(context.Background(), "sh", []string{"-c", script}, Options{
-		Redactor:   secrets.NewRedactor([]string{captureToken + captureTestSecret}),
+		Redactor:   redact.FromEntries([]string{captureToken + captureTestSecret}),
 		Diagnostic: DiagnosticSink{Stdout: &out},
 	})
 	if err != nil {

@@ -3,10 +3,12 @@ package log
 import (
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
@@ -32,21 +34,26 @@ type Config struct {
 	DefaultLevel string // persisted default when no explicit verbosity flag is set
 	VerbositySet bool
 	Format       string // "text", "json", "logfmt"
-	Redactor     *secrets.Redactor
+	Redactor     *redact.Redactor
 }
 
 // Init configures the global logger. Called once in root command PersistentPreRunE.
 func Init(cfg Config) {
-	cfg.Redactor = secrets.Combine(cfg.Redactor, secrets.NewEnvironmentRedactor(os.Environ()))
+	cfg.Redactor = redact.Combine(
+		cfg.Redactor,
+		redact.New(redact.Options{Environment: os.Environ()}),
+	)
 	level := resolveLevel(cfg)
 	encoder := resolveEncoder(cfg.Format)
-	stderrWriter := zapcore.Lock(&redactingWriter{next: os.Stderr, redactor: cfg.Redactor})
+	stderrWriter := zapcore.Lock(
+		&redactingWriter{next: os.Stderr, redactor: cfg.Redactor, completeRecords: true},
+	)
 	stderrCore := zapcore.NewCore(encoder, consoleWriter{next: stderrWriter}, level)
 	// A separate core writes to the fanout sink with the same level/encoder
 	// so AddSink consumers see the same output stderr does.
 	sinkCore := zapcore.NewCore(
 		resolveEncoder(cfg.Format),
-		&redactingWriter{next: extraSinks, redactor: cfg.Redactor},
+		&redactingWriter{next: extraSinks, redactor: cfg.Redactor, completeRecords: true},
 		level,
 	)
 	core := zapcore.NewTee(stderrCore, sinkCore)
@@ -89,10 +96,11 @@ func SuppressConsoleOutput() func() {
 }
 
 type redactingWriter struct {
-	mu       sync.Mutex
-	next     io.Writer
-	redactor *secrets.Redactor
-	stream   *secrets.StreamingRedactor
+	mu              sync.Mutex
+	next            io.Writer
+	redactor        *redact.Redactor
+	stream          *redact.Stream
+	completeRecords bool
 }
 
 func (w *redactingWriter) Write(p []byte) (int, error) {
@@ -101,14 +109,11 @@ func (w *redactingWriter) Write(p []byte) (int, error) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.stream == nil {
-		w.stream = secrets.NewStreamingRedactor(w.redactor)
-	}
-	redacted := []byte(w.stream.RedactChunk(string(p)))
+	redacted := w.redactOutput(string(p))
 	if len(redacted) == 0 {
 		return len(p), nil
 	}
-	_, err := w.next.Write(redacted)
+	_, err := io.WriteString(w.next, redacted)
 	if err != nil {
 		return 0, err
 	}
@@ -132,6 +137,20 @@ func (w *redactingWriter) Sync() error {
 		return syncer.Sync()
 	}
 	return nil
+}
+
+func (w *redactingWriter) redactOutput(input string) string {
+	if w.completeRecords {
+		result := diagnosticredact.Record(w.redactor, input)
+		if strings.HasSuffix(input, "\n") && !strings.HasSuffix(result, "\n") {
+			return result + "\n"
+		}
+		return result
+	}
+	if w.stream == nil {
+		w.stream = diagnosticredact.Stream(w.redactor)
+	}
+	return w.stream.RedactChunk(input)
 }
 
 // AddSink attaches w as an additional destination for log output for the

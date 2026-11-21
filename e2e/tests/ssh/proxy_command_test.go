@@ -4,13 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/stretchr/testify/require"
 )
 
 func TestProxyCommandExcerptProtectsFailureReport(t *testing.T) {
 	secret := strings.Repeat("test-value-", 8)
-	redactor := secrets.NewEnvironmentRedactor([]string{"DEVSY_TOKEN=" + secret})
+	redactor := redact.New(redact.Options{Environment: []string{"DEVSY_TOKEN=" + secret}})
 	input := strings.Repeat(
 		"padding",
 		3000,

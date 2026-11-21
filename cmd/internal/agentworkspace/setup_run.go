@@ -4,8 +4,8 @@ import (
 	"os"
 	"slices"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
@@ -31,9 +31,9 @@ func startProviderRun(
 		RunID:            opts.SetupRunID,
 		ParentProducerID: parent,
 		Location:         workspacelogs.LocationProviderHost,
-		Redactor: secrets.Combine(
-			secrets.NewEnvironmentRedactor(os.Environ()),
-			secrets.NewRedactor(slices.Clone(secretEntries)),
+		Redactor: redact.Combine(
+			redact.New(redact.Options{Environment: os.Environ()}),
+			redact.FromEntries(slices.Clone(secretEntries)),
 		),
 		Run: workspacelogs.RunSpec{
 			Context:            ws.Context,

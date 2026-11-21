@@ -6,7 +6,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -22,20 +23,20 @@ func Writer(level int) io.WriteCloser {
 // PassthroughWriter writes bytes exactly as received, with no level
 // filtering, line buffering, or structured formatting.
 func PassthroughWriter() io.WriteCloser {
-	return PassthroughWriterWithRedactor(secrets.NewEnvironmentRedactor(os.Environ()))
+	return PassthroughWriterWithRedactor(redact.New(redact.Options{Environment: os.Environ()}))
 }
 
 // PassthroughWriterWithRedactor writes raw bytes to stderr while applying the
 // supplied streaming redactor before anything leaves the process.
-func PassthroughWriterWithRedactor(redactor *secrets.Redactor) io.WriteCloser {
+func PassthroughWriterWithRedactor(redactor *redact.Redactor) io.WriteCloser {
 	return &passthroughWriter{
-		stream: secrets.NewStreamingRedactor(redactor),
+		stream: diagnosticredact.Stream(redactor),
 	}
 }
 
 type passthroughWriter struct {
 	mu     sync.Mutex
-	stream *secrets.StreamingRedactor
+	stream *redact.Stream
 }
 
 func (w *passthroughWriter) Write(p []byte) (int, error) {

@@ -13,10 +13,10 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
@@ -135,7 +135,7 @@ func runHostCLI(ctx context.Context, path string, args ...string) ([]byte, error
 	if !validHostCLI(path) || !validHostCLIArgs(args) {
 		return nil, errors.New("unsupported editor command")
 	}
-	options := subprocess.Options{Redactor: secrets.NewEnvironmentRedactor(os.Environ())}
+	options := subprocess.Options{Redactor: redact.New(redact.Options{Environment: os.Environ()})}
 	var stdout bytes.Buffer
 	if len(args) == 1 && args[0] == listExtensionsArg {
 		// Extension enumeration is functional data, not a diagnostic tail.
@@ -272,7 +272,7 @@ func (l hostLauncher) open(ctx context.Context, params OpenParams) error {
 	if _, ok := openConfigs[params.Flavor]; !ok {
 		return newStageError(stageResolve, errors.New("unsupported editor flavor"))
 	}
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	fields := []any{
 		"operation", redactor.Redact(status.OperationID(ctx)),
 		"flavor", redactor.Redact(string(params.Flavor)),

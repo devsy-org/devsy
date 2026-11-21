@@ -8,9 +8,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
@@ -56,11 +56,11 @@ func (c *command) Run() (string, error) {
 }
 
 func (c *command) RunContext(ctx context.Context) (string, error) {
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
 	if craneSigningKey != "" {
-		redactor = secrets.Combine(
+		redactor = redact.Combine(
 			redactor,
-			secrets.NewRedactor([]string{"CRANE_SIGNING_KEY=" + craneSigningKey}),
+			redact.FromEntries([]string{"CRANE_SIGNING_KEY=" + craneSigningKey}),
 		)
 	}
 	result, err := subprocess.Run(ctx, c.cmd, c.args, subprocess.Options{

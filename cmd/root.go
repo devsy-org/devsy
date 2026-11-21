@@ -29,6 +29,8 @@ import (
 	"github.com/devsy-org/devsy/cmd/template"
 	"github.com/devsy-org/devsy/cmd/update"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/clihelp"
 	"github.com/devsy-org/devsy/pkg/command"
@@ -38,7 +40,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/flatpak"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -224,7 +225,7 @@ func configureOutput(
 		DefaultLevel: defaultLogLevel(globalFlags),
 		VerbositySet: rootCmd.PersistentFlags().Changed(names.Verbose),
 		Format:       format,
-		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
+		Redactor:     redact.New(redact.Options{Environment: os.Environ()}),
 	})
 	return machineMode
 }
@@ -335,18 +336,18 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 }
 
 func writeCLIErrorText(cliErr *clierr.CLIError) {
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
-	fmt.Fprintf(os.Stderr, "Error: %s\n", redactor.Redact(cliErr.Message))
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
+	fmt.Fprintf(os.Stderr, "Error: %s\n", diagnosticredact.Field(redactor, cliErr.Message))
 	if cliErr.Code != "" && cliErr.Code != clierr.CodeUnknown {
 		fmt.Fprintf(os.Stderr, "Error code: %s\n", redactor.Redact(string(cliErr.Code)))
 	}
 	writeCLIErrorContext(cliErr.Context, redactor)
 	if cliErr.Hint != "" {
-		fmt.Fprintf(os.Stderr, "Try: %s\n", redactor.Redact(cliErr.Hint))
+		fmt.Fprintf(os.Stderr, "Try: %s\n", diagnosticredact.Field(redactor, cliErr.Hint))
 	}
 }
 
-func writeCLIErrorContext(errContext map[string]string, redactor *secrets.Redactor) {
+func writeCLIErrorContext(errContext map[string]string, redactor *redact.Redactor) {
 	if len(errContext) == 0 {
 		return
 	}
@@ -361,7 +362,7 @@ func writeCLIErrorContext(errContext map[string]string, redactor *secrets.Redact
 			os.Stderr,
 			"  %s: %s\n",
 			redactor.Redact(key),
-			redactor.Redact(errContext[key]),
+			diagnosticredact.Field(redactor, errContext[key]),
 		)
 	}
 }
@@ -449,7 +450,7 @@ func rootPreRun(
 		DefaultLevel: defaultLogLevel(globalFlags),
 		VerbositySet: persistentFlags.Changed(names.Verbose),
 		Format:       resolveLogFormat(cobraCmd, globalFlags.LogOutput),
-		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
+		Redactor:     redact.New(redact.Options{Environment: os.Environ()}),
 	})
 	klog.SetLogger(logr.New(log.LogrSink()))
 

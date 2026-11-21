@@ -17,11 +17,11 @@ import (
 
 	"github.com/devsy-org/devsy-runtime-sdk/conformance/fake"
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/shirou/gopsutil/v4/process"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap/zapcore"
@@ -171,7 +171,7 @@ func (s *HostSuite) TestContainerConversionRejectsInvalidState() {
 
 func (s *HostSuite) TestErrorRedactionPreservesStatus() {
 	host := s.host(fake.Normal)
-	host.redactor = secrets.NewRedactor([]string{"SECRET=private-canary-value"})
+	host.redactor = redact.FromEntries([]string{"SECRET=private-canary-value"})
 	err := host.operationError(
 		context.Background(),
 		"Start",
@@ -215,8 +215,8 @@ func (s *HostSuite) TestSplitDiagnosticRedaction() {
 	var output bytes.Buffer
 	writer := &diagnosticWriter{
 		writer: &output,
-		stream: secrets.NewStreamingRedactor(
-			secrets.NewRedactor([]string{"TOKEN=private-canary-value"}),
+		stream: redact.NewStream(
+			redact.FromEntries([]string{"TOKEN=private-canary-value"}),
 		),
 	}
 	_, err := writer.Write([]byte("diagnostic private-canary-"))

@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/driver/runargs"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
@@ -448,7 +448,7 @@ func (d *dockerDriver) startContainer(
 	logBindSources(args)
 
 	stderr := subprocess.NewBuffer(
-		secrets.NewEnvironmentRedactor(append(os.Environ(), d.Docker.Environment...)),
+		redact.New(redact.Options{Environment: append(os.Environ(), d.Docker.Environment...)}),
 	)
 	err := d.Docker.RunWithDir(
 		ctx,

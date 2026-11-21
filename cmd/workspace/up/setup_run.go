@@ -3,9 +3,9 @@ package up
 import (
 	"os"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
@@ -27,7 +27,7 @@ func (cmd *UpCmd) startSetupRun(client client2.BaseWorkspaceClient) *workspacelo
 	opts := workspacelogs.SessionOptions{
 		Run:      spec,
 		Location: workspacelogs.LocationHost,
-		Redactor: secrets.NewEnvironmentRedactor(os.Environ()),
+		Redactor: redact.New(redact.Options{Environment: os.Environ()}),
 	}
 	if cmd.workerTask != nil {
 		opts.RunID = cmd.workerTask.RunID()

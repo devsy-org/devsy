@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
@@ -16,7 +16,7 @@ func runCaptured(ctx context.Context, cmd *exec.Cmd) (subprocess.Result, error) 
 	if env == nil {
 		env = os.Environ()
 	}
-	result, err := subprocess.RunCommand(cmd, secrets.NewEnvironmentRedactor(env))
+	result, err := subprocess.RunCommand(cmd, redact.New(redact.Options{Environment: env}))
 	result.OperationID = status.OperationID(ctx)
 	return result, err
 }
