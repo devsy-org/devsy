@@ -212,9 +212,10 @@ func (fixture *dockerlessPathFixture) verifyEnvironment(
 	// SSH must find the executable solely through the image/remote environment.
 	out, err := fixture.framework.DevsySSHOnce(commandCtx, fixture.id, dockerlessPathCommand)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred(), "%s bare-name SSH command", phase)
-	gomega.Expect(strings.TrimSpace(out)).
-		To(gomega.Equal(expectedOutput), "%s SSH environment", phase)
-	gomega.Expect(out).NotTo(gomega.ContainSubstring("/.dockerless"))
+	expectFixtureOutput(
+		strings.TrimSpace(out) == expectedOutput, out, phase+" SSH environment")
+	expectFixtureOutput(
+		!strings.Contains(out, "/.dockerless"), out, phase+" SSH output omits the build path")
 
 	// Raw kubectl exec reads files without treating the pod's original builder
 	// environment as the post-setup agent/SSH environment.
