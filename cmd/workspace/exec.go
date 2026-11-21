@@ -118,7 +118,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	reporter, err := newWorkspaceStatusReporter(
 		cmd.ResultFormat,
 		os.Stderr,
-		cmd.Verbosity > 0 || cmd.Debug,
+		log.InfoEnabled(),
 		cmd.NoStatus,
 	)
 	if err != nil {

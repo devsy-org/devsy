@@ -35,7 +35,7 @@ func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
 		{flagName: "home", envName: "DEVSY_HOME", want: "/tmp/h", persistent: true},
 		{flagName: "context", envName: "DEVSY_CONTEXT", want: "ctx-a", persistent: true},
 		{flagName: cmdProvider, envName: "DEVSY_PROVIDER", want: "docker", persistent: true},
-		{flagName: "debug", envName: "DEVSY_DEBUG", want: "true", persistent: true},
+		{flagName: "no-status", envName: "DEVSY_NO_STATUS", want: "true", persistent: true},
 		{
 			cmdPath:  "platform workspace list",
 			flagName: "host",

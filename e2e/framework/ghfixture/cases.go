@@ -266,7 +266,7 @@ var ExpectedChecks = []string{
 	"real gh arguments pass through Cobra: api --devsy-unknown-fixture-flag",
 	"real gh arguments pass through Cobra: api --context sample",
 	"real gh arguments pass through Cobra: api --log-level invalid",
-	"real gh arguments pass through Cobra: api --log-output json",
+	"real gh arguments pass through Cobra: api --log-format json",
 	"debug enables relay logs without changing stdout",
 	"trace enables relay logs without changing stdout",
 	"aliases inherit relay self-path",

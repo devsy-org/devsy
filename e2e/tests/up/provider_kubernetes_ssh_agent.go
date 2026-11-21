@@ -101,7 +101,7 @@ var _ = ginkgo.Describe(
 					defer cancel()
 					// The clone override applies only to the current up invocation.
 					baseArgs := []string{
-						"workspace", "up", "--debug", "--ide", "none",
+						"workspace", "up", debugFlag, "--ide", "none",
 						"--pull-from-inside-container=true",
 					}
 					stdout, stderr, err := f.ExecCommandCapture(

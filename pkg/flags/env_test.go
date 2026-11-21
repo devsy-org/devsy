@@ -14,7 +14,6 @@ import (
 func TestEnvName_MatchesConfigConstants(t *testing.T) {
 	cases := map[string]string{
 		"home":      config.EnvHome,
-		"debug":     config.EnvDebug,
 		"agent-url": config.EnvAgentURL,
 		"log-level": config.EnvLogLevel,
 	}

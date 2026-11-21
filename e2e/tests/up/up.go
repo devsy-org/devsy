@@ -22,7 +22,7 @@ import (
 const (
 	noStatusFlag     = "--no-status"
 	resultFormatFlag = "--result-format"
-	debugFlag        = "--debug"
+	debugFlag        = "--log-level=debug"
 	eventsCommand    = "events"
 	ideNone          = "none"
 )

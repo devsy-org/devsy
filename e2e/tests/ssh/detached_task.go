@@ -52,7 +52,7 @@ func startDetachedTunnelUp(
 ) (string, error) {
 	args := []string{
 		cmdWorkspace, "up",
-		names.Flag(names.Debug),
+		names.FlagValue(names.LogLevel, "debug"),
 		names.Flag(names.IDE), "none",
 		names.Flag(names.SSHTunnel),
 		names.Flag(names.Detach),

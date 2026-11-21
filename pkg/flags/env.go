@@ -29,10 +29,7 @@ const EnvAnnotation = "devsy_env"
 //
 // Failure modes are loud by design:
 //   - panics if the flag is not registered (programmer bug at startup);
-//   - log.Fatalf if the env value is rejected by the flag's type (operator bug;
-//     e.g. DEVSY_DEBUG=garbage on a bool flag). This matches the contract of
-//     the prior inheritFlagsFromEnvironment loop so misconfigured env vars are
-//     never silently ignored.
+//   - log.Fatalf if the env value is rejected by the flag's type.
 func BindEnv(fs *pflag.FlagSet, flagName string) {
 	f := fs.Lookup(flagName)
 	if f == nil {

@@ -36,9 +36,7 @@ func init() { Init(Config{}) }
 
 type Config struct {
 	Verbosity    int
-	Quiet        bool
 	Debug        bool
-	VerbositySet bool
 	Level        string
 	DefaultLevel string
 	Format       string
@@ -46,6 +44,12 @@ type Config struct {
 }
 
 func Init(cfg Config) {
+	if cfg.Level == "" {
+		cfg.Level = os.Getenv("DEVSY_LOG_LEVEL")
+	}
+	if cfg.Format == "" {
+		cfg.Format = os.Getenv("DEVSY_LOG_FORMAT")
+	}
 	redactor := redact.Combine(cfg.Redactor, redact.New(redact.Options{Environment: os.Environ()}))
 	level := resolveLevel(cfg)
 	writer := &redactingWriter{next: outputWriter{}}
@@ -211,11 +215,9 @@ func (f *writerFanout) add(w io.Writer) (remove func()) {
 
 func resolveLevel(cfg Config) Level {
 	switch {
-	case cfg.Quiet:
-		return slog.LevelError
 	case cfg.Debug:
 		return slog.LevelDebug
-	case cfg.VerbositySet || cfg.Verbosity > 0:
+	case cfg.Verbosity > 0:
 		return VerbosityToLevel(cfg.Verbosity)
 	default:
 		return resolveNamedLevel(cfg)

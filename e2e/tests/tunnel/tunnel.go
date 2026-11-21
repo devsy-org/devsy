@@ -12,6 +12,8 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const debugLevelFlag = "--log-level=debug"
+
 var _ = ginkgo.Describe(
 	"devsy tunnel test suite",
 	ginkgo.Label("tunnel"),
@@ -46,7 +48,7 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 				})
 
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, debugLevelFlag)
 				framework.ExpectNoError(err)
 
 				out, err := f.DevsySSH(
@@ -90,7 +92,7 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 				})
 
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, debugLevelFlag)
 				framework.ExpectNoError(err)
 
 				out, err := f.DevsySSH(ctx, tempDir, "echo alive")

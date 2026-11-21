@@ -366,7 +366,7 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 		)
 
 		ginkgo.It("mounts", func(ctx context.Context) {
-			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-mounts", "--debug")
+			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-mounts", debugFlag)
 			framework.ExpectNoError(err)
 
 			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)

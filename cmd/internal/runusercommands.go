@@ -112,7 +112,7 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 	reporter, err := newLifecycleStatusReporter(
 		cmd.ResultFormat,
 		os.Stderr,
-		cmd.Verbosity > 0 || cmd.Debug,
+		log.InfoEnabled(),
 		cmd.NoStatus,
 	)
 	if err != nil {

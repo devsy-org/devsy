@@ -45,7 +45,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			err = f.DevsyUp(ctx, tempDir, "--debug")
+			err = f.DevsyUp(ctx, tempDir, debugFlag)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutVeryLong()))
 
@@ -59,7 +59,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				err = f.DevsyUp(ctx, tempDir, "--debug")
+				err = f.DevsyUp(ctx, tempDir, debugFlag)
 				framework.ExpectNoError(err)
 			},
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
@@ -96,7 +96,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				ginkgo.By("Starting Devsy again with --recreate")
-				err = f.DevsyUp(ctx, tempDir, "--debug", names.Flag(names.Recreate))
+				err = f.DevsyUp(ctx, tempDir, debugFlag, names.Flag(names.Recreate))
 				framework.ExpectNoError(err)
 
 				container, err = dockerHelper.FindDevContainer(ctx, []string{
@@ -143,7 +143,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				ginkgo.By("Starting Devsy again with --recreate")
-				err = f.DevsyUp(ctx, tempDir, "--debug", names.Flag(names.Recreate))
+				err = f.DevsyUp(ctx, tempDir, debugFlag, names.Flag(names.Recreate))
 				framework.ExpectNoError(err)
 
 				container, err = dockerHelper.FindDevContainer(ctx, []string{

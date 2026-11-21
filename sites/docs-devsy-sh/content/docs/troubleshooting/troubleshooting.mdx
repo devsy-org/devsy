@@ -20,7 +20,7 @@ Port forwarding needs an open SSH session. With `--ide none`, keep one open with
 
 ### Reading CLI errors
 
-Pass `--log-output json` to get errors as JSON with a stable `code` and a `message`. Some errors also include a `hint` and a `context` object.
+Pass `--log-format=json` to get errors as JSON with a stable `code` and a `message`. Some errors also include a `hint` and a `context` object.
 
 ```json
 {
@@ -43,7 +43,7 @@ Pass `--log-output json` to get errors as JSON with a stable `code` and a `messa
 | `PANIC` | Devsy hit an internal error. Report it. |
 | `UNKNOWN` | The error was not classified. The original text is in `message`. |
 
-Run with `--debug` to see the full error chain.
+Run with `--log-level=debug` to see the full error chain.
 
 ### Find the right log
 
@@ -109,11 +109,11 @@ A failed hook is still a successful read. The command exits zero and returns the
 
 ### Hide live progress while keeping diagnostics
 
-Pass `--no-status` to hide live progress messages. Diagnostics still follow `--quiet`, `--log-level` and the diagnostic format settings. A command's stdout and stderr stay on their original streams, and event and task recording continue. The flag does not turn off capture or history. `--quiet` also leaves capture on, and setup history stays readable with both flags.
+Pass `--no-status` to hide live progress messages. Use `--log-level` and `--log-format` to control diagnostics. A command's stdout and stderr stay on their original streams, and event and task recording continue. The flag does not turn off capture or history. Setting the log level to `error` leaves capture on and keeps setup history readable.
 
 ### VS Code editor launch diagnostics
 
-For VS Code, VSCodium and related editors, a failed CLI launch records the `flavor`, `operation`, `route`, failed `stage` and failure `class`, such as `exit status 1` or `permission denied`. A successful URI-handler fallback does not erase that CLI warning. With `--debug`, the logs also record executable resolution, extension enumeration and installation, and dispatch stages. Use the `operation` value to match records in the workspace task's logs.
+For VS Code, VSCodium and related editors, a failed CLI launch records the `flavor`, `operation`, `route`, failed `stage` and failure `class`, such as `exit status 1` or `permission denied`. A successful URI-handler fallback does not erase that CLI warning. With `--log-level=debug`, the logs also record executable resolution, extension enumeration and installation, and dispatch stages. Use the `operation` value to match records in the workspace task's logs.
 
 Diagnostics omit executable paths, command arguments, folder URIs, editor output and error text, because these can contain private paths, host names or credentials. Failure classes and stage names remain. The `cli_kind` value names an executable or batch wrapper. It does not show that a Windows wrapper ran.
 

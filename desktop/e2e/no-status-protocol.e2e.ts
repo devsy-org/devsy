@@ -39,7 +39,7 @@ test("candidate CLI status reaches the Desktop timeline with --no-status", () =>
       [
         "--no-status",
         "--result-format=json",
-        "--log-output=json",
+        "--log-format=json",
         "provider",
         "add",
         resolve(REPO_DIR, "providers/docker/provider.yaml"),

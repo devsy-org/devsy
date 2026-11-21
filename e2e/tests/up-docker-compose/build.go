@@ -54,7 +54,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			// Wait for devsy workspace to come online (deadline: 30s)
-			err = f.DevsyUp(ctx, tempDir, "--debug")
+			err = f.DevsyUp(ctx, tempDir, flagDebug)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -117,7 +117,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			ginkgo.By("Starting Devsy again with --recreate")
-			err = f.DevsyUp(ctx, tempDir, "--debug", names.Flag(names.Recreate))
+			err = f.DevsyUp(ctx, tempDir, flagDebug, names.Flag(names.Recreate))
 			framework.ExpectError(err)
 
 			ginkgo.By("Should leave original container running")
@@ -169,7 +169,7 @@ var _ = ginkgo.Describe(
 				Should(gomega.Equal(1), "1 compose container to be created")
 
 			ginkgo.By("Starting Devsy again with --recreate")
-			err = f.DevsyUp(ctx, tempDir, "--debug", names.Flag(names.Recreate))
+			err = f.DevsyUp(ctx, tempDir, flagDebug, names.Flag(names.Recreate))
 			framework.ExpectNoError(err)
 
 			ginkgo.By("Should start a new docker-compose container on rebuild")

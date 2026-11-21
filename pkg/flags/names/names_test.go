@@ -133,13 +133,11 @@ var wireNames = []struct {
 	{names.ForceInternalBuildKit, "force-internal-buildkit"},
 	{names.DaemonInterval, "daemon-interval"},
 	{names.ForceDockerless, "force-dockerless"},
-	{names.Debug, "debug"},
 	{names.Command, "command"},
 	{names.Context, "context"},
 	{names.User, "user"},
 	{names.Workdir, "workdir"},
 	{names.Home, "home"},
-	{names.LogOutput, "log-output"},
 	{names.LogFormat, "log-format"},
 	{names.ResultFormat, "result-format"},
 	{names.NoStatus, "no-status"},
@@ -154,8 +152,6 @@ var wireNames = []struct {
 	{names.ShutdownAction, "shutdown-action"},
 	{names.Timeout, "timeout"},
 	{names.Flavor, "flavor"},
-	{names.Verbose, "verbose"},
-	{names.Quiet, "quiet"},
 	{names.Owner, "owner"},
 	{names.AgentDir, "agent-dir"},
 	{names.StateRoot, "state-root"},
@@ -166,7 +162,6 @@ var wireNames = []struct {
 	{names.OpenBrowser, "open-browser"},
 	{names.InheritListener, "inherit-listener"},
 	{names.Config, "config"},
-	{names.JSON, "json"},
 	{names.Name, "name"},
 	{names.DryRun, "dry-run"},
 	{names.BaseImage, "base-image"},
@@ -282,8 +277,8 @@ func TestFlagHelpers(t *testing.T) {
 	if got := names.Flag("stdio"); got != "--stdio" {
 		t.Errorf("Flag = %q, want --stdio", got)
 	}
-	if got := names.FlagValue("log-output", "raw"); got != "--log-output=raw" {
-		t.Errorf("FlagValue = %q, want --log-output=raw", got)
+	if got := names.FlagValue("log-format", "text"); got != "--log-format=text" {
+		t.Errorf("FlagValue = %q, want --log-format=text", got)
 	}
 	if got := names.FlagTrue("agent-forwarding"); got != "--agent-forwarding=true" {
 		t.Errorf("FlagTrue = %q, want --agent-forwarding=true", got)

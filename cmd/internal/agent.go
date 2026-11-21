@@ -45,12 +45,17 @@ func agentPreRunE(globalFlags *flags.GlobalFlags) func(*cobra.Command, []string)
 		}
 		root.Annotations[config.AgentExecutedAnnotation] = "true"
 
+		format := globalFlags.LogFormat
+		switch format {
+		case "", "auto":
+			format = "json"
+		case "plain":
+			format = "text"
+		}
 		log.Init(log.Config{
-			Quiet:        globalFlags.Quiet,
-			Debug:        globalFlags.Debug,
 			Level:        globalFlags.LogLevel,
 			DefaultLevel: log.LevelInfoName,
-			Format:       "json",
+			Format:       format,
 		})
 
 		if globalFlags.DevsyHome != "" {

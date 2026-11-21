@@ -278,7 +278,7 @@ func (cmd *SetupContainerCmd) prepareWorkspace(
 		SetupInfo:         state.setupInfo,
 		DockerlessOptions: &state.workspaceInfo.Dockerless,
 		ImageConfigOutput: agent.DefaultImageConfigPath,
-		Debug:             cmd.Debug,
+		Debug:             log.DebugEnabled(),
 		ConfigureCredentialsFunc: func(ctx context.Context) (string, error) {
 			serverPort, err := credentials.StartCredentialsServer(
 				ctx,

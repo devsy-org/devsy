@@ -24,9 +24,6 @@ const (
 	// EnvUI indicates the desktop UI is active.
 	EnvUI = "DEVSY_UI"
 
-	// EnvDebug enables debug logging.
-	EnvDebug = "DEVSY_DEBUG"
-
 	// EnvInsecureTLS, when truthy, disables TLS certificate verification for the
 	// shared HTTP client. Enabled by default.
 	EnvInsecureTLS = "DEVSY_INSECURE_TLS"

@@ -15,12 +15,9 @@ type GlobalFlags struct {
 	UID       string
 	Owner     platform.OwnerFilter
 
-	LogOutput    string
+	LogFormat    string
 	LogLevel     string
 	ResultFormat string
-	Verbosity    int
-	Quiet        bool
-	Debug        bool
 	NoStatus     bool
 }
 
@@ -30,7 +27,6 @@ func SetGlobalFlags(flags *flag.FlagSet) *GlobalFlags {
 
 	registerCoreFlags(flags, globalFlags)
 	registerOutputFlags(flags, globalFlags)
-	registerVerbosityFlags(flags, globalFlags)
 	registerHiddenFlags(flags, globalFlags)
 	bindGlobalEnvVars(flags)
 
@@ -71,38 +67,8 @@ func registerOutputFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 		"The result output format. Can be auto, text, plain, or json",
 	)
 	flags.StringVar(
-		&globalFlags.LogOutput,
-		names.LogOutput,
-		"text",
-		"The log format to use. Can be text, json, or logfmt",
-	)
-	flags.StringVar(
-		&globalFlags.LogOutput,
-		names.LogFormat,
-		"text",
+		&globalFlags.LogFormat, names.LogFormat, "auto",
 		"The log format. Can be auto, text, plain, json, or logfmt",
-	)
-}
-
-func registerVerbosityFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
-	flags.CountVarP(
-		&globalFlags.Verbosity,
-		names.Verbose,
-		"v",
-		"Increase log verbosity (-v=info, -vv=debug, -vvv=trace)",
-	)
-	flags.BoolVarP(
-		&globalFlags.Quiet,
-		names.Quiet,
-		"q",
-		false,
-		"Suppress all log output except errors",
-	)
-	flags.BoolVar(
-		&globalFlags.Debug,
-		names.Debug,
-		false,
-		"Enable debug logging (equivalent to -vv)",
 	)
 }
 
@@ -124,7 +90,6 @@ func bindGlobalEnvVars(flags *flag.FlagSet) {
 	pkgflags.BindEnv(flags, names.Home)
 	pkgflags.BindEnv(flags, names.Context)
 	pkgflags.BindEnv(flags, names.Provider)
-	pkgflags.BindEnv(flags, names.Debug)
 	pkgflags.BindEnv(flags, names.LogLevel)
 	pkgflags.BindEnv(flags, names.LogFormat)
 	pkgflags.BindEnv(flags, names.ResultFormat)
