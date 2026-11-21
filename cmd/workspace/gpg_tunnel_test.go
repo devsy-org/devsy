@@ -17,6 +17,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/port"
+	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -278,6 +279,8 @@ func TestGPGForwardFailureReasonUsesSafeCategory(t *testing.T) {
 }
 
 func TestWriteGPGForwardDiagnosticRedactsAndScopesDetails(t *testing.T) {
+	const foldedCanary = "folded-gpg-fixture-value"
+	const publicDetail = "public gpg detail"
 	home := t.TempDir()
 	path := filepath.Join(
 		home, ".devsy", "desktop", "logs", "workspaces", "default", "ws-1", "ssh.log",
@@ -286,12 +289,14 @@ func TestWriteGPGForwardDiagnosticRedactsAndScopesDetails(t *testing.T) {
 		t.Fatalf("create diagnostic directory: %v", err)
 	}
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv(gpgForwardDiagnosticFileEnv, path)
 	t.Setenv(gpgForwardSessionIDEnv, "session-123")
 	t.Setenv("TOKEN", "diagnostic-secret")
 
 	if !writeGPGForwardDiagnostic(errors.New(
-		"start gpg-agent reverse forward: token=diagnostic-secret",
+		"start gpg-agent reverse forward: token=diagnostic-secret\nAuthorization:\n Bearer " +
+			foldedCanary + "\n" + publicDetail,
 	)) {
 		t.Fatal("writeGPGForwardDiagnostic() = false, want true")
 	}
@@ -306,6 +311,8 @@ func TestWriteGPGForwardDiagnosticRedactsAndScopesDetails(t *testing.T) {
 		t.Fatalf("decode diagnostic: %v", err)
 	}
 	assertGPGForwardDiagnostic(t, record)
+	assert.NotContains(t, record.Message, foldedCanary)
+	assert.Contains(t, record.Message, publicDetail)
 	assertPrivateGPGDiagnosticFile(t, path)
 }
 
