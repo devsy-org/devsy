@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging"
 	"github.com/devsy-org/devsy/logging/redact"
 	"golang.org/x/term"
@@ -72,7 +73,12 @@ func Init(cfg Config) {
 		_ = old.writer.Sync()
 	}
 	current.Store(
-		&loggerState{logger: slog.New(handler), level: level, writer: writer, redactor: redactor},
+		&loggerState{
+			logger:   slog.New(diagnosticredact.ProtectMessages(handler, redactor)),
+			level:    level,
+			writer:   writer,
+			redactor: redactor,
+		},
 	)
 	stateMu.Unlock()
 }
@@ -117,7 +123,7 @@ func (w *redactingWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.stream == nil {
-		w.stream = redact.NewStream(w.redactor)
+		w.stream = diagnosticredact.Stream(w.redactor)
 	}
 	redacted := []byte(w.stream.RedactChunk(string(p)))
 	if len(redacted) == 0 {

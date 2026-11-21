@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -203,7 +204,8 @@ func writeGPGForwardDiagnostic(err error) bool {
 }
 
 func marshalGPGForwardDiagnostic(err error) ([]byte, error) {
-	message := redact.New(redact.Options{Environment: os.Environ()}).Redact(err.Error())
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
+	message := diagnosticredact.Record(redactor, err.Error())
 	if runes := []rune(message); len(runes) > 2048 {
 		message = string(runes[:2048])
 	}

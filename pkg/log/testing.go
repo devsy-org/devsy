@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging"
 	"github.com/devsy-org/devsy/logging/redact"
 )
@@ -199,7 +200,7 @@ func InitTest(t testing.TB) {
 		Level: slog.LevelDebug, Format: logging.FormatText, Redactor: redactor,
 	})
 	state := &loggerState{
-		logger:   slog.New(handler),
+		logger:   slog.New(diagnosticredact.ProtectMessages(handler, redactor)),
 		level:    slog.LevelDebug,
 		writer:   writer,
 		redactor: redactor,
@@ -216,7 +217,11 @@ func InitTestObserved(t testing.TB, level Level) *ObservedLogs {
 		redactor,
 		logging.DropReserved,
 	)
-	state := &loggerState{logger: slog.New(handler), level: level, redactor: redactor}
+	state := &loggerState{
+		logger:   slog.New(diagnosticredact.ProtectMessages(handler, redactor)),
+		level:    level,
+		redactor: redactor,
+	}
 	installTestState(t, state)
 	return &ObservedLogs{store: store}
 }

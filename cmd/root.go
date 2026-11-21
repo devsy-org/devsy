@@ -29,6 +29,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/template"
 	"github.com/devsy-org/devsy/cmd/update"
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/clierr"
@@ -353,26 +354,13 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 
 func writeCLIErrorText(cliErr *clierr.CLIError) {
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
-	fmt.Fprintf(os.Stderr, "Error: %s\n", redactCLIErrorValue(redactor, cliErr.Message))
+	fmt.Fprintf(os.Stderr, "Error: %s\n", diagnosticredact.Field(redactor, cliErr.Message))
 	if cliErr.Code != "" && cliErr.Code != clierr.CodeUnknown {
 		fmt.Fprintf(os.Stderr, "Error code: %s\n", redactor.Redact(string(cliErr.Code)))
 	}
 	writeCLIErrorContext(cliErr.Context, redactor)
 	if cliErr.Hint != "" {
-		fmt.Fprintf(os.Stderr, "Try: %s\n", redactCLIErrorValue(redactor, cliErr.Hint))
-	}
-}
-
-func redactCLIErrorValue(redactor *redact.Redactor, value string) string {
-	conservative := redactor.Redact(value)
-	diagnostic := redactor.RedactDiagnostic(value)
-	switch {
-	case conservative == value || conservative == diagnostic:
-		return diagnostic
-	case diagnostic == value:
-		return conservative
-	default:
-		return redactor.Mask()
+		fmt.Fprintf(os.Stderr, "Try: %s\n", diagnosticredact.Field(redactor, cliErr.Hint))
 	}
 }
 
@@ -391,7 +379,7 @@ func writeCLIErrorContext(errContext map[string]string, redactor *redact.Redacto
 			os.Stderr,
 			"  %s: %s\n",
 			redactor.Redact(key),
-			redactCLIErrorValue(redactor, errContext[key]),
+			diagnosticredact.Field(redactor, errContext[key]),
 		)
 	}
 }
