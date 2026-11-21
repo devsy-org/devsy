@@ -74,8 +74,8 @@ func (s *StreamingBoundarySuite) TestRepeatedOutputDoesNotBufferWholeStream() {
 	const count = 1 << 14
 	input := strings.Repeat("abcabc", count)
 	redactor := redact.FromEntries([]string{"TOKEN=abcabc"})
-	stream := redact.NewStream(redactor)
+	stream := redact.NewDiagnosticStream(redactor)
 	emitted := stream.RedactChunk(input)
 	s.GreaterOrEqual(len(emitted), 3*(count-1))
-	s.Equal(redactor.Redact(input), emitted+stream.Flush())
+	s.Equal(redactor.RedactDiagnostic(input), emitted+stream.Flush())
 }

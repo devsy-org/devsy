@@ -115,7 +115,7 @@ func (w *StreamingRedactingWriter) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	if w.stream == nil {
-		w.stream = redact.NewStream(w.Redactor)
+		w.stream = redact.NewDiagnosticStream(w.Redactor)
 	}
 	redacted := []byte(w.stream.RedactChunk(string(p)))
 	if len(redacted) == 0 {
@@ -350,7 +350,7 @@ type Buffer struct {
 // NewBuffer creates a bounded output buffer.
 func NewBuffer(redactor *redact.Redactor) *Buffer {
 	return &Buffer{
-		stream: redact.NewStream(redactor),
+		stream: redact.NewDiagnosticStream(redactor),
 		data:   make([]byte, 0, 4096),
 	}
 }
