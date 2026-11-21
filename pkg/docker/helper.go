@@ -68,7 +68,11 @@ var imageNotFoundMarkers = []string{
 }
 
 func isImageNotFoundError(err error) bool {
-	msg := strings.ToLower(err.Error())
+	return command.MatchErrorOutput(err, imageNotFoundMessage)
+}
+
+func imageNotFoundMessage(message string) bool {
+	msg := strings.ToLower(message)
 	for _, marker := range imageNotFoundMarkers {
 		if strings.Contains(msg, marker) {
 			return true
@@ -716,9 +720,13 @@ func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string,
 		"{{if .RepoTags}}{{index .RepoTags 0}}{{end}}",
 	}
 	args = append(args, imageID)
-	out, err := r.buildCmd(ctx, args...).Output()
+	cmd := r.buildCmd(ctx, args...)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return "", fmt.Errorf("inspect image: %w", command.WrapCommandError(out, err))
+		return "", fmt.Errorf(
+			"inspect image: %w",
+			err,
+		)
 	}
 
 	repoTag := strings.TrimSpace(string(out))
@@ -808,9 +816,14 @@ func (r *DockerHelper) Inspect(
 ) error {
 	args := []string{"inspect", "--type", inspectType}
 	args = append(args, ids...)
-	out, err := r.buildCmd(ctx, args...).Output()
+	cmd := r.buildCmd(ctx, args...)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return fmt.Errorf("inspect %s: %w", inspectType, command.WrapCommandError(out, err))
+		return fmt.Errorf(
+			"inspect %s: %w",
+			inspectType,
+			err,
+		)
 	}
 
 	err = json.Unmarshal(out, obj)
@@ -849,9 +862,10 @@ func (r *DockerHelper) FindContainer(ctx context.Context, labels []string) ([]st
 // This is useful in case the `--filter` doesn't work.
 func (r *DockerHelper) FindContainerJSON(ctx context.Context, labels []string) ([]string, error) {
 	args := []string{"ps", "-q", "-a"}
-	out, err := r.buildCmd(ctx, args...).Output()
+	cmd := r.buildCmd(ctx, args...)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return nil, command.WrapCommandError(out, err)
+		return nil, err
 	}
 
 	result := []string{}
