@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"filippo.io/age"
+	"github.com/devsy-org/devsy/pkg/secrets/internal/scryptcost"
 )
 
 type BackendOpenIntent string
@@ -239,7 +240,7 @@ func passphraseFileKey(passphrase string) (*fileKey, error) {
 	if passphrase == "" {
 		return nil, &UnlockRequiredError{Backend: BackendFile}
 	}
-	recipient, err := age.NewScryptRecipient(passphrase)
+	recipient, err := scryptcost.Recipient(passphrase)
 	if err != nil {
 		return nil, err
 	}
