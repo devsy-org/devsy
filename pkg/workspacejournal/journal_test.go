@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestJournalPersistsRedactedOperationAndPermissions(t *testing.T) {
@@ -53,6 +55,38 @@ func TestJournalPersistsRedactedOperationAndPermissions(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode=%o", info.Mode().Perm())
 	}
+}
+
+func TestJournalMasksFoldedAuthorization(t *testing.T) {
+	const continuation = "folded-journal-fixture-value"
+	const folded = "Authorization: Bearer first-fixture\n  " + continuation
+	const publicContext = "public workspace detail"
+	dir := t.TempDir()
+	journal, err := New(Options{Dir: dir, Env: []string{}})
+	require.NoError(t, err)
+	require.NoError(t, journal.Append("demo", status.Event{
+		Pipeline:    status.PipelineWorkspaceUp,
+		OperationID: "folded-diagnostic-operation",
+		Phase:       status.PhaseReady,
+		Step:        folded,
+		State:       status.StateFailed,
+		Error: &status.ErrorInfo{
+			Code:    "failed_fixture",
+			Message: folded,
+			Hint:    folded,
+			Context: map[string]string{"detail": folded, "workspace": publicContext},
+		},
+	}))
+
+	event := onlyEvent(t, dir, "demo")
+	require.NotNil(t, event.Error)
+	assert.Equal(t, "folded-diagnostic-operation", event.OperationID)
+	assert.Equal(t, "failed_fixture", event.Error.Code)
+	assert.Equal(t, publicContext, event.Error.Context["workspace"])
+	assert.NotContains(t, event.Step, continuation)
+	assert.NotContains(t, event.Error.Message, continuation)
+	assert.NotContains(t, event.Error.Hint, continuation)
+	assert.NotContains(t, event.Error.Context["detail"], continuation)
 }
 
 func TestJournalRotatesAndPrunes(t *testing.T) {
