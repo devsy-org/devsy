@@ -851,6 +851,7 @@ type RunCommandOptions struct {
 	RawStdout        bool
 	Cancellation     provider.ProviderCancellationMode
 	providerShell    *providerShellInvocation
+	cancelTiming     providerCancelTiming
 	closeInputOnExit io.Closer
 }
 
