@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy-runtime-sdk/conformance/fake"
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -127,7 +128,9 @@ func (s *HostSuite) TestExecCancellationClosesInputAndReapsChild() {
 	host := s.host("stream-block-child")
 	input, producer := io.Pipe()
 	defer func() { _ = producer.Close() }()
-	ctx, cancel := context.WithCancel(context.Background())
+	metrics := telemetry.NewMetricsReporter()
+	parent := telemetry.WithMetrics(context.Background(), metrics)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
@@ -139,6 +142,10 @@ func (s *HostSuite) TestExecCancellationClosesInputAndReapsChild() {
 	select {
 	case err := <-done:
 		s.ErrorIs(err, context.Canceled)
+		snapshot := metrics.Finish(err)
+		s.Require().Len(snapshot.ProviderOperations, 1)
+		s.Equal("Exec", snapshot.ProviderOperations[0].Operation)
+		s.Equal("cancelled", snapshot.ProviderOperations[0].RuntimeErrorCode)
 	case <-time.After(5 * time.Second):
 		s.FailNow("Exec cancellation did not join its input pump")
 	}

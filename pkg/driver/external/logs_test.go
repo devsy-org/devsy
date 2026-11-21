@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy-runtime-sdk/conformance/fake"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -47,7 +48,9 @@ func (s *HostSuite) TestLogsWriterAndProtocolFailures() {
 
 func (s *HostSuite) TestLogsCancellationReapsProcess() {
 	host := s.host("stream-logs-block")
-	ctx, cancel := context.WithCancel(context.Background())
+	metrics := telemetry.NewMetricsReporter()
+	parent := telemetry.WithMetrics(context.Background(), metrics)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- host.GetDevContainerLogs(ctx, fixtureWorkspace, nil, nil) }()
@@ -56,6 +59,10 @@ func (s *HostSuite) TestLogsCancellationReapsProcess() {
 	select {
 	case err := <-done:
 		s.ErrorIs(err, context.Canceled)
+		snapshot := metrics.Finish(err)
+		s.Require().Len(snapshot.ProviderOperations, 1)
+		s.Equal("Logs", snapshot.ProviderOperations[0].Operation)
+		s.Equal("cancelled", snapshot.ProviderOperations[0].RuntimeErrorCode)
 	case <-time.After(5 * time.Second):
 		s.FailNow("Logs cancellation did not return")
 	}
