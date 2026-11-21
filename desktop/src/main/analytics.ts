@@ -19,6 +19,14 @@ export function getAnalyticsDistinctId(): string {
   return distinctId || getDistinctId()
 }
 
+export function hashWorkspaceRef(workspaceId: string): string {
+  if (!client) return ""
+  return createHmac("sha256", getAnalyticsDistinctId())
+    .update(workspaceId)
+    .digest("hex")
+    .slice(0, 16)
+}
+
 export function hashWorkspaceUid(uid: string): string {
   return createHmac("sha256", "devsy-telemetry-v1")
     .update("workspace\0")
