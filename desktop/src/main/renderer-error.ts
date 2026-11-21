@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import {
+  maxRendererErrorMessageLength,
   type RendererErrorSummary,
   rendererErrorMessages,
   rendererErrorNames,
@@ -7,11 +8,14 @@ import {
 } from "../shared/renderer-error.js"
 import { isTrustedSecretIpcSender } from "./secret-ipc-policy.js"
 
-const MAX_PAYLOAD_BYTES = 512
+const MAX_PAYLOAD_BYTES = maxRendererErrorMessageLength * 4 + 128
 const MAX_REPORTS = 10
 const WINDOW_MS = 60_000
 
-function parseSummary(payload: unknown): RendererErrorSummary | undefined {
+function parseSummary(
+  payload: unknown,
+  registered: readonly string[],
+): RendererErrorSummary | undefined {
   try {
     if (!payload || typeof payload !== "object" || Array.isArray(payload))
       return undefined
@@ -29,7 +33,7 @@ function parseSummary(payload: unknown): RendererErrorSummary | undefined {
       kind.length > 32 ||
       typeof message !== "string" ||
       message.length === 0 ||
-      message.length > 128 ||
+      message.length > maxRendererErrorMessageLength ||
       typeof name !== "string" ||
       name.length > 32
     )
@@ -46,7 +50,8 @@ function parseSummary(payload: unknown): RendererErrorSummary | undefined {
     return {
       kind,
       message:
-        sanitizeRendererErrorMessage(message) || rendererErrorMessages[kind],
+        sanitizeRendererErrorMessage(message, registered) ||
+        rendererErrorMessages[kind],
       name: name as RendererErrorSummary["name"],
     }
   } catch {
@@ -58,6 +63,7 @@ export function createRendererErrorHandler(options: {
   getWindow: () => BrowserWindow | null
   expectedDocumentURL: string
   log: (summary: RendererErrorSummary) => void
+  registeredValues: () => readonly string[]
   now?: () => number
 }): (event: IpcMainEvent, payload: unknown) => void {
   let windowStart: number | undefined
@@ -72,7 +78,7 @@ export function createRendererErrorHandler(options: {
       )
     )
       return
-    const summary = parseSummary(payload)
+    const summary = parseSummary(payload, options.registeredValues())
     if (!summary) return
     const time = now()
     if (

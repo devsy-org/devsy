@@ -1,10 +1,10 @@
 import {
+  maxRendererErrorMessageLength,
   type RendererErrorKind,
   type RendererErrorName,
   type RendererErrorSummary,
   rendererErrorMessages,
   rendererErrorNames,
-  sanitizeRendererErrorMessage,
 } from "$shared/renderer-error.js"
 
 function errorName(value: unknown): RendererErrorName {
@@ -35,7 +35,9 @@ export function installRendererErrorReporting(
       report({
         kind,
         message:
-          sanitizeRendererErrorMessage(message) || rendererErrorMessages[kind],
+          message.length > 0 && message.length <= maxRendererErrorMessageLength
+            ? message
+            : rendererErrorMessages[kind],
         name: errorName(value),
       })
     } catch {}

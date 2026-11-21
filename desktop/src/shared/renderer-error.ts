@@ -36,9 +36,47 @@ function redactCredentialAssignments(value: string): string {
   return result + value.slice(copied)
 }
 
-export function sanitizeRendererErrorMessage(value: string): string {
+export const maxRendererErrorMessageLength = 4096
+
+function redactRegisteredValues(
+  value: string,
+  registered: readonly string[],
+): string {
+  const ranges: [number, number][] = []
+  for (const secret of registered) {
+    if (!secret) continue
+    for (
+      let start = value.indexOf(secret);
+      start >= 0;
+      start = value.indexOf(secret, start + 1)
+    )
+      ranges.push([start, start + secret.length])
+  }
+  ranges.sort(([left], [right]) => left - right)
+  let result = ""
+  let copied = 0
+  let masked = -1
+  for (const [start, end] of ranges) {
+    if (start > masked) {
+      result += `${value.slice(copied, start)}[redacted]`
+      copied = start
+    }
+    if (end > masked) {
+      masked = end
+      copied = end
+    }
+  }
+  return result + value.slice(copied)
+}
+
+export function sanitizeRendererErrorMessage(
+  value: string,
+  registered: readonly string[] = [],
+): string {
   return redactCredentialAssignments(
-    value.slice(0, 4096).split(/[\r\n\u2028\u2029]/, 1)[0],
+    redactRegisteredValues(value, registered)
+      .slice(0, maxRendererErrorMessageLength)
+      .split(/[\r\n\u2028\u2029]/, 1)[0],
   )
     .replace(/\b(?:bearer|basic)\s+[a-z0-9._~+/=-]+/gi, "[redacted]")
     .replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, "[redacted]")

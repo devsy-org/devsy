@@ -12,141 +12,52 @@ function emit(
   target.dispatchEvent(event)
 }
 
+function install() {
+  const target = new EventTarget()
+  const report = vi.fn()
+  const dispose = installRendererErrorReporting(
+    target as unknown as Window,
+    report,
+  )
+  return { target, report, dispose }
+}
+
 describe("renderer error reporting", () => {
-  it("preserves useful messages while removing secrets, stacks, paths, and URLs", () => {
-    const target = new EventTarget()
-    const report = vi.fn()
-    const dispose = installRendererErrorReporting(
-      target as unknown as Window,
-      report,
-    )
-    const error = new TypeError(
-      "Workspace load failed token=secret https://example.test/?secret=123",
-    )
+  it("forwards the message unaltered so the main process can mask registered values first", () => {
+    const { target, report, dispose } = install()
+    const message = "Workspace load failed prefix-canary/suffix-canary?x={y}"
+    const error = new TypeError(message)
     error.stack = "/Users/private/file.ts:1"
     emit(target, "error", "error", error)
-    emit(
-      target,
-      "unhandledrejection",
-      "reason",
-      "Fetch failed /path?token=value",
-    )
-    const first = report.mock.calls[0][0]
-    const second = report.mock.calls[1][0]
-    expect(first.kind).toBe("error")
-    expect(first.name).toBe("TypeError")
-    expect(first.message).toContain("Workspace load failed")
-    expect(second.message).toContain("Fetch failed")
-    for (const secret of [
-      "secret",
-      "example.test",
-      "123",
-      "/Users",
-      "/path",
-      "token=value",
-    ]) {
-      expect(JSON.stringify(report.mock.calls)).not.toContain(secret)
-    }
+    emit(target, "unhandledrejection", "reason", message)
+    expect(report).toHaveBeenNthCalledWith(1, {
+      kind: "error",
+      message,
+      name: "TypeError",
+    })
+    expect(report).toHaveBeenNthCalledWith(2, {
+      kind: "unhandledrejection",
+      message,
+      name: "UnknownError",
+    })
+    expect(JSON.stringify(report.mock.calls)).not.toContain("/Users")
     dispose()
     emit(target, "error", "error", error)
     expect(report).toHaveBeenCalledTimes(2)
   })
 
   it.each([
-    [
-      String.raw`Request failed token="hidden\"escaped-canary" retry`,
-      "Request failed [redacted] retry",
-    ],
-    [
-      String.raw`Request failed token='hidden\'escaped-canary' retry`,
-      "Request failed [redacted] retry",
-    ],
-    [
-      `Request failed password="prefix truncated-canary ${"x".repeat(4096)}"`,
-      "Request failed [redacted]",
-    ],
-    [
-      String.raw`Request failed token=\"prefix encoded-canary\" retry`,
-      "Request failed [redacted]",
-    ],
-  ])(
-    "masks the whole quoted sensitive value before IPC",
-    (message, expected) => {
-      const target = new EventTarget()
-      const report = vi.fn()
-      installRendererErrorReporting(target as unknown as Window, report)
-      emit(target, "error", "error", new Error(message))
-      expect(report).toHaveBeenCalledWith({
-        kind: "error",
-        message: expected,
-        name: "Error",
-      })
-    },
-  )
-
-  it.each([
-    "access_token=access-canary",
-    "client_secret is client-canary",
-    "private key: private-canary",
-    'accessToken=["array-canary", {"nested": ["nested-canary"]}]',
-    'token= access_token="prefix quoted-tail-canary"',
-    "password is client_secret is prose-tail-canary",
-    `${"token= ".repeat(256)}"access_token": ["prefix", "group-tail-canary"]`,
-    "Authorization: token auth-canary",
-    'pRoXy-aUtHoRiZaTiOn: Extension "first alternate-canary"',
-    "Authorization: 'first single-canary'",
-    "Authorization: Basic Y2FuYXJ5IQ==",
-    "request.headers.authorization=Extension qualified-canary",
-    "password=alpha,beta;gamma",
-  ])(
-    "keeps compound credential values out of the reported payload",
-    (field) => {
-      const target = new EventTarget()
-      const report = vi.fn()
-      const dispose = installRendererErrorReporting(
-        target as unknown as Window,
-        report,
-      )
-      emit(
-        target,
-        "error",
-        "error",
-        new TypeError(`Request failed ${field} workspace=staging`),
-      )
-      expect(report).toHaveBeenCalledExactlyOnceWith({
-        kind: "error",
-        message: "Request failed [redacted] workspace=staging",
-        name: "TypeError",
-      })
-      dispose()
-    },
-  )
-
-  it.each([
-    'client_secret={"nested": ["hidden"], "note": "remaining-canary"',
-    'Authorization: Extension keyId="private identity",signature=signed-canary',
-    'Authorization: Extension "complete" quoted-tail-canary',
-    'Proxy-Authorization: Extension ["complete"] field=group-tail-canary workspace=staging',
-    "Authorization: token auth-canary field=scalar-tail-canary workspace=staging",
-    "Authorization: token auth-canary workspace=staging field=ambiguous-tail-canary",
-  ])(
-    "masks an incomplete or opaque credential field before forwarding",
-    (field) => {
-      const target = new EventTarget()
-      const report = vi.fn()
-      const dispose = installRendererErrorReporting(
-        target as unknown as Window,
-        report,
-      )
-      emit(target, "unhandledrejection", "reason", `Request failed ${field}`)
-      expect(report).toHaveBeenCalledExactlyOnceWith({
-        kind: "unhandledrejection",
-        message: "Request failed [redacted]",
-        name: "UnknownError",
-      })
-      dispose()
-    },
-  )
+    ["empty", ""],
+    ["overlong", "x".repeat(4097)],
+  ])("sends the generic message for an %s message", (_name, message) => {
+    const { target, report } = install()
+    emit(target, "error", "error", new Error(message))
+    expect(report).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Uncaught renderer error",
+      name: "Error",
+    })
+  })
 
   it("does not inspect arbitrary thrown objects and tolerates a failed bridge", () => {
     const target = new EventTarget()

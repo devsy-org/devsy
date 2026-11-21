@@ -2,7 +2,7 @@ import type { BrowserWindow, IpcMainEvent } from "electron"
 import { describe, expect, it, vi } from "vitest"
 import { createRendererErrorHandler } from "../renderer-error.js"
 
-function fixture() {
+function fixture(registeredValues: string[] = []) {
   const frame = {
     url: "file:///app/renderer/index.html#/workspace?token=secret",
   }
@@ -21,6 +21,7 @@ function fixture() {
     getWindow: () => win,
     expectedDocumentURL: "file:///app/renderer/index.html",
     log,
+    registeredValues: () => registeredValues,
     now: () => time,
   })
   return {
@@ -104,6 +105,27 @@ describe("renderer error handler", () => {
       ...summary,
       message: "Unlock failed [redacted] retry",
     })
+  })
+
+  it("masks a registered value before structural sanitization splits it", () => {
+    const registered = "prefix-canary/suffix-canary"
+    const f = fixture([registered])
+    f.handle(f.event, {
+      ...summary,
+      message: `Workspace failed ${registered} retry`,
+    })
+    expect(f.log).toHaveBeenCalledWith({
+      ...summary,
+      message: "Workspace failed [redacted] retry",
+    })
+  })
+
+  it("accepts a raw message up to the renderer limit and rejects longer", () => {
+    const f = fixture()
+    f.handle(f.event, { ...summary, message: "x".repeat(4096) })
+    expect(f.log).toHaveBeenCalledOnce()
+    f.handle(f.event, { ...summary, message: "x".repeat(4097) })
+    expect(f.log).toHaveBeenCalledOnce()
   })
 
   it("limits valid reports and resets after a minute", () => {

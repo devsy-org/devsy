@@ -27,6 +27,12 @@ let logPath: string | undefined
 
 type RedactionRange = [start: number, end: number]
 
+export function registeredSecretValues(): string[] {
+  return Object.entries(process.env).flatMap(([name, secret]) =>
+    secret && isCredentialKey(name) ? [secret] : [],
+  )
+}
+
 function redactText(value: string): string {
   const ranges = Array.from(
     credentialAssignments(value),
@@ -38,8 +44,7 @@ function redactText(value: string): string {
       match.index + match[0].length - 1,
     ])
   }
-  for (const [name, secret] of Object.entries(process.env)) {
-    if (!secret || !isCredentialKey(name)) continue
+  for (const secret of registeredSecretValues()) {
     for (
       let start = value.indexOf(secret);
       start >= 0;

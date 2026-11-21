@@ -34,7 +34,7 @@ import type { CliInvocationOptions, CliRunner, StreamLine } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { LinuxDesktopIntegration } from "./linux-desktop-integration.js"
 import type { LogStore } from "./log-store.js"
-import { mainLog } from "./logging.js"
+import { mainLog, registeredSecretValues } from "./logging.js"
 import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderIconReader } from "./provider-icons.js"
@@ -486,6 +486,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       getWindow: getMainWindow,
       expectedDocumentURL: secretDocumentURL,
       log: (summary) => mainLog.error("Renderer error", summary),
+      registeredValues: registeredSecretValues,
     }),
   )
   const secretRequestDenied: SecretIpcFailure = {
