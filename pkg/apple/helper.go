@@ -205,11 +205,11 @@ func (h *AppleHelper) InspectContainers(
 	}
 	args := append([]string{"inspect"}, ids...)
 	cmd := h.buildCmd(ctx, args...)
-	out, err := cmd.Output()
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"inspect container: %w",
-			command.WrapCommandErrorWithEnvironment(out, err, cmd.Environ()),
+			err,
 		)
 	}
 
@@ -280,12 +280,12 @@ func (h *AppleHelper) InspectImage(
 	tryRemote bool,
 ) (*config.ImageDetails, error) {
 	cmd := h.buildCmd(ctx, "image", "inspect", imageName)
-	out, err := cmd.Output()
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
 		err = fmt.Errorf(
 			"inspect image %s: %w",
 			imageName,
-			command.WrapCommandErrorWithEnvironment(out, err, cmd.Environ()),
+			err,
 		)
 	} else {
 		var raw []imageInspect
@@ -321,11 +321,11 @@ func (h *AppleHelper) InspectImage(
 
 func (h *AppleHelper) GetImageTag(ctx context.Context, imageID string) (string, error) {
 	cmd := h.buildCmd(ctx, "image", "inspect", imageID)
-	out, err := cmd.Output()
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
 		return "", fmt.Errorf(
 			"inspect image: %w",
-			command.WrapCommandErrorWithEnvironment(out, err, cmd.Environ()),
+			err,
 		)
 	}
 	var raw []imageInspect
@@ -401,11 +401,11 @@ func appleCommandDiagnostic(cmd *exec.Cmd, value []byte) string {
 
 func (h *AppleHelper) listContainers(ctx context.Context) ([]containerInspect, error) {
 	cmd := h.buildCmd(ctx, "list", "--all", "--format", "json")
-	out, err := cmd.Output()
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"list containers: %w",
-			command.WrapCommandErrorWithEnvironment(out, err, cmd.Environ()),
+			err,
 		)
 	}
 	var raw []containerInspect

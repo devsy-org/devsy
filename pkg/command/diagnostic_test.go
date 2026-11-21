@@ -1,6 +1,7 @@
 package command
 
 import (
+	"encoding/json"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -49,6 +50,22 @@ func TestCommandErrorMasksFoldedOutput(t *testing.T) {
 	assert.NotContains(t, err.Error(), fixture)
 	assert.Contains(t, err.Error(), "public stdout")
 	assert.Contains(t, err.Error(), "public stderr")
+}
+
+func TestCommandErrorMasksEscapedJSONValues(t *testing.T) {
+	const fixture = `synthetic"json-value`
+	data, err := json.Marshal(map[string]string{"message": fixture, "detail": "public JSON detail"})
+	require.NoError(t, err)
+	cause := &exec.ExitError{Stderr: data}
+	wrapped := WrapCommandErrorWithEnvironment(
+		data,
+		cause,
+		[]string{"DEVSY_FIXTURE_TOKEN=" + fixture},
+	)
+	require.ErrorIs(t, wrapped, cause)
+	assert.NotContains(t, wrapped.Error(), "json-value")
+	assert.Equal(t, 2, strings.Count(wrapped.Error(), `"message":"***"`))
+	assert.Equal(t, 2, strings.Count(wrapped.Error(), "public JSON detail"))
 }
 
 func TestWindowsCapturedOutputUsesDiagnosticFormatter(t *testing.T) {
