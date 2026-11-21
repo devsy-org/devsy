@@ -319,6 +319,7 @@ jobs:
           {
             echo "build=$(go env GOCACHE)"
             echo "mod=$(go env GOMODCACHE)"
+            echo "week=$(date -u +%G-W%V)"
           } >> "$GITHUB_OUTPUT"
 
       - name: restore Go caches
@@ -328,7 +329,7 @@ jobs:
           path: |
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
-          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.gocache.outputs.week }}
           restore-keys: |
             go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
 
@@ -337,7 +338,7 @@ jobs:
         run: go run ./hack/ci unit
 
       - name: save Go caches
-        if: always() && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true'
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
