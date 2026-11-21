@@ -23,11 +23,13 @@ import (
 )
 
 const (
-	helperModeEnv   = "DEVSY_TEST_DIAL_STDIO_MODE"
-	helperEchoMode  = "echo"
-	helperHangMode  = "hang"
-	shortShutdown   = 150 * time.Millisecond
-	boundedInterval = 5 * time.Second
+	helperModeEnv    = "DEVSY_TEST_DIAL_STDIO_MODE"
+	helperEchoMode   = "echo"
+	helperHangMode   = "hang"
+	shortShutdown    = 150 * time.Millisecond
+	boundedInterval  = 5 * time.Second
+	outputFixtureEnv = "DEVSY_DOCKER_EFFECTIVE_OUTPUT_TOKEN"
+	stderrFixtureEnv = "DEVSY_DOCKER_EFFECTIVE_STDERR_TOKEN"
 )
 
 var helperModes = map[string]func(){
@@ -39,6 +41,11 @@ var helperModes = map[string]func(){
 	"fail-secret": func() {
 		_, _ = fmt.Fprintln(os.Stderr, "auth failed for hunter2-token")
 		os.Exit(4)
+	},
+	"fail-effective-environment": func() {
+		_, _ = fmt.Fprintln(os.Stdout, "public output", os.Getenv(outputFixtureEnv))
+		_, _ = fmt.Fprintln(os.Stderr, "public diagnostic", os.Getenv(stderrFixtureEnv))
+		os.Exit(23)
 	},
 	helperHangMode: func() { time.Sleep(time.Minute) },
 	"lingering": func() {
@@ -62,6 +69,32 @@ func TestMain(m *testing.M) {
 		run()
 	}
 	os.Exit(0)
+}
+
+func TestDockerInspectMasksEffectiveEnvironment(t *testing.T) {
+	const privateOutput = "synthetic-docker-output-value"
+	const privateDiagnostic = "synthetic-docker-diagnostic-value"
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	helper := &DockerHelper{
+		DockerCommand: executable,
+		Environment: []string{
+			helperModeEnv + "=fail-effective-environment",
+			outputFixtureEnv + "=" + privateOutput,
+			stderrFixtureEnv + "=" + privateDiagnostic,
+		},
+	}
+	err = helper.Inspect(t.Context(), []string{"fixture"}, "image", &[]map[string]any{})
+	require.Error(t, err)
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.Equal(t, 23, exit.ExitCode())
+	for _, text := range []string{"public output", "public diagnostic"} {
+		require.ErrorContains(t, err, text)
+	}
+	for _, text := range []string{privateOutput, privateDiagnostic} {
+		require.NotContains(t, err.Error(), text)
+	}
 }
 
 // spawnChild starts a long-lived descendant immediately and reports its pid,

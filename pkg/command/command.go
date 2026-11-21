@@ -20,12 +20,26 @@ func WrapCommandError(stdout []byte, err error) error {
 	}
 }
 
+func WrapCommandErrorWithEnvironment(stdout []byte, err error, environment []string) error {
+	if err == nil {
+		return nil
+	}
+	wrapped := &Error{stdout: stdout, err: err}
+	masked := diagnosticredact.RecordWithEnvironment(environment, wrapped.output())
+	wrapped.maskedOutput = &masked
+	return wrapped
+}
+
 type Error struct {
-	stdout []byte
-	err    error
+	stdout       []byte
+	err          error
+	maskedOutput *string
 }
 
 func (e *Error) Error() string {
+	if e.maskedOutput != nil {
+		return *e.maskedOutput
+	}
 	return diagnosticredact.EnvironmentRecord(e.output())
 }
 
