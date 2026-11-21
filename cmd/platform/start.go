@@ -22,6 +22,7 @@ import (
 	"github.com/devsy-org/api/pkg/auth"
 	devsyclientset "github.com/devsy-org/api/pkg/clientset/versioned"
 	platformflags "github.com/devsy-org/devsy/cmd/platform/flags"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
@@ -58,6 +59,8 @@ const (
 )
 
 var defaultReleaseName = config.PlatformReleaseName
+
+var platformToolCommand = exec.CommandContext
 
 var defaultDeploymentName = "loft" // Need to update helm chart if we change this!
 
@@ -691,9 +694,10 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 		)
 	}
 
-	output, err := exec.Command("helm", "version").CombinedOutput()
+	output, err := platformToolCommand(ctx, "helm", "version").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("seems like there are issues with your helm client: \n\n%s", output)
+		detail := diagnosticredact.EnvironmentRecord(string(output))
+		return fmt.Errorf("seems like there are issues with your helm client: \n\n%s", detail)
 	}
 
 	_, err = exec.LookPath("kubectl")
@@ -704,7 +708,7 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 		)
 	}
 
-	kubectlCmd := exec.CommandContext(
+	kubectlCmd := platformToolCommand(
 		ctx,
 		"kubectl",
 		"version",
@@ -715,7 +719,7 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 	if err != nil {
 		return fmt.Errorf(
 			"seems like kubectl cannot connect to your Kubernetes cluster: \n\n%s",
-			output,
+			diagnosticredact.EnvironmentRecord(string(output)),
 		)
 	}
 
@@ -1232,13 +1236,17 @@ func installNginxIngress(
 	fmt.Fprint(os.Stderr, "\n")
 	log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
 	log.Info("Waiting for ingress controller deployment, this can take several minutes")
-	helmCmd := exec.CommandContext(
+	helmCmd := platformToolCommand(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
 	output, err := helmCmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("error during helm command: %s (%w)", string(output), err)
+		return fmt.Errorf(
+			"error during helm command: %s (%w)",
+			diagnosticredact.EnvironmentRecord(string(output)),
+			err,
+		)
 	}
 
 	list, err := kubeClient.CoreV1().Secrets(ingressNginx).List(ctx, metav1.ListOptions{
@@ -1535,7 +1543,7 @@ func upgradeRelease(
 	fmt.Fprint(os.Stderr, "\n")
 	log.Infof("Executing command: helm %s\n", strings.Join(args, " "))
 	log.Info("Waiting for helm command, this can take up to several minutes")
-	helmCmd := exec.CommandContext(
+	helmCmd := platformToolCommand(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
@@ -1544,7 +1552,11 @@ func upgradeRelease(
 	}
 	output, err := helmCmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("error during helm command: %s (%w)", string(output), err)
+		return fmt.Errorf(
+			"error during helm command: %s (%w)",
+			diagnosticredact.EnvironmentRecord(string(output)),
+			err,
+		)
 	}
 
 	log.Infof("Devsy Platform has been deployed to your cluster!")
@@ -1564,7 +1576,7 @@ func getReleaseManifests(
 	)
 	args = helmArgs(args, target, extraArgs)
 
-	helmCmd := exec.CommandContext(
+	helmCmd := platformToolCommand(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
@@ -1573,7 +1585,11 @@ func getReleaseManifests(
 	}
 	output, err := helmCmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("error during helm command: %s (%w)", string(output), err)
+		return "", fmt.Errorf(
+			"error during helm command: %s (%w)",
+			diagnosticredact.EnvironmentRecord(string(output)),
+			err,
+		)
 	}
 	return string(output), nil
 }

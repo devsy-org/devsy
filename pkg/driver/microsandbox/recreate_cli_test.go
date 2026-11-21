@@ -21,10 +21,16 @@ const (
 	recreateCLIFixtureEnv   = "DEVSY_TEST_MSB_CREATE_FIXTURE"
 	recreateCLIFixtureMode  = "capture-argv"
 	recreateCLIArgumentFile = "create-argv.json"
+	diagnosticCLIFailure    = "diagnostic-failure"
+	diagnosticCLISuccess    = "diagnostic-success"
+	diagnosticCLIValue      = "synthetic-msb-folded-value"
+	diagnosticCLIDetail     = "public microsandbox detail"
+	diagnosticCLIOutput     = "Authorization:\n Bearer " + diagnosticCLIValue + "\n\n" + diagnosticCLIDetail
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv(recreateCLIFixtureEnv) == recreateCLIFixtureMode {
+	switch os.Getenv(recreateCLIFixtureEnv) {
+	case recreateCLIFixtureMode:
 		if handled, err := captureRecreateCLIArguments(); handled {
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, err)
@@ -32,8 +38,27 @@ func TestMain(m *testing.M) {
 			}
 			os.Exit(0)
 		}
+	case diagnosticCLIFailure, diagnosticCLISuccess:
+		executable, err := os.Executable()
+		if err == nil && filepath.Base(executable) == recreateCLIExecutableName() {
+			os.Exit(runDiagnosticCLIFixture())
+		}
 	}
 	os.Exit(m.Run())
+}
+
+func runDiagnosticCLIFixture() int {
+	if len(os.Args) > 1 && os.Args[1] == "load" {
+		if _, err := io.Copy(io.Discard, os.Stdin); err != nil {
+			return 1
+		}
+	}
+	if os.Getenv(recreateCLIFixtureEnv) == diagnosticCLISuccess {
+		_, _ = fmt.Fprint(os.Stdout, diagnosticCLIOutput)
+		return 0
+	}
+	_, _ = fmt.Fprint(os.Stderr, diagnosticCLIOutput)
+	return 23
 }
 
 // Only the test executable copied to an owned msb path enters fixture mode.

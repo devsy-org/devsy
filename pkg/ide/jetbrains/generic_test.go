@@ -8,14 +8,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	devconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -276,4 +279,27 @@ func TestInstallPluginsSkipsWhenNoneConfigured(t *testing.T) {
 	err := s.installPlugins(setupInfo, filepath.Join(t.TempDir(), "missing"), t.TempDir())
 
 	assert.NoError(t, err)
+}
+
+const pluginInstallerFixture = "public plugin diagnostic\nAuthorization:\n Bearer synthetic-plugin-value"
+
+func TestPluginInstallerMasksSuccessfulDiagnosticOutput(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	cmd := &exec.Cmd{
+		Path: executable,
+		Args: []string{executable, "-test.run=^TestPluginInstallerOutputFixture$"},
+		Env:  append(os.Environ(), "DEVSY_JETBRAINS_DIAGNOSTIC_FIXTURE=1"),
+	}
+	observed := log.InitTestObserved(t, zapcore.DebugLevel)
+	require.NoError(t, runPluginInstaller(cmd, []string{"example.plugin"}))
+	require.Positive(t, observed.FilterMessageSnippet("public plugin diagnostic").Len())
+	require.Zero(t, observed.FilterMessageSnippet("synthetic-plugin-value").Len())
+}
+
+func TestPluginInstallerOutputFixture(t *testing.T) {
+	if os.Getenv("DEVSY_JETBRAINS_DIAGNOSTIC_FIXTURE") == "1" {
+		_, _ = os.Stdout.WriteString(pluginInstallerFixture)
+		os.Exit(0)
+	}
 }

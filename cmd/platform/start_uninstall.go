@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	devsyclientset "github.com/devsy-org/api/pkg/clientset/versioned"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -70,12 +71,16 @@ func runHelmUninstall(
 	}
 	log.Infof("Executing command: helm %s", strings.Join(args, " "))
 	helmCmd := exec.CommandContext(ctx, "helm", args...) // #nosec G204 -- internally constructed
-	output, err := helmCmd.CombinedOutput()
-	if err != nil {
-		log.Errorf("error during helm command: %s (%v)", string(output), err)
-	}
-
+	runHelmUninstallCommand(helmCmd)
 	return nil
+}
+
+func runHelmUninstallCommand(cmd *exec.Cmd) {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Errorf("error during helm command: %s (%v)",
+			diagnosticredact.RecordWithEnvironment(cmd.Environ(), string(output)), err)
+	}
 }
 
 func cleanupPlatformResources(

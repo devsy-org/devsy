@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"golang.org/x/crypto/ssh"
@@ -98,7 +99,10 @@ func (g *GPGConf) ImportOwnerTrust() error {
 func runGpgWithStdin(input []byte, args ...string) error {
 	//nolint:gosec // args are internal gpg directive literals
 	cmd := exec.Command("gpg", args...)
+	return runGpgImport(cmd, input)
+}
 
+func runGpgImport(cmd *exec.Cmd, input []byte) error {
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -110,7 +114,8 @@ func runGpgWithStdin(input []byte, args ...string) error {
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("gpg %s: %s: %w", strings.Join(args, " "), out, err)
+		return fmt.Errorf("gpg %s: %s: %w",
+			strings.Join(cmd.Args[1:], " "), diagnosticredact.EnvironmentRecord(string(out)), err)
 	}
 	return nil
 }

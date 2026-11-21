@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
@@ -177,16 +178,26 @@ func (r *DockerHelper) ClientVersion(ctx context.Context) string {
 }
 
 func runCmdCombined(ctx context.Context, cmd *exec.Cmd) error {
+	out, err := captureCommandOutput(ctx, cmd)
+	return capturedCommandError(cmd, out, err)
+}
+
+func captureCommandOutput(ctx context.Context, cmd *exec.Cmd) (string, error) {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	if err := runCmd(ctx, cmd); err != nil {
-		if msg := strings.TrimSpace(out.String()); msg != "" {
-			return fmt.Errorf("%s: %w", msg, err)
-		}
-		return err
+		return out.String(), err
 	}
-	return nil
+	return "", nil
+}
+
+func capturedCommandError(cmd *exec.Cmd, output string, err error) error {
+	return command.WrapCombinedOutputError(output, err, cmd.Environ())
+}
+
+func dockerCommandDiagnostic(cmd *exec.Cmd, value string) string {
+	return diagnosticredact.RecordWithEnvironment(cmd.Environ(), value)
 }
 
 const envUnset = "<unset>"
@@ -242,24 +253,18 @@ func runtimeDiagnosticsPodman(r *DockerHelper, diag map[string]string) {
 // between docker (.ServerVersion) and podman/nerdctl, so a shared template
 // would falsely fail non-docker runtimes.
 func (r *DockerHelper) Ping(ctx context.Context) error {
-	cctx, cancel := context.WithTimeout(ctx, pingTimeout)
-	defer cancel()
-
-	err := runCmdCombined(cctx, r.buildCmd(cctx, "info"))
-	if err != nil && cctx.Err() != nil {
-		return errors.Join(err, cctx.Err())
-	}
+	_, err := r.ping(ctx)
 	return err
 }
 
 // CheckRuntimeHealth reports only control-plane availability failures. A
 // responsive runtime error must not end an injection retry as a daemon outage.
 func (r *DockerHelper) CheckRuntimeHealth(ctx context.Context) error {
-	err := r.Ping(ctx)
+	rawFailure, err := r.ping(ctx)
 	if err == nil {
 		return nil
 	}
-	lower := strings.ToLower(err.Error())
+	lower := strings.ToLower(rawFailure)
 	if errors.Is(err, context.DeadlineExceeded) ||
 		strings.Contains(lower, "cannot connect") ||
 		strings.Contains(lower, "connection refused") ||
@@ -375,29 +380,21 @@ func (r *DockerHelper) DeleteVolume(ctx context.Context, volume string) error {
 		return nil
 	}
 
-	out, err := r.buildCmd(ctx, "volume", "list", "-q", "--filter", "name="+volume).CombinedOutput()
+	out, err := r.combinedOutput(ctx, "volume", "list", "-q", "--filter", "name="+volume)
 	if err != nil {
-		return fmt.Errorf("list volume %s: %s: %w", volume, strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("list volume %s: %w", volume, err)
 	}
 	if len(out) == 0 {
 		return nil
 	}
 
-	out, err = r.buildCmd(ctx, "volume", "rm", volume).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
-	}
-
-	return nil
+	_, err = r.combinedOutput(ctx, "volume", "rm", volume)
+	return err
 }
 
 func (r *DockerHelper) Stop(ctx context.Context, id string) error {
-	out, err := r.buildCmd(ctx, "stop", id).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
-	}
-
-	return nil
+	_, err := r.combinedOutput(ctx, "stop", id)
+	return err
 }
 
 // PullOptions configures an image pull.
@@ -442,12 +439,8 @@ func (r *DockerHelper) Pull(ctx context.Context, opts PullOptions) error {
 }
 
 func (r *DockerHelper) Remove(ctx context.Context, id string) error {
-	out, err := r.buildCmd(ctx, "rm", "-v", id).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
-	}
-
-	return nil
+	_, err := r.combinedOutput(ctx, "rm", "-v", id)
+	return err
 }
 
 type Streams struct {
@@ -619,17 +612,16 @@ func runStreams(ctx context.Context, cmd *exec.Cmd, streams Streams) error {
 }
 
 func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) error {
-	out, err := r.buildCmd(ctx, "start", containerId).CombinedOutput()
+	_, err := r.combinedOutput(ctx, "start", containerId)
 	if err != nil {
-		stateErr, _ := r.buildCmd(ctx, "inspect", containerId, "--format",
-			"{{.State.Error}} (exit code: {{.State.ExitCode}})").
-			CombinedOutput()
-		logs, _ := r.buildCmd(ctx, "logs", containerId, "--tail", "50").CombinedOutput()
-		details := strings.TrimSpace(string(stateErr) + "\n" + string(logs))
+		stateErr := r.diagnosticOutput(ctx, "inspect", containerId, "--format",
+			"{{.State.Error}} (exit code: {{.State.ExitCode}})")
+		logs := r.diagnosticOutput(ctx, "logs", containerId, "--tail", "50")
+		details := strings.TrimSpace(stateErr + "\n" + logs)
 		if details != "" {
 			log.Errorf("container failed to start: %s", details)
 		}
-		return fmt.Errorf("failed to start container: %s: %w", string(out), err)
+		return fmt.Errorf("failed to start container: %w", err)
 	}
 
 	container, err := r.FindContainerByID(ctx, []string{containerId})
@@ -644,9 +636,9 @@ func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) e
 
 // UnpauseContainer unpauses a paused container.
 func (r *DockerHelper) UnpauseContainer(ctx context.Context, containerId string) error {
-	out, err := r.buildCmd(ctx, "unpause", containerId).CombinedOutput()
+	_, err := r.combinedOutput(ctx, "unpause", containerId)
 	if err != nil {
-		return fmt.Errorf("failed to unpause container: %s: %w", string(out), err)
+		return fmt.Errorf("failed to unpause container: %w", err)
 	}
 
 	return nil
@@ -979,6 +971,23 @@ func failedBootSentinel(status config.ContainerStatus, graceElapsed bool) error 
 	return nil
 }
 
+func (r *DockerHelper) ping(ctx context.Context) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+
+	cmd := r.buildCmd(cctx, "info")
+	out, err := captureCommandOutput(cctx, cmd)
+	if err == nil {
+		return "", nil
+	}
+	rawFailure := out + "\n" + err.Error()
+	err = capturedCommandError(cmd, out, err)
+	if cctx.Err() != nil {
+		err = errors.Join(err, cctx.Err())
+	}
+	return rawFailure, err
+}
+
 func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 	name, cmdArgs := r.DockerCommand, args
 	if r.Elevator != nil {
@@ -992,6 +1001,21 @@ func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 	}
 	PrepareForGroupCancellation(cmd)
 	return cmd
+}
+
+func (r *DockerHelper) combinedOutput(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := r.buildCmd(ctx, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, capturedCommandError(cmd, string(out), err)
+	}
+	return out, nil
+}
+
+func (r *DockerHelper) diagnosticOutput(ctx context.Context, args ...string) string {
+	cmd := r.buildCmd(ctx, args...)
+	output, _ := cmd.CombinedOutput()
+	return dockerCommandDiagnostic(cmd, string(output))
 }
 
 func (r *DockerHelper) resolveDockerContext(ctx context.Context, envContext string) string {

@@ -17,17 +17,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
+	"github.com/devsy-org/devsy/pkg/log"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
-	helperModeEnv   = "DEVSY_TEST_DIAL_STDIO_MODE"
-	helperEchoMode  = "echo"
-	helperHangMode  = "hang"
-	shortShutdown   = 150 * time.Millisecond
-	boundedInterval = 5 * time.Second
+	helperModeEnv           = "DEVSY_TEST_DIAL_STDIO_MODE"
+	helperEchoMode          = "echo"
+	helperHangMode          = "hang"
+	helperStartFailureMode  = "command-failure"
+	helperFailureCommandEnv = "DEVSY_TEST_DOCKER_FAILURE_COMMAND"
+	helperDaemonFixtureEnv  = "DEVSY_DOCKER_TEST_DAEMON_TOKEN"
+	helperExactFixtureEnv   = "DEVSY_DOCKER_TEST_EXACT_TOKEN"
+	fixtureInfoCommand      = "info"
+	fixtureStopCommand      = "stop"
+	fixtureContainerName    = "fixture-container"
+	startFoldedFixture      = "synthetic-docker-start-folded-value"
+	startRegisteredFixture  = "synthetic-docker-start-registered-value"
+	startPublicDetail       = "public Docker start detail"
+	startInspectionDetail   = "public Docker inspection detail"
+	shortShutdown           = 150 * time.Millisecond
+	boundedInterval         = 5 * time.Second
 )
 
 var helperModes = map[string]func(){
@@ -49,8 +63,44 @@ var helperModes = map[string]func(){
 		spawnChild()
 		time.Sleep(time.Minute)
 	},
-	"spawn-child-exit": spawnChild,
-	"daemon":           serveFakeDaemon,
+	"spawn-child-exit":     spawnChild,
+	"daemon":               serveFakeDaemon,
+	helperStartFailureMode: failDockerFixtureCommand,
+}
+
+func failDockerFixtureCommand() {
+	if len(os.Args) <= 1 {
+		return
+	}
+	command := os.Args[1]
+	if command == "volume" && len(os.Args) > 2 {
+		command += "/" + os.Args[2]
+	}
+	failure := os.Getenv(helperFailureCommandEnv)
+	if command == failure {
+		writeDockerFixtureFailure()
+	}
+	if failure == "start" && command == "inspect" {
+		_, _ = fmt.Fprintln(os.Stdout, startInspectionDetail, startRegisteredFixture)
+	}
+	if command == "volume/list" {
+		_, _ = fmt.Fprintln(os.Stdout, "fixture-volume-entry")
+	}
+}
+
+func writeDockerFixtureFailure() {
+	if exact := os.Getenv(helperExactFixtureEnv); exact != "" {
+		_, _ = fmt.Fprint(os.Stderr, exact)
+		os.Exit(23)
+	}
+	if daemon := os.Getenv(helperDaemonFixtureEnv); daemon != "" {
+		_, _ = fmt.Fprintln(os.Stderr, daemon)
+	}
+	_, _ = fmt.Fprint(
+		os.Stderr,
+		"Authorization:\n Bearer "+startFoldedFixture+" cannot connect\n\n"+startPublicDetail+" "+startRegisteredFixture,
+	)
+	os.Exit(23)
 }
 
 func TestMain(m *testing.M) {
@@ -62,6 +112,137 @@ func TestMain(m *testing.M) {
 		run()
 	}
 	os.Exit(0)
+}
+
+func TestDockerMasksReturnedFailureOutput(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		command string
+		run     func(*DockerHelper, context.Context, string) error
+	}{
+		{"start", (*DockerHelper).StartContainer},
+		{fixtureStopCommand, (*DockerHelper).Stop},
+		{"rm", (*DockerHelper).Remove},
+		{"unpause", (*DockerHelper).UnpauseContainer},
+		{"volume/list", (*DockerHelper).DeleteVolume},
+		{"volume/rm", (*DockerHelper).DeleteVolume},
+		{fixtureInfoCommand, func(helper *DockerHelper, ctx context.Context, _ string) error { return helper.Ping(ctx) }},
+		{"machine", func(helper *DockerHelper, ctx context.Context, _ string) error {
+			return helper.StartPodmanMachine(ctx)
+		}},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			helper := &DockerHelper{
+				DockerCommand: executable,
+				Environment: []string{
+					helperModeEnv + "=" + helperStartFailureMode,
+					helperFailureCommandEnv + "=" + tc.command,
+					"DEVSY_DOCKER_TEST_TOKEN=" + startRegisteredFixture,
+				},
+			}
+			err := tc.run(helper, t.Context(), fixtureContainerName)
+			assertDockerReturnedDiagnostic(t, err)
+			if tc.command == fixtureInfoCommand {
+				err = helper.CheckRuntimeHealth(t.Context())
+				require.ErrorIs(t, err, ErrRuntimeUnavailable)
+				require.NotContains(t, err.Error(), startFoldedFixture)
+			}
+		})
+	}
+}
+
+func TestDockerCapturedFailureMasksBeforeTrimming(t *testing.T) {
+	const fixture = " synthetic-trim-canary "
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		command string
+		run     func(*DockerHelper, context.Context) error
+	}{
+		{fixtureInfoCommand, (*DockerHelper).Ping},
+		{fixtureStopCommand, func(helper *DockerHelper, ctx context.Context) error {
+			return helper.Stop(ctx, fixtureContainerName)
+		}},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			helper := &DockerHelper{
+				DockerCommand: executable,
+				Environment: []string{
+					helperModeEnv + "=" + helperStartFailureMode,
+					helperFailureCommandEnv + "=" + tc.command,
+					helperExactFixtureEnv + "=" + fixture,
+				},
+			}
+			err := tc.run(helper, t.Context())
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), strings.TrimSpace(fixture))
+			require.Contains(t, err.Error(), "***")
+		})
+	}
+}
+
+func TestDockerCapturedFailurePreservesDaemonClassification(t *testing.T) {
+	const fixture = "cannot connect to the docker daemon"
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		command string
+		run     func(*DockerHelper) error
+	}{
+		{fixtureInfoCommand, func(helper *DockerHelper) error { return helper.Ping(t.Context()) }},
+		{fixtureStopCommand, func(helper *DockerHelper) error { return helper.Stop(t.Context(), fixtureContainerName) }},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			helper := &DockerHelper{
+				DockerCommand: executable,
+				Environment: []string{
+					helperModeEnv + "=" + helperStartFailureMode,
+					helperFailureCommandEnv + "=" + tc.command,
+					helperDaemonFixtureEnv + "=" + fixture,
+				},
+			}
+			err := tc.run(helper)
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), fixture)
+			require.Contains(t, err.Error(), startPublicDetail)
+			require.Equal(
+				t,
+				clierr.CodeDockerDaemonUnreachable,
+				clierr.Classify(fmt.Errorf("preflight: %w", err)).Code,
+			)
+			var exit *exec.ExitError
+			require.ErrorAs(t, err, &exit)
+			require.Equal(t, 23, exit.ExitCode())
+		})
+	}
+}
+
+func TestDockerStartMasksSupplementalDiagnostics(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	observed := log.InitTestObserved(t, zapcore.DebugLevel)
+	helper := &DockerHelper{
+		DockerCommand: executable,
+		Environment: []string{
+			helperModeEnv + "=" + helperStartFailureMode,
+			helperFailureCommandEnv + "=start",
+			"DEVSY_DOCKER_TEST_TOKEN=" + startRegisteredFixture,
+		},
+	}
+	require.Error(t, helper.StartContainer(t.Context(), fixtureContainerName))
+	require.Positive(t, observed.FilterMessageSnippet(startInspectionDetail).Len())
+	require.Zero(t, observed.FilterMessageSnippet(startRegisteredFixture).Len())
+}
+
+func assertDockerReturnedDiagnostic(t *testing.T, err error) {
+	t.Helper()
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, 23, exitErr.ExitCode())
+	require.Contains(t, err.Error(), startPublicDetail)
+	require.NotContains(t, err.Error(), startFoldedFixture)
+	require.NotContains(t, err.Error(), startRegisteredFixture)
 }
 
 // spawnChild starts a long-lived descendant immediately and reports its pid,

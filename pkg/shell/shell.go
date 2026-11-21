@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -177,9 +178,16 @@ func getUserShell(userName string) (string, error) {
 		return "", err
 	}
 
-	shell := strings.Split(string(output), ":")
+	return parseUserShell(string(output))
+}
+
+func parseUserShell(output string) (string, error) {
+	shell := strings.Split(output, ":")
 	if len(shell) != 7 {
-		return "", fmt.Errorf("unexpected getent format: %s", string(output))
+		return "", fmt.Errorf(
+			"unexpected getent format: %s",
+			diagnosticredact.EnvironmentRecord(output),
+		)
 	}
 
 	loginShell := strings.TrimSpace(filepath.Base(shell[6]))

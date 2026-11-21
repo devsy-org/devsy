@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -45,7 +46,7 @@ func (cliClient) Version(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf(
 			"get microsandbox version: %s: %w",
-			strings.TrimSpace(string(out)), err,
+			strings.TrimSpace(diagnosticredact.EnvironmentRecord(string(out))), err,
 		)
 	}
 	return strings.TrimSpace(string(out)), nil
@@ -207,7 +208,8 @@ func (cliClient) ensureVolumes(ctx context.Context, mounts []volumeMount) error 
 		// #nosec G204 -- args are a resolved binary path and a named-volume name
 		out, err := exec.CommandContext(ctx, msbBinary(), "volume", "create", vol).CombinedOutput()
 		if err != nil && !strings.Contains(strings.ToLower(string(out)), "already exists") {
-			return fmt.Errorf("create microsandbox volume %q: %s: %w", vol, out, err)
+			return fmt.Errorf("create microsandbox volume %q: %s: %w",
+				vol, diagnosticredact.EnvironmentRecord(string(out)), err)
 		}
 	}
 	return nil
@@ -319,7 +321,7 @@ func msbRun(ctx context.Context, args ...string) error {
 		return fmt.Errorf(
 			"msb %s: %s: %w",
 			redactArgs(args),
-			strings.TrimSpace(string(out)),
+			strings.TrimSpace(diagnosticredact.EnvironmentRecord(string(out))),
 			err,
 		)
 	}
@@ -368,12 +370,19 @@ func loadImageSnapshot(ctx context.Context, imageRef string, img v1.Image) error
 	if err := errors.Join(writeErr, closeErr, ctx.Err()); err != nil {
 		_ = load.Process.Kill()
 		_ = load.Wait()
-		return fmt.Errorf("stream image %q: %s: %w", imageRef, output.String(), err)
+		return fmt.Errorf(
+			"stream image %q: %s: %w",
+			imageRef,
+			diagnosticredact.EnvironmentRecord(output.String()),
+			err,
+		)
 	}
 	if err := load.Wait(); err != nil {
 		return fmt.Errorf(
 			"msb load %q: %s: %w",
-			imageRef, output.String(), errors.Join(err, ctx.Err()),
+			imageRef,
+			diagnosticredact.EnvironmentRecord(output.String()),
+			errors.Join(err, ctx.Err()),
 		)
 	}
 	return nil

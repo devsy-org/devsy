@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"slices"
+	"strings"
 
 	"github.com/devsy-org/devsy/internal/diagnosticredact"
 )
@@ -20,12 +21,32 @@ func WrapCommandError(stdout []byte, err error) error {
 	}
 }
 
+func WrapCombinedOutputError(output string, err error, environment []string) error {
+	if err == nil || output == "" {
+		return err
+	}
+	masked := strings.TrimSpace(diagnosticredact.RecordWithEnvironment(environment, output))
+	if masked == "" {
+		return err
+	}
+	return &Error{
+		captured:      output,
+		maskedCapture: masked,
+		err:           err,
+	}
+}
+
 type Error struct {
-	stdout []byte
-	err    error
+	stdout        []byte
+	captured      string
+	maskedCapture string
+	err           error
 }
 
 func (e *Error) Error() string {
+	if e.captured != "" {
+		return e.maskedCapture + ": " + e.err.Error()
+	}
 	return diagnosticredact.EnvironmentRecord(e.output())
 }
 
@@ -53,6 +74,9 @@ func matchOriginalCommandOutput(err error, match func(string) bool) bool {
 }
 
 func (e *Error) output() string {
+	if e.captured != "" {
+		return e.captured + ": " + e.err.Error()
+	}
 	message := ""
 	if len(e.stdout) > 0 {
 		message += string(e.stdout) + "\n"

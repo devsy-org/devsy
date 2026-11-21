@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/command"
 	config2 "github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
@@ -217,7 +218,11 @@ func (o *GenericJetBrainsServer) installPlugins(
 		return err
 	}
 
-	out, err := installPluginsCommand.CombinedOutput()
+	return runPluginInstaller(installPluginsCommand, plugins)
+}
+
+func runPluginInstaller(cmd *exec.Cmd, plugins []string) error {
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf(
 			"failed to install JetBrains plugins %v: %w",
@@ -226,7 +231,10 @@ func (o *GenericJetBrainsServer) installPlugins(
 		)
 	}
 
-	log.Debugf("remote-dev-server.sh output: %s", out)
+	log.Debugf(
+		"remote-dev-server.sh output: %s",
+		diagnosticredact.RecordWithEnvironment(cmd.Environ(), string(out)),
+	)
 	log.Infof("installed JetBrains plugins: plugins=%v", plugins)
 
 	return nil
