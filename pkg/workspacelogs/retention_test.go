@@ -91,6 +91,13 @@ func TestPruneEnforcesGenerationByteCap(t *testing.T) {
 		ids = append(ids, id)
 	}
 
+	before := dirBytes(s.root)
+	require.Greater(
+		t,
+		before,
+		int64(smallGenerationBytes+smallRunBytes),
+		"the fixture must exceed the generation cap by more than one run",
+	)
 	require.NoError(t, s.Prune())
 
 	var kept int
@@ -100,6 +107,7 @@ func TestPruneEnforcesGenerationByteCap(t *testing.T) {
 		}
 	}
 	assert.Less(t, kept, len(ids))
+	assert.Positive(t, kept)
 	assert.LessOrEqual(t, dirBytes(s.root), int64(smallGenerationBytes))
 	assert.True(t, runExists(t, s, ids[len(ids)-1]), "the newest run survives")
 }

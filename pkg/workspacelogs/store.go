@@ -38,10 +38,10 @@ type Options struct {
 	Root string
 	// Now overrides the clock in tests.
 	Now func() time.Time
-	// MaxRunBytes overrides MaxRunBytes. Zero keeps the default.
-	MaxRunBytes int64
-	// MaxGenerationBytes overrides MaxGenerationBytes. Zero keeps the default.
-	MaxGenerationBytes int64
+	// maxRunBytes overrides MaxRunBytes in tests. Zero keeps the default.
+	maxRunBytes int64
+	// maxGenerationBytes overrides MaxGenerationBytes in tests. Zero keeps the default.
+	maxGenerationBytes int64
 }
 
 // Store is a file-backed archive of workspace run output. It is safe for use
@@ -68,17 +68,17 @@ func Open(opts Options) (*Store, error) {
 	if err := os.MkdirAll(opts.Root, dirPerm); err != nil {
 		return nil, fmt.Errorf("create workspace logs root: %w", err)
 	}
-	if opts.MaxRunBytes <= 0 {
-		opts.MaxRunBytes = MaxRunBytes
+	if opts.maxRunBytes <= 0 {
+		opts.maxRunBytes = MaxRunBytes
 	}
-	if opts.MaxGenerationBytes <= 0 {
-		opts.MaxGenerationBytes = MaxGenerationBytes
+	if opts.maxGenerationBytes <= 0 {
+		opts.maxGenerationBytes = MaxGenerationBytes
 	}
 	s := &Store{
 		root:               opts.Root,
 		now:                opts.Now,
-		maxRunBytes:        opts.MaxRunBytes,
-		maxGenerationBytes: opts.MaxGenerationBytes,
+		maxRunBytes:        opts.maxRunBytes,
+		maxGenerationBytes: opts.maxGenerationBytes,
 		tails:              map[string]tail{},
 	}
 	_ = s.Prune()

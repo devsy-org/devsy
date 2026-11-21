@@ -51,7 +51,7 @@ func newTestStore(t *testing.T) (*Store, *fakeClock) {
 
 const (
 	smallRunBytes        = 1024 * 1024
-	smallGenerationBytes = 5 * 1024 * 1024
+	smallGenerationBytes = 3 * 1024 * 1024
 )
 
 func newSmallBudgetStore(t *testing.T) *Store {
@@ -59,8 +59,8 @@ func newSmallBudgetStore(t *testing.T) *Store {
 	s, err := Open(Options{
 		Root:               t.TempDir(),
 		Now:                newClock().Now,
-		MaxRunBytes:        smallRunBytes,
-		MaxGenerationBytes: smallGenerationBytes,
+		maxRunBytes:        smallRunBytes,
+		maxGenerationBytes: smallGenerationBytes,
 	})
 	require.NoError(t, err)
 
