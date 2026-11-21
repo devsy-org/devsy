@@ -25,6 +25,14 @@ func (s *HostSuite) TestDebugKeepsRuntimeDiagnosticsWithoutHelperShutdownNoise()
 	}
 }
 
+func (s *HostSuite) TestRuntimeStderrMasksFoldedAuthorization() {
+	observed := log.InitTestObserved(s.T(), slog.LevelDebug)
+	host := s.host("stream-folded-startup-stderr")
+	s.NotEmpty(host.Info().RuntimeName)
+	s.Positive(observed.FilterMessageSnippet("public runtime detail").Len())
+	s.Zero(observed.FilterMessageSnippet("folded-runtime-fixture-value").Len())
+}
+
 func (s *HostSuite) TestTraceKeepsHelperLifecycleDiagnostics() {
 	observed := log.InitTestObserved(s.T(), logging.LevelTrace)
 	host := s.host(fake.Normal)
