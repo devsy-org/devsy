@@ -16,6 +16,7 @@ func Records(redactor *redact.Redactor, value string) string {
 	if json.Valid([]byte(value)) {
 		return wholeRecord(redactor, value)
 	}
+	value = wholeRecord(redactor, value)
 	var output strings.Builder
 	for value != "" {
 		if LooksLikeStructuredJSON(value) {

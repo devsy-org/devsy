@@ -79,3 +79,25 @@ func TestRecordMasksJSONCredentialRecordsBeforePublicText(t *testing.T) {
 		})
 	}
 }
+
+func TestRecordsMaskRegisteredMultilineValueBeforeSplittingRecords(t *testing.T) {
+	const cookie = "synthetic-registered-cookie"
+	const tail = "synthetic registered plain tail"
+	registered := `{"Cookie":"` + cookie + `"}` + "\n" + tail
+	redactor := redact.New(redact.Options{
+		Environment: []string{"DEVSY_FIXTURE_TOKEN=" + registered},
+	})
+	input := "public before\n" + registered + "\npublic after"
+	for name, mask := range map[string]func(*redact.Redactor, string) string{
+		"Record":  Record,
+		"Records": Records,
+	} {
+		t.Run(name, func(t *testing.T) {
+			output := mask(redactor, input)
+			assert.NotContains(t, output, cookie)
+			assert.NotContains(t, output, tail)
+			assert.Contains(t, output, "public before")
+			assert.Contains(t, output, "public after")
+		})
+	}
+}
