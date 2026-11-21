@@ -69,6 +69,10 @@ jobs:
         working-directory: desktop
         run: npm run test
 
+      - name: Shared scanner tests
+        if: needs.changes.outputs.desktop == 'true'
+        run: node --test logging/desktop/*.test.ts
+
   build-desktop:
     needs: [changes, lint-and-test]
     if: needs.changes.outputs.desktop == 'true'

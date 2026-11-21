@@ -157,12 +157,12 @@ app.whenReady().then(async () => {
   appSettingsStore.load()
   try {
     setMainLogLevel(appSettingsStore.get().desktopLogLevel)
-    initializeMainLog(app.getPath("logs"))
   } catch {
     console.error("Desktop logging configuration failed")
     app.exit(1)
     return
   }
+  initializeMainLog(app.getPath("logs"))
 
   initAnalytics()
   trackEvent("app_open")

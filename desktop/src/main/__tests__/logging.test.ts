@@ -1,9 +1,11 @@
 import {
+  existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -56,6 +58,24 @@ describe("main logger", () => {
     expect(getMainLogLevel()).toBe("debug")
     process.env.DEVSY_LOG_LEVEL = "invalid"
     expect(() => setMainLogLevel("info")).toThrow("Invalid DEVSY_LOG_LEVEL")
+  })
+
+  it("keeps logging to the console when the log directory cannot be created", () => {
+    const dir = mkdtempSync(join(tmpdir(), "devsy-unwritable-log-"))
+    const blocker = join(dir, "blocker")
+    writeFileSync(blocker, "")
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(() => initializeMainLog(join(blocker, "logs"))).not.toThrow()
+      mainLog.info("still visible")
+      expect(info).toHaveBeenCalledOnce()
+      expect(JSON.parse(info.mock.calls[0][0]).msg).toBe("still visible")
+      expect(error).toHaveBeenCalledOnce()
+      expect(existsSync(join(blocker, "logs"))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it("redacts sensitive labels and quoted values in messages and errors in both sinks", () => {

@@ -202,8 +202,13 @@ function logger(component?: string) {
 export const mainLog = logger()
 
 export function initializeMainLog(directory: string): void {
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
-  logPath = join(directory, "main.log")
+  try {
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    logPath = join(directory, "main.log")
+  } catch {
+    logPath = undefined
+    console.error("Desktop log directory unavailable; logging to console only")
+  }
 }
 
 export function setMainLogLevel(level: LogLevel | undefined): void {
