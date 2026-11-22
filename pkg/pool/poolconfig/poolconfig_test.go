@@ -169,6 +169,26 @@ func (s *PoolConfigSuite) TestRejections() {
 	s.runRejections(rejections)
 }
 
+func (s *PoolConfigSuite) TestDecoderErrorsDoNotEchoValues() {
+	cases := []struct{ name, extra, want string }{
+		{"tagged int", "      env: {PASS: !!int CANARY}\n", "invalid YAML"},
+		{"unknown anchor", "      env: {PASS: *CANARY}\n", "invalid YAML"},
+		{
+			"overflow",
+			"  capacity: {maxQueued: 9223372036854775987}\n",
+			"spec.capacity.maxQueued: must be of type int",
+		},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			_, err := Parse(append(s.readMinimal(), []byte(tc.extra)...))
+			s.ErrorContains(err, tc.want)
+			s.NotContains(err.Error(), "CANARY")
+			s.NotContains(err.Error(), "9223372036854775987")
+		})
+	}
+}
+
 func (s *PoolConfigSuite) loadExample() *Pool {
 	p, err := Load(filepath.Join("testdata", "pool.yaml"))
 	s.Require().NoError(err)
