@@ -34,7 +34,7 @@ type AllowRule struct {
 
 var (
 	labelPattern  = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
-	letterPattern = regexp.MustCompile(`[a-z]`)
+	letterPattern = regexp.MustCompile(`^[a-z]`)
 )
 
 // reservedPrefixes are never reachable through an allow rule: loopback,
@@ -148,10 +148,10 @@ func checkLabels(labels []string) string {
 			return "is not a valid DNS name"
 		}
 	}
-	// Some resolvers read names such as "127.1" as addresses.
+	// Some resolvers read names such as "127.1" or "0x7f.0x1" as addresses.
 	tld := labels[len(labels)-1]
 	if !letterPattern.MatchString(tld) || tld == "localhost" {
-		return "must end in a top-level domain with a letter, other than localhost"
+		return "must end in a top-level domain that starts with a letter, other than localhost"
 	}
 	return ""
 }

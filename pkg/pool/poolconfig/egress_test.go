@@ -3,6 +3,7 @@ package poolconfig
 const (
 	wantNarrower = "narrower"
 	wantOutside  = "outside"
+	wantTLD      = "top-level domain"
 )
 
 var egressRejections = []rejection{
@@ -20,8 +21,9 @@ var egressRejections = []rejection{
 	{"single label", func(p *Pool) { allow(p, AllowRule{Host: "intranet"}) }, "fully qualified"},
 	{"uppercase host", func(p *Pool) { allow(p, AllowRule{Host: "A.com"}) }, "lowercase"},
 	{"bad label", func(p *Pool) { allow(p, AllowRule{Host: "a_b.com"}) }, "valid DNS"},
-	{"numeric tld", func(p *Pool) { allow(p, AllowRule{Host: "127.1"}) }, "top-level domain"},
-	{"hex host", func(p *Pool) { allow(p, AllowRule{Host: "0x7f.1"}) }, "top-level domain"},
+	{"numeric tld", func(p *Pool) { allow(p, AllowRule{Host: "127.1"}) }, wantTLD},
+	{"hex host", func(p *Pool) { allow(p, AllowRule{Host: "0x7f.1"}) }, wantTLD},
+	{"hex tld", func(p *Pool) { allow(p, AllowRule{Host: "0x7f.0x1"}) }, wantTLD},
 	{"localhost suffix", func(p *Pool) { allow(p, AllowRule{Host: "*.a.localhost"}) }, "localhost"},
 	{
 		"port zero",
