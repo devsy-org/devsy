@@ -38,6 +38,7 @@ var (
 	errDuplicateSuite = errors.New("duplicate suite")
 	errInvalidSuite   = errors.New("invalid suite")
 	errInvalidStep    = errors.New("invalid unit step")
+	errInvalidRunner  = errors.New("invalid unit runner")
 	errInvalidGlob    = errors.New("invalid selection glob")
 )
 
@@ -60,10 +61,24 @@ type UnitTier struct {
 	Excluded []Exclusion  `yaml:"excluded"`
 }
 
-// UnitRunner is one runner of the unit-test job matrix.
+// UnitRunner is one runner of the unit-test job matrix. SaveReserveMinutes is
+// the part of the job limit kept for the cache upload after the tests.
 type UnitRunner struct {
-	Runner         string `yaml:"runner"          json:"runner"`
-	TimeoutMinutes int    `yaml:"timeout_minutes" json:"timeout_minutes"`
+	Runner             string `yaml:"runner"               json:"runner"`
+	TimeoutMinutes     int    `yaml:"timeout_minutes"      json:"timeout_minutes"`
+	SaveReserveMinutes int    `yaml:"save_reserve_minutes" json:"-"`
+}
+
+func (r UnitRunner) validate() error {
+	if r.Runner == "" || r.TimeoutMinutes <= 0 ||
+		r.SaveReserveMinutes < 0 || r.SaveReserveMinutes >= r.TimeoutMinutes {
+		return fmt.Errorf(
+			"%w: %q needs a timeout above its save reserve",
+			errInvalidRunner,
+			r.Runner,
+		)
+	}
+	return nil
 }
 
 // UnitStep is one `go test` invocation. Steps run in manifest order.
@@ -338,6 +353,11 @@ func (m *Manifest) validate() error {
 		}
 		seen[key] = true
 		if err := s.validate(); err != nil {
+			return err
+		}
+	}
+	for _, runner := range m.Unit.Runners {
+		if err := runner.validate(); err != nil {
 			return err
 		}
 	}

@@ -42,7 +42,8 @@ type matrixDoc struct {
 // matrixUnitEntry is one unit-test runner with the GOOS its steps run as.
 type matrixUnitEntry struct {
 	UnitRunner
-	OS string `json:"os"`
+	OS                 string `json:"os"`
+	TestTimeoutMinutes int    `json:"test_timeout_minutes"`
 }
 
 type matrixBuildEntry struct {
@@ -226,7 +227,11 @@ func matrixInclude(m *Manifest, group string, opts selectionOptions) (any, error
 func unitMatrixEntries(m *Manifest) []matrixUnitEntry {
 	entries := make([]matrixUnitEntry, 0, len(m.Unit.Runners))
 	for _, r := range m.Unit.Runners {
-		entries = append(entries, matrixUnitEntry{UnitRunner: r, OS: Suite{Runner: r.Runner}.OS()})
+		entries = append(entries, matrixUnitEntry{
+			UnitRunner:         r,
+			OS:                 Suite{Runner: r.Runner}.OS(),
+			TestTimeoutMinutes: r.TimeoutMinutes - r.SaveReserveMinutes,
+		})
 	}
 	return entries
 }
