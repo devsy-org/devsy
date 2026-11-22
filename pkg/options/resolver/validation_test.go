@@ -103,6 +103,21 @@ func (suite *ValidateUserValueTestSuite) TestPatternErrorTakesPrecedence() {
 	suite.EqualError(validateUserValue("opt", "x", option), "must be digits")
 }
 
+func (suite *ValidateUserValueTestSuite) TestEnumErrorListsValues() {
+	option := &types.Option{
+		Enum: types.OptionEnumArray{
+			{Value: "strict", DisplayName: "Require stat virtualization support."},
+			{Value: "relaxed", DisplayName: "Relax stat virtualization."},
+			{Value: "off", DisplayName: "Disable stat virtualization."},
+		},
+	}
+
+	suite.EqualError(
+		validateUserValue("opt", "bad", option),
+		`invalid value "bad" for option "opt", has to match one of the following values: [strict relaxed off]`,
+	)
+}
+
 func (suite *ValidateUserValueTestSuite) runUserValueCases(cases map[string]userValueCase) {
 	for name, tc := range cases {
 		suite.Run(name, func() {

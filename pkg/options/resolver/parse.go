@@ -80,11 +80,16 @@ func validateUserValueEnum(optionName, userValue string, option *types.Option) e
 		}
 	}
 
+	values := make([]string, 0, len(option.Enum))
+	for _, e := range option.Enum {
+		values = append(values, e.Value)
+	}
+
 	return fmt.Errorf(
 		"invalid value %q for option %q, has to match one of the following values: %v",
 		userValue,
 		optionName,
-		option.Enum,
+		values,
 	)
 }
 
