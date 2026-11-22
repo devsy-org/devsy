@@ -45,6 +45,8 @@ func (p *Pool) Validate() error {
 	p.Spec.validateLifecycle(&errs)
 	p.Spec.validateEgress(&errs)
 	p.Spec.validateAgents(&errs)
+	routes := p.Spec.validateCredentials(&errs)
+	p.Spec.validateAgentGrants(&errs, routes)
 	p.Spec.validateAudit(&errs)
 	return errors.Join(errs...)
 }

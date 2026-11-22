@@ -25,13 +25,14 @@ type Metadata struct {
 }
 
 type Spec struct {
-	Source    Source           `json:"source"`
-	Provider  Provider         `json:"provider"`
-	Capacity  Capacity         `json:"capacity"`
-	Lifecycle Lifecycle        `json:"lifecycle"`
-	Egress    Egress           `json:"egress"`
-	Agents    map[string]Agent `json:"agents"`
-	Audit     Audit            `json:"audit"`
+	Source      Source           `json:"source"`
+	Provider    Provider         `json:"provider"`
+	Capacity    Capacity         `json:"capacity"`
+	Lifecycle   Lifecycle        `json:"lifecycle"`
+	Egress      Egress           `json:"egress"`
+	Credentials []Credential     `json:"credentials,omitempty"`
+	Agents      map[string]Agent `json:"agents"`
+	Audit       Audit            `json:"audit"`
 }
 
 type Source struct {
@@ -60,8 +61,9 @@ type Lifecycle struct {
 }
 
 type Agent struct {
-	Command []string          `json:"command"`
-	Env     map[string]string `json:"env,omitempty"`
+	Command     []string          `json:"command"`
+	Env         map[string]string `json:"env,omitempty"`
+	Credentials []string          `json:"credentials,omitempty"`
 }
 
 type Audit struct {
