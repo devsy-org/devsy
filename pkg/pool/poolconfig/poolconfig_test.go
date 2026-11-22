@@ -109,11 +109,13 @@ func (s *PoolConfigSuite) TestRejectsAmbiguousYAML() {
 			`spec.agents.claude.env: key "1" must be a quoted string`,
 		},
 		{"bool word key", "      env: {ON: x}\n", `key "ON" must be a quoted string`},
+		{"null key", "      env: {null: secret-token}\n", `key "null" must be a quoted string`},
 	}
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			_, err := Parse(append(s.readMinimal(), []byte(tc.extra)...))
 			s.ErrorContains(err, tc.want)
+			s.NotContains(err.Error(), "secret-token")
 		})
 	}
 }
