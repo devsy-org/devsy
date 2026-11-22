@@ -169,10 +169,19 @@ func (s *PoolConfigSuite) TestRejections() {
 	s.runRejections(rejections)
 }
 
+const wantInvalidYAML = "invalid YAML"
+
 func (s *PoolConfigSuite) TestDecoderErrorsDoNotEchoValues() {
 	cases := []struct{ name, extra, want string }{
-		{"tagged int", "      env: {PASS: !!int CANARY}\n", "invalid YAML"},
-		{"unknown anchor", "      env: {PASS: *CANARY}\n", "invalid YAML"},
+		{"tagged int", "      env: {PASS: !!int CANARY}\n", wantInvalidYAML},
+		{"unknown anchor", "      env: {PASS: *CANARY}\n", wantInvalidYAML},
+		{
+			"fake field path",
+			"      env: {PASS: !!int 'Go struct field X.CANARY of type int'}\n",
+			wantInvalidYAML,
+		},
+		{"fake line", "      env: {PASS: !!int 'line 987654321 CANARY'}\n", wantInvalidYAML},
+		{"syntax error", "      env: {PASS: 'CANARY\n", "invalid YAML at line"},
 		{
 			"overflow",
 			"  capacity: {maxQueued: 9223372036854775987}\n",
@@ -185,6 +194,7 @@ func (s *PoolConfigSuite) TestDecoderErrorsDoNotEchoValues() {
 			s.ErrorContains(err, tc.want)
 			s.NotContains(err.Error(), "CANARY")
 			s.NotContains(err.Error(), "9223372036854775987")
+			s.NotContains(err.Error(), "987654321")
 		})
 	}
 }
