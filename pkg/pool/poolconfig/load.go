@@ -70,6 +70,7 @@ func (p *Pool) ApplyDefaults() {
 	defaultDuration(&s.Lifecycle.IdleTimeout, defaultIdleTimeout)
 	defaultDuration(&s.Lifecycle.TTL, defaultTTL)
 	defaultDuration(&s.Lifecycle.JobTimeout, defaultJobTimeout)
+	s.applyEgressDefaults()
 	if s.Audit.RetainDays == 0 {
 		s.Audit.RetainDays = defaultRetainDays
 	}

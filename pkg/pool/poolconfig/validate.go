@@ -43,6 +43,7 @@ func (p *Pool) Validate() error {
 	p.Spec.validateSource(&errs)
 	p.Spec.validateCapacity(&errs)
 	p.Spec.validateLifecycle(&errs)
+	p.Spec.validateEgress(&errs)
 	p.Spec.validateAgents(&errs)
 	p.Spec.validateAudit(&errs)
 	return errors.Join(errs...)
