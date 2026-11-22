@@ -148,6 +148,7 @@ var credentialRejections = []rejection{
 		"not allowed for pool agents",
 	},
 	upstreamCase("upstream path", "https://api.anthropic.com/v1"),
+	upstreamCase("upstream trailing slash", "https://api.anthropic.com/"),
 	upstreamCase("upstream empty query", "https://api.anthropic.com?"),
 	upstreamCase("upstream empty fragment", "https://api.anthropic.com#"),
 	upstreamCase("upstream empty port", "https://api.anthropic.com:"),

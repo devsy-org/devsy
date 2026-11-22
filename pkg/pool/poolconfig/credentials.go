@@ -248,7 +248,7 @@ func checkUpstreamURL(upstream string) (string, string) {
 }
 
 func plainHTTPSOrigin(u *url.URL, raw string) bool {
-	return u.Scheme == "https" && u.User == nil && (u.Path == "" || u.Path == "/") &&
+	return u.Scheme == "https" && u.User == nil && u.Path == "" &&
 		!strings.ContainsAny(raw, "?#") && (!strings.HasSuffix(u.Host, ":") || u.Port() != "")
 }
 
