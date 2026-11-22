@@ -337,7 +337,7 @@ e2e:
       runtime: docker-wsl
       expected_spec_count: 2
       test_timeout: 600s
-      job_timeout_minutes: 40
+      job_timeout_minutes: 25
 
     # --- microsandbox ---
     - { group: microsandbox, label: up-provider-microsandbox, expected_spec_count: 2, performance_capture: true, pr_smoke: true, paths: ["e2e/tests/up/*microsandbox*", "e2e/tests/up/managed_policy_fixture_linux.go", "pkg/driver/microsandbox/**", "pkg/driver/external/**", "pkg/driver/drivercreate/microsandbox_images.go", "providers/microsandbox/**", "hack/microsandbox/**", "cmd/internal/runtime_supervisor.go", "cmd/internal/managedvalue/**"] }
