@@ -81,7 +81,7 @@ var egressRejections = []rejection{
 	{
 		"non canonical cidr",
 		func(p *Pool) { allow(p, AllowRule{CIDR: "10.1.2.3/8"}) },
-		"must be canonical, use 10.0.0.0/8",
+		"must be canonical",
 	},
 	{
 		"azure wireserver",
@@ -135,6 +135,18 @@ func (s *PoolConfigSuite) TestHostMatches() {
 	s.False(HostMatches("*.example.com", "a b.example.com"))
 	s.False(HostMatches("*.com", "example.com"))
 	s.False(HostMatches("GitHub.com", "github.com"))
+}
+
+func (s *PoolConfigSuite) TestEgressErrorsDoNotEchoValues() {
+	p := s.loadExample()
+	allow(p, AllowRule{Host: "a.com", Ports: []int{987654321}})
+	allow(p, AllowRule{CIDR: "10.1.2.3/16"})
+	err := p.Validate()
+	s.ErrorContains(err, "ports[0]: is outside")
+	s.ErrorContains(err, "must be canonical")
+	for _, v := range []string{"987654321", "10.1.2.3", "10.1.0.0"} {
+		s.NotContains(err.Error(), v)
+	}
 }
 
 func (s *PoolConfigSuite) TestEgressDecodeErrorsDoNotEchoValues() {
