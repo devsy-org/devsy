@@ -36,6 +36,7 @@ func TestValidateCmdSuite(t *testing.T) {
 }
 
 func (s *ValidateCmdSuite) SetupTest() {
+	s.T().Setenv("DEVSY_UI", "")
 	s.dir = s.T().TempDir()
 }
 
