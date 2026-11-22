@@ -112,7 +112,7 @@ var credentialRejections = []rejection{
 	},
 	{"undeclared credential", func(p *Pool) {
 		setAgent(p, func(a *Agent) { a.Credentials = append(a.Credentials, "aws") })
-	}, "undeclared credential"},
+	}, "must reference a declared credential"},
 	{"unknown placeholder", func(p *Pool) {
 		setAgent(p, func(a *Agent) { a.Env["X"] = "{{secret.github}}" })
 	}, "unknown placeholder"},
@@ -175,13 +175,15 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	p.Spec.Credentials[0].Scope.Repositories = []string{"acme/api", "CANARY_REPO"}
 	p.Spec.Credentials[1].Route.Upstream = "https://api.anthropic.com:987654321"
 	p.Spec.Credentials[2].Route.Upstream = "https://canary-host.example.com"
+	setAgent(p, func(a *Agent) { a.Credentials = append(a.Credentials, "CANARY_CREDENTIAL") })
 	allow(p, AllowRule{Host: "canary-host.example.com"})
 	err := p.Validate()
 	s.ErrorContains(err, "deliver[0]: unknown target")
 	s.ErrorContains(err, "repositories[1]: must be owner/repo")
 	s.ErrorContains(err, "port is outside")
 	s.ErrorContains(err, "must not also be matched")
-	for _, v := range []string{"CANARY_DELIVERY", "CANARY_REPO", "987654321"} {
+	s.ErrorContains(err, "must reference a declared credential")
+	for _, v := range []string{"CANARY_DELIVERY", "CANARY_REPO", "987654321", "CANARY_CREDENTIAL"} {
 		s.NotContains(err.Error(), v)
 	}
 	s.NotContains(strings.ReplaceAll(err.Error(), "spec.egress.allow", ""), "canary-host")

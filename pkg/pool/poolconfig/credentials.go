@@ -299,9 +299,10 @@ func (s *Spec) validateAgentGrants(errs *fieldErrors, routes map[string]string) 
 	}
 	for name, agent := range s.Agents {
 		path := "spec.agents." + name
-		for _, cred := range agent.Credentials {
+		for i, cred := range agent.Credentials {
 			if !declared[cred] {
-				errs.add(path+".credentials", "names undeclared credential %q", cred)
+				errs.add(fmt.Sprintf("%s.credentials[%d]", path, i),
+					"must reference a declared credential")
 			}
 		}
 		for key, value := range agent.Env {
