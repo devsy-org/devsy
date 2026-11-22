@@ -31,7 +31,7 @@ func (commandRunner) Run(ctx context.Context, path string, args []string) (Probe
 		result.ExitCode = cmd.ProcessState.ExitCode()
 	}
 	if stdout.overflow || stderr.overflow {
-		return ProbeResult{}, ErrProtocol
+		return ProbeResult{}, errProbeOutputLimit
 	}
 	if _, ok := errors.AsType[*exec.ExitError](err); ok {
 		return result, nil

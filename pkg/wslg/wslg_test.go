@@ -17,6 +17,9 @@ const (
 	testUser            = "alice"
 	testOrdinaryDisplay = "DISPLAY=:9"
 	testProcessHelper   = "-test.run=^TestWSLgProcessHelper$"
+	testPrivateOutput   = "private-output"
+	testLargeStdout     = "large-stdout"
+	testLargeStderr     = "large-stderr"
 )
 
 type WSLgSuite struct{ suite.Suite }
@@ -109,6 +112,25 @@ func (s *WSLgSuite) TestInvalidTargetsNeverRun() {
 	}
 }
 
+func (s *WSLgSuite) TestProtocolErrorsNameTheirReason() {
+	for _, tc := range []struct {
+		result ProbeResult
+		reason string
+	}{
+		{ProbeResult{ExitCode: 1, Stderr: []byte("private")}, "exit code 1, stdout 0 bytes, stderr 7 bytes"},
+		{ProbeResult{ExitCode: 255, Stdout: []byte("ab")}, "exit code 255, stdout 2 bytes, stderr 0 bytes"},
+		{ProbeResult{Stdout: []byte("private")}, "stdout has no trailing newline"},
+		{ProbeResult{Stdout: []byte{0xff, '\n'}}, "stdout is not valid UTF-8"},
+		{ProbeResult{Stdout: []byte("a\x1bb\n")}, "value has control characters"},
+		{ProbeResult{Stdout: []byte(strings.Repeat("a", outputLimit+1))}, "output over the limit"},
+	} {
+		_, _, err := parseResult(tc.result)
+		s.ErrorIs(err, ErrProtocol)
+		s.ErrorContains(err, tc.reason)
+		s.NotContains(err.Error(), "private")
+	}
+}
+
 func (s *WSLgSuite) TestStrictProtocol() {
 	for _, result := range []ProbeResult{
 		{Stdout: []byte("private")},
@@ -190,13 +212,31 @@ func (s *WSLgSuite) TestNamespaceAndOverlay() {
 	s.Error(ValidateEnvironment(map[string]string{Display: "x\n"}))
 }
 
+func (s *WSLgSuite) TestCaptureReportsSubprocessOutputLimit() {
+	path, err := os.Executable()
+	s.Require().NoError(err)
+	for _, mode := range []string{testLargeStdout, testLargeStderr} {
+		s.Run(mode, func() {
+			runner := fakeRunner{
+				run: func(ctx context.Context, path string, _ []string) (ProbeResult, error) {
+					return (commandRunner{}).Run(ctx, path, []string{testProcessHelper, "--", mode})
+				},
+			}
+			_, err := Capture(s.T().Context(), Target{testDistro, testUser}, path, runner)
+			s.Require().ErrorIs(err, ErrProtocol)
+			s.ErrorContains(err, "output over the limit (DISPLAY)")
+			s.NotContains(err.Error(), testPrivateOutput)
+		})
+	}
+}
+
 func (s *WSLgSuite) TestSubprocessBoundsAndCancellation() {
 	path, err := os.Executable()
 	s.Require().NoError(err)
 	result, err := (commandRunner{}).Run(
 		context.Background(),
 		path,
-		[]string{testProcessHelper, "--", "large"},
+		[]string{testProcessHelper, "--", testLargeStdout},
 	)
 	s.ErrorIs(err, ErrProtocol)
 	s.Empty(result.Stdout)
@@ -223,8 +263,13 @@ func TestWSLgProcessHelper(t *testing.T) {
 		return
 	}
 	switch os.Args[len(os.Args)-1] {
-	case "large":
-		_, err := io.WriteString(os.Stdout, strings.Repeat("a", outputLimit+1))
+	case testLargeStdout, testLargeStderr:
+		stream := os.Stdout
+		if os.Args[len(os.Args)-1] == testLargeStderr {
+			stream = os.Stderr
+		}
+		output := testPrivateOutput + strings.Repeat("a", outputLimit+1-len(testPrivateOutput))
+		_, err := io.WriteString(stream, output)
 		if err != nil {
 			os.Exit(2)
 		}
