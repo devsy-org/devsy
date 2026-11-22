@@ -24,6 +24,7 @@ func workFactorOf(t *testing.T) string {
 
 func TestSetOverridesWorkFactorUntilRestored(t *testing.T) {
 	restore := Set(8)
+	t.Cleanup(restore)
 	require.Equal(t, "8", workFactorOf(t))
 	restore()
 	require.Equal(t, "18", workFactorOf(t))

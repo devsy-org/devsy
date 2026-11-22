@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"filippo.io/age"
+	"github.com/devsy-org/devsy/pkg/secrets/secretstest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +38,7 @@ func (r unavailableLegacyKeyring) Open(
 	if err == nil {
 		if file, ok := b.(*fileBackend); ok {
 			if recipient, ok := file.key.recipient.(*age.ScryptRecipient); ok {
-				recipient.SetWorkFactor(testScryptWorkFactor)
+				recipient.SetWorkFactor(secretstest.WorkFactor)
 			}
 		}
 	}
