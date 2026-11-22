@@ -62,7 +62,25 @@ var egressRejections = []rejection{
 		"64:ff9b::/96",
 	},
 	{"6to4", func(p *Pool) { allow(p, AllowRule{CIDR: "2002:a9fe:a9fe::/48"}) }, "2002::/16"},
-	{"unspecified ipv6", func(p *Pool) { allow(p, AllowRule{CIDR: "::/128"}) }, "::/128"},
+	{"unspecified ipv6", func(p *Pool) { allow(p, AllowRule{CIDR: "::/128"}) }, "::/96"},
+	{
+		"ipv4 compatible",
+		func(p *Pool) { allow(p, AllowRule{CIDR: "::192.0.2.1/128"}) },
+		"::/96",
+	},
+	{
+		"teredo",
+		func(p *Pool) { allow(p, AllowRule{CIDR: "2001:0:a9fe:a9fe::/64"}) },
+		"2001::/32",
+	},
+	{"ipv4 multicast", func(p *Pool) { allow(p, AllowRule{CIDR: "224.0.0.0/8"}) }, "224.0.0.0/4"},
+	{"ipv6 multicast", func(p *Pool) { allow(p, AllowRule{CIDR: "ff02::/32"}) }, "ff00::/8"},
+	{"broadcast", func(p *Pool) { allow(p, AllowRule{CIDR: "255.255.255.255/32"}) }, "240.0.0.0/4"},
+	{
+		"non canonical cidr",
+		func(p *Pool) { allow(p, AllowRule{CIDR: "10.1.2.3/8"}) },
+		"must be canonical, use 10.0.0.0/8",
+	},
 	{
 		"azure wireserver",
 		func(p *Pool) { allow(p, AllowRule{CIDR: "168.63.129.0/24"}) },
@@ -88,6 +106,13 @@ func (s *PoolConfigSuite) TestEgressDefaults() {
 		s.version(string(s.readMinimal())),
 		s.version(string(s.readMinimal())+"  egress: {default: deny}\n"),
 	)
+
+	withPorts := func(ports string) string {
+		return s.version(string(s.readMinimal()) +
+			"  egress:\n    allow:\n      - {host: a.com" + ports + "}\n")
+	}
+	s.Equal(withPorts(""), withPorts(", ports: [443]"))
+	s.NotEqual(withPorts(""), withPorts(", ports: [8443]"))
 }
 
 func (s *PoolConfigSuite) TestEgressRequiresExactFieldNames() {
@@ -106,6 +131,8 @@ func (s *PoolConfigSuite) TestHostMatches() {
 	s.False(HostMatches("*.example.com", ".example.com"))
 	s.False(HostMatches("*.example.com", "*.example.com"))
 	s.False(HostMatches("*.example.com", "a b.example.com"))
+	s.False(HostMatches("*.com", "example.com"))
+	s.False(HostMatches("GitHub.com", "github.com"))
 }
 
 func allow(p *Pool, rule AllowRule) {

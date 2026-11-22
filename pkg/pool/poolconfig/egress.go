@@ -38,8 +38,8 @@ var (
 )
 
 // reservedPrefixes are never reachable through an allow rule: loopback,
-// link-local, cloud metadata, and IPv6 forms that embed an IPv4 address and
-// would otherwise slip past the IPv4 entries.
+// link-local, cloud metadata, multicast, reserved space, and IPv6 forms that
+// embed an IPv4 address and would otherwise slip past the IPv4 entries.
 var reservedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
 	netip.MustParsePrefix("127.0.0.0/8"),
@@ -47,20 +47,27 @@ var reservedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("100.100.100.200/32"),
 	netip.MustParsePrefix("168.63.129.16/32"),
 	netip.MustParsePrefix("192.0.0.192/32"),
-	netip.MustParsePrefix("::/128"),
-	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/96"),
 	netip.MustParsePrefix("::ffff:0:0/96"),
 	netip.MustParsePrefix("64:ff9b::/96"),
 	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2001::/32"),
 	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("ff00::/8"),
 	netip.MustParsePrefix("fe80::/10"),
 	netip.MustParsePrefix("fd00:ec2::/32"),
 }
 
-// HostMatches reports whether host matches an allow rule host pattern. A
-// leading "*." matches any subdomain, but not the bare domain. Hosts that are
-// not valid DNS names never match.
+// HostMatches reports whether host matches an allow rule host pattern.
+// Patterns are lowercase and must be valid allow patterns. A leading "*."
+// matches subdomains at any depth, but not the bare domain. Hosts that are not
+// valid DNS names never match.
 func HostMatches(pattern, host string) bool {
+	if checkHostPattern(pattern) != "" {
+		return false
+	}
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	if checkHostName(host) != "" {
 		return false
@@ -154,6 +161,9 @@ func checkCIDR(value string) string {
 	if err != nil {
 		return "is not a valid CIDR"
 	}
+	if prefix != prefix.Masked() {
+		return "must be canonical, use " + prefix.Masked().String()
+	}
 	minBits := minIPv6PrefixBits
 	if prefix.Addr().Is4() {
 		minBits = minIPv4PrefixBits
@@ -165,7 +175,7 @@ func checkCIDR(value string) string {
 	for _, reserved := range reservedPrefixes {
 		if prefix.Overlaps(reserved) {
 			return "overlaps reserved range " + reserved.String() +
-				" (loopback, link-local, metadata or IPv4 embedded in IPv6)"
+				" (loopback, link-local, metadata, multicast, reserved or IPv4 embedded in IPv6)"
 		}
 	}
 	return ""
