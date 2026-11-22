@@ -249,7 +249,7 @@ func TestPermissionsArePrivate(t *testing.T) {
 }
 
 func TestRunBudgetElidesOutputButKeepsSequenceAndMetadata(t *testing.T) {
-	s, _ := newTestStore(t)
+	s := newSmallBudgetStore(t)
 	runID := newRun(t, s, "u")
 	pid := newProducer(t, s, runID)
 	seq := newSeq(runID, pid)
@@ -257,7 +257,7 @@ func TestRunBudgetElidesOutputButKeepsSequenceAndMetadata(t *testing.T) {
 	chunk := strings.Repeat("y", MaxChunkBytes)
 
 	var elided int
-	for range MaxRunBytes/MaxChunkBytes + 50 {
+	for range smallRunBytes/MaxChunkBytes + 50 {
 		elided += mustAppend(t, s, seq.output(inv, StreamStdout, chunk)).Elided
 	}
 	require.Positive(t, elided, "output past the budget is elided")
@@ -269,7 +269,7 @@ func TestRunBudgetElidesOutputButKeepsSequenceAndMetadata(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, CapturePartial, m.CaptureState)
 	assert.Contains(t, m.Conditions, ConditionCapacity)
-	assert.LessOrEqual(t, dirBytes(filepath.Join(s.root, runsDirName)), int64(MaxRunBytes))
+	assert.LessOrEqual(t, dirBytes(filepath.Join(s.root, runsDirName)), int64(smallRunBytes))
 
 	recs := readAll(t, s, ReadRequest{RunID: runID, Hook: hookCreate, Limit: MaxReadLimit})
 	var failed bool

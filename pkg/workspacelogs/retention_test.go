@@ -76,7 +76,7 @@ func TestPruneRemovesExpiredAndStaleActiveRuns(t *testing.T) {
 }
 
 func TestPruneEnforcesGenerationByteCap(t *testing.T) {
-	s, _ := newTestStore(t)
+	s := newSmallBudgetStore(t)
 	chunk := strings.Repeat("b", MaxChunkBytes)
 	var ids []string
 	for range 7 {
@@ -84,13 +84,20 @@ func TestPruneEnforcesGenerationByteCap(t *testing.T) {
 		pid := newProducer(t, s, id)
 		seq := newSeq(id, pid)
 		inv := NewID()
-		for range MaxRunBytes/MaxChunkBytes - 40 {
+		for range smallRunBytes/MaxChunkBytes - 4 {
 			mustAppend(t, s, seq.output(inv, StreamStdout, chunk))
 		}
 		mustAppend(t, s, seq.terminal(true))
 		ids = append(ids, id)
 	}
 
+	before := dirBytes(s.root)
+	require.Greater(
+		t,
+		before,
+		int64(smallGenerationBytes+smallRunBytes),
+		"the fixture must exceed the generation cap by more than one run",
+	)
 	require.NoError(t, s.Prune())
 
 	var kept int
@@ -100,7 +107,8 @@ func TestPruneEnforcesGenerationByteCap(t *testing.T) {
 		}
 	}
 	assert.Less(t, kept, len(ids))
-	assert.LessOrEqual(t, dirBytes(s.root), int64(MaxGenerationBytes))
+	assert.Positive(t, kept)
+	assert.LessOrEqual(t, dirBytes(s.root), int64(smallGenerationBytes))
 	assert.True(t, runExists(t, s, ids[len(ids)-1]), "the newest run survives")
 }
 

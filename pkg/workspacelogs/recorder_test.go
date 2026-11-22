@@ -386,7 +386,7 @@ func TestResumedWorkerDoesNotRepeatThePlan(t *testing.T) {
 }
 
 func TestNoisyHookStillRecordsItsOutcomeAfterOutputBudget(t *testing.T) {
-	s, _ := newTestStore(t)
+	s := newSmallBudgetStore(t)
 	runID := newRun(t, s, "uid")
 	rec := newTestRecorder(t, s, runID, nil)
 	inv := NewID()
@@ -395,7 +395,7 @@ func TestNoisyHookStillRecordsItsOutcomeAfterOutputBudget(t *testing.T) {
 	)
 	out := rec.Writer(inv, StreamStdout)
 	chunk := strings.Repeat("n", MaxChunkBytes-1) + "\n"
-	for range (MaxRunBytes/MaxChunkBytes)*2 + 64 {
+	for range (smallRunBytes/MaxChunkBytes)*2 + 64 {
 		_, _ = out.Write([]byte(chunk))
 	}
 	require.NoError(t, out.Close())
