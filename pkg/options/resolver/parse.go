@@ -74,11 +74,14 @@ func validateUserValueEnum(optionName, userValue string, option *types.Option) e
 		return nil
 	}
 
-	values := make([]string, 0, len(option.Enum))
 	for _, e := range option.Enum {
 		if userValue == e.Value {
 			return nil
 		}
+	}
+
+	values := make([]string, 0, len(option.Enum))
+	for _, e := range option.Enum {
 		values = append(values, e.Value)
 	}
 
