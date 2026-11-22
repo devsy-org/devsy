@@ -137,6 +137,13 @@ func (s *PoolConfigSuite) TestHostMatches() {
 	s.False(HostMatches("GitHub.com", "github.com"))
 }
 
+func (s *PoolConfigSuite) TestEgressDecodeErrorsDoNotEchoValues() {
+	extra := "  egress: {allow: [{host: a.com, ports: [!!int CANARY]}]}\n"
+	_, err := Parse(append(s.readMinimal(), []byte(extra)...))
+	s.ErrorContains(err, "invalid YAML")
+	s.NotContains(err.Error(), "CANARY")
+}
+
 func allow(p *Pool, rule AllowRule) {
 	p.Spec.Egress.Allow = append(p.Spec.Egress.Allow, rule)
 }
