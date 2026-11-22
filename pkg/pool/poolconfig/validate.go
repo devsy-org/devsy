@@ -19,8 +19,15 @@ const (
 )
 
 var (
-	namePattern   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
-	proxyEnvNames = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"}
+	namePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+	// reservedEnvNames are set by the pool or would break credential delivery
+	// or egress.
+	reservedEnvNames = []string{
+		"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "FTP_PROXY",
+		"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GH_HOST",
+		"GIT_ASKPASS", "SSH_ASKPASS", "GIT_PROXY_COMMAND", "GIT_SSH_COMMAND",
+		"DEVSY_SESSION_ID",
+	}
 )
 
 // fieldErrors collects every problem so one validate run reports them all.
@@ -128,7 +135,8 @@ func validateEnvName(name string) error {
 	if err := secrets.ValidateName(name); err != nil {
 		return err
 	}
-	if slices.Contains(proxyEnvNames, strings.ToUpper(name)) {
+	upper := strings.ToUpper(name)
+	if slices.Contains(reservedEnvNames, upper) || strings.HasPrefix(upper, "GIT_CONFIG") {
 		return fmt.Errorf("%s is set by the pool and cannot be overridden", name)
 	}
 	return nil

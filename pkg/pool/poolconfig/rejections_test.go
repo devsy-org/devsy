@@ -8,7 +8,10 @@ type rejection struct {
 	want   string
 }
 
-const nameRule = "must be 1 to 32"
+const (
+	nameRule  = "must be 1 to 32"
+	poolOwned = "set by the pool"
+)
 
 // rejections starts from testdata/pool.yaml, breaks one rule each and expects
 // the error to mention want.
@@ -58,7 +61,17 @@ var rejections = []rejection{
 	{
 		"proxy env",
 		func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["https_proxy"] = "x" }) },
-		"set by the pool",
+		poolOwned,
+	},
+	{
+		"reserved env mixed case",
+		func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["GH_token"] = "x" }) },
+		poolOwned,
+	},
+	{
+		"git config env",
+		func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["GIT_CONFIG_COUNT"] = "1" }) },
+		poolOwned,
 	},
 	{"zero retention", func(p *Pool) { p.Spec.Audit.RetainDays = -1 }, "retainDays"},
 	{"relative audit dir", func(p *Pool) { p.Spec.Audit.Dir = "audit" }, "absolute"},
