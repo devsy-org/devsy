@@ -86,6 +86,9 @@ func checkDocument(data []byte) error {
 		}
 		return err
 	}
+	if err := checkNodes(&node, ""); err != nil {
+		return err
+	}
 	if err := checkFieldNames(&node, reflect.TypeFor[Pool](), ""); err != nil {
 		return err
 	}

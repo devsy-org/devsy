@@ -3,9 +3,11 @@ package poolconfig
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"time"
 )
+
+var errInvalidDuration = errors.New("must be a duration such as 15m")
 
 const (
 	APIVersion = "devsy.sh/v1alpha1"
@@ -80,11 +82,11 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 func (d *Duration) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
-		return fmt.Errorf("duration must be a string such as \"15m\": %w", err)
+		return errInvalidDuration
 	}
 	v, err := time.ParseDuration(s)
 	if err != nil {
-		return err
+		return errInvalidDuration
 	}
 	d.Duration = v
 	return nil
