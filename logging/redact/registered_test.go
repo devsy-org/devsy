@@ -226,6 +226,22 @@ func TestRedactRegisteredSparseMatchesAllocateInProportionToOutput(t *testing.T)
 	}
 }
 
+func BenchmarkRedactRegisteredLongUnmatchedValue(b *testing.B) {
+	redactor := New(Options{Values: []string{"a", "b", strings.Repeat("z", 64<<10)}})
+	input := strings.Repeat("a,b;", 128<<10)
+	want := strings.Repeat("***,***;", 128<<10)
+	if got := redactor.RedactRegistered(input); got != want {
+		b.Fatal("disjoint matches were not masked in order")
+	}
+
+	b.SetBytes(int64(len(input)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		redactor.RedactRegistered(input)
+	}
+}
+
 func TestRedactRegisteredEachEncodingPathMatches(t *testing.T) {
 	tests := []struct {
 		name, value, input string

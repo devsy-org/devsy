@@ -56,7 +56,7 @@ func (s *registeredScan) advance(position, length int) {
 func (s *registeredScan) compact() {
 	if s.head == len(s.pending) {
 		s.pending, s.head = s.pending[:0], 0
-	} else if s.head >= 4096 {
+	} else if s.head >= 4096 && s.head >= len(s.pending)-s.head {
 		s.pending = append(s.pending[:0], s.pending[s.head:]...)
 		s.head = 0
 	}
