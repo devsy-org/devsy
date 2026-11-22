@@ -4,21 +4,21 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"filippo.io/age"
+	"github.com/devsy-org/devsy/pkg/secrets/secretstest"
 	"github.com/stretchr/testify/require"
 )
 
 // Functional fixtures use real age/scrypt at a cost unsuitable for user secrets.
 // TestProductionPassphraseEncryptionCompatibility verifies production defaults.
-const testScryptWorkFactor = 10
-
 func testPassphraseFileKey(t *testing.T, passphrase string) *fileKey {
 	t.Helper()
 	recipient, err := age.NewScryptRecipient(passphrase)
 	require.NoError(t, err)
-	recipient.SetWorkFactor(testScryptWorkFactor)
+	recipient.SetWorkFactor(secretstest.WorkFactor)
 	identity, err := age.NewScryptIdentity(passphrase)
 	require.NoError(t, err)
 	return &fileKey{recipient: recipient, identity: identity, source: keySourcePassphrase}
@@ -41,7 +41,7 @@ func TestPassphraseFixtureWorkFactor(t *testing.T) {
 	require.NoError(t, backend.set("default/FIXTURE", "fixture value"))
 	blob, err := os.ReadFile(path) // #nosec G304 -- isolated test directory.
 	require.NoError(t, err)
-	assertScryptHeader(t, blob, "10")
+	assertScryptHeader(t, blob, strconv.Itoa(secretstest.WorkFactor))
 
 	key, err := openPassphraseFileKey()
 	require.NoError(t, err)
