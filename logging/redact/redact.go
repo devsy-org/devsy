@@ -2,6 +2,7 @@ package redact
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -172,20 +173,20 @@ func (r *Redactor) RedactRegistered(value string) string {
 	if r == nil || r.matcher == nil {
 		return value
 	}
-	lengths := r.registeredLengths(value)
-	var result strings.Builder
-	covered := 0
-	for i, length := range lengths {
-		if length > 0 {
-			if i >= covered {
-				result.WriteString(value[covered:i])
-				result.WriteString(r.Mask())
-			}
-			covered = max(covered, i+length)
-		}
-	}
-	if result.Len() == 0 {
+	spans := append(matchSpansWith(r.matcher, value), matchSpansWith(r.escaped, value)...)
+	if len(spans) == 0 {
 		return value
+	}
+	slices.SortFunc(spans, func(left, right matchSpan) int { return left.start - right.start })
+	var result strings.Builder
+	result.Grow(len(value))
+	covered := 0
+	for _, span := range spans {
+		if span.start >= covered {
+			result.WriteString(value[covered:span.start])
+			result.WriteString(r.Mask())
+		}
+		covered = max(covered, span.end)
 	}
 	result.WriteString(value[covered:])
 	return result.String()
@@ -227,16 +228,6 @@ func (r *Redactor) Mask() string {
 		return defaultMask
 	}
 	return r.mask
-}
-
-func (r *Redactor) registeredLengths(value string) []int {
-	lengths := make([]int, len(value))
-	for _, matcher := range []*byteMatcher{r.matcher, r.escaped} {
-		for i, length := range matchLengthsWith(matcher, value, len(value)) {
-			lengths[i] = max(lengths[i], length)
-		}
-	}
-	return lengths
 }
 
 type textMatches struct {

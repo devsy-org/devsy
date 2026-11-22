@@ -1,6 +1,12 @@
 package redact
 
-import "testing"
+import (
+	"runtime"
+	"strings"
+	"testing"
+)
+
+const maskedMiddle = "x *** y"
 
 func TestRedactRegisteredMasksOnlyRegisteredValues(t *testing.T) {
 	multiline := "{\"Cookie\":\"x-secret\"}\nsecret-tail"
@@ -43,7 +49,7 @@ func TestRedactRegisteredMasksOnlyRegisteredValues(t *testing.T) {
 			name:   "overlapping values share one mask",
 			values: []string{"abcd", "cdef"},
 			input:  "x abcdef y",
-			want:   "x *** y",
+			want:   maskedMiddle,
 		},
 		{
 			name:   "no registered values",
@@ -62,5 +68,100 @@ func TestRedactRegisteredMasksOnlyRegisteredValues(t *testing.T) {
 	var nilRedactor *Redactor
 	if got := nilRedactor.RedactRegistered("value"); got != "value" {
 		t.Fatalf("nil redactor changed the value to %q", got)
+	}
+}
+
+func TestRedactRegisteredEncodedAndSeparatorForms(t *testing.T) {
+	htmlForm := "<a&b>\"c"
+	tests := []struct {
+		name, input, want string
+		options           Options
+	}{
+		{
+			name:    "carriage return inside a value",
+			options: Options{Values: []string{"first\rsecond"}},
+			input:   "x first\rsecond y",
+			want:    maskedMiddle,
+		},
+		{
+			name:    "carriage return line feed inside a value",
+			options: Options{Values: []string{"first\r\nsecond"}},
+			input:   "x first\r\nsecond y",
+			want:    maskedMiddle,
+		},
+		{
+			name:    "encoder form with html escaping",
+			options: Options{Values: []string{htmlForm}},
+			input:   `{"k":"\u003ca\u0026b\u003e\"c"}`,
+			want:    `{"k":"***"}`,
+		},
+		{
+			name:    "encoder form without html escaping",
+			options: Options{Values: []string{htmlForm}},
+			input:   `{"k":"<a&b>\"c"}`,
+			want:    `{"k":"***"}`,
+		},
+		{
+			name:    "go quoted form",
+			options: Options{Values: []string{"tab\there"}},
+			input:   `fmt: "tab\there" raw: tab` + "\t" + `here`,
+			want:    `fmt: "***" raw: ***`,
+		},
+		{
+			name:    "sensitive environment entry",
+			options: Options{Environment: []string{"SERVICE_TOKEN=env-secret", "PLAIN=env-public"}},
+			input:   "env-secret env-public",
+			want:    "*** env-public",
+		},
+		{
+			name:    "short explicit values follow the minimum",
+			options: Options{Values: []string{"ab", "abcd"}, MinExplicitBytes: 3},
+			input:   "ab abcd",
+			want:    "ab ***",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := New(tt.options).RedactRegistered(tt.input); got != tt.want {
+				t.Fatalf("RedactRegistered(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func allocatedBytes(run func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	run()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+func TestRedactRegisteredAllocatesInProportionToMatches(t *testing.T) {
+	redactor := New(Options{Values: []string{"raw", "x\ty"}})
+	large := strings.Repeat("z", 8<<20)
+	var unchanged string
+	if bytes := allocatedBytes(
+		func() { unchanged = redactor.RedactRegistered(large) },
+	); bytes > 1<<20 {
+		t.Fatalf("no-match input allocated %d bytes", bytes)
+	}
+	if unchanged != large {
+		t.Fatal("no-match input changed")
+	}
+	tail := large + "raw x\ty"
+	var masked string
+	if bytes := allocatedBytes(
+		func() { masked = redactor.RedactRegistered(tail) },
+	); bytes > 24<<20 {
+		t.Fatalf("one-match input allocated %d bytes", bytes)
+	}
+	if want := large + "*** ***"; masked != want {
+		t.Fatal("trailing matches were not masked")
+	}
+	blank := strings.Repeat("\n", 100_000) + "tail"
+	if got := redactor.RedactRegistered(blank); got != blank {
+		t.Fatal("blank records changed")
 	}
 }
