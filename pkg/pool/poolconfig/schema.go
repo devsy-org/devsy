@@ -21,17 +21,18 @@ func checkFieldNames(n *yamlv3.Node, t reflect.Type, path string) error {
 	case t.Kind() == reflect.Struct && n.Kind == yamlv3.MappingNode:
 		return checkStructKeys(n, t, path)
 	case t.Kind() == reflect.Map && n.Kind == yamlv3.MappingNode:
-		for i := 1; i < len(n.Content); i += 2 {
-			if err := checkFieldNames(
-				n.Content[i],
-				t.Elem(),
-				path+"."+n.Content[i-1].Value,
-			); err != nil {
-				return err
-			}
-		}
+		return checkMapValues(n, t.Elem(), path)
 	case t.Kind() == reflect.Slice && n.Kind == yamlv3.SequenceNode:
 		return checkChildren(n.Content, t.Elem(), path)
+	}
+	return nil
+}
+
+func checkMapValues(n *yamlv3.Node, elem reflect.Type, path string) error {
+	for i := 1; i < len(n.Content); i += 2 {
+		if err := checkFieldNames(n.Content[i], elem, path+"."+n.Content[i-1].Value); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -47,9 +48,9 @@ func checkChildren(nodes []*yamlv3.Node, t reflect.Type, path string) error {
 
 func checkStructKeys(n *yamlv3.Node, t reflect.Type, path string) error {
 	fields := map[string]reflect.Type{}
-	for i := range t.NumField() {
-		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
-		fields[name] = t.Field(i).Type
+	for field := range t.Fields() {
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		fields[name] = field.Type
 	}
 	for i := 1; i < len(n.Content); i += 2 {
 		key := n.Content[i-1].Value
