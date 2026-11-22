@@ -340,6 +340,8 @@ func TestProviderCancellationCooperatesAndCleansUp(t *testing.T) {
 	requireTestAcknowledgement(t, ack)
 }
 
+const helperStartGuard = time.Minute
+
 func requireProviderStarted(
 	t *testing.T,
 	ready <-chan struct{},
@@ -347,10 +349,14 @@ func requireProviderStarted(
 	what string,
 ) {
 	t.Helper()
+	guard := time.NewTimer(helperStartGuard)
+	defer guard.Stop()
 	select {
 	case <-ready:
 	case err := <-finished:
 		t.Fatalf("%s exited before it started: %v", what, err)
+	case <-guard.C:
+		t.Fatalf("%s sent no start signal within %s", what, helperStartGuard)
 	}
 }
 
@@ -1145,12 +1151,19 @@ func TestMachineCommandTransportCancellationJoinsCallback(t *testing.T) {
 			go func() { completed <- conn.Wait() }()
 			ticker := time.NewTicker(10 * time.Millisecond)
 			defer ticker.Stop()
+			guard := time.NewTimer(helperStartGuard)
+			defer guard.Stop()
 			for started := false; !started; {
 				select {
 				case err := <-completed:
 					t.Fatalf("transport provider exited before it started: %v", err)
+				case <-guard.C:
+					t.Fatalf("transport provider sent no start signal within %s", helperStartGuard)
 				case <-ticker.C:
 					_, statErr := os.Stat(ready)
+					if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+						t.Fatalf("stat transport ready file: %v", statErr)
+					}
 					started = statErr == nil
 				}
 			}
@@ -1195,6 +1208,7 @@ func TestWorkspaceTransportCompletesWithoutClosingInput(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, conn.Close()) })
 	ready := make([]byte, 5)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(helperStartGuard)))
 	_, err = io.ReadFull(conn, ready)
 	require.NoError(t, err)
 	require.Equal(t, "ready", string(ready))
@@ -1242,6 +1256,7 @@ func requireWorkspaceTransportCancellation(
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, conn.Close()) })
 	ready := make([]byte, 5)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(helperStartGuard)))
 	_, err = io.ReadFull(conn, ready)
 	require.NoError(t, err)
 	require.Equal(t, "ready", string(ready))
