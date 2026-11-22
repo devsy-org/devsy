@@ -41,7 +41,7 @@ spec:
     - name: openai
       mode: inject
       secret: OPENAI_API_KEY
-      route: {name: openai, upstream: "https://api.openai.com/v1", header: Authorization, prefix: "Bearer "}
+      route: {name: openai, upstream: "https://api.openai.com", header: Authorization, prefix: "Bearer "}
   agents:
     claude:
       command: [claude, -p, --output-format, stream-json, --verbose]
@@ -49,5 +49,5 @@ spec:
       credentials: [github, anthropic]
     codex:
       command: [codex, exec]
-      env: {OPENAI_BASE_URL: "{{route.openai}}"}
+      env: {OPENAI_BASE_URL: "{{route.openai}}/v1"}
       credentials: [github, openai]

@@ -24,6 +24,8 @@ const (
 	defaultMintTTL = time.Hour
 	// GitHub installation tokens expire after one hour and cannot be extended.
 	maxMintTTL = time.Hour
+
+	malformedPlaceholder = "malformed placeholder; use {{route.<name>}}"
 )
 
 // Credential is a grant the broker serves to pool sessions. Mint grants use
@@ -59,12 +61,17 @@ type Route struct {
 
 var (
 	placeholderRegex  = regexp.MustCompile(`\{\{\s*([^{}]*?)\s*\}\}`)
+	strayRouteRegex   = regexp.MustCompile(`\{\s*route\.`)
 	digitsPattern     = regexp.MustCompile(`^[0-9]+$`)
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	permissionPattern = regexp.MustCompile(`^[a-z_]+$`)
 	headerPattern     = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 	prefixPattern     = regexp.MustCompile(`^[\x20-\x7e]*$`)
-	reservedHeaders   = []string{
+	deniedPermissions = []string{
+		"administration", "organization_administration", "secrets", "organization_secrets",
+		"workflows",
+	}
+	reservedHeaders = []string{
 		"host", "content-length", "transfer-encoding", "connection", "keep-alive", "te",
 		"trailer", "upgrade", "proxy-authorization", "proxy-authenticate", "proxy-connection",
 	}
@@ -129,12 +136,29 @@ func validateScope(errs *fieldErrors, path string, scope *MintScope) {
 	if len(scope.Repositories) == 0 {
 		errs.add(path+".repositories", "must list at least one owner/repo")
 	}
-	for _, repo := range scope.Repositories {
-		if !repositoryPattern.MatchString(repo) {
-			errs.add(path+".repositories", "%q is not owner/repo", repo)
+	validateRepositories(errs, path+".repositories", scope.Repositories)
+	validatePermissions(errs, path+".permissions", scope.Permissions)
+}
+
+// One installation token covers a single owner.
+func validateRepositories(errs *fieldErrors, path string, repos []string) {
+	owner := ""
+	for _, repo := range repos {
+		o, name, _ := strings.Cut(repo, "/")
+		if !repositoryPattern.MatchString(repo) || isDotName(o) || isDotName(name) {
+			errs.add(path, "%q is not owner/repo", repo)
+			continue
+		}
+		if owner == "" {
+			owner = o
+		} else if !strings.EqualFold(o, owner) {
+			errs.add(path, "all repositories must have the same owner")
 		}
 	}
-	validatePermissions(errs, path+".permissions", scope.Permissions)
+}
+
+func isDotName(s string) bool {
+	return s == "." || s == ".."
 }
 
 func validatePermissions(errs *fieldErrors, path string, permissions map[string]string) {
@@ -144,6 +168,8 @@ func validatePermissions(errs *fieldErrors, path string, permissions map[string]
 	for name, level := range permissions {
 		if !permissionPattern.MatchString(name) || (level != "read" && level != "write") {
 			errs.add(path, "%q must be read or write", name)
+		} else if slices.Contains(deniedPermissions, name) {
+			errs.add(path, "permission %q is not allowed for pool agents", name)
 		}
 	}
 }
@@ -209,8 +235,8 @@ func (s *Spec) validateUpstream(errs *fieldErrors, path, upstream string) {
 
 func checkUpstreamURL(upstream string) (string, string) {
 	u, err := url.Parse(upstream)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", "must be an https URL without credentials, query or fragment"
+	if err != nil || !plainHTTPSOrigin(u, upstream) {
+		return "", "must be https://host[:port] with no credentials, path, query or fragment"
 	}
 	if msg := checkURLPort(u.Port()); msg != "" {
 		return "", msg
@@ -219,6 +245,11 @@ func checkUpstreamURL(upstream string) (string, string) {
 		return "", "host " + msg
 	}
 	return u.Hostname(), ""
+}
+
+func plainHTTPSOrigin(u *url.URL, raw string) bool {
+	return u.Scheme == "https" && u.User == nil && (u.Path == "" || u.Path == "/") &&
+		!strings.ContainsAny(raw, "?#") && (!strings.HasSuffix(u.Host, ":") || u.Port() != "")
 }
 
 func checkURLPort(port string) string {
@@ -273,23 +304,53 @@ func (s *Spec) validateAgentGrants(errs *fieldErrors, routes map[string]string) 
 			}
 		}
 		for key, value := range agent.Env {
-			for _, m := range placeholderRegex.FindAllStringSubmatch(value, -1) {
-				if msg := checkPlaceholder(m[1], agent, routes); msg != "" {
-					errs.add(path+".env."+key, "%s", msg)
-				}
+			if msg := checkEnvValue(value, agent, routes); msg != "" {
+				errs.add(path+".env."+key, "%s", msg)
 			}
 		}
 	}
 }
 
+// checkEnvValue never echoes the value or expression, since env values may
+// hold a pasted key. Only declared route names appear in messages.
+func checkEnvValue(value string, agent Agent, routes map[string]string) string {
+	left, msg := stripPlaceholders(value, agent, routes)
+	if msg != "" {
+		return msg
+	}
+	if strings.Contains(left, "{{") || strings.Contains(left, "}}") ||
+		strayRouteRegex.MatchString(left) {
+		return malformedPlaceholder
+	}
+	return ""
+}
+
+// stripPlaceholders checks each {{route.<name>}} and returns the text around them.
+func stripPlaceholders(value string, agent Agent, routes map[string]string) (string, string) {
+	var rest strings.Builder
+	last := 0
+	for _, m := range placeholderRegex.FindAllStringSubmatchIndex(value, -1) {
+		if (m[0] > 0 && value[m[0]-1] == '{') || (m[1] < len(value) && value[m[1]] == '}') {
+			return "", malformedPlaceholder
+		}
+		if msg := checkPlaceholder(value[m[2]:m[3]], agent, routes); msg != "" {
+			return "", msg
+		}
+		rest.WriteString(value[last:m[0]])
+		last = m[1]
+	}
+	rest.WriteString(value[last:])
+	return rest.String(), ""
+}
+
 func checkPlaceholder(expr string, agent Agent, routes map[string]string) string {
 	routeName, ok := strings.CutPrefix(expr, "route.")
 	if !ok {
-		return fmt.Sprintf("unknown placeholder %q; only {{route.<name>}} is supported", expr)
+		return "unknown placeholder; only {{route.<name>}} is supported"
 	}
 	owner, found := routes[routeName]
 	if !found {
-		return fmt.Sprintf("names undeclared route %q", routeName)
+		return "names undeclared route"
 	}
 	if !slices.Contains(agent.Credentials, owner) {
 		return fmt.Sprintf(

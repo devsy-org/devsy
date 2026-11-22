@@ -2,7 +2,10 @@ package poolconfig
 
 import "time"
 
-const wantHeader = "route.header"
+const (
+	wantHeader = "route.header"
+	wantRepo   = "owner/repo"
+)
 
 var credentialRejections = []rejection{
 	{
@@ -22,7 +25,7 @@ var credentialRejections = []rejection{
 	{
 		"bad repo",
 		func(p *Pool) { p.Spec.Credentials[0].Scope.Repositories = []string{"api"} },
-		"owner/repo",
+		wantRepo,
 	},
 	{
 		"no permissions",
@@ -115,6 +118,51 @@ var credentialRejections = []rejection{
 	{"route not granted", func(p *Pool) {
 		setAgent(p, func(a *Agent) { a.Env["X"] = "{{route.openai}}" })
 	}, "does not list credential"},
+	malformedCase("unterminated placeholder", "{{route.anthropic"),
+	malformedCase("triple braces", "{{{route.anthropic}}}"),
+	malformedCase("single braces", "{route.anthropic}"),
+	malformedCase("stray close braces", "{{route.anthropic}}}}"),
+	{
+		"repos with several owners",
+		func(p *Pool) { p.Spec.Credentials[0].Scope.Repositories = []string{"acme/api", "other/web"} },
+		"same owner",
+	},
+	{
+		"repo dot dot",
+		func(p *Pool) { p.Spec.Credentials[0].Scope.Repositories = []string{"acme/.."} },
+		wantRepo,
+	},
+	{
+		"owner dot",
+		func(p *Pool) { p.Spec.Credentials[0].Scope.Repositories = []string{"./api"} },
+		wantRepo,
+	},
+	{
+		"workflows permission",
+		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["workflows"] = "write" },
+		"not allowed for pool agents",
+	},
+	{
+		"administration permission",
+		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["administration"] = "read" },
+		"not allowed for pool agents",
+	},
+	upstreamCase("upstream path", "https://api.anthropic.com/v1"),
+	upstreamCase("upstream empty query", "https://api.anthropic.com?"),
+	upstreamCase("upstream empty fragment", "https://api.anthropic.com#"),
+	upstreamCase("upstream empty port", "https://api.anthropic.com:"),
+}
+
+func malformedCase(name, value string) rejection {
+	return rejection{name, func(p *Pool) {
+		setAgent(p, func(a *Agent) { a.Env["X"] = value })
+	}, "malformed placeholder"}
+}
+
+func upstreamCase(name, upstream string) rejection {
+	return rejection{name, func(p *Pool) {
+		p.Spec.Credentials[1].Route.Upstream = upstream
+	}, "no credentials, path, query or fragment"}
 }
 
 func (s *PoolConfigSuite) TestCredentialRejections() {
@@ -125,6 +173,24 @@ func (s *PoolConfigSuite) TestCredentialExample() {
 	p := s.loadExample()
 	s.Equal([]string{DeliverGitHelper, DeliverGHEnv}, p.Spec.Credentials[0].Deliver)
 	s.Equal("{{route.anthropic}}", p.Spec.Agents["claude"].Env["ANTHROPIC_BASE_URL"])
+}
+
+func (s *PoolConfigSuite) TestEnvValuesAcceptedWithoutPlaceholder() {
+	for _, value := range []string{`{"a":1}`, "prefix {{ route.anthropic }} suffix"} {
+		p := s.loadExample()
+		setAgent(p, func(a *Agent) { a.Env["X"] = value })
+		s.NoError(p.Validate(), value)
+	}
+}
+
+func (s *PoolConfigSuite) TestEnvErrorsDoNotEchoValue() {
+	for _, value := range []string{"{{CANARY}}", "{{route.CANARY}}", "x {{ route.CANARY }}"} {
+		p := s.loadExample()
+		setAgent(p, func(a *Agent) { a.Env["X"] = value })
+		err := p.Validate()
+		s.Require().Error(err)
+		s.NotContains(err.Error(), "CANARY")
+	}
 }
 
 func (s *PoolConfigSuite) TestMintDefaults() {
