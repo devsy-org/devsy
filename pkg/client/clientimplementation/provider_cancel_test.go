@@ -340,7 +340,12 @@ func TestProviderCancellationCooperatesAndCleansUp(t *testing.T) {
 	requireTestAcknowledgement(t, ack)
 }
 
-func requireProviderStarted(t *testing.T, ready <-chan struct{}, finished <-chan error, what string) {
+func requireProviderStarted(
+	t *testing.T,
+	ready <-chan struct{},
+	finished <-chan error,
+	what string,
+) {
 	t.Helper()
 	select {
 	case <-ready:
