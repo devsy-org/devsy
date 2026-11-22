@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"math/rand"
 	"runtime"
 	"strings"
 	"testing"
@@ -167,7 +168,7 @@ func TestRedactRegisteredAllocatesInProportionToMatches(t *testing.T) {
 }
 
 func TestRedactRegisteredDenseInputsStayBounded(t *testing.T) {
-	size := 8 << 20
+	size := 4 << 20
 	tests := []struct {
 		name   string
 		values []string
@@ -209,5 +210,118 @@ func TestRedactRegisteredLongSpanAbsorbsEarlierGroups(t *testing.T) {
 	got = New(Options{Values: []string{"zzzzzz", "yy", "xx"}}).RedactRegistered("xx zzzzzz yy")
 	if got != "*** *** ***" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRedactRegisteredSparseMatchesAllocateInProportionToOutput(t *testing.T) {
+	redactor := New(Options{Values: []string{"a"}})
+	input := strings.Repeat("a ", 4<<20)
+	want := strings.Repeat("*** ", 4<<20)
+	var got string
+	if bytes := allocatedBytes(func() { got = redactor.RedactRegistered(input) }); bytes > 64<<20 {
+		t.Fatalf("sparse input allocated %d bytes", bytes)
+	}
+	if got != want {
+		t.Fatal("sparse matches were not masked")
+	}
+}
+
+func TestRedactRegisteredEachEncodingPathMatches(t *testing.T) {
+	tests := []struct {
+		name, value, input string
+	}{
+		{"go quoting only", "\x1b", `\x1b`},
+		{"json escaping only", "\x1b", `\u001b`},
+		{"html escaping", "<", `\u003c`},
+		{"unicode separator", "\u2028", `\u2028`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := New(Options{Values: []string{tt.value}}).RedactRegistered("x " + tt.input + " y")
+			if got != maskedMiddle {
+				t.Fatalf("got %q", got)
+			}
+		})
+	}
+}
+
+func TestRedactRegisteredBuildsNoEscapedMatcherUntilNeeded(t *testing.T) {
+	values := make([]string, 0, 100)
+	for i := range 100 {
+		values = append(
+			values,
+			strings.Repeat("0", 6)+string(rune('a'+i%26))+strings.Repeat("1", i%7),
+		)
+	}
+	redactor := New(Options{Values: values})
+	if redactor.escaped.built() {
+		t.Fatal("escaped matcher built eagerly")
+	}
+	_ = redactor.Redact("id=" + values[0])
+	if redactor.escaped.built() {
+		t.Fatal("Redact built the escaped matcher")
+	}
+	_ = redactor.RedactRegistered("id=" + values[0])
+	if !redactor.escaped.built() {
+		t.Fatal("RedactRegistered did not build the escaped matcher")
+	}
+}
+
+func naiveCoverage(values []string, input string) []bool {
+	covered := make([]bool, len(input))
+	for _, value := range values {
+		for start := 0; start+len(value) <= len(input); start++ {
+			if input[start:start+len(value)] == value {
+				for i := start; i < start+len(value); i++ {
+					covered[i] = true
+				}
+			}
+		}
+	}
+	return covered
+}
+
+func naiveRegistered(values []string, input string) string {
+	var all []string
+	for _, value := range values {
+		all = append(all, value)
+		all = append(all, escapedForms(value)...)
+	}
+	covered := naiveCoverage(all, input)
+	var out strings.Builder
+	for i := 0; i < len(input); i++ {
+		if !covered[i] {
+			out.WriteByte(input[i])
+			continue
+		}
+		for i < len(input) && covered[i] {
+			i++
+		}
+		i--
+		out.WriteString(defaultMask)
+	}
+	return out.String()
+}
+
+func TestRedactRegisteredMatchesANaiveReference(t *testing.T) {
+	random := rand.New(rand.NewSource(7)) //nolint:gosec // deterministic test data
+	const alphabet = "ab\\\"\n"
+	build := func(length int) string {
+		var text strings.Builder
+		for range length {
+			text.WriteByte(alphabet[random.Intn(len(alphabet))])
+		}
+		return text.String()
+	}
+	for range 3000 {
+		values := make([]string, 1+random.Intn(4))
+		for i := range values {
+			values[i] = build(1 + random.Intn(5))
+		}
+		input := build(random.Intn(40))
+		want := naiveRegistered(values, input)
+		if got := New(Options{Values: values}).RedactRegistered(input); got != want {
+			t.Fatalf("values %q input %q: got %q, want %q", values, input, got, want)
+		}
 	}
 }

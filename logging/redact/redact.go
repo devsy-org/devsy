@@ -2,7 +2,6 @@ package redact
 
 import (
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -26,7 +25,7 @@ type Options struct {
 type Redactor struct {
 	values        []string
 	matcher       *byteMatcher
-	escaped       *byteMatcher
+	escaped       *lazyEscapedMatcher
 	maxLength     int
 	mask          string
 	authorityURLs bool
@@ -169,38 +168,13 @@ func (r *Redactor) ContainsValue(value string) bool {
 	return false
 }
 
-func (r *Redactor) RedactRegistered(value string) string {
-	if r == nil || r.matcher == nil {
-		return value
-	}
-	groups := r.registeredGroups(value)
-	if len(groups) == 0 {
-		return value
-	}
-	mask := r.Mask()
-	size := len(value) + len(groups)*len(mask)
-	for _, group := range groups {
-		size -= group.end - group.start
-	}
-	var result strings.Builder
-	result.Grow(size)
-	cursor := 0
-	for _, group := range slices.Backward(groups) {
-		result.WriteString(value[cursor:group.start])
-		result.WriteString(mask)
-		cursor = group.end
-	}
-	result.WriteString(value[cursor:])
-	return result.String()
-}
-
 func newRedactor(values []string, mask string) *Redactor {
 	r := &Redactor{values: values, mask: mask}
 	if len(values) == 0 {
 		return r
 	}
 	r.matcher = newByteMatcher(values)
-	r.escaped = newEscapedMatcher(values)
+	r.escaped = &lazyEscapedMatcher{values: values}
 	for _, value := range values {
 		r.maxLength = max(r.maxLength, len(value))
 	}
@@ -230,37 +204,6 @@ func (r *Redactor) Mask() string {
 		return defaultMask
 	}
 	return r.mask
-}
-
-func (r *Redactor) registeredGroups(value string) []matchSpan {
-	rawRoot := r.matcher.reverse
-	rawState := rawRoot
-	var escapedRoot, escapedState *matchNode
-	if r.escaped != nil {
-		escapedRoot = r.escaped.reverse
-		escapedState = escapedRoot
-	}
-	var groups []matchSpan
-	for index := len(value) - 1; index >= 0; index-- {
-		rawState = transition(rawRoot, rawState, value[index])
-		length := rawState.longest
-		if escapedRoot != nil {
-			escapedState = transition(escapedRoot, escapedState, value[index])
-			length = max(length, escapedState.longest)
-		}
-		if length > 0 {
-			groups = absorbSpan(groups, matchSpan{start: index, end: index + length})
-		}
-	}
-	return groups
-}
-
-func absorbSpan(groups []matchSpan, span matchSpan) []matchSpan {
-	for len(groups) > 0 && span.end >= groups[len(groups)-1].start {
-		span.end = max(span.end, groups[len(groups)-1].end)
-		groups = groups[:len(groups)-1]
-	}
-	return append(groups, span)
 }
 
 type textMatches struct {

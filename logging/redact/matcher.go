@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 type byteMatcher struct {
@@ -19,21 +21,6 @@ type matchNode struct {
 	terminal int
 	longest  int
 	proper   int
-}
-
-func newEscapedMatcher(values []string) *byteMatcher {
-	var escaped []string
-	for _, value := range values {
-		for _, form := range escapedForms(value) {
-			if form != value {
-				escaped = append(escaped, form)
-			}
-		}
-	}
-	if len(escaped) == 0 {
-		return nil
-	}
-	return &byteMatcher{reverse: newAutomaton(escaped, true)}
 }
 
 func escapedForms(value string) []string {
@@ -124,8 +111,6 @@ func (r *Redactor) matchLengths(value string, cut int) []int {
 	return matchLengthsWith(r.matcher, value, cut)
 }
 
-type matchSpan struct{ start, end int }
-
 func matchLengthsWith(matcher *byteMatcher, value string, cut int) []int {
 	if matcher == nil || cut == 0 {
 		return nil
@@ -161,3 +146,32 @@ func (r *Redactor) secretPrefixBoundary(value string) int {
 	}
 	return len(value) - state.proper
 }
+
+type lazyEscapedMatcher struct {
+	once      sync.Once
+	values    []string
+	root      *matchNode
+	maxLength int
+	ready     atomic.Bool
+}
+
+func (m *lazyEscapedMatcher) forward() (*matchNode, int) {
+	m.once.Do(func() {
+		var forms []string
+		for _, value := range m.values {
+			for _, form := range escapedForms(value) {
+				if form != value {
+					forms = append(forms, form)
+					m.maxLength = max(m.maxLength, len(form))
+				}
+			}
+		}
+		if len(forms) > 0 {
+			m.root = newAutomaton(forms, false)
+		}
+		m.ready.Store(true)
+	})
+	return m.root, m.maxLength
+}
+
+func (m *lazyEscapedMatcher) built() bool { return m.ready.Load() }
