@@ -12,9 +12,7 @@ import (
 // decoder matches names case-insensitively, so "allow" and "Allow" in one
 // mapping would both decode and the last one would silently win.
 func checkFieldNames(n *yamlv3.Node, t reflect.Type, path string) error {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
+	t = derefType(t)
 	switch {
 	case n.Kind == yamlv3.DocumentNode:
 		return checkChildren(n.Content, t, path)
@@ -26,6 +24,13 @@ func checkFieldNames(n *yamlv3.Node, t reflect.Type, path string) error {
 		return checkChildren(n.Content, t.Elem(), path)
 	}
 	return nil
+}
+
+func derefType(t reflect.Type) reflect.Type {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t
 }
 
 func checkMapValues(n *yamlv3.Node, elem reflect.Type, path string) error {
