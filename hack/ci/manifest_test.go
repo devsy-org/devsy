@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -277,7 +278,7 @@ func (s *manifestSuite) mustFindIn(m *Manifest, label, runner string) Suite {
 }
 
 func invalidManifestCases() []manifestCase {
-	return append(invalidSuiteCases(), invalidUnitStepCases()...)
+	return slices.Concat(invalidSuiteCases(), invalidUnitStepCases(), invalidUnitRunnerCases())
 }
 
 func invalidSuiteCases() []manifestCase {
@@ -330,6 +331,26 @@ func invalidSuiteCases() []manifestCase {
 			yaml: testGroupsYAML +
 				"    - { group: integration, label: x, runner: windows-latest, runtime: docker-wsl }\n",
 			want: errInvalidSuite,
+		},
+	}
+}
+
+func invalidUnitRunnerCases() []manifestCase {
+	return []manifestCase{
+		{
+			name: "unit runner reserve equal to the job limit",
+			yaml: "unit:\n  runners:\n    - { runner: ubuntu-latest, timeout_minutes: 30, save_reserve_minutes: 30 }\n",
+			want: errInvalidRunner,
+		},
+		{
+			name: "unit runner with a negative reserve",
+			yaml: "unit:\n  runners:\n    - { runner: ubuntu-latest, timeout_minutes: 30, save_reserve_minutes: -1 }\n",
+			want: errInvalidRunner,
+		},
+		{
+			name: "unit runner without a timeout",
+			yaml: "unit:\n  runners:\n    - { runner: ubuntu-latest }\n",
+			want: errInvalidRunner,
 		},
 	}
 }

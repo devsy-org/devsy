@@ -16,8 +16,8 @@ import (
 const matrixTestManifest = `
 unit:
   runners:
-    - { runner: ubuntu-latest, timeout_minutes: 30 }
-    - { runner: windows-latest, timeout_minutes: 30 }
+    - { runner: ubuntu-latest, timeout_minutes: 30, save_reserve_minutes: 3 }
+    - { runner: windows-latest, timeout_minutes: 40, save_reserve_minutes: 10 }
 e2e:
   groups:
     unprivileged:
@@ -279,8 +279,8 @@ func (s *matrixSuite) TestUnitEntriesCarryOS() {
 	s.Require().NoError(err)
 
 	s.Equal(`{"include":[`+
-		`{"runner":"ubuntu-latest","timeout_minutes":30,"os":"linux"},`+
-		`{"runner":"windows-latest","timeout_minutes":30,"os":"windows"}]}`+"\n", out)
+		`{"runner":"ubuntu-latest","timeout_minutes":30,"os":"linux","test_timeout_minutes":27},`+
+		`{"runner":"windows-latest","timeout_minutes":40,"os":"windows","test_timeout_minutes":30}]}`+"\n", out)
 }
 
 func (s *matrixSuite) TestCompactJSONDoesNotEscapeHTML() {
