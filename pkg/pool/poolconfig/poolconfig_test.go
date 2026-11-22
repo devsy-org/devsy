@@ -21,34 +21,23 @@ func (s *PoolConfigSuite) TestExampleIsValid() {
 	p := s.loadExample()
 	s.Equal("api-agents", p.Metadata.Name)
 	s.Equal(4, p.Spec.Capacity.MaxConcurrent)
-	s.Equal([]int{443}, p.Spec.Egress.Allow[0].Ports)
-	s.Equal([]string{DeliverGitHelper, DeliverGHEnv}, p.Spec.Credentials[0].Deliver)
+	s.Equal(8*time.Hour, p.Spec.Lifecycle.TTL.Duration)
 }
 
 func (s *PoolConfigSuite) TestDefaults() {
-	data, err := os.ReadFile(filepath.Join("testdata", "minimal.yaml"))
-	s.Require().NoError(err)
-	p, err := Parse(data)
-	s.Require().NoError(err)
-	spec := p.Spec
+	spec := s.parseMinimal("").Spec
 	s.Equal(1, spec.Capacity.MaxConcurrent)
 	s.Equal(0, spec.Capacity.MaxQueued)
 	s.Equal(10*time.Minute, spec.Lifecycle.SpawnTimeout.Duration)
 	s.Equal(15*time.Minute, spec.Lifecycle.IdleTimeout.Duration)
 	s.Equal(8*time.Hour, spec.Lifecycle.TTL.Duration)
 	s.Equal(2*time.Hour, spec.Lifecycle.JobTimeout.Duration)
-	s.Equal(EgressDeny, spec.Egress.Default)
 	s.Equal(30, spec.Audit.RetainDays)
 }
 
-func (s *PoolConfigSuite) TestMintDefaults() {
-	p := s.loadExample()
-	p.Spec.Credentials[0].TTL = Duration{}
-	p.Spec.Credentials[0].Deliver = nil
-	p.ApplyDefaults()
-	s.Equal(time.Hour, p.Spec.Credentials[0].TTL.Duration)
-	s.Equal([]string{DeliverGitHelper}, p.Spec.Credentials[0].Deliver)
-	s.Zero(p.Spec.Credentials[1].TTL.Duration)
+func (s *PoolConfigSuite) TestZeroDurationTakesDefault() {
+	p := s.parseMinimal("  lifecycle: {spawnTimeout: 0s}\n")
+	s.Equal(10*time.Minute, p.Spec.Lifecycle.SpawnTimeout.Duration)
 }
 
 func (s *PoolConfigSuite) TestPolicyVersionIgnoresFormattingAndDefaults() {
@@ -64,7 +53,6 @@ spec:
     claude: {command: [claude, -p]}
   lifecycle: {ttl: 8h, idleTimeout: 15m, spawnTimeout: 10m, jobTimeout: 2h}
   capacity: {maxConcurrent: 1}
-  egress: {default: deny}
   provider: {name: docker}
   source: {repo: "https://github.com/acme/api"}
 `
@@ -75,7 +63,7 @@ func (s *PoolConfigSuite) TestPolicyVersionChangesWithPolicy() {
 	p := s.loadExample()
 	before, err := p.PolicyVersion()
 	s.Require().NoError(err)
-	allow(p, AllowRule{Host: "example.com", Ports: []int{443}})
+	p.Spec.Capacity.MaxQueued++
 	after, err := p.PolicyVersion()
 	s.Require().NoError(err)
 	s.NotEqual(before, after)
@@ -110,79 +98,43 @@ func (s *PoolConfigSuite) TestReportsEveryError() {
 	}
 }
 
-func (s *PoolConfigSuite) TestRejections() {
-	for _, tc := range rejections {
-		s.Run(tc.name, func() {
-			p := s.loadExample()
-			tc.mutate(p)
-			s.ErrorContains(p.Validate(), tc.want)
-		})
-	}
-}
-
-func (s *PoolConfigSuite) TestHostMatches() {
-	s.True(HostMatches("github.com", "github.com"))
-	s.True(HostMatches("github.com", "GitHub.com."))
-	s.False(HostMatches("github.com", "api.github.com"))
-	s.True(HostMatches("*.npmjs.org", "registry.npmjs.org"))
-	s.True(HostMatches("*.npmjs.org", "a.b.npmjs.org"))
-	s.False(HostMatches("*.npmjs.org", "npmjs.org"))
-	s.False(HostMatches("*.npmjs.org", "evilnpmjs.org"))
-	s.False(HostMatches("*.example.com", ".example.com"))
-	s.False(HostMatches("*.example.com", "*.example.com"))
-	s.False(HostMatches("*.example.com", "a b.example.com"))
-}
-
 func (s *PoolConfigSuite) TestRejectsExtraDocuments() {
-	data, err := os.ReadFile(filepath.Join("testdata", "minimal.yaml"))
-	s.Require().NoError(err)
-	_, err = Parse(append(data, []byte("---\napiVersion: v0\n")...))
+	data := s.readMinimal()
+	_, err := Parse(append(data, []byte("---\napiVersion: v0\n")...))
 	s.ErrorContains(err, "exactly one YAML document")
 	_, err = Parse(append([]byte("---\n"), data...))
 	s.NoError(err)
 }
 
 func (s *PoolConfigSuite) TestRequiresExactFieldNames() {
-	data, err := os.ReadFile(filepath.Join("testdata", "minimal.yaml"))
-	s.Require().NoError(err)
-	_, err = Parse(append(data, []byte("  Agents: {}\n")...))
+	_, err := Parse(append(s.readMinimal(), []byte("  Agents: {}\n")...))
 	s.ErrorContains(err, `spec: unknown field "Agents"`)
-	_, err = Parse(append(data, []byte("  egress: {allow: [{Host: a.com}]}\n")...))
-	s.ErrorContains(err, `spec.egress.allow: unknown field "Host"`)
-	p, err := Parse(append(data, []byte("      env: {Foo: a, foo: b}\n")...))
-	s.Require().NoError(err)
+	_, err = Parse(append(s.readMinimal(), []byte("  audit: {RetainDays: 3}\n")...))
+	s.ErrorContains(err, `spec.audit: unknown field "RetainDays"`)
+	p := s.parseMinimal("      env: {Foo: a, foo: b}\n")
 	s.Len(p.Spec.Agents["claude"].Env, 2)
 }
 
-func (s *PoolConfigSuite) TestSecretRefErrorsDoNotEchoValue() {
-	for _, raw := range []string{"sk-ant-api03-CANARY value", "sk:ant/CANARY/x"} {
-		p := s.loadExample()
-		p.Spec.Credentials[1].Secret = raw
-		p.Spec.Credentials[0].PrivateKey = raw
-		err := p.Validate()
-		s.Require().ErrorContains(err, "TYPE:SOURCE/NAME")
-		s.NotContains(err.Error(), "CANARY")
-	}
-}
-
-func (s *PoolConfigSuite) TestScopeReportsRepositoriesAndPermissions() {
-	p := s.loadExample()
-	p.Spec.Credentials[0].Scope = &MintScope{}
-	err := p.Validate()
-	s.ErrorContains(err, "scope.repositories")
-	s.ErrorContains(err, "scope.permissions")
-}
-
-func (s *PoolConfigSuite) TestZeroDurationTakesDefault() {
-	data, err := os.ReadFile(filepath.Join("testdata", "minimal.yaml"))
-	s.Require().NoError(err)
-	p, err := Parse(append(data, []byte("  lifecycle: {spawnTimeout: 0s}\n")...))
-	s.Require().NoError(err)
-	s.Equal(10*time.Minute, p.Spec.Lifecycle.SpawnTimeout.Duration)
+func (s *PoolConfigSuite) TestRejections() {
+	s.runRejections(rejections)
 }
 
 func (s *PoolConfigSuite) loadExample() *Pool {
 	p, err := Load(filepath.Join("testdata", "pool.yaml"))
+	s.Require().NoError(err)
+	return p
+}
+
+func (s *PoolConfigSuite) readMinimal() []byte {
+	data, err := os.ReadFile(filepath.Join("testdata", "minimal.yaml"))
+	s.Require().NoError(err)
+	return data
+}
+
+// parseMinimal appends extra, which may extend the last agent or add spec
+// keys, to testdata/minimal.yaml.
+func (s *PoolConfigSuite) parseMinimal(extra string) *Pool {
+	p, err := Parse(append(s.readMinimal(), []byte(extra)...))
 	s.Require().NoError(err)
 	return p
 }
@@ -193,4 +145,14 @@ func (s *PoolConfigSuite) version(content string) string {
 	v, err := p.PolicyVersion()
 	s.Require().NoError(err)
 	return v
+}
+
+func (s *PoolConfigSuite) runRejections(cases []rejection) {
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			p := s.loadExample()
+			tc.mutate(p)
+			s.ErrorContains(p.Validate(), tc.want)
+		})
+	}
 }

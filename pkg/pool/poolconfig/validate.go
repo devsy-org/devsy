@@ -7,15 +7,20 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
-// maxPoolNameLength keeps "p-<pool>-<10 chars>" within the 48 character
-// workspace ID limit.
-const maxPoolNameLength = 32
+const (
+	// maxPoolNameLength keeps "p-<pool>-<10 chars>" within the 48 character
+	// workspace ID limit.
+	maxPoolNameLength = 32
+	maxNameLength     = 63
+)
 
 var (
-	poolNamePattern  = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
-	placeholderRegex = regexp.MustCompile(`\{\{\s*([^{}]*?)\s*\}\}`)
+	namePattern   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+	proxyEnvNames = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"}
 )
 
 // fieldErrors collects every problem so one validate run reports them all.
@@ -38,15 +43,13 @@ func (p *Pool) Validate() error {
 	p.Spec.validateSource(&errs)
 	p.Spec.validateCapacity(&errs)
 	p.Spec.validateLifecycle(&errs)
-	p.Spec.validateEgress(&errs)
-	routes := p.Spec.validateCredentials(&errs)
-	p.Spec.validateAgents(&errs, routes)
+	p.Spec.validateAgents(&errs)
 	p.Spec.validateAudit(&errs)
 	return errors.Join(errs...)
 }
 
 func validateName(errs *fieldErrors, path, name string, maxLen int) {
-	if !poolNamePattern.MatchString(name) || len(name) > maxLen {
+	if !namePattern.MatchString(name) || len(name) > maxLen {
 		errs.add(path, "must be 1 to %d lowercase letters, digits or dashes, starting and ending "+
 			"with a letter or digit", maxLen)
 	}
@@ -84,7 +87,10 @@ func (s *Spec) validateCapacity(errs *fieldErrors) {
 
 func (s *Spec) validateLifecycle(errs *fieldErrors) {
 	l := s.Lifecycle
-	durations := []struct {
+	if l.TTL.Duration <= 0 {
+		errs.add("spec.lifecycle.ttl", "must be positive")
+	}
+	checks := []struct {
 		path  string
 		value Duration
 	}{
@@ -92,23 +98,16 @@ func (s *Spec) validateLifecycle(errs *fieldErrors) {
 		{"spec.lifecycle.idleTimeout", l.IdleTimeout},
 		{"spec.lifecycle.jobTimeout", l.JobTimeout},
 	}
-	if l.TTL.Duration <= 0 {
-		errs.add("spec.lifecycle.ttl", "must be positive")
-	}
-	for _, d := range durations {
-		if d.value.Duration <= 0 || d.value.Duration > l.TTL.Duration {
-			errs.add(d.path, "must be positive and not longer than ttl")
+	for _, c := range checks {
+		if c.value.Duration <= 0 || c.value.Duration > l.TTL.Duration {
+			errs.add(c.path, "must be positive and not longer than ttl")
 		}
 	}
 }
 
-func (s *Spec) validateAgents(errs *fieldErrors, routes map[string]string) {
+func (s *Spec) validateAgents(errs *fieldErrors) {
 	if len(s.Agents) == 0 {
 		errs.add("spec.agents", "must define at least one agent")
-	}
-	declared := make(map[string]bool, len(s.Credentials))
-	for _, c := range s.Credentials {
-		declared[c.Name] = true
 	}
 	for name, agent := range s.Agents {
 		path := "spec.agents." + name
@@ -116,45 +115,22 @@ func (s *Spec) validateAgents(errs *fieldErrors, routes map[string]string) {
 		if len(agent.Command) == 0 || agent.Command[0] == "" {
 			errs.add(path+".command", "is required")
 		}
-		for _, cred := range agent.Credentials {
-			if !declared[cred] {
-				errs.add(path+".credentials", "names undeclared credential %q", cred)
-			}
-		}
-		validateAgentEnv(errs, path+".env", agent, routes)
-	}
-}
-
-func validateAgentEnv(errs *fieldErrors, path string, agent Agent, routes map[string]string) {
-	for key, value := range agent.Env {
-		if err := validateEnvName(key); err != nil {
-			errs.add(path, "%v", err)
-		}
-		for _, m := range placeholderRegex.FindAllStringSubmatch(value, -1) {
-			if msg := checkPlaceholder(m[1], agent, routes); msg != "" {
-				errs.add(path+"."+key, "%s", msg)
+		for key := range agent.Env {
+			if err := validateEnvName(key); err != nil {
+				errs.add(path+".env", "%v", err)
 			}
 		}
 	}
 }
 
-func checkPlaceholder(expr string, agent Agent, routes map[string]string) string {
-	routeName, ok := strings.CutPrefix(expr, "route.")
-	if !ok {
-		return fmt.Sprintf("unknown placeholder %q; only {{route.<name>}} is supported", expr)
+func validateEnvName(name string) error {
+	if err := secrets.ValidateName(name); err != nil {
+		return err
 	}
-	owner, found := routes[routeName]
-	if !found {
-		return fmt.Sprintf("names undeclared route %q", routeName)
+	if slices.Contains(proxyEnvNames, strings.ToUpper(name)) {
+		return fmt.Errorf("%s is set by the pool and cannot be overridden", name)
 	}
-	if !slices.Contains(agent.Credentials, owner) {
-		return fmt.Sprintf(
-			"uses route %q but the agent does not list credential %q",
-			routeName,
-			owner,
-		)
-	}
-	return ""
+	return nil
 }
 
 func (s *Spec) validateAudit(errs *fieldErrors) {

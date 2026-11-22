@@ -17,12 +17,10 @@ import (
 )
 
 const (
-	defaultHTTPSPort    = 443
 	defaultSpawnTimeout = 10 * time.Minute
 	defaultIdleTimeout  = 15 * time.Minute
 	defaultTTL          = 8 * time.Hour
 	defaultJobTimeout   = 2 * time.Hour
-	defaultMintTTL      = time.Hour
 	defaultRetainDays   = 30
 )
 
@@ -72,29 +70,8 @@ func (p *Pool) ApplyDefaults() {
 	defaultDuration(&s.Lifecycle.IdleTimeout, defaultIdleTimeout)
 	defaultDuration(&s.Lifecycle.TTL, defaultTTL)
 	defaultDuration(&s.Lifecycle.JobTimeout, defaultJobTimeout)
-	if s.Egress.Default == "" {
-		s.Egress.Default = EgressDeny
-	}
-	for i := range s.Egress.Allow {
-		if len(s.Egress.Allow[i].Ports) == 0 {
-			s.Egress.Allow[i].Ports = []int{defaultHTTPSPort}
-		}
-	}
-	for i := range s.Credentials {
-		defaultCredential(&s.Credentials[i])
-	}
 	if s.Audit.RetainDays == 0 {
 		s.Audit.RetainDays = defaultRetainDays
-	}
-}
-
-func defaultCredential(c *Credential) {
-	if c.Mode != ModeMint {
-		return
-	}
-	defaultDuration(&c.TTL, defaultMintTTL)
-	if len(c.Deliver) == 0 {
-		c.Deliver = []string{DeliverGitHelper}
 	}
 }
 
