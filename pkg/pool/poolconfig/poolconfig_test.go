@@ -84,7 +84,54 @@ func (s *PoolConfigSuite) TestStrictParsing() {
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: 8 hours\n"))
 	s.ErrorContains(err, "parse pool config")
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: 8\n"))
-	s.ErrorContains(err, "duration must be a string")
+	s.ErrorContains(err, "spec.lifecycle.ttl: must be a duration")
+	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: synthetic-secret-marker\n"))
+	s.ErrorContains(err, "spec.lifecycle.ttl")
+	s.NotContains(err.Error(), "synthetic-secret-marker")
+	var d Duration
+	err = d.UnmarshalJSON([]byte(`"synthetic-secret-marker"`))
+	s.Require().Error(err)
+	s.NotContains(err.Error(), "synthetic-secret-marker")
+}
+
+func (s *PoolConfigSuite) TestRejectsAmbiguousYAML() {
+	cases := []struct{ name, extra, want string }{
+		{"anchor", "      env: &m {A: b}\n", "spec.agents.claude.env: YAML anchors and aliases"},
+		{
+			"alias",
+			"      env: &m {Name: demo}\n    other:\n      command: [x]\n      env: *m\n",
+			"YAML anchors and aliases are not supported",
+		},
+		{"merge key", "      env: {<<: {A: b}}\n", "YAML anchors and aliases are not supported"},
+		{
+			"numeric key",
+			"      env: {1: a}\n",
+			`spec.agents.claude.env: key "1" must be a quoted string`,
+		},
+		{"bool word key", "      env: {ON: x}\n", `key "ON" must be a quoted string`},
+		{"null key", "      env: {null: secret-token}\n", `key "null" must be a quoted string`},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			_, err := Parse(append(s.readMinimal(), []byte(tc.extra)...))
+			s.ErrorContains(err, tc.want)
+			s.NotContains(err.Error(), "secret-token")
+		})
+	}
+}
+
+func (s *PoolConfigSuite) TestAcceptsQuotedKeys() {
+	p, err := Parse([]byte(`apiVersion: devsy.sh/v1alpha1
+kind: Pool
+metadata: {name: demo}
+spec:
+  source: {repo: "https://github.com/acme/api"}
+  provider: {name: docker, options: {"1": a, "ON": b}}
+  agents:
+    claude: {command: [claude]}
+`))
+	s.Require().NoError(err)
+	s.Equal(map[string]string{"1": "a", "ON": "b"}, p.Spec.Provider.Options)
 }
 
 func (s *PoolConfigSuite) TestReportsEveryError() {
