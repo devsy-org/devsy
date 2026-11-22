@@ -127,3 +127,28 @@ func TestRecordMaskerOversizedRecordCarriesState(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordMaskerPlainBracketLineOverLimit(t *testing.T) {
+	line := "[progress " + strings.Repeat("x", maxJSONRecordBytes+10)
+	inputs := map[string]string{
+		"lf":   line + "\npublic detail\n",
+		"crlf": line + "\r\npublic detail\r\n",
+	}
+	for name, input := range inputs {
+		cut := len(line) + 1
+		splits := map[string][]string{
+			"one write": {input},
+			"32769":     splitEvery(input, 32769),
+			"65537":     splitEvery(input, 65537),
+			"split eol": {input[:cut], input[cut:]},
+		}
+		for split, chunks := range splits {
+			t.Run(name+"/"+split, func(t *testing.T) {
+				got := runMasker(t, chunks)
+				if !strings.Contains(got, "public detail") {
+					t.Fatalf("later line lost: %q", got[max(0, len(got)-80):])
+				}
+			})
+		}
+	}
+}

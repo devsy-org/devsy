@@ -153,18 +153,29 @@ func (m *recordMasker) maskRecord(start string, final bool) bool {
 }
 
 func (m *recordMasker) holdOrOverflow() bool {
-	if len(m.pending) > maxJSONRecordBytes {
-		skip := &recordSkipper{}
-		rest, closed := skip.consume(m.pending)
-		m.maskPending()
-		if closed {
-			m.pending = rest
-		} else {
-			m.skip = skip
-		}
-		return true
+	if len(m.pending) <= maxJSONRecordBytes {
+		return false
 	}
-	return false
+	// Text that already breaks JSON syntax is a plain line; skipping it would
+	// drop everything up to a closing bracket that may never come.
+	if !couldBeJSON(m.pending) {
+		return m.copyLine()
+	}
+	skip := &recordSkipper{}
+	rest, closed := skip.consume(m.pending)
+	m.maskPending()
+	if closed {
+		m.pending = rest
+	} else {
+		m.skip = skip
+	}
+	return true
+}
+
+func couldBeJSON(text string) bool {
+	var record json.RawMessage
+	err := json.NewDecoder(strings.NewReader(text)).Decode(&record)
+	return err == nil || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 func (m *recordMasker) maskPending() {
