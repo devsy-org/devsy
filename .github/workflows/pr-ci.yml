@@ -363,6 +363,8 @@ jobs:
     runs-on: windows-latest
     # Allow cold Go compilation and the post-job cache save to complete.
     timeout-minutes: 30
+    env:
+      GOTRACEBACK: wer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -371,9 +373,42 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # golang/go#81238 corrupts the heap only on hosts that enable AMX
+      # (XTILEDATA), so every run records the host features next to its result.
+      - name: record toolchain, runner image and CPU features
+        shell: pwsh
+        run: |
+          go version
+          "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
+          $os = Get-CimInstance Win32_OperatingSystem
+          "Windows $($os.Caption) $($os.Version) build $($os.BuildNumber)"
+          Get-CimInstance Win32_Processor | ForEach-Object { "CPU $($_.Name)" }
+          Add-Type -Namespace Native -Name Kernel32 -MemberDefinition '[DllImport("kernel32.dll")] public static extern ulong GetEnabledXStateFeatures();'
+          $mask = [uint64][Native.Kernel32]::GetEnabledXStateFeatures()
+          "XSTATE features=0x{0:x} XTILECFG={1} XTILEDATA={2}" -f $mask, (($mask -band [uint64]0x20000) -ne 0), (($mask -band [uint64]0x40000) -ne 0)
+
+      - name: enable Windows Error Reporting dumps for test binaries
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'provider-update-dumps'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
+          New-ItemProperty -Force -Path $wer -Name Disabled -PropertyType DWord -Value 0 | Out-Null
+          New-ItemProperty -Force -Path $wer -Name DontShowUI -PropertyType DWord -Value 1 | Out-Null
+          $key = "$wer\LocalDumps"
+          New-Item -Force -Path $key | Out-Null
+          New-ItemProperty -Force -Path $key -Name DumpFolder -PropertyType ExpandString -Value $dir | Out-Null
+          New-ItemProperty -Force -Path $key -Name DumpType -PropertyType DWord -Value 2 | Out-Null
+          New-ItemProperty -Force -Path $key -Name DumpCount -PropertyType DWord -Value 5 | Out-Null
+
       - name: run provider update tests and require Windows coverage
         shell: pwsh
         run: go run ./hack/provider_update_ci --artifacts-dir "$env:RUNNER_TEMP"
+
+      - name: build matching test binaries for dump symbolization
+        if: failure()
+        shell: pwsh
+        run: go test -c -o "$env:RUNNER_TEMP/provider-update-dumps/" github.com/devsy-org/devsy/pkg/workspace github.com/devsy-org/devsy/pkg/provider
 
       - name: upload provider update test JSON on failure
         if: failure()
@@ -383,6 +418,15 @@ jobs:
           path: |
             ${{ runner.temp }}/provider-update-windows.jsonl
             ${{ runner.temp }}/provider-update-windows.exitcode
+          if-no-files-found: ignore
+
+      - name: upload crash dumps and test binaries on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: provider-update-windows-crash-dumps
+          path: ${{ runner.temp }}/provider-update-dumps
+          retention-days: 7
           if-no-files-found: ignore
 
   build-cli:
