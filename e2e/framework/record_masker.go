@@ -154,8 +154,14 @@ func (m *recordMasker) maskRecord(start string, final bool) bool {
 
 func (m *recordMasker) holdOrOverflow() bool {
 	if len(m.pending) > maxJSONRecordBytes {
-		m.skip = &recordSkipper{}
+		skip := &recordSkipper{}
+		rest, closed := skip.consume(m.pending)
 		m.maskPending()
+		if closed {
+			m.pending = rest
+		} else {
+			m.skip = skip
+		}
 		return true
 	}
 	return false

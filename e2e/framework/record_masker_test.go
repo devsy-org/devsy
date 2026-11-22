@@ -91,3 +91,39 @@ func TestRecordMaskerCloseWhileOversizedOpen(t *testing.T) {
 		t.Fatalf("leaked: %q", got)
 	}
 }
+
+func TestRecordMaskerOversizedRecordCarriesState(t *testing.T) {
+	pad := strings.Repeat("p", maxJSONRecordBytes+10)
+	cookie := "\"Cookie\": \"server-cookie\"}\n"
+	records := map[string]string{
+		"nested object": "{\"a\":{\"pad\":\"" + pad + "\",\"c\":1},\n" + cookie,
+		"inside string": "{\"pad\":\"" + pad + " } \\\" ] still in string\",\n" + cookie,
+		"after escape":  "{\"pad\":\"" + pad + "\\\\\\\"}\",\n" + cookie,
+		"nested array":  "{\"a\":[{\"pad\":\"" + pad + "\"}],\n" + cookie,
+	}
+	for name, record := range records {
+		limit := maxJSONRecordBytes
+		pos := strings.Index(record, "p")
+		splits := map[string][]string{
+			"whole":    {record},
+			"at limit": {record[:limit], record[limit:]},
+			"after":    {record[:limit+1], record[limit+1:]},
+			"one byte": append([]string{record[:limit-1], record[limit-1 : limit]},
+				splitEvery(record[limit:], 1)...),
+			"in pad": {record[:pos+limit-5], record[pos+limit-5:]},
+			"chunks": splitEvery(record, 4096),
+		}
+		for split, chunks := range splits {
+			t.Run(name+"/"+split, func(t *testing.T) {
+				chunks = append(chunks, "public detail\n")
+				got := runMasker(t, chunks)
+				if strings.Contains(got, "server-cookie") {
+					t.Fatalf("credential leaked: %q", got[max(0, len(got)-120):])
+				}
+				if !strings.HasSuffix(got, "public detail\n") {
+					t.Fatalf("plain line lost: %q", got[max(0, len(got)-80):])
+				}
+			})
+		}
+	}
+}
