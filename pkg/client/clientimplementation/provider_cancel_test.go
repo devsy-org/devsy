@@ -324,16 +324,13 @@ func TestProviderCancellationCooperatesAndCleansUp(t *testing.T) {
 	opts := cancelHelperOptions("acknowledge")
 	opts.Environ = append(opts.Environ, "DEVSY_CANCEL_ACK_PATH="+ack)
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ready := make(chan struct{})
 	opts.Stdout = &readyWriter{ready: ready}
 	opts.RawStdout = true
 	finished := make(chan error, 1)
 	go func() { finished <- RunCommand(ctx, opts) }()
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("provider did not start")
-	}
+	requireProviderStarted(t, ready, finished, "provider")
 	cancel()
 	select {
 	case err := <-finished:
@@ -342,6 +339,26 @@ func TestProviderCancellationCooperatesAndCleansUp(t *testing.T) {
 		t.Fatal("provider did not acknowledge cancellation")
 	}
 	requireTestAcknowledgement(t, ack)
+}
+
+const helperStartGuard = time.Minute
+
+func requireProviderStarted(
+	t *testing.T,
+	ready <-chan struct{},
+	finished <-chan error,
+	what string,
+) {
+	t.Helper()
+	guard := time.NewTimer(helperStartGuard)
+	defer guard.Stop()
+	select {
+	case <-ready:
+	case err := <-finished:
+		t.Fatalf("%s exited before it started: %v", what, err)
+	case <-guard.C:
+		t.Fatalf("%s sent no start signal within %s", what, helperStartGuard)
+	}
 }
 
 func requireTestAcknowledgement(t *testing.T, path string) {
@@ -370,16 +387,13 @@ func TestProviderCancellationForcedAfterGrace(t *testing.T) {
 	opts := cancelHelperOptions("ignore")
 	opts.cancelTiming = testProviderCancelTiming
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ready := make(chan struct{})
 	opts.Stdout = &readyWriter{ready: ready}
 	opts.RawStdout = true
 	finished := make(chan error, 1)
 	go func() { finished <- RunCommand(ctx, opts) }()
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("provider did not start")
-	}
+	requireProviderStarted(t, ready, finished, "provider")
 	start := time.Now()
 	cancel()
 	select {
@@ -439,11 +453,7 @@ func TestProviderCancellationBlockedShellStdin(t *testing.T) {
 	defer cancel()
 	finished := make(chan error, 1)
 	go func() { finished <- RunCommand(ctx, opts) }()
-	select {
-	case <-output.ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("provider shell did not start")
-	}
+	requireProviderStarted(t, output.ready, finished, "provider shell")
 	marker := output.marker()
 	requirePrivateProviderScript(t, marker, privateCommand)
 
@@ -648,11 +658,7 @@ func TestProviderCancellationPublicationFailureReapsProvider(t *testing.T) {
 			return &os.PathError{Op: "open", Path: marker, Err: os.ErrPermission}
 		})
 	}()
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("provider did not start")
-	}
+	requireProviderStarted(t, ready, finished, "provider")
 	cancel()
 	select {
 	case err := <-finished:
@@ -774,11 +780,7 @@ func TestProviderCancellationShellCannotForgeAck(t *testing.T) {
 	defer cancel()
 	finished := make(chan error, 1)
 	go func() { finished <- RunCommand(ctx, opts) }()
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("provider direct child did not start")
-	}
+	requireProviderStarted(t, ready, finished, "provider direct child")
 	start := time.Now()
 	cancel()
 	select {
@@ -1061,11 +1063,7 @@ func TestProviderCancellationOwnedOutputStopsAfterForcedCancellation(t *testing.
 	defer cancel()
 	finished := make(chan error, 1)
 	go func() { finished <- RunCommand(ctx, opts) }()
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("provider output holder did not start")
-	}
+	requireProviderStarted(t, ready, finished, "provider output holder")
 	cancel()
 	select {
 	case err := <-finished:
@@ -1151,19 +1149,27 @@ func TestMachineCommandTransportCancellationJoinsCallback(t *testing.T) {
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, conn.Close()) })
-			deadline := time.Now().Add(5 * time.Second)
-			for {
-				if _, err := os.Stat(ready); err == nil {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("transport provider did not start")
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-			cancel()
 			completed := make(chan error, 1)
 			go func() { completed <- conn.Wait() }()
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			guard := time.NewTimer(helperStartGuard)
+			defer guard.Stop()
+			for started := false; !started; {
+				select {
+				case err := <-completed:
+					t.Fatalf("transport provider exited before it started: %v", err)
+				case <-guard.C:
+					t.Fatalf("transport provider sent no start signal within %s", helperStartGuard)
+				case <-ticker.C:
+					_, statErr := os.Stat(ready)
+					if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+						t.Fatalf("stat transport ready file: %v", statErr)
+					}
+					started = statErr == nil
+				}
+			}
+			cancel()
 			select {
 			case err := <-completed:
 				require.ErrorIs(t, err, context.Canceled)
@@ -1204,9 +1210,9 @@ func TestWorkspaceTransportCompletesWithoutClosingInput(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, conn.Close()) })
 	ready := make([]byte, 5)
-	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(helperStartGuard)))
 	_, err = io.ReadFull(conn, ready)
-	require.NoError(t, err)
+	require.NoError(t, err, "workspace provider sent no ready bytes")
 	require.Equal(t, "ready", string(ready))
 	finished := make(chan error, 1)
 	go func() { finished <- conn.Wait() }()
@@ -1252,9 +1258,9 @@ func requireWorkspaceTransportCancellation(
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, conn.Close()) })
 	ready := make([]byte, 5)
-	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(helperStartGuard)))
 	_, err = io.ReadFull(conn, ready)
-	require.NoError(t, err)
+	require.NoError(t, err, "workspace provider sent no ready bytes")
 	require.Equal(t, "ready", string(ready))
 	cancel()
 	require.ErrorIs(t, conn.Wait(), context.Canceled)
@@ -1276,11 +1282,7 @@ func requireWorkspaceDirectCancellation(
 			RawStdout: true,
 		})
 	}()
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("workspace provider did not start")
-	}
+	requireProviderStarted(t, ready, finished, "workspace provider")
 	cancel()
 	select {
 	case err := <-finished:
