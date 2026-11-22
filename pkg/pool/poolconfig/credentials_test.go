@@ -169,6 +169,24 @@ func (s *PoolConfigSuite) TestSecretDecodeErrorsDoNotEchoValues() {
 	}
 }
 
+func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
+	p := s.loadExample()
+	p.Spec.Credentials[0].Deliver = []string{"CANARY_DELIVERY"}
+	p.Spec.Credentials[0].Scope.Repositories = []string{"acme/api", "CANARY_REPO"}
+	p.Spec.Credentials[1].Route.Upstream = "https://api.anthropic.com:987654321"
+	p.Spec.Credentials[2].Route.Upstream = "https://canary-host.example.com"
+	allow(p, AllowRule{Host: "canary-host.example.com"})
+	err := p.Validate()
+	s.ErrorContains(err, "deliver[0]: unknown target")
+	s.ErrorContains(err, "repositories[1]: must be owner/repo")
+	s.ErrorContains(err, "port is outside")
+	s.ErrorContains(err, "must not also be matched")
+	for _, v := range []string{"CANARY_DELIVERY", "CANARY_REPO", "987654321"} {
+		s.NotContains(err.Error(), v)
+	}
+	s.NotContains(strings.ReplaceAll(err.Error(), "spec.egress.allow", ""), "canary-host")
+}
+
 func malformedCase(name, value string) rejection {
 	return rejection{name, func(p *Pool) {
 		setAgent(p, func(a *Agent) { a.Env["X"] = value })

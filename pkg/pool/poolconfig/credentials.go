@@ -121,9 +121,10 @@ func validateDelivery(errs *fieldErrors, path string, c *Credential) {
 	if c.TTL.Duration <= 0 || c.TTL.Duration > maxMintTTL {
 		errs.add(path+".ttl", "must be positive and at most %s", maxMintTTL)
 	}
-	for _, d := range c.Deliver {
+	for i, d := range c.Deliver {
 		if d != DeliverGitHelper && d != DeliverGHEnv {
-			errs.add(path+".deliver", "unknown target %q", d)
+			errs.add(fmt.Sprintf("%s.deliver[%d]", path, i), "unknown target; use %q or %q",
+				DeliverGitHelper, DeliverGHEnv)
 		}
 	}
 }
@@ -143,10 +144,10 @@ func validateScope(errs *fieldErrors, path string, scope *MintScope) {
 // One installation token covers a single owner.
 func validateRepositories(errs *fieldErrors, path string, repos []string) {
 	owner := ""
-	for _, repo := range repos {
+	for i, repo := range repos {
 		o, name, _ := strings.Cut(repo, "/")
 		if !repositoryPattern.MatchString(repo) || isDotName(o) || isDotName(name) {
-			errs.add(path, "%q is not owner/repo", repo)
+			errs.add(fmt.Sprintf("%s[%d]", path, i), "must be owner/repo")
 			continue
 		}
 		if owner == "" {
@@ -229,7 +230,7 @@ func (s *Spec) validateUpstream(errs *fieldErrors, path, upstream string) {
 	// A direct allow rule would let the agent reach the upstream with a key
 	// of its own, bypassing the injected credential.
 	if s.hostAllowed(host) {
-		errs.add(path, "host %q must not also be in spec.egress.allow", host)
+		errs.add(path, "host must not also be matched by spec.egress.allow")
 	}
 }
 
@@ -257,7 +258,7 @@ func checkURLPort(port string) string {
 		return ""
 	}
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > maxPort {
-		return fmt.Sprintf("port %s is outside 1 to %d", port, maxPort)
+		return fmt.Sprintf("port is outside 1 to %d", maxPort)
 	}
 	return ""
 }
