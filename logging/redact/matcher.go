@@ -1,5 +1,12 @@
 package redact
 
+import (
+	"bytes"
+	"encoding/json"
+	"strconv"
+	"strings"
+)
+
 type byteMatcher struct {
 	forward *matchNode
 	reverse *matchNode
@@ -12,6 +19,37 @@ type matchNode struct {
 	terminal int
 	longest  int
 	proper   int
+}
+
+func newEscapedMatcher(values []string) *byteMatcher {
+	var escaped []string
+	for _, value := range values {
+		for _, form := range escapedForms(value) {
+			if form != value {
+				escaped = append(escaped, form)
+			}
+		}
+	}
+	if len(escaped) == 0 {
+		return nil
+	}
+	return newByteMatcher(escaped)
+}
+
+func escapedForms(value string) []string {
+	forms := []string{strconv.Quote(value)}
+	for _, escapeHTML := range []bool{true, false} {
+		var buffer bytes.Buffer
+		encoder := json.NewEncoder(&buffer)
+		encoder.SetEscapeHTML(escapeHTML)
+		if encoder.Encode(value) == nil {
+			forms = append(forms, strings.TrimSuffix(buffer.String(), "\n"))
+		}
+	}
+	for i, form := range forms {
+		forms[i] = form[1 : len(form)-1]
+	}
+	return forms
 }
 
 func newByteMatcher(values []string) *byteMatcher {
@@ -80,10 +118,17 @@ func transition(root, state *matchNode, value byte) *matchNode {
 }
 
 func (r *Redactor) matchLengths(value string, cut int) []int {
-	if r == nil || r.matcher == nil || cut == 0 {
+	if r == nil {
 		return nil
 	}
-	root := r.matcher.reverse
+	return matchLengthsWith(r.matcher, value, cut)
+}
+
+func matchLengthsWith(matcher *byteMatcher, value string, cut int) []int {
+	if matcher == nil || cut == 0 {
+		return nil
+	}
+	root := matcher.reverse
 	state := root
 	var lengths []int
 	for index := len(value) - 1; index >= 0; index-- {

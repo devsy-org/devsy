@@ -25,6 +25,7 @@ type Options struct {
 type Redactor struct {
 	values        []string
 	matcher       *byteMatcher
+	escaped       *byteMatcher
 	maxLength     int
 	mask          string
 	authorityURLs bool
@@ -167,12 +168,36 @@ func (r *Redactor) ContainsValue(value string) bool {
 	return false
 }
 
+func (r *Redactor) RedactRegistered(value string) string {
+	if r == nil || r.matcher == nil {
+		return value
+	}
+	lengths := r.registeredLengths(value)
+	var result strings.Builder
+	covered := 0
+	for i, length := range lengths {
+		if length > 0 {
+			if i >= covered {
+				result.WriteString(value[covered:i])
+				result.WriteString(r.Mask())
+			}
+			covered = max(covered, i+length)
+		}
+	}
+	if result.Len() == 0 {
+		return value
+	}
+	result.WriteString(value[covered:])
+	return result.String()
+}
+
 func newRedactor(values []string, mask string) *Redactor {
 	r := &Redactor{values: values, mask: mask}
 	if len(values) == 0 {
 		return r
 	}
 	r.matcher = newByteMatcher(values)
+	r.escaped = newEscapedMatcher(values)
 	for _, value := range values {
 		r.maxLength = max(r.maxLength, len(value))
 	}
@@ -202,6 +227,16 @@ func (r *Redactor) Mask() string {
 		return defaultMask
 	}
 	return r.mask
+}
+
+func (r *Redactor) registeredLengths(value string) []int {
+	lengths := make([]int, len(value))
+	for _, matcher := range []*byteMatcher{r.matcher, r.escaped} {
+		for i, length := range matchLengthsWith(matcher, value, len(value)) {
+			lengths[i] = max(lengths[i], length)
+		}
+	}
+	return lengths
 }
 
 type textMatches struct {
