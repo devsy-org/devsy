@@ -1,0 +1,53 @@
+apiVersion: devsy.sh/v1alpha1
+kind: Pool
+metadata:
+  name: api-agents
+spec:
+  source:
+    repo: https://github.com/acme/api
+    ref: main
+    devcontainerPath: .devcontainer/devcontainer.json
+  provider:
+    name: docker
+  capacity:
+    maxConcurrent: 4
+    maxQueued: 8
+  lifecycle:
+    idleTimeout: 15m
+    ttl: 8h
+  egress:
+    allow:
+      - host: registry.npmjs.org
+      - host: "*.pythonhosted.org"
+      - host: github.com
+        ports: [443, 22]
+      - cidr: 10.20.0.0/16
+  credentials:
+    - name: github
+      mode: mint
+      issuer: github-app
+      appId: "123456"
+      installationId: "7890"
+      privateKey: sops:pool/GITHUB_APP_KEY
+      scope:
+        repositories: [acme/api]
+        permissions: {contents: write, pull_requests: write}
+      ttl: 1h
+      deliver: [git-helper, gh-env]
+    - name: anthropic
+      mode: inject
+      secret: ANTHROPIC_API_KEY
+      route: {name: anthropic, upstream: "https://api.anthropic.com", header: x-api-key}
+    - name: openai
+      mode: inject
+      secret: OPENAI_API_KEY
+      route: {name: openai, upstream: "https://api.openai.com/v1", header: Authorization, prefix: "Bearer "}
+  agents:
+    claude:
+      command: [claude, -p, --output-format, stream-json, --verbose]
+      env: {ANTHROPIC_BASE_URL: "{{route.anthropic}}"}
+      credentials: [github, anthropic]
+    codex:
+      command: [codex, exec]
+      env: {OPENAI_BASE_URL: "{{route.openai}}"}
+      credentials: [github, openai]

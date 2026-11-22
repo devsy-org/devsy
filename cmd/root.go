@@ -23,6 +23,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/mcp"
 	"github.com/devsy-org/devsy/cmd/platform"
+	poolcmd "github.com/devsy-org/devsy/cmd/pool"
 	"github.com/devsy-org/devsy/cmd/provider"
 	secretscmd "github.com/devsy-org/devsy/cmd/secrets"
 	snapshotcmd "github.com/devsy-org/devsy/cmd/snapshot"
@@ -412,6 +413,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		ide.NewIDECmd(globalFlags),
 		machine.NewMachineCmd(globalFlags),
 		mcp.NewMCPCmd(globalFlags),
+		poolcmd.NewPoolCmd(globalFlags),
 		provider.NewProviderCmd(globalFlags),
 		secretscmd.NewSecretsCmd(globalFlags),
 		snapshotcmd.NewSnapshotCmd(globalFlags),
