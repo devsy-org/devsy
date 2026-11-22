@@ -109,6 +109,25 @@ func (s *WSLgSuite) TestInvalidTargetsNeverRun() {
 	}
 }
 
+func (s *WSLgSuite) TestProtocolErrorsNameTheirReason() {
+	for _, tc := range []struct {
+		result ProbeResult
+		reason string
+	}{
+		{ProbeResult{ExitCode: 1, Stderr: []byte("private")}, "exit code 1, stdout 0 bytes, stderr 7 bytes"},
+		{ProbeResult{ExitCode: 255, Stdout: []byte("ab")}, "exit code 255, stdout 2 bytes, stderr 0 bytes"},
+		{ProbeResult{Stdout: []byte("private")}, "stdout has no trailing newline"},
+		{ProbeResult{Stdout: []byte{0xff, '\n'}}, "stdout is not valid UTF-8"},
+		{ProbeResult{Stdout: []byte("a\x1bb\n")}, "value has control characters"},
+		{ProbeResult{Stdout: []byte(strings.Repeat("a", outputLimit+1))}, "output over the limit"},
+	} {
+		_, _, err := parseResult(tc.result)
+		s.ErrorIs(err, ErrProtocol)
+		s.ErrorContains(err, tc.reason)
+		s.NotContains(err.Error(), "private")
+	}
+}
+
 func (s *WSLgSuite) TestStrictProtocol() {
 	for _, result := range []ProbeResult{
 		{Stdout: []byte("private")},

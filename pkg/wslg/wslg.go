@@ -262,7 +262,11 @@ func (p displayProbe) value(ctx context.Context, key string) (string, bool, erro
 		return "", false, ctx.Err()
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("%w (%s)", ErrProtocol, key)
+		return "", false, fmt.Errorf(
+			"%w (%s): the command did not run to completion",
+			ErrProtocol,
+			key,
+		)
 	}
 	value, present, err := parseResult(result)
 	if err != nil {
@@ -277,25 +281,37 @@ func (p displayProbe) value(ctx context.Context, key string) (string, bool, erro
 // otherwise a wsl.exe failure would look like a missing variable.
 func parseResult(result ProbeResult) (string, bool, error) {
 	if len(result.Stdout) > outputLimit {
-		return "", false, ErrProtocol
+		return "", false, protocolError("output over the limit")
 	}
 	if result.ExitCode == 1 && len(result.Stdout) == 0 && len(result.Stderr) == 0 {
 		return "", false, nil
 	}
 	if result.ExitCode != 0 {
-		return "", false, ErrProtocol
+		return "", false, protocolError(fmt.Sprintf(
+			"exit code %d, stdout %d bytes, stderr %d bytes",
+			result.ExitCode,
+			len(result.Stdout),
+			len(result.Stderr),
+		))
 	}
 	value, err := parseValue(result.Stdout)
 	return value, err == nil, err
 }
 
+func protocolError(reason string) error {
+	return fmt.Errorf("%w: %s", ErrProtocol, reason)
+}
+
 func parseValue(stdout []byte) (string, error) {
-	if !utf8.Valid(stdout) || !strings.HasSuffix(string(stdout), "\n") {
-		return "", ErrProtocol
+	if !utf8.Valid(stdout) {
+		return "", protocolError("stdout is not valid UTF-8")
+	}
+	if !strings.HasSuffix(string(stdout), "\n") {
+		return "", protocolError("stdout has no trailing newline")
 	}
 	value := strings.TrimSuffix(strings.TrimSuffix(string(stdout), "\n"), "\r")
 	if hasControl(value) {
-		return "", ErrProtocol
+		return "", protocolError("value has control characters")
 	}
 	return value, nil
 }
