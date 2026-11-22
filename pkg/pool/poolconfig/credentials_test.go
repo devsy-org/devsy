@@ -1,6 +1,10 @@
 package poolconfig
 
-import "time"
+import (
+	"os"
+	"strings"
+	"time"
+)
 
 const (
 	wantHeader = "route.header"
@@ -152,6 +156,17 @@ var credentialRejections = []rejection{
 	upstreamCase("upstream empty query", "https://api.anthropic.com?"),
 	upstreamCase("upstream empty fragment", "https://api.anthropic.com#"),
 	upstreamCase("upstream empty port", "https://api.anthropic.com:"),
+}
+
+func (s *PoolConfigSuite) TestSecretDecodeErrorsDoNotEchoValues() {
+	data, err := os.ReadFile("testdata/pool.yaml")
+	s.Require().NoError(err)
+	for _, field := range []string{"secret: ANTHROPIC_API_KEY", "privateKey: sops:pool/GITHUB_APP_KEY"} {
+		name, _, _ := strings.Cut(field, ":")
+		_, err := Parse([]byte(strings.Replace(string(data), field, name+": !!null CANARY", 1)))
+		s.Require().Error(err)
+		s.NotContains(err.Error(), "CANARY")
+	}
 }
 
 func malformedCase(name, value string) rejection {
