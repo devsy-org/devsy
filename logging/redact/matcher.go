@@ -126,22 +126,6 @@ func (r *Redactor) matchLengths(value string, cut int) []int {
 
 type matchSpan struct{ start, end int }
 
-func matchSpansWith(matcher *byteMatcher, value string) []matchSpan {
-	if matcher == nil {
-		return nil
-	}
-	root := matcher.reverse
-	state := root
-	var spans []matchSpan
-	for index := len(value) - 1; index >= 0; index-- {
-		state = transition(root, state, value[index])
-		if state.longest != 0 {
-			spans = append(spans, matchSpan{start: index, end: index + state.longest})
-		}
-	}
-	return spans
-}
-
 func matchLengthsWith(matcher *byteMatcher, value string, cut int) []int {
 	if matcher == nil || cut == 0 {
 		return nil

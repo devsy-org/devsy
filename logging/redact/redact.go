@@ -2,7 +2,6 @@ package redact
 
 import (
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -173,22 +172,24 @@ func (r *Redactor) RedactRegistered(value string) string {
 	if r == nil || r.matcher == nil {
 		return value
 	}
-	spans := append(matchSpansWith(r.matcher, value), matchSpansWith(r.escaped, value)...)
-	if len(spans) == 0 {
+	groups := r.registeredGroups(value)
+	if len(groups) == 0 {
 		return value
 	}
-	slices.SortFunc(spans, func(left, right matchSpan) int { return left.start - right.start })
-	var result strings.Builder
-	result.Grow(len(value))
-	covered := 0
-	for _, span := range spans {
-		if span.start >= covered {
-			result.WriteString(value[covered:span.start])
-			result.WriteString(r.Mask())
-		}
-		covered = max(covered, span.end)
+	mask := r.Mask()
+	size := len(value) + len(groups)*len(mask)
+	for _, group := range groups {
+		size -= group.end - group.start
 	}
-	result.WriteString(value[covered:])
+	var result strings.Builder
+	result.Grow(size)
+	cursor := 0
+	for i := len(groups) - 1; i >= 0; i-- {
+		result.WriteString(value[cursor:groups[i].start])
+		result.WriteString(mask)
+		cursor = groups[i].end
+	}
+	result.WriteString(value[cursor:])
 	return result.String()
 }
 
@@ -228,6 +229,37 @@ func (r *Redactor) Mask() string {
 		return defaultMask
 	}
 	return r.mask
+}
+
+func (r *Redactor) registeredGroups(value string) []matchSpan {
+	rawRoot := r.matcher.reverse
+	rawState := rawRoot
+	var escapedRoot, escapedState *matchNode
+	if r.escaped != nil {
+		escapedRoot = r.escaped.reverse
+		escapedState = escapedRoot
+	}
+	var groups []matchSpan
+	for index := len(value) - 1; index >= 0; index-- {
+		rawState = transition(rawRoot, rawState, value[index])
+		length := rawState.longest
+		if escapedRoot != nil {
+			escapedState = transition(escapedRoot, escapedState, value[index])
+			length = max(length, escapedState.longest)
+		}
+		if length > 0 {
+			groups = absorbSpan(groups, matchSpan{start: index, end: index + length})
+		}
+	}
+	return groups
+}
+
+func absorbSpan(groups []matchSpan, span matchSpan) []matchSpan {
+	for len(groups) > 0 && span.end >= groups[len(groups)-1].start {
+		span.end = max(span.end, groups[len(groups)-1].end)
+		groups = groups[:len(groups)-1]
+	}
+	return append(groups, span)
 }
 
 type textMatches struct {

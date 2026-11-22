@@ -165,3 +165,49 @@ func TestRedactRegisteredAllocatesInProportionToMatches(t *testing.T) {
 		t.Fatal("blank records changed")
 	}
 }
+
+func TestRedactRegisteredDenseInputsStayBounded(t *testing.T) {
+	size := 8 << 20
+	tests := []struct {
+		name   string
+		values []string
+		input  string
+		want   string
+	}{
+		{"single byte value", []string{"a"}, strings.Repeat("a", size), "***"},
+		{"nested values", []string{"a", "aa", "aaa"}, strings.Repeat("a", size), "***"},
+		{"backslash value", []string{"\\"}, strings.Repeat("\\", size), "***"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			redactor := New(Options{Values: tt.values})
+			var got string
+			if bytes := allocatedBytes(
+				func() { got = redactor.RedactRegistered(tt.input) },
+			); bytes > 1<<20 {
+				t.Fatalf("allocated %d bytes", bytes)
+			}
+			if got != tt.want {
+				t.Fatalf("dense input produced %d bytes", len(got))
+			}
+		})
+	}
+}
+
+func TestRedactRegisteredRawAndEscapedFormsShareOneMask(t *testing.T) {
+	got := New(Options{Values: []string{"\""}}).RedactRegistered(`x \" y`)
+	if got != maskedMiddle {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRedactRegisteredLongSpanAbsorbsEarlierGroups(t *testing.T) {
+	got := New(Options{Values: []string{"b", "xxabcdexx", "d"}}).RedactRegistered("1 xxabcdexx 2")
+	if got != "1 *** 2" {
+		t.Fatalf("got %q", got)
+	}
+	got = New(Options{Values: []string{"zzzzzz", "yy", "xx"}}).RedactRegistered("xx zzzzzz yy")
+	if got != "*** *** ***" {
+		t.Fatalf("got %q", got)
+	}
+}

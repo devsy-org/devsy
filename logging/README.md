@@ -47,7 +47,7 @@ For unstructured text, the redactor masks registered values and uses two conserv
 
 Use `RedactDiagnostic` for a complete diagnostic that may contain folded Authorization values. It masks nonblank indented continuation lines and a Basic or Bearer value on the line immediately after an empty Authorization assignment. A blank line ends the value. When the input is valid JSON, it also checks folded values inside decoded string fields and emits valid JSON.
 
-Use `RedactRegistered` to mask only registered values, with no text patterns and no JSON parsing. It matches each value as the raw bytes that were registered and as its JSON and Go-quoted escaped forms, across record separators, and overlapping matches share one mask. A caller can run it on a complete buffer before any record splitting.
+Use `RedactRegistered` to mask only registered values, with no text patterns and no JSON parsing. It matches each value as the raw bytes that were registered and as its JSON and Go-quoted escaped forms, across record separators, and overlapping or adjacent matches share one mask. Memory use follows the number of separate masked regions, not the input size. A caller can run it on a complete buffer before any record splitting.
 
 `RedactDiagnostic` limits URL masking to the authority. A slash, query, fragment, whitespace, double quote, or angle bracket ends the authority, so a later `@` in the path or another field leaves the host intact. Register credentials that appear in malformed URLs outside the recognized authority. An ambiguous authority containing a raw backslash may still be masked through a later `@`.
 
