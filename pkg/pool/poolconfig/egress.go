@@ -103,9 +103,9 @@ func validateAllowRule(errs *fieldErrors, path string, rule AllowRule) {
 	if msg != "" {
 		errs.add(path+field, "%s", msg)
 	}
-	for _, port := range rule.Ports {
+	for j, port := range rule.Ports {
 		if port < 1 || port > maxPort {
-			errs.add(path+".ports", "port %d is outside 1 to %d", port, maxPort)
+			errs.add(fmt.Sprintf("%s.ports[%d]", path, j), "is outside 1 to %d", maxPort)
 		}
 	}
 }
@@ -162,7 +162,7 @@ func checkCIDR(value string) string {
 		return "is not a valid CIDR"
 	}
 	if prefix != prefix.Masked() {
-		return "must be canonical, use " + prefix.Masked().String()
+		return "must be canonical, with no address bits set past the prefix length"
 	}
 	minBits := minIPv6PrefixBits
 	if prefix.Addr().Is4() {

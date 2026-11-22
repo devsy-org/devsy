@@ -25,12 +25,7 @@ const (
 	defaultRetainDays   = 30
 )
 
-var (
-	jsonTypeErrorPattern = regexp.MustCompile(
-		`Go struct field [A-Za-z0-9_]+\.([A-Za-z0-9_.]+) of type ([A-Za-z0-9_.\[\]]+)`,
-	)
-	yamlLinePattern = regexp.MustCompile(`line (\d+)`)
-)
+var yamlLinePattern = regexp.MustCompile(`^(?:error converting YAML to JSON: )?yaml: line (\d+):`)
 
 // Load reads, defaults and validates a pool.yaml file.
 func Load(path string) (*Pool, error) {
@@ -117,13 +112,14 @@ func defaultDuration(d *Duration, value time.Duration) {
 }
 
 // decodeError keeps only the field path, expected type and line of a decoder
-// error. Decoders quote the offending value, which may be a pasted secret.
+// error. Decoders quote the offending value, which may be a pasted secret, so
+// nothing is taken from the free text after the decoder's fixed prefix.
 func decodeError(err error) error {
-	msg := err.Error()
-	if m := jsonTypeErrorPattern.FindStringSubmatch(msg); m != nil {
-		return fmt.Errorf("%s: must be of type %s", m[1], m[2])
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) && typeErr.Field != "" && typeErr.Type != nil {
+		return fmt.Errorf("%s: must be of type %s", typeErr.Field, typeErr.Type)
 	}
-	if m := yamlLinePattern.FindStringSubmatch(msg); m != nil {
+	if m := yamlLinePattern.FindStringSubmatch(err.Error()); m != nil {
 		return fmt.Errorf("invalid YAML at line %s", m[1])
 	}
 	return errors.New("invalid YAML or a value of the wrong type")
