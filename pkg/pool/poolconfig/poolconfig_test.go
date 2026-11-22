@@ -142,6 +142,18 @@ func (s *PoolConfigSuite) TestRejectsExtraDocuments() {
 	s.NoError(err)
 }
 
+func (s *PoolConfigSuite) TestRequiresExactFieldNames() {
+	data, err := os.ReadFile(filepath.Join("testdata", "minimal.yaml"))
+	s.Require().NoError(err)
+	_, err = Parse(append(data, []byte("  Agents: {}\n")...))
+	s.ErrorContains(err, `spec: unknown field "Agents"`)
+	_, err = Parse(append(data, []byte("  egress: {allow: [{Host: a.com}]}\n")...))
+	s.ErrorContains(err, `spec.egress.allow: unknown field "Host"`)
+	p, err := Parse(append(data, []byte("      env: {Foo: a, foo: b}\n")...))
+	s.Require().NoError(err)
+	s.Len(p.Spec.Agents["claude"].Env, 2)
+}
+
 func (s *PoolConfigSuite) TestSecretRefErrorsDoNotEchoValue() {
 	for _, raw := range []string{"sk-ant-api03-CANARY value", "sk:ant/CANARY/x"} {
 		p := s.loadExample()

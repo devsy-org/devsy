@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"time"
 
 	yamlv3 "gopkg.in/yaml.v3"
@@ -37,7 +38,7 @@ func Load(path string) (*Pool, error) {
 // Parse decodes pool.yaml content, rejecting unknown fields, then applies
 // defaults and validates the result.
 func Parse(data []byte) (*Pool, error) {
-	if err := checkSingleDocument(data); err != nil {
+	if err := checkDocument(data); err != nil {
 		return nil, fmt.Errorf("parse pool config: %w", err)
 	}
 	var p Pool
@@ -97,15 +98,18 @@ func defaultCredential(c *Credential) {
 	}
 }
 
-// checkSingleDocument rejects multi-document input, which UnmarshalStrict
-// would otherwise accept by reading only the first document.
-func checkSingleDocument(data []byte) error {
+// checkDocument rejects input that UnmarshalStrict would accept but not fully
+// apply: a second YAML document, or field names that differ only in case.
+func checkDocument(data []byte) error {
 	dec := yamlv3.NewDecoder(bytes.NewReader(data))
 	var node yamlv3.Node
 	if err := dec.Decode(&node); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
+		return err
+	}
+	if err := checkFieldNames(&node, reflect.TypeFor[Pool](), ""); err != nil {
 		return err
 	}
 	if err := dec.Decode(&node); !errors.Is(err, io.EOF) {
