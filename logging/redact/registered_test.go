@@ -174,9 +174,9 @@ func TestRedactRegisteredDenseInputsStayBounded(t *testing.T) {
 		input  string
 		want   string
 	}{
-		{"single byte value", []string{"a"}, strings.Repeat("a", size), "***"},
-		{"nested values", []string{"a", "aa", "aaa"}, strings.Repeat("a", size), "***"},
-		{"backslash value", []string{"\\"}, strings.Repeat("\\", size), "***"},
+		{"single byte value", []string{"a"}, strings.Repeat("a", size), defaultMask},
+		{"nested values", []string{"a", "aa", "aaa"}, strings.Repeat("a", size), defaultMask},
+		{"backslash value", []string{"\\"}, strings.Repeat("\\", size), defaultMask},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

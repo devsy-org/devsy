@@ -2,6 +2,7 @@ package redact
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -184,10 +185,10 @@ func (r *Redactor) RedactRegistered(value string) string {
 	var result strings.Builder
 	result.Grow(size)
 	cursor := 0
-	for i := len(groups) - 1; i >= 0; i-- {
-		result.WriteString(value[cursor:groups[i].start])
+	for _, group := range slices.Backward(groups) {
+		result.WriteString(value[cursor:group.start])
 		result.WriteString(mask)
-		cursor = groups[i].end
+		cursor = group.end
 	}
 	result.WriteString(value[cursor:])
 	return result.String()
