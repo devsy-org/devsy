@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"regexp"
 	"time"
 
 	yamlv3 "gopkg.in/yaml.v3"
@@ -22,6 +23,13 @@ const (
 	defaultTTL          = 8 * time.Hour
 	defaultJobTimeout   = 2 * time.Hour
 	defaultRetainDays   = 30
+)
+
+var (
+	jsonTypeErrorPattern = regexp.MustCompile(
+		`Go struct field [A-Za-z0-9_]+\.([A-Za-z0-9_.]+) of type ([A-Za-z0-9_.\[\]]+)`,
+	)
+	yamlLinePattern = regexp.MustCompile(`line (\d+)`)
 )
 
 // Load reads, defaults and validates a pool.yaml file.
@@ -41,7 +49,7 @@ func Parse(data []byte) (*Pool, error) {
 	}
 	var p Pool
 	if err := yaml.UnmarshalStrict(data, &p); err != nil {
-		return nil, fmt.Errorf("parse pool config: %w", err)
+		return nil, fmt.Errorf("parse pool config: %w", decodeError(err))
 	}
 	p.ApplyDefaults()
 	if err := p.Validate(); err != nil {
@@ -84,7 +92,7 @@ func checkDocument(data []byte) error {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		return err
+		return decodeError(err)
 	}
 	if err := checkNodes(&node, ""); err != nil {
 		return err
@@ -102,4 +110,17 @@ func defaultDuration(d *Duration, value time.Duration) {
 	if d.Duration == 0 {
 		d.Duration = value
 	}
+}
+
+// decodeError keeps only the field path, expected type and line of a decoder
+// error. Decoders quote the offending value, which may be a pasted secret.
+func decodeError(err error) error {
+	msg := err.Error()
+	if m := jsonTypeErrorPattern.FindStringSubmatch(msg); m != nil {
+		return fmt.Errorf("%s: must be of type %s", m[1], m[2])
+	}
+	if m := yamlLinePattern.FindStringSubmatch(msg); m != nil {
+		return fmt.Errorf("invalid YAML at line %s", m[1])
+	}
+	return errors.New("invalid YAML or a value of the wrong type")
 }
