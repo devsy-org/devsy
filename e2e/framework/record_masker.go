@@ -18,6 +18,43 @@ type recordMasker struct {
 	emit     func(string)
 	pending  string
 	midLine  bool
+	skip     *recordSkipper
+}
+
+// recordSkipper tracks JSON nesting so an oversized record can be discarded
+// without buffering until its closing bracket arrives.
+type recordSkipper struct {
+	depth    int
+	inString bool
+	escaped  bool
+}
+
+// consume returns the text after the record's end and whether the record closed.
+func (s *recordSkipper) consume(text string) (string, bool) {
+	for i := 0; i < len(text); i++ {
+		if s.advance(text[i]) {
+			return text[i+1:], true
+		}
+	}
+	return "", false
+}
+
+func (s *recordSkipper) advance(c byte) bool {
+	switch {
+	case s.escaped:
+		s.escaped = false
+	case s.inString:
+		s.inString = c != '"'
+		s.escaped = c == '\\'
+	case c == '"':
+		s.inString = true
+	case c == '{' || c == '[':
+		s.depth++
+	case c == '}' || c == ']':
+		s.depth--
+		return s.depth <= 0
+	}
+	return false
 }
 
 func newRecordMasker(redactor *redact.Redactor, emit func(string)) *recordMasker {
@@ -44,6 +81,14 @@ func (m *recordMasker) drain(final bool) {
 }
 
 func (m *recordMasker) step(final bool) bool {
+	if m.skip != nil {
+		rest, closed := m.skip.consume(m.pending)
+		m.pending = rest
+		if closed {
+			m.skip = nil
+		}
+		return closed
+	}
 	if m.midLine {
 		return m.copyLine()
 	}
@@ -109,6 +154,7 @@ func (m *recordMasker) maskRecord(start string, final bool) bool {
 
 func (m *recordMasker) holdOrOverflow() bool {
 	if len(m.pending) > maxJSONRecordBytes {
+		m.skip = &recordSkipper{}
 		m.maskPending()
 		return true
 	}
