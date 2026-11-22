@@ -81,23 +81,47 @@ func TestRecordMasksJSONCredentialRecordsBeforePublicText(t *testing.T) {
 }
 
 func TestRecordsMaskRegisteredMultilineValueBeforeSplittingRecords(t *testing.T) {
+	const single = "synthetic-single-record-value"
 	const cookie = "synthetic-registered-cookie"
 	const tail = "synthetic registered plain tail"
 	registered := `{"Cookie":"` + cookie + `"}` + "\n" + tail
 	redactor := redact.New(redact.Options{
-		Environment: []string{"DEVSY_FIXTURE_TOKEN=" + registered},
+		Values: []string{single, registered},
 	})
-	input := "public before\n" + registered + "\npublic after"
+	input := "public before\n" + single + "\n" + registered + "\npublic after"
 	for name, mask := range map[string]func(*redact.Redactor, string) string{
 		"Record":  Record,
 		"Records": Records,
 	} {
 		t.Run(name, func(t *testing.T) {
 			output := mask(redactor, input)
+			assert.NotContains(t, output, single)
 			assert.NotContains(t, output, cookie)
 			assert.NotContains(t, output, tail)
 			assert.Contains(t, output, "public before")
 			assert.Contains(t, output, "public after")
+		})
+	}
+}
+
+func TestRecordsMaskEscapedRegisteredValueBeforeProcessingJSON(t *testing.T) {
+	const registered = "\"Authorization: Bearer synthetic-initial\"\n synthetic-continuation"
+	redactor := redact.New(redact.Options{Values: []string{registered}})
+	encoded, err := json.Marshal(registered)
+	require.NoError(t, err)
+	record := `{"detail":` + string(encoded) + `,"Cookie":"synthetic-cookie","public":"keep"}`
+	for name, mask := range map[string]func(*redact.Redactor, string) string{
+		"Record":  Record,
+		"Records": Records,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, input := range []string{record, "public head\n" + record + "\npublic tail"} {
+				output := mask(redactor, input)
+				assert.NotContains(t, output, "synthetic-initial")
+				assert.NotContains(t, output, "synthetic-continuation")
+				assert.NotContains(t, output, "synthetic-cookie")
+				assert.Contains(t, output, `"public":"keep"`)
+			}
 		})
 	}
 }
