@@ -1,5 +1,14 @@
 package redact
 
+import (
+	"bytes"
+	"encoding/json"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+)
+
 type byteMatcher struct {
 	forward *matchNode
 	reverse *matchNode
@@ -12,6 +21,22 @@ type matchNode struct {
 	terminal int
 	longest  int
 	proper   int
+}
+
+func escapedForms(value string) []string {
+	forms := []string{strconv.Quote(value)}
+	for _, escapeHTML := range []bool{true, false} {
+		var buffer bytes.Buffer
+		encoder := json.NewEncoder(&buffer)
+		encoder.SetEscapeHTML(escapeHTML)
+		if encoder.Encode(value) == nil {
+			forms = append(forms, strings.TrimSuffix(buffer.String(), "\n"))
+		}
+	}
+	for i, form := range forms {
+		forms[i] = form[1 : len(form)-1]
+	}
+	return forms
 }
 
 func newByteMatcher(values []string) *byteMatcher {
@@ -80,10 +105,17 @@ func transition(root, state *matchNode, value byte) *matchNode {
 }
 
 func (r *Redactor) matchLengths(value string, cut int) []int {
-	if r == nil || r.matcher == nil || cut == 0 {
+	if r == nil {
 		return nil
 	}
-	root := r.matcher.reverse
+	return matchLengthsWith(r.matcher, value, cut)
+}
+
+func matchLengthsWith(matcher *byteMatcher, value string, cut int) []int {
+	if matcher == nil || cut == 0 {
+		return nil
+	}
+	root := matcher.reverse
 	state := root
 	var lengths []int
 	for index := len(value) - 1; index >= 0; index-- {
@@ -114,3 +146,32 @@ func (r *Redactor) secretPrefixBoundary(value string) int {
 	}
 	return len(value) - state.proper
 }
+
+type lazyEscapedMatcher struct {
+	once      sync.Once
+	values    []string
+	root      *matchNode
+	maxLength int
+	ready     atomic.Bool
+}
+
+func (m *lazyEscapedMatcher) forward() (*matchNode, int) {
+	m.once.Do(func() {
+		var forms []string
+		for _, value := range m.values {
+			for _, form := range escapedForms(value) {
+				if form != value {
+					forms = append(forms, form)
+					m.maxLength = max(m.maxLength, len(form))
+				}
+			}
+		}
+		if len(forms) > 0 {
+			m.root = newAutomaton(forms, false)
+		}
+		m.ready.Store(true)
+	})
+	return m.root, m.maxLength
+}
+
+func (m *lazyEscapedMatcher) built() bool { return m.ready.Load() }

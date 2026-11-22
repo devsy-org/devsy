@@ -25,6 +25,7 @@ type Options struct {
 type Redactor struct {
 	values        []string
 	matcher       *byteMatcher
+	escaped       *lazyEscapedMatcher
 	maxLength     int
 	mask          string
 	authorityURLs bool
@@ -173,6 +174,7 @@ func newRedactor(values []string, mask string) *Redactor {
 		return r
 	}
 	r.matcher = newByteMatcher(values)
+	r.escaped = &lazyEscapedMatcher{values: values}
 	for _, value := range values {
 		r.maxLength = max(r.maxLength, len(value))
 	}
