@@ -22,6 +22,25 @@ const (
 	providerForceAckWait      = 5 * time.Second
 )
 
+type providerCancelTiming struct {
+	grace        time.Duration
+	forceAckWait time.Duration
+}
+
+func (t providerCancelTiming) graceOrDefault() time.Duration {
+	if t.grace > 0 {
+		return t.grace
+	}
+	return providerCancellationGrace
+}
+
+func (t providerCancelTiming) forceAckWaitOrDefault() time.Duration {
+	if t.forceAckWait > 0 {
+		return t.forceAckWait
+	}
+	return providerForceAckWait
+}
+
 func runProviderWithCancellation(parent context.Context, opts RunCommandOptions) error {
 	return runProviderWithCancellationUsingPublisher(parent, opts, publishProviderCancellation)
 }
@@ -72,7 +91,12 @@ func runProviderWithCancellationUsingPublisher(
 		parent,
 		marker,
 		publish,
-		providerExecution{cancel: cancel, completed: completed, shell: opts.providerShell},
+		providerExecution{
+			cancel:    cancel,
+			completed: completed,
+			shell:     opts.providerShell,
+			timing:    opts.cancelTiming,
+		},
 	)
 }
 
@@ -122,6 +146,7 @@ type providerExecution struct {
 	cancel    context.CancelCauseFunc
 	completed <-chan error
 	shell     *providerShellInvocation
+	timing    providerCancelTiming
 }
 
 func waitForProviderCancellation(
@@ -154,7 +179,7 @@ func waitForProviderCancellation(
 }
 
 func waitForProviderGrace(cause error, process providerExecution) error {
-	timer := time.NewTimer(providerCancellationGrace)
+	timer := time.NewTimer(process.timing.graceOrDefault())
 	defer timer.Stop()
 	select {
 	case <-process.completed:
@@ -189,7 +214,7 @@ func forceProviderExecution(cause error, process providerExecution) error {
 }
 
 func waitForProviderForceAck(cause error, process providerExecution) error {
-	timer := time.NewTimer(providerForceAckWait)
+	timer := time.NewTimer(process.timing.forceAckWaitOrDefault())
 	defer timer.Stop()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()

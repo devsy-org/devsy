@@ -298,6 +298,11 @@ func testTransportCancellationHelper(behavior, marker string) {
 	}
 }
 
+var testProviderCancelTiming = providerCancelTiming{
+	grace:        300 * time.Millisecond,
+	forceAckWait: 3 * time.Second,
+}
+
 func cancelHelperOptions(behavior string) RunCommandOptions {
 	binary, err := os.Executable()
 	if err != nil {
@@ -361,8 +366,9 @@ func (w *readyWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestProviderCancellationForcedAfterProductionGrace(t *testing.T) {
+func TestProviderCancellationForcedAfterGrace(t *testing.T) {
 	opts := cancelHelperOptions("ignore")
+	opts.cancelTiming = testProviderCancelTiming
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
 	opts.Stdout = &readyWriter{ready: ready}
@@ -379,8 +385,8 @@ func TestProviderCancellationForcedAfterProductionGrace(t *testing.T) {
 	select {
 	case err := <-finished:
 		require.ErrorIs(t, err, context.Canceled)
-		require.GreaterOrEqual(t, time.Since(start), providerCancellationGrace)
-	case <-time.After(providerCancellationGrace + 8*time.Second):
+		require.GreaterOrEqual(t, time.Since(start), testProviderCancelTiming.grace)
+	case <-time.After(testProviderCancelTiming.grace + 8*time.Second):
 		t.Fatal("owned provider process was not reaped")
 	}
 }
@@ -427,6 +433,7 @@ func TestProviderCancellationBlockedShellStdin(t *testing.T) {
 		Stdout:       output,
 		RawStdout:    true,
 		Cancellation: provider.ProviderCancellationFile,
+		cancelTiming: testProviderCancelTiming,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -445,10 +452,10 @@ func TestProviderCancellationBlockedShellStdin(t *testing.T) {
 	select {
 	case err := <-finished:
 		require.ErrorIs(t, err, context.Canceled)
-		require.GreaterOrEqual(t, time.Since(start), providerCancellationGrace)
+		require.GreaterOrEqual(t, time.Since(start), testProviderCancelTiming.grace)
 		require.NotContains(t, err.Error(), privateCommand)
 		require.NotContains(t, err.Error(), marker)
-	case <-time.After(providerCancellationGrace + providerForceAckWait + 3*time.Second):
+	case <-time.After(testProviderCancelTiming.grace + testProviderCancelTiming.forceAckWait + 3*time.Second):
 		t.Fatal("provider shell remained blocked on stdin")
 	}
 	_, err = os.Stdin.Stat()
@@ -492,11 +499,12 @@ func TestProviderCancellationMissingForceAck(t *testing.T) {
 			ack:      filepath.Join(dir, "ack"),
 			ackToken: strings.Repeat("a", 64),
 		},
+		timing: providerCancelTiming{forceAckWait: 300 * time.Millisecond},
 	}
 	start := time.Now()
 	err := forceProviderExecution(context.Canceled, process)
 	require.ErrorContains(t, err, "provider force acknowledgement timed out")
-	require.GreaterOrEqual(t, time.Since(start), providerForceAckWait)
+	require.GreaterOrEqual(t, time.Since(start), process.timing.forceAckWait)
 	select {
 	case <-cancelled:
 	default:
@@ -758,6 +766,7 @@ func TestProviderCancellationShellCannotForgeAck(t *testing.T) {
 		Environ:      append(os.Environ(), "DEVSY_CANCEL_CHILD_PID_PATH="+pidPath),
 		Cancellation: provider.ProviderCancellationFile,
 		RawStdout:    true,
+		cancelTiming: testProviderCancelTiming,
 	}
 	ready := make(chan struct{})
 	opts.Stdout = &readyWriter{ready: ready}
@@ -775,7 +784,7 @@ func TestProviderCancellationShellCannotForgeAck(t *testing.T) {
 	select {
 	case err := <-finished:
 		require.ErrorIs(t, err, context.Canceled)
-		require.GreaterOrEqual(t, time.Since(start), providerCancellationGrace)
+		require.GreaterOrEqual(t, time.Since(start), testProviderCancelTiming.grace)
 		require.NotContains(t, err.Error(), command)
 		require.NotContains(t, err.Error(), forged)
 		if err.Error() != context.Canceled.Error() {
@@ -793,7 +802,7 @@ func TestProviderCancellationShellCannotForgeAck(t *testing.T) {
 			require.NoError(t, findErr)
 			require.Error(t, child.Signal(syscall.Signal(0)))
 		}
-	case <-time.After(providerCancellationGrace + providerForceAckWait + 3*time.Second):
+	case <-time.After(testProviderCancelTiming.grace + testProviderCancelTiming.forceAckWait + 3*time.Second):
 		t.Fatal("provider helper did not reap its direct child or report unclean shutdown")
 	}
 }
@@ -1039,6 +1048,7 @@ func TestProviderCancellationOwnedOutputStopsAfterForcedCancellation(t *testing.
 	t.Setenv("DEVSY_CANCEL_HOLDER_PID_PATH", holderPath)
 	t.Cleanup(func() { cleanupTestCancellationOutputHolder(holderPath) })
 	opts := cancelHelperOptions("orphan-output")
+	opts.cancelTiming = testProviderCancelTiming
 	opts.Command = types.StrArray{
 		fmt.Sprintf("'%s' -test.run=^TestProviderCancellationHelper$", binary),
 	}
@@ -1060,7 +1070,7 @@ func TestProviderCancellationOwnedOutputStopsAfterForcedCancellation(t *testing.
 	select {
 	case err := <-finished:
 		require.ErrorIs(t, err, context.Canceled)
-	case <-time.After(providerCancellationGrace + providerForceAckWait + 3*time.Second):
+	case <-time.After(testProviderCancelTiming.grace + testProviderCancelTiming.forceAckWait + 3*time.Second):
 		t.Fatal("forced provider completion waited for descendant output pipe")
 	}
 }
