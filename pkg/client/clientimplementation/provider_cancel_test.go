@@ -324,6 +324,7 @@ func TestProviderCancellationCooperatesAndCleansUp(t *testing.T) {
 	opts := cancelHelperOptions("acknowledge")
 	opts.Environ = append(opts.Environ, "DEVSY_CANCEL_ACK_PATH="+ack)
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ready := make(chan struct{})
 	opts.Stdout = &readyWriter{ready: ready}
 	opts.RawStdout = true
@@ -386,6 +387,7 @@ func TestProviderCancellationForcedAfterGrace(t *testing.T) {
 	opts := cancelHelperOptions("ignore")
 	opts.cancelTiming = testProviderCancelTiming
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ready := make(chan struct{})
 	opts.Stdout = &readyWriter{ready: ready}
 	opts.RawStdout = true
@@ -1210,7 +1212,7 @@ func TestWorkspaceTransportCompletesWithoutClosingInput(t *testing.T) {
 	ready := make([]byte, 5)
 	require.NoError(t, conn.SetReadDeadline(time.Now().Add(helperStartGuard)))
 	_, err = io.ReadFull(conn, ready)
-	require.NoError(t, err)
+	require.NoError(t, err, "workspace provider sent no ready bytes")
 	require.Equal(t, "ready", string(ready))
 	finished := make(chan error, 1)
 	go func() { finished <- conn.Wait() }()
@@ -1258,7 +1260,7 @@ func requireWorkspaceTransportCancellation(
 	ready := make([]byte, 5)
 	require.NoError(t, conn.SetReadDeadline(time.Now().Add(helperStartGuard)))
 	_, err = io.ReadFull(conn, ready)
-	require.NoError(t, err)
+	require.NoError(t, err, "workspace provider sent no ready bytes")
 	require.Equal(t, "ready", string(ready))
 	cancel()
 	require.ErrorIs(t, conn.Wait(), context.Canceled)
