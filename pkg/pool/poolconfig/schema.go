@@ -16,6 +16,8 @@ var (
 	// yaml11Words resolve to bool or null under YAML 1.1, which the decoder uses.
 	yaml11Words  = []string{"y", "yes", "n", "no", "on", "off", "true", "false", "null"}
 	durationType = reflect.TypeFor[Duration]()
+	// An explicit !!null tag can carry any text, which the decoder would echo.
+	yamlNullSpellings = []string{"", "~", "null", "Null", "NULL"}
 )
 
 // checkNodes rejects anchors, aliases and map keys the decoder would resolve
@@ -82,7 +84,7 @@ func displayPath(path string) string {
 }
 
 func checkDuration(n *yamlv3.Node, path string) error {
-	if n.Tag == "!!null" {
+	if n.Tag == "!!null" && slices.Contains(yamlNullSpellings, n.Value) {
 		return nil
 	}
 	if _, err := time.ParseDuration(n.Value); err != nil || n.Tag != "!!str" {

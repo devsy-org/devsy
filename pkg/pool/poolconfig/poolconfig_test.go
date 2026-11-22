@@ -88,6 +88,9 @@ func (s *PoolConfigSuite) TestStrictParsing() {
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: synthetic-secret-marker\n"))
 	s.ErrorContains(err, "spec.lifecycle.ttl")
 	s.NotContains(err.Error(), "synthetic-secret-marker")
+	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: !!null synthetic-secret-marker\n"))
+	s.ErrorContains(err, "spec.lifecycle.ttl: must be a duration")
+	s.NotContains(err.Error(), "synthetic-secret-marker")
 	var d Duration
 	err = d.UnmarshalJSON([]byte(`"synthetic-secret-marker"`))
 	s.Require().Error(err)
