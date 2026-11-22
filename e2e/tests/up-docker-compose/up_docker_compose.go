@@ -3,7 +3,6 @@
 package up
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -942,15 +941,11 @@ var _ = ginkgo.Describe(
 					sharedImage = "devsy-e2e-compose-shared-base:latest"
 				)
 				const (
-					projectAPath = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-a"
-					projectBPath = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-b"
+					projectAPath   = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-a"
+					projectBPath   = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-b"
+					projectAMarker = "/usr/local/share/devsy-e2e-project-a"
+					projectBMarker = "/usr/local/share/devsy-e2e-project-b"
 				)
-				commandPresenceCheck := func(command string) string {
-					return fmt.Sprintf(
-						"if command -v %s >/dev/null 2>&1; then echo present; else echo missing; fi",
-						command,
-					)
-				}
 
 				ginkgo.By("resetting the shared base image tag")
 				err := tc.resetTaggedImage(ctx, sourceImage, sharedImage)
@@ -974,16 +969,15 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				ghVersionOutput, err := tc.f.DevsySSH(ctx, tempDirA, "gh --version")
+				markerA, err := tc.f.DevsySSH(ctx, tempDirA, "cat "+projectAMarker)
 				framework.ExpectNoError(err)
-				gomega.Expect(ghVersionOutput).To(gomega.ContainSubstring("gh version"))
+				gomega.Expect(strings.TrimSpace(markerA)).To(gomega.Equal("project-a"))
 
 				imageIDAfterA, err := tc.inspectImageID(ctx, sharedImage)
 				framework.ExpectNoError(err)
 				gomega.Expect(imageIDAfterA).
 					To(gomega.Equal(initialImageID), "shared image tag should stay unchanged after project A")
 
-				var hostGhOut bytes.Buffer
 				err = tc.dockerHelper.Run(
 					ctx,
 					[]string{
@@ -991,14 +985,13 @@ var _ = ginkgo.Describe(
 						"--rm",
 						sharedImage,
 						"sh",
-						"-lc",
-						commandPresenceCheck("gh"),
+						"-c",
+						"test ! -e " + projectAMarker,
 					},
-					docker.Streams{Stdout: &hostGhOut, Stderr: io.Discard},
+					docker.Streams{Stdout: io.Discard, Stderr: io.Discard},
 				)
-				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(hostGhOut.String())).
-					To(gomega.Equal("missing"), "shared image should not gain gh")
+				gomega.Expect(err).
+					NotTo(gomega.HaveOccurred(), "shared image should not gain project A's marker")
 
 				ginkgo.By("starting project B")
 				tempDirB, _, err := tc.setupAndStartWorkspace(
@@ -1008,33 +1001,22 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				nodeVersionOutput, err := tc.f.DevsySSH(ctx, tempDirB, "node --version")
+				markerB, err := tc.f.DevsySSH(ctx, tempDirB, "cat "+projectBMarker)
 				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(nodeVersionOutput)).
-					To(gomega.MatchRegexp(`^v\d+\.`))
+				gomega.Expect(strings.TrimSpace(markerB)).To(gomega.Equal("project-b"))
 
-				ghLookupOutput, err := tc.f.DevsySSH(
-					ctx,
-					tempDirB,
-					fmt.Sprintf("sh -lc %q", commandPresenceCheck("gh")),
-				)
-				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(ghLookupOutput)).
-					To(gomega.Equal("missing"), "project B should not inherit project A's github-cli feature")
+				_, err = tc.f.DevsySSH(ctx, tempDirB, "test ! -e "+projectAMarker)
+				gomega.Expect(err).
+					NotTo(gomega.HaveOccurred(), "project B should not inherit project A's marker")
 
 				imageIDAfterB, err := tc.inspectImageID(ctx, sharedImage)
 				framework.ExpectNoError(err)
 				gomega.Expect(imageIDAfterB).
 					To(gomega.Equal(initialImageID), "shared image tag should stay unchanged after project B")
 
-				nodeLookupOutput, err := tc.f.DevsySSH(
-					ctx,
-					tempDirA,
-					fmt.Sprintf("sh -lc %q", commandPresenceCheck("node")),
-				)
-				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(nodeLookupOutput)).
-					To(gomega.Equal("missing"), "project A should not inherit project B's node feature")
+				_, err = tc.f.DevsySSH(ctx, tempDirA, "test ! -e "+projectBMarker)
+				gomega.Expect(err).
+					NotTo(gomega.HaveOccurred(), "project A should not inherit project B's marker")
 			},
 			ginkgo.SpecTimeout(framework.TimeoutVeryLong()),
 		)
