@@ -38,6 +38,8 @@ var (
 	ErrCollision = errors.New("reserved WSLg environment assignment")
 )
 
+var errProbeOutputLimit = protocolError("output over the limit")
+
 type Target struct {
 	Distro string `json:"distro"`
 	User   string `json:"user"`
@@ -261,6 +263,9 @@ func (p displayProbe) value(ctx context.Context, key string) (string, bool, erro
 	if ctx.Err() != nil {
 		return "", false, ctx.Err()
 	}
+	if errors.Is(err, errProbeOutputLimit) {
+		return "", false, fmt.Errorf("%w (%s)", errProbeOutputLimit, key)
+	}
 	if err != nil {
 		return "", false, fmt.Errorf(
 			"%w (%s): the command did not run to completion",
@@ -281,7 +286,7 @@ func (p displayProbe) value(ctx context.Context, key string) (string, bool, erro
 // otherwise a wsl.exe failure would look like a missing variable.
 func parseResult(result ProbeResult) (string, bool, error) {
 	if len(result.Stdout) > outputLimit {
-		return "", false, protocolError("output over the limit")
+		return "", false, errProbeOutputLimit
 	}
 	if result.ExitCode == 1 && len(result.Stdout) == 0 && len(result.Stderr) == 0 {
 		return "", false, nil
