@@ -62,6 +62,7 @@ type Capacity struct {
 	Warm          int `json:"warm"`
 }
 
+// Lifecycle durations of zero, omitted or written as "0s", take the default.
 type Lifecycle struct {
 	SpawnTimeout Duration `json:"spawnTimeout"`
 	IdleTimeout  Duration `json:"idleTimeout"`
@@ -83,7 +84,8 @@ type AllowRule struct {
 }
 
 // Credential is a grant the broker serves to pool sessions. Mint grants use
-// the issuer fields; inject grants use Secret and Route.
+// the issuer fields; inject grants use Secret and Route. A zero mint TTL takes
+// the default.
 type Credential struct {
 	Name           string     `json:"name"`
 	Mode           string     `json:"mode"`

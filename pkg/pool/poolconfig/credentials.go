@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,11 +23,10 @@ var (
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	permissionPattern = regexp.MustCompile(`^[a-z_]+$`)
 	headerPattern     = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+	prefixPattern     = regexp.MustCompile(`^[\x20-\x7e]*$`)
 	reservedHeaders   = []string{
-		"host",
-		"proxy-authorization",
-		"content-length",
-		"transfer-encoding",
+		"host", "content-length", "transfer-encoding", "connection", "keep-alive", "te",
+		"trailer", "upgrade", "proxy-authorization", "proxy-authenticate", "proxy-connection",
 	}
 	proxyEnvNames = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"}
 )
@@ -83,9 +83,12 @@ func validateDelivery(errs *fieldErrors, path string, c *Credential) {
 }
 
 func validateScope(errs *fieldErrors, path string, scope *MintScope) {
-	if scope == nil || len(scope.Repositories) == 0 {
-		errs.add(path+".repositories", "must list at least one owner/repo")
+	if scope == nil {
+		errs.add(path, "is required")
 		return
+	}
+	if len(scope.Repositories) == 0 {
+		errs.add(path+".repositories", "must list at least one owner/repo")
 	}
 	for _, repo := range scope.Repositories {
 		if !repositoryPattern.MatchString(repo) {
@@ -129,7 +132,7 @@ func (s *Spec) validateInject(
 		errs.add(path+".route.name", "duplicate route %q", r.Name)
 	}
 	routes[r.Name] = c.Name
-	validateHeader(errs, path+".route.header", r.Header)
+	validateHeader(errs, path+".route", r)
 	s.validateUpstream(errs, path+".route.upstream", r.Upstream)
 }
 
@@ -138,33 +141,62 @@ func hasMintFields(c *Credential) bool {
 		c.Scope != nil || len(c.Deliver) > 0 || c.TTL.Duration != 0
 }
 
-func validateHeader(errs *fieldErrors, path, header string) {
-	if !headerPattern.MatchString(header) ||
-		slices.Contains(reservedHeaders, strings.ToLower(header)) {
-		errs.add(path, "must be a header name other than %s", strings.Join(reservedHeaders, ", "))
+func validateHeader(errs *fieldErrors, path string, r *Route) {
+	if !headerPattern.MatchString(r.Header) ||
+		slices.Contains(reservedHeaders, strings.ToLower(r.Header)) {
+		errs.add(
+			path+".header",
+			"must be a header name other than %s",
+			strings.Join(reservedHeaders, ", "),
+		)
+	}
+	if !prefixPattern.MatchString(r.Prefix) {
+		errs.add(path+".prefix", "must be printable ASCII")
 	}
 }
 
 func (s *Spec) validateUpstream(errs *fieldErrors, path, upstream string) {
-	u, err := url.Parse(upstream)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		errs.add(path, "must be an https URL without credentials, query or fragment")
-		return
-	}
-	if msg := checkHostName(u.Hostname()); msg != "" {
-		errs.add(path, "host %s", msg)
+	host, msg := checkUpstreamURL(upstream)
+	if msg != "" {
+		errs.add(path, "%s", msg)
 		return
 	}
 	// A direct allow rule would let the agent reach the upstream with a key
 	// of its own, bypassing the injected credential.
-	if s.hostAllowed(u.Hostname()) {
-		errs.add(path, "host %q must not also be in spec.egress.allow", u.Hostname())
+	if s.hostAllowed(host) {
+		errs.add(path, "host %q must not also be in spec.egress.allow", host)
 	}
 }
 
+func checkUpstreamURL(upstream string) (string, string) {
+	u, err := url.Parse(upstream)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", "must be an https URL without credentials, query or fragment"
+	}
+	if msg := checkURLPort(u.Port()); msg != "" {
+		return "", msg
+	}
+	if msg := checkHostName(u.Hostname()); msg != "" {
+		return "", "host " + msg
+	}
+	return u.Hostname(), ""
+}
+
+func checkURLPort(port string) string {
+	if port == "" {
+		return ""
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > maxPort {
+		return fmt.Sprintf("port %s is outside 1 to %d", port, maxPort)
+	}
+	return ""
+}
+
+// validateSecretRef never echoes the value, since a pasted raw key would
+// otherwise land in terminal and CI logs.
 func validateSecretRef(errs *fieldErrors, path, ref string) {
 	if _, err := secrets.ParseRef(ref); err != nil {
-		errs.add(path, "%v", err)
+		errs.add(path, "must be a secret name or a TYPE:SOURCE/NAME reference")
 	}
 }
 

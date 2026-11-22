@@ -1,13 +1,17 @@
 package poolconfig
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
+	yamlv3 "gopkg.in/yaml.v3"
 	"sigs.k8s.io/yaml"
 )
 
@@ -33,6 +37,9 @@ func Load(path string) (*Pool, error) {
 // Parse decodes pool.yaml content, rejecting unknown fields, then applies
 // defaults and validates the result.
 func Parse(data []byte) (*Pool, error) {
+	if err := checkSingleDocument(data); err != nil {
+		return nil, fmt.Errorf("parse pool config: %w", err)
+	}
 	var p Pool
 	if err := yaml.UnmarshalStrict(data, &p); err != nil {
 		return nil, fmt.Errorf("parse pool config: %w", err)
@@ -88,6 +95,23 @@ func defaultCredential(c *Credential) {
 	if len(c.Deliver) == 0 {
 		c.Deliver = []string{DeliverGitHelper}
 	}
+}
+
+// checkSingleDocument rejects multi-document input, which UnmarshalStrict
+// would otherwise accept by reading only the first document.
+func checkSingleDocument(data []byte) error {
+	dec := yamlv3.NewDecoder(bytes.NewReader(data))
+	var node yamlv3.Node
+	if err := dec.Decode(&node); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
+	if err := dec.Decode(&node); !errors.Is(err, io.EOF) {
+		return errors.New("file must contain exactly one YAML document")
+	}
+	return nil
 }
 
 func defaultDuration(d *Duration, value time.Duration) {

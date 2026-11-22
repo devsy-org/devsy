@@ -128,6 +128,45 @@ func (s *PoolConfigSuite) TestHostMatches() {
 	s.True(HostMatches("*.npmjs.org", "a.b.npmjs.org"))
 	s.False(HostMatches("*.npmjs.org", "npmjs.org"))
 	s.False(HostMatches("*.npmjs.org", "evilnpmjs.org"))
+	s.False(HostMatches("*.example.com", ".example.com"))
+	s.False(HostMatches("*.example.com", "*.example.com"))
+	s.False(HostMatches("*.example.com", "a b.example.com"))
+}
+
+func (s *PoolConfigSuite) TestRejectsExtraDocuments() {
+	data, err := os.ReadFile(filepath.Join("testdata", "minimal.yaml"))
+	s.Require().NoError(err)
+	_, err = Parse(append(data, []byte("---\napiVersion: v0\n")...))
+	s.ErrorContains(err, "exactly one YAML document")
+	_, err = Parse(append([]byte("---\n"), data...))
+	s.NoError(err)
+}
+
+func (s *PoolConfigSuite) TestSecretRefErrorsDoNotEchoValue() {
+	for _, raw := range []string{"sk-ant-api03-CANARY value", "sk:ant/CANARY/x"} {
+		p := s.loadExample()
+		p.Spec.Credentials[1].Secret = raw
+		p.Spec.Credentials[0].PrivateKey = raw
+		err := p.Validate()
+		s.Require().ErrorContains(err, "TYPE:SOURCE/NAME")
+		s.NotContains(err.Error(), "CANARY")
+	}
+}
+
+func (s *PoolConfigSuite) TestScopeReportsRepositoriesAndPermissions() {
+	p := s.loadExample()
+	p.Spec.Credentials[0].Scope = &MintScope{}
+	err := p.Validate()
+	s.ErrorContains(err, "scope.repositories")
+	s.ErrorContains(err, "scope.permissions")
+}
+
+func (s *PoolConfigSuite) TestZeroDurationTakesDefault() {
+	data, err := os.ReadFile(filepath.Join("testdata", "minimal.yaml"))
+	s.Require().NoError(err)
+	p, err := Parse(append(data, []byte("  lifecycle: {spawnTimeout: 0s}\n")...))
+	s.Require().NoError(err)
+	s.Equal(10*time.Minute, p.Spec.Lifecycle.SpawnTimeout.Duration)
 }
 
 func (s *PoolConfigSuite) loadExample() *Pool {
