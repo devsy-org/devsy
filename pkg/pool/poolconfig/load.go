@@ -93,10 +93,14 @@ func checkDocument(data []byte) error {
 		}
 		return decodeError(err)
 	}
-	if err := checkNodes(&node, ""); err != nil {
-		return err
+	// Shapes are checked first, so a mapping pasted into a string field is
+	// reported by path before its keys reach any message.
+	for _, root := range node.Content {
+		if err := checkFieldNames(root, reflect.TypeFor[Pool](), ""); err != nil {
+			return err
+		}
 	}
-	if err := checkFieldNames(&node, reflect.TypeFor[Pool](), ""); err != nil {
+	if err := checkNodes(&node, ""); err != nil {
 		return err
 	}
 	if err := dec.Decode(&node); !errors.Is(err, io.EOF) {

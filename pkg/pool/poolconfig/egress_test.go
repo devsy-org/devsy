@@ -140,7 +140,7 @@ func (s *PoolConfigSuite) TestEgressDefaults() {
 
 func (s *PoolConfigSuite) TestEgressRequiresExactFieldNames() {
 	_, err := Parse(append(s.readMinimal(), []byte("  egress: {allow: [{Host: a.com}]}\n")...))
-	s.ErrorContains(err, `spec.egress.allow (line 13): unknown field "Host"`)
+	s.ErrorContains(err, `spec.egress.allow[0] (line 13): unknown field "Host"`)
 }
 
 func (s *PoolConfigSuite) TestHostMatches() {
@@ -174,7 +174,7 @@ func (s *PoolConfigSuite) TestEgressErrorsDoNotEchoValues() {
 func (s *PoolConfigSuite) TestEgressDecodeErrorsDoNotEchoValues() {
 	extra := "  egress: {allow: [{host: a.com, ports: [!!int CANARY]}]}\n"
 	_, err := Parse(append(s.readMinimal(), []byte(extra)...))
-	s.ErrorContains(err, "invalid YAML")
+	s.ErrorContains(err, "spec.egress.allow[0].ports[0] (line 13): must be a whole number")
 	s.NotContains(err.Error(), "CANARY")
 }
 

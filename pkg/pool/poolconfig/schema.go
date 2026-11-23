@@ -3,6 +3,7 @@ package poolconfig
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -15,7 +16,16 @@ var (
 	durationType = reflect.TypeFor[Duration]()
 	// An explicit !!null tag can carry any text, which the decoder would echo.
 	yamlNullSpellings = []string{"", "~", "null", "Null", "NULL"}
+	// YAML 1.1 reads 010 as octal and 1_000 as 1000; only plain decimals agree.
+	decimalPattern = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
 )
+
+// shape is the YAML node a Go field type needs.
+type shape struct {
+	kind yamlv3.Kind
+	tag  string
+	desc string
+}
 
 // checkNodes rejects anchors, aliases and map keys the decoder would resolve
 // differently from how they read: an alias can hide a key from the exact-name
@@ -77,7 +87,8 @@ func isStringKey(k *yamlv3.Node) bool {
 		return false
 	case k.Style&yamlv3.TaggedStyle != 0:
 		return k.Tag == "!!str"
-	case k.Style&(yamlv3.SingleQuotedStyle|yamlv3.DoubleQuotedStyle) != 0:
+	case k.Style&(yamlv3.SingleQuotedStyle|yamlv3.DoubleQuotedStyle|
+		yamlv3.LiteralStyle|yamlv3.FoldedStyle) != 0:
 		return true
 	}
 	return resolvesAsString(k.Value)
@@ -88,7 +99,8 @@ func isStringKey(k *yamlv3.Node) bool {
 // strings but 2026-01-15 is.
 func resolvesAsString(plain string) bool {
 	var out map[any]any
-	if err := yamlv2.Unmarshal([]byte(plain+": 0\n"), &out); err != nil || len(out) != 1 {
+	// Explicit key syntax has no 1024 character limit on the key.
+	if err := yamlv2.Unmarshal([]byte("? "+plain+"\n: 0\n"), &out); err != nil || len(out) != 1 {
 		return false
 	}
 	_, ok := out[plain]
@@ -117,17 +129,59 @@ func checkDuration(n *yamlv3.Node, path string) error {
 // mapping would both decode and the last one would silently win.
 func checkFieldNames(n *yamlv3.Node, t reflect.Type, path string) error {
 	t = derefType(t)
+	if err := checkShape(n, t, path); err != nil {
+		return err
+	}
 	switch {
-	case n.Kind == yamlv3.DocumentNode:
-		return checkChildren(n.Content, t, path)
 	case t.Kind() == reflect.Struct && n.Kind == yamlv3.MappingNode:
 		return checkStructKeys(n, t, path)
 	case t.Kind() == reflect.Map && n.Kind == yamlv3.MappingNode:
 		return checkMapValues(n, t.Elem(), path)
 	case t.Kind() == reflect.Slice && n.Kind == yamlv3.SequenceNode:
-		return checkChildren(n.Content, t.Elem(), path)
+		return checkItems(n.Content, t.Elem(), path)
 	}
 	return nil
+}
+
+// checkShape reports a value of the wrong kind with its full path and line.
+// The JSON decoder would name only the innermost struct field, without map
+// keys, list indexes or the line.
+func checkShape(n *yamlv3.Node, t reflect.Type, path string) error {
+	if n.Kind == yamlv3.AliasNode {
+		return nil
+	}
+	if t == durationType {
+		return checkDuration(n, path)
+	}
+	want, ok := shapeOf(t)
+	if !ok || n.Tag == "!!null" || want.matches(n) {
+		return nil
+	}
+	return nodeErrorf(n, path, "must be %s", want.desc)
+}
+
+func shapeOf(t reflect.Type) (shape, bool) {
+	switch t.Kind() {
+	case reflect.Struct, reflect.Map:
+		return shape{kind: yamlv3.MappingNode, desc: "a mapping"}, true
+	case reflect.Slice:
+		return shape{kind: yamlv3.SequenceNode, desc: "a list"}, true
+	case reflect.String:
+		return shape{kind: yamlv3.ScalarNode, desc: "a string"}, true
+	case reflect.Int, reflect.Int32, reflect.Int64:
+		return shape{kind: yamlv3.ScalarNode, tag: "!!int", desc: "a whole number"}, true
+	case reflect.Bool:
+		return shape{kind: yamlv3.ScalarNode, tag: "!!bool", desc: "true or false"}, true
+	default:
+		return shape{}, false
+	}
+}
+
+func (s shape) matches(n *yamlv3.Node) bool {
+	if n.Kind != s.kind || (s.tag != "" && n.Tag != s.tag) {
+		return false
+	}
+	return s.tag != "!!int" || decimalPattern.MatchString(n.Value)
 }
 
 func derefType(t reflect.Type) reflect.Type {
@@ -139,16 +193,21 @@ func derefType(t reflect.Type) reflect.Type {
 
 func checkMapValues(n *yamlv3.Node, elem reflect.Type, path string) error {
 	for i := 1; i < len(n.Content); i += 2 {
-		if err := checkFieldNames(n.Content[i], elem, path+"."+n.Content[i-1].Value); err != nil {
+		key := n.Content[i-1]
+		// checkNodes rejects merge keys with a clearer message.
+		if key.Tag == "!!merge" {
+			continue
+		}
+		if err := checkFieldNames(n.Content[i], elem, path+"."+key.Value); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkChildren(nodes []*yamlv3.Node, t reflect.Type, path string) error {
-	for _, c := range nodes {
-		if err := checkFieldNames(c, t, path); err != nil {
+func checkItems(nodes []*yamlv3.Node, t reflect.Type, path string) error {
+	for i, c := range nodes {
+		if err := checkFieldNames(c, t, fmt.Sprintf("%s[%d]", path, i)); err != nil {
 			return err
 		}
 	}
@@ -167,13 +226,7 @@ func checkStructKeys(n *yamlv3.Node, t reflect.Type, path string) error {
 		if !ok {
 			return nodeErrorf(n.Content[i-1], path, "unknown field %q", key)
 		}
-		var err error
-		if ft == durationType && n.Content[i].Kind == yamlv3.ScalarNode {
-			err = checkDuration(n.Content[i], path+"."+key)
-		} else {
-			err = checkFieldNames(n.Content[i], ft, path+"."+key)
-		}
-		if err != nil {
+		if err := checkFieldNames(n.Content[i], ft, path+"."+key); err != nil {
 			return err
 		}
 	}
