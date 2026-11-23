@@ -163,10 +163,20 @@ func (s *PoolConfigSuite) TestSecretDecodeErrorsDoNotEchoValues() {
 	s.Require().NoError(err)
 	for _, field := range []string{"secret: ANTHROPIC_API_KEY", "privateKey: sops:pool/GITHUB_APP_KEY"} {
 		name, _, _ := strings.Cut(field, ":")
-		_, err := Parse([]byte(strings.Replace(string(data), field, name+": !!null CANARY", 1)))
-		s.Require().Error(err)
-		s.NotContains(err.Error(), "CANARY")
+		for _, value := range []string{"!!null CANARY", "{CANARY: &a 1}", "[CANARY]"} {
+			_, err := Parse([]byte(strings.Replace(string(data), field, name+": "+value, 1)))
+			s.Require().Error(err, value)
+			s.NotContains(err.Error(), "CANARY")
+		}
 	}
+}
+
+// A change here changes the policy version of every existing pool. Field
+// renames, reordering and always-serialized new fields all do that.
+func (s *PoolConfigSuite) TestPolicyVersionGolden() {
+	v, err := s.loadExample().PolicyVersion()
+	s.Require().NoError(err)
+	s.Equal("sha256:da7204a0ad2a36e7692843f3a4d891e0ea05dc138b4860e668e4aec8b63f2f2c", v)
 }
 
 func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
@@ -176,6 +186,7 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	p.Spec.Credentials[1].Route.Upstream = "https://api.anthropic.com:987654321"
 	p.Spec.Credentials[2].Route.Upstream = "https://canary-host.example.com"
 	setAgent(p, func(a *Agent) { a.Credentials = append(a.Credentials, "CANARY_CREDENTIAL") })
+	p.Spec.Credentials[0].Scope.Permissions["ghp_CANARY_PERMISSION"] = "read"
 	allow(p, AllowRule{Host: "canary-host.example.com"})
 	err := p.Validate()
 	s.ErrorContains(err, "deliver[0]: unknown target")
@@ -183,7 +194,8 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	s.ErrorContains(err, "port is outside")
 	s.ErrorContains(err, "must not also be matched")
 	s.ErrorContains(err, "must reference a declared credential")
-	for _, v := range []string{"CANARY_DELIVERY", "CANARY_REPO", "987654321", "CANARY_CREDENTIAL"} {
+	s.ErrorContains(err, "permission names must be")
+	for _, v := range []string{"CANARY_DELIVERY", "CANARY_REPO", "987654321", "CANARY"} {
 		s.NotContains(err.Error(), v)
 	}
 	s.NotContains(strings.ReplaceAll(err.Error(), "spec.egress.allow", ""), "canary-host")

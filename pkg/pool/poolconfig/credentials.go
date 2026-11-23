@@ -167,9 +167,13 @@ func validatePermissions(errs *fieldErrors, path string, permissions map[string]
 		errs.add(path, "must list at least one permission")
 	}
 	for name, level := range permissions {
-		if !permissionPattern.MatchString(name) || (level != "read" && level != "write") {
+		switch {
+		// An invalid key may be a pasted token, so it is never quoted.
+		case !permissionPattern.MatchString(name):
+			errs.add(path, "permission names must be lowercase letters and underscores")
+		case level != "read" && level != "write":
 			errs.add(path, "%q must be read or write", name)
-		} else if slices.Contains(deniedPermissions, name) {
+		case slices.Contains(deniedPermissions, name):
 			errs.add(path, "permission %q is not allowed for pool agents", name)
 		}
 	}
