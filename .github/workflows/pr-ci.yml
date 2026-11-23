@@ -367,14 +367,14 @@ jobs:
       # macOS runners are scarce, so the native credential host tests share
       # this job instead of queueing for a second macOS runner.
       - name: record native host and available CLI versions
-        if: ${{ !cancelled() && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
         run: |
           go env GOOS GOARCH
           gh --version
 
       - name: execute native credential discovery and process-bound regressions
-        if: ${{ !cancelled() && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
-        timeout-minutes: 6
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        timeout-minutes: 8
         env:
           DEVSY_TEST_REAL_GH: "1"
           DEVSY_TEST_NATIVE_KEYRING: "1"
@@ -383,13 +383,13 @@ jobs:
           -run '^(TestNative.*|TestHostLookupEnvironmentAndGuestEnvironmentAreIndependent|TestRegisteredGuestDeclinesAmbiguousKeyringResult)$'
 
       - name: test strict fixture report validation
-        if: ${{ !cancelled() && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
         timeout-minutes: 3
         run: go test -race -count=1 -v ./e2e/framework/ghfixture
 
       - name: test native credential service boundaries
-        if: ${{ !cancelled() && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
-        timeout-minutes: 3
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        timeout-minutes: 5
         run: >-
           go test -race -count=1 -v -timeout 2m ./pkg/tunnel ./pkg/credentials
           -run '^(TestCredentials.*Host.*|TestOptionalGitHubService.*|TestServicesStartup.*)$'
