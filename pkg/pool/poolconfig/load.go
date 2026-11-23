@@ -98,7 +98,7 @@ func decodeDocument(data []byte) (any, map[string]int, error) {
 	var tree any
 	for _, root := range node.Content {
 		var err error
-		if tree, err = d.value(root, reflect.TypeFor[Pool](), ""); err != nil {
+		if tree, err = d.value(root, reflect.TypeFor[Pool](), fieldPath{}); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -115,14 +115,10 @@ func defaultDuration(d *Duration, value time.Duration) {
 	}
 }
 
-// decodeError keeps only the field path, expected type and line of a decoder
-// error. Decoders quote the offending value, which may be a pasted secret, so
-// nothing is taken from the free text after the decoder's fixed prefix.
+// decodeError keeps only the line of a decoder error. Decoders quote the
+// offending value or map key, which may be a pasted secret, so nothing is
+// taken from the free text after the decoder's fixed prefix.
 func decodeError(err error) error {
-	var typeErr *json.UnmarshalTypeError
-	if errors.As(err, &typeErr) && typeErr.Field != "" && typeErr.Type != nil {
-		return fmt.Errorf("%s: must be of type %s", typeErr.Field, typeErr.Type)
-	}
 	if m := yamlLinePattern.FindStringSubmatch(err.Error()); m != nil {
 		return fmt.Errorf("invalid YAML at line %s", m[1])
 	}
