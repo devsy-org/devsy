@@ -130,8 +130,7 @@ func repoError(repo string) string {
 	// The raw text is checked too: NormalizeRepository reads
 	// https://user:token@host/a as repository https://user:token and branch
 	// host/a.
-	if hasURLCredentials(normalized, true) ||
-		hasURLCredentials(strings.TrimPrefix(repo, "git:"), false) {
+	if hasURLCredentials(normalized) || hasURLCredentials(strings.TrimPrefix(repo, "git:")) {
 		return errRepoCredentials
 	}
 	if strings.ContainsAny(repo, "?#") {
@@ -144,18 +143,22 @@ func repoError(repo string) string {
 }
 
 // hasURLCredentials reads the text directly, since a token can make the
-// reference fail to parse as a URL. An @ left in the path of a normalized
-// reference means a nested or mis-cased prefix, such as
-// git:git:https://user@host or SSH://user@host.
-func hasURLCredentials(ref string, checkPath bool) bool {
+// reference fail to parse as a URL. Only an @ in the authority counts, so
+// paths such as /scm/@team/repo stay valid. Extra leading slashes are
+// skipped because //user@host normalizes to https:////user@host. A nested
+// or mis-cased prefix such as git:git:https://user@host or SSH://user@host
+// leaves a scheme other than ssh in front of the userinfo.
+func hasURLCredentials(ref string) bool {
 	scheme, rest, found := strings.Cut(ref, "://")
 	if !found {
 		scheme, rest = "https", ref
 	}
-	authority, path, _ := strings.Cut(rest, "/")
+	if scheme != "file" {
+		rest = strings.TrimLeft(rest, "/")
+	}
+	authority, _, _ := strings.Cut(rest, "/")
 	at := strings.LastIndexByte(authority, '@')
-	return (checkPath && strings.Contains(path, "@")) ||
-		(at >= 0 && (scheme != "ssh" || !sshUserPattern.MatchString(authority[:at])))
+	return at >= 0 && (scheme != "ssh" || !sshUserPattern.MatchString(authority[:at]))
 }
 
 // scpError checks host:path after the git@ of an scp-style reference.
