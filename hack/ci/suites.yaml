@@ -58,7 +58,8 @@ unit:
   # One job per runner; every runner executes the steps whose `os` matches.
   runners:
     - { runner: ubuntu-latest, timeout_minutes: 30, save_reserve_minutes: 3 }
-    - { runner: macos-latest, timeout_minutes: 45, save_reserve_minutes: 8 }
+    # The macOS reserve also covers the native credential steps in pr-ci.yml.
+    - { runner: macos-latest, timeout_minutes: 57, save_reserve_minutes: 20 }
     - { runner: windows-latest, timeout_minutes: 40, save_reserve_minutes: 10 }
 
   # Steps run in order on each runner. `os` uses GOOS values; empty means all.
