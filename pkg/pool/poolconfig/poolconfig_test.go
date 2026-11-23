@@ -88,6 +88,8 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"https://x-access-token:CANARY@github.com/acme/api",
 		"https://CANARY@github.com/acme/api",
 		"user:CANARY@github.com:acme/api.git",
+		"git:https://user:CANARY@github.com/acme/api",
+		"user:CANARY@github.com/acme?u=https://x",
 		"ssh://git:CANARY@github.com/acme/api.git",
 	} {
 		p := s.loadExample()
@@ -266,14 +268,16 @@ func (s *PoolConfigSuite) TestStringValuesKeepText() {
 		_, err := Parse(append(s.readMinimal(), []byte("      env: {MODE: "+value+"}\n")...))
 		s.ErrorContains(err, "spec.agents.claude.env.MODE (line 13): must be quoted", value)
 	}
-	p, err := Parse(append(s.readMinimal(), []byte(
-		"      env:\n        A: \"yes\"\n        B: 8080\n        C: true\n        D: !!str 0123\n"+
-			"        E: 2026-01-15\n        F: |-\n          on\n",
-	)...))
+	data := strings.Replace(string(s.readMinimal()), "[claude, -p]", "[cat, -, ---, a:b]", 1)
+	p, err := Parse([]byte(data +
+		"      env:\n        A: \"yes\"\n        B: 8080\n        C: true\n        D: !!str 0123\n" +
+		"        E: 2026-01-15\n        F: |-\n          on\n",
+	))
 	s.Require().NoError(err)
 	s.Equal(map[string]string{
 		"A": "yes", "B": "8080", "C": "true", "D": "0123", "E": "2026-01-15", "F": "on",
 	}, p.Spec.Agents["claude"].Env)
+	s.Equal([]string{"cat", "-", "---", "a:b"}, p.Spec.Agents["claude"].Command)
 }
 
 func (s *PoolConfigSuite) TestReportsEveryError() {
