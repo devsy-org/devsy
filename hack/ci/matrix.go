@@ -16,7 +16,6 @@ const (
 	matrixUnitGroup     = "unit"
 	matrixBuildGroup    = "build"
 	matrixUbuntuRunner  = "ubuntu-latest"
-	matrixMacOSRunner   = "macos-latest"
 	matrixWindowsRunner = "windows-latest"
 )
 
@@ -46,10 +45,22 @@ type matrixUnitEntry struct {
 	TestTimeoutMinutes int    `json:"test_timeout_minutes"`
 }
 
+// matrixBuildEntry is one CLI build job. Every build runs on Linux and cross
+// compiles for OS, since all targets build with CGO disabled.
 type matrixBuildEntry struct {
 	Runner            string `json:"runner"`
+	OS                string `json:"os"`
 	JobTimeoutMinutes int    `json:"job_timeout_minutes,omitempty"`
 	BuildMicrosandbox bool   `json:"build_microsandbox"`
+}
+
+func newBuildEntry(osName string, timeoutMinutes int, microsandbox bool) matrixBuildEntry {
+	return matrixBuildEntry{
+		Runner:            matrixUbuntuRunner,
+		OS:                osName,
+		JobTimeoutMinutes: timeoutMinutes,
+		BuildMicrosandbox: microsandbox,
+	}
 }
 
 // matrixEntry is one e2e suite as a job of the workflow matrix.
@@ -246,19 +257,13 @@ func e2eMatrixEntries(m *Manifest, group string, opts selectionOptions) []matrix
 }
 
 func buildMatrixEntries(m *Manifest, opts selectionOptions) []matrixBuildEntry {
-	if opts.mode == "" || opts.mode == selectionModeFull {
-		return []matrixBuildEntry{
-			{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
-			{Runner: matrixMacOSRunner, JobTimeoutMinutes: 20},
-			{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45},
-		}
-	}
-	if matchesAny(opts.changedFiles, m.Selection.FullRunPaths) ||
+	if opts.mode == "" || opts.mode == selectionModeFull ||
+		matchesAny(opts.changedFiles, m.Selection.FullRunPaths) ||
 		slices.Contains(opts.changedFiles, ".goreleaser.yml") {
 		return []matrixBuildEntry{
-			{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
-			{Runner: matrixMacOSRunner, JobTimeoutMinutes: 20, BuildMicrosandbox: true},
-			{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
+			newBuildEntry(osLinux, 45, true),
+			newBuildEntry(osDarwin, 20, false),
+			newBuildEntry(osWindows, 45, false),
 		}
 	}
 	unprivileged := selectSuites(m, groupUnprivileged, opts)
@@ -266,21 +271,11 @@ func buildMatrixEntries(m *Manifest, opts selectionOptions) []matrixBuildEntry {
 	microsandbox := selectSuites(m, groupMicrosandbox, opts)
 	entries := make([]matrixBuildEntry, 0, 2)
 	if len(unprivileged)+len(integration)+len(microsandbox) > 0 {
-		entries = append(
-			entries,
-			matrixBuildEntry{
-				Runner:            matrixUbuntuRunner,
-				JobTimeoutMinutes: 45,
-				BuildMicrosandbox: len(microsandbox) > 0,
-			},
-		)
+		entries = append(entries, newBuildEntry(osLinux, 45, len(microsandbox) > 0))
 	}
 	for _, s := range integration {
 		if s.OS() == osWindows {
-			entries = append(
-				entries,
-				matrixBuildEntry{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45},
-			)
+			entries = append(entries, newBuildEntry(osWindows, 45, false))
 			break
 		}
 	}
