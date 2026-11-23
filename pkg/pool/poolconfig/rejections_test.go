@@ -15,6 +15,8 @@ const (
 
 // rejections starts from testdata/pool.yaml, breaks one rule each and expects
 // the error to mention want.
+const wantDevcontainer = "devcontainerPath"
+
 var rejections = []rejection{
 	{"name uppercase", func(p *Pool) { p.Metadata.Name = "Demo" }, nameRule},
 	{
@@ -25,12 +27,27 @@ var rejections = []rejection{
 	{
 		"absolute devcontainer",
 		func(p *Pool) { p.Spec.Source.DevcontainerPath = "/etc/dc.json" },
-		"devcontainerPath",
+		wantDevcontainer,
 	},
 	{
 		"escaping devcontainer",
 		func(p *Pool) { p.Spec.Source.DevcontainerPath = "../x.json" },
-		"devcontainerPath",
+		wantDevcontainer,
+	},
+	{
+		"rooted windows devcontainer",
+		func(p *Pool) { p.Spec.Source.DevcontainerPath = `\etc\dc.json` },
+		wantDevcontainer,
+	},
+	{
+		"drive devcontainer",
+		func(p *Pool) { p.Spec.Source.DevcontainerPath = "C:dc.json" },
+		wantDevcontainer,
+	},
+	{
+		"escaping windows devcontainer",
+		func(p *Pool) { p.Spec.Source.DevcontainerPath = `..\x.json` },
+		wantDevcontainer,
 	},
 	{"no concurrency", func(p *Pool) { p.Spec.Capacity.MaxConcurrent = -1 }, "maxConcurrent"},
 	{"negative queue", func(p *Pool) { p.Spec.Capacity.MaxQueued = -1 }, "maxQueued"},
@@ -66,6 +83,11 @@ var rejections = []rejection{
 	{
 		"reserved env mixed case",
 		func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["GH_token"] = "x" }) },
+		poolOwned,
+	},
+	{
+		"enterprise token env",
+		func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["GITHUB_ENTERPRISE_TOKEN"] = "x" }) },
 		poolOwned,
 	},
 	{
