@@ -110,6 +110,8 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"ssh://git@github.com/acme/api.git", "git@github.com:acme/api.git", "github.com/acme/api@main",
 		"git:git@github.com:acme/api.git", "github.com:8443/acme/api@main",
 		"git@github.com:project.git@main", "https://github.com/acme/api.git@feature/x",
+		"https://git.example.com/scm/@team/repo+tools.git", "file:///work/@team/repo%20tools.git",
+		"https://git.example.com/@team/repo.git@main",
 	} {
 		p := s.loadExample()
 		p.Spec.Source.Repo = repo
