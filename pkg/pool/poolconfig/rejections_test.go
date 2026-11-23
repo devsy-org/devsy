@@ -67,13 +67,13 @@ var rejections = []rejection{
 	{
 		"bad agent name",
 		func(p *Pool) { p.Spec.Agents["Bad"] = Agent{Command: []string{"x"}} },
-		"spec.agents.Bad",
+		"spec.agents.<key>: must be 1 to 63",
 	},
 	{"empty command", func(p *Pool) { setAgent(p, func(a *Agent) { a.Command = nil }) }, "command"},
 	{
 		"bad env name",
 		func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["1X"] = "v" }) },
-		"invalid secret name",
+		"spec.agents.claude.env: names must start with a letter",
 	},
 	{
 		"proxy env",
