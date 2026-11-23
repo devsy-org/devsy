@@ -344,7 +344,10 @@ func advanceCrashWorker(t *testing.T, tk *Task, state *State) bool {
 	if !alive {
 		return false
 	}
-	if state.PID != 0 {
+	// Report readiness once, as the real worker does. Every write holds the
+	// exclusive state lock through an fsync, so rewriting it on each tick
+	// starved the launcher's and the parent's reads on slow Windows disks.
+	if state.PID != 0 && !state.WorkerReady {
 		require.NoError(t, tk.WorkerLaunchReady(os.Getpid()))
 	}
 	return true
