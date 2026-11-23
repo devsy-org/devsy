@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
@@ -19,11 +20,14 @@ const (
 	maxNameLength     = 63
 
 	errRepoCredentials = "must not contain credentials; use a credential grant"
+	schemeSSH          = "ssh"
+	schemeSCP          = "scp"
 )
 
 var (
 	namePattern       = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 	rootedPathPattern = regexp.MustCompile(`^([A-Za-z]:|/)`)
+	schemePattern     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*$`)
 	// reservedEnvNames are set by the pool or would break credential delivery
 	// or egress.
 	reservedEnvNames = []string{
@@ -34,15 +38,36 @@ var (
 	}
 )
 
+type fieldError struct {
+	path, msg string
+}
+
 // fieldErrors collects every problem so one validate run reports them all.
-type fieldErrors []error
+type fieldErrors []fieldError
 
 func (e *fieldErrors) add(path, format string, args ...any) {
-	*e = append(*e, fmt.Errorf("%s: %s", path, fmt.Sprintf(format, args...)))
+	*e = append(*e, fieldError{path: path, msg: fmt.Sprintf(format, args...)})
+}
+
+// join adds the source line of each path that has one.
+func (e fieldErrors) join(lines map[string]int) error {
+	errs := make([]error, 0, len(e))
+	for _, f := range e {
+		if line, ok := lines[f.path]; ok {
+			errs = append(errs, fmt.Errorf("%s (line %d): %s", f.path, line, f.msg))
+		} else {
+			errs = append(errs, fmt.Errorf("%s: %s", f.path, f.msg))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Validate checks a defaulted pool and returns every problem found.
 func (p *Pool) Validate() error {
+	return p.validate(nil)
+}
+
+func (p *Pool) validate(lines map[string]int) error {
 	var errs fieldErrors
 	if p.APIVersion != APIVersion {
 		errs.add("apiVersion", "must be %q", APIVersion)
@@ -59,7 +84,7 @@ func (p *Pool) Validate() error {
 	routes := p.Spec.validateCredentials(&errs)
 	p.Spec.validateAgentGrants(&errs, routes)
 	p.Spec.validateAudit(&errs)
-	return errors.Join(errs...)
+	return errs.join(lines)
 }
 
 func validateName(errs *fieldErrors, path, name string, maxLen int) {
@@ -79,30 +104,38 @@ func escapesRepo(path string) bool {
 }
 
 // repoError finds a token pasted into the repository reference, which would
-// otherwise reach the policy hash, audit records and logs. A plain ssh user
-// such as git@ is not a secret. Messages never include the value.
+// otherwise reach the policy hash, audit records and logs. A reference without
+// a scheme is read the way workspaces read it, as https, so user@host/repo
+// carries https userinfo. A plain ssh user such as git@ is not a secret.
+// Messages never include the value.
 func repoError(repo string) string {
-	head, _, isURL := strings.Cut(repo, "://")
-	// In scp-style user@host:path, a colon before the @ marks a password.
-	if user, _, found := strings.Cut(head, "@"); found && strings.Contains(user, ":") {
-		return errRepoCredentials
+	ref := strings.TrimPrefix(repo, "git:")
+	scheme, rest := splitScheme(ref)
+	authority, _, _ := strings.Cut(rest, "/")
+	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+		if strings.Contains(authority[:at], ":") || (scheme != schemeSSH && scheme != schemeSCP) {
+			return errRepoCredentials
+		}
 	}
-	if !isURL {
+	if scheme == schemeSCP {
 		return ""
 	}
-	// A prefix such as git: in git:https://host/repo hides the authority from
-	// url.Parse.
-	u, err := url.Parse(repo[strings.LastIndexByte(head, ':')+1:])
-	if err != nil {
-		return "must be a valid URL"
-	}
-	if u.User == nil {
-		return ""
-	}
-	if _, hasPassword := u.User.Password(); hasPassword || u.Scheme != "ssh" {
-		return errRepoCredentials
+	if _, err := url.Parse(git.NormalizeRepository(ref).Repository); err != nil {
+		return "must be a valid repository URL"
 	}
 	return ""
+}
+
+// splitScheme reports git@host:path as scp, which uses the ssh user rules.
+func splitScheme(ref string) (string, string) {
+	if strings.HasPrefix(ref, "git@") {
+		return schemeSCP, ref
+	}
+	scheme, rest, found := strings.Cut(ref, "://")
+	if !found || !schemePattern.MatchString(scheme) {
+		return "https", ref
+	}
+	return strings.ToLower(scheme), rest
 }
 
 func (s *Spec) validateSource(errs *fieldErrors) {
@@ -160,28 +193,38 @@ func (s *Spec) validateAgents(errs *fieldErrors) {
 		errs.add("spec.agents", "must define at least one agent")
 	}
 	for name, agent := range s.Agents {
-		path := "spec.agents." + name
+		path := agentPath(name)
 		validateName(errs, path, name, maxNameLength)
 		if len(agent.Command) == 0 || agent.Command[0] == "" {
 			errs.add(path+".command", "is required")
 		}
 		for key := range agent.Env {
-			if err := validateEnvName(key); err != nil {
-				errs.add(path+".env", "%v", err)
+			if secrets.ValidateName(key) != nil {
+				errs.add(path+".env", "names must start with a letter or underscore and "+
+					"contain only letters, digits and underscores")
+			} else if isReservedEnvName(key) {
+				errs.add(path+".env."+key, "is set by the pool and cannot be overridden")
 			}
 		}
 	}
 }
 
-func validateEnvName(name string) error {
-	if err := secrets.ValidateName(name); err != nil {
-		return err
+// agentPath names an agent only when its name is valid; an invalid name may
+// be pasted text.
+func agentPath(name string) string {
+	if isValidName(name) {
+		return "spec.agents." + name
 	}
+	return "spec.agents." + hiddenKey
+}
+
+func isValidName(name string) bool {
+	return namePattern.MatchString(name) && len(name) <= maxNameLength
+}
+
+func isReservedEnvName(name string) bool {
 	upper := strings.ToUpper(name)
-	if slices.Contains(reservedEnvNames, upper) || strings.HasPrefix(upper, "GIT_CONFIG") {
-		return fmt.Errorf("%s is set by the pool and cannot be overridden", name)
-	}
-	return nil
+	return slices.Contains(reservedEnvNames, upper) || strings.HasPrefix(upper, "GIT_CONFIG")
 }
 
 func (s *Spec) validateAudit(errs *fieldErrors) {

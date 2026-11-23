@@ -90,6 +90,7 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"user:CANARY@github.com:acme/api.git",
 		"git:https://user:CANARY@github.com/acme/api",
 		"user:CANARY@github.com/acme?u=https://x",
+		"CANARY-user@github.com/acme/api",
 		"ssh://git:CANARY@github.com/acme/api.git",
 	} {
 		p := s.loadExample()
@@ -100,16 +101,15 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 	}
 	for _, repo := range []string{
 		"ssh://git@github.com/acme/api.git", "git@github.com:acme/api.git", "github.com/acme/api@main",
+		"git:git@github.com:acme/api.git", "github.com:8443/acme/api@main",
 	} {
 		p := s.loadExample()
 		p.Spec.Source.Repo = repo
 		s.NoError(p.Validate(), repo)
 	}
 	p := s.loadExample()
-	p.Spec.Source.Repo = "https://user:CANARY@github.com/acme/%zz"
-	err := p.Validate()
-	s.ErrorContains(err, "spec.source.repo: must be a valid URL")
-	s.NotContains(err.Error(), "CANARY")
+	p.Spec.Source.Repo = "https://github.com/acme/%zz"
+	s.ErrorContains(p.Validate(), "spec.source.repo: must be a valid repository URL")
 }
 
 func (s *PoolConfigSuite) TestStrictParsing() {
@@ -147,14 +147,26 @@ func (s *PoolConfigSuite) TestRejectsAmbiguousYAML() {
 		},
 		{"merge key", "      env: {<<: {A: b}}\n", "YAML anchors and aliases are not supported"},
 		{
-			"numeric key",
-			"      env: {1: a}\n",
-			`spec.agents.claude.env (line 13): key "1" must be a quoted string`,
+			"tagged key",
+			"      env: {!!binary c2VjcmV0LXRva2Vu: x}\n",
+			"env (line 13): keys must be strings",
 		},
-		{"bool word key", "      env: {ON: x}\n", `key "ON" must be a quoted string`},
-		{"underscore int key", "      env: {1_000: x}\n", `key "1_000" must be a quoted string`},
-		{"hex key", "      env: {0x1f: x}\n", `key "0x1f" must be a quoted string`},
-		{"null key", "      env: {null: secret-token}\n", `key "null" must be a quoted string`},
+		{"list key", "      env: {[secret-token]: x}\n", "env (line 13): keys must be strings"},
+		{
+			"unknown text key",
+			"      'secret-token here': x\n",
+			"spec.agents.claude (line 13): unknown field",
+		},
+		{
+			"duplicate text key",
+			"      env: {'secret-token x': a, 'secret-token x': b}\n",
+			"duplicate key",
+		},
+		{
+			"invalid key path",
+			"      env: {'secret-token x': [a]}\n",
+			"env.<key> (line 13): must be a string",
+		},
 	}
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
@@ -173,14 +185,17 @@ spec:
   source: {repo: "https://github.com/acme/api"}
   provider:
     name: docker
-    options: {"1": a, "ON": b, 2026-01-15: c, ...: d}
+    options: {"1": a, ON: b, 2026-01-15: c, ...: d, 1_000: e, 0x1f: f, null: g, -: h}
   agents:
     claude: {command: [claude]}
     2agent: {command: [x]}
 `))
 	s.Require().NoError(err)
 	s.Equal(
-		map[string]string{"1": "a", "ON": "b", "2026-01-15": "c", "...": "d"},
+		map[string]string{
+			"1": "a", "ON": "b", "2026-01-15": "c", "...": "d",
+			"1_000": "e", "0x1f": "f", "null": "g", "-": "h",
+		},
 		p.Spec.Provider.Options,
 	)
 	s.Contains(p.Spec.Agents, "2agent")
@@ -225,11 +240,20 @@ func (s *PoolConfigSuite) TestRejectsWrongShapes() {
 			"      env: {MODE: !!null {synthetic-secret: &x 1}}\n",
 			wantModeString,
 		},
+		{"null-tagged text", "      env: {MODE: !!null synthetic-secret}\n", wantModeString},
 		{
-			"null-tagged text",
-			"      env: {MODE: !!null synthetic-secret}\n",
-			"spec.agents.claude.env.MODE (line 13): must be quoted",
+			"null-tagged command",
+			"      command: !!null [claude]\n",
+			"command (line 13): must be a list",
 		},
+		{
+			"null-tagged struct",
+			"  audit: !!null {retainDays: 3}\n",
+			"spec.audit (line 13): must be a mapping",
+		},
+		{"bool-tagged quoted", "      env: {MODE: !!bool \"yes\"}\n", wantModeString},
+		{"binary-tagged", "      env: {MODE: !!binary c3ludGhldGljLXNlY3JldA==}\n", wantModeString},
+		{"int-tagged quoted", "      env: {MODE: !!int '0123'}\n", wantModeString},
 	}
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
@@ -264,9 +288,9 @@ spec:
 }
 
 func (s *PoolConfigSuite) TestStringValuesKeepText() {
-	for _, value := range []string{"yes", "Off", "0123", "0x1F", "1_000", "+1", "1.5", "!!int 7"} {
-		_, err := Parse(append(s.readMinimal(), []byte("      env: {MODE: "+value+"}\n")...))
-		s.ErrorContains(err, "spec.agents.claude.env.MODE (line 13): must be quoted", value)
+	for _, value := range []string{"yes", "Off", "0123", "0x1F", "1_000", "+1", "1.5", "~x", "null x"} {
+		p := s.parseMinimal("      env: {MODE: " + value + "}\n")
+		s.Equal(value, p.Spec.Agents["claude"].Env["MODE"])
 	}
 	data := strings.Replace(string(s.readMinimal()), "[claude, -p]", "[cat, -, ---, a:b]", 1)
 	p, err := Parse([]byte(data +
@@ -312,23 +336,34 @@ func (s *PoolConfigSuite) TestRejections() {
 	s.runRejections(rejections)
 }
 
-const wantInvalidYAML = "invalid YAML"
+const (
+	wantInvalidYAML = "invalid YAML"
+	wantEnvField    = "env.PASS (line 13): must be a string"
+)
+
+func (s *PoolConfigSuite) TestValidationErrorsGiveLines() {
+	_, err := Parse(append(s.readMinimal(), []byte("  capacity: {maxQueued: -1}\n")...))
+	s.ErrorContains(err, "spec.capacity.maxQueued (line 13): must not be negative")
+	p := s.loadExample()
+	p.Spec.Capacity.MaxQueued = -1
+	s.ErrorContains(p.Validate(), "spec.capacity.maxQueued: must not be negative")
+}
 
 func (s *PoolConfigSuite) TestDecoderErrorsDoNotEchoValues() {
 	cases := []struct{ name, extra, want string }{
-		{"tagged int", "      env: {PASS: !!int CANARY}\n", "env.PASS (line 13): must be quoted"},
+		{"tagged int", "      env: {PASS: !!int CANARY}\n", wantEnvField},
 		{"unknown anchor", "      env: {PASS: *CANARY}\n", wantInvalidYAML},
 		{
 			"fake field path",
 			"      env: {PASS: !!int 'Go struct field X.CANARY of type int'}\n",
-			wantInvalidYAML,
+			wantEnvField,
 		},
-		{"fake line", "      env: {PASS: !!int 'line 987654321 CANARY'}\n", wantInvalidYAML},
+		{"fake line", "      env: {PASS: !!int 'line 987654321 CANARY'}\n", wantEnvField},
 		{"syntax error", "      env: {PASS: 'CANARY\n", "invalid YAML at line"},
 		{
 			"overflow",
 			"  capacity: {maxQueued: 9223372036854775987}\n",
-			"spec.capacity.maxQueued: must be of type int",
+			"spec.capacity.maxQueued (line 13): must be a whole number",
 		},
 	}
 	for _, tc := range cases {

@@ -178,6 +178,17 @@ func (s *PoolConfigSuite) TestEgressDecodeErrorsDoNotEchoValues() {
 	s.NotContains(err.Error(), "CANARY")
 }
 
+func (s *PoolConfigSuite) TestEgressParseErrorsGiveLines() {
+	for _, tc := range []struct{ extra, want string }{
+		{"  egress: {allow: !!null [{host: a.com}]}\n", "spec.egress.allow (line 13): must be a list"},
+		{"  egress: {allow: [{host: a.com, ports: !!null [22]}]}\n", "ports (line 13): must be a list"},
+		{"  egress: {allow: [{host: a.com, ports: [70000]}]}\n", "ports[0] (line 13): is outside"},
+	} {
+		_, err := Parse(append(s.readMinimal(), []byte(tc.extra)...))
+		s.ErrorContains(err, tc.want)
+	}
+}
+
 func allow(p *Pool, rule AllowRule) {
 	p.Spec.Egress.Allow = append(p.Spec.Egress.Allow, rule)
 }

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	yamlv3 "gopkg.in/yaml.v3"
-	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -37,17 +36,22 @@ func Load(path string) (*Pool, error) {
 }
 
 // Parse decodes pool.yaml content, rejecting unknown fields, then applies
-// defaults and validates the result.
+// defaults and validates the result. Errors give the line where one exists.
 func Parse(data []byte) (*Pool, error) {
-	if err := checkDocument(data); err != nil {
+	tree, lines, err := decodeDocument(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse pool config: %w", err)
+	}
+	raw, err := json.Marshal(tree)
+	if err != nil {
 		return nil, fmt.Errorf("parse pool config: %w", err)
 	}
 	var p Pool
-	if err := yaml.UnmarshalStrict(data, &p); err != nil {
+	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, fmt.Errorf("parse pool config: %w", decodeError(err))
 	}
 	p.ApplyDefaults()
-	if err := p.Validate(); err != nil {
+	if err := p.validate(lines); err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -82,31 +86,30 @@ func (p *Pool) ApplyDefaults() {
 	}
 }
 
-// checkDocument rejects input that UnmarshalStrict would accept but not fully
-// apply: a second YAML document, or field names that differ only in case.
-func checkDocument(data []byte) error {
+// decodeDocument reads exactly one YAML document into JSON values and the
+// line of each field path.
+func decodeDocument(data []byte) (any, map[string]int, error) {
 	dec := yamlv3.NewDecoder(bytes.NewReader(data))
 	var node yamlv3.Node
 	if err := dec.Decode(&node); err != nil {
 		if errors.Is(err, io.EOF) {
-			return nil
+			return nil, nil, nil
 		}
-		return decodeError(err)
+		return nil, nil, decodeError(err)
 	}
-	// Shapes are checked first, so a mapping pasted into a string field is
-	// reported by path before its keys reach any message.
+	d := decoder{lines: map[string]int{}}
+	var tree any
 	for _, root := range node.Content {
-		if err := checkFieldNames(root, reflect.TypeFor[Pool](), ""); err != nil {
-			return err
+		var err error
+		if tree, err = d.value(root, reflect.TypeFor[Pool](), ""); err != nil {
+			return nil, nil, err
 		}
 	}
-	if err := checkNodes(&node, ""); err != nil {
-		return err
+	var extra yamlv3.Node
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, nil, errors.New("file must contain exactly one YAML document")
 	}
-	if err := dec.Decode(&node); !errors.Is(err, io.EOF) {
-		return errors.New("file must contain exactly one YAML document")
-	}
-	return nil
+	return tree, d.lines, nil
 }
 
 func defaultDuration(d *Duration, value time.Duration) {
