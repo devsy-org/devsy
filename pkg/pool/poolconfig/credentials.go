@@ -67,9 +67,12 @@ var (
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	permissionPattern = regexp.MustCompile(`^[a-z_]+$`)
 	prefixPattern     = regexp.MustCompile(`^[\x20-\x7e]*$`)
-	deniedPermissions = []string{
-		"administration", "organization_administration", "secrets", "organization_secrets",
-		"workflows",
+	// deniedPermissionParts refuses any permission whose name holds one of
+	// these, which covers the organization_ and dependabot_ variants: each can
+	// change who controls the repository, read secrets or run code elsewhere.
+	deniedPermissionParts = []string{
+		"administration", "secrets", "workflows", "hooks", "runners",
+		"personal_access_token", "custom_role", "members",
 	}
 	reservedHeaders = []string{
 		"host", "content-length", "transfer-encoding", "connection", "keep-alive", "te",
@@ -174,10 +177,17 @@ func validatePermissions(errs *fieldErrors, path string, permissions map[string]
 			errs.add(path, "permission names must be lowercase letters and underscores")
 		case level != "read" && level != "write":
 			errs.add(path, "levels must be read or write")
-		case slices.Contains(deniedPermissions, name):
-			errs.add(path, "must not include %s", strings.Join(deniedPermissions, ", "))
+		case isDeniedPermission(name):
+			errs.add(path, "must not include a permission whose name contains %s",
+				strings.Join(deniedPermissionParts, ", "))
 		}
 	}
+}
+
+func isDeniedPermission(name string) bool {
+	return slices.ContainsFunc(deniedPermissionParts, func(part string) bool {
+		return strings.Contains(name, part)
+	})
 }
 
 func (s *Spec) validateInject(
@@ -310,17 +320,13 @@ func (s *Spec) validateAgentGrants(errs *fieldErrors, routes map[string]string) 
 		path := agentPath(name)
 		for i, cred := range agent.Credentials {
 			if !declared[cred] {
-				errs.add(fmt.Sprintf("%s.credentials[%d]", path, i),
+				errs.addAt(path.field("credentials").index(i),
 					"must reference a declared credential")
 			}
 		}
 		for key, value := range agent.Env {
-			// validateAgents reports invalid names, which are never shown.
-			if secrets.ValidateName(key) != nil {
-				continue
-			}
 			if msg := checkEnvValue(value, agent, routes); msg != "" {
-				errs.add(path+".env."+key, "%s", msg)
+				errs.addAt(envPath(path, key), "%s", msg)
 			}
 		}
 	}

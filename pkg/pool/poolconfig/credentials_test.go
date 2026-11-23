@@ -144,12 +144,12 @@ var credentialRejections = []rejection{
 	{
 		"workflows permission",
 		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["workflows"] = "write" },
-		"permissions: must not include administration",
+		wantDeniedPermission,
 	},
 	{
 		"administration permission",
 		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["administration"] = "read" },
-		"permissions: must not include administration",
+		wantDeniedPermission,
 	},
 	upstreamCase("upstream path", "https://api.anthropic.com/v1"),
 	upstreamCase("upstream trailing slash", "https://api.anthropic.com/"),
@@ -216,8 +216,22 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoNames() {
 	s.ErrorContains(err, "levels must be read or write")
 	s.ErrorContains(err, "duplicates another credential name")
 	s.ErrorContains(err, "duplicates another route name")
-	s.ErrorContains(err, "spec.agents.<key>.env.X: names undeclared route")
+	s.ErrorContains(err, "spec.agents.<key>.env.<key>: names undeclared route")
 	s.NotContains(strings.ToLower(err.Error()), "canary")
+}
+
+const wantDeniedPermission = "permissions: must not include a permission whose name contains"
+
+func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
+	for _, name := range []string{
+		"dependabot_secrets", "organization_codespaces_secrets", "repository_hooks",
+		"organization_self_hosted_runners", "organization_personal_access_tokens",
+		"organization_custom_roles", "members",
+	} {
+		p := s.loadExample()
+		p.Spec.Credentials[0].Scope.Permissions[name] = "write"
+		s.ErrorContains(p.Validate(), wantDeniedPermission, name)
+	}
 }
 
 func (s *PoolConfigSuite) TestDuplicateRouteKeepsFirstOwner() {
