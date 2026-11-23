@@ -20,7 +20,7 @@ const (
 
 var (
 	namePattern       = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
-	rootedPathPattern = regexp.MustCompile(`^([A-Za-z]:|[/\\])`)
+	rootedPathPattern = regexp.MustCompile(`^([A-Za-z]:|/)`)
 	// reservedEnvNames are set by the pool or would break credential delivery
 	// or egress.
 	reservedEnvNames = []string{
@@ -64,11 +64,12 @@ func validateName(errs *fieldErrors, path, name string, maxLen int) {
 }
 
 // escapesRepo also refuses rooted and drive paths, which filepath.IsAbs
-// accepts as relative on Windows.
+// accepts as relative on Windows, and backslashes, which name a different
+// file on Linux than on Windows.
 func escapesRepo(path string) bool {
-	clean := filepath.ToSlash(filepath.Clean(strings.ReplaceAll(path, `\`, "/")))
-	return filepath.IsAbs(path) || rootedPathPattern.MatchString(path) ||
-		clean == ".." || strings.HasPrefix(clean, "../")
+	clean := filepath.ToSlash(filepath.Clean(path))
+	return strings.Contains(path, `\`) || filepath.IsAbs(path) ||
+		rootedPathPattern.MatchString(path) || clean == ".." || strings.HasPrefix(clean, "../")
 }
 
 func (s *Spec) validateSource(errs *fieldErrors) {
@@ -78,7 +79,7 @@ func (s *Spec) validateSource(errs *fieldErrors) {
 	if path := s.Source.DevcontainerPath; path != "" && escapesRepo(path) {
 		errs.add(
 			"spec.source.devcontainerPath",
-			"must be relative to the repository and stay inside it",
+			"must be a relative path with / separators that stays inside the repository",
 		)
 	}
 	if s.Provider.Name == "" {
