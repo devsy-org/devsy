@@ -22,7 +22,7 @@ var (
 // check, and a plain key such as 1 or ON is not a string under YAML 1.1.
 func checkNodes(n *yamlv3.Node, path string) error {
 	if n.Anchor != "" || n.Kind == yamlv3.AliasNode {
-		return errNoAnchors(path)
+		return errNoAnchors(n, path)
 	}
 	if n.Kind == yamlv3.MappingNode {
 		return checkMapping(n, path)
@@ -36,11 +36,16 @@ func checkNodes(n *yamlv3.Node, path string) error {
 }
 
 func checkMapping(n *yamlv3.Node, path string) error {
+	seen := make(map[string]bool, len(n.Content)/2)
 	for i := 1; i < len(n.Content); i += 2 {
 		key := n.Content[i-1]
 		if err := checkKey(key, path); err != nil {
 			return err
 		}
+		if seen[key.Value] {
+			return nodeErrorf(key, path, "duplicate key %q", key.Value)
+		}
+		seen[key.Value] = true
 		if err := checkNodes(n.Content[i], path+"."+key.Value); err != nil {
 			return err
 		}
@@ -48,39 +53,46 @@ func checkMapping(n *yamlv3.Node, path string) error {
 	return nil
 }
 
-func errNoAnchors(path string) error {
-	return fmt.Errorf("%s: YAML anchors and aliases are not supported", displayPath(path))
+func errNoAnchors(n *yamlv3.Node, path string) error {
+	return nodeErrorf(n, path, "YAML anchors and aliases are not supported")
+}
+
+func nodeErrorf(n *yamlv3.Node, path, format string, args ...any) error {
+	return fmt.Errorf("%s (line %d): %s", displayPath(path), n.Line, fmt.Sprintf(format, args...))
 }
 
 func checkKey(k *yamlv3.Node, path string) error {
 	if k.Anchor != "" || k.Kind == yamlv3.AliasNode || k.Tag == "!!merge" {
-		return errNoAnchors(path)
+		return errNoAnchors(k, path)
 	}
 	if !isStringKey(k) {
-		return fmt.Errorf("%s: key %q must be a quoted string", displayPath(path), k.Value)
+		return nodeErrorf(k, path, "key %q must be a quoted string", k.Value)
 	}
 	return nil
 }
 
 func isStringKey(k *yamlv3.Node) bool {
-	if k.Kind != yamlv3.ScalarNode || k.Tag != "!!str" {
+	switch {
+	case k.Kind != yamlv3.ScalarNode:
 		return false
-	}
-	if k.Style&(yamlv3.SingleQuotedStyle|yamlv3.DoubleQuotedStyle) != 0 {
+	case k.Style&yamlv3.TaggedStyle != 0:
+		return k.Tag == "!!str"
+	case k.Style&(yamlv3.SingleQuotedStyle|yamlv3.DoubleQuotedStyle) != 0:
 		return true
 	}
 	return resolvesAsString(k.Value)
 }
 
-// resolvesAsString uses the YAML 1.1 resolver the decoder uses, where plain
-// keys such as ON, 1_000 or 0x1f are not strings.
+// resolvesAsString decodes the key in a mapping with the YAML 1.1 decoder
+// sigs.k8s.io/yaml uses, where plain keys such as ON, 1_000 or 0x1f are not
+// strings but 2026-01-15 is.
 func resolvesAsString(plain string) bool {
-	var out any
-	if err := yamlv2.Unmarshal([]byte(plain), &out); err != nil {
+	var out map[any]any
+	if err := yamlv2.Unmarshal([]byte(plain+": 0\n"), &out); err != nil || len(out) != 1 {
 		return false
 	}
-	str, ok := out.(string)
-	return ok && str == plain
+	_, ok := out[plain]
+	return ok
 }
 
 func displayPath(path string) string {
@@ -95,7 +107,7 @@ func checkDuration(n *yamlv3.Node, path string) error {
 		return nil
 	}
 	if _, err := time.ParseDuration(n.Value); err != nil || n.Tag != "!!str" {
-		return fmt.Errorf("%s: must be a duration string such as \"15m\"", displayPath(path))
+		return nodeErrorf(n, path, "must be a duration string such as \"15m\"")
 	}
 	return nil
 }
@@ -153,7 +165,7 @@ func checkStructKeys(n *yamlv3.Node, t reflect.Type, path string) error {
 		key := n.Content[i-1].Value
 		ft, ok := fields[key]
 		if !ok {
-			return fmt.Errorf("%s: unknown field %q", strings.TrimPrefix(path, "."), key)
+			return nodeErrorf(n.Content[i-1], path, "unknown field %q", key)
 		}
 		var err error
 		if ft == durationType && n.Content[i].Kind == yamlv3.ScalarNode {
