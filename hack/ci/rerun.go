@@ -149,14 +149,17 @@ func noRunnerJobs(jobs []ghJob, ignore map[string]bool) ([]string, string) {
 			continue
 		}
 		if !noRunnerMacOS(job) {
-			return nil, fmt.Sprintf(
-				"%s ended %s on runner %q with labels %v",
-				job.Name, job.Conclusion, job.RunnerName, job.Labels,
-			)
+			return nil, job.describe()
 		}
 		names = append(names, job.Name)
 	}
 	return names, ""
+}
+
+func (job ghJob) describe() string {
+	name, conclusion := logSafe(job.Name), logSafe(job.Conclusion)
+	runner, labels := logSafe(job.RunnerName), logSafe(job.Labels)
+	return name + " ended " + conclusion + " on runner " + runner + " with labels " + labels
 }
 
 func passed(conclusion string) bool {
@@ -187,7 +190,12 @@ func (c rerunCommand) skipSuperseded(
 		return plan, err
 	}
 	if id := strings.TrimSpace(latest.String()); id != strconv.FormatInt(run.ID, 10) {
-		return rerunPlan{reason: "a newer run " + id + " exists for branch " + run.HeadBranch}, nil
+		reason := fmt.Sprintf(
+			"a newer run %s exists for branch %s",
+			logSafe(id),
+			logSafe(run.HeadBranch),
+		)
+		return rerunPlan{reason: reason}, nil
 	}
 	return plan, nil
 }
@@ -204,7 +212,7 @@ func (c rerunCommand) report(run ghRun, plan rerunPlan) {
 		plan.reason,
 	)
 	for _, job := range plan.jobs {
-		_, _ = fmt.Fprintf(c.stdout, "  %s\n", job)
+		_, _ = fmt.Fprintf(c.stdout, "  %s\n", logSafe(job))
 	}
 }
 
@@ -248,10 +256,22 @@ func (c rerunCommand) gh(ctx context.Context, stdout io.Writer, args ...string) 
 	if stdout == nil {
 		stdout = io.Discard
 	}
-	return c.runner.Run(ctx, commandSpec{
+	var stderr bytes.Buffer
+	err := c.runner.Run(ctx, commandSpec{
 		Name:   "gh",
 		Args:   append([]string{"api"}, args...),
 		Stdout: stdout,
-		Stderr: os.Stderr,
+		Stderr: &stderr,
 	})
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, logSafe(strings.TrimSpace(stderr.String())))
+	}
+	return nil
+}
+
+// logSafe quotes text that pull requests control so it cannot start a workflow
+// command: %q escapes line breaks, and the runner's legacy parser matches
+// "##[" anywhere in a line.
+func logSafe(v any) string {
+	return strings.ReplaceAll(fmt.Sprintf("%q", v), "#", `\x23`)
 }

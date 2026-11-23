@@ -107,23 +107,23 @@ func selectionCases() []selectionCase {
 			jobs: []ghJob{noRunner}, reason: "not completed/failure",
 		},
 		{
-			name: "macOS job that ran", run: run, reason: "ended cancelled on runner \"m1\"",
+			name: "macOS job that ran", run: run, reason: "ended \"cancelled\" on runner \"m1\"",
 			jobs: []ghJob{job(macUnitTests, "cancelled", "m1", "macos-latest")},
 		},
 		{
-			name: "macOS test failure", run: run, reason: "ended failure",
+			name: "macOS test failure", run: run, reason: "ended \"failure\"",
 			jobs: []ghJob{job(macUnitTests, "failure", "m1", "macos-latest")},
 		},
 		{
-			name: "Linux no-runner cancel", run: run, reason: "Build ended cancelled",
+			name: "Linux no-runner cancel", run: run, reason: "\"Build\" ended \"cancelled\"",
 			jobs: []ghJob{noRunner, job("Build", "cancelled", "", "ubuntu-latest")},
 		},
 		{
-			name: "unlabelled cancel", run: run, reason: "matrix.title ended cancelled",
+			name: "unlabelled cancel", run: run, reason: "\"matrix.title\" ended \"cancelled\"",
 			jobs: []ghJob{noRunner, job("matrix.title", "cancelled", "")},
 		},
 		{
-			name: "timed out macOS job", run: run, reason: "ended timed_out",
+			name: "timed out macOS job", run: run, reason: "ended \"timed_out\"",
 			jobs: []ghJob{job(macUnitTests, "timed_out", "", "macos-latest")},
 		},
 		{
@@ -159,7 +159,7 @@ func (s *rerunSuite) TestRerunsAndLogsJobs() {
 	s.Require().NoError(err)
 	s.Contains(
 		out,
-		"::notice::run 7: rerunning failed jobs: "+noRunnerReason+"\n  "+macUnitTests+"\n",
+		"::notice::run 7: rerunning failed jobs: "+noRunnerReason+"\n  \""+macUnitTests+"\"\n",
 	)
 	s.Equal("api -X POST "+testRunPath+"/rerun-failed-jobs", fake.calls[len(fake.calls)-1])
 }
@@ -185,7 +185,7 @@ func (s *rerunSuite) TestNoRerunWhenAnotherJobFailed() {
 	out, err := s.runRerun(fake)
 
 	s.Require().NoError(err)
-	s.Contains(out, "run 7: no rerun: CI Success ended failure")
+	s.Contains(out, "run 7: no rerun: \"CI Success\" ended \"failure\"")
 	s.Len(fake.calls, 2)
 }
 
@@ -212,7 +212,7 @@ func (s *rerunSuite) TestPullRequestRunNeedsToBeLatest() {
 				s.Len(fake.calls, 4)
 				return
 			}
-			s.Contains(out, "no rerun: a newer run 9 exists for branch main")
+			s.Contains(out, "no rerun: a newer run \"9\" exists for branch \"main\"")
 			s.Len(fake.calls, 3)
 		})
 	}
@@ -242,6 +242,62 @@ func (s *rerunSuite) TestArgs() {
 	s.Require().Error(err)
 }
 
+func (s *rerunSuite) TestJobNamesCannotStartWorkflowCommands() {
+	name := `"name":"Unit\n::error::injected ##[error]legacy"`
+	tests := []struct {
+		name    string
+		job     string
+		escaped string
+	}{
+		{
+			name:    "rerun list",
+			job:     `{` + name + `,"conclusion":"cancelled","runner_name":"","labels":["macos-latest"]}`,
+			escaped: `"Unit\n::error::injected \x23\x23[error]legacy"`,
+		},
+		{
+			name: "skip reason",
+			job: `{` + name + `,"conclusion":"failure","runner_name":"r1",` +
+				`"labels":["ubuntu-latest\r::error::label"]}`,
+			escaped: `["ubuntu-latest\r::error::label"]`,
+		},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			fake := &rerunFakeRunner{
+				outputs: map[string]string{testRunPath: failedRun, testJobsPath: tt.job},
+			}
+
+			out, err := s.runRerun(fake, "--dry-run")
+
+			s.Require().NoError(err)
+			s.Contains(out, tt.escaped)
+			s.assertOnlyOwnCommands(out)
+		})
+	}
+}
+
+func (s *rerunSuite) TestGHErrorOutputIsQuoted() {
+	var out bytes.Buffer
+	cmd := rerunCommand{runner: stderrRunner{text: "bad\n::error::x ##[error]y\n"}, stdout: &out}
+
+	err := cmd.run(context.Background(), rerunOptions{repo: testRepo, runID: 7})
+
+	s.Require().Error(err)
+	_, _ = io.WriteString(&out, "::error::"+err.Error()+"\n")
+	s.Contains(out.String(), `"bad\n::error::x \x23\x23[error]y"`)
+	s.assertOnlyOwnCommands(out.String())
+}
+
+// stderrRunner fails every call after writing text to stderr, as gh does.
+type stderrRunner struct {
+	text string
+}
+
+func (r stderrRunner) Run(_ context.Context, spec commandSpec) error {
+	_, _ = io.WriteString(spec.Stderr, r.text)
+	return errors.New("exit status 1")
+}
+
 func (s *rerunSuite) TestRetriesDoNotShareThePullRequestGroup() {
 	workflow, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "pr-ci.yml"))
 	s.Require().NoError(err)
@@ -265,4 +321,20 @@ func (s *rerunSuite) runRerun(fake *rerunFakeRunner, args ...string) (string, er
 	var stdout bytes.Buffer
 	err = rerunCommand{runner: fake, stdout: &stdout}.run(context.Background(), opts)
 	return stdout.String(), err
+}
+
+// assertOnlyOwnCommands fails if a line could be read as a workflow command
+// other than the ones rerun-no-runner writes itself.
+func (s *rerunSuite) assertOnlyOwnCommands(out string) {
+	s.NotContains(out, "##[")
+	for _, line := range strings.FieldsFunc(out, func(r rune) bool { return r == '\n' || r == '\r' }) {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "::") {
+			s.True(
+				strings.HasPrefix(trimmed, "::notice::run 7: ") ||
+					strings.HasPrefix(trimmed, "::error::exit status 1: "),
+				"unexpected command line %q", line,
+			)
+		}
+	}
 }
