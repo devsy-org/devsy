@@ -12,6 +12,8 @@ import (
 	yamlv3 "gopkg.in/yaml.v3"
 )
 
+const strTag = "!!str"
+
 var (
 	durationType = reflect.TypeFor[Duration]()
 	// An explicit !!null tag can carry any text, which the decoder would echo.
@@ -86,7 +88,7 @@ func isStringKey(k *yamlv3.Node) bool {
 	case k.Kind != yamlv3.ScalarNode:
 		return false
 	case k.Style&yamlv3.TaggedStyle != 0:
-		return k.Tag == "!!str"
+		return k.Tag == strTag
 	case k.Style&(yamlv3.SingleQuotedStyle|yamlv3.DoubleQuotedStyle|
 		yamlv3.LiteralStyle|yamlv3.FoldedStyle) != 0:
 		return true
@@ -115,10 +117,7 @@ func displayPath(path string) string {
 }
 
 func checkDuration(n *yamlv3.Node, path string) error {
-	if n.Tag == "!!null" && slices.Contains(yamlNullSpellings, n.Value) {
-		return nil
-	}
-	if _, err := time.ParseDuration(n.Value); err != nil || n.Tag != "!!str" {
+	if _, err := time.ParseDuration(n.Value); err != nil || n.Tag != strTag {
 		return nodeErrorf(n, path, "must be a duration string such as \"15m\"")
 	}
 	return nil
@@ -147,17 +146,54 @@ func checkFieldNames(n *yamlv3.Node, t reflect.Type, path string) error {
 // The JSON decoder would name only the innermost struct field, without map
 // keys, list indexes or the line.
 func checkShape(n *yamlv3.Node, t reflect.Type, path string) error {
-	if n.Kind == yamlv3.AliasNode {
+	if n.Kind == yamlv3.AliasNode || isNull(n) {
 		return nil
 	}
 	if t == durationType {
 		return checkDuration(n, path)
 	}
 	want, ok := shapeOf(t)
-	if !ok || n.Tag == "!!null" || want.matches(n) {
+	if !ok {
 		return nil
 	}
-	return nodeErrorf(n, path, "must be %s", want.desc)
+	if !want.matches(n) {
+		return nodeErrorf(n, path, "must be %s", want.desc)
+	}
+	if t.Kind() == reflect.String && changesText(n) {
+		return nodeErrorf(n, path, "must be quoted to keep its text")
+	}
+	return nil
+}
+
+// isNull accepts only scalar nulls: an explicit !!null tag can sit on a
+// collection or carry any text, which later checks would echo.
+func isNull(n *yamlv3.Node) bool {
+	return n.Kind == yamlv3.ScalarNode && n.Tag == "!!null" &&
+		slices.Contains(yamlNullSpellings, n.Value)
+}
+
+// changesText finds an unquoted value that the YAML 1.1 decoder reads as a
+// number or bool with different text, so yes or 0123 in a string field would
+// silently become "true" or "83".
+func changesText(n *yamlv3.Node) bool {
+	switch {
+	case n.Style&(yamlv3.SingleQuotedStyle|yamlv3.DoubleQuotedStyle|
+		yamlv3.LiteralStyle|yamlv3.FoldedStyle) != 0:
+		return false
+	case n.Style&yamlv3.TaggedStyle != 0:
+		return n.Tag != strTag
+	}
+	var v any
+	if err := yamlv2.Unmarshal([]byte(n.Value), &v); err != nil {
+		return true
+	}
+	switch v.(type) {
+	case string:
+		return false
+	case int, int64, bool:
+		return fmt.Sprint(v) != n.Value
+	}
+	return true
 }
 
 func shapeOf(t reflect.Type) (shape, bool) {
