@@ -87,7 +87,7 @@ func (s *Spec) validateCredentials(errs *fieldErrors) map[string]string {
 		path := fmt.Sprintf("spec.credentials[%d]", i)
 		validateName(errs, path+".name", c.Name, maxNameLength)
 		if isValidName(c.Name) && seen[c.Name] {
-			errs.add(path+".name", "duplicate credential %q", c.Name)
+			errs.add(path+".name", "duplicates another credential name")
 		}
 		seen[c.Name] = true
 		switch c.Mode {
@@ -166,15 +166,16 @@ func validatePermissions(errs *fieldErrors, path string, permissions map[string]
 	if len(permissions) == 0 {
 		errs.add(path, "must list at least one permission")
 	}
+	// Names are never quoted: a key may be a pasted token, even one shaped
+	// like a permission name.
 	for name, level := range permissions {
 		switch {
-		// An invalid key may be a pasted token, so it is never quoted.
 		case !permissionPattern.MatchString(name):
 			errs.add(path, "permission names must be lowercase letters and underscores")
 		case level != "read" && level != "write":
-			errs.add(path, "%q must be read or write", name)
+			errs.add(path, "levels must be read or write")
 		case slices.Contains(deniedPermissions, name):
-			errs.add(path, "permission %q is not allowed for pool agents", name)
+			errs.add(path, "must not include %s", strings.Join(deniedPermissions, ", "))
 		}
 	}
 }
@@ -201,16 +202,12 @@ func (s *Spec) validateInject(
 	// Only valid names are registered, so env errors never name an invalid one.
 	if isValidName(r.Name) {
 		if _, dup := routes[r.Name]; dup {
-			errs.add(path+".route.name", "duplicate route %q", r.Name)
+			errs.add(path+".route.name", "duplicates another route name")
 		}
 		routes[r.Name] = c.Name
 	}
 	validateHeader(errs, path+".route", r)
 	s.validateUpstream(errs, path+".route.upstream", r.Upstream)
-}
-
-func isValidName(name string) bool {
-	return namePattern.MatchString(name) && len(name) <= maxNameLength
 }
 
 func hasMintFields(c *Credential) bool {
@@ -309,7 +306,7 @@ func (s *Spec) validateAgentGrants(errs *fieldErrors, routes map[string]string) 
 		declared[c.Name] = true
 	}
 	for name, agent := range s.Agents {
-		path := "spec.agents." + name
+		path := agentPath(name)
 		for i, cred := range agent.Credentials {
 			if !declared[cred] {
 				errs.add(fmt.Sprintf("%s.credentials[%d]", path, i),
@@ -317,6 +314,10 @@ func (s *Spec) validateAgentGrants(errs *fieldErrors, routes map[string]string) 
 			}
 		}
 		for key, value := range agent.Env {
+			// validateAgents reports invalid names, which are never shown.
+			if secrets.ValidateName(key) != nil {
+				continue
+			}
 			if msg := checkEnvValue(value, agent, routes); msg != "" {
 				errs.add(path+".env."+key, "%s", msg)
 			}

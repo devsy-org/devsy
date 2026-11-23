@@ -15,7 +15,7 @@ var credentialRejections = []rejection{
 	{
 		"duplicate credential",
 		func(p *Pool) { p.Spec.Credentials[1].Name = "github" },
-		"duplicate credential",
+		"spec.credentials[1].name: duplicates another credential name",
 	},
 	{"unknown mode", func(p *Pool) { p.Spec.Credentials[0].Mode = "static" }, "mode"},
 	{"wrong issuer", func(p *Pool) { p.Spec.Credentials[0].Issuer = "gitlab" }, "issuer"},
@@ -108,7 +108,7 @@ var credentialRejections = []rejection{
 	{
 		"duplicate route",
 		func(p *Pool) { p.Spec.Credentials[2].Route.Name = "anthropic" },
-		"duplicate route",
+		"spec.credentials[2].route.name: duplicates another route name",
 	},
 	{"undeclared credential", func(p *Pool) {
 		setAgent(p, func(a *Agent) { a.Credentials = append(a.Credentials, "aws") })
@@ -144,12 +144,12 @@ var credentialRejections = []rejection{
 	{
 		"workflows permission",
 		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["workflows"] = "write" },
-		"not allowed for pool agents",
+		"permissions: must not include administration",
 	},
 	{
 		"administration permission",
 		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["administration"] = "read" },
-		"not allowed for pool agents",
+		"permissions: must not include administration",
 	},
 	upstreamCase("upstream path", "https://api.anthropic.com/v1"),
 	upstreamCase("upstream trailing slash", "https://api.anthropic.com/"),
@@ -200,6 +200,39 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 		s.NotContains(err.Error(), v)
 	}
 	s.NotContains(strings.ReplaceAll(err.Error(), "spec.egress.allow", ""), "canary-host")
+}
+
+func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoNames() {
+	p := s.loadExample()
+	p.Spec.Credentials[0].Scope.Permissions["canary_password"] = "admin"
+	p.Spec.Credentials[1].Name = "canary-dup"
+	p.Spec.Credentials[2].Name = "canary-dup"
+	p.Spec.Credentials[2].Route.Name = p.Spec.Credentials[1].Route.Name
+	p.Spec.Agents["CANARY_AGENT"] = Agent{
+		Command: []string{"a"},
+		Env:     map[string]string{"X": "{{route.none}}", "ghp CANARY": "{{x}}"},
+	}
+	err := p.Validate()
+	s.ErrorContains(err, "levels must be read or write")
+	s.ErrorContains(err, "duplicates another credential name")
+	s.ErrorContains(err, "duplicates another route name")
+	s.ErrorContains(err, "spec.agents.<key>.env.X: names undeclared route")
+	s.NotContains(strings.ToLower(err.Error()), "canary")
+}
+
+func (s *PoolConfigSuite) TestCredentialDecodeErrorsDoNotEchoKeys() {
+	data, err := os.ReadFile("testdata/pool.yaml")
+	s.Require().NoError(err)
+	perms := "contents: write,"
+	for _, tc := range []struct{ old, new, want string }{
+		{"mode: mint", "mode: mint\n      canary_field: x", "spec.credentials[0] (line 28): unknown field"},
+		{perms, perms + " canary_password: [x],", "permissions.<key> (line 34): must be a string"},
+		{perms, perms + " canary_password: read, canary_password: write,", "permissions (line 34): duplicate"},
+	} {
+		_, err := Parse([]byte(strings.Replace(string(data), tc.old, tc.new, 1)))
+		s.ErrorContains(err, tc.want, tc.new)
+		s.NotContains(strings.ToLower(err.Error()), "canary", tc.new)
+	}
 }
 
 func (s *PoolConfigSuite) TestInvalidRouteNameNotEchoedFromEnv() {
