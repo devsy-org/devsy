@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -238,6 +240,17 @@ func (s *rerunSuite) TestArgs() {
 	}
 	_, err = parseRerunArgs([]string{runIDFlag, "7"}, &output, func(string) string { return "" })
 	s.Require().Error(err)
+}
+
+func (s *rerunSuite) TestRetriesDoNotShareThePullRequestGroup() {
+	workflow, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "pr-ci.yml"))
+	s.Require().NoError(err)
+
+	s.Contains(
+		string(workflow),
+		"group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && "+
+			"github.run_attempt == 1 && github.head_ref || github.run_id }}\n",
+	)
 }
 
 func (s *rerunSuite) runRerun(fake *rerunFakeRunner, args ...string) (string, error) {
