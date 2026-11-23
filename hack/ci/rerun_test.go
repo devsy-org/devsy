@@ -249,7 +249,8 @@ func (s *rerunSuite) TestRetriesDoNotShareThePullRequestGroup() {
 	s.Contains(
 		string(workflow),
 		"group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && "+
-			"github.run_attempt == 1 && github.head_ref || github.run_id }}\n",
+			"github.run_attempt == 1 && format('pr-{0}', github.head_ref) || "+
+			"format('run-{0}', github.run_id) }}\n",
 	)
 }
 
