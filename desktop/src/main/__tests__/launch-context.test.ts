@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { DEFAULT_APP_SETTINGS } from "../app-settings.js"
 import {
   AUTO_LAUNCH_ARG,
   isAutomaticLoginLaunch,
@@ -6,6 +7,7 @@ import {
 } from "../launch-context.js"
 
 const base = {
+  ...DEFAULT_APP_SETTINGS,
   runAtStartup: true,
   openToTrayOnStartup: true,
   trayNotifications: "failures" as const,
