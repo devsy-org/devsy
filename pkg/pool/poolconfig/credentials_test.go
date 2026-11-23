@@ -143,7 +143,7 @@ var credentialRejections = []rejection{
 	},
 	{
 		"workflows permission",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["workflows"] = "write" },
+		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["workflows"] = permWrite },
 		wantDeniedPermission,
 	},
 	{
@@ -220,7 +220,10 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoNames() {
 	s.NotContains(strings.ToLower(err.Error()), "canary")
 }
 
-const wantDeniedPermission = "permissions: must not include a permission whose name contains"
+const (
+	wantDeniedPermission = "permissions: must not include a permission whose name contains"
+	permWrite            = "write"
+)
 
 func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
 	for _, name := range []string{
@@ -230,7 +233,7 @@ func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
 		"secret_scanning_alerts", "organization_custom_properties",
 	} {
 		p := s.loadExample()
-		p.Spec.Credentials[0].Scope.Permissions[name] = "write"
+		p.Spec.Credentials[0].Scope.Permissions[name] = permWrite
 		s.ErrorContains(p.Validate(), wantDeniedPermission, name)
 	}
 }
@@ -241,7 +244,7 @@ func (s *PoolConfigSuite) TestAllowedPermissions() {
 		"packages", "pages", "deployments", "environments",
 	} {
 		p := s.loadExample()
-		p.Spec.Credentials[0].Scope.Permissions[name] = "write"
+		p.Spec.Credentials[0].Scope.Permissions[name] = permWrite
 		s.NoError(p.Validate(), name)
 	}
 }
