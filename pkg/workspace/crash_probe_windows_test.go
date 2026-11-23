@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestTemporaryCrashDumpProbe(t *testing.T) {
+func TestProviderUpdateTemporaryCrashProbe(t *testing.T) {
 	var mu sync.Mutex
 	mu.Unlock()
 }
