@@ -91,6 +91,12 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"git:https://user:CANARY@github.com/acme/api",
 		"user:CANARY@github.com/acme?u=https://x",
 		"CANARY-user@github.com/acme/api",
+		"git:git:https://CANARY@github.com/acme/api",
+		"SSH://CANARY@github.com/acme/api",
+		"ssh://CANARY@github.com/acme/api",
+		"ssh://git@CANARY@github.com/acme/api",
+		"git@CANARY@github.com:acme/api",
+		"//CANARY@github.com/acme/api",
 		"ssh://git:CANARY@github.com/acme/api.git",
 	} {
 		p := s.loadExample()
@@ -102,6 +108,7 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 	for _, repo := range []string{
 		"ssh://git@github.com/acme/api.git", "git@github.com:acme/api.git", "github.com/acme/api@main",
 		"git:git@github.com:acme/api.git", "github.com:8443/acme/api@main",
+		"git@github.com:project.git@main", "https://github.com/acme/api.git@feature/x",
 	} {
 		p := s.loadExample()
 		p.Spec.Source.Repo = repo
@@ -110,6 +117,12 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 	p := s.loadExample()
 	p.Spec.Source.Repo = "https://github.com/acme/%zz"
 	s.ErrorContains(p.Validate(), "spec.source.repo: must be a valid repository URL")
+	for _, repo := range []string{"https://github.com/acme/api?CANARY=1", "https://github.com/a/b#CANARY"} {
+		p.Spec.Source.Repo = repo
+		err := p.Validate()
+		s.ErrorContains(err, "spec.source.repo: must not contain a query or fragment")
+		s.NotContains(err.Error(), "CANARY")
+	}
 }
 
 func (s *PoolConfigSuite) TestStrictParsing() {
@@ -254,6 +267,7 @@ func (s *PoolConfigSuite) TestRejectsWrongShapes() {
 		{"bool-tagged quoted", "      env: {MODE: !!bool \"yes\"}\n", wantModeString},
 		{"binary-tagged", "      env: {MODE: !!binary c3ludGhldGljLXNlY3JldA==}\n", wantModeString},
 		{"int-tagged quoted", "      env: {MODE: !!int '0123'}\n", wantModeString},
+		{"null-tagged null", "      env: {MODE: !!null \"null\"}\n", wantModeString},
 	}
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
@@ -346,6 +360,17 @@ func (s *PoolConfigSuite) TestValidationErrorsGiveLines() {
 	s.ErrorContains(err, "spec.capacity.maxQueued (line 13): must not be negative")
 	_, err = Parse(append(s.readMinimal(), []byte("      env: {HTTP_PROXY: x}\n")...))
 	s.ErrorContains(err, "spec.agents.claude.env.HTTP_PROXY (line 13): is set by the pool")
+	_, err = Parse(append(s.readMinimal(), []byte("      env: {ghp_CANARY: x}\n")...))
+	s.NoError(err)
+	_, err = Parse(append(s.readMinimal(), []byte("      env: {'CANARY x': y}\n")...))
+	s.ErrorContains(err, "spec.agents.claude.env.<key> (line 13): names must start")
+	s.NotContains(err.Error(), "CANARY")
+	_, err = Parse(append(s.readMinimal(), []byte("    CANARY: {command: [x]}\n")...))
+	s.ErrorContains(err, "spec.agents.<key> (line 13): must be 1 to 63")
+	s.NotContains(err.Error(), "CANARY")
+	bad := strings.Replace(string(s.readMinimal()), "command: [claude, -p]", "command: []", 1)
+	_, err = Parse([]byte(bad + "    'claude.command': {command: [x]}\n"))
+	s.ErrorContains(err, "spec.agents.claude.command (line 12): is required")
 	p := s.loadExample()
 	p.Spec.Capacity.MaxQueued = -1
 	s.ErrorContains(p.Validate(), "spec.capacity.maxQueued: must not be negative")
