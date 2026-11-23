@@ -114,7 +114,7 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 
 func (s *PoolConfigSuite) TestStrictParsing() {
 	_, err := Parse([]byte("apiVersion: devsy.sh/v1alpha1\nkind: Pool\nspec:\n  egres: {}\n"))
-	s.ErrorContains(err, `spec (line 4): unknown field "egres"`)
+	s.ErrorContains(err, "spec (line 4): unknown field")
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: 8 hours\n"))
 	s.ErrorContains(err, "parse pool config")
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: 8\n"))
@@ -126,7 +126,7 @@ func (s *PoolConfigSuite) TestStrictParsing() {
 	s.ErrorContains(err, "spec.lifecycle.ttl (line 3): must be a duration")
 	s.NotContains(err.Error(), "synthetic-secret-marker")
 	_, err = Parse(append(s.readMinimal(), []byte("  provider: {name: x}\n")...))
-	s.ErrorContains(err, `spec (line 13): duplicate key "provider"`)
+	s.ErrorContains(err, "spec (line 13): duplicate key")
 	var d Duration
 	err = d.UnmarshalJSON([]byte(`"synthetic-secret-marker"`))
 	s.Require().Error(err)
@@ -138,7 +138,7 @@ func (s *PoolConfigSuite) TestRejectsAmbiguousYAML() {
 		{
 			"anchor",
 			"      env: &m {A: b}\n",
-			"spec.agents.claude.env (line 13): YAML anchors and aliases",
+			"spec.agents.<key>.env (line 13): YAML anchors and aliases",
 		},
 		{
 			"alias",
@@ -155,7 +155,7 @@ func (s *PoolConfigSuite) TestRejectsAmbiguousYAML() {
 		{
 			"unknown text key",
 			"      'secret-token here': x\n",
-			"spec.agents.claude (line 13): unknown field",
+			"spec.agents.<key> (line 13): unknown field",
 		},
 		{
 			"duplicate text key",
@@ -201,7 +201,7 @@ spec:
 	s.Contains(p.Spec.Agents, "2agent")
 }
 
-const wantModeString = "spec.agents.claude.env.MODE (line 13): must be a string"
+const wantModeString = "spec.agents.<key>.env.<key> (line 13): must be a string"
 
 func (s *PoolConfigSuite) TestRejectsWrongShapes() {
 	cases := []struct{ name, extra, want string }{
@@ -228,7 +228,7 @@ func (s *PoolConfigSuite) TestRejectsWrongShapes() {
 		{
 			"mapping in string list",
 			"      command: [a, {synthetic-secret: &x 1}]\n",
-			"spec.agents.claude.command[1] (line 13): must be a string",
+			"spec.agents.<key>.command[1] (line 13): must be a string",
 		},
 		{
 			"null-tagged list",
@@ -325,9 +325,9 @@ func (s *PoolConfigSuite) TestRejectsExtraDocuments() {
 
 func (s *PoolConfigSuite) TestRequiresExactFieldNames() {
 	_, err := Parse(append(s.readMinimal(), []byte("  Agents: {}\n")...))
-	s.ErrorContains(err, `spec (line 13): unknown field "Agents"`)
+	s.ErrorContains(err, "spec (line 13): unknown field")
 	_, err = Parse(append(s.readMinimal(), []byte("  audit: {RetainDays: 3}\n")...))
-	s.ErrorContains(err, `spec.audit (line 13): unknown field "RetainDays"`)
+	s.ErrorContains(err, "spec.audit (line 13): unknown field")
 	p := s.parseMinimal("      env: {Foo: a, foo: b}\n")
 	s.Len(p.Spec.Agents["claude"].Env, 2)
 }
@@ -338,12 +338,14 @@ func (s *PoolConfigSuite) TestRejections() {
 
 const (
 	wantInvalidYAML = "invalid YAML"
-	wantEnvField    = "env.PASS (line 13): must be a string"
+	wantEnvField    = "env.<key> (line 13): must be a string"
 )
 
 func (s *PoolConfigSuite) TestValidationErrorsGiveLines() {
 	_, err := Parse(append(s.readMinimal(), []byte("  capacity: {maxQueued: -1}\n")...))
 	s.ErrorContains(err, "spec.capacity.maxQueued (line 13): must not be negative")
+	_, err = Parse(append(s.readMinimal(), []byte("      env: {HTTP_PROXY: x}\n")...))
+	s.ErrorContains(err, "spec.agents.claude.env.HTTP_PROXY (line 13): is set by the pool")
 	p := s.loadExample()
 	p.Spec.Capacity.MaxQueued = -1
 	s.ErrorContains(p.Validate(), "spec.capacity.maxQueued: must not be negative")
@@ -352,6 +354,14 @@ func (s *PoolConfigSuite) TestValidationErrorsGiveLines() {
 func (s *PoolConfigSuite) TestDecoderErrorsDoNotEchoValues() {
 	cases := []struct{ name, extra, want string }{
 		{"tagged int", "      env: {PASS: !!int CANARY}\n", wantEnvField},
+		{"key-shaped token", "      env: {CANARY_TOKEN: [a]}\n", wantEnvField},
+		{"unknown field", "      CANARY_field: x\n", "spec.agents.<key> (line 13): unknown field"},
+		{"duplicate key", "      env: {CANARY: a, CANARY: b}\n", "env (line 13): duplicate key"},
+		{
+			"duplicate agent",
+			"    CANARY: {command: [a]}\n    CANARY: {command: [b]}\n",
+			"spec.agents (line 14): duplicate key",
+		},
 		{"unknown anchor", "      env: {PASS: *CANARY}\n", wantInvalidYAML},
 		{
 			"fake field path",

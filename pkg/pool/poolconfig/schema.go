@@ -15,8 +15,8 @@ import (
 
 const (
 	strTag = "!!str"
-	// hiddenKey stands in for a map key that does not look like a name, since
-	// a key may be pasted text.
+	// hiddenKey stands in for a map key in decode errors, since a key may be
+	// pasted text.
 	hiddenKey = "<key>"
 )
 
@@ -29,8 +29,24 @@ var (
 		"false": false, "False": false, "FALSE": false,
 	}
 	decimalPattern = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
-	keyNamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,62}$`)
 )
+
+// fieldPath locates a node. key holds map keys as written, for the line
+// table; shown replaces them with hiddenKey for messages.
+type fieldPath struct {
+	key, shown string
+}
+
+func (p fieldPath) child(name string, isField bool) fieldPath {
+	if isField {
+		return fieldPath{p.key + "." + name, p.shown + "." + name}
+	}
+	return fieldPath{p.key + "." + name, p.shown + "." + hiddenKey}
+}
+
+func (p fieldPath) index(i int) fieldPath {
+	return fieldPath{fmt.Sprintf("%s[%d]", p.key, i), fmt.Sprintf("%s[%d]", p.shown, i)}
+}
 
 // decoder turns the YAML node tree into JSON values for the Go types. Every
 // scalar keeps the text it was written with, so no second YAML parser can
@@ -40,7 +56,7 @@ type decoder struct {
 	lines map[string]int
 }
 
-func (d *decoder) value(n *yamlv3.Node, t reflect.Type, path string) (any, error) {
+func (d *decoder) value(n *yamlv3.Node, t reflect.Type, path fieldPath) (any, error) {
 	t = derefType(t)
 	if n.Anchor != "" || n.Kind == yamlv3.AliasNode {
 		return nil, errNoAnchors(n, path)
@@ -62,9 +78,9 @@ func (d *decoder) value(n *yamlv3.Node, t reflect.Type, path string) (any, error
 	return scalarValue(n, t.Kind(), path)
 }
 
-func (d *decoder) record(n *yamlv3.Node, path string) {
-	if path != "" && !strings.Contains(path, hiddenKey) {
-		d.lines[displayPath(path)] = n.Line
+func (d *decoder) record(n *yamlv3.Node, path fieldPath) {
+	if path.key != "" {
+		d.lines[displayPath(path.key)] = n.Line
 	}
 }
 
@@ -73,7 +89,7 @@ func (d *decoder) record(n *yamlv3.Node, path string) {
 // so "allow" and "Allow" would both decode and the last one would win.
 func (d *decoder) object(
 	n *yamlv3.Node,
-	path string,
+	path fieldPath,
 	fields map[string]reflect.Type,
 	elem reflect.Type,
 ) (any, error) {
@@ -88,13 +104,13 @@ func (d *decoder) object(
 			return nil, err
 		}
 		if _, dup := out[name]; dup {
-			return nil, nodeErrorf(key, path, "duplicate key%s", keyLabel(name))
+			return nil, nodeErrorf(key, path, "duplicate key")
 		}
 		t, err := fieldType(fields, elem, key, path)
 		if err != nil {
 			return nil, err
 		}
-		if out[name], err = d.value(n.Content[i], t, path+"."+pathKey(name)); err != nil {
+		if out[name], err = d.value(n.Content[i], t, path.child(name, fields != nil)); err != nil {
 			return nil, err
 		}
 	}
@@ -105,7 +121,7 @@ func fieldType(
 	fields map[string]reflect.Type,
 	elem reflect.Type,
 	key *yamlv3.Node,
-	path string,
+	path fieldPath,
 ) (reflect.Type, error) {
 	if fields == nil {
 		return elem, nil
@@ -113,16 +129,16 @@ func fieldType(
 	if t := fields[key.Value]; t != nil {
 		return t, nil
 	}
-	return nil, nodeErrorf(key, path, "unknown field%s", keyLabel(key.Value))
+	return nil, nodeErrorf(key, path, "unknown field")
 }
 
-func (d *decoder) list(n *yamlv3.Node, elem reflect.Type, path string) (any, error) {
+func (d *decoder) list(n *yamlv3.Node, elem reflect.Type, path fieldPath) (any, error) {
 	if n.Kind != yamlv3.SequenceNode || n.Tag != "!!seq" {
 		return nil, nodeErrorf(n, path, "must be a list")
 	}
 	out := make([]any, len(n.Content))
 	for i, c := range n.Content {
-		v, err := d.value(c, elem, fmt.Sprintf("%s[%d]", path, i))
+		v, err := d.value(c, elem, path.index(i))
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +149,7 @@ func (d *decoder) list(n *yamlv3.Node, elem reflect.Type, path string) (any, err
 
 // keyName takes a key as written. A merge key or anchor could hide a key from
 // the exact-name check.
-func keyName(k *yamlv3.Node, path string) (string, error) {
+func keyName(k *yamlv3.Node, path fieldPath) (string, error) {
 	if k.Anchor != "" || k.Kind == yamlv3.AliasNode || k.Tag == "!!merge" {
 		return "", errNoAnchors(k, path)
 	}
@@ -161,7 +177,7 @@ var scalarRules = map[reflect.Kind]scalarRule{
 	}},
 }
 
-func scalarValue(n *yamlv3.Node, kind reflect.Kind, path string) (any, error) {
+func scalarValue(n *yamlv3.Node, kind reflect.Kind, path fieldPath) (any, error) {
 	rule, known := scalarRules[kind]
 	if !known {
 		return nil, nodeErrorf(n, path, "has an unsupported type")
@@ -180,7 +196,7 @@ func isDecimal(n *yamlv3.Node) bool {
 	return n.Tag == "!!int" && decimalPattern.MatchString(n.Value) && err == nil
 }
 
-func durationValue(n *yamlv3.Node, path string) (any, error) {
+func durationValue(n *yamlv3.Node, path fieldPath) (any, error) {
 	if _, err := time.ParseDuration(n.Value); err != nil || n.Kind != yamlv3.ScalarNode ||
 		n.Tag != strTag {
 		return nil, nodeErrorf(n, path, "must be a duration string such as \"15m\"")
@@ -215,26 +231,13 @@ func derefType(t reflect.Type) reflect.Type {
 	return t
 }
 
-func pathKey(name string) string {
-	if keyNamePattern.MatchString(name) {
-		return name
-	}
-	return hiddenKey
-}
-
-func keyLabel(name string) string {
-	if keyNamePattern.MatchString(name) {
-		return fmt.Sprintf(" %q", name)
-	}
-	return ""
-}
-
-func errNoAnchors(n *yamlv3.Node, path string) error {
+func errNoAnchors(n *yamlv3.Node, path fieldPath) error {
 	return nodeErrorf(n, path, "YAML anchors and aliases are not supported")
 }
 
-func nodeErrorf(n *yamlv3.Node, path, format string, args ...any) error {
-	return fmt.Errorf("%s (line %d): %s", displayPath(path), n.Line, fmt.Sprintf(format, args...))
+func nodeErrorf(n *yamlv3.Node, path fieldPath, format string, args ...any) error {
+	msg := fmt.Sprintf(format, args...)
+	return fmt.Errorf("%s (line %d): %s", displayPath(path.shown), n.Line, msg)
 }
 
 func displayPath(path string) string {
