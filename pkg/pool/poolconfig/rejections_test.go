@@ -73,7 +73,7 @@ var rejections = []rejection{
 	{
 		"bad env name",
 		func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["1X"] = "v" }) },
-		"spec.agents.claude.env: names must start with a letter",
+		"spec.agents.claude.env.<key>: names must start with a letter",
 	},
 	{
 		"proxy env",

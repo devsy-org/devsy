@@ -32,16 +32,19 @@ var (
 )
 
 // fieldPath locates a node. key holds map keys as written, for the line
-// table; shown replaces them with hiddenKey for messages.
+// table; shown is the path printed in messages.
 type fieldPath struct {
 	key, shown string
 }
 
-func (p fieldPath) child(name string, isField bool) fieldPath {
-	if isField {
-		return fieldPath{p.key + "." + name, p.shown + "." + name}
-	}
-	return fieldPath{p.key + "." + name, p.shown + "." + hiddenKey}
+func (p fieldPath) field(name string) fieldPath {
+	return fieldPath{p.key + "." + name, p.shown + "." + name}
+}
+
+// entry quotes the map key in the lookup path, so a key holding dots or
+// brackets cannot match another field's path.
+func (p fieldPath) entry(name, label string) fieldPath {
+	return fieldPath{p.key + "[" + strconv.Quote(name) + "]", p.shown + "." + label}
 }
 
 func (p fieldPath) index(i int) fieldPath {
@@ -80,7 +83,7 @@ func (d *decoder) value(n *yamlv3.Node, t reflect.Type, path fieldPath) (any, er
 
 func (d *decoder) record(n *yamlv3.Node, path fieldPath) {
 	if path.key != "" {
-		d.lines[displayPath(path.key)] = n.Line
+		d.lines[strings.TrimPrefix(path.key, ".")] = n.Line
 	}
 }
 
@@ -110,11 +113,22 @@ func (d *decoder) object(
 		if err != nil {
 			return nil, err
 		}
-		if out[name], err = d.value(n.Content[i], t, path.child(name, fields != nil)); err != nil {
+		if out[name], err = d.value(
+			n.Content[i],
+			t,
+			childPath(path, name, fields != nil),
+		); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
+}
+
+func childPath(path fieldPath, name string, isField bool) fieldPath {
+	if isField {
+		return path.field(name)
+	}
+	return path.entry(name, hiddenKey)
 }
 
 func fieldType(
@@ -204,10 +218,10 @@ func durationValue(n *yamlv3.Node, path fieldPath) (any, error) {
 	return n.Value, nil
 }
 
-// isNull accepts only scalar nulls: an explicit !!null tag can sit on a
-// collection or carry any text.
+// isNull accepts only plain scalar nulls: an explicit !!null tag can sit on
+// a collection, carry any text or turn a quoted string into null.
 func isNull(n *yamlv3.Node) bool {
-	return n.Kind == yamlv3.ScalarNode && n.Tag == "!!null" &&
+	return n.Kind == yamlv3.ScalarNode && n.Tag == "!!null" && !isExplicitlyTagged(n) &&
 		slices.Contains(yamlNullSpellings, n.Value)
 }
 
