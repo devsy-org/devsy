@@ -17,6 +17,8 @@ const (
 	// workspace ID limit.
 	maxPoolNameLength = 32
 	maxNameLength     = 63
+
+	errRepoCredentials = "must not contain credentials; use a credential grant"
 )
 
 var (
@@ -73,23 +75,36 @@ func escapesRepo(path string) bool {
 		rootedPathPattern.MatchString(path) || clean == ".." || strings.HasPrefix(clean, "../")
 }
 
-// repoHasCredentials finds a token pasted into the repository URL, which
-// would otherwise reach the policy hash, audit records and logs. A plain ssh
-// user such as git@ is not a secret.
-func repoHasCredentials(repo string) bool {
-	u, err := url.Parse(repo)
-	if err != nil || u.User == nil {
-		return false
+// repoError finds a token pasted into the repository reference, which would
+// otherwise reach the policy hash, audit records and logs. A plain ssh user
+// such as git@ is not a secret. Messages never include the value.
+func repoError(repo string) string {
+	if !strings.Contains(repo, "://") {
+		// In scp-style user@host:path, a colon before the @ marks a password.
+		user, _, found := strings.Cut(repo, "@")
+		if found && strings.Contains(user, ":") {
+			return errRepoCredentials
+		}
+		return ""
 	}
-	_, hasPassword := u.User.Password()
-	return hasPassword || u.Scheme != "ssh"
+	u, err := url.Parse(repo)
+	if err != nil {
+		return "must be a valid URL"
+	}
+	if u.User == nil {
+		return ""
+	}
+	if _, hasPassword := u.User.Password(); hasPassword || u.Scheme != "ssh" {
+		return errRepoCredentials
+	}
+	return ""
 }
 
 func (s *Spec) validateSource(errs *fieldErrors) {
 	if s.Source.Repo == "" {
 		errs.add("spec.source.repo", "is required")
-	} else if repoHasCredentials(s.Source.Repo) {
-		errs.add("spec.source.repo", "must not contain credentials; use a credential grant")
+	} else if msg := repoError(s.Source.Repo); msg != "" {
+		errs.add("spec.source.repo", "%s", msg)
 	}
 	if path := s.Source.DevcontainerPath; path != "" && escapesRepo(path) {
 		errs.add(

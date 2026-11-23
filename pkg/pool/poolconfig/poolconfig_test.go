@@ -87,6 +87,7 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 	for _, repo := range []string{
 		"https://x-access-token:CANARY@github.com/acme/api",
 		"https://CANARY@github.com/acme/api",
+		"user:CANARY@github.com:acme/api.git",
 		"ssh://git:CANARY@github.com/acme/api.git",
 	} {
 		p := s.loadExample()
@@ -102,6 +103,11 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		p.Spec.Source.Repo = repo
 		s.NoError(p.Validate(), repo)
 	}
+	p := s.loadExample()
+	p.Spec.Source.Repo = "https://user:CANARY@github.com/acme/%zz"
+	err := p.Validate()
+	s.ErrorContains(err, "spec.source.repo: must be a valid URL")
+	s.NotContains(err.Error(), "CANARY")
 }
 
 func (s *PoolConfigSuite) TestStrictParsing() {
@@ -178,6 +184,8 @@ spec:
 	s.Contains(p.Spec.Agents, "2agent")
 }
 
+const wantModeString = "spec.agents.claude.env.MODE (line 13): must be a string"
+
 func (s *PoolConfigSuite) TestRejectsWrongShapes() {
 	cases := []struct{ name, extra, want string }{
 		{
@@ -188,7 +196,7 @@ func (s *PoolConfigSuite) TestRejectsWrongShapes() {
 		{
 			"list env value",
 			"      env: {MODE: [synthetic-secret]}\n",
-			"spec.agents.claude.env.MODE (line 13): must be a string",
+			wantModeString,
 		},
 		{
 			"word number",
@@ -204,6 +212,21 @@ func (s *PoolConfigSuite) TestRejectsWrongShapes() {
 			"mapping in string list",
 			"      command: [a, {synthetic-secret: &x 1}]\n",
 			"spec.agents.claude.command[1] (line 13): must be a string",
+		},
+		{
+			"null-tagged list",
+			"      env: {MODE: !!null [synthetic-secret]}\n",
+			wantModeString,
+		},
+		{
+			"null-tagged mapping",
+			"      env: {MODE: !!null {synthetic-secret: &x 1}}\n",
+			wantModeString,
+		},
+		{
+			"null-tagged text",
+			"      env: {MODE: !!null synthetic-secret}\n",
+			"spec.agents.claude.env.MODE (line 13): must be quoted",
 		},
 	}
 	for _, tc := range cases {
@@ -236,6 +259,21 @@ spec:
 `))
 	s.Require().NoError(err)
 	s.Equal(map[string]string{"ON": "a", long: "b"}, p.Spec.Provider.Options)
+}
+
+func (s *PoolConfigSuite) TestStringValuesKeepText() {
+	for _, value := range []string{"yes", "Off", "0123", "0x1F", "1_000", "+1", "1.5", "!!int 7"} {
+		_, err := Parse(append(s.readMinimal(), []byte("      env: {MODE: "+value+"}\n")...))
+		s.ErrorContains(err, "spec.agents.claude.env.MODE (line 13): must be quoted", value)
+	}
+	p, err := Parse(append(s.readMinimal(), []byte(
+		"      env:\n        A: \"yes\"\n        B: 8080\n        C: true\n        D: !!str 0123\n"+
+			"        E: 2026-01-15\n        F: |-\n          on\n",
+	)...))
+	s.Require().NoError(err)
+	s.Equal(map[string]string{
+		"A": "yes", "B": "8080", "C": "true", "D": "0123", "E": "2026-01-15", "F": "on",
+	}, p.Spec.Agents["claude"].Env)
 }
 
 func (s *PoolConfigSuite) TestReportsEveryError() {
@@ -274,7 +312,7 @@ const wantInvalidYAML = "invalid YAML"
 
 func (s *PoolConfigSuite) TestDecoderErrorsDoNotEchoValues() {
 	cases := []struct{ name, extra, want string }{
-		{"tagged int", "      env: {PASS: !!int CANARY}\n", wantInvalidYAML},
+		{"tagged int", "      env: {PASS: !!int CANARY}\n", "env.PASS (line 13): must be quoted"},
 		{"unknown anchor", "      env: {PASS: *CANARY}\n", wantInvalidYAML},
 		{
 			"fake field path",
