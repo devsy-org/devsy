@@ -150,7 +150,7 @@ func noRunnerJobs(jobs []ghJob, ignore map[string]bool) ([]string, string) {
 		}
 		if !noRunnerMacOS(job) {
 			return nil, fmt.Sprintf(
-				"%s ended %s on runner %q with labels %v",
+				"%q ended %q on runner %q with labels %q",
 				job.Name, job.Conclusion, job.RunnerName, job.Labels,
 			)
 		}
@@ -187,7 +187,8 @@ func (c rerunCommand) skipSuperseded(
 		return plan, err
 	}
 	if id := strings.TrimSpace(latest.String()); id != strconv.FormatInt(run.ID, 10) {
-		return rerunPlan{reason: "a newer run " + id + " exists for branch " + run.HeadBranch}, nil
+		reason := fmt.Sprintf("a newer run %q exists for branch %q", id, run.HeadBranch)
+		return rerunPlan{reason: reason}, nil
 	}
 	return plan, nil
 }
@@ -204,7 +205,7 @@ func (c rerunCommand) report(run ghRun, plan rerunPlan) {
 		plan.reason,
 	)
 	for _, job := range plan.jobs {
-		_, _ = fmt.Fprintf(c.stdout, "  %s\n", job)
+		_, _ = fmt.Fprintf(c.stdout, "  %q\n", job)
 	}
 }
 
