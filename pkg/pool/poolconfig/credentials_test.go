@@ -121,7 +121,7 @@ var credentialRejections = []rejection{
 	}, "undeclared route"},
 	{"route not granted", func(p *Pool) {
 		setAgent(p, func(a *Agent) { a.Env["X"] = "{{route.openai}}" })
-	}, "does not list credential"},
+	}, "does not list"},
 	malformedCase("unterminated placeholder", "{{route.anthropic"),
 	malformedCase("triple braces", "{{{route.anthropic}}}"),
 	malformedCase("single braces", "{route.anthropic}"),
@@ -189,6 +189,21 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	s.NotContains(strings.ReplaceAll(err.Error(), "spec.egress.allow", ""), "canary-host")
 }
 
+func (s *PoolConfigSuite) TestInvalidRouteNameNotEchoedFromEnv() {
+	p := s.loadExample()
+	p.Spec.Credentials[2].Route.Name = "CANARY_ROUTE"
+	setAgent(p, func(a *Agent) { a.Env["X"] = "{{route.CANARY_ROUTE}}" })
+	err := p.Validate()
+	s.ErrorContains(err, "route.name")
+	s.NotContains(err.Error(), "CANARY")
+}
+
+func (s *PoolConfigSuite) TestHeaderAcceptsAnyToken() {
+	p := s.loadExample()
+	p.Spec.Credentials[1].Route.Header = "X_API_Key"
+	s.NoError(p.Validate())
+}
+
 func malformedCase(name, value string) rejection {
 	return rejection{name, func(p *Pool) {
 		setAgent(p, func(a *Agent) { a.Env["X"] = value })
@@ -212,7 +227,9 @@ func (s *PoolConfigSuite) TestCredentialExample() {
 }
 
 func (s *PoolConfigSuite) TestEnvValuesAcceptedWithoutPlaceholder() {
-	for _, value := range []string{`{"a":1}`, "prefix {{ route.anthropic }} suffix"} {
+	for _, value := range []string{
+		`{"a":1}`, `{"nested":{"enabled":true}}`, "prefix {{ route.anthropic }} suffix",
+	} {
 		p := s.loadExample()
 		setAgent(p, func(a *Agent) { a.Env["X"] = value })
 		s.NoError(p.Validate(), value)

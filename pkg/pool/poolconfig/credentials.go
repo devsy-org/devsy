@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/secrets"
+	"golang.org/x/net/http/httpguts"
 )
 
 const (
@@ -65,7 +66,6 @@ var (
 	digitsPattern     = regexp.MustCompile(`^[0-9]+$`)
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	permissionPattern = regexp.MustCompile(`^[a-z_]+$`)
-	headerPattern     = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 	prefixPattern     = regexp.MustCompile(`^[\x20-\x7e]*$`)
 	deniedPermissions = []string{
 		"administration", "organization_administration", "secrets", "organization_secrets",
@@ -86,7 +86,7 @@ func (s *Spec) validateCredentials(errs *fieldErrors) map[string]string {
 		c := &s.Credentials[i]
 		path := fmt.Sprintf("spec.credentials[%d]", i)
 		validateName(errs, path+".name", c.Name, maxNameLength)
-		if seen[c.Name] {
+		if isValidName(c.Name) && seen[c.Name] {
 			errs.add(path+".name", "duplicate credential %q", c.Name)
 		}
 		seen[c.Name] = true
@@ -194,12 +194,19 @@ func (s *Spec) validateInject(
 	}
 	r := c.Route
 	validateName(errs, path+".route.name", r.Name, maxNameLength)
-	if _, dup := routes[r.Name]; dup {
-		errs.add(path+".route.name", "duplicate route %q", r.Name)
+	// Only valid names are registered, so env errors never name an invalid one.
+	if isValidName(r.Name) {
+		if _, dup := routes[r.Name]; dup {
+			errs.add(path+".route.name", "duplicate route %q", r.Name)
+		}
+		routes[r.Name] = c.Name
 	}
-	routes[r.Name] = c.Name
 	validateHeader(errs, path+".route", r)
 	s.validateUpstream(errs, path+".route.upstream", r.Upstream)
+}
+
+func isValidName(name string) bool {
+	return namePattern.MatchString(name) && len(name) <= maxNameLength
 }
 
 func hasMintFields(c *Credential) bool {
@@ -208,7 +215,7 @@ func hasMintFields(c *Credential) bool {
 }
 
 func validateHeader(errs *fieldErrors, path string, r *Route) {
-	if !headerPattern.MatchString(r.Header) ||
+	if !httpguts.ValidHeaderFieldName(r.Header) ||
 		slices.Contains(reservedHeaders, strings.ToLower(r.Header)) {
 		errs.add(
 			path+".header",
@@ -320,8 +327,8 @@ func checkEnvValue(value string, agent Agent, routes map[string]string) string {
 	if msg != "" {
 		return msg
 	}
-	if strings.Contains(left, "{{") || strings.Contains(left, "}}") ||
-		strayRouteRegex.MatchString(left) {
+	// A lone "}}" is allowed so nested JSON values pass.
+	if strings.Contains(left, "{{") || strayRouteRegex.MatchString(left) {
 		return malformedPlaceholder
 	}
 	return ""
@@ -355,11 +362,7 @@ func checkPlaceholder(expr string, agent Agent, routes map[string]string) string
 		return "names undeclared route"
 	}
 	if !slices.Contains(agent.Credentials, owner) {
-		return fmt.Sprintf(
-			"uses route %q but the agent does not list credential %q",
-			routeName,
-			owner,
-		)
+		return "uses a route whose credential the agent does not list"
 	}
 	return ""
 }
