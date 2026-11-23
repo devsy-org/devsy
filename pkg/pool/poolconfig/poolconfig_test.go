@@ -3,6 +3,7 @@ package poolconfig
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -117,7 +118,10 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 	p := s.loadExample()
 	p.Spec.Source.Repo = "https://github.com/acme/%zz"
 	s.ErrorContains(p.Validate(), "spec.source.repo: must be a valid repository URL")
-	for _, repo := range []string{"https://github.com/acme/api?CANARY=1", "https://github.com/a/b#CANARY"} {
+	for _, repo := range []string{
+		"https://github.com/acme/api?CANARY=1", "https://github.com/a/b#CANARY",
+		"git@github.com:acme/api.git?key=CANARY", "git:git@github.com:acme/api.git#CANARY",
+	} {
 		p.Spec.Source.Repo = repo
 		err := p.Validate()
 		s.ErrorContains(err, "spec.source.repo: must not contain a query or fragment")
@@ -355,11 +359,23 @@ const (
 	wantEnvField    = "env.<key> (line 13): must be a string"
 )
 
+func (s *PoolConfigSuite) TestReservedEnvNames() {
+	for _, name := range append(slices.Clone(reservedEnvNames),
+		"http_proxy", "GIT_CONFIG_COUNT", "GIT_SSL_NO_VERIFY", "git_ssl_cainfo") {
+		p := s.loadExample()
+		setAgent(p, func(a *Agent) { a.Env = map[string]string{name: "x"} })
+		s.ErrorContains(p.Validate(), "is set by the pool", name)
+	}
+}
+
 func (s *PoolConfigSuite) TestValidationErrorsGiveLines() {
 	_, err := Parse(append(s.readMinimal(), []byte("  capacity: {maxQueued: -1}\n")...))
 	s.ErrorContains(err, "spec.capacity.maxQueued (line 13): must not be negative")
 	_, err = Parse(append(s.readMinimal(), []byte("      env: {HTTP_PROXY: x}\n")...))
 	s.ErrorContains(err, "spec.agents.claude.env.HTTP_PROXY (line 13): is set by the pool")
+	_, err = Parse(append(s.readMinimal(), []byte("      env: {GIT_SSL_CANARY: x}\n")...))
+	s.ErrorContains(err, "spec.agents.claude.env.<key> (line 13): is set by the pool")
+	s.NotContains(err.Error(), "CANARY")
 	_, err = Parse(append(s.readMinimal(), []byte("      env: {ghp_CANARY: x}\n")...))
 	s.NoError(err)
 	_, err = Parse(append(s.readMinimal(), []byte("      env: {'CANARY x': y}\n")...))
