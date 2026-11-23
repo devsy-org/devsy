@@ -203,8 +203,9 @@ func (s *Spec) validateInject(
 	if isValidName(r.Name) {
 		if _, dup := routes[r.Name]; dup {
 			errs.add(path+".route.name", "duplicates another route name")
+		} else {
+			routes[r.Name] = c.Name
 		}
-		routes[r.Name] = c.Name
 	}
 	validateHeader(errs, path+".route", r)
 	s.validateUpstream(errs, path+".route.upstream", r.Upstream)

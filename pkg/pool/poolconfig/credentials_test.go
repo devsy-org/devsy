@@ -220,6 +220,14 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoNames() {
 	s.NotContains(strings.ToLower(err.Error()), "canary")
 }
 
+func (s *PoolConfigSuite) TestDuplicateRouteKeepsFirstOwner() {
+	p := s.loadExample()
+	p.Spec.Credentials[2].Route.Name = p.Spec.Credentials[1].Route.Name
+	err := p.Validate()
+	s.ErrorContains(err, "spec.credentials[2].route.name: duplicates another route name")
+	s.NotContains(err.Error(), "spec.agents.claude.env")
+}
+
 func (s *PoolConfigSuite) TestCredentialDecodeErrorsDoNotEchoKeys() {
 	data, err := os.ReadFile("testdata/pool.yaml")
 	s.Require().NoError(err)
