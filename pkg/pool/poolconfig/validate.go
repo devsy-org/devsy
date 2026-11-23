@@ -19,12 +19,13 @@ const (
 )
 
 var (
-	namePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+	namePattern       = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+	rootedPathPattern = regexp.MustCompile(`^([A-Za-z]:|[/\\])`)
 	// reservedEnvNames are set by the pool or would break credential delivery
 	// or egress.
 	reservedEnvNames = []string{
 		"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "FTP_PROXY",
-		"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GH_HOST",
+		"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST",
 		"GIT_ASKPASS", "SSH_ASKPASS", "GIT_PROXY_COMMAND", "GIT_SSH_COMMAND",
 		"DEVSY_SESSION_ID",
 	}
@@ -63,13 +64,19 @@ func validateName(errs *fieldErrors, path, name string, maxLen int) {
 	}
 }
 
+// escapesRepo also refuses rooted and drive paths, which filepath.IsAbs
+// accepts as relative on Windows.
+func escapesRepo(path string) bool {
+	clean := filepath.ToSlash(filepath.Clean(strings.ReplaceAll(path, `\`, "/")))
+	return filepath.IsAbs(path) || rootedPathPattern.MatchString(path) ||
+		clean == ".." || strings.HasPrefix(clean, "../")
+}
+
 func (s *Spec) validateSource(errs *fieldErrors) {
 	if s.Source.Repo == "" {
 		errs.add("spec.source.repo", "is required")
 	}
-	path := s.Source.DevcontainerPath
-	clean := filepath.ToSlash(filepath.Clean(path))
-	if path != "" && (filepath.IsAbs(path) || clean == ".." || strings.HasPrefix(clean, "../")) {
+	if path := s.Source.DevcontainerPath; path != "" && escapesRepo(path) {
 		errs.add(
 			"spec.source.devcontainerPath",
 			"must be relative to the repository and stay inside it",
