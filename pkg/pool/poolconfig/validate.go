@@ -248,14 +248,10 @@ func (s *Spec) validateAgents(errs *fieldErrors) {
 	}
 }
 
-// agentPath names an agent only when its name is valid; an invalid name may
-// be pasted text.
+// agentPath never shows the name: a pasted token can be a valid agent name.
+// The line still points at the agent.
 func agentPath(name string) fieldPath {
-	label := hiddenKey
-	if isValidName(name) {
-		label = name
-	}
-	return fieldPath{key: "spec.agents", shown: "spec.agents"}.entry(name, label)
+	return fieldPath{key: "spec.agents", shown: "spec.agents"}.entry(name, hiddenKey)
 }
 
 // reservedEnvPath shows only an exact reserved name, which cannot be a
@@ -270,10 +266,6 @@ func reservedEnvPath(agent fieldPath, key string) fieldPath {
 // envPath never shows the name: a token can look like a valid env name.
 func envPath(agent fieldPath, key string) fieldPath {
 	return agent.field("env").entry(key, hiddenKey)
-}
-
-func isValidName(name string) bool {
-	return namePattern.MatchString(name) && len(name) <= maxNameLength
 }
 
 func isReservedEnvName(name string) bool {

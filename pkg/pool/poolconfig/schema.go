@@ -99,6 +99,7 @@ func (d *decoder) object(
 	if n.Kind != yamlv3.MappingNode || n.Tag != "!!map" {
 		return nil, nodeErrorf(n, path, "must be a mapping")
 	}
+	decode := d.decoderFor(fields)
 	out := make(map[string]any, len(n.Content)/2)
 	for i := 1; i < len(n.Content); i += 2 {
 		key := n.Content[i-1]
@@ -113,7 +114,7 @@ func (d *decoder) object(
 		if err != nil {
 			return nil, err
 		}
-		if out[name], err = d.value(
+		if out[name], err = decode(
 			n.Content[i],
 			t,
 			childPath(path, name, fields != nil),
@@ -146,13 +147,31 @@ func fieldType(
 	return nil, nodeErrorf(key, path, "unknown field")
 }
 
+func (d *decoder) decoderFor(
+	fields map[string]reflect.Type,
+) func(*yamlv3.Node, reflect.Type, fieldPath) (any, error) {
+	if fields == nil {
+		return d.element
+	}
+	return d.value
+}
+
+// element decodes a map value or list item. Null is refused there, since
+// the JSON decoder would turn it into an empty string or a zero agent.
+func (d *decoder) element(n *yamlv3.Node, t reflect.Type, path fieldPath) (any, error) {
+	if isNull(n) {
+		return nil, nodeErrorf(n, path, "must not be null")
+	}
+	return d.value(n, t, path)
+}
+
 func (d *decoder) list(n *yamlv3.Node, elem reflect.Type, path fieldPath) (any, error) {
 	if n.Kind != yamlv3.SequenceNode || n.Tag != "!!seq" {
 		return nil, nodeErrorf(n, path, "must be a list")
 	}
 	out := make([]any, len(n.Content))
 	for i, c := range n.Content {
-		v, err := d.value(c, elem, path.index(i))
+		v, err := d.element(c, elem, path.index(i))
 		if err != nil {
 			return nil, err
 		}
