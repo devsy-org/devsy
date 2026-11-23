@@ -71,8 +71,8 @@ var (
 	// these, which covers the organization_ and dependabot_ variants: each can
 	// change who controls the repository, read secrets or run code elsewhere.
 	deniedPermissionParts = []string{
-		"administration", "secrets", "workflows", "hooks", "runners",
-		"personal_access_token", "custom_role", "members",
+		"administration", "secret", "workflows", "hooks", "runners",
+		"personal_access_token", "custom_", "members",
 	}
 	reservedHeaders = []string{
 		"host", "content-length", "transfer-encoding", "connection", "keep-alive", "te",

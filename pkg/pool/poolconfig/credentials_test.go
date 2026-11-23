@@ -226,12 +226,44 @@ func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
 	for _, name := range []string{
 		"dependabot_secrets", "organization_codespaces_secrets", "repository_hooks",
 		"organization_self_hosted_runners", "organization_personal_access_tokens",
-		"organization_custom_roles", "members",
+		"organization_custom_roles", "members", "organization_custom_org_roles",
+		"secret_scanning_alerts", "organization_custom_properties",
 	} {
 		p := s.loadExample()
 		p.Spec.Credentials[0].Scope.Permissions[name] = "write"
 		s.ErrorContains(p.Validate(), wantDeniedPermission, name)
 	}
+}
+
+func (s *PoolConfigSuite) TestAllowedPermissions() {
+	for _, name := range []string{
+		"contents", "pull_requests", "issues", "checks", "statuses", "actions",
+		"packages", "pages", "deployments", "environments",
+	} {
+		p := s.loadExample()
+		p.Spec.Credentials[0].Scope.Permissions[name] = "write"
+		s.NoError(p.Validate(), name)
+	}
+}
+
+func (s *PoolConfigSuite) TestGrantErrorsGiveLinesWithoutKeys() {
+	data, err := os.ReadFile("testdata/pool.yaml")
+	s.Require().NoError(err)
+	yaml := strings.NewReplacer(
+		"credentials: [github, anthropic]", "credentials: [github, CANARY-cred]",
+		`env: {ANTHROPIC_BASE_URL: "{{route.anthropic}}"}`,
+		`env: {"CANARY key!": "{{route.none}}", ghp_CANARY: "{{x}}"}`,
+	).Replace(string(data))
+	_, err = Parse([]byte(yaml))
+	for _, want := range []string{
+		"spec.agents.claude.credentials[1] (line 49): must reference a declared credential",
+		"spec.agents.claude.env.<key> (line 48): names must start",
+		"spec.agents.claude.env.<key> (line 48): names undeclared route",
+		"spec.agents.claude.env.<key> (line 48): unknown placeholder",
+	} {
+		s.ErrorContains(err, want)
+	}
+	s.NotContains(err.Error(), "CANARY")
 }
 
 func (s *PoolConfigSuite) TestDuplicateRouteKeepsFirstOwner() {
