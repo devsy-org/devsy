@@ -9,6 +9,7 @@
 //	e2e      prepare and run Ginkgo suites
 //	setup    host setup for suites (Docker, Podman)
 //	success  fold the needed job results into the required status check
+//	rerun-no-runner  rerun a run's failed jobs once when GitHub never assigned their macOS runner
 package main
 
 import (
@@ -21,26 +22,28 @@ func main() {
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr))
 }
 
+var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
+	"matrix":          matrixCLI,
+	"unit":            unitCLI,
+	"e2e":             e2eCLI,
+	"setup":           setupCLI,
+	"success":         successCLI,
+	"lint-patch":      lintPatchCLI,
+	"rerun-no-runner": rerunCLI,
+}
+
 func runCLI(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ci <matrix|unit|e2e|setup|success|lint-patch> [args]")
+		_, _ = fmt.Fprintln(
+			stderr,
+			"usage: ci <matrix|unit|e2e|setup|success|lint-patch|rerun-no-runner> [args]",
+		)
 		return 2
 	}
-	switch args[0] {
-	case "matrix":
-		return matrixCLI(args[1:], stdout, stderr)
-	case "unit":
-		return unitCLI(args[1:], stdout, stderr)
-	case "e2e":
-		return e2eCLI(args[1:], stdout, stderr)
-	case "setup":
-		return setupCLI(args[1:], stdout, stderr)
-	case "success":
-		return successCLI(args[1:], stdout, stderr)
-	case "lint-patch":
-		return lintPatchCLI(args[1:], stdout, stderr)
-	default:
+	command, ok := commands[args[0]]
+	if !ok {
 		_, _ = fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		return 2
 	}
+	return command(args[1:], stdout, stderr)
 }
