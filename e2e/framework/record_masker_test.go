@@ -152,3 +152,23 @@ func TestRecordMaskerPlainBracketLineOverLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordMaskerOverflowTailSyntaxError(t *testing.T) {
+	head := "{\"pad\":\"" + strings.Repeat("a", maxJSONRecordBytes+10) + "\","
+	tail := "\n\"Cookie\": \"server-cookie\"}\npublic detail\n"
+	splits := map[string][]string{
+		"error in overflow write": {head + " !", tail},
+		"error in later write":    {head, " !" + tail},
+	}
+	for name, chunks := range splits {
+		t.Run(name, func(t *testing.T) {
+			got := runMasker(t, chunks)
+			if strings.Contains(got, "server-cookie") {
+				t.Fatalf("credential leaked: %q", got[max(0, len(got)-120):])
+			}
+			if !strings.HasSuffix(got, "public detail\n") {
+				t.Fatalf("plain line lost: %q", got[max(0, len(got)-80):])
+			}
+		})
+	}
+}

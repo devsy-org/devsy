@@ -156,9 +156,10 @@ func (m *recordMasker) holdOrOverflow() bool {
 	if len(m.pending) <= maxJSONRecordBytes {
 		return false
 	}
-	// Text that already breaks JSON syntax is a plain line; skipping it would
-	// drop everything up to a closing bracket that may never come.
-	if !couldBeJSON(m.pending) {
+	// Text that breaks JSON syntax within the limit is a plain line; skipping it
+	// would drop everything up to a closing bracket that may never come. Bytes
+	// past the limit must not decide this, or a malformed record's tail leaks.
+	if !couldBeJSON(m.pending[:maxJSONRecordBytes]) {
 		return m.copyLine()
 	}
 	skip := &recordSkipper{}
