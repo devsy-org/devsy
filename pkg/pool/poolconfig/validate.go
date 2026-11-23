@@ -82,15 +82,17 @@ func escapesRepo(path string) bool {
 // otherwise reach the policy hash, audit records and logs. A plain ssh user
 // such as git@ is not a secret. Messages never include the value.
 func repoError(repo string) string {
-	if !strings.Contains(repo, "://") {
-		// In scp-style user@host:path, a colon before the @ marks a password.
-		user, _, found := strings.Cut(repo, "@")
-		if found && strings.Contains(user, ":") {
-			return errRepoCredentials
-		}
+	head, _, isURL := strings.Cut(repo, "://")
+	// In scp-style user@host:path, a colon before the @ marks a password.
+	if user, _, found := strings.Cut(head, "@"); found && strings.Contains(user, ":") {
+		return errRepoCredentials
+	}
+	if !isURL {
 		return ""
 	}
-	u, err := url.Parse(repo)
+	// A prefix such as git: in git:https://host/repo hides the authority from
+	// url.Parse.
+	u, err := url.Parse(repo[strings.LastIndexByte(head, ':')+1:])
 	if err != nil {
 		return "must be a valid URL"
 	}
