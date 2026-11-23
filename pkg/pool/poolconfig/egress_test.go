@@ -58,6 +58,22 @@ var egressRejections = []rejection{
 		func(p *Pool) { allow(p, AllowRule{CIDR: "::ffff:169.254.169.254/128"}) },
 		"::ffff:0.0.0.0/96",
 	},
+	{"unspecified", func(p *Pool) { allow(p, AllowRule{CIDR: "0.0.0.0/32"}) }, "0.0.0.0/8"},
+	{
+		"oracle metadata",
+		func(p *Pool) { allow(p, AllowRule{CIDR: "192.0.0.192/32"}) },
+		"192.0.0.192/32",
+	},
+	{
+		"local nat64",
+		func(p *Pool) { allow(p, AllowRule{CIDR: "64:ff9b:1::/64"}) },
+		"64:ff9b:1::/48",
+	},
+	{
+		"zone id",
+		func(p *Pool) { allow(p, AllowRule{CIDR: "2606:4700::1%eth0/128"}) },
+		"valid CIDR",
+	},
 	{
 		"translated metadata",
 		func(p *Pool) { allow(p, AllowRule{CIDR: "::ffff:0:a9fe:a9fe/128"}) },

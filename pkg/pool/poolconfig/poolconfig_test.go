@@ -36,8 +36,10 @@ func (s *PoolConfigSuite) TestDefaults() {
 }
 
 func (s *PoolConfigSuite) TestZeroDurationTakesDefault() {
-	p := s.parseMinimal("  lifecycle: {spawnTimeout: 0s}\n")
+	p := s.parseMinimal("  lifecycle: {spawnTimeout: 0s, ttl: null, idleTimeout: ~}\n")
 	s.Equal(10*time.Minute, p.Spec.Lifecycle.SpawnTimeout.Duration)
+	s.Equal(8*time.Hour, p.Spec.Lifecycle.TTL.Duration)
+	s.Equal(15*time.Minute, p.Spec.Lifecycle.IdleTimeout.Duration)
 }
 
 func (s *PoolConfigSuite) TestPolicyVersionIgnoresFormattingAndDefaults() {
@@ -76,21 +78,25 @@ func (s *PoolConfigSuite) TestDevcontainerPathWithDots() {
 	s.NoError(p.Validate())
 	p.Spec.Source.DevcontainerPath = "a/../../x.json"
 	s.ErrorContains(p.Validate(), "devcontainerPath")
+	p.Spec.Source.DevcontainerPath = `.devcontainer\devcontainer.json`
+	s.ErrorContains(p.Validate(), "devcontainerPath")
 }
 
 func (s *PoolConfigSuite) TestStrictParsing() {
 	_, err := Parse([]byte("apiVersion: devsy.sh/v1alpha1\nkind: Pool\nspec:\n  egres: {}\n"))
-	s.ErrorContains(err, "unknown field")
+	s.ErrorContains(err, `spec (line 4): unknown field "egres"`)
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: 8 hours\n"))
 	s.ErrorContains(err, "parse pool config")
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: 8\n"))
-	s.ErrorContains(err, "spec.lifecycle.ttl: must be a duration")
+	s.ErrorContains(err, "spec.lifecycle.ttl (line 3): must be a duration")
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: synthetic-secret-marker\n"))
 	s.ErrorContains(err, "spec.lifecycle.ttl")
 	s.NotContains(err.Error(), "synthetic-secret-marker")
 	_, err = Parse([]byte("spec:\n  lifecycle:\n    ttl: !!null synthetic-secret-marker\n"))
-	s.ErrorContains(err, "spec.lifecycle.ttl: must be a duration")
+	s.ErrorContains(err, "spec.lifecycle.ttl (line 3): must be a duration")
 	s.NotContains(err.Error(), "synthetic-secret-marker")
+	_, err = Parse(append(s.readMinimal(), []byte("  provider: {name: x}\n")...))
+	s.ErrorContains(err, `spec (line 13): duplicate key "provider"`)
 	var d Duration
 	err = d.UnmarshalJSON([]byte(`"synthetic-secret-marker"`))
 	s.Require().Error(err)
@@ -99,7 +105,11 @@ func (s *PoolConfigSuite) TestStrictParsing() {
 
 func (s *PoolConfigSuite) TestRejectsAmbiguousYAML() {
 	cases := []struct{ name, extra, want string }{
-		{"anchor", "      env: &m {A: b}\n", "spec.agents.claude.env: YAML anchors and aliases"},
+		{
+			"anchor",
+			"      env: &m {A: b}\n",
+			"spec.agents.claude.env (line 13): YAML anchors and aliases",
+		},
 		{
 			"alias",
 			"      env: &m {Name: demo}\n    other:\n      command: [x]\n      env: *m\n",
@@ -109,7 +119,7 @@ func (s *PoolConfigSuite) TestRejectsAmbiguousYAML() {
 		{
 			"numeric key",
 			"      env: {1: a}\n",
-			`spec.agents.claude.env: key "1" must be a quoted string`,
+			`spec.agents.claude.env (line 13): key "1" must be a quoted string`,
 		},
 		{"bool word key", "      env: {ON: x}\n", `key "ON" must be a quoted string`},
 		{"underscore int key", "      env: {1_000: x}\n", `key "1_000" must be a quoted string`},
@@ -131,13 +141,18 @@ kind: Pool
 metadata: {name: demo}
 spec:
   source: {repo: "https://github.com/acme/api"}
-  provider: {name: docker, options: {"1": a, "ON": b}}
+  provider:
+    name: docker
+    options: {"1": a, "ON": b, 2026-01-15: c, ...: d}
   agents:
     claude: {command: [claude]}
     2agent: {command: [x]}
 `))
 	s.Require().NoError(err)
-	s.Equal(map[string]string{"1": "a", "ON": "b"}, p.Spec.Provider.Options)
+	s.Equal(
+		map[string]string{"1": "a", "ON": "b", "2026-01-15": "c", "...": "d"},
+		p.Spec.Provider.Options,
+	)
 	s.Contains(p.Spec.Agents, "2agent")
 }
 
@@ -162,9 +177,9 @@ func (s *PoolConfigSuite) TestRejectsExtraDocuments() {
 
 func (s *PoolConfigSuite) TestRequiresExactFieldNames() {
 	_, err := Parse(append(s.readMinimal(), []byte("  Agents: {}\n")...))
-	s.ErrorContains(err, `spec: unknown field "Agents"`)
+	s.ErrorContains(err, `spec (line 13): unknown field "Agents"`)
 	_, err = Parse(append(s.readMinimal(), []byte("  audit: {RetainDays: 3}\n")...))
-	s.ErrorContains(err, `spec.audit: unknown field "RetainDays"`)
+	s.ErrorContains(err, `spec.audit (line 13): unknown field "RetainDays"`)
 	p := s.parseMinimal("      env: {Foo: a, foo: b}\n")
 	s.Len(p.Spec.Agents["claude"].Env, 2)
 }
