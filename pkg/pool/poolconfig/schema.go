@@ -174,7 +174,8 @@ func isNull(n *yamlv3.Node) bool {
 
 // changesText finds an unquoted value that the YAML 1.1 decoder reads as a
 // number or bool with different text, so yes or 0123 in a string field would
-// silently become "true" or "83".
+// silently become "true" or "83". The text is reparsed on its own, where a
+// value such as - can read as a list; only scalar results count.
 func changesText(n *yamlv3.Node) bool {
 	switch {
 	case n.Style&(yamlv3.SingleQuotedStyle|yamlv3.DoubleQuotedStyle|
@@ -185,15 +186,15 @@ func changesText(n *yamlv3.Node) bool {
 	}
 	var v any
 	if err := yamlv2.Unmarshal([]byte(n.Value), &v); err != nil {
-		return true
+		return false
 	}
 	switch v.(type) {
-	case string:
-		return false
 	case int, int64, bool:
 		return fmt.Sprint(v) != n.Value
+	case uint64, float64:
+		return true
 	}
-	return true
+	return false
 }
 
 func shapeOf(t reflect.Type) (shape, bool) {
