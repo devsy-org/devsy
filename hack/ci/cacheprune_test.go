@@ -23,13 +23,21 @@ const (
 // pruneFakeRunner serves `gh api` output by API path and records every call.
 type pruneFakeRunner struct {
 	outputs map[string]string
-	calls   []string
+	// failures maps a DELETE path to the stderr gh prints when it fails.
+	failures map[string]string
+	calls    []string
 }
 
 func (f *pruneFakeRunner) Run(_ context.Context, spec commandSpec) error {
 	call := strings.Join(spec.Args, " ")
 	f.calls = append(f.calls, call)
 	if slices.Contains(spec.Args, "DELETE") {
+		for path, stderr := range f.failures {
+			if slices.Contains(spec.Args, path) {
+				_, _ = io.WriteString(spec.Stderr, stderr)
+				return errors.New("exit status 1")
+			}
+		}
 		return nil
 	}
 	for path, out := range f.outputs {
@@ -72,13 +80,14 @@ func prunedIDs(items []pruneItem) []int64 {
 	return ids
 }
 
-func (s *cachePruneSuite) TestSelectPrunable() {
-	closed := map[int]bool{1896: true, 1891: false}
-	tests := []struct {
-		name   string
-		caches []ghCache
-		want   []int64
-	}{
+type pruneSelectionCase struct {
+	name   string
+	caches []ghCache
+	want   []int64
+}
+
+func pruneSelectionCases() []pruneSelectionCase {
+	return []pruneSelectionCase{
 		{
 			name: "closed pull request caches go, open ones stay",
 			caches: []ghCache{
@@ -90,13 +99,27 @@ func (s *cachePruneSuite) TestSelectPrunable() {
 			want: []int64{1, 2},
 		},
 		{
-			name: "older week goes once the same runner has this week",
+			name: "older week goes once the same restore group has this week",
 			caches: []ghCache{
 				cache(1, unitLinuxW48, mainRef),
 				cache(2, unitLinuxW49, mainRef),
-				cache(3, "go-unit-Linux-X64-1.26.8-abc-2026-W47", mainRef),
+				cache(3, "go-unit-Linux-X64-1.26.9-def-2026-W47", mainRef),
 			},
 			want: []int64{1, 3},
+		},
+		{
+			name: "older week stays when this week's cache is for another Go or cache version",
+			caches: []ghCache{
+				cache(1, "go-unit-Linux-X64-1.26.9-abc-2026-W48", mainRef),
+				cache(2, "go-unit-Linux-X64-1.26.8-abc-2026-W49", mainRef),
+				cache(3, "go-unit-macOS-ARM64-1.26.9-abc-2026-W48", mainRef),
+				{
+					ID:      4,
+					Key:     "***************************************",
+					Ref:     mainRef,
+					Version: "v2",
+				},
+			},
 		},
 		{
 			name: "older week stays until this week's cache exists",
@@ -117,7 +140,11 @@ func (s *cachePruneSuite) TestSelectPrunable() {
 			},
 		},
 	}
-	for _, tt := range tests {
+}
+
+func (s *cachePruneSuite) TestSelectPrunable() {
+	closed := map[int]bool{1896: true, 1891: false}
+	for _, tt := range pruneSelectionCases() {
 		s.Run(tt.name, func() {
 			s.Equal(tt.want, prunedIDs(selectPrunable(tt.caches, closed, pruneWeek)))
 		})
@@ -176,6 +203,45 @@ func (s *cachePruneSuite) TestKeysCannotStartWorkflowCommands() {
 	s.Contains(out.String(), `"k\n::error::x \x23\x23[error]y"`)
 	s.NotContains(out.String(), "##[")
 	s.NotContains(out.String(), "\n::")
+}
+
+func (s *cachePruneSuite) TestDeleteErrors() {
+	tests := []struct {
+		name    string
+		stderr  string
+		wantErr string
+		wantOut string
+	}{
+		{
+			name: "evicted after listing", stderr: "gh: Not Found (HTTP 404)\n",
+			wantOut: "7 was already gone\n",
+		},
+		{
+			name: "server error", stderr: "gh: Server Error (HTTP 500)\n",
+			wantErr: "(HTTP 500)",
+		},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			fake := s.fixture()
+			fake.failures = map[string]string{"repos/o/r/actions/caches/7": tt.stderr}
+			var out bytes.Buffer
+
+			err := cachePruneCommand{runner: fake, stdout: &out}.run(
+				context.Background(), pruneOptions{repo: testRepo, week: pruneWeek},
+			)
+
+			if tt.wantErr != "" {
+				s.Require().ErrorContains(err, tt.wantErr)
+				s.Len(fake.deletes(), 1)
+				return
+			}
+			s.Require().NoError(err)
+			s.Contains(out.String(), tt.wantOut)
+			s.Len(fake.deletes(), 2)
+			s.Contains(out.String(), "deleted 1 caches, 208 MB\n")
+		})
+	}
 }
 
 func (s *cachePruneSuite) TestPullLookupErrorFails() {

@@ -17,8 +17,10 @@ import (
 )
 
 var (
-	pullRefPattern  = regexp.MustCompile(`^refs/pull/(\d+)/(?:merge|head)$`)
-	unitKeyPattern  = regexp.MustCompile(`^go-unit-([A-Za-z]+-[A-Za-z0-9]+)-.+-(\d{4}-W\d{2})$`)
+	pullRefPattern = regexp.MustCompile(`^refs/pull/(\d+)/(?:merge|head)$`)
+	unitKeyPattern = regexp.MustCompile(
+		`^go-unit-([A-Za-z]+-[A-Za-z0-9]+-[^-]+)-[0-9a-f]+-(\d{4}-W\d{2})$`,
+	)
 	errBadWeek      = errors.New("week must look like 2026-W48")
 	isoWeekPattern  = regexp.MustCompile(`^\d{4}-W\d{2}$`)
 	unitPartialPart = "go-unit-partial-"
@@ -32,6 +34,9 @@ type ghCache struct {
 	Key  string `json:"key"`
 	Ref  string `json:"ref"`
 	Size int64  `json:"size_in_bytes"`
+	// Version is GitHub's hash of the cache paths and compression; restores
+	// only match an entry with the same version.
+	Version string `json:"version"`
 }
 
 type pruneItem struct {
@@ -106,40 +111,55 @@ func (c cachePruneCommand) run(ctx context.Context, opts pruneOptions) error {
 	if err != nil {
 		return err
 	}
-	items := selectPrunable(caches, closed, opts.week)
+	var count int
 	var freed int64
-	for _, item := range items {
-		if err := c.prune(ctx, opts, item); err != nil {
+	for _, item := range selectPrunable(caches, closed, opts.week) {
+		removed, err := c.prune(ctx, opts, item)
+		if err != nil {
 			return err
 		}
-		freed += item.cache.Size
+		if removed {
+			count++
+			freed += item.cache.Size
+		}
 	}
 	verb := "deleted"
 	if opts.dryRun {
 		verb = "would delete"
 	}
-	_, _ = fmt.Fprintf(c.stdout, "%s %d caches, %d MB\n", verb, len(items), freed/1_000_000)
+	_, _ = fmt.Fprintf(c.stdout, "%s %d caches, %d MB\n", verb, count, freed/1_000_000)
 	return nil
 }
 
-func (c cachePruneCommand) prune(ctx context.Context, opts pruneOptions, item pruneItem) error {
+// prune reports whether the cache was, or in a dry run would be, deleted. A
+// cache that GitHub evicted after the listing is already gone.
+func (c cachePruneCommand) prune(
+	ctx context.Context,
+	opts pruneOptions,
+	item pruneItem,
+) (bool, error) {
 	_, _ = fmt.Fprintf(c.stdout, "%d %s on %s, %d MB: %s\n",
 		item.cache.ID, logSafe(item.cache.Key), logSafe(item.cache.Ref),
 		item.cache.Size/1_000_000, item.reason)
 	if opts.dryRun {
-		return nil
+		return true, nil
 	}
 	path := fmt.Sprintf("repos/%s/actions/caches/%d", opts.repo, item.cache.ID)
-	return ghAPI(ctx, c.runner, nil, "-X", "DELETE", path)
+	err := ghAPI(ctx, c.runner, nil, "-X", "DELETE", path)
+	if err != nil && strings.Contains(err.Error(), "(HTTP 404)") {
+		_, _ = fmt.Fprintf(c.stdout, "%d was already gone\n", item.cache.ID)
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // selectPrunable picks caches of closed pull requests, and main's go-unit
-// caches from earlier weeks once the same runner has one for this week.
+// caches from earlier weeks once their restore group has one for this week.
 func selectPrunable(caches []ghCache, closed map[int]bool, week string) []pruneItem {
 	current := make(map[string]bool)
 	for _, cache := range caches {
-		if runner, cacheWeek, ok := unitCacheWeek(cache); ok && cacheWeek == week {
-			current[runner] = true
+		if group, cacheWeek, ok := unitCacheWeek(cache); ok && cacheWeek == week {
+			current[group] = true
 		}
 	}
 	var items []pruneItem
@@ -155,14 +175,16 @@ func pruneReason(cache ghCache, closed map[int]bool, current map[string]bool, we
 	if number, ok := pullNumber(cache.Ref); ok && closed[number] {
 		return "pull request " + strconv.Itoa(number) + " is closed"
 	}
-	runner, cacheWeek, ok := unitCacheWeek(cache)
-	if ok && current[runner] && cacheWeek < week {
+	group, cacheWeek, ok := unitCacheWeek(cache)
+	if ok && current[group] && cacheWeek < week {
 		return "replaced by the " + week + " cache"
 	}
 	return ""
 }
 
-// unitCacheWeek reads the runner and week from a full go-unit cache on main.
+// unitCacheWeek reads the restore group and week of a full go-unit cache on
+// main. The group is everything a restore prefix must match: runner OS and
+// architecture, Go version, and GitHub's cache version.
 func unitCacheWeek(cache ghCache) (string, string, bool) {
 	if cache.Ref != mainRef || strings.HasPrefix(cache.Key, unitPartialPart) {
 		return "", "", false
@@ -171,7 +193,7 @@ func unitCacheWeek(cache ghCache) (string, string, bool) {
 	if match == nil {
 		return "", "", false
 	}
-	return match[1], match[2], true
+	return match[1] + " " + cache.Version, match[2], true
 }
 
 func pullNumber(ref string) (int, bool) {
