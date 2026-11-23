@@ -59,6 +59,11 @@ var egressRejections = []rejection{
 		"::ffff:0.0.0.0/96",
 	},
 	{
+		"translated metadata",
+		func(p *Pool) { allow(p, AllowRule{CIDR: "::ffff:0:a9fe:a9fe/128"}) },
+		"::ffff:0:0:0/96",
+	},
+	{
 		"nat64 metadata",
 		func(p *Pool) { allow(p, AllowRule{CIDR: "64:ff9b::a9fe:a9fe/128"}) },
 		"64:ff9b::/96",
@@ -135,6 +140,7 @@ func (s *PoolConfigSuite) TestHostMatches() {
 	s.False(HostMatches("*.example.com", "a b.example.com"))
 	s.False(HostMatches("*.com", "example.com"))
 	s.False(HostMatches("GitHub.com", "github.com"))
+	s.False(HostMatches("github.com", "g\u0130thub.com"))
 }
 
 func (s *PoolConfigSuite) TestEgressErrorsDoNotEchoValues() {

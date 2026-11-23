@@ -112,6 +112,8 @@ func (s *PoolConfigSuite) TestRejectsAmbiguousYAML() {
 			`spec.agents.claude.env: key "1" must be a quoted string`,
 		},
 		{"bool word key", "      env: {ON: x}\n", `key "ON" must be a quoted string`},
+		{"underscore int key", "      env: {1_000: x}\n", `key "1_000" must be a quoted string`},
+		{"hex key", "      env: {0x1f: x}\n", `key "0x1f" must be a quoted string`},
 		{"null key", "      env: {null: secret-token}\n", `key "null" must be a quoted string`},
 	}
 	for _, tc := range cases {
@@ -132,9 +134,11 @@ spec:
   provider: {name: docker, options: {"1": a, "ON": b}}
   agents:
     claude: {command: [claude]}
+    2agent: {command: [x]}
 `))
 	s.Require().NoError(err)
 	s.Equal(map[string]string{"1": "a", "ON": "b"}, p.Spec.Provider.Options)
+	s.Contains(p.Spec.Agents, "2agent")
 }
 
 func (s *PoolConfigSuite) TestReportsEveryError() {

@@ -3,18 +3,15 @@ package poolconfig
 import (
 	"fmt"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	yamlv2 "go.yaml.in/yaml/v2"
 	yamlv3 "gopkg.in/yaml.v3"
 )
 
 var (
-	plainKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
-	// yaml11Words resolve to bool or null under YAML 1.1, which the decoder uses.
-	yaml11Words  = []string{"y", "yes", "n", "no", "on", "off", "true", "false", "null"}
 	durationType = reflect.TypeFor[Duration]()
 	// An explicit !!null tag can carry any text, which the decoder would echo.
 	yamlNullSpellings = []string{"", "~", "null", "Null", "NULL"}
@@ -72,8 +69,18 @@ func isStringKey(k *yamlv3.Node) bool {
 	if k.Style&(yamlv3.SingleQuotedStyle|yamlv3.DoubleQuotedStyle) != 0 {
 		return true
 	}
-	return plainKeyPattern.MatchString(k.Value) &&
-		!slices.Contains(yaml11Words, strings.ToLower(k.Value))
+	return resolvesAsString(k.Value)
+}
+
+// resolvesAsString uses the YAML 1.1 resolver the decoder uses, where plain
+// keys such as ON, 1_000 or 0x1f are not strings.
+func resolvesAsString(plain string) bool {
+	var out any
+	if err := yamlv2.Unmarshal([]byte(plain), &out); err != nil {
+		return false
+	}
+	str, ok := out.(string)
+	return ok && str == plain
 }
 
 func displayPath(path string) string {
