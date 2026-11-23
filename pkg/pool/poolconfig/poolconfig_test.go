@@ -3,6 +3,7 @@ package poolconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,6 +155,66 @@ spec:
 		p.Spec.Provider.Options,
 	)
 	s.Contains(p.Spec.Agents, "2agent")
+}
+
+func (s *PoolConfigSuite) TestRejectsWrongShapes() {
+	cases := []struct{ name, extra, want string }{
+		{
+			"list duration",
+			"  lifecycle: {ttl: [1h]}\n",
+			"spec.lifecycle.ttl (line 13): must be a duration",
+		},
+		{
+			"list env value",
+			"      env: {MODE: [synthetic-secret]}\n",
+			"spec.agents.claude.env.MODE (line 13): must be a string",
+		},
+		{
+			"word number",
+			"  capacity: {maxConcurrent: synthetic-secret}\n",
+			"spec.capacity.maxConcurrent (line 13): must be a whole number",
+		},
+		{
+			"octal number",
+			"  capacity: {maxConcurrent: 010}\n",
+			"spec.capacity.maxConcurrent (line 13): must be a whole number",
+		},
+		{
+			"mapping in string list",
+			"      command: [a, {synthetic-secret: &x 1}]\n",
+			"spec.agents.claude.command[1] (line 13): must be a string",
+		},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			data := strings.Replace(string(s.readMinimal()), "      command: [claude, -p]\n", "", 1)
+			_, err := Parse([]byte(data + tc.extra))
+			s.ErrorContains(err, strings.Replace(tc.want, "line 13", "line 12", 1))
+			s.NotContains(err.Error(), "synthetic-secret")
+		})
+	}
+}
+
+func (s *PoolConfigSuite) TestAcceptsBlockAndLongKeys() {
+	long := strings.Repeat("k", 1100)
+	p, err := Parse([]byte(`apiVersion: devsy.sh/v1alpha1
+kind: Pool
+metadata: {name: demo}
+spec:
+  source: {repo: "https://github.com/acme/api"}
+  provider:
+    name: docker
+    options:
+      ? |-
+        ON
+      : a
+      ? ` + long + `
+      : b
+  agents:
+    claude: {command: [claude]}
+`))
+	s.Require().NoError(err)
+	s.Equal(map[string]string{"ON": "a", long: "b"}, p.Spec.Provider.Options)
 }
 
 func (s *PoolConfigSuite) TestReportsEveryError() {
