@@ -220,64 +220,82 @@ spec:
 
 const wantModeString = "spec.agents.<key>.env.<key> (line 13): must be a string"
 
+var wrongShapeCases = []struct{ name, extra, want string }{
+	{
+		"list duration",
+		"  lifecycle: {ttl: [1h]}\n",
+		"spec.lifecycle.ttl (line 13): must be a duration",
+	},
+	{
+		"list env value",
+		"      env: {MODE: [synthetic-secret]}\n",
+		wantModeString,
+	},
+	{
+		"word number",
+		"  capacity: {maxConcurrent: synthetic-secret}\n",
+		"spec.capacity.maxConcurrent (line 13): must be a whole number",
+	},
+	{
+		"octal number",
+		"  capacity: {maxConcurrent: 010}\n",
+		"spec.capacity.maxConcurrent (line 13): must be a whole number",
+	},
+	{
+		"mapping in string list",
+		"      command: [a, {synthetic-secret: &x 1}]\n",
+		"spec.agents.<key>.command[1] (line 13): must be a string",
+	},
+	{
+		"null-tagged list",
+		"      env: {MODE: !!null [synthetic-secret]}\n",
+		wantModeString,
+	},
+	{
+		"null-tagged mapping",
+		"      env: {MODE: !!null {synthetic-secret: &x 1}}\n",
+		wantModeString,
+	},
+	{"null-tagged text", "      env: {MODE: !!null synthetic-secret}\n", wantModeString},
+	{
+		"null-tagged command",
+		"      command: !!null [claude]\n",
+		"command (line 13): must be a list",
+	},
+	{
+		"null-tagged struct",
+		"  audit: !!null {retainDays: 3}\n",
+		"spec.audit (line 13): must be a mapping",
+	},
+	{"bool-tagged quoted", "      env: {MODE: !!bool \"yes\"}\n", wantModeString},
+	{"binary-tagged", "      env: {MODE: !!binary c3ludGhldGljLXNlY3JldA==}\n", wantModeString},
+	{"int-tagged quoted", "      env: {MODE: !!int '0123'}\n", wantModeString},
+	{"null-tagged null", "      env: {MODE: !!null \"null\"}\n", wantModeString},
+	{
+		"null env value",
+		"      env: {MODE: null}\n",
+		"spec.agents.<key>.env.<key> (line 13): must not be null",
+	},
+	{
+		"null command item",
+		"      command: [claude, ~]\n",
+		"command[1] (line 13): must not be null",
+	},
+	{"null agent", "    other: null\n", "spec.agents.<key> (line 13): must not be null"},
+}
+
 func (s *PoolConfigSuite) TestRejectsWrongShapes() {
-	cases := []struct{ name, extra, want string }{
-		{
-			"list duration",
-			"  lifecycle: {ttl: [1h]}\n",
-			"spec.lifecycle.ttl (line 13): must be a duration",
-		},
-		{
-			"list env value",
-			"      env: {MODE: [synthetic-secret]}\n",
-			wantModeString,
-		},
-		{
-			"word number",
-			"  capacity: {maxConcurrent: synthetic-secret}\n",
-			"spec.capacity.maxConcurrent (line 13): must be a whole number",
-		},
-		{
-			"octal number",
-			"  capacity: {maxConcurrent: 010}\n",
-			"spec.capacity.maxConcurrent (line 13): must be a whole number",
-		},
-		{
-			"mapping in string list",
-			"      command: [a, {synthetic-secret: &x 1}]\n",
-			"spec.agents.<key>.command[1] (line 13): must be a string",
-		},
-		{
-			"null-tagged list",
-			"      env: {MODE: !!null [synthetic-secret]}\n",
-			wantModeString,
-		},
-		{
-			"null-tagged mapping",
-			"      env: {MODE: !!null {synthetic-secret: &x 1}}\n",
-			wantModeString,
-		},
-		{"null-tagged text", "      env: {MODE: !!null synthetic-secret}\n", wantModeString},
-		{
-			"null-tagged command",
-			"      command: !!null [claude]\n",
-			"command (line 13): must be a list",
-		},
-		{
-			"null-tagged struct",
-			"  audit: !!null {retainDays: 3}\n",
-			"spec.audit (line 13): must be a mapping",
-		},
-		{"bool-tagged quoted", "      env: {MODE: !!bool \"yes\"}\n", wantModeString},
-		{"binary-tagged", "      env: {MODE: !!binary c3ludGhldGljLXNlY3JldA==}\n", wantModeString},
-		{"int-tagged quoted", "      env: {MODE: !!int '0123'}\n", wantModeString},
-		{"null-tagged null", "      env: {MODE: !!null \"null\"}\n", wantModeString},
-	}
-	for _, tc := range cases {
+	for _, tc := range wrongShapeCases {
 		s.Run(tc.name, func() {
-			data := strings.Replace(string(s.readMinimal()), "      command: [claude, -p]\n", "", 1)
+			data, want := string(s.readMinimal()), tc.want
+			// Agent fields replace the command line so a command case is not a
+			// duplicate key.
+			if strings.HasPrefix(tc.extra, "      ") {
+				data = strings.Replace(data, "      command: [claude, -p]\n", "", 1)
+				want = strings.Replace(want, "line 13", "line 12", 1)
+			}
 			_, err := Parse([]byte(data + tc.extra))
-			s.ErrorContains(err, strings.Replace(tc.want, "line 13", "line 12", 1))
+			s.ErrorContains(err, want)
 			s.NotContains(err.Error(), "synthetic-secret")
 		})
 	}
@@ -372,21 +390,26 @@ func (s *PoolConfigSuite) TestValidationErrorsGiveLines() {
 	_, err := Parse(append(s.readMinimal(), []byte("  capacity: {maxQueued: -1}\n")...))
 	s.ErrorContains(err, "spec.capacity.maxQueued (line 13): must not be negative")
 	_, err = Parse(append(s.readMinimal(), []byte("      env: {HTTP_PROXY: x}\n")...))
-	s.ErrorContains(err, "spec.agents.claude.env.HTTP_PROXY (line 13): is set by the pool")
+	s.ErrorContains(err, "spec.agents.<key>.env.HTTP_PROXY (line 13): is set by the pool")
 	_, err = Parse(append(s.readMinimal(), []byte("      env: {GIT_SSL_CANARY: x}\n")...))
-	s.ErrorContains(err, "spec.agents.claude.env.<key> (line 13): is set by the pool")
+	s.ErrorContains(err, "spec.agents.<key>.env.<key> (line 13): is set by the pool")
 	s.NotContains(err.Error(), "CANARY")
 	_, err = Parse(append(s.readMinimal(), []byte("      env: {ghp_CANARY: x}\n")...))
 	s.NoError(err)
 	_, err = Parse(append(s.readMinimal(), []byte("      env: {'CANARY x': y}\n")...))
-	s.ErrorContains(err, "spec.agents.claude.env.<key> (line 13): names must start")
+	s.ErrorContains(err, "spec.agents.<key>.env.<key> (line 13): names must start")
 	s.NotContains(err.Error(), "CANARY")
+	_, err = Parse(
+		append(s.readMinimal(), []byte("    0123456789abcdef0123456789abcdef: {command: []}\n")...),
+	)
+	s.ErrorContains(err, "spec.agents.<key>.command (line 13): is required")
+	s.NotContains(err.Error(), "0123456789abcdef")
 	_, err = Parse(append(s.readMinimal(), []byte("    CANARY: {command: [x]}\n")...))
 	s.ErrorContains(err, "spec.agents.<key> (line 13): must be 1 to 63")
 	s.NotContains(err.Error(), "CANARY")
 	bad := strings.Replace(string(s.readMinimal()), "command: [claude, -p]", "command: []", 1)
 	_, err = Parse([]byte(bad + "    'claude.command': {command: [x]}\n"))
-	s.ErrorContains(err, "spec.agents.claude.command (line 12): is required")
+	s.ErrorContains(err, "spec.agents.<key>.command (line 12): is required")
 	p := s.loadExample()
 	p.Spec.Capacity.MaxQueued = -1
 	s.ErrorContains(p.Validate(), "spec.capacity.maxQueued: must not be negative")
