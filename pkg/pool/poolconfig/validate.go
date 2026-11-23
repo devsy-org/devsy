@@ -3,6 +3,7 @@ package poolconfig
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -73,9 +74,23 @@ func escapesRepo(path string) bool {
 		rootedPathPattern.MatchString(path) || clean == ".." || strings.HasPrefix(clean, "../")
 }
 
+// repoHasCredentials finds a token pasted into the repository URL, which
+// would otherwise reach the policy hash, audit records and logs. A plain ssh
+// user such as git@ is not a secret.
+func repoHasCredentials(repo string) bool {
+	u, err := url.Parse(repo)
+	if err != nil || u.User == nil {
+		return false
+	}
+	_, hasPassword := u.User.Password()
+	return hasPassword || u.Scheme != "ssh"
+}
+
 func (s *Spec) validateSource(errs *fieldErrors) {
 	if s.Source.Repo == "" {
 		errs.add("spec.source.repo", "is required")
+	} else if repoHasCredentials(s.Source.Repo) {
+		errs.add("spec.source.repo", "must not contain credentials; use a credential grant")
 	}
 	if path := s.Source.DevcontainerPath; path != "" && escapesRepo(path) {
 		errs.add(

@@ -83,6 +83,27 @@ func (s *PoolConfigSuite) TestDevcontainerPathWithDots() {
 	s.ErrorContains(p.Validate(), "devcontainerPath")
 }
 
+func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
+	for _, repo := range []string{
+		"https://x-access-token:CANARY@github.com/acme/api",
+		"https://CANARY@github.com/acme/api",
+		"ssh://git:CANARY@github.com/acme/api.git",
+	} {
+		p := s.loadExample()
+		p.Spec.Source.Repo = repo
+		err := p.Validate()
+		s.ErrorContains(err, "spec.source.repo: must not contain credentials", repo)
+		s.NotContains(err.Error(), "CANARY")
+	}
+	for _, repo := range []string{
+		"ssh://git@github.com/acme/api.git", "git@github.com:acme/api.git", "github.com/acme/api@main",
+	} {
+		p := s.loadExample()
+		p.Spec.Source.Repo = repo
+		s.NoError(p.Validate(), repo)
+	}
+}
+
 func (s *PoolConfigSuite) TestStrictParsing() {
 	_, err := Parse([]byte("apiVersion: devsy.sh/v1alpha1\nkind: Pool\nspec:\n  egres: {}\n"))
 	s.ErrorContains(err, `spec (line 4): unknown field "egres"`)
