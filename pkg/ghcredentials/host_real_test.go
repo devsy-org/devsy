@@ -16,8 +16,8 @@ func requireRealGH(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
 		// The CPU-contended -short unit tier can exceed the 1.5s token lookup
-		// budget; the GitHub Credential Host Tests job runs these uncontended.
-		t.Skip("real gh runs in the GitHub Credential Host Tests job")
+		// budget; the native credential host CI steps run these uncontended.
+		t.Skip("real gh runs in the native credential host CI steps")
 	}
 	if _, err := exec.LookPath("gh"); err != nil {
 		if os.Getenv("DEVSY_TEST_REAL_GH") == "1" {

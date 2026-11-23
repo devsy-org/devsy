@@ -247,8 +247,8 @@ jobs:
           only-new-issues: ${{ github.event_name != 'pull_request' }}
           args: ${{ steps.lint-patch.outputs.args }}
 
-  # Native host tests: they execute the real `gh` CLI and, on macOS, the native
-  # keyring, so they run per host OS outside the unit tier's package list.
+  # Native host tests: they execute the real `gh` CLI, so they run per host OS
+  # outside the unit tier's package list. macOS runs them in its unit job.
   github-credential-host-tests:
     name: GitHub Credential Host Tests (${{ matrix.runner }})
     needs: [changes]
@@ -256,7 +256,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, macos-latest, windows-latest]
+        runner: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.runner }}
     # Cold Windows runs compile with -race and download modules before the
     # post-job cache save, which alone can exceed 4 minutes.
@@ -298,7 +298,7 @@ jobs:
       - name: execute native credential discovery and process-bound regressions
         env:
           DEVSY_TEST_REAL_GH: "1"
-          DEVSY_TEST_NATIVE_KEYRING: ${{ runner.os == 'macOS' && '1' || '0' }}
+          DEVSY_TEST_NATIVE_KEYRING: "0"
         run: >-
           go test -race -count=1 -v -timeout 5m ./pkg/ghcredentials
           -run '^(TestNative.*|TestHostLookupEnvironmentAndGuestEnvironmentAreIndependent|TestRegisteredGuestDeclinesAmbiguousKeyringResult)$'
@@ -322,6 +322,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
       contents: read
+    env:
+      NATIVE_CREDENTIAL_TESTS: ${{ matrix.os == 'darwin' && needs.changes.outputs.gh_credentials == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -361,6 +363,36 @@ jobs:
         shell: bash
         timeout-minutes: ${{ matrix.test_timeout_minutes }}
         run: go run ./hack/ci unit
+
+      # macOS runners are scarce, so the native credential host tests share
+      # this job instead of queueing for a second macOS runner.
+      - name: record native host and available CLI versions
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        run: |
+          go env GOOS GOARCH
+          gh --version
+
+      - name: execute native credential discovery and process-bound regressions
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        timeout-minutes: 8
+        env:
+          DEVSY_TEST_REAL_GH: "1"
+          DEVSY_TEST_NATIVE_KEYRING: "1"
+        run: >-
+          go test -race -count=1 -v -timeout 5m ./pkg/ghcredentials
+          -run '^(TestNative.*|TestHostLookupEnvironmentAndGuestEnvironmentAreIndependent|TestRegisteredGuestDeclinesAmbiguousKeyringResult)$'
+
+      - name: test strict fixture report validation
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        timeout-minutes: 3
+        run: go test -race -count=1 -v ./e2e/framework/ghfixture
+
+      - name: test native credential service boundaries
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        timeout-minutes: 5
+        run: >-
+          go test -race -count=1 -v -timeout 2m ./pkg/tunnel ./pkg/credentials
+          -run '^(TestCredentials.*Host.*|TestOptionalGitHubService.*|TestServicesStartup.*)$'
 
       - name: save Go caches
         if: success() && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true'
