@@ -148,7 +148,7 @@ var credentialRejections = []rejection{
 	},
 	{
 		"administration permission",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["administration"] = "read" },
+		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["administration"] = permRead },
 		wantDeniedPermission,
 	},
 	upstreamCase("upstream path", "https://api.anthropic.com/v1"),
@@ -187,7 +187,7 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	p.Spec.Credentials[1].Route.Upstream = "https://api.anthropic.com:987654321"
 	p.Spec.Credentials[2].Route.Upstream = "https://canary-host.example.com"
 	setAgent(p, func(a *Agent) { a.Credentials = append(a.Credentials, "CANARY_CREDENTIAL") })
-	p.Spec.Credentials[0].Scope.Permissions["ghp_CANARY_PERMISSION"] = "read"
+	p.Spec.Credentials[0].Scope.Permissions["ghp_CANARY_PERMISSION"] = permRead
 	allow(p, AllowRule{Host: "canary-host.example.com"})
 	err := p.Validate()
 	s.ErrorContains(err, "deliver[0]: unknown target")
@@ -195,7 +195,7 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	s.ErrorContains(err, "port is outside")
 	s.ErrorContains(err, "must not also be matched")
 	s.ErrorContains(err, "must reference a declared credential")
-	s.ErrorContains(err, "permission names must be")
+	s.ErrorContains(err, wantDeniedPermission)
 	for _, v := range []string{"CANARY_DELIVERY", "CANARY_REPO", "987654321", "CANARY"} {
 		s.NotContains(err.Error(), v)
 	}
@@ -204,7 +204,8 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 
 func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoNames() {
 	p := s.loadExample()
-	p.Spec.Credentials[0].Scope.Permissions["canary_password"] = "admin"
+	p.Spec.Credentials[0].Scope.Permissions["canary_password"] = permRead
+	p.Spec.Credentials[0].Scope.Permissions["issues"] = "canary"
 	p.Spec.Credentials[1].Name = "canary-dup"
 	p.Spec.Credentials[2].Name = "canary-dup"
 	p.Spec.Credentials[2].Route.Name = p.Spec.Credentials[1].Route.Name
@@ -221,8 +222,9 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoNames() {
 }
 
 const (
-	wantDeniedPermission = "permissions: must not include a permission whose name contains"
+	wantDeniedPermission = "permissions: names must be one of actions,"
 	permWrite            = "write"
+	permRead             = "read"
 )
 
 func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
@@ -230,7 +232,9 @@ func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
 		"dependabot_secrets", "organization_codespaces_secrets", "repository_hooks",
 		"organization_self_hosted_runners", "organization_personal_access_tokens",
 		"organization_custom_roles", "members", "organization_custom_org_roles",
-		"secret_scanning_alerts", "organization_custom_properties",
+		"secret_scanning_alerts", "organization_custom_properties", "organization_user_blocking",
+		"organization_copilot_agent_settings", "organization_actions_variables",
+		"administration", "workflows", "secrets", "unknown_permission",
 	} {
 		p := s.loadExample()
 		p.Spec.Credentials[0].Scope.Permissions[name] = permWrite
@@ -259,10 +263,10 @@ func (s *PoolConfigSuite) TestGrantErrorsGiveLinesWithoutKeys() {
 	).Replace(string(data))
 	_, err = Parse([]byte(yaml))
 	for _, want := range []string{
-		"spec.agents.claude.credentials[1] (line 49): must reference a declared credential",
-		"spec.agents.claude.env.<key> (line 48): names must start",
-		"spec.agents.claude.env.<key> (line 48): names undeclared route",
-		"spec.agents.claude.env.<key> (line 48): unknown placeholder",
+		"spec.agents.<key>.credentials[1] (line 49): must reference a declared credential",
+		"spec.agents.<key>.env.<key> (line 48): names must start",
+		"spec.agents.<key>.env.<key> (line 48): names undeclared route",
+		"spec.agents.<key>.env.<key> (line 48): unknown placeholder",
 	} {
 		s.ErrorContains(err, want)
 	}
@@ -274,7 +278,7 @@ func (s *PoolConfigSuite) TestDuplicateRouteKeepsFirstOwner() {
 	p.Spec.Credentials[2].Route.Name = p.Spec.Credentials[1].Route.Name
 	err := p.Validate()
 	s.ErrorContains(err, "spec.credentials[2].route.name: duplicates another route name")
-	s.NotContains(err.Error(), "spec.agents.claude.env")
+	s.NotContains(err.Error(), "uses a route whose credential")
 }
 
 func (s *PoolConfigSuite) TestCredentialDecodeErrorsDoNotEchoKeys() {

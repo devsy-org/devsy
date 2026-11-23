@@ -65,14 +65,15 @@ var (
 	strayRouteRegex   = regexp.MustCompile(`\{\s*route\.`)
 	digitsPattern     = regexp.MustCompile(`^[0-9]+$`)
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	permissionPattern = regexp.MustCompile(`^[a-z_]+$`)
 	prefixPattern     = regexp.MustCompile(`^[\x20-\x7e]*$`)
-	// deniedPermissionParts refuses any permission whose name holds one of
-	// these, which covers the organization_ and dependabot_ variants: each can
-	// change who controls the repository, read secrets or run code elsewhere.
-	deniedPermissionParts = []string{
-		"administration", "secret", "workflows", "hooks", "runners",
-		"personal_access_token", "custom_", "members",
+	// allowedPermissions are the repository permissions a pool agent may
+	// hold. Everything else is refused, including every organization
+	// permission and administration, secrets, workflows and hooks, so a new
+	// GitHub permission stays refused until it is reviewed.
+	allowedPermissions = []string{
+		"actions", "attestations", "checks", "contents", "deployments", "discussions",
+		"environments", "issues", "merge_queues", "metadata", "packages", "pages",
+		"pull_requests", "repository_projects", "statuses",
 	}
 	reservedHeaders = []string{
 		"host", "content-length", "transfer-encoding", "connection", "keep-alive", "te",
@@ -173,21 +174,16 @@ func validatePermissions(errs *fieldErrors, path string, permissions map[string]
 	// like a permission name.
 	for name, level := range permissions {
 		switch {
-		case !permissionPattern.MatchString(name):
-			errs.add(path, "permission names must be lowercase letters and underscores")
+		case !slices.Contains(allowedPermissions, name):
+			errs.add(path, "names must be one of %s", strings.Join(allowedPermissions, ", "))
 		case level != "read" && level != "write":
 			errs.add(path, "levels must be read or write")
-		case isDeniedPermission(name):
-			errs.add(path, "must not include a permission whose name contains %s",
-				strings.Join(deniedPermissionParts, ", "))
 		}
 	}
 }
 
-func isDeniedPermission(name string) bool {
-	return slices.ContainsFunc(deniedPermissionParts, func(part string) bool {
-		return strings.Contains(name, part)
-	})
+func isValidName(name string) bool {
+	return namePattern.MatchString(name) && len(name) <= maxNameLength
 }
 
 func (s *Spec) validateInject(
