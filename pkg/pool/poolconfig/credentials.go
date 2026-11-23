@@ -25,6 +25,8 @@ const (
 	defaultMintTTL = time.Hour
 	// GitHub installation tokens expire after one hour and cannot be extended.
 	maxMintTTL = time.Hour
+	// GitHub refuses an installation token request naming more repositories.
+	maxMintRepositories = 500
 
 	malformedPlaceholder = "malformed placeholder; use {{route.<name>}}"
 )
@@ -140,6 +142,8 @@ func validateScope(errs *fieldErrors, path string, scope *MintScope) {
 	}
 	if len(scope.Repositories) == 0 {
 		errs.add(path+".repositories", "must list at least one owner/repo")
+	} else if len(scope.Repositories) > maxMintRepositories {
+		errs.add(path+".repositories", "must list at most %d repositories", maxMintRepositories)
 	}
 	validateRepositories(errs, path+".repositories", scope.Repositories)
 	validatePermissions(errs, path+".permissions", scope.Permissions)

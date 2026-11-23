@@ -1,6 +1,7 @@
 package poolconfig
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -225,6 +226,7 @@ const (
 	wantDeniedPermission = "permissions: names must be one of actions,"
 	permWrite            = "write"
 	permRead             = "read"
+	permMetadata         = "metadata"
 )
 
 func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
@@ -244,13 +246,28 @@ func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
 
 func (s *PoolConfigSuite) TestAllowedPermissions() {
 	for _, name := range []string{
-		"contents", "pull_requests", "issues", "checks", "statuses", "actions",
-		"packages", "pages", "deployments", "environments",
+		"actions", "attestations", "checks", "contents", "deployments", "discussions",
+		"environments", "issues", "merge_queues", permMetadata, "packages", "pages",
+		"pull_requests", "repository_projects", "statuses",
 	} {
-		p := s.loadExample()
-		p.Spec.Credentials[0].Scope.Permissions[name] = permWrite
-		s.NoError(p.Validate(), name)
+		for _, level := range []string{permRead, permWrite} {
+			p := s.loadExample()
+			p.Spec.Credentials[0].Scope.Permissions = map[string]string{name: level}
+			s.NoError(p.Validate(), name+" "+level)
+		}
 	}
+}
+
+func (s *PoolConfigSuite) TestMintRepositoryLimit() {
+	p := s.loadExample()
+	repos := make([]string, 501)
+	for i := range repos {
+		repos[i] = fmt.Sprintf("acme/repo-%d", i)
+	}
+	p.Spec.Credentials[0].Scope.Repositories = repos[:500]
+	s.NoError(p.Validate())
+	p.Spec.Credentials[0].Scope.Repositories = repos
+	s.ErrorContains(p.Validate(), "scope.repositories: must list at most 500 repositories")
 }
 
 func (s *PoolConfigSuite) TestGrantErrorsGiveLinesWithoutKeys() {
