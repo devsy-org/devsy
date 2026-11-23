@@ -243,15 +243,23 @@ func (s *rerunSuite) TestArgs() {
 }
 
 func (s *rerunSuite) TestJobNamesCannotStartWorkflowCommands() {
-	injected := "Unit\n::error::injected"
+	name := `"name":"Unit\n::error::injected ##[error]legacy"`
 	tests := []struct {
-		name string
-		job  string
+		name    string
+		job     string
+		escaped string
 	}{
-		{name: "rerun list", job: `{"name":"Unit\n::error::injected","conclusion":"cancelled",` +
-			`"runner_name":"","labels":["macos-latest"]}`},
-		{name: "skip reason", job: `{"name":"Unit\n::error::injected","conclusion":"failure",` +
-			`"runner_name":"r1","labels":["ubuntu-latest\n::error::label"]}`},
+		{
+			name:    "rerun list",
+			job:     `{` + name + `,"conclusion":"cancelled","runner_name":"","labels":["macos-latest"]}`,
+			escaped: `"Unit\n::error::injected \x23\x23[error]legacy"`,
+		},
+		{
+			name: "skip reason",
+			job: `{` + name + `,"conclusion":"failure","runner_name":"r1",` +
+				`"labels":["ubuntu-latest\r::error::label"]}`,
+			escaped: `["ubuntu-latest\r::error::label"]`,
+		},
 	}
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -262,11 +270,32 @@ func (s *rerunSuite) TestJobNamesCannotStartWorkflowCommands() {
 			out, err := s.runRerun(fake, "--dry-run")
 
 			s.Require().NoError(err)
-			s.Contains(out, `"Unit\n::error::injected"`)
-			s.NotContains(out, injected)
-			s.NotContains(out, "\n::error::")
+			s.Contains(out, tt.escaped)
+			s.assertOnlyOwnCommands(out)
 		})
 	}
+}
+
+func (s *rerunSuite) TestGHErrorOutputIsQuoted() {
+	var out bytes.Buffer
+	cmd := rerunCommand{runner: stderrRunner{text: "bad\n::error::x ##[error]y\n"}, stdout: &out}
+
+	err := cmd.run(context.Background(), rerunOptions{repo: testRepo, runID: 7})
+
+	s.Require().Error(err)
+	_, _ = io.WriteString(&out, "::error::"+err.Error()+"\n")
+	s.Contains(out.String(), `"bad\n::error::x \x23\x23[error]y"`)
+	s.assertOnlyOwnCommands(out.String())
+}
+
+// stderrRunner fails every call after writing text to stderr, as gh does.
+type stderrRunner struct {
+	text string
+}
+
+func (r stderrRunner) Run(_ context.Context, spec commandSpec) error {
+	_, _ = io.WriteString(spec.Stderr, r.text)
+	return errors.New("exit status 1")
 }
 
 func (s *rerunSuite) TestRetriesDoNotShareThePullRequestGroup() {
@@ -292,4 +321,20 @@ func (s *rerunSuite) runRerun(fake *rerunFakeRunner, args ...string) (string, er
 	var stdout bytes.Buffer
 	err = rerunCommand{runner: fake, stdout: &stdout}.run(context.Background(), opts)
 	return stdout.String(), err
+}
+
+// assertOnlyOwnCommands fails if a line could be read as a workflow command
+// other than the ones rerun-no-runner writes itself.
+func (s *rerunSuite) assertOnlyOwnCommands(out string) {
+	s.NotContains(out, "##[")
+	for _, line := range strings.FieldsFunc(out, func(r rune) bool { return r == '\n' || r == '\r' }) {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "::") {
+			s.True(
+				strings.HasPrefix(trimmed, "::notice::run 7: ") ||
+					strings.HasPrefix(trimmed, "::error::exit status 1: "),
+				"unexpected command line %q", line,
+			)
+		}
+	}
 }
