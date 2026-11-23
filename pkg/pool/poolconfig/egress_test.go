@@ -140,7 +140,7 @@ func (s *PoolConfigSuite) TestEgressDefaults() {
 
 func (s *PoolConfigSuite) TestEgressRequiresExactFieldNames() {
 	_, err := Parse(append(s.readMinimal(), []byte("  egress: {allow: [{Host: a.com}]}\n")...))
-	s.ErrorContains(err, "spec.egress.allow[0] (line 13): unknown field")
+	s.EqualError(err, "parse pool config: spec.egress.allow[0] (line 13): unknown field")
 }
 
 func (s *PoolConfigSuite) TestHostMatches() {
