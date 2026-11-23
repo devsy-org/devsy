@@ -171,8 +171,9 @@ func (s *PoolConfigSuite) TestSecretDecodeErrorsDoNotEchoValues() {
 	}
 }
 
-// A change here changes the policy version of every existing pool. Field
-// renames, reordering and always-serialized new fields all do that.
+// Pins the policy version of testdata/pool.yaml. Field renames, reordering
+// and always-serialized new fields change it, and with it the version of
+// existing pools that use those fields.
 func (s *PoolConfigSuite) TestPolicyVersionGolden() {
 	v, err := s.loadExample().PolicyVersion()
 	s.Require().NoError(err)
