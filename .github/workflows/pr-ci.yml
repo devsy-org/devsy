@@ -279,6 +279,7 @@ jobs:
           {
             echo "build=$(go env GOCACHE)"
             echo "mod=$(go env GOMODCACHE)"
+            echo "week=$(date -u +%G-W%V)"
           } >> "$GITHUB_OUTPUT"
       - name: restore unit test Go caches
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -286,8 +287,9 @@ jobs:
           path: |
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
-          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.gocache.outputs.week }}
           restore-keys: |
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
             go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
       - name: record native host and available CLI versions
         run: |
@@ -351,7 +353,9 @@ jobs:
             ${{ steps.gocache.outputs.mod }}
           key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.gocache.outputs.week }}
           restore-keys: |
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
             go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+            go-unit-partial-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
 
       - name: run unit tests
         shell: bash
@@ -374,7 +378,7 @@ jobs:
           path: |
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
-          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-partial-${{ github.run_id }}
+          key: go-unit-partial-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.run_id }}
 
   provider-update-windows:
     name: Provider Update Tests (windows-latest)
@@ -400,6 +404,7 @@ jobs:
           {
             echo "build=$(go env GOCACHE)"
             echo "mod=$(go env GOMODCACHE)"
+            echo "week=$(date -u +%G-W%V)"
           } >> "$GITHUB_OUTPUT"
 
       - name: restore unit test Go caches
@@ -408,8 +413,9 @@ jobs:
           path: |
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
-          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.gocache.outputs.week }}
           restore-keys: |
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
             go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
 
       - name: run provider update tests and require Windows coverage
@@ -1045,33 +1051,13 @@ jobs:
 
       - name: setup Go
         if: matrix.setup_docker_wsl
-        id: go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: false
 
-      - name: locate Go caches
-        if: matrix.setup_docker_wsl
-        id: gocache
-        shell: bash
-        run: |
-          {
-            echo "build=$(go env GOCACHE)"
-            echo "mod=$(go env GOMODCACHE)"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: restore unit test Go caches
-        if: matrix.setup_docker_wsl
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ steps.gocache.outputs.build }}
-            ${{ steps.gocache.outputs.mod }}
-          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
-
+      # Restoring the 2 GB unit cache takes about 5 min on Windows, longer
+      # than compiling the two WSLg test packages cold.
       - name: test real noninteractive WSLg discovery and Compose parity
         if: matrix.setup_docker_wsl
         shell: pwsh
