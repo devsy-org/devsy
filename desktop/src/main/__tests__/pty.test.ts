@@ -76,9 +76,7 @@ describe("PtyManager", () => {
       onData: vi.fn(),
       onExit: vi.fn(),
     } as unknown as IPty
-    const spawnPty = vi
-      .fn()
-      .mockReturnValue(proc) as unknown as typeof import("node-pty").spawn
+    const spawnPty = vi.fn<typeof import("node-pty").spawn>(() => proc)
     const manager = new PtyManager({
       binaryPath: "/devsy",
       getMainWindow: () => null,
@@ -92,7 +90,7 @@ describe("PtyManager", () => {
       "/logs/ssh-diagnostics.log",
     )
 
-    const options = spawnPty.mock.calls[0]?.[2] as {
+    const options = vi.mocked(spawnPty).mock.calls[0]?.[2] as {
       env: Record<string, string>
     }
     expect(options.env.DEVSY_GPG_FORWARD_DIAGNOSTIC_FILE).toBe(

@@ -94,7 +94,6 @@ export async function applyAutostart(
     try {
       app.setLoginItemSettings({
         openAtLogin: settings.runAtStartup,
-        openAsHidden: settings.openToTrayOnStartup,
       })
       return {
         applied: true,

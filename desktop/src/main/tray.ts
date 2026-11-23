@@ -119,7 +119,7 @@ export interface TrayMenuModel {
 }
 
 export interface TrayMenuActions {
-  showDevsy: (route?: string) => void
+  showDevsy: () => void
   showWorkspace: (id: string) => void
   showWorkspaceLogs: (id: string) => void
   showAllWorkspaces: () => void
