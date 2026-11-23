@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -51,6 +52,7 @@ var reservedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("240.0.0.0/4"),
 	netip.MustParsePrefix("::/96"),
 	netip.MustParsePrefix("::ffff:0:0/96"),
+	netip.MustParsePrefix("::ffff:0:0:0/96"),
 	netip.MustParsePrefix("64:ff9b::/96"),
 	netip.MustParsePrefix("64:ff9b:1::/48"),
 	netip.MustParsePrefix("2001::/32"),
@@ -65,7 +67,8 @@ var reservedPrefixes = []netip.Prefix{
 // matches subdomains at any depth, but not the bare domain. Hosts that are not
 // valid DNS names never match.
 func HostMatches(pattern, host string) bool {
-	if checkHostPattern(pattern) != "" {
+	// Unicode lowercasing maps some non-ASCII runes, such as U+0130, to ASCII.
+	if checkHostPattern(pattern) != "" || !isASCII(host) {
 		return false
 	}
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
@@ -76,6 +79,15 @@ func HostMatches(pattern, host string) bool {
 		return strings.HasSuffix(host, "."+base)
 	}
 	return host == pattern
+}
+
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Spec) applyEgressDefaults() {
