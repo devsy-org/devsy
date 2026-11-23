@@ -52,6 +52,8 @@ run = "golangci-lint run ./..."
 [tasks."cli:lint:ci"]
 description = "lint using golangci-lint with CI parity"
 run = '''
+# golangci-lint drops every issue in new-from modes when the path goes through a symlink such as /tmp on macOS.
+cd "$(pwd -P)"
 golangci-lint config verify
 git fetch --quiet origin main
 patch="$(mktemp)"
