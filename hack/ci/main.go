@@ -10,6 +10,7 @@
 //	setup    host setup for suites (Docker, Podman)
 //	success  fold the needed job results into the required status check
 //	rerun-no-runner  rerun a run's failed jobs once when GitHub never assigned their macOS runner
+//	cache-prune      delete caches of closed pull requests and main's go-unit caches from older weeks
 package main
 
 import (
@@ -30,13 +31,14 @@ var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
 	"success":         successCLI,
 	"lint-patch":      lintPatchCLI,
 	"rerun-no-runner": rerunCLI,
+	"cache-prune":     cachePruneCLI,
 }
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(
 			stderr,
-			"usage: ci <matrix|unit|e2e|setup|success|lint-patch|rerun-no-runner> [args]",
+			"usage: ci <matrix|unit|e2e|setup|success|lint-patch|rerun-no-runner|cache-prune> [args]",
 		)
 		return 2
 	}

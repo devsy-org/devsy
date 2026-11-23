@@ -83,6 +83,7 @@ workflow edits.
 | `ci setup podman-linux ...` | Download, verify, and install the pinned static Podman build. |
 | `ci success --always-run JOBS` | Fold the `needs` results into the required `CI Success` check. |
 | `ci rerun-no-runner --run-id ID [--ignore JOBS] [--dry-run]` | Rerun the failed jobs of a run's first attempt once when every failure is a macOS job GitHub cancelled before assigning a runner. |
+| `ci cache-prune [--week YYYY-Www] [--dry-run]` | Delete the caches of closed pull requests, and main's `go-unit` caches from earlier weeks once the same runner has one for the current week. |
 
 The Podman and MicroSandbox runtime helpers live in `hack/podman_ci` and
 `hack/microsandbox`.
