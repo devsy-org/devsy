@@ -21,6 +21,7 @@ const (
 
 	errRepoCredentials = "must not contain credentials; use a credential grant"
 	errRepoURL         = "must be a valid repository URL"
+	errRepoQuery       = "must not contain a query or fragment"
 	scpPrefix          = "git@"
 	errEnvName         = "names must start with a letter or underscore and contain only " +
 		"letters, digits and underscores"
@@ -124,7 +125,7 @@ func escapesRepo(path string) bool {
 func repoError(repo string) string {
 	normalized := git.NormalizeRepository(repo).Repository
 	if rest, ok := strings.CutPrefix(normalized, scpPrefix); ok {
-		return scpError(rest)
+		return scpError(repo, rest)
 	}
 	// The raw text is checked too: NormalizeRepository reads
 	// https://user:token@host/a as repository https://user:token and branch
@@ -134,7 +135,7 @@ func repoError(repo string) string {
 		return errRepoCredentials
 	}
 	if strings.ContainsAny(repo, "?#") {
-		return "must not contain a query or fragment"
+		return errRepoQuery
 	}
 	if u, err := url.Parse(normalized); err != nil || (u.Host == "" && u.Scheme != "file") {
 		return errRepoURL
@@ -158,9 +159,12 @@ func hasURLCredentials(ref string, checkPath bool) bool {
 }
 
 // scpError checks host:path after the git@ of an scp-style reference.
-func scpError(rest string) string {
+func scpError(repo, rest string) string {
 	if strings.Contains(rest, "@") {
 		return errRepoCredentials
+	}
+	if strings.ContainsAny(repo, "?#") {
+		return errRepoQuery
 	}
 	host, path, ok := strings.Cut(rest, ":")
 	if !ok || host == "" || path == "" {
@@ -234,8 +238,7 @@ func (s *Spec) validateAgents(errs *fieldErrors) {
 			case secrets.ValidateName(key) != nil:
 				errs.addAt(envPath(path, key), errEnvName)
 			case isReservedEnvName(key):
-				// Only a reserved name is shown, since it cannot be a secret.
-				errs.addAt(path.field("env").entry(key, key),
+				errs.addAt(reservedEnvPath(path, key),
 					"is set by the pool and cannot be overridden")
 			}
 		}
@@ -250,6 +253,15 @@ func agentPath(name string) fieldPath {
 		label = name
 	}
 	return fieldPath{key: "spec.agents", shown: "spec.agents"}.entry(name, label)
+}
+
+// reservedEnvPath shows only an exact reserved name, which cannot be a
+// secret; a name that matched a prefix may carry pasted text after it.
+func reservedEnvPath(agent fieldPath, key string) fieldPath {
+	if slices.Contains(reservedEnvNames, strings.ToUpper(key)) {
+		return agent.field("env").entry(key, key)
+	}
+	return envPath(agent, key)
 }
 
 // envPath never shows the name: a token can look like a valid env name.
