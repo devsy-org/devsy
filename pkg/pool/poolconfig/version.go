@@ -7,17 +7,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/netip"
 	"slices"
+	"strings"
 )
 
 // policy is the part of a pool that governs what its workspaces run and can
-// reach. Capacity, lifecycle, audit settings and the pool name stay out, so
-// tuning them keeps the policy version.
+// reach, and how long they and their credentials live. Capacity, audit
+// settings and the pool name stay out, so tuning them keeps the policy version.
 type policy struct {
 	APIVersion  string           `json:"apiVersion"`
 	Kind        string           `json:"kind"`
 	Source      Source           `json:"source"`
 	Provider    Provider         `json:"provider"`
+	Lifecycle   Lifecycle        `json:"lifecycle"`
 	Egress      Egress           `json:"egress"`
 	Credentials []Credential     `json:"credentials,omitempty"`
 	Agents      map[string]Agent `json:"agents"`
@@ -33,6 +36,7 @@ func (p *Pool) PolicyVersion() (string, error) {
 		Kind:        n.Kind,
 		Source:      n.Spec.Source,
 		Provider:    n.Spec.Provider,
+		Lifecycle:   n.Spec.Lifecycle,
 		Egress:      n.Spec.Egress,
 		Credentials: n.Spec.Credentials,
 		Agents:      n.Spec.Agents,
@@ -56,14 +60,18 @@ func hashJSON(v any) (string, error) {
 }
 
 // normalized copies the pool with ports, delivery targets, repositories and
-// agent credentials sorted and deduplicated. Validation already refuses
+// agent credentials sorted and deduplicated, with repository names lowercased. Validation already refuses
 // duplicates; this keeps the hash stable if a caller skips it. Command
 // arguments and allow rules keep their order.
 func (p *Pool) normalized() Pool {
 	n := *p
 	n.Spec.Egress.Allow = slices.Clone(p.Spec.Egress.Allow)
 	for i := range n.Spec.Egress.Allow {
-		n.Spec.Egress.Allow[i].Ports = sortedSet(n.Spec.Egress.Allow[i].Ports)
+		rule := &n.Spec.Egress.Allow[i]
+		rule.Ports = sortedSet(rule.Ports)
+		if prefix, err := netip.ParsePrefix(rule.CIDR); err == nil {
+			rule.CIDR = prefix.String()
+		}
 	}
 	n.Spec.Credentials = slices.Clone(p.Spec.Credentials)
 	for i := range n.Spec.Credentials {
@@ -71,7 +79,7 @@ func (p *Pool) normalized() Pool {
 		c.Deliver = sortedSet(c.Deliver)
 		if c.GitHubApp != nil && c.GitHubApp.Scope != nil {
 			app, scope := *c.GitHubApp, *c.GitHubApp.Scope
-			scope.Repositories = sortedSet(scope.Repositories)
+			scope.Repositories = sortedSet(lowered(scope.Repositories))
 			app.Scope = &scope
 			c.GitHubApp = &app
 		}
@@ -84,6 +92,15 @@ func (p *Pool) normalized() Pool {
 		}
 	}
 	return n
+}
+
+// lowered matches validation, which treats repository names as case-insensitive.
+func lowered(items []string) []string {
+	out := make([]string, len(items))
+	for i, item := range items {
+		out[i] = strings.ToLower(item)
+	}
+	return out
 }
 
 func sortedSet[T cmp.Ordered](items []T) []T {

@@ -28,8 +28,11 @@ func NewValidateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &ValidateCmd{GlobalFlags: globalFlags}
 	validateCmd := &cobra.Command{
 		Use:   "validate",
-		Short: "Check a pool file and print its policy version",
-		Long: `Check a pool file and print its policy version.
+		Short: "Check a pool file and print its policy and config versions",
+		Long: `Check a pool file and print its policy and config versions.
+
+The policy version covers what governs a workspace. The config version covers
+the whole file, including capacity and audit settings.
 
 A pool file must hold no secrets. Env values, command arguments and provider
 options are kept as written and feed the policy version. Keep keys in a secret

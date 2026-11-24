@@ -195,6 +195,7 @@ func (s *PoolConfigSuite) TestInternalNamesRefused() {
 	for _, host := range []string{
 		"metadata.google.internal", "*.ec2.internal", "kubernetes.default.svc", "*.svc.cluster.local",
 		"printer.local", "a.localdomain", "router.home.arpa", "metadata.goog",
+		"x.metadata.goog", "*.metadata.goog",
 	} {
 		p := s.loadExample()
 		allow(p, AllowRule{Host: host})

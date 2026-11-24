@@ -114,9 +114,18 @@ func (s *Spec) validateEgress(errs *fieldErrors) {
 	for i, rule := range s.Egress.Allow {
 		validateAllowRule(errs, fmt.Sprintf("spec.egress.allow[%d]", i), rule)
 	}
-	targets := duplicates(s.Egress.Allow, func(r AllowRule) string { return r.Host + " " + r.CIDR })
+	targets := duplicates(s.Egress.Allow, allowTarget)
 	addDuplicates(errs, plainPath("spec.egress.allow"), targets,
 		"rule's host or cidr; list all its ports in one rule")
+}
+
+// allowTarget keys a rule by what it matches, so two spellings of one CIDR
+// count as the same target.
+func allowTarget(r AllowRule) string {
+	if prefix, err := netip.ParsePrefix(r.CIDR); err == nil {
+		return "cidr " + prefix.String()
+	}
+	return r.Host + " " + r.CIDR
 }
 
 func validateAllowRule(errs *fieldErrors, path string, rule AllowRule) {
@@ -172,7 +181,9 @@ func checkHostName(name string) string {
 }
 
 func isInternalName(name string) bool {
-	return slices.Contains(metadataNames, name) ||
+	return slices.ContainsFunc(metadataNames, func(m string) bool {
+		return name == m || strings.HasSuffix(name, "."+m)
+	}) ||
 		slices.ContainsFunc(internalSuffixes, func(suffix string) bool {
 			return strings.HasSuffix(name, suffix)
 		})

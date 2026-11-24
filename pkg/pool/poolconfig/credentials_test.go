@@ -192,7 +192,7 @@ func (s *PoolConfigSuite) TestSecretDecodeErrorsDoNotEchoValues() {
 func (s *PoolConfigSuite) TestPolicyVersionGolden() {
 	v, err := s.loadExample().PolicyVersion()
 	s.Require().NoError(err)
-	s.Equal("sha256:249090b583e8c465114f46f2a73eaf4b8d55192836a4aa333b1da9b4612d918f", v)
+	s.Equal("sha256:6e50a9585c2b974c9e766c3a54ddeed33c4d4edf1a51acc2f74236a2aab18cb2", v)
 }
 
 func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {

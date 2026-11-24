@@ -1,6 +1,7 @@
 package poolconfig
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -68,6 +69,10 @@ func (s *PoolConfigSuite) TestPolicyVersionChangesWithPolicy() {
 		"egress": func(p *Pool) { allow(p, AllowRule{Host: "x.example.com", Ports: []int{443}}) },
 		"env":    func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["MODE"] = "fast" }) },
 		"repo":   func(p *Pool) { p.Spec.Source.Repo = "https://github.com/acme/web" },
+		"ttl":    func(p *Pool) { p.Spec.Lifecycle.TTL = dur(time.Hour) },
+		"idle":   func(p *Pool) { p.Spec.Lifecycle.IdleTimeout = dur(time.Minute) },
+		"job":    func(p *Pool) { p.Spec.Lifecycle.JobTimeout = dur(time.Minute) },
+		"spawn":  func(p *Pool) { p.Spec.Lifecycle.SpawnTimeout = dur(time.Minute) },
 		"perm":   func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Permissions["issues"] = permRead },
 	} {
 		policy, config := s.versions(s.loadExample())
@@ -85,7 +90,6 @@ func (s *PoolConfigSuite) TestOperationalChangesKeepPolicyVersion() {
 		"capacity":  func(p *Pool) { p.Spec.Capacity.MaxQueued++ },
 		"audit dir": func(p *Pool) { p.Spec.Audit.Dir = "/var/log/pool" },
 		"retain":    func(p *Pool) { p.Spec.Audit.RetainDays++ },
-		"lifecycle": func(p *Pool) { p.Spec.Lifecycle.TTL = dur(time.Hour) },
 		"name":      func(p *Pool) { p.Metadata.Name = "other" },
 	} {
 		policy, config := s.versions(s.loadExample())
@@ -103,7 +107,7 @@ func (s *PoolConfigSuite) TestVersionsIgnoreSetOrderAndDuplicates() {
 	p.Spec.Egress.Allow[2].Ports = []int{22, 443, 22}
 	c := &p.Spec.Credentials[0]
 	c.Deliver = []string{DeliverGHEnv, DeliverGitHelper, DeliverGHEnv}
-	c.GitHubApp.Scope.Repositories = []string{repoWeb, repoAPI, repoWeb}
+	c.GitHubApp.Scope.Repositories = []string{repoWeb, "ACME/API", repoWeb}
 	setAgent(p, func(a *Agent) { a.Credentials = []string{credAnthropic, credGitHub, credGitHub} })
 	q := s.loadExample()
 	q.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{repoAPI, repoWeb}
@@ -118,6 +122,63 @@ func (s *PoolConfigSuite) TestVersionsIgnoreSetOrderAndDuplicates() {
 		p.Spec.Egress.Allow[2].Ports,
 		"normalizing must not change the pool",
 	)
+}
+
+func (s *PoolConfigSuite) TestVersionsDoNotChangeThePool() {
+	p := s.loadExample()
+	p.Spec.Egress.Allow[2].Ports = []int{443, 22, 443}
+	p.Spec.Credentials[0].Deliver = []string{DeliverGHEnv, DeliverGitHelper, DeliverGHEnv}
+	p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{repoWeb, "ACME/API", repoWeb}
+	setAgent(p, func(a *Agent) { a.Credentials = []string{credAnthropic, credGitHub, credGitHub} })
+	before, err := json.Marshal(p)
+	s.Require().NoError(err)
+	_, _ = s.versions(p)
+	after, err := json.Marshal(p)
+	s.Require().NoError(err)
+	s.JSONEq(string(before), string(after))
+}
+
+func (s *PoolConfigSuite) TestOrderSensitiveListsChangeVersions() {
+	for name, mutate := range map[string]func(*Pool){
+		"allow order": func(p *Pool) {
+			a := p.Spec.Egress.Allow
+			a[0], a[1] = a[1], a[0]
+		},
+		"command order": func(p *Pool) {
+			setAgent(p, func(a *Agent) { a.Command[1], a.Command[2] = a.Command[2], a.Command[1] })
+		},
+	} {
+		policy, config := s.versions(s.loadExample())
+		p := s.loadExample()
+		mutate(p)
+		newPolicy, newConfig := s.versions(p)
+		s.NotEqual(policy, newPolicy, name)
+		s.NotEqual(config, newConfig, name)
+	}
+}
+
+func (s *PoolConfigSuite) TestEquivalentCIDRSpellingsShareVersions() {
+	a, b := s.loadExample(), s.loadExample()
+	allow(a, AllowRule{CIDR: "2001:db8::/32"})
+	allow(b, AllowRule{CIDR: "2001:0db8:0:0:0:0:0:0/32"})
+	policyA, configA := s.versions(a)
+	policyB, configB := s.versions(b)
+	s.Equal(policyA, policyB)
+	s.Equal(configA, configB)
+}
+
+func (s *PoolConfigSuite) TestDuplicateCIDRSpellingsRefused() {
+	p := s.loadExample()
+	allow(p, AllowRule{CIDR: "2001:db8::/32"})
+	allow(p, AllowRule{CIDR: "2001:0db8:0:0:0:0:0:0/32"})
+	s.ErrorContains(p.Validate(), "spec.egress.allow[5]: duplicates another rule's host or cidr")
+}
+
+func (s *PoolConfigSuite) TestDuplicateItemsGiveLines() {
+	extra := "  egress:\n    allow:\n      - host: a.example.com\n        ports: [443, 443]\n"
+	_, err := Parse(append(s.readMinimal(), []byte(extra)...))
+	s.Require().
+		ErrorContains(err, "spec.egress.allow[0].ports[1] (line 16): duplicates another port")
 }
 
 func (s *PoolConfigSuite) TestDuplicateListItemsRefused() {
