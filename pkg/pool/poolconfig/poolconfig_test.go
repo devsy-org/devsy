@@ -106,6 +106,79 @@ func (s *PoolConfigSuite) TestDevcontainerPathWithDots() {
 	s.ErrorContains(p.Validate(), "devcontainerPath")
 }
 
+var repoTargetRejections = map[string][]string{
+	errRepoURL: {
+		"--upload-pack=touch",
+		"-oProxyCommand=x",
+		"ssh://-oProxyCommand=sh/x",
+		"git@-oProxyCommand=x:p",
+		"git:--upload-pack=touch",
+		"https://github.com/-acme/api",
+		"https://github.com//-acme/api",
+		"git@github.com:-acme/api",
+		"git@github.com:/-acme/api",
+		"https://127.1/acme/api",
+		"https://0x7f.1/acme/api",
+		"https://2130706433/acme/api",
+		"git@[::1/acme/api",
+	},
+	errRepoScheme: {
+		"file:///etc", "http://169.254.169.254/x", "http://github.com/acme/api",
+		"file:///work/@team/repo%20tools.git",
+	},
+	errRepoHost: {
+		"https://localhost/x",
+		"https://LocalHost./x",
+		"https://api.localhost/x",
+		"https://169.254.169.254/x",
+		"https://[::ffff:169.254.169.254]/x",
+		"https://[::ffff:a9fe:a9fe]/x",
+		"https://[::1]/x",
+		"https://[fe80::1%25eth0]/x",
+		"https://[fd00:ec2::254]/x",
+		"https://10.0.0.1/x",
+		"https://172.16.0.1/x",
+		"https://192.168.1.1:8443/x",
+		"https://100.64.0.1/x",
+		"https://100.100.100.200/x",
+		"https://168.63.129.16/x",
+		"https://0.0.0.0/x",
+		"https://255.255.255.255/x",
+		"https://224.0.0.1/x",
+		"https://[64:ff9b::a9fe:a9fe]/x",
+		"https://[2002:a9fe:a9fe::]/x",
+		"https://[::a9fe:a9fe]/x",
+		"https://metadata.google.internal/x",
+		"https://METADATA.google.internal./x",
+		"https://metadata/x",
+		"ssh://git@instance-data/x",
+		"git@localhost:acme/api",
+		"git@[::1]:acme/api",
+		"git@127.0.0.1:acme/api",
+		"ssh://git@192.168.1.1/acme/api",
+		"192.168.1.1/acme/api",
+	},
+}
+
+func (s *PoolConfigSuite) TestRepoTargetRefused() {
+	for want, repos := range repoTargetRejections {
+		for _, repo := range repos {
+			p := s.loadExample()
+			p.Spec.Source.Repo = repo
+			s.ErrorContains(p.Validate(), "spec.source.repo: "+want, repo)
+		}
+	}
+	for _, repo := range []string{
+		"https://8.8.8.8/acme/api", "https://[2606:4700::1111]/acme/api", "git@[2606:4700::1111]:acme/api",
+		"ssh://git@github.com:22/acme/api", "https://github.com./acme/api", "https://github.com/acme/-api",
+		"https://gitlab.example.internal/acme/api",
+	} {
+		p := s.loadExample()
+		p.Spec.Source.Repo = repo
+		s.NoError(p.Validate(), repo)
+	}
+}
+
 func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 	for _, repo := range []string{
 		"https://x-access-token:CANARY@github.com/acme/api",
@@ -134,7 +207,7 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"ssh://git@github.com/acme/api.git", "git@github.com:acme/api.git", "github.com/acme/api@main",
 		"git:git@github.com:acme/api.git", "github.com:8443/acme/api@main",
 		"git@github.com:project.git@main", "https://github.com/acme/api.git@feature/x",
-		"https://git.example.com/scm/@team/repo+tools.git", "file:///work/@team/repo%20tools.git",
+		"https://git.example.com/scm/@team/repo+tools.git",
 		"https://git.example.com/@team/repo.git@main", "git@git.example.com:scm/@team/repo+tools.git",
 		"ssh://john.smith@git.example.com/team/repo.git", "ssh://john%2Esmith@git.example.com/team/repo.git",
 	} {

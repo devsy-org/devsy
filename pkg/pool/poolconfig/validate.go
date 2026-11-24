@@ -137,7 +137,10 @@ func repoError(repo string) string {
 	}
 	normalized := git.NormalizeRepository(repo).Repository
 	if rest, ok := strings.CutPrefix(normalized, scpPrefix); ok {
-		return scpError(repo, rest)
+		if msg := scpError(repo, rest); msg != "" {
+			return msg
+		}
+		return repoTargetError(repo, normalized)
 	}
 	// The raw text is checked too: NormalizeRepository reads
 	// https://user:token@host/a as repository https://user:token and branch
@@ -151,7 +154,7 @@ func repoError(repo string) string {
 	if !isRepoURL(normalized) {
 		return errRepoURL
 	}
-	return ""
+	return repoTargetError(repo, normalized)
 }
 
 // isRepoURL refuses backslashes, which git and url.Parse read differently,
