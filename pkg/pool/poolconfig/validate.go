@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/devsy-org/devsy/pkg/secrets"
@@ -126,6 +127,9 @@ func escapesRepo(path string) bool {
 // user@host/repo carries https userinfo. Only an ssh login name such as git
 // may come before an @. Messages never include the value.
 func repoError(repo string) string {
+	if strings.IndexFunc(repo, isSpaceOrControl) >= 0 {
+		return errRepoURL
+	}
 	normalized := git.NormalizeRepository(repo).Repository
 	if rest, ok := strings.CutPrefix(normalized, scpPrefix); ok {
 		return scpError(repo, rest)
@@ -146,10 +150,16 @@ func repoError(repo string) string {
 }
 
 // isRepoURL refuses backslashes, which git and url.Parse read differently,
-// so https:/\user@host/x cannot pass as a URL for host https.
+// so https:/\user@host/x cannot pass as a URL for host https, and a host
+// ending in a colon, left by a mis-cased or single-slash scheme.
 func isRepoURL(ref string) bool {
 	u, err := url.Parse(ref)
-	return err == nil && !strings.Contains(ref, `\`) && (u.Host != "" || u.Scheme == "file")
+	return err == nil && !strings.Contains(ref, `\`) && !strings.HasSuffix(u.Host, ":") &&
+		(u.Host != "" || u.Scheme == "file")
+}
+
+func isSpaceOrControl(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsControl(r)
 }
 
 // hasURLCredentials reads the text directly, since a token can make the
