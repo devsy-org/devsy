@@ -158,6 +158,22 @@ jobs:
 
       - run: SKIP=golangci-lint prek run --all-files
 
+  # Left out of ci-success needs until it has run for a week without false positives.
+  mask-scan:
+    name: Mask Scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: devsy-org/ci/mask-scan@1225bd8960ff7eac8e7d6eafbb55073551c853c7
+
   agent-skill:
     name: Agent Skill
     needs: [changes]
