@@ -94,7 +94,7 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"CANARY-user@github.com/acme/api",
 		"git:git:https://CANARY@github.com/acme/api",
 		"SSH://CANARY@github.com/acme/api",
-		"ssh://CANARY@github.com/acme/api",
+		"ssh://CANARY0123456789abcdefghijklmnopqrst@github.com/acme/api",
 		"ssh://git@CANARY@github.com/acme/api",
 		"git@CANARY@github.com:acme/api",
 		"//CANARY@github.com/acme/api",
@@ -112,6 +112,7 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"git@github.com:project.git@main", "https://github.com/acme/api.git@feature/x",
 		"https://git.example.com/scm/@team/repo+tools.git", "file:///work/@team/repo%20tools.git",
 		"https://git.example.com/@team/repo.git@main", "git@git.example.com:scm/@team/repo+tools.git",
+		"ssh://john.smith@git.example.com/team/repo.git", "ssh://John.Smith@git.example.com/team/repo.git",
 	} {
 		p := s.loadExample()
 		p.Spec.Source.Repo = repo
