@@ -34,6 +34,9 @@ var (
 	// A lowercase login name of at most 32 characters, so mixed-case or long
 	// pasted tokens do not pass.
 	sshUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9._-]{0,31}$`)
+	// badRefPattern follows git check-ref-format with one-level names
+	// allowed, and also refuses a leading - that git would read as an option.
+	badRefPattern = regexp.MustCompile(`[\x00-\x20\x7f~^:?*[\\]|\.\.|@\{|^-|^@$|\.$`)
 	// reservedEnvNames are set by the pool or would break credential delivery,
 	// egress or TLS trust.
 	reservedEnvNames = []string{
@@ -206,11 +209,26 @@ func scpError(repo, rest string) string {
 	return ""
 }
 
+func isValidRef(ref string) bool {
+	if badRefPattern.MatchString(ref) {
+		return false
+	}
+	for part := range strings.SplitSeq(ref, "/") {
+		if part == "" || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Spec) validateSource(errs *fieldErrors) {
 	if s.Source.Repo == "" {
 		errs.add("spec.source.repo", "is required")
 	} else if msg := repoError(s.Source.Repo); msg != "" {
 		errs.add("spec.source.repo", "%s", msg)
+	}
+	if ref := s.Source.Ref; ref != "" && !isValidRef(ref) {
+		errs.add("spec.source.ref", "must be a valid git ref name and must not start with -")
 	}
 	if path := s.Source.DevcontainerPath; path != "" && escapesRepo(path) {
 		errs.add(
