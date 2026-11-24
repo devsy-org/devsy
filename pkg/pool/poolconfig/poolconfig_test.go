@@ -129,7 +129,7 @@ func (s *PoolConfigSuite) TestVersionsDoNotChangeThePool() {
 	p.Spec.Egress.Allow[2].Ports = []int{443, 22, 443}
 	p.Spec.Credentials[0].Deliver = []string{DeliverGHEnv, DeliverGitHelper, DeliverGHEnv}
 	p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{repoWeb, "ACME/API", repoWeb}
-	setAgent(p, func(a *Agent) { a.Credentials = []string{credAnthropic, credGitHub, credGitHub} })
+	setAgent(p, func(a *Agent) { a.Credentials = []string{credGitHub, credAnthropic, credGitHub} })
 	before, err := json.Marshal(p)
 	s.Require().NoError(err)
 	_, _ = s.versions(p)
