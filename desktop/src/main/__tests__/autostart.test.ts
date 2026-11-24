@@ -9,15 +9,18 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { DEFAULT_APP_SETTINGS } from "../app-settings.js"
 
-const { getLoginItemSettings } = vi.hoisted(() => ({
+const { getLoginItemSettings, setLoginItemSettings } = vi.hoisted(() => ({
   getLoginItemSettings: vi.fn(() => ({ openAtLogin: false })),
+  setLoginItemSettings: vi.fn(),
 }))
 vi.mock("electron", () => ({
   app: {
     getPath: () => "/tmp",
     isPackaged: true,
     getLoginItemSettings,
+    setLoginItemSettings,
   },
 }))
 
@@ -36,6 +39,7 @@ describe("Linux autostart", () => {
     dir = mkdtempSync(join(tmpdir(), "devsy-autostart-"))
     await applyAutostart(
       {
+        ...DEFAULT_APP_SETTINGS,
         runAtStartup: true,
         openToTrayOnStartup: true,
         trayNotifications: "all",
@@ -76,6 +80,7 @@ describe("Linux autostart", () => {
 
     const result = await applyAutostart(
       {
+        ...DEFAULT_APP_SETTINGS,
         runAtStartup: false,
         openToTrayOnStartup: true,
         trayNotifications: "all",
@@ -101,5 +106,24 @@ describe("Linux autostart", () => {
     expect(getLoginItemSettings).toHaveBeenCalledWith({
       args: ["--opened-at-login"],
     })
+  })
+
+  it("sets macOS login startup", async () => {
+    const result = await applyAutostart(
+      {
+        ...DEFAULT_APP_SETTINGS,
+        runAtStartup: true,
+        openToTrayOnStartup: true,
+      },
+      {
+        platform: "darwin",
+        isFlatpak: false,
+        execPath: "/app/devsy",
+        homeDir: "/home/test",
+        packaged: true,
+      },
+    )
+    expect(setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true })
+    expect(result.status).toBe("enabled")
   })
 })

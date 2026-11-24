@@ -350,11 +350,7 @@ func (s *matrixSuite) TestFullModeMatrices() {
 	m, err := LoadManifest()
 	s.Require().NoError(err)
 	build := matrixIncludeOf[matrixBuildEntry](s, strings.TrimPrefix(lines[1], "build="))
-	s.Equal([]matrixBuildEntry{
-		{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
-		{Runner: matrixMacOSRunner, JobTimeoutMinutes: 20},
-		{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45},
-	}, build)
+	s.Equal(allBuildEntries(), build)
 	for i, group := range []string{groupUnprivileged, groupIntegration, groupMicrosandbox} {
 		entries := matrixIncludeOf[matrixEntry](s, strings.TrimPrefix(lines[i+2], group+"="))
 		s.Len(entries, len(m.SuitesIn(group)))
@@ -369,7 +365,7 @@ func (s *matrixSuite) TestPRSelectionAndBuild() {
 	s.Require().Len(integration, 1)
 	s.Equal("mcp", integration[0].Name)
 	s.Equal(
-		[]matrixBuildEntry{{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45}},
+		[]matrixBuildEntry{{Runner: matrixUbuntuRunner, OS: osLinux, JobTimeoutMinutes: 45}},
 		matrixIncludeOf[matrixBuildEntry](s, leaf[matrixBuildGroup]),
 	)
 
@@ -390,8 +386,8 @@ func (s *matrixSuite) TestPRSelectionAndBuild() {
 	}
 	s.Contains(integrationNames, "up-handle-errors")
 	s.Equal([]matrixBuildEntry{
-		{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
-		{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45},
+		{Runner: matrixUbuntuRunner, OS: osLinux, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
+		{Runner: matrixUbuntuRunner, OS: osWindows, JobTimeoutMinutes: 45},
 	}, matrixIncludeOf[matrixBuildEntry](s, core[matrixBuildGroup]))
 
 	for _, changes := range []string{"sites/docs-devsy-sh/README.md\n", ""} {
@@ -401,11 +397,15 @@ func (s *matrixSuite) TestPRSelectionAndBuild() {
 		}
 	}
 	full := s.planChanges("go.mod\n")
-	s.Equal([]matrixBuildEntry{
-		{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
-		{Runner: matrixMacOSRunner, JobTimeoutMinutes: 20, BuildMicrosandbox: true},
-		{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
-	}, matrixIncludeOf[matrixBuildEntry](s, full[matrixBuildGroup]))
+	s.Equal(allBuildEntries(), matrixIncludeOf[matrixBuildEntry](s, full[matrixBuildGroup]))
+}
+
+func allBuildEntries() []matrixBuildEntry {
+	return []matrixBuildEntry{
+		{Runner: matrixUbuntuRunner, OS: osLinux, JobTimeoutMinutes: 45, BuildMicrosandbox: true},
+		{Runner: matrixUbuntuRunner, OS: osDarwin, JobTimeoutMinutes: 20},
+		{Runner: matrixUbuntuRunner, OS: osWindows, JobTimeoutMinutes: 45},
+	}
 }
 
 func (s *matrixSuite) TestWindowsOnlySelectionRequiresLinuxBuild() {
@@ -417,8 +417,8 @@ func (s *matrixSuite) TestWindowsOnlySelectionRequiresLinuxBuild() {
 		Paths:  []string{"windows-only.go"},
 	}}
 	s.Equal([]matrixBuildEntry{
-		{Runner: matrixUbuntuRunner, JobTimeoutMinutes: 45},
-		{Runner: matrixWindowsRunner, JobTimeoutMinutes: 45},
+		{Runner: matrixUbuntuRunner, OS: osLinux, JobTimeoutMinutes: 45},
+		{Runner: matrixUbuntuRunner, OS: osWindows, JobTimeoutMinutes: 45},
 	}, buildMatrixEntries(m, selectionOptions{mode: selectionModePR, changedFiles: []string{"windows-only.go"}}))
 }
 
