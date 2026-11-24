@@ -30,8 +30,9 @@ const (
 var (
 	namePattern       = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 	rootedPathPattern = regexp.MustCompile(`^([A-Za-z]:|/)`)
-	// A login name, at most 32 characters, so a pasted token does not pass.
-	sshUserPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9._-]{0,31}$`)
+	// A lowercase login name of at most 32 characters, so mixed-case or long
+	// pasted tokens do not pass.
+	sshUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9._-]{0,31}$`)
 	// reservedEnvNames are set by the pool or would break credential delivery,
 	// egress or TLS trust.
 	reservedEnvNames = []string{
@@ -181,7 +182,7 @@ func scpError(repo, rest string) string {
 	if strings.ContainsAny(repo, "?#") {
 		return errRepoQuery
 	}
-	if !ok || host == "" || path == "" {
+	if !ok || host == "" || path == "" || strings.Contains(host, `\`) {
 		return errRepoURL
 	}
 	return ""

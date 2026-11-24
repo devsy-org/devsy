@@ -95,6 +95,7 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"git:git:https://CANARY@github.com/acme/api",
 		"SSH://CANARY@github.com/acme/api",
 		"ssh://CANARY0123456789abcdefghijklmnopqrst@github.com/acme/api",
+		"ssh://Mixed.Case.Login@gitlab.com/acme/api", "ssh://John.CANARY@github.com/acme/api",
 		"ssh://git@CANARY@github.com/acme/api",
 		"git@CANARY@github.com:acme/api",
 		"//CANARY@github.com/acme/api",
@@ -112,14 +113,16 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"git@github.com:project.git@main", "https://github.com/acme/api.git@feature/x",
 		"https://git.example.com/scm/@team/repo+tools.git", "file:///work/@team/repo%20tools.git",
 		"https://git.example.com/@team/repo.git@main", "git@git.example.com:scm/@team/repo+tools.git",
-		"ssh://john.smith@git.example.com/team/repo.git", "ssh://John.Smith@git.example.com/team/repo.git",
+		"ssh://john.smith@git.example.com/team/repo.git",
 	} {
 		p := s.loadExample()
 		p.Spec.Source.Repo = repo
 		s.NoError(p.Validate(), repo)
 	}
 	p := s.loadExample()
-	for _, repo := range []string{"https://github.com/acme/%zz", `https:/\CANARY@github.com/x`} {
+	for _, repo := range []string{
+		"https://github.com/acme/%zz", `https:/\CANARY@github.com/x`, `git@git\CANARY.example.com:acme/api`,
+	} {
 		p.Spec.Source.Repo = repo
 		err := p.Validate()
 		s.ErrorContains(err, "spec.source.repo: must be a valid repository URL", repo)
