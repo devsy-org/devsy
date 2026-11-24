@@ -1,6 +1,7 @@
 package poolconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -19,27 +20,35 @@ var credentialRejections = []rejection{
 		"spec.credentials[1].name: duplicates another credential name",
 	},
 	{"unknown mode", func(p *Pool) { p.Spec.Credentials[0].Mode = "static" }, "mode"},
-	{"wrong issuer", func(p *Pool) { p.Spec.Credentials[0].Issuer = "gitlab" }, "issuer"},
-	{"bad app id", func(p *Pool) { p.Spec.Credentials[0].AppID = "12a" }, "numeric"},
+	{
+		"no githubApp",
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp = nil },
+		"githubApp: is required",
+	},
+	{"bad app id", func(p *Pool) { p.Spec.Credentials[0].GitHubApp.AppID = "12a" }, "numeric"},
 	{
 		"bad private key ref",
-		func(p *Pool) { p.Spec.Credentials[0].PrivateKey = "sops:/x" },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.PrivateKey = "sops:/x" },
 		"privateKey",
 	},
-	{"no scope", func(p *Pool) { p.Spec.Credentials[0].Scope = nil }, "scope: is required"},
+	{
+		"no scope",
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope = nil },
+		"scope: is required",
+	},
 	{
 		"bad repo",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Repositories = []string{"api"} },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{"api"} },
 		wantRepo,
 	},
 	{
 		"no permissions",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions = nil },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Permissions = nil },
 		"permission",
 	},
 	{
 		"admin permission",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["contents"] = "admin" },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Permissions["contents"] = "admin" },
 		"read or write",
 	},
 	{
@@ -64,7 +73,7 @@ var credentialRejections = []rejection{
 	},
 	{
 		"inject with app id",
-		func(p *Pool) { p.Spec.Credentials[1].AppID = "1" },
+		func(p *Pool) { p.Spec.Credentials[1].GitHubApp = &GitHubApp{AppID: "1"} },
 		"only valid for mint",
 	},
 	{"inject bad secret", func(p *Pool) { p.Spec.Credentials[1].Secret = "" }, "secret"},
@@ -129,27 +138,27 @@ var credentialRejections = []rejection{
 	malformedCase("stray close braces", "{{route.anthropic}}}}"),
 	{
 		"repos with several owners",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Repositories = []string{"acme/api", "other/web"} },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{"acme/api", "other/web"} },
 		"same owner",
 	},
 	{
 		"repo dot dot",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Repositories = []string{"acme/.."} },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{"acme/.."} },
 		wantRepo,
 	},
 	{
 		"owner dot",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Repositories = []string{"./api"} },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{"./api"} },
 		wantRepo,
 	},
 	{
 		"workflows permission",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["workflows"] = permWrite },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Permissions["workflows"] = permWrite },
 		wantDeniedPermission,
 	},
 	{
 		"administration permission",
-		func(p *Pool) { p.Spec.Credentials[0].Scope.Permissions["administration"] = permRead },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Permissions["administration"] = permRead },
 		wantDeniedPermission,
 	},
 	upstreamCase("upstream path", "https://api.anthropic.com/v1"),
@@ -162,7 +171,7 @@ var credentialRejections = []rejection{
 func (s *PoolConfigSuite) TestSecretDecodeErrorsDoNotEchoValues() {
 	data, err := os.ReadFile("testdata/pool.yaml")
 	s.Require().NoError(err)
-	for _, field := range []string{"secret: ANTHROPIC_API_KEY", "privateKey: sops:pool/GITHUB_APP_KEY"} {
+	for _, field := range []string{"secret: sops:pool/ANTHROPIC_API_KEY", "privateKey: sops:pool/GITHUB_APP_KEY"} {
 		name, _, _ := strings.Cut(field, ":")
 		for _, value := range []string{"!!null CANARY", "{CANARY: &a 1}", "[CANARY]"} {
 			_, err := Parse([]byte(strings.Replace(string(data), field, name+": "+value, 1)))
@@ -178,17 +187,17 @@ func (s *PoolConfigSuite) TestSecretDecodeErrorsDoNotEchoValues() {
 func (s *PoolConfigSuite) TestPolicyVersionGolden() {
 	v, err := s.loadExample().PolicyVersion()
 	s.Require().NoError(err)
-	s.Equal("sha256:da7204a0ad2a36e7692843f3a4d891e0ea05dc138b4860e668e4aec8b63f2f2c", v)
+	s.Equal("sha256:ff02d29f15a70d25e888a0cf1b665f4ff0c255d594040958637e297dc462fe8c", v)
 }
 
 func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	p := s.loadExample()
 	p.Spec.Credentials[0].Deliver = []string{"CANARY_DELIVERY"}
-	p.Spec.Credentials[0].Scope.Repositories = []string{"acme/api", "CANARY_REPO"}
+	p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{"acme/api", "CANARY_REPO"}
 	p.Spec.Credentials[1].Route.Upstream = "https://api.anthropic.com:987654321"
 	p.Spec.Credentials[2].Route.Upstream = "https://canary-host.example.com"
 	setAgent(p, func(a *Agent) { a.Credentials = append(a.Credentials, "CANARY_CREDENTIAL") })
-	p.Spec.Credentials[0].Scope.Permissions["ghp_CANARY_PERMISSION"] = permRead
+	p.Spec.Credentials[0].GitHubApp.Scope.Permissions["ghp_CANARY_PERMISSION"] = permRead
 	allow(p, AllowRule{Host: "canary-host.example.com"})
 	err := p.Validate()
 	s.ErrorContains(err, "deliver[0]: unknown target")
@@ -205,8 +214,8 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 
 func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoNames() {
 	p := s.loadExample()
-	p.Spec.Credentials[0].Scope.Permissions["canary_password"] = permRead
-	p.Spec.Credentials[0].Scope.Permissions["issues"] = "canary"
+	p.Spec.Credentials[0].GitHubApp.Scope.Permissions["canary_password"] = permRead
+	p.Spec.Credentials[0].GitHubApp.Scope.Permissions["issues"] = "canary"
 	p.Spec.Credentials[1].Name = "canary-dup"
 	p.Spec.Credentials[2].Name = "canary-dup"
 	p.Spec.Credentials[2].Route.Name = p.Spec.Credentials[1].Route.Name
@@ -223,7 +232,7 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoNames() {
 }
 
 const (
-	wantDeniedPermission = "permissions: names must be one of actions,"
+	wantDeniedPermission = "permissions.<key>: names must be one of actions,"
 	permWrite            = "write"
 	permRead             = "read"
 	permMetadata         = "metadata"
@@ -239,30 +248,30 @@ func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
 		"administration", "workflows", "secrets", "unknown_permission",
 	} {
 		p := s.loadExample()
-		p.Spec.Credentials[0].Scope.Permissions[name] = permWrite
+		p.Spec.Credentials[0].GitHubApp.Scope.Permissions[name] = permWrite
 		s.ErrorContains(p.Validate(), wantDeniedPermission, name)
 	}
 }
 
 func (s *PoolConfigSuite) TestAllowedPermissions() {
 	for _, name := range []string{
-		"attestations", "checks", "contents", "deployments", "discussions", "issues",
-		"merge_queues", "packages", "pages", "pull_requests", "repository_projects", "statuses",
+		"checks", "contents", "deployments", "discussions", "issues", "merge_queues",
+		"packages", "pages", "pull_requests", "repository_projects", "statuses",
 	} {
 		for _, level := range []string{permRead, permWrite} {
 			p := s.loadExample()
-			p.Spec.Credentials[0].Scope.Permissions = map[string]string{name: level}
+			p.Spec.Credentials[0].GitHubApp.Scope.Permissions = map[string]string{name: level}
 			s.NoError(p.Validate(), name+" "+level)
 		}
 	}
-	for _, name := range []string{"actions", "environments", permMetadata} {
+	for _, name := range []string{"actions", "attestations", "environments", permMetadata} {
 		p := s.loadExample()
-		p.Spec.Credentials[0].Scope.Permissions = map[string]string{name: permRead}
+		p.Spec.Credentials[0].GitHubApp.Scope.Permissions = map[string]string{name: permRead}
 		s.NoError(p.Validate(), name)
-		p.Spec.Credentials[0].Scope.Permissions[name] = permWrite
+		p.Spec.Credentials[0].GitHubApp.Scope.Permissions[name] = permWrite
 		s.ErrorContains(
 			p.Validate(),
-			"permissions: actions, environments and metadata allow read only",
+			"permissions.<key>: actions, attestations, environments and metadata allow read only",
 			name,
 		)
 	}
@@ -272,7 +281,7 @@ func (s *PoolConfigSuite) TestWorkflowsPermissionRefused() {
 	s.NotContains(allowedPermissions, "workflows")
 	for _, level := range []string{permRead, permWrite} {
 		p := s.loadExample()
-		p.Spec.Credentials[0].Scope.Permissions["workflows"] = level
+		p.Spec.Credentials[0].GitHubApp.Scope.Permissions["workflows"] = level
 		s.ErrorContains(p.Validate(), wantDeniedPermission, level)
 	}
 }
@@ -283,9 +292,9 @@ func (s *PoolConfigSuite) TestMintRepositoryLimit() {
 	for i := range repos {
 		repos[i] = fmt.Sprintf("acme/repo-%d", i)
 	}
-	p.Spec.Credentials[0].Scope.Repositories = repos[:500]
+	p.Spec.Credentials[0].GitHubApp.Scope.Repositories = repos[:500]
 	s.NoError(p.Validate())
-	p.Spec.Credentials[0].Scope.Repositories = repos
+	p.Spec.Credentials[0].GitHubApp.Scope.Repositories = repos
 	s.ErrorContains(p.Validate(), "scope.repositories: must list at most 500 repositories")
 }
 
@@ -315,6 +324,72 @@ func (s *PoolConfigSuite) TestDuplicateRouteKeepsFirstOwner() {
 	err := p.Validate()
 	s.ErrorContains(err, "spec.credentials[2].route.name: duplicates another route name")
 	s.NotContains(err.Error(), "uses a route whose credential")
+}
+
+func (s *PoolConfigSuite) TestErrorOrderIsStable() {
+	p := s.loadExample()
+	for _, name := range []string{"a1", "b2", "c3", "d4", "e5", "f6"} {
+		p.Spec.Agents[name] = Agent{Env: map[string]string{"1x": "{{route.nope}}", "2y": "{{"}}
+	}
+	p.Spec.Credentials[0].GitHubApp.Scope.Permissions = map[string]string{
+		"x1": permRead, "x2": permRead, "x3": permRead, "actions": permWrite, "issues": "admin",
+	}
+	want := p.Validate().Error()
+	for range 20 {
+		s.Equal(want, p.Validate().Error())
+	}
+}
+
+func (s *PoolConfigSuite) TestInjectTTLNotHashed() {
+	p := s.loadExample()
+	//nolint:gosec // G117: secret holds a store reference, not a value
+	data, err := json.Marshal(p.Spec.Credentials[1])
+	s.Require().NoError(err)
+	s.NotContains(string(data), "ttl")
+}
+
+func (s *PoolConfigSuite) TestSecretRefsMustBeQualified() {
+	for _, ref := range []string{
+		"ANTHROPIC_API_KEY", "sk_live_CANARY0123", "vault:pool/CANARY", "ghp_CANARY:src/name",
+		"local:pool/CANARY", " sops:pool/CANARY", "sops:pool/CANARY ", "sops:pool", "sops:/CANARY",
+	} {
+		p := s.loadExample()
+		p.Spec.Credentials[1].Secret = ref
+		p.Spec.Credentials[0].GitHubApp.PrivateKey = ref
+		err := p.Validate()
+		s.Require().
+			ErrorContains(err, "spec.credentials[1].secret: must be a TYPE:SOURCE/NAME", ref)
+		s.ErrorContains(
+			err,
+			"spec.credentials[0].githubApp.privateKey: must be a TYPE:SOURCE/NAME",
+			ref,
+		)
+		s.NotContains(err.Error(), "CANARY")
+	}
+	for _, ref := range []string{"local:local/ANTHROPIC_API_KEY", "sops:team-a/ANTHROPIC_API_KEY"} {
+		p := s.loadExample()
+		p.Spec.Credentials[1].Secret = ref
+		s.NoError(p.Validate(), ref)
+	}
+}
+
+func (s *PoolConfigSuite) TestPermissionErrorsGiveEntryLine() {
+	data, err := os.ReadFile("testdata/pool.yaml")
+	s.Require().NoError(err)
+	block := "permissions:\n            contents: write\n            CANARY_admin: write\n" +
+		"            actions: write\n            issues: CANARY"
+	yaml := strings.Replace(
+		string(data),
+		"permissions: {contents: write, pull_requests: write}",
+		block,
+		1,
+	)
+	_, err = Parse([]byte(yaml))
+	s.Require().Error(err)
+	s.ErrorContains(err, "permissions.<key> (line 36): names must be one of")
+	s.ErrorContains(err, "permissions.<key> (line 37): actions, attestations")
+	s.ErrorContains(err, "permissions.<key> (line 38): levels must be read or write")
+	s.NotContains(err.Error(), "CANARY")
 }
 
 func (s *PoolConfigSuite) TestCredentialDecodeErrorsDoNotEchoKeys() {
@@ -403,16 +478,29 @@ func (s *PoolConfigSuite) TestSecretRefErrorsDoNotEchoValue() {
 	for _, raw := range []string{"sk-ant-api03-CANARY value", "sk:ant/CANARY/x"} {
 		p := s.loadExample()
 		p.Spec.Credentials[1].Secret = raw
-		p.Spec.Credentials[0].PrivateKey = raw
+		p.Spec.Credentials[0].GitHubApp.PrivateKey = raw
 		err := p.Validate()
 		s.Require().ErrorContains(err, "TYPE:SOURCE/NAME")
 		s.NotContains(err.Error(), "CANARY")
 	}
 }
 
+func (s *PoolConfigSuite) TestFlatGitHubAppFieldsRefused() {
+	data, err := os.ReadFile("testdata/pool.yaml")
+	s.Require().NoError(err)
+	yaml := strings.Replace(
+		string(data),
+		"      githubApp:\n",
+		"      issuer: github-app\n      githubApp:\n",
+		1,
+	)
+	_, err = Parse([]byte(yaml))
+	s.ErrorContains(err, "spec.credentials[0] (line 28): unknown field")
+}
+
 func (s *PoolConfigSuite) TestScopeReportsRepositoriesAndPermissions() {
 	p := s.loadExample()
-	p.Spec.Credentials[0].Scope = &MintScope{}
+	p.Spec.Credentials[0].GitHubApp.Scope = &MintScope{}
 	err := p.Validate()
 	s.ErrorContains(err, "scope.repositories")
 	s.ErrorContains(err, "scope.permissions")

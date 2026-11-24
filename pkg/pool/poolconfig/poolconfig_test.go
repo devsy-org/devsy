@@ -178,7 +178,7 @@ func (s *PoolConfigSuite) TestRepoTargetRefused() {
 			p := s.loadExample()
 			p.Spec.Source.Repo = repo
 			err := p.Validate()
-			s.ErrorContains(err, "spec.source.repo: "+want, repo)
+			s.Require().ErrorContains(err, "spec.source.repo: "+want, repo)
 			s.NotContains(err.Error(), repo)
 		}
 	}
@@ -192,6 +192,14 @@ func (s *PoolConfigSuite) TestRepoTargetRefused() {
 		p.Spec.Source.Repo = repo
 		s.NoError(p.Validate(), repo)
 	}
+}
+
+func (s *PoolConfigSuite) TestSourceRefParseErrorGivesLine() {
+	data, err := os.ReadFile("testdata/pool.yaml")
+	s.Require().NoError(err)
+	_, err = Parse([]byte(strings.Replace(string(data), "ref: main", "ref: CANARY..x", 1)))
+	s.Require().ErrorContains(err, "spec.source.ref (line 8): must be a valid git ref name")
+	s.NotContains(err.Error(), "CANARY")
 }
 
 func (s *PoolConfigSuite) TestRepoCredentialsRefused() {

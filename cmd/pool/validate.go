@@ -28,7 +28,13 @@ func NewValidateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	validateCmd := &cobra.Command{
 		Use:   "validate",
 		Short: "Check a pool file and print its policy version",
-		Args:  cobra.NoArgs,
+		Long: `Check a pool file and print its policy version.
+
+A pool file must hold no secrets. Env values, command arguments and provider
+options are kept as written and feed the policy version. Keep keys in a secret
+store and reference them from a credential grant as TYPE:SOURCE/NAME, for
+example sops:pool/API_KEY.`,
+		Args: cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
 			return cmd.Run(cobraCmd.OutOrStdout())
 		},

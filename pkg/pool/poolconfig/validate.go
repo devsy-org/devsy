@@ -3,6 +3,7 @@ package poolconfig
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -281,13 +282,14 @@ func (s *Spec) validateAgents(errs *fieldErrors) {
 	if len(s.Agents) == 0 {
 		errs.add("spec.agents", "must define at least one agent")
 	}
-	for name, agent := range s.Agents {
+	for _, name := range sortedKeys(s.Agents) {
+		agent := s.Agents[name]
 		path := agentPath(name)
 		validateNameAt(errs, path, name, maxNameLength)
 		if len(agent.Command) == 0 || agent.Command[0] == "" {
 			errs.addAt(path.field("command"), "is required")
 		}
-		for key := range agent.Env {
+		for _, key := range sortedKeys(agent.Env) {
 			switch {
 			case secrets.ValidateName(key) != nil:
 				errs.addAt(envPath(path, key), errEnvName)
@@ -297,6 +299,11 @@ func (s *Spec) validateAgents(errs *fieldErrors) {
 			}
 		}
 	}
+}
+
+// sortedKeys keeps the error order the same from run to run.
+func sortedKeys[V any](m map[string]V) []string {
+	return slices.Sorted(maps.Keys(m))
 }
 
 // agentPath never shows the name: a pasted token can be a valid agent name.

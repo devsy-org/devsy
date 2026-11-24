@@ -1,5 +1,7 @@
 package poolconfig
 
+import "strings"
+
 const (
 	wantNarrower = "narrower"
 	wantOutside  = "outside"
@@ -186,6 +188,26 @@ func (s *PoolConfigSuite) TestEgressParseErrorsGiveLines() {
 	} {
 		_, err := Parse(append(s.readMinimal(), []byte(tc.extra)...))
 		s.ErrorContains(err, tc.want)
+	}
+}
+
+func (s *PoolConfigSuite) TestInternalNamesRefused() {
+	for _, host := range []string{
+		"metadata.google.internal", "*.ec2.internal", "kubernetes.default.svc", "*.svc.cluster.local",
+		"printer.local", "a.localdomain", "router.home.arpa", "metadata.goog",
+	} {
+		p := s.loadExample()
+		allow(p, AllowRule{Host: host})
+		p.Spec.Credentials[1].Route.Upstream = "https://" + strings.TrimPrefix(host, "*.")
+		err := p.Validate()
+		s.Require().ErrorContains(err, "host: must not be an internal or metadata name", host)
+		s.ErrorContains(err, "route.upstream: host must not be an internal or metadata name", host)
+		s.False(HostMatches("*.example.com", strings.TrimPrefix(host, "*.")), host)
+	}
+	for _, host := range []string{"internal.example.com", "local.example.com", "svc.example.com"} {
+		p := s.loadExample()
+		allow(p, AllowRule{Host: host})
+		s.NoError(p.Validate(), host)
 	}
 }
 

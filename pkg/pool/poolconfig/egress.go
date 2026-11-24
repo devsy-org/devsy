@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -36,6 +37,10 @@ type AllowRule struct {
 var (
 	labelPattern  = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 	letterPattern = regexp.MustCompile(`^[a-z]`)
+	// internalSuffixes name cluster, host and cloud internal services, which
+	// an allow rule or upstream must never reach by name.
+	internalSuffixes = []string{".internal", ".local", ".localdomain", ".svc", ".home.arpa"}
+	metadataNames    = []string{"metadata.goog"}
 )
 
 // reservedPrefixes are never reachable through an allow rule: loopback,
@@ -151,7 +156,21 @@ func checkHostName(name string) string {
 	if len(name) > maxHostNameLength || !strings.Contains(name, ".") {
 		return "must be a fully qualified name with at least one dot"
 	}
-	return checkLabels(strings.Split(name, "."))
+	if msg := checkLabels(strings.Split(name, ".")); msg != "" {
+		return msg
+	}
+	if isInternalName(name) {
+		return "must not be an internal or metadata name (" +
+			strings.Join(internalSuffixes, ", ") + ", " + strings.Join(metadataNames, ", ") + ")"
+	}
+	return ""
+}
+
+func isInternalName(name string) bool {
+	return slices.Contains(metadataNames, name) ||
+		slices.ContainsFunc(internalSuffixes, func(suffix string) bool {
+			return strings.HasSuffix(name, suffix)
+		})
 }
 
 func checkLabels(labels []string) string {

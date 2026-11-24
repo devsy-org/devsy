@@ -18,8 +18,6 @@ const (
 	ModeMint   = "mint"
 	ModeInject = "inject"
 
-	IssuerGitHubApp = "github-app"
-
 	DeliverGitHelper = "git-helper"
 	DeliverGHEnv     = "gh-env"
 
@@ -35,21 +33,25 @@ const (
 	levelWrite = "write"
 )
 
-// Credential is a grant the broker serves to pool sessions. Mint grants use
-// the issuer fields; inject grants use Secret and Route. A zero mint TTL takes
-// the default.
+// Credential is a grant the broker serves to pool sessions. Mint grants name
+// their issuer with one issuer block, today only GitHubApp; inject grants use
+// Secret and Route. A zero mint TTL takes the default.
 type Credential struct {
-	Name           string     `json:"name"`
-	Mode           string     `json:"mode"`
-	Issuer         string     `json:"issuer,omitempty"`
-	AppID          string     `json:"appId,omitempty"`
-	InstallationID string     `json:"installationId,omitempty"`
-	PrivateKey     string     `json:"privateKey,omitempty"`
-	Scope          *MintScope `json:"scope,omitempty"`
-	TTL            Duration   `json:"ttl"`
-	Deliver        []string   `json:"deliver,omitempty"`
-	Secret         string     `json:"secret,omitempty"`
-	Route          *Route     `json:"route,omitempty"`
+	Name      string     `json:"name"`
+	Mode      string     `json:"mode"`
+	GitHubApp *GitHubApp `json:"githubApp,omitempty"`
+	TTL       Duration   `json:"ttl,omitzero"`
+	Deliver   []string   `json:"deliver,omitempty"`
+	Secret    string     `json:"secret,omitempty"`
+	Route     *Route     `json:"route,omitempty"`
+}
+
+// GitHubApp mints installation tokens for one GitHub App installation.
+type GitHubApp struct {
+	AppID          string     `json:"appId"`
+	InstallationID string     `json:"installationId"`
+	PrivateKey     string     `json:"privateKey"`
+	Scope          *MintScope `json:"scope"`
 }
 
 type MintScope struct {
@@ -78,14 +80,16 @@ var (
 	// and hooks, so a new GitHub permission stays refused until it is
 	// reviewed. actions and environments are read only: write can dispatch
 	// workflows that hold secrets or replace environment secrets.
+	// attestations is read only: write can forge build provenance.
 	permissionLevels = map[string]string{
-		"actions": levelRead, "attestations": levelWrite, "checks": levelWrite,
+		"actions": levelRead, "attestations": levelRead, "checks": levelWrite,
 		"contents": levelWrite, "deployments": levelWrite, "discussions": levelWrite,
 		"environments": levelRead, "issues": levelWrite, "merge_queues": levelWrite,
 		"metadata": levelRead, "packages": levelWrite, "pages": levelWrite,
 		"pull_requests": levelWrite, "repository_projects": levelWrite, "statuses": levelWrite,
 	}
 	allowedPermissions = slices.Sorted(maps.Keys(permissionLevels))
+	secretRefTypes     = []string{secrets.LocalSourceName, secrets.SOPSFormatter}
 	reservedHeaders    = []string{
 		"host", "content-length", "transfer-encoding", "connection", "keep-alive", "te",
 		"trailer", "upgrade", "proxy-authorization", "proxy-authenticate", "proxy-connection",
@@ -118,18 +122,23 @@ func (s *Spec) validateCredentials(errs *fieldErrors) map[string]string {
 }
 
 func validateMint(errs *fieldErrors, path string, c *Credential) {
-	if c.Issuer != IssuerGitHubApp {
-		errs.add(path+".issuer", "must be %q", IssuerGitHubApp)
+	if app := c.GitHubApp; app == nil {
+		errs.add(path+".githubApp", "is required")
+	} else {
+		validateGitHubApp(errs, path+".githubApp", app)
 	}
-	if !digitsPattern.MatchString(c.AppID) || !digitsPattern.MatchString(c.InstallationID) {
-		errs.add(path, "appId and installationId must be numeric")
-	}
-	validateSecretRef(errs, path+".privateKey", c.PrivateKey)
-	validateScope(errs, path+".scope", c.Scope)
 	validateDelivery(errs, path, c)
 	if c.Secret != "" || c.Route != nil {
 		errs.add(path, "secret and route are only valid for inject credentials")
 	}
+}
+
+func validateGitHubApp(errs *fieldErrors, path string, app *GitHubApp) {
+	if !digitsPattern.MatchString(app.AppID) || !digitsPattern.MatchString(app.InstallationID) {
+		errs.add(path, "appId and installationId must be numeric")
+	}
+	validateSecretRef(errs, path+".privateKey", app.PrivateKey)
+	validateScope(errs, path+".scope", app.Scope)
 }
 
 func validateDelivery(errs *fieldErrors, path string, c *Credential) {
@@ -183,17 +192,19 @@ func validatePermissions(errs *fieldErrors, path string, permissions map[string]
 	if len(permissions) == 0 {
 		errs.add(path, "must list at least one permission")
 	}
-	// Names are never quoted: a key may be a pasted token, even one shaped
-	// like a permission name.
-	for name, level := range permissions {
+	// Names are never shown: a key may be a pasted token, even one shaped
+	// like a permission name. The line still points at the entry.
+	for _, name := range sortedKeys(permissions) {
+		level := permissions[name]
+		at := fieldPath{key: path, shown: path}.entry(name, hiddenKey)
 		highest, ok := permissionLevels[name]
 		switch {
 		case !ok:
-			errs.add(path, "names must be one of %s", strings.Join(allowedPermissions, ", "))
+			errs.addAt(at, "names must be one of %s", strings.Join(allowedPermissions, ", "))
 		case level != levelRead && level != levelWrite:
-			errs.add(path, "levels must be read or write")
+			errs.addAt(at, "levels must be read or write")
 		case level == levelWrite && highest == levelRead:
-			errs.add(path, "actions, environments and metadata allow read only")
+			errs.addAt(at, "actions, attestations, environments and metadata allow read only")
 		}
 	}
 }
@@ -212,7 +223,7 @@ func (s *Spec) validateInject(
 	if hasMintFields(c) {
 		errs.add(
 			path,
-			"issuer, privateKey, scope, ttl and deliver are only valid for mint credentials",
+			"githubApp, ttl and deliver are only valid for mint credentials",
 		)
 	}
 	if c.Route == nil {
@@ -234,8 +245,7 @@ func (s *Spec) validateInject(
 }
 
 func hasMintFields(c *Credential) bool {
-	return c.Issuer != "" || c.AppID != "" || c.InstallationID != "" || c.PrivateKey != "" ||
-		c.Scope != nil || len(c.Deliver) > 0 || c.TTL.Duration != 0
+	return c.GitHubApp != nil || len(c.Deliver) > 0 || c.TTL.Duration != 0
 }
 
 func validateHeader(errs *fieldErrors, path string, r *Route) {
@@ -294,11 +304,16 @@ func checkURLPort(port string) string {
 	return ""
 }
 
-// validateSecretRef never echoes the value, since a pasted raw key would
-// otherwise land in terminal and CI logs.
+// validateSecretRef requires a qualified reference with a known type, since
+// a pasted raw key often parses as a bare name, and never echoes the value,
+// which would otherwise land in terminal and CI logs.
 func validateSecretRef(errs *fieldErrors, path, ref string) {
-	if _, err := secrets.ParseRef(ref); err != nil {
-		errs.add(path, "must be a secret name or a TYPE:SOURCE/NAME reference")
+	parsed, err := secrets.ParseRef(ref)
+	if err != nil || !strings.Contains(ref, ":") || ref != strings.TrimSpace(ref) ||
+		!slices.Contains(secretRefTypes, parsed.Type) ||
+		(parsed.Type == secrets.LocalSourceName && parsed.Source != secrets.LocalSourceName) {
+		errs.add(path, "must be a TYPE:SOURCE/NAME reference with type %s, such as %s",
+			strings.Join(secretRefTypes, " or "), "sops:pool/API_KEY")
 	}
 }
 
@@ -312,6 +327,9 @@ func defaultCredential(c *Credential) {
 	}
 }
 
+// hostAllowed checks host rules only. Whether a cidr rule covers an upstream
+// depends on DNS, so the sidecar refuses that overlap at policy load and
+// again on every upstream lookup, failing closed.
 func (s *Spec) hostAllowed(host string) bool {
 	for _, rule := range s.Egress.Allow {
 		if rule.Host != "" && HostMatches(rule.Host, host) {
@@ -328,7 +346,8 @@ func (s *Spec) validateAgentGrants(errs *fieldErrors, routes map[string]string) 
 	for _, c := range s.Credentials {
 		declared[c.Name] = true
 	}
-	for name, agent := range s.Agents {
+	for _, name := range sortedKeys(s.Agents) {
+		agent := s.Agents[name]
 		path := agentPath(name)
 		for i, cred := range agent.Credentials {
 			if !declared[cred] {
@@ -336,8 +355,8 @@ func (s *Spec) validateAgentGrants(errs *fieldErrors, routes map[string]string) 
 					"must reference a declared credential")
 			}
 		}
-		for key, value := range agent.Env {
-			if msg := checkEnvValue(value, agent, routes); msg != "" {
+		for _, key := range sortedKeys(agent.Env) {
+			if msg := checkEnvValue(agent.Env[key], agent, routes); msg != "" {
 				errs.addAt(envPath(path, key), "%s", msg)
 			}
 		}
