@@ -1,0 +1,12 @@
+apiVersion: devsy.sh/v1alpha1
+kind: Pool
+metadata:
+  name: demo
+spec:
+  source:
+    repo: https://github.com/acme/api
+  provider:
+    name: docker
+  agents:
+    claude:
+      command: [claude, -p]

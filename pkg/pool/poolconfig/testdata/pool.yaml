@@ -1,0 +1,24 @@
+apiVersion: devsy.sh/v1alpha1
+kind: Pool
+metadata:
+  name: api-agents
+spec:
+  source:
+    repo: https://github.com/acme/api
+    ref: main
+    devcontainerPath: .devcontainer/devcontainer.json
+  provider:
+    name: docker
+  capacity:
+    maxConcurrent: 4
+    maxQueued: 8
+  lifecycle:
+    idleTimeout: 15m
+    ttl: 8h
+  agents:
+    claude:
+      command: [claude, -p, --output-format, stream-json, --verbose]
+      env: {LOG_LEVEL: info}
+    codex:
+      command: [codex, exec]
+      env: {LOG_LEVEL: info}
