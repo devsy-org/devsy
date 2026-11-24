@@ -16,6 +16,7 @@ import (
 const (
 	pruneCachesPath = "repos/o/r/actions/caches?per_page=100"
 	pruneWeek       = "2026-W49"
+	weekFlag        = "--week"
 	unitLinuxW48    = "go-unit-Linux-X64-1.26.9-abc-2026-W48"
 	unitLinuxW49    = "go-unit-Linux-X64-1.26.9-abc-2026-W49"
 )
@@ -72,6 +73,11 @@ func cache(id int64, key, ref string) ghCache {
 	return ghCache{ID: id, Key: key, Ref: ref, Size: 2_000_000}
 }
 
+func withVersion(c ghCache, version string) ghCache {
+	c.Version = version
+	return c
+}
+
 func prunedIDs(items []pruneItem) []int64 {
 	var ids []int64
 	for _, item := range items {
@@ -95,6 +101,7 @@ func pruneSelectionCases() []pruneSelectionCase {
 				cache(2, "setup-go-Linux", "refs/pull/1896/head"),
 				cache(3, "mise-v1-linux", "refs/pull/1891/merge"),
 				cache(4, "mise-v1-linux", "refs/pull/1777/merge"),
+				cache(5, "mise-v1-linux", "refs/pull/1896/merge-queue"),
 			},
 			want: []int64{1, 2},
 		},
@@ -112,13 +119,7 @@ func pruneSelectionCases() []pruneSelectionCase {
 			caches: []ghCache{
 				cache(1, "go-unit-Linux-X64-1.26.9-abc-2026-W48", mainRef),
 				cache(2, "go-unit-Linux-X64-1.26.8-abc-2026-W49", mainRef),
-				cache(3, "go-unit-macOS-ARM64-1.26.9-abc-2026-W48", mainRef),
-				{
-					ID:      4,
-					Key:     "***************************************",
-					Ref:     mainRef,
-					Version: "v2",
-				},
+				withVersion(cache(3, unitLinuxW49, mainRef), "v2"),
 			},
 		},
 		{
@@ -266,9 +267,14 @@ func (s *cachePruneSuite) TestArgs() {
 
 	s.Require().NoError(err)
 	s.Equal(pruneOptions{repo: testRepo, week: pruneWeek, dryRun: true}, opts)
-	for _, args := range [][]string{{"stray"}, {"--week", "2026-48"}} {
-		_, err := parsePruneArgs(args, &output, getenv, now)
-		s.Require().Error(err)
+	opts, err = parsePruneArgs([]string{weekFlag, "2026-W53"}, &output, getenv, now)
+	s.Require().NoError(err)
+	s.Equal("2026-W53", opts.week)
+	_, err = parsePruneArgs([]string{"stray"}, &output, getenv, now)
+	s.Require().Error(err)
+	for _, week := range []string{"2026-48", "2026-W00", "2026-W54"} {
+		_, err := parsePruneArgs([]string{weekFlag, week}, &output, getenv, now)
+		s.Require().ErrorIs(err, errBadWeek, week)
 	}
 	_, err = parsePruneArgs(nil, &output, func(string) string { return "" }, now)
 	s.Require().Error(err)

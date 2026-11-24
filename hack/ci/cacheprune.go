@@ -22,7 +22,7 @@ var (
 		`^go-unit-([A-Za-z]+-[A-Za-z0-9]+-[^-]+)-[0-9a-f]+-(\d{4}-W\d{2})$`,
 	)
 	errBadWeek      = errors.New("week must look like 2026-W48")
-	isoWeekPattern  = regexp.MustCompile(`^\d{4}-W\d{2}$`)
+	isoWeekPattern  = regexp.MustCompile(`^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$`)
 	unitPartialPart = "go-unit-partial-"
 )
 
