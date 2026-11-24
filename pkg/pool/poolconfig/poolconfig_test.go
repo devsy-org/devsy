@@ -121,15 +121,9 @@ var repoTargetRejections = map[string][]string{
 		"https://0x7f.1/acme/api",
 		"https://2130706433/acme/api",
 		"git@[::1/acme/api",
-		"https://localhost\u3002/x",
-		"https://localhost\uff0e/x",
-		"https://l\uff4fcalhost/x",
-		"https://local\u00adhost/x",
-		"https://localhost\u200b/x",
-		"https://metadata.google.internal\u3002/x",
-		"git@localhost\u3002:x",
 		"https://ex_ample.com/x",
-		"https://\u212aube.example.com/x",
+		"https://a..example.com/x",
+		"https://\uff11\uff12\uff17.1/x",
 	},
 	errRepoScheme: {
 		"file:///etc", "http://169.254.169.254/x", "http://github.com/acme/api",
@@ -166,6 +160,15 @@ var repoTargetRejections = map[string][]string{
 		"git@127.0.0.1:acme/api",
 		"ssh://git@192.168.1.1/acme/api",
 		"192.168.1.1/acme/api",
+		"https://[3fff::1]/x",
+		"https://localhost\u3002/x",
+		"https://localhost\uff0e/x",
+		"https://l\uff4fcalhost/x",
+		"https://local\u00adhost/x",
+		"https://localhost\u200b/x",
+		"https://metadata.google.internal\u3002/x",
+		"git@localhost\u3002:x",
+		"https://127\u30020\u30020\u30021/x",
 	},
 }
 
@@ -174,13 +177,16 @@ func (s *PoolConfigSuite) TestRepoTargetRefused() {
 		for _, repo := range repos {
 			p := s.loadExample()
 			p.Spec.Source.Repo = repo
-			s.ErrorContains(p.Validate(), "spec.source.repo: "+want, repo)
+			err := p.Validate()
+			s.ErrorContains(err, "spec.source.repo: "+want, repo)
+			s.NotContains(err.Error(), repo)
 		}
 	}
 	for _, repo := range []string{
 		"https://8.8.8.8/acme/api", "https://[2606:4700::1111]/acme/api", "git@[2606:4700::1111]:acme/api",
 		"ssh://git@github.com:22/acme/api", "https://github.com./acme/api", "https://github.com/acme/-api",
-		"https://gitlab.example.internal/acme/api",
+		"https://gitlab.example.internal/acme/api", "https://example.\u307f\u3093\u306a/acme/api",
+		"https://example.xn--q9jyb4c/acme/api", "https://\u212aube.example.com/acme/api",
 	} {
 		p := s.loadExample()
 		p.Spec.Source.Repo = repo
