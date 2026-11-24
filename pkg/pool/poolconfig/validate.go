@@ -301,6 +301,35 @@ func (s *Spec) validateAgents(errs *fieldErrors) {
 	}
 }
 
+// duplicates lists the index of each item whose key repeats an earlier one.
+func duplicates[T any](items []T, key func(T) string) []int {
+	var out []int
+	seen := make(map[string]bool, len(items))
+	for i, item := range items {
+		k := key(item)
+		if seen[k] {
+			out = append(out, i)
+		}
+		seen[k] = true
+	}
+	return out
+}
+
+// addDuplicates never shows the repeated value.
+func addDuplicates(errs *fieldErrors, at fieldPath, indexes []int, what string) {
+	for _, i := range indexes {
+		errs.addAt(at.index(i), "duplicates another %s", what)
+	}
+}
+
+func plainPath(path string) fieldPath {
+	return fieldPath{key: path, shown: path}
+}
+
+func identity(s string) string {
+	return s
+}
+
 // sortedKeys keeps the error order the same from run to run.
 func sortedKeys[V any](m map[string]V) []string {
 	return slices.Sorted(maps.Keys(m))

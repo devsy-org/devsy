@@ -73,7 +73,7 @@ var (
 	strayRouteRegex   = regexp.MustCompile(`\{\s*route\.`)
 	digitsPattern     = regexp.MustCompile(`^[0-9]+$`)
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	prefixPattern     = regexp.MustCompile(`^[\x20-\x7e]*$`)
+	prefixPattern     = regexp.MustCompile(`^[\x20-\x7e]{0,64}$`)
 	// permissionLevels maps each repository permission a pool agent may hold
 	// to the highest level allowed. Everything else is refused, including
 	// every organization permission and administration, secrets, workflows
@@ -151,6 +151,7 @@ func validateDelivery(errs *fieldErrors, path string, c *Credential) {
 				DeliverGitHelper, DeliverGHEnv)
 		}
 	}
+	addDuplicates(errs, plainPath(path+".deliver"), duplicates(c.Deliver, identity), "target")
 }
 
 func validateScope(errs *fieldErrors, path string, scope *MintScope) {
@@ -182,6 +183,8 @@ func validateRepositories(errs *fieldErrors, path string, repos []string) {
 			errs.add(path, "all repositories must have the same owner")
 		}
 	}
+	// GitHub repository names are case-insensitive.
+	addDuplicates(errs, plainPath(path), duplicates(repos, strings.ToLower), "repository")
 }
 
 func isDotName(s string) bool {
@@ -258,7 +261,7 @@ func validateHeader(errs *fieldErrors, path string, r *Route) {
 		)
 	}
 	if !prefixPattern.MatchString(r.Prefix) {
-		errs.add(path+".prefix", "must be printable ASCII")
+		errs.add(path+".prefix", "must be at most 64 printable ASCII characters")
 	}
 }
 
@@ -355,6 +358,8 @@ func (s *Spec) validateAgentGrants(errs *fieldErrors, routes map[string]string) 
 					"must reference a declared credential")
 			}
 		}
+		addDuplicates(errs, path.field("credentials"),
+			duplicates(agent.Credentials, identity), "credential")
 		for _, key := range sortedKeys(agent.Env) {
 			if msg := checkEnvValue(agent.Env[key], agent, routes); msg != "" {
 				errs.addAt(envPath(path, key), "%s", msg)

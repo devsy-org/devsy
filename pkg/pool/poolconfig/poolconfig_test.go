@@ -64,14 +64,83 @@ spec:
 }
 
 func (s *PoolConfigSuite) TestPolicyVersionChangesWithPolicy() {
+	for name, mutate := range map[string]func(*Pool){
+		"egress": func(p *Pool) { allow(p, AllowRule{Host: "x.example.com", Ports: []int{443}}) },
+		"env":    func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["MODE"] = "fast" }) },
+		"repo":   func(p *Pool) { p.Spec.Source.Repo = "https://github.com/acme/web" },
+		"perm":   func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Permissions["issues"] = permRead },
+	} {
+		policy, config := s.versions(s.loadExample())
+		p := s.loadExample()
+		mutate(p)
+		newPolicy, newConfig := s.versions(p)
+		s.NotEqual(policy, newPolicy, name)
+		s.NotEqual(config, newConfig, name)
+		s.Regexp(`^sha256:[0-9a-f]{64}$`, newPolicy)
+	}
+}
+
+func (s *PoolConfigSuite) TestOperationalChangesKeepPolicyVersion() {
+	for name, mutate := range map[string]func(*Pool){
+		"capacity":  func(p *Pool) { p.Spec.Capacity.MaxQueued++ },
+		"audit dir": func(p *Pool) { p.Spec.Audit.Dir = "/var/log/pool" },
+		"retain":    func(p *Pool) { p.Spec.Audit.RetainDays++ },
+		"lifecycle": func(p *Pool) { p.Spec.Lifecycle.TTL = dur(time.Hour) },
+		"name":      func(p *Pool) { p.Metadata.Name = "other" },
+	} {
+		policy, config := s.versions(s.loadExample())
+		p := s.loadExample()
+		mutate(p)
+		newPolicy, newConfig := s.versions(p)
+		s.Equal(policy, newPolicy, name)
+		s.NotEqual(config, newConfig, name)
+	}
+}
+
+func (s *PoolConfigSuite) TestVersionsIgnoreSetOrderAndDuplicates() {
+	policy, config := s.versions(s.loadExample())
 	p := s.loadExample()
-	before, err := p.PolicyVersion()
-	s.Require().NoError(err)
-	p.Spec.Capacity.MaxQueued++
-	after, err := p.PolicyVersion()
-	s.Require().NoError(err)
-	s.NotEqual(before, after)
-	s.Regexp(`^sha256:[0-9a-f]{64}$`, after)
+	p.Spec.Egress.Allow[2].Ports = []int{22, 443, 22}
+	c := &p.Spec.Credentials[0]
+	c.Deliver = []string{DeliverGHEnv, DeliverGitHelper, DeliverGHEnv}
+	c.GitHubApp.Scope.Repositories = []string{repoWeb, repoAPI, repoWeb}
+	setAgent(p, func(a *Agent) { a.Credentials = []string{credAnthropic, credGitHub, credGitHub} })
+	q := s.loadExample()
+	q.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{repoAPI, repoWeb}
+	wantPolicy, wantConfig := s.versions(q)
+	gotPolicy, gotConfig := s.versions(p)
+	s.Equal(wantPolicy, gotPolicy)
+	s.Equal(wantConfig, gotConfig)
+	s.NotEqual(policy, gotPolicy)
+	s.NotEqual(config, gotConfig)
+	s.Equal(
+		[]int{22, 443, 22},
+		p.Spec.Egress.Allow[2].Ports,
+		"normalizing must not change the pool",
+	)
+}
+
+func (s *PoolConfigSuite) TestDuplicateListItemsRefused() {
+	p := s.loadExample()
+	p.Spec.Egress.Allow[2].Ports = []int{443, 22, 443}
+	allow(p, AllowRule{Host: "github.com", Ports: []int{80}})
+	allow(p, AllowRule{CIDR: "10.20.0.0/16"})
+	c := &p.Spec.Credentials[0]
+	c.Deliver = []string{DeliverGitHelper, DeliverGitHelper}
+	c.GitHubApp.Scope.Repositories = []string{repoAPI, "Acme/API"}
+	setAgent(p, func(a *Agent) { a.Credentials = []string{credGitHub, credAnthropic, credGitHub} })
+	err := p.Validate()
+	s.Require().Error(err)
+	for _, want := range []string{
+		"spec.egress.allow[2].ports[2]: duplicates another port",
+		"spec.egress.allow[4]: duplicates another rule's host or cidr",
+		"spec.egress.allow[5]: duplicates another rule's host or cidr",
+		"spec.credentials[0].deliver[1]: duplicates another target",
+		"spec.credentials[0].githubApp.scope.repositories[1]: duplicates another repository",
+		"spec.agents.<key>.credentials[2]: duplicates another credential",
+	} {
+		s.ErrorContains(err, want)
+	}
 }
 
 func (s *PoolConfigSuite) TestSourceRef() {
@@ -504,6 +573,10 @@ func (s *PoolConfigSuite) TestRejections() {
 }
 
 const (
+	credGitHub      = "github"
+	credAnthropic   = "anthropic"
+	repoAPI         = "acme/api"
+	repoWeb         = "acme/web"
 	wantInvalidYAML = "invalid YAML"
 	wantEnvField    = "env.<key> (line 13): must be a string"
 )
@@ -582,6 +655,33 @@ func (s *PoolConfigSuite) TestDecoderErrorsDoNotEchoValues() {
 	}
 }
 
+func (s *PoolConfigSuite) TestNegativeZeroRefused() {
+	_, err := Parse(append(s.readMinimal(), []byte("  capacity: {maxQueued: -0}\n")...))
+	s.Require().ErrorContains(err, "spec.capacity.maxQueued (line 13)")
+}
+
+func (s *PoolConfigSuite) TestLoadRefusesLargeFile() {
+	base := s.readMinimal()
+	pad := func(size int) []byte {
+		out := slices.Clone(base)
+		out = append(out, '#')
+		for len(out) < size-1 {
+			out = append(out, 'x')
+		}
+		return append(out, '\n')
+	}
+	dir := s.T().TempDir()
+	atCap, overCap := filepath.Join(dir, "at.yaml"), filepath.Join(dir, "over.yaml")
+	s.Require().NoError(os.WriteFile(atCap, pad(maxFileSize), 0o600))
+	s.Require().NoError(os.WriteFile(overCap, pad(maxFileSize+1), 0o600))
+	_, err := Load(atCap)
+	s.Require().NoError(err)
+	_, err = Load(overCap)
+	s.Require().ErrorIs(err, errFileTooLarge)
+	_, err = Parse(pad(maxFileSize + 1))
+	s.Require().ErrorIs(err, errFileTooLarge)
+}
+
 func (s *PoolConfigSuite) loadExample() *Pool {
 	p, err := Load(filepath.Join("testdata", "pool.yaml"))
 	s.Require().NoError(err)
@@ -600,6 +700,14 @@ func (s *PoolConfigSuite) parseMinimal(extra string) *Pool {
 	p, err := Parse(append(s.readMinimal(), []byte(extra)...))
 	s.Require().NoError(err)
 	return p
+}
+
+func (s *PoolConfigSuite) versions(p *Pool) (string, string) {
+	policy, err := p.PolicyVersion()
+	s.Require().NoError(err)
+	config, err := p.ConfigVersion()
+	s.Require().NoError(err)
+	return policy, config
 }
 
 func (s *PoolConfigSuite) version(content string) string {

@@ -21,6 +21,7 @@ type ValidateCmd struct {
 type validateResult struct {
 	Name          string `json:"name"`
 	PolicyVersion string `json:"policyVersion"`
+	ConfigVersion string `json:"configVersion"`
 }
 
 func NewValidateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
@@ -52,19 +53,24 @@ func (cmd *ValidateCmd) Run(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	version, err := p.PolicyVersion()
+	policy, err := p.PolicyVersion()
 	if err != nil {
 		return err
 	}
-	result := validateResult{Name: p.Metadata.Name, PolicyVersion: version}
+	config, err := p.ConfigVersion()
+	if err != nil {
+		return err
+	}
+	result := validateResult{Name: p.Metadata.Name, PolicyVersion: policy, ConfigVersion: config}
 	if mode == output.ModeJSON {
 		return json.NewEncoder(w).Encode(result)
 	}
 	_, err = fmt.Fprintf(
 		w,
-		"pool %s is valid\npolicy version: %s\n",
+		"pool %s is valid\npolicy version: %s\nconfig version: %s\n",
 		result.Name,
 		result.PolicyVersion,
+		result.ConfigVersion,
 	)
 	return err
 }

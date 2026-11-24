@@ -16,7 +16,7 @@ const (
 var credentialRejections = []rejection{
 	{
 		"duplicate credential",
-		func(p *Pool) { p.Spec.Credentials[1].Name = "github" },
+		func(p *Pool) { p.Spec.Credentials[1].Name = credGitHub },
 		"spec.credentials[1].name: duplicates another credential name",
 	},
 	{"unknown mode", func(p *Pool) { p.Spec.Credentials[0].Mode = "static" }, "mode"},
@@ -116,8 +116,13 @@ var credentialRejections = []rejection{
 		"printable",
 	},
 	{
+		"long prefix",
+		func(p *Pool) { p.Spec.Credentials[2].Route.Prefix = strings.Repeat("a", 65) },
+		"spec.credentials[2].route.prefix: must be at most 64",
+	},
+	{
 		"duplicate route",
-		func(p *Pool) { p.Spec.Credentials[2].Route.Name = "anthropic" },
+		func(p *Pool) { p.Spec.Credentials[2].Route.Name = credAnthropic },
 		"spec.credentials[2].route.name: duplicates another route name",
 	},
 	{"undeclared credential", func(p *Pool) {
@@ -138,7 +143,7 @@ var credentialRejections = []rejection{
 	malformedCase("stray close braces", "{{route.anthropic}}}}"),
 	{
 		"repos with several owners",
-		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{"acme/api", "other/web"} },
+		func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{repoAPI, "other/web"} },
 		"same owner",
 	},
 	{
@@ -187,13 +192,13 @@ func (s *PoolConfigSuite) TestSecretDecodeErrorsDoNotEchoValues() {
 func (s *PoolConfigSuite) TestPolicyVersionGolden() {
 	v, err := s.loadExample().PolicyVersion()
 	s.Require().NoError(err)
-	s.Equal("sha256:ff02d29f15a70d25e888a0cf1b665f4ff0c255d594040958637e297dc462fe8c", v)
+	s.Equal("sha256:249090b583e8c465114f46f2a73eaf4b8d55192836a4aa333b1da9b4612d918f", v)
 }
 
 func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	p := s.loadExample()
 	p.Spec.Credentials[0].Deliver = []string{"CANARY_DELIVERY"}
-	p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{"acme/api", "CANARY_REPO"}
+	p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{repoAPI, "CANARY_REPO"}
 	p.Spec.Credentials[1].Route.Upstream = "https://api.anthropic.com:987654321"
 	p.Spec.Credentials[2].Route.Upstream = "https://canary-host.example.com"
 	setAgent(p, func(a *Agent) { a.Credentials = append(a.Credentials, "CANARY_CREDENTIAL") })

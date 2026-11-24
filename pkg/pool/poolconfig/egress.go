@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -113,6 +114,9 @@ func (s *Spec) validateEgress(errs *fieldErrors) {
 	for i, rule := range s.Egress.Allow {
 		validateAllowRule(errs, fmt.Sprintf("spec.egress.allow[%d]", i), rule)
 	}
+	targets := duplicates(s.Egress.Allow, func(r AllowRule) string { return r.Host + " " + r.CIDR })
+	addDuplicates(errs, plainPath("spec.egress.allow"), targets,
+		"rule's host or cidr; list all its ports in one rule")
 }
 
 func validateAllowRule(errs *fieldErrors, path string, rule AllowRule) {
@@ -125,6 +129,7 @@ func validateAllowRule(errs *fieldErrors, path string, rule AllowRule) {
 			errs.add(fmt.Sprintf("%s.ports[%d]", path, j), "is outside 1 to %d", maxPort)
 		}
 	}
+	addDuplicates(errs, plainPath(path+".ports"), duplicates(rule.Ports, strconv.Itoa), "port")
 }
 
 func checkAllowTarget(rule AllowRule) (string, string) {
