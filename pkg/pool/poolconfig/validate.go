@@ -170,7 +170,15 @@ func hasURLCredentials(ref string) bool {
 	}
 	authority, _, _ := strings.Cut(rest, "/")
 	at := strings.LastIndexByte(authority, '@')
-	return at >= 0 && (scheme != "ssh" || !sshUserPattern.MatchString(authority[:at]))
+	if at < 0 {
+		return false
+	}
+	if scheme != "ssh" {
+		return true
+	}
+	// git decodes the login before handing it to ssh.
+	user, err := url.PathUnescape(authority[:at])
+	return err != nil || !sshUserPattern.MatchString(user)
 }
 
 // scpError checks host:path after the git@ of an scp-style reference.
