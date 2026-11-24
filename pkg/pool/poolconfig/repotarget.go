@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -15,7 +17,7 @@ const (
 
 var (
 	// blockedRepoPrefixes cover loopback, private, link-local, CGNAT,
-	// documentation, multicast and reserved ranges, cloud metadata
+	// documentation (including 3fff::/20), multicast and reserved ranges, cloud metadata
 	// addresses, and the IPv6 forms that embed an IPv4 address.
 	blockedRepoPrefixes = []netip.Prefix{
 		netip.MustParsePrefix("0.0.0.0/8"),
@@ -42,12 +44,13 @@ var (
 		netip.MustParsePrefix("2001::/23"),
 		netip.MustParsePrefix("2001:db8::/32"),
 		netip.MustParsePrefix("2002::/16"),
+		netip.MustParsePrefix("3fff::/20"),
 		netip.MustParsePrefix("fc00::/7"),
 		netip.MustParsePrefix("fe80::/10"),
 		netip.MustParsePrefix("fec0::/10"),
 		netip.MustParsePrefix("ff00::/8"),
 	}
-	repoHostPattern = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
+	repoHostPattern = regexp.MustCompile(`^([a-z0-9-]+\.)*[a-z0-9-]+\.?$`)
 	metadataHosts   = []string{
 		"metadata", "metadata.google.internal", "metadata.goog",
 		"instance-data", "instance-data.ec2.internal",
@@ -97,36 +100,43 @@ func parseRepoTarget(normalized string) (repoTarget, string) {
 	return repoTarget{host: u.Hostname(), user: u.User.Username(), path: u.Path}, ""
 }
 
+// repoHostError checks a name by its IDNA lookup form, the one a resolver
+// sees, so fullwidth or ideographic spellings of localhost, a metadata name
+// or an address get the same answer as the ASCII spelling.
 func repoHostError(host string) string {
-	host = strings.TrimSuffix(host, ".")
-	if addr, err := netip.ParseAddr(host); err == nil {
-		if isBlockedRepoAddr(addr) {
-			return errRepoHost
-		}
-		return ""
+	if addr, err := netip.ParseAddr(strings.TrimSuffix(host, ".")); err == nil {
+		return repoAddrError(addr)
 	}
-	// Checked before lowercasing, which maps some non-ASCII runes to ASCII.
-	// An IDNA-aware client could map other non-ASCII forms onto localhost
-	// or a metadata name.
-	if !repoHostPattern.MatchString(host) {
+	ascii, err := idna.Lookup.ToASCII(host)
+	if err != nil || !repoHostPattern.MatchString(ascii) {
 		return errRepoURL
 	}
-	host = strings.ToLower(host)
-	if !hasNameTLD(host) {
+	ascii = strings.TrimSuffix(ascii, ".")
+	if addr, err := netip.ParseAddr(ascii); err == nil {
+		return repoAddrError(addr)
+	}
+	if !hasNameTLD(ascii) {
 		return errRepoURL
 	}
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") ||
-		slices.Contains(metadataHosts, host) {
+	if isLocalName(ascii) {
 		return errRepoHost
 	}
 	return ""
 }
 
-func isBlockedRepoAddr(addr netip.Addr) bool {
+func isLocalName(name string) bool {
+	return name == "localhost" || strings.HasSuffix(name, ".localhost") ||
+		slices.Contains(metadataHosts, name)
+}
+
+func repoAddrError(addr netip.Addr) string {
 	addr = addr.WithZone("").Unmap()
-	return slices.ContainsFunc(blockedRepoPrefixes, func(p netip.Prefix) bool {
+	if slices.ContainsFunc(blockedRepoPrefixes, func(p netip.Prefix) bool {
 		return p.Contains(addr)
-	})
+	}) {
+		return errRepoHost
+	}
+	return ""
 }
 
 // hasNameTLD refuses numeric hosts that are not plain IP literals, such as
