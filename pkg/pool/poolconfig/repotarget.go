@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -58,7 +59,7 @@ var (
 )
 
 type repoTarget struct {
-	host, user, path string
+	host, user, path, port string
 }
 
 // repoTargetError checks where a normalized reference points. A host, user
@@ -75,7 +76,19 @@ func repoTargetError(raw, normalized string) string {
 		strings.HasPrefix(strings.TrimLeft(t.path, "/"), "-") {
 		return errRepoURL
 	}
+	if !validRepoPort(t.port) {
+		return errRepoURL
+	}
 	return repoHostError(t.host)
+}
+
+// validRepoPort accepts no port or one in 1 to 65535.
+func validRepoPort(port string) bool {
+	if port == "" {
+		return true
+	}
+	n, err := strconv.Atoi(port)
+	return err == nil && n >= 1 && n <= maxPort
 }
 
 func parseRepoTarget(normalized string) (repoTarget, string) {
@@ -97,7 +110,7 @@ func parseRepoTarget(normalized string) (repoTarget, string) {
 	if err != nil {
 		return repoTarget{}, errRepoURL
 	}
-	return repoTarget{host: u.Hostname(), user: u.User.Username(), path: u.Path}, ""
+	return repoTarget{host: u.Hostname(), user: u.User.Username(), path: u.Path, port: u.Port()}, ""
 }
 
 // repoHostError checks a name by its IDNA lookup form, the one a resolver
@@ -124,8 +137,11 @@ func repoHostError(host string) string {
 	return ""
 }
 
+// isLocalName covers names a resolver answers from the local network: a
+// single label (search domains), the egress internal suffixes and metadata names.
 func isLocalName(name string) bool {
 	return name == "localhost" || strings.HasSuffix(name, ".localhost") ||
+		!strings.Contains(name, ".") || isInternalName(name) ||
 		slices.Contains(metadataHosts, name)
 }
 

@@ -2,6 +2,7 @@ package poolconfig
 
 import (
 	"encoding/json"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -254,6 +255,10 @@ var repoTargetRejections = map[string][]string{
 		"https://ex_ample.com/x",
 		"https://a..example.com/x",
 		"https://\uff11\uff12\uff17.1/x",
+		"https://github.com:0/acme/api",
+		"https://github.com:65536/acme/api",
+		"ssh://git@github.com:99999/acme/api",
+		"ssh://git@github.com:0/acme/api",
 	},
 	errRepoScheme: {
 		"file:///etc", "http://169.254.169.254/x", "http://github.com/acme/api",
@@ -261,6 +266,15 @@ var repoTargetRejections = map[string][]string{
 	},
 	errRepoHost: {
 		"https://localhost/x",
+		"https://intranet/acme/api",
+		"git@gitserver:acme/api",
+		"https://gitlab.example.internal/acme/api",
+		"https://git.corp.local/acme/api",
+		"https://git.svc/acme/api",
+		"https://git.default.svc.cluster.local/acme/api",
+		"https://git.corp.localdomain/acme/api",
+		"https://git.home.arpa/acme/api",
+		"https://x.metadata.goog/acme/api",
 		"https://LocalHost./x",
 		"https://api.localhost/x",
 		"https://169.254.169.254/x",
@@ -302,6 +316,54 @@ var repoTargetRejections = map[string][]string{
 	},
 }
 
+func lastAddr(p netip.Prefix) netip.Addr {
+	b := p.Masked().Addr().AsSlice()
+	for i := p.Bits(); i < len(b)*8; i++ {
+		b[i/8] |= 0x80 >> (i % 8)
+	}
+	a, _ := netip.AddrFromSlice(b)
+	return a
+}
+
+func repoURLFor(a netip.Addr) string {
+	if a.Is4() {
+		return "https://" + a.String() + "/acme/api"
+	}
+	return "https://[" + a.String() + "]/acme/api"
+}
+
+// The first and last address of each range must stay refused, and the
+// addresses just outside must stay allowed, so a widened or dropped range
+// fails here.
+func (s *PoolConfigSuite) TestRepoBlockedRangesPinned() {
+	pinned := map[string]string{
+		"fec0::/10":       "",
+		"2001::/23":       "2001:200::1",
+		"100::/64":        "100:0:0:1::1",
+		"198.18.0.0/15":   "198.20.0.1",
+		"64:ff9b:1::/48":  "64:ff9b:2::1",
+		"::ffff:0:0:0/96": "0:0:0:fffe::1",
+		"192.0.0.0/24":    "192.0.1.1",
+	}
+	for cidr, outside := range pinned {
+		prefix := netip.MustParsePrefix(cidr)
+		s.Contains(blockedRepoPrefixes, prefix, cidr)
+		for _, a := range []netip.Addr{prefix.Masked().Addr(), lastAddr(prefix)} {
+			p := s.loadExample()
+			p.Spec.Source.Repo = repoURLFor(a)
+			s.ErrorContains(p.Validate(), "spec.source.repo: "+errRepoHost, a.String())
+		}
+		if outside != "" {
+			p := s.loadExample()
+			p.Spec.Source.Repo = repoURLFor(netip.MustParseAddr(outside))
+			s.NoError(p.Validate(), outside)
+		}
+	}
+	p := s.loadExample()
+	p.Spec.Source.Repo = "https://198.17.255.255/acme/api"
+	s.NoError(p.Validate())
+}
+
 func (s *PoolConfigSuite) TestRepoTargetRefused() {
 	for want, repos := range repoTargetRejections {
 		for _, repo := range repos {
@@ -315,7 +377,8 @@ func (s *PoolConfigSuite) TestRepoTargetRefused() {
 	for _, repo := range []string{
 		"https://8.8.8.8/acme/api", "https://[2606:4700::1111]/acme/api", "git@[2606:4700::1111]:acme/api",
 		"ssh://git@github.com:22/acme/api", "https://github.com./acme/api", "https://github.com/acme/-api",
-		"https://gitlab.example.internal/acme/api", "https://example.\u307f\u3093\u306a/acme/api",
+		"https://github.com:1/acme/api", "https://github.com:65535/acme/api",
+		"https://internal.example.com/acme/api", "https://example.\u307f\u3093\u306a/acme/api",
 		"https://example.xn--q9jyb4c/acme/api", "https://\u212aube.example.com/acme/api",
 	} {
 		p := s.loadExample()
