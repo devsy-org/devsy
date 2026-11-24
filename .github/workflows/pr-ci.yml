@@ -153,6 +153,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
 
       - run: SKIP=golangci-lint prek run --all-files
 
