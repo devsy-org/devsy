@@ -123,6 +123,8 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 	p := s.loadExample()
 	for _, repo := range []string{
 		"https://github.com/acme/%zz", `https:/\CANARY@github.com/x`, `git@git\CANARY.example.com:acme/api`,
+		"git@github.com:acme/CANARY\tapi", "https://github.com/acme/CANARY api", "git@github.com:acme/\u0085CANARY",
+		"https:/CANARY@github.com/acme/api", "HTTPS://github.com/acme/CANARY",
 	} {
 		p.Spec.Source.Repo = repo
 		err := p.Validate()
