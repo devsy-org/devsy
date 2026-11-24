@@ -164,6 +164,7 @@ describe("AppSettingsStore", () => {
     const store = new AppSettingsStore(file)
     store.load()
     store.save({
+      ...DEFAULT_APP_SETTINGS,
       runAtStartup: true,
       openToTrayOnStartup: true,
       trayNotifications: "off",
@@ -183,6 +184,7 @@ describe("AppSettingsStore", () => {
     const store = new AppSettingsStore(file)
     store.load()
     store.save({
+      ...DEFAULT_APP_SETTINGS,
       runAtStartup: false,
       openToTrayOnStartup: true,
       trayNotifications: "failures",
