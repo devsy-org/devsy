@@ -136,10 +136,17 @@ func repoError(repo string) string {
 	if strings.ContainsAny(repo, "?#") {
 		return errRepoQuery
 	}
-	if u, err := url.Parse(normalized); err != nil || (u.Host == "" && u.Scheme != "file") {
+	if !isRepoURL(normalized) {
 		return errRepoURL
 	}
 	return ""
+}
+
+// isRepoURL refuses backslashes, which git and url.Parse read differently,
+// so https:/\user@host/x cannot pass as a URL for host https.
+func isRepoURL(ref string) bool {
+	u, err := url.Parse(ref)
+	return err == nil && !strings.Contains(ref, `\`) && (u.Host != "" || u.Scheme == "file")
 }
 
 // hasURLCredentials reads the text directly, since a token can make the
@@ -163,13 +170,13 @@ func hasURLCredentials(ref string) bool {
 
 // scpError checks host:path after the git@ of an scp-style reference.
 func scpError(repo, rest string) string {
-	if strings.Contains(rest, "@") {
+	host, path, ok := strings.Cut(rest, ":")
+	if strings.Contains(host, "@") {
 		return errRepoCredentials
 	}
 	if strings.ContainsAny(repo, "?#") {
 		return errRepoQuery
 	}
-	host, path, ok := strings.Cut(rest, ":")
 	if !ok || host == "" || path == "" {
 		return errRepoURL
 	}

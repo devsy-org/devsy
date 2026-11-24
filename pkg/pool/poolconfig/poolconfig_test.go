@@ -111,15 +111,19 @@ func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
 		"git:git@github.com:acme/api.git", "github.com:8443/acme/api@main",
 		"git@github.com:project.git@main", "https://github.com/acme/api.git@feature/x",
 		"https://git.example.com/scm/@team/repo+tools.git", "file:///work/@team/repo%20tools.git",
-		"https://git.example.com/@team/repo.git@main",
+		"https://git.example.com/@team/repo.git@main", "git@git.example.com:scm/@team/repo+tools.git",
 	} {
 		p := s.loadExample()
 		p.Spec.Source.Repo = repo
 		s.NoError(p.Validate(), repo)
 	}
 	p := s.loadExample()
-	p.Spec.Source.Repo = "https://github.com/acme/%zz"
-	s.ErrorContains(p.Validate(), "spec.source.repo: must be a valid repository URL")
+	for _, repo := range []string{"https://github.com/acme/%zz", `https:/\CANARY@github.com/x`} {
+		p.Spec.Source.Repo = repo
+		err := p.Validate()
+		s.ErrorContains(err, "spec.source.repo: must be a valid repository URL", repo)
+		s.NotContains(err.Error(), "CANARY")
+	}
 	for _, repo := range []string{
 		"https://github.com/acme/api?CANARY=1", "https://github.com/a/b#CANARY",
 		"git@github.com:acme/api.git?key=CANARY", "git:git@github.com:acme/api.git#CANARY",
