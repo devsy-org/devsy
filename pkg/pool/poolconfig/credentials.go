@@ -2,6 +2,7 @@ package poolconfig
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -29,6 +30,9 @@ const (
 	maxMintRepositories = 500
 
 	malformedPlaceholder = "malformed placeholder; use {{route.<name>}}"
+
+	levelRead  = "read"
+	levelWrite = "write"
 )
 
 // Credential is a grant the broker serves to pool sessions. Mint grants use
@@ -68,16 +72,21 @@ var (
 	digitsPattern     = regexp.MustCompile(`^[0-9]+$`)
 	repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	prefixPattern     = regexp.MustCompile(`^[\x20-\x7e]*$`)
-	// allowedPermissions are the repository permissions a pool agent may
-	// hold. Everything else is refused, including every organization
-	// permission and administration, secrets, workflows and hooks, so a new
-	// GitHub permission stays refused until it is reviewed.
-	allowedPermissions = []string{
-		"actions", "attestations", "checks", "contents", "deployments", "discussions",
-		"environments", "issues", "merge_queues", "metadata", "packages", "pages",
-		"pull_requests", "repository_projects", "statuses",
+	// permissionLevels maps each repository permission a pool agent may hold
+	// to the highest level allowed. Everything else is refused, including
+	// every organization permission and administration, secrets, workflows
+	// and hooks, so a new GitHub permission stays refused until it is
+	// reviewed. actions and environments are read only: write can dispatch
+	// workflows that hold secrets or replace environment secrets.
+	permissionLevels = map[string]string{
+		"actions": levelRead, "attestations": levelWrite, "checks": levelWrite,
+		"contents": levelWrite, "deployments": levelWrite, "discussions": levelWrite,
+		"environments": levelRead, "issues": levelWrite, "merge_queues": levelWrite,
+		"metadata": levelRead, "packages": levelWrite, "pages": levelWrite,
+		"pull_requests": levelWrite, "repository_projects": levelWrite, "statuses": levelWrite,
 	}
-	reservedHeaders = []string{
+	allowedPermissions = slices.Sorted(maps.Keys(permissionLevels))
+	reservedHeaders    = []string{
 		"host", "content-length", "transfer-encoding", "connection", "keep-alive", "te",
 		"trailer", "upgrade", "proxy-authorization", "proxy-authenticate", "proxy-connection",
 	}
@@ -177,11 +186,14 @@ func validatePermissions(errs *fieldErrors, path string, permissions map[string]
 	// Names are never quoted: a key may be a pasted token, even one shaped
 	// like a permission name.
 	for name, level := range permissions {
+		highest, ok := permissionLevels[name]
 		switch {
-		case !slices.Contains(allowedPermissions, name):
+		case !ok:
 			errs.add(path, "names must be one of %s", strings.Join(allowedPermissions, ", "))
-		case level != "read" && level != "write":
+		case level != levelRead && level != levelWrite:
 			errs.add(path, "levels must be read or write")
+		case level == levelWrite && highest == levelRead:
+			errs.add(path, "actions, environments and metadata allow read only")
 		}
 	}
 }

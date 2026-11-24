@@ -246,15 +246,34 @@ func (s *PoolConfigSuite) TestDeniedPermissionVariants() {
 
 func (s *PoolConfigSuite) TestAllowedPermissions() {
 	for _, name := range []string{
-		"actions", "attestations", "checks", "contents", "deployments", "discussions",
-		"environments", "issues", "merge_queues", permMetadata, "packages", "pages",
-		"pull_requests", "repository_projects", "statuses",
+		"attestations", "checks", "contents", "deployments", "discussions", "issues",
+		"merge_queues", "packages", "pages", "pull_requests", "repository_projects", "statuses",
 	} {
 		for _, level := range []string{permRead, permWrite} {
 			p := s.loadExample()
 			p.Spec.Credentials[0].Scope.Permissions = map[string]string{name: level}
 			s.NoError(p.Validate(), name+" "+level)
 		}
+	}
+	for _, name := range []string{"actions", "environments", permMetadata} {
+		p := s.loadExample()
+		p.Spec.Credentials[0].Scope.Permissions = map[string]string{name: permRead}
+		s.NoError(p.Validate(), name)
+		p.Spec.Credentials[0].Scope.Permissions[name] = permWrite
+		s.ErrorContains(
+			p.Validate(),
+			"permissions: actions, environments and metadata allow read only",
+			name,
+		)
+	}
+}
+
+func (s *PoolConfigSuite) TestWorkflowsPermissionRefused() {
+	s.NotContains(allowedPermissions, "workflows")
+	for _, level := range []string{permRead, permWrite} {
+		p := s.loadExample()
+		p.Spec.Credentials[0].Scope.Permissions["workflows"] = level
+		s.ErrorContains(p.Validate(), wantDeniedPermission, level)
 	}
 }
 
