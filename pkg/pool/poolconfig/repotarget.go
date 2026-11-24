@@ -3,6 +3,7 @@ package poolconfig
 import (
 	"net/netip"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -46,7 +47,8 @@ var (
 		netip.MustParsePrefix("fec0::/10"),
 		netip.MustParsePrefix("ff00::/8"),
 	}
-	metadataHosts = []string{
+	repoHostPattern = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
+	metadataHosts   = []string{
 		"metadata", "metadata.google.internal", "metadata.goog",
 		"instance-data", "instance-data.ec2.internal",
 	}
@@ -96,13 +98,20 @@ func parseRepoTarget(normalized string) (repoTarget, string) {
 }
 
 func repoHostError(host string) string {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	host = strings.TrimSuffix(host, ".")
 	if addr, err := netip.ParseAddr(host); err == nil {
 		if isBlockedRepoAddr(addr) {
 			return errRepoHost
 		}
 		return ""
 	}
+	// Checked before lowercasing, which maps some non-ASCII runes to ASCII.
+	// An IDNA-aware client could map other non-ASCII forms onto localhost
+	// or a metadata name.
+	if !repoHostPattern.MatchString(host) {
+		return errRepoURL
+	}
+	host = strings.ToLower(host)
 	if !hasNameTLD(host) {
 		return errRepoURL
 	}
@@ -124,5 +133,5 @@ func isBlockedRepoAddr(addr netip.Addr) bool {
 // 127.1 or 0x7f.1, which the resolver reads as addresses.
 func hasNameTLD(host string) bool {
 	last := host[strings.LastIndexByte(host, '.')+1:]
-	return last != "" && last[0] >= 'a' && last[0] <= 'z' && !strings.Contains(host, ":")
+	return last != "" && last[0] >= 'a' && last[0] <= 'z'
 }
