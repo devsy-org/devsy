@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { DEFAULT_APP_SETTINGS } from "../app-settings.js"
 import {
   buildTrayMenuTemplate,
   buildUpdateMenuItems,
@@ -124,6 +125,7 @@ describe("buildUpdateMenuItems", () => {
 
 describe("buildTrayMenuTemplate", () => {
   const settings = {
+    ...DEFAULT_APP_SETTINGS,
     runAtStartup: true,
     openToTrayOnStartup: false,
     trayNotifications: "failures" as const,
@@ -457,6 +459,7 @@ describe("buildTrayMenuTemplate", () => {
     const items = buildTrayMenuTemplate(
       model({
         settings: {
+          ...DEFAULT_APP_SETTINGS,
           runAtStartup: true,
           openToTrayOnStartup: false,
           trayNotifications: "failures",
@@ -486,6 +489,7 @@ describe("buildTrayMenuTemplate", () => {
     const items = buildTrayMenuTemplate(
       model({
         settings: {
+          ...DEFAULT_APP_SETTINGS,
           runAtStartup: false,
           openToTrayOnStartup: false,
           trayNotifications: "failures",

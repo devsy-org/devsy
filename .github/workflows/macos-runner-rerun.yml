@@ -1,0 +1,34 @@
+name: macOS Runner Rerun
+
+# A run cannot rerun its own jobs before it completes, so this reacts to the
+# finished Pull Request run instead of living in pr-ci.yml.
+on:
+  workflow_run:
+    workflows: [Pull Request]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  rerun-no-runner:
+    name: Rerun macOS jobs that got no runner
+    if: github.event.workflow_run.run_attempt == 1 && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: Rerun failed jobs once when only macOS runner assignment failed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: go run ./hack/ci rerun-no-runner --run-id "$RUN_ID" --ignore "CI Success"
