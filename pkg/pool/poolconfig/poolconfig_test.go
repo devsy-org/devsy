@@ -74,6 +74,28 @@ func (s *PoolConfigSuite) TestPolicyVersionChangesWithPolicy() {
 	s.Regexp(`^sha256:[0-9a-f]{64}$`, after)
 }
 
+func (s *PoolConfigSuite) TestSourceRef() {
+	for _, ref := range []string{
+		"main", "feature/x", "v1.2.3", "refs/heads/main", "release-1.0", "0123456789abcdef0123456789abcdef01234567",
+		"a@b", "x/@", "a{b",
+	} {
+		p := s.loadExample()
+		p.Spec.Source.Ref = ref
+		s.NoError(p.Validate(), ref)
+	}
+	for _, ref := range []string{
+		"-CANARY", "--upload-pack=CANARY", "CANARY..x", "CANARY x", "CANARY~1", "CANARY^", "CANARY:x",
+		"CANARY?", "CANARY*", "CANARY[", `CANARY\x`, "CANARY/", "/CANARY", "CANARY//x", ".CANARY",
+		"CANARY/.x", "CANARY.lock", "CANARY/x.lock/y", "CANARY.", "@", "CANARY@{1}", "CANARY\tx", "CANARY\x7f",
+	} {
+		p := s.loadExample()
+		p.Spec.Source.Ref = ref
+		err := p.Validate()
+		s.ErrorContains(err, "spec.source.ref: must be a valid git ref name", ref)
+		s.NotContains(err.Error(), "CANARY")
+	}
+}
+
 func (s *PoolConfigSuite) TestDevcontainerPathWithDots() {
 	p := s.loadExample()
 	p.Spec.Source.DevcontainerPath = ".devcontainer/a..b/devcontainer.json"
