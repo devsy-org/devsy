@@ -138,6 +138,59 @@ func (s *StoreSuite) TestAdmitDoesNotPublishSessionWhenFreshKeyLinkFails() {
 	s.Equal([]string{keyFile(canaryKey)}, dirNames(s, s.layout.KeysDir()))
 }
 
+func (s *StoreSuite) TestCreateSyncsKeysBeforeChoosingAnID() {
+	s.writeReservation("old", s.clock)
+	s.clock = s.clock.Add(KeyRetention)
+	fail := true
+	var synced []*os.Root
+	s.stubSync(func(root *os.Root) error {
+		synced = append(synced, root)
+		if fail && root == s.store.keys {
+			return errInjectedIO
+		}
+		return syncDirectory(root)
+	})
+	removed, err := s.store.PruneKeys()
+	s.Require().ErrorIs(err, errInjectedIO)
+	s.Equal(1, removed)
+	s.Empty(dirNames(s, s.layout.KeysDir()))
+
+	useSource(s.T(), fixedReader{0})
+	synced = nil
+	got, err := s.store.Create()
+	s.Require().ErrorIs(err, errInjectedIO)
+	s.Zero(got)
+	s.Equal([]*os.Root{s.store.keys}, synced)
+	s.Empty(s.names())
+
+	fail = false
+	synced = nil
+	_, err = s.store.Create()
+	s.Require().NoError(err)
+	s.Equal(s.store.keys, synced[0])
+}
+
+func (s *StoreSuite) TestCreateSyncsKeysAfterAnExpiredReservationIsReplaced() {
+	s.writeReservation(canaryKey, s.clock.Add(-KeyRetention))
+	fail := true
+	s.stubSync(func(root *os.Root) error {
+		if fail && root == s.store.keys {
+			return errInjectedIO
+		}
+		return syncDirectory(root)
+	})
+	useSource(s.T(), fixedReader{0xff})
+	got, err := s.store.Admit(canaryKey, Limits{MaxConcurrent: 2})
+	s.Require().ErrorIs(err, errInjectedIO)
+	s.Zero(got)
+
+	useSource(s.T(), fixedReader{0})
+	created, err := s.store.Create()
+	s.Require().ErrorIs(err, errInjectedIO)
+	s.Zero(created)
+	s.Empty(s.names())
+}
+
 func (s *StoreSuite) stubSync(stub func(*os.Root) error) {
 	orig := syncRoot
 	syncRoot = stub

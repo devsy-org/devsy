@@ -148,14 +148,12 @@ func (s *Store) Transition(id string, from, to State, reason string) (Session, e
 	return s.transition(id, from, to, reason)
 }
 
+// freshID picks an ID no session file or key record holds. The key directory
+// is synced first, so a record a crash could still restore is never reused.
 func (s *Store) freshID() (string, error) {
-	records, err := s.keyRecords()
+	reserved, err := s.reservedIDs()
 	if err != nil {
 		return "", err
-	}
-	reserved := make(map[string]struct{}, len(records))
-	for _, record := range records {
-		reserved[record.Session] = struct{}{}
 	}
 	for range idAttempts {
 		id, err := NewID(s.pool)
@@ -174,6 +172,21 @@ func (s *Store) freshID() (string, error) {
 		}
 	}
 	return "", ErrExists
+}
+
+func (s *Store) reservedIDs() (map[string]struct{}, error) {
+	if err := syncRoot(s.keys); err != nil {
+		return nil, err
+	}
+	records, err := s.keyRecords()
+	if err != nil {
+		return nil, err
+	}
+	reserved := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		reserved[record.Session] = struct{}{}
+	}
+	return reserved, nil
 }
 
 func (s *Store) createQueued(id string, now time.Time) (Session, error) {
