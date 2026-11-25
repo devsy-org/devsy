@@ -15,6 +15,13 @@ spec:
   lifecycle:
     idleTimeout: 15m
     ttl: 8h
+  egress:
+    allow:
+      - host: registry.npmjs.org
+      - host: "*.pythonhosted.org"
+      - host: github.com
+        ports: [443, 22]
+      - cidr: 10.20.0.0/16
   agents:
     claude:
       command: [claude, -p, --output-format, stream-json, --verbose]

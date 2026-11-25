@@ -31,6 +31,7 @@ type Spec struct {
 	Provider  Provider         `json:"provider"`
 	Capacity  Capacity         `json:"capacity"`
 	Lifecycle Lifecycle        `json:"lifecycle"`
+	Egress    Egress           `json:"egress"`
 	Agents    map[string]Agent `json:"agents"`
 	Audit     Audit            `json:"audit"`
 }
