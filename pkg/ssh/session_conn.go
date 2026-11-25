@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/transport"
@@ -28,6 +29,7 @@ type sessionConn struct {
 	// writeMu orders Write against the EOF sent by Close: x/crypto sets
 	// channel.sentEOF in CloseWrite without a lock.
 	writeMu   sync.Mutex
+	closed    atomic.Bool
 	closeOnce sync.Once
 	waitOnce  sync.Once
 	waitDone  chan struct{}
@@ -121,14 +123,23 @@ func startSession(
 func (c *sessionConn) Read(p []byte) (int, error) { return c.stdout.Read(p) }
 
 func (c *sessionConn) Write(p []byte) (int, error) {
+	// Checked before the lock too: a Write stalled on the peer's window holds
+	// writeMu, and a Write that starts after Close must not queue behind it.
+	if c.closed.Load() {
+		return 0, net.ErrClosed
+	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.closed.Load() {
+		return 0, net.ErrClosed
+	}
 	return c.stdin.Write(p)
 }
 
 func (c *sessionConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
+		c.closed.Store(true)
 		c.cancel()
 		err = c.closeStdin()
 		if closeErr := c.session.Close(); err == nil && closeErr != nil {
