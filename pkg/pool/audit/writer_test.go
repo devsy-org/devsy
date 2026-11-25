@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -159,6 +161,7 @@ func (s *WriterSuite) TestRefusesInvalidDataWithoutLeakingValues() {
 		"bad enum value": func(d map[string]any) { d["devsy.request.outcome"] = writerTestCanary },
 		"missing key":    func(d map[string]any) { delete(d, writerTestAgent) },
 		"empty key":      func(d map[string]any) { d[""] = writerTestCanary },
+		"canary key":     func(d map[string]any) { d[writerTestCanary] = "x" },
 	} {
 		event := writerTestEvent(envelope.AuditSessionRequest)
 		mutate(event.Data)
@@ -259,7 +262,17 @@ func (s *WriterSuite) TestStoreSyncFailureIsAnError() {
 	failSyncOnce(s.T())
 	err := w.Write(writerTestEvent(envelope.AuditSessionRequest))
 	s.Require().ErrorContains(err, "append audit event")
-	s.ErrorContains(err, "injected sync failure")
+	s.NotContains(err.Error(), "injected sync failure")
+}
+
+func (s *WriterSuite) TestStoreFailureDoesNotExposeThePath() {
+	w := s.writer()
+	dir := s.store.dir
+	s.Require().NoError(os.RemoveAll(dir))
+	err := w.Write(writerTestEvent(envelope.AuditSessionRequest))
+	s.Require().ErrorIs(err, syscall.ENOENT)
+	s.NotContains(err.Error(), dir)
+	s.Equal(syscall.ENOENT, errors.Unwrap(err))
 }
 
 func (s *WriterSuite) TestConcurrentWritesDoNotInterleave() {
