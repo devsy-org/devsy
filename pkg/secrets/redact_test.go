@@ -74,6 +74,19 @@ func TestEnvironmentRedactorOnlyMasksSensitiveKeys(t *testing.T) {
 	}
 }
 
+func TestEnvironmentRedactorIgnoresFlagValues(t *testing.T) {
+	r := secrets.NewEnvironmentRedactor([]string{
+		"NATIVE_CREDENTIAL_TESTS=true",
+		"AUTH_ENABLED=1",
+		"TOKEN_CACHE=Off",
+		"DEVSY_TOKEN=real-token-value",
+	})
+	got := r.Redact("true 1 off real-token-value")
+	if want := "true 1 off ***"; got != want {
+		t.Errorf("Redact = %q, want %q", got, want)
+	}
+}
+
 func TestCombineMasksValuesFromEveryRedactor(t *testing.T) {
 	r := secrets.Combine(
 		secrets.NewRedactor([]string{"A=alpha-secret"}),
