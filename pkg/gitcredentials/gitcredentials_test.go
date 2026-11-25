@@ -319,6 +319,22 @@ func TestGetHTTPPath_ErrorOnInvalidRepositoryURL(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse workspace repository")
 }
 
+func TestGetHTTPPath_ReturnsGitFailure(t *testing.T) {
+	httpPathTestEnv(t, `[credential "https://github.com"]
+	useHttpPath = true
+`)
+	t.Setenv("PATH", t.TempDir())
+
+	got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:       httpPathTestHost,
+		Protocol:   httpPathTestProtocol,
+		Repository: httpPathTestRepository,
+	})
+
+	require.ErrorContains(t, err, "read credential.https://github.com.useHttpPath")
+	assert.Empty(t, got)
+}
+
 func TestGetHTTPPath_PerHostScopedConfigOnly(t *testing.T) {
 	httpPathTestEnv(t, `[credential "https://gitlab.com"]
 	useHttpPath = true

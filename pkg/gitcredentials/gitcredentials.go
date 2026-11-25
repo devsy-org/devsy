@@ -277,8 +277,11 @@ func GetHTTPPath(ctx context.Context, params GetHttpPathParameters) (string, err
 	}
 
 	configKey := fmt.Sprintf("credential.%s://%s.useHttpPath", params.Protocol, params.Host)
-	value, _ := git.At("", git.WithStrictHostKeyChecking(false)).
+	value, err := git.At("", git.WithStrictHostKeyChecking(false)).
 		Config().Get(ctx, configKey, git.ScopeDefault)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", configKey, err)
+	}
 	if value != config.BoolTrue {
 		return "", nil
 	}
