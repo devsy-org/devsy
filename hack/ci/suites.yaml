@@ -84,6 +84,7 @@ unit:
         - ./pkg/livetee
         - ./e2e/framework/dockerwsl
         - ./e2e/framework/ginkgoreport
+        - ./e2e/framework/recordmask
         - ./e2e/cmd/devsy-ci
         - ./e2e/tests/ssh
       require_tests: [TestProxyCommandExcerptProtectsFailureReport]
