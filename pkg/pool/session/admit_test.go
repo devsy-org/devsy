@@ -145,6 +145,33 @@ func (s *StoreSuite) TestLegacyStartedSessionKeepsSlotWhenReclaimed() {
 	s.Zero(next)
 }
 
+func (s *StoreSuite) TestLegacyStartedStatesKeepSlotWhenReclaimedOrFailed() {
+	s.store = s.openWith(Limits{MaxConcurrent: 1, MaxQueued: 1})
+	s.admit("waiting")
+	for i, from := range []State{StateReady, StateBusy, StateIdle} {
+		for j, to := range []State{StateReclaiming, StateFailed} {
+			legacy := validSession()
+			legacy.ID = "p-pool-" + strings.Repeat(string(rune('a'+2*i+j)), idSuffixLen)
+			legacy.State = from
+			s.writeSession(legacy)
+
+			moved := s.move(legacy.ID, from, to)
+			s.True(moved.Started, "%s to %s", from, to)
+			s.assertPoolFull()
+			next, ok, err := s.store.Promote()
+			s.Require().NoError(err)
+			s.False(ok, "%s to %s", from, to)
+			s.Zero(next)
+
+			path := []State{StateReclaiming, StateDeleted}
+			if to == StateFailed {
+				path = []State{StateFailed, StateReclaiming, StateDeleted}
+			}
+			s.move(legacy.ID, path...)
+		}
+	}
+}
+
 func (s *StoreSuite) TestLegacyReclaimingSessionDoesNotHoldCapacity() {
 	legacy := validSession()
 	legacy.State = StateReclaiming
