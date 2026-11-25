@@ -75,7 +75,10 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 				run := func(args ...string) string {
 					// #nosec G204 -- executable is resolved Podman; arguments are test commands and quoted owned fixture paths.
 					output, cmdErr := exec.CommandContext(ctx, podman, args...).CombinedOutput()
-					framework.ExpectNoError(cmdErr, "podman %v: %s", args, output)
+					if cmdErr != nil {
+						framework.ExpectNoError(cmdErr, "podman %v: %s", args,
+							redactPodmanDiagnostics(string(output)))
+					}
 					return strings.TrimSpace(string(output))
 				}
 				for _, key := range []string{
@@ -165,8 +168,8 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 				gomega.Expect(guestUID).NotTo(gomega.Equal("0"))
 				ginkgo.GinkgoWriter.Printf(
 					"Guest UID: %s; runtime directory: %s\n",
-					guestUID,
-					guest(`printf %s "$XDG_RUNTIME_DIR"`),
+					redactPodmanDiagnostics(guestUID),
+					redactPodmanDiagnostics(guest(`printf %s "$XDG_RUNTIME_DIR"`)),
 				)
 				gomega.Expect(info.Host.Hostname).To(gomega.Equal(guest("hostname")))
 				gomega.Expect(endpoint.Path).
@@ -174,7 +177,7 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 				gomega.Expect(guest(`id -un`)).To(gomega.Equal(endpoint.User.Username()))
 				ginkgo.GinkgoWriter.Printf(
 					"Podman version: %s; selected connection: %s; machine: %s\n",
-					run("version", podmanFormatFlag, podmanJSONFormat),
+					redactPodmanDiagnostics(run("version", podmanFormatFlag, podmanJSONFormat)),
 					connection.Name,
 					machine,
 				)

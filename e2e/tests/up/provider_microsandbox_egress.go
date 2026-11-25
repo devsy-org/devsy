@@ -311,7 +311,7 @@ func microsandboxEgressIP(ctx context.Context, args ...string) error {
 	// #nosec G204 -- fixed ip executable and generated test-owned interface/address arguments.
 	out, err := exec.CommandContext(commandCtx, "ip", args...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ip %v: %w: %s", args, err, out)
+		return fmt.Errorf("ip %v: %w: %s", args, err, fixtureDiagnostic(nil, string(out)))
 	}
 	return nil
 }

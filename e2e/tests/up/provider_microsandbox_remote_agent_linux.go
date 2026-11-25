@@ -463,10 +463,7 @@ func removeRemoteAgentContainer(ctx context.Context, name string) error {
 	// #nosec G204 -- docker is fixed; name is a nonce generated within this test.
 	cmd := exec.CommandContext(ctx, "docker", "rm", "-f", name)
 	output, err := cmd.CombinedOutput()
-	if err != nil && !strings.Contains(string(output), "No such container") {
-		return fmt.Errorf("remove remote agent container: %w: %s", err, output)
-	}
-	return nil
+	return remoteAgentRemovalError(string(output), err)
 }
 
 func assertRemoteAgentBinary(ctx context.Context, containerName, path, expectedHash string) string {

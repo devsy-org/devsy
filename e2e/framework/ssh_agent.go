@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/logging/redact"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -86,7 +87,7 @@ func generateAgentKey(keyPath string) error {
 	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-q").
 		CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ssh-keygen: %w: %s", err, out)
+		return fmt.Errorf("ssh-keygen: %w: %s", err, externalCommandDiagnostic(string(out)))
 	}
 	return nil
 }
@@ -128,7 +129,7 @@ func addKeyToAgent(sockPath, keyPath string) error {
 	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+sockPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ssh-add: %w: %s", err, out)
+		return fmt.Errorf("ssh-add: %w: %s", err, externalCommandDiagnostic(string(out)))
 	}
 	return nil
 }
@@ -176,7 +177,12 @@ func OpenSSHControlMaster(
 	cmd.Stdout = io.Discard
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", nil, fmt.Errorf("ssh ControlMaster start: %w: %s", err, stderr.String())
+		redactor := redact.New(redact.Options{Environment: cmd.Env})
+		return "", nil, fmt.Errorf(
+			"ssh ControlMaster start: %w: %s",
+			err,
+			ReportText(redactor, stderr.String()),
+		)
 	}
 
 	closer = func() {

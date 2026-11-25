@@ -234,20 +234,21 @@ func (f *Framework) DevsySSHOnce(
 	workspace string,
 	command string,
 ) (string, error) {
-	out, stderr, err := f.ExecCommandCapture(ctx, []string{
+	out, stderr, err := f.ExecCommandDiagnosticCapture(ctx, []string{
 		cmdWorkspace, cmdSSH, workspace, flagCommand, command, flagDebug,
 	})
 	if err != nil {
+		diagnostic := externalCommandDiagnostic(stderr)
 		if strings.Contains(stderr, "AGENT_INJECTION_RUNTIME_UNAVAILABLE") ||
 			strings.Contains(stderr, "PODMAN_ROOTFUL_RUNTIME_POISONED") {
 			return "", fmt.Errorf(
 				"SSH_RUNTIME_UNAVAILABLE: %w (stderr: %s)",
 				errors.Join(docker.ErrRuntimeUnavailable, err),
-				stderr,
+				diagnostic,
 			)
 		}
 		if stderr != "" {
-			return "", fmt.Errorf("devsy ssh failed: %w (stderr: %s)", err, stderr)
+			return "", fmt.Errorf("devsy ssh failed: %w (stderr: %s)", err, diagnostic)
 		}
 		return "", fmt.Errorf("devsy ssh failed: %w", err)
 	}
@@ -347,7 +348,7 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 		return fmt.Errorf("devsy provider add failed: %w", err)
 	}
 	capture := func(ctx context.Context) (string, string, error) {
-		return f.ExecCommandCapture(ctx, baseArgs)
+		return f.ExecCommandDiagnosticCapture(ctx, baseArgs)
 	}
 	stderr, err := execWithProviderAddRetry(ctx, capture)
 	if err != nil {
@@ -365,7 +366,11 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("devsy provider add failed: %w: %s", err, stderr)
+		return fmt.Errorf(
+			"devsy provider add failed: %w: %s",
+			err,
+			externalCommandDiagnostic(stderr),
+		)
 	}
 	return nil
 }
@@ -406,10 +411,10 @@ func providerNameFromAddArgs(args []string) string {
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, cmdDelete}
 	baseArgs = append(baseArgs, args...)
-	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
+	_, stderr, err := f.ExecCommandDiagnosticCapture(ctx, baseArgs)
 	if err != nil {
 		if strings.Contains(stderr, "because workspace") {
-			return fmt.Errorf("%w: %s", errProviderInUse, stderr)
+			return fmt.Errorf("%w: %s", errProviderInUse, externalCommandDiagnostic(stderr))
 		}
 		return err
 	}
@@ -603,10 +608,14 @@ func ImportGpgKey(privateKeyPath string) error {
 	// #nosec G204 -- test imports a controlled key path
 	out, err := exec.Command("gpg", "--batch", "--import", privateKeyPath).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("import gpg private key: %s: %w", out, err)
+		return fmt.Errorf(
+			"import gpg private key: %s: %w",
+			externalCommandDiagnostic(string(out)),
+			err,
+		)
 	}
 	if out, err := exec.Command("gpg-connect-agent", "/bye").CombinedOutput(); err != nil {
-		return fmt.Errorf("start gpg-agent: %s: %w", out, err)
+		return fmt.Errorf("start gpg-agent: %s: %w", externalCommandDiagnostic(string(out)), err)
 	}
 	return nil
 }
@@ -615,7 +624,7 @@ func (f *Framework) DevsySSHGpgSecretKeyForwarded(
 	ctx context.Context,
 	workspace, expectedFingerprint string,
 ) error {
-	stdout, _, err := f.ExecCommandCapture(ctx, []string{
+	stdout, _, err := f.ExecCommandDiagnosticCapture(ctx, []string{
 		cmdWorkspace,
 		cmdSSH,
 		names.Flag(names.AgentForwarding),
@@ -631,7 +640,7 @@ func (f *Framework) DevsySSHGpgSecretKeyForwarded(
 		return fmt.Errorf(
 			"gpg agent forwarding failed: secret key %s not reachable in container, got: %q",
 			expectedFingerprint,
-			stdout,
+			externalCommandDiagnostic(stdout),
 		)
 	}
 	return nil

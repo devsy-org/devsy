@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/livetee"
 )
@@ -96,6 +98,21 @@ func (f *Framework) ExecCommandContaining(
 // ExecCommandCapture executes the command string with the devsy test binary, and returns
 // stdout, stderr, and any error that occurred.
 func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (string, string, error) {
+	return f.execCommandCapture(ctx, args, false)
+}
+
+func (f *Framework) ExecCommandDiagnosticCapture(
+	ctx context.Context,
+	args []string,
+) (string, string, error) {
+	return f.execCommandCapture(ctx, args, true)
+}
+
+func (f *Framework) execCommandCapture(
+	ctx context.Context,
+	args []string,
+	diagnostic bool,
+) (string, string, error) {
 	var execOut bytes.Buffer
 	var execErr bytes.Buffer
 
@@ -103,25 +120,54 @@ func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (stri
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
-	outTee := livetee.New(&execOut, os.Stdout)
-	cmd.Stdout = outTee
-	errTee := livetee.New(&execErr, os.Stderr)
-	cmd.Stderr = errTee
+	var redactor *redact.Redactor
+	if diagnostic {
+		redactor = redact.New(redact.Options{Environment: cmd.Environ()})
+	}
+	stdout, closeStdout := captureCommandOutput(&execOut, os.Stdout, redactor)
+	stderr, closeStderr := captureCommandOutput(&execErr, os.Stderr, redactor)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	err := cmd.Run()
-	f.liveStdoutDropped.Add(outTee.Close())
-	f.liveStderrDropped.Add(errTee.Close())
+	f.liveStdoutDropped.Add(closeStdout())
+	f.liveStderrDropped.Add(closeStderr())
 	if err != nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
 	return execOut.String(), execErr.String(), err
 }
 
+func captureCommandOutput(
+	capture, live io.Writer,
+	redactor *redact.Redactor,
+) (io.Writer, func() int64) {
+	if redactor == nil {
+		tee := livetee.New(capture, live)
+		return tee, tee.Close
+	}
+	tee := livetee.New(io.Discard, live)
+	diagnostic := newLiveDiagnosticCapture(tee, redactor)
+	return io.MultiWriter(capture, diagnostic), diagnostic.close
+}
+
+func externalCommandDiagnostic(value string) string {
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
+	return ReportText(redactor, value)
+}
+
 // ExecCommandJSON runs the devsy test binary and decodes its stdout as a JSON object.
 func (f *Framework) ExecCommandJSON(ctx context.Context, args []string) (map[string]any, error) {
-	stdout, stderr, err := f.ExecCommandCapture(ctx, args)
+	stdout, stderr, err := f.ExecCommandDiagnosticCapture(ctx, args)
 	if err != nil {
-		return nil, fmt.Errorf("devsy %s: %w (stderr: %s)", strings.Join(args, " "), err, stderr)
+		return nil, fmt.Errorf(
+			"devsy %s: %w (stderr: %s)",
+			externalCommandDiagnostic(
+				strings.Join(args, " "),
+			),
+			err,
+			externalCommandDiagnostic(stderr),
+		)
 	}
 
 	var result map[string]any

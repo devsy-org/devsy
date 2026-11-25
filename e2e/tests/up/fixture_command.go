@@ -3,10 +3,14 @@ package up
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -40,9 +44,33 @@ func fixtureCommand(
 	argv ...string,
 ) string {
 	out, err := runFixtureCommand(ctx, timeout, env, argv...)
-	gomega.Expect(err).
-		NotTo(gomega.HaveOccurred(), "fixture command %v: %s", argv, out)
+	if err != nil {
+		gomega.Expect(err).NotTo(gomega.HaveOccurred(), "fixture command %s: %s",
+			fixtureDiagnostic(env, fmt.Sprint(argv)), fixtureDiagnostic(env, out))
+	}
 	return out
+}
+
+func remoteAgentRemovalError(output string, err error) error {
+	if err != nil && !strings.Contains(output, "No such container") {
+		return fmt.Errorf(
+			"remove remote agent container: %w: %s",
+			err,
+			fixtureDiagnostic(nil, output),
+		)
+	}
+	return nil
+}
+
+func fixtureDiagnostic(env []string, value string) string {
+	redactor := redact.New(redact.Options{Environment: append(os.Environ(), env...)})
+	return framework.ReportText(redactor, value)
+}
+
+// expectFixtureOutput fails the spec when ok is false and prints only the redacted output.
+func expectFixtureOutput(ok bool, output, description string) {
+	gomega.Expect(ok).
+		To(gomega.BeTrue(), "%s\nOutput: %s", description, fixtureDiagnostic(nil, output))
 }
 
 // kubectlFixture runs kubectl with args, bounded by timeout, and fails the current spec on error.
@@ -76,10 +104,10 @@ func dumpFixtureDiagnostics(ctx context.Context, namespace, selector string) {
 			append([]string{"kubectl"}, args...)...,
 		)
 		ginkgo.GinkgoWriter.Printf(
-			"Kubernetes failure diagnostics: %s\n%s\nerror: %v\n",
+			"Kubernetes failure diagnostics: %s\n%s\nerror: %s\n",
 			args,
-			output,
-			err,
+			fixtureDiagnostic(nil, output),
+			fixtureDiagnostic(nil, fmt.Sprint(err)),
 		)
 	}
 }
@@ -104,7 +132,10 @@ func fixtureWorkspacePod(ctx context.Context, namespace, selector string) corev1
 			"-o",
 			"json",
 		)
-		g.Expect(err).NotTo(gomega.HaveOccurred(), "workspace pod discovery: %s", out)
+		if err != nil {
+			g.Expect(err).NotTo(gomega.HaveOccurred(), "workspace pod discovery: %s",
+				fixtureDiagnostic(nil, out))
+		}
 		var pods corev1.PodList
 		g.Expect(json.Unmarshal([]byte(out), &pods)).To(gomega.Succeed())
 		g.Expect(pods.Items).To(gomega.HaveLen(1), "workspace-specific selector %s", selector)

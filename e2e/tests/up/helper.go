@@ -17,7 +17,6 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 )
 
 const (
@@ -89,10 +88,10 @@ func probeSSH(
 	out, err := f.DevsySSHOnce(probeCtx, workspace, command)
 	if err != nil {
 		ginkgo.GinkgoWriter.Printf(
-			"ssh readiness probe failed for %s (%s): %v\n",
+			"ssh readiness probe failed for %s (%s): %s\n",
 			workspace,
 			command,
-			err,
+			fixtureDiagnostic(nil, err.Error()),
 		)
 	}
 	return out, err
@@ -297,17 +296,17 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 		`if [ "$(cat `+tc.checkFile+`)" = expected-value ]; then printf present; else printf absent; fi`,
 	)
 	framework.ExpectNoError(err)
-	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+	expectTrimmed(out, "present")
 	if tc.sessionCheck != "" {
 		fileCheck := `if [ -e /run/devsy/secrets-env/` + tc.sessionFile + ` ]; then ` +
 			`stat -c '%U:%a' /run/devsy/secrets-env/` + tc.sessionFile +
 			`; else printf missing; fi`
 		out, err = dtc.f.DevsySSH(ctx, tempDir, fileCheck)
 		framework.ExpectNoError(err)
-		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("vscode:600"))
+		expectTrimmed(out, "vscode:600")
 		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
 		framework.ExpectNoError(err)
-		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+		expectTrimmed(out, "present")
 	}
 
 	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "detach", tc.name})
@@ -319,10 +318,14 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 		`if [ -s `+tc.checkFile+` ]; then printf present; else printf absent; fi`,
 	)
 	framework.ExpectNoError(err)
-	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
+	expectTrimmed(out, "absent")
 	if tc.sessionCheck != "" {
 		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
 		framework.ExpectNoError(err)
-		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
+		expectTrimmed(out, "absent")
 	}
+}
+
+func expectTrimmed(out, want string) {
+	expectFixtureOutput(strings.TrimSpace(out) == want, out, "expected output "+want)
 }

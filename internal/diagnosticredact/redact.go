@@ -35,6 +35,10 @@ func Record(redactor *redact.Redactor, value string) string {
 	}
 }
 
+func Stream(redactor *redact.Redactor) *redact.Stream {
+	return redact.NewDiagnosticStream(redactor)
+}
+
 func reconcileText(redactor *redact.Redactor, left, right string) string {
 	prefix, suffix := sharedEdges(left, right)
 	start, end := left[:prefix], left[len(left)-suffix:]

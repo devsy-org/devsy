@@ -127,15 +127,20 @@ func (fixture *dockerlessPathFixture) up(
 		names.Flag(names.IDE),
 		kubernetesIgnoreIDE,
 	}
-	stdout, stderr, upErr := fixture.framework.ExecCommandCapture(
+	stdout, stderr, upErr := fixture.framework.ExecCommandDiagnosticCapture(
 		commandCtx,
 		append(baseArgs, args...),
 	)
 	gomega.Expect(upErr).NotTo(gomega.HaveOccurred(),
-		"%s first CLI attempt: stdout=%s stderr=%s", phase, stdout, stderr)
+		"%s first CLI attempt: stdout=%s stderr=%s", phase,
+		fixtureDiagnostic(nil, stdout), fixtureDiagnostic(nil, stderr))
 	output := stdout + stderr
-	gomega.Expect(output).NotTo(gomega.ContainSubstring("failed to configure docker credentials"))
-	gomega.Expect(output).NotTo(gomega.ContainSubstring("docker credentials disabled"))
+	expectFixtureOutput(
+		!strings.Contains(output, "failed to configure docker credentials"), output,
+		phase+" configures docker credentials")
+	expectFixtureOutput(
+		!strings.Contains(output, "docker credentials disabled"), output,
+		phase+" keeps docker credentials enabled")
 	helperPattern := regexp.MustCompile(
 		`Wrote docker credentials helper to ` +
 			`(/\.dockerless/\.docker/docker-credentials-[a-zA-Z0-9]{12})/`,
@@ -147,8 +152,16 @@ func (fixture *dockerlessPathFixture) up(
 	if mustBuild {
 		gomega.Expect(helpers).
 			NotTo(gomega.BeEmpty(), "%s must configure Dockerless credentials", phase)
-		gomega.Expect(output).To(gomega.ContainSubstring("starting dockerless build"), phase)
-		gomega.Expect(output).To(gomega.ContainSubstring("dockerless build completed"), phase)
+		expectFixtureOutput(
+			strings.Contains(output, "starting dockerless build"), output, phase+" starts a build")
+		expectFixtureOutput(
+			strings.Contains(
+				output,
+				"dockerless build completed",
+			),
+			output,
+			phase+" completes the build",
+		)
 	}
 }
 
@@ -199,9 +212,10 @@ func (fixture *dockerlessPathFixture) verifyEnvironment(
 	// SSH must find the executable solely through the image/remote environment.
 	out, err := fixture.framework.DevsySSHOnce(commandCtx, fixture.id, dockerlessPathCommand)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred(), "%s bare-name SSH command", phase)
-	gomega.Expect(strings.TrimSpace(out)).
-		To(gomega.Equal(expectedOutput), "%s SSH environment", phase)
-	gomega.Expect(out).NotTo(gomega.ContainSubstring("/.dockerless"))
+	expectFixtureOutput(
+		strings.TrimSpace(out) == expectedOutput, out, phase+" SSH environment")
+	expectFixtureOutput(
+		!strings.Contains(out, "/.dockerless"), out, phase+" SSH output omits the build path")
 
 	// Raw kubectl exec reads files without treating the pod's original builder
 	// environment as the post-setup agent/SSH environment.

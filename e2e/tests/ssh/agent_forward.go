@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -75,6 +76,7 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(closeCM)
 
 				env := map[string]string{envSSHAuthSock: authSock}
+				redactor := redact.New(redact.Options{Environment: os.Environ()})
 
 				// Session A: capture $SSH_AUTH_SOCK inside the container and
 				// verify the forwarded key is reachable.
@@ -82,7 +84,10 @@ var _ = ginkgo.Describe(
 					controlPath, host, env,
 					"sh", "-c", "printf %s \"$SSH_AUTH_SOCK\"",
 				)
-				ginkgo.GinkgoWriter.Printf("session A stderr: %s\n", errA)
+				ginkgo.GinkgoWriter.Printf(
+					"session A stderr: %s\n",
+					framework.ReportText(redactor, errA),
+				)
 				framework.ExpectNoError(err)
 				s1 := strings.TrimSpace(outA)
 				gomega.Expect(s1).NotTo(gomega.BeEmpty(), "session A must see SSH_AUTH_SOCK")
@@ -112,9 +117,17 @@ var _ = ginkgo.Describe(
 					controlPath, host, env,
 					"sh", "-c", "SSH_AUTH_SOCK="+s1+" ssh-add -L",
 				)
-				ginkgo.GinkgoWriter.Printf("session B explicit-S1 stderr: %s\n", errB)
+				ginkgo.GinkgoWriter.Printf(
+					"session B explicit-S1 stderr: %s\n",
+					framework.ReportText(redactor, errB),
+				)
 				framework.ExpectNoError(err, "session B: socket from session A must still work")
-				gomega.Expect(outAddB).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAddB,
+					strings.Fields(pubKey)[1],
+					"session B lists the forwarded key",
+					true,
+				)
 
 				// Session B's reported SSH_AUTH_SOCK should equal S1 too - the
 				// regression is that this used to differ session-to-session.
@@ -135,7 +148,12 @@ var _ = ginkgo.Describe(
 					"sh", "-c", "SSH_AUTH_SOCK="+s1+" ssh-add -L",
 				)
 				framework.ExpectNoError(err, "session C: S1 must still work")
-				gomega.Expect(outAddC).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAddC,
+					strings.Fields(pubKey)[1],
+					"session C lists the forwarded key",
+					true,
+				)
 			},
 		)
 
@@ -188,7 +206,12 @@ var _ = ginkgo.Describe(
 					err,
 					"connection 2 must remain functional after connection 1 closes",
 				)
-				gomega.Expect(outAdd).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAdd,
+					strings.Fields(pubKey)[1],
+					"session lists the forwarded key",
+					true,
+				)
 			},
 		)
 

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -237,16 +238,15 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				tempDir,
 			}
 
-			stdout, stderr, err := f.ExecCommandCapture(ctx,
+			stdout, stderr, err := f.ExecCommandDiagnosticCapture(ctx,
 				append(sshBase, flagCommand, commitCmd),
 			)
-			ginkgo.GinkgoWriter.Printf("commit stdout: %s\n", stdout)
-			ginkgo.GinkgoWriter.Printf("commit stderr: %s\n", stderr)
+			reportSSHCommandOutput("commit", stdout, stderr)
 			framework.ExpectNoError(err)
 
-			gomega.Expect(stdout).To(
-				gomega.ContainSubstring("signed test commit"),
+			expectSSHSubstring(stdout, "signed test commit",
 				"git commit should succeed with the signed test commit message",
+				true,
 			)
 
 			// Verify the commit is signed with a valid SSH signature.
@@ -263,37 +263,35 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				gitVerifyCommitCmd,
 			}, " && ")
 
-			stdout, stderr, err = f.ExecCommandCapture(ctx,
+			stdout, stderr, err = f.ExecCommandDiagnosticCapture(ctx,
 				append(sshBase, flagCommand, verifyCmd),
 			)
-			ginkgo.GinkgoWriter.Printf("verify stdout: %s\n", stdout)
-			ginkgo.GinkgoWriter.Printf("verify stderr: %s\n", stderr)
+			reportSSHCommandOutput("verify", stdout, stderr)
 			framework.ExpectNoError(err)
 
 			// git verify-commit writes signature details to stderr
 			combined := stdout + stderr
-			gomega.Expect(combined).To(
-				gomega.ContainSubstring("Good"),
+			expectSSHSubstring(combined, "Good",
 				"git verify-commit should report a good SSH signature",
+				true,
 			)
 
 			// And confirm the signature log shows the correct principal
 			logCmd := "cd /tmp/test-sign-repo && git log --show-signature -1 2>&1"
-			stdout, stderr, err = f.ExecCommandCapture(ctx,
+			stdout, stderr, err = f.ExecCommandDiagnosticCapture(ctx,
 				append(sshBase, flagCommand, logCmd),
 			)
-			ginkgo.GinkgoWriter.Printf("log stdout: %s\n", stdout)
-			ginkgo.GinkgoWriter.Printf("log stderr: %s\n", stderr)
+			reportSSHCommandOutput("log", stdout, stderr)
 			framework.ExpectNoError(err)
 
 			combined = stdout + stderr
-			gomega.Expect(combined).To(
-				gomega.ContainSubstring("Good"),
+			expectSSHSubstring(combined, "Good",
 				"git log --show-signature should report a good signature",
+				true,
 			)
-			gomega.Expect(combined).To(
-				gomega.ContainSubstring("test@example.com"),
+			expectSSHSubstring(combined, "test@example.com",
 				"signature should be associated with the test email principal",
+				true,
 			)
 		},
 	)
@@ -374,7 +372,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				"git commit -m 'signed test commit' 2>&1",
 			}, " && ")
 
-			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+			stdout, stderr, err := f.ExecCommandDiagnosticCapture(ctx, []string{
 				cmdWorkspace,
 				cmdSSH,
 				"--agent-forwarding",
@@ -382,8 +380,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				tempDir,
 				flagCommand, commitCmd,
 			})
-			ginkgo.GinkgoWriter.Printf("error commit stdout: %s\n", stdout)
-			ginkgo.GinkgoWriter.Printf("error commit stderr: %s\n", stderr)
+			reportSSHCommandOutput("error commit", stdout, stderr)
 
 			// The commit should fail
 			combined := stdout + stderr
@@ -392,9 +389,11 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			}
 
 			// The error must NOT contain JSON decode artifacts
-			gomega.Expect(combined).NotTo(
-				gomega.ContainSubstring("invalid character"),
+			expectSSHSubstring(
+				combined,
+				"invalid character",
 				"error should not contain JSON parse errors - error messages must be human-readable",
+				false,
 			)
 		},
 	)
@@ -426,7 +425,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			framework.ExpectNoError(err)
 
 			signCmd := buildTildeSigningScript(privKeyBase64, pubKey)
-			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+			stdout, stderr, err := f.ExecCommandDiagnosticCapture(ctx, []string{
 				cmdWorkspace,
 				cmdSSH,
 				names.Flag(names.StartServices),
@@ -434,23 +433,22 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				names.Flag(names.Command),
 				signCmd,
 			})
-			ginkgo.GinkgoWriter.Printf("tilde signing stdout: %s\n", stdout)
-			ginkgo.GinkgoWriter.Printf("tilde signing stderr: %s\n", stderr)
+			reportSSHCommandOutput("tilde signing", stdout, stderr)
 			framework.ExpectNoError(err)
 
 			const goodSig = `Good "git" signature`
 			combined := stdout + stderr
-			gomega.Expect(combined).To(
-				gomega.ContainSubstring("signed via default tilde relay"),
+			expectSSHSubstring(combined, "signed via default tilde relay",
 				"commit signed via host-forwarded tilde key should succeed",
+				true,
 			)
-			gomega.Expect(combined).To(
-				gomega.ContainSubstring("signed via workspace tilde override"),
+			expectSSHSubstring(combined, "signed via workspace tilde override",
 				"commit signed via workspace repo-local tilde private key should succeed",
+				true,
 			)
-			gomega.Expect(combined).To(
-				gomega.ContainSubstring(goodSig),
+			expectSSHSubstring(combined, goodSig,
 				"git verify-commit should report a valid SSH signature",
+				true,
 			)
 			gomega.Expect(strings.Count(combined, goodSig)).To(
 				gomega.Equal(2),
@@ -663,4 +661,21 @@ func buildTildeSigningScript(privKeyBase64, pubKey string) string {
 		"! git commit -m 'workspace-only key must not sign' 2>&1",
 		"test \"$(git rev-list --count HEAD)\" = 2",
 	}, " && ")
+}
+
+func reportSSHCommandOutput(label, stdout, stderr string) {
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
+	ginkgo.GinkgoWriter.Printf("%s stdout: %s\n", label, framework.ReportText(redactor, stdout))
+	ginkgo.GinkgoWriter.Printf("%s stderr: %s\n", label, framework.ReportText(redactor, stderr))
+}
+
+func sshDiagnostic(value string) string {
+	redactor := redact.New(redact.Options{Environment: os.Environ()})
+	return framework.ReportText(redactor, value)
+}
+
+func expectSSHSubstring(output, fragment, description string, present bool) {
+	gomega.Expect(strings.Contains(output, fragment)).To(
+		gomega.Equal(present), "%s\nOutput: %s", description, sshDiagnostic(output),
+	)
 }
