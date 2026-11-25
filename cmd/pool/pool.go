@@ -11,5 +11,6 @@ func NewPoolCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short: "Manage pools of agent workspaces",
 	}
 	cmd.AddCommand(NewValidateCmd(globalFlags))
+	cmd.AddCommand(NewAuditCmd())
 	return cmd
 }
