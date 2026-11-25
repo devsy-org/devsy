@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"syscall"
 	"time"
 
 	"github.com/devsy-org/devsy-signals/envelope"
@@ -76,9 +77,20 @@ func (w *Writer) Write(e Event) error {
 		return fmt.Errorf("write audit event %s: marshal envelope failed", e.Type)
 	}
 	if err := w.store.Append(line); err != nil {
-		return fmt.Errorf("append audit event %s: %w", e.Type, err)
+		return appendFailure(e.Type, err)
 	}
 	return nil
+}
+
+// appendFailure keeps only a cause that carries no path or event value.
+func appendFailure(typ string, err error) error {
+	if errors.Is(err, errLockTimeout) {
+		return fmt.Errorf("append audit event %s: %w", typ, errLockTimeout)
+	}
+	if errno, ok := errors.AsType[syscall.Errno](err); ok {
+		return fmt.Errorf("append audit event %s: %w", typ, errno)
+	}
+	return fmt.Errorf("append audit event %s failed", typ)
 }
 
 func checkEvent(e Event) error {
