@@ -141,6 +141,7 @@ func (s *StoreSuite) TestScanLockWaitIsBounded() {
 	defer func() { _ = lock.Unlock() }()
 	err := st.Scan("", "", func(string, []byte) error { return nil })
 	s.ErrorIs(err, errLockTimeout)
+	s.ErrorContains(err, "waited 50ms")
 	s.ErrorContains(err, dayOne)
 }
 
