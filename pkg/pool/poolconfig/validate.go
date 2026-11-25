@@ -99,6 +99,8 @@ func (p *Pool) validate(lines map[string]int) error {
 	p.Spec.validateLifecycle(&errs)
 	p.Spec.validateEgress(&errs)
 	p.Spec.validateAgents(&errs)
+	routes := p.Spec.validateCredentials(&errs)
+	p.Spec.validateAgentGrants(&errs, routes)
 	p.Spec.validateAudit(&errs)
 	return errs.join(lines)
 }

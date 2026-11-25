@@ -78,6 +78,9 @@ func (p *Pool) ApplyDefaults() {
 	defaultDuration(&s.Lifecycle.TTL, defaultTTL)
 	defaultDuration(&s.Lifecycle.JobTimeout, defaultJobTimeout)
 	s.applyEgressDefaults()
+	for i := range s.Credentials {
+		defaultCredential(&s.Credentials[i])
+	}
 	if s.Audit.RetainDays == 0 {
 		s.Audit.RetainDays = defaultRetainDays
 	}
