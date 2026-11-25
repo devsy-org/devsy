@@ -2,6 +2,7 @@ package pool
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -37,7 +38,7 @@ func NewAuditCmd() *cobra.Command {
 			if cobraCmd.Flags().Changed(auditSinceFlag) && cmd.since == "" {
 				return errAuditSince
 			}
-			return cmd.Run(cobraCmd.OutOrStdout())
+			return cmd.Run(cobraCmd.OutOrStdout(), cobraCmd.ErrOrStderr())
 		},
 	}
 	f := command.Flags()
@@ -59,7 +60,7 @@ func NewAuditCmd() *cobra.Command {
 	return command
 }
 
-func (cmd *auditCmd) Run(w io.Writer) error {
+func (cmd *auditCmd) Run(w, stderr io.Writer) error {
 	if cmd.dir == "" {
 		return errors.New("--dir must not be empty")
 	}
@@ -83,6 +84,9 @@ func (cmd *auditCmd) Run(w io.Writer) error {
 		func(line []byte) error {
 			_, err := w.Write(append(line, '\n'))
 			return err
+		},
+		func(warning error) {
+			_, _ = fmt.Fprintf(stderr, "warning: %v\n", warning)
 		},
 	)
 }

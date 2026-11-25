@@ -3,6 +3,7 @@ package pool
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +19,8 @@ import (
 const (
 	auditTestDate = "2026-11-23"
 	auditTestTime = auditTestDate + "T00:00:00Z"
+	auditTestNext = "2026-11-24"
+	auditTestTail = `{"torn":`
 )
 
 type AuditCmdSuite struct {
@@ -100,14 +103,53 @@ func (s *AuditCmdSuite) TestErrorKeepsEarlierOutput() {
 	s.Equal(good, got)
 }
 
+func (s *AuditCmdSuite) TestNewestTornTailIsSilent() {
+	s.skipWindows()
+	first := s.record("one", auditTestTime) + "\n"
+	last := s.record("two", auditTestTime) + "\n"
+	s.writeDay(auditTestDate, first)
+	s.writeDay(auditTestNext, last+auditTestTail)
+	stdout, stderr, err := s.executeWithStderr("--dir", s.dir)
+	s.Require().NoError(err)
+	s.Equal(first+last, stdout)
+	s.Empty(stderr)
+}
+
+func (s *AuditCmdSuite) TestOlderTornTailWarnsOnlyOnStderr() {
+	s.skipWindows()
+	first := s.record("one", auditTestTime) + "\n"
+	last := s.record("two", auditTestTime) + "\n"
+	path := s.writeDay(auditTestDate, first+auditTestTail)
+	s.writeDay(auditTestNext, last+auditTestTail)
+	stdout, stderr, err := s.executeWithStderr("--dir", s.dir)
+	s.Require().NoError(err)
+	s.Equal(first+last, stdout)
+	s.Equal(
+		fmt.Sprintf("warning: audit file %s at byte offset %d: skipped unterminated audit record\n",
+			path, len(first)),
+		stderr,
+	)
+}
+
 func (s *AuditCmdSuite) execute(args ...string) (string, error) {
+	out, _, err := s.executeWithStderr(args...)
+	return out, err
+}
+
+func (s *AuditCmdSuite) executeWithStderr(args ...string) (string, string, error) {
 	var out, stderr bytes.Buffer
 	cmd := NewPoolCmd(&flags.GlobalFlags{})
 	cmd.SetOut(&out)
 	cmd.SetErr(&stderr)
 	cmd.SetArgs(append([]string{"audit"}, args...))
 	err := cmd.Execute()
-	return out.String(), err
+	return out.String(), stderr.String(), err
+}
+
+func (s *AuditCmdSuite) writeDay(day, content string) string {
+	path := filepath.Join(s.dir, day+".jsonl")
+	s.Require().NoError(os.WriteFile(path, []byte(content), 0o600))
+	return path
 }
 
 func (s *AuditCmdSuite) record(session, ts string) string {

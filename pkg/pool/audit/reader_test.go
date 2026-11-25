@@ -5,7 +5,6 @@ package audit
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -20,6 +19,7 @@ import (
 const (
 	readerFutureDay = "2026-11-24"
 	readerSession   = "keep"
+	readerFragment  = `{"torn":`
 )
 
 type ReaderSuite struct {
@@ -87,55 +87,96 @@ func (s *ReaderSuite) TestOpaqueRecordIsNotDecodedWithoutFilters() {
 	s.Equal([]string{record}, got)
 }
 
-func (s *ReaderSuite) TestCurrentUTCDayTornTailIsSkipped() {
-	const good = "{}\n"
-	s.writeDay(dayTwo, good+`{"torn":`)
-	future := s.appendEvent(readerFutureDay, "future", s.now.AddDate(0, 0, 1))
-	got, err := s.scan(ReaderFilter{})
+func (s *ReaderSuite) TestNewestDayTornTailIsSilent() {
+	s.writeDay(dayOne, "{\"n\":1}\n")
+	s.writeDay(readerFutureDay, "{}\n"+readerFragment)
+	s.Require().NoError(os.WriteFile(filepath.Join(s.dir, "z.txt"), nil, fileMode))
+	got, warnings, err := s.scanWithWarnings(ReaderFilter{})
 	s.Require().NoError(err)
-	s.Equal([]string{"{}", future}, got)
+	s.Empty(warnings)
+	s.Equal([]string{`{"n":1}`, "{}"}, got)
 }
 
-func (s *ReaderSuite) TestOtherDaysTornTailFails() {
-	for _, day := range []string{dayOne, readerFutureDay} {
-		s.Run(day, func() {
-			path := s.writeDay(day, "{}\n{}")
-			got, err := s.scan(ReaderFilter{})
-			s.Require().ErrorIs(err, io.ErrUnexpectedEOF)
-			s.checkLocation(err, day, len("{}\n"))
-			s.Equal([]string{"{}"}, got)
-			s.Require().NoError(os.Remove(path))
-		})
-	}
+func (s *ReaderSuite) TestOlderDayTornTailWarnsAndContinues() {
+	s.writeDay(dayOne, "{}\n"+readerFragment)
+	s.writeDay(dayTwo, "{\"n\":2}\n"+readerFragment)
+	s.writeDay(readerFutureDay, "{\"n\":3}\n"+readerFragment)
+	got, warnings, err := s.scanWithWarnings(ReaderFilter{})
+	s.Require().NoError(err)
+	s.Require().Len(warnings, 2)
+	s.checkLocation(warnings[0], dayOne, len("{}\n"))
+	s.checkLocation(warnings[1], dayTwo, len("{\"n\":2}\n"))
+	s.Equal([]string{"{}", `{"n":2}`, `{"n":3}`}, got)
 }
 
-func (s *ReaderSuite) TestMalformedLineStopsAtOffset() {
+func (s *ReaderSuite) TestPrunedDaysDoNotWarn() {
+	s.writeDay(dayOne, readerFragment)
+	want := s.appendEvent(dayTwo, readerSession, s.now)
+	s.writeDay(dayTwo, want+"\n"+readerFragment)
+	got, warnings, err := s.scanWithWarnings(ReaderFilter{Since: &s.now})
+	s.Require().NoError(err)
+	s.Empty(warnings)
+	s.Equal([]string{want}, got)
+
+	later := s.now.AddDate(0, 0, 1)
+	got, warnings, err = s.scanWithWarnings(ReaderFilter{Since: &later})
+	s.Require().NoError(err)
+	s.Empty(warnings)
+	s.Empty(got)
+}
+
+func (s *ReaderSuite) TestNewestDayMalformedLineStopsAtOffset() {
 	for _, bad := range []string{"", "[]", `{"cut":`, "{\r}", " {}"} {
 		s.Run(fmt.Sprintf("%q", bad), func() {
 			const prefix = "{ \"x\": 1 }\n{}\n"
 			s.writeDay(dayTwo, prefix+bad+"\n{}\n")
-			got, err := s.scan(ReaderFilter{})
+			got, warnings, err := s.scanWithWarnings(ReaderFilter{})
 			s.Require().Error(err)
+			s.Empty(warnings)
 			s.checkLocation(err, dayTwo, len(prefix))
 			s.Equal([]string{`{ "x": 1 }`, "{}"}, got)
 		})
 	}
 }
 
+func (s *ReaderSuite) TestOlderDayMalformedLineStopsAtOffset() {
+	s.writeDay(dayOne, "{}\n[]\n")
+	s.writeDay(dayTwo, "{\"n\":2}\n")
+	got, warnings, err := s.scanWithWarnings(ReaderFilter{})
+	s.Require().ErrorIs(err, errLineShape)
+	s.Empty(warnings)
+	s.checkLocation(err, dayOne, len("{}\n"))
+	s.Equal([]string{"{}"}, got)
+}
+
 func (s *ReaderSuite) TestLineLimitWithLargeFile() {
 	const count = 128
 	atLimit := "{" + strings.Repeat(" ", MaxLineBytes-2) + "}"
-	for _, end := range []string{"", "\n"} {
-		s.writeDay(dayTwo, strings.Repeat(atLimit+"\n", count)+atLimit+" "+end)
+	for _, over := range []string{atLimit + " ", strings.Repeat(atLimit, 3)} {
+		s.writeDay(dayTwo, strings.Repeat(atLimit+"\n", count)+over+"\n{}\n")
 		delivered := 0
 		err := s.reader().Scan(ReaderFilter{}, func(record []byte) error {
 			s.Len(record, MaxLineBytes)
 			delivered++
 			return nil
-		})
+		}, nil)
 		s.Require().ErrorIs(err, errLineTooLong)
 		s.checkLocation(err, dayTwo, count*(MaxLineBytes+1))
 		s.Equal(count, delivered)
+	}
+}
+
+func (s *ReaderSuite) TestOversizedTornTailIsDiscardedInChunks() {
+	const prefix = "{}\n"
+	for _, size := range []int{MaxLineBytes + 1, 2 * (MaxLineBytes + 2), 3 * MaxLineBytes} {
+		fragment := strings.Repeat("x", size)
+		s.writeDay(dayOne, prefix+fragment)
+		s.writeDay(dayTwo, prefix+fragment)
+		got, warnings, err := s.scanWithWarnings(ReaderFilter{})
+		s.Require().NoError(err)
+		s.Require().Len(warnings, 1)
+		s.checkLocation(warnings[0], dayOne, len(prefix))
+		s.Equal([]string{"{}", "{}"}, got)
 	}
 }
 
@@ -152,7 +193,7 @@ func (s *ReaderSuite) TestReadsWhileWriterHoldsLock() {
 		done <- reader.Scan(ReaderFilter{}, func(line []byte) error {
 			got = string(line)
 			return nil
-		})
+		}, nil)
 	}()
 	select {
 	case err := <-done:
@@ -227,17 +268,24 @@ func (s *ReaderSuite) TestForeignDirectoryIsRefused() {
 func (s *ReaderSuite) reader() *Reader {
 	r, err := OpenReader(s.dir)
 	s.Require().NoError(err)
-	r.now = func() time.Time { return s.now }
 	return r
 }
 
 func (s *ReaderSuite) scan(filter ReaderFilter) ([]string, error) {
+	got, _, err := s.scanWithWarnings(filter)
+	return got, err
+}
+
+func (s *ReaderSuite) scanWithWarnings(filter ReaderFilter) ([]string, []error, error) {
 	var got []string
+	var warnings []error
 	err := s.reader().Scan(filter, func(line []byte) error {
 		got = append(got, string(line))
 		return nil
+	}, func(warning error) {
+		warnings = append(warnings, warning)
 	})
-	return got, err
+	return got, warnings, err
 }
 
 func (s *ReaderSuite) appendEvent(day, session string, ts time.Time) string {
