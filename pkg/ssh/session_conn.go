@@ -25,6 +25,9 @@ type sessionConn struct {
 	session *xssh.Session
 	cancel  context.CancelFunc
 
+	// writeMu orders Write against the EOF sent by Close: x/crypto sets
+	// channel.sentEOF in CloseWrite without a lock.
+	writeMu   sync.Mutex
 	closeOnce sync.Once
 	waitOnce  sync.Once
 	waitDone  chan struct{}
@@ -115,16 +118,19 @@ func startSession(
 	return &startedSession{session: session, stdin: stdin, stdout: stdout}, nil
 }
 
-func (c *sessionConn) Read(p []byte) (int, error)  { return c.stdout.Read(p) }
-func (c *sessionConn) Write(p []byte) (int, error) { return c.stdin.Write(p) }
+func (c *sessionConn) Read(p []byte) (int, error) { return c.stdout.Read(p) }
+
+func (c *sessionConn) Write(p []byte) (int, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.stdin.Write(p)
+}
 
 func (c *sessionConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		c.cancel()
-		if closeErr := c.stdin.Close(); closeErr != nil {
-			err = closeErr
-		}
+		err = c.closeStdin()
 		if closeErr := c.session.Close(); err == nil && closeErr != nil {
 			err = closeErr
 		}
@@ -145,6 +151,17 @@ func (c *sessionConn) Wait() error {
 	})
 	<-c.waitDone
 	return c.waitErr
+}
+
+// closeStdin sends EOF unless a Write is in flight. A Write blocked on the
+// peer's window holds writeMu until the channel closes, so waiting for it here
+// could hang Close; session.Close right after unblocks that Write.
+func (c *sessionConn) closeStdin() error {
+	if !c.writeMu.TryLock() {
+		return nil
+	}
+	defer c.writeMu.Unlock()
+	return c.stdin.Close()
 }
 
 var (
