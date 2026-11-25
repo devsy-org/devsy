@@ -13,12 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/stretchr/testify/suite"
 )
 
 const (
-	dayOne = "2026-11-22"
-	dayTwo = "2026-11-23"
+	goosWindows = "windows"
+	dayOne      = "2026-11-22"
+	dayTwo      = "2026-11-23"
 )
 
 type StoreSuite struct {
@@ -33,7 +35,8 @@ func TestStoreSuite(t *testing.T) {
 
 func (s *StoreSuite) SetupTest() {
 	s.dir = filepath.Join(s.T().TempDir(), "audit")
-	s.clock = time.Date(2026, 11, 22, 23, 59, 0, 0, time.UTC)
+	west := time.FixedZone("west", -8*60*60)
+	s.clock = time.Date(2026, 11, 22, 15, 59, 0, 0, west)
 }
 
 func (s *StoreSuite) TestAppendWritesOneLinePerRecord() {
@@ -41,7 +44,7 @@ func (s *StoreSuite) TestAppendWritesOneLinePerRecord() {
 	s.Require().NoError(st.Append([]byte(`{"a":1}`)))
 	s.Require().NoError(st.Append([]byte(`{"b":"x y"}`)))
 	s.Equal("{\"a\":1}\n{\"b\":\"x y\"}\n", s.read(dayOne))
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != goosWindows {
 		info, err := os.Stat(filepath.Join(s.dir, dayOne+fileExt))
 		s.Require().NoError(err)
 		s.Equal(os.FileMode(fileMode), info.Mode().Perm())
@@ -58,6 +61,97 @@ func (s *StoreSuite) TestRotatesAtUTCMidnight() {
 	days, err := st.Days()
 	s.Require().NoError(err)
 	s.Equal([]string{dayOne, dayTwo}, days)
+}
+
+func (s *StoreSuite) TestAppendCutsTornTail() {
+	st := s.open()
+	path := filepath.Join(s.dir, dayOne+fileExt)
+	s.Require().NoError(os.WriteFile(path, []byte("{\"a\":1}\n{\"bad\":"), fileMode))
+	s.Require().NoError(st.Append([]byte(`{"good":1}`)))
+	s.Equal("{\"a\":1}\n{\"good\":1}\n", s.read(dayOne))
+	s.Require().NoError(os.WriteFile(path, []byte("{\"bad\":"), fileMode))
+	s.Require().NoError(st.Append([]byte(`{"good":2}`)))
+	s.Equal("{\"good\":2}\n", s.read(dayOne))
+}
+
+func (s *StoreSuite) TestAppendRefusesHugeUnterminatedTail() {
+	st := s.open()
+	tail := bytes.Repeat([]byte("x"), MaxLineBytes+10)
+	path := filepath.Join(s.dir, dayOne+fileExt)
+	s.Require().NoError(os.WriteFile(path, tail, fileMode))
+	s.Require().ErrorIs(st.Append([]byte(`{"a":1}`)), errTornTail)
+	s.Equal(string(tail), s.read(dayOne))
+}
+
+func (s *StoreSuite) TestAppendWaitsForTheDirectoryLock() {
+	st := s.open()
+	lock := flock.New(filepath.Join(s.dir, lockName), flock.SetPermissions(fileMode))
+	s.Require().NoError(lock.Lock())
+	done := make(chan error, 1)
+	go func() { done <- st.Append([]byte(`{"a":1}`)) }()
+	select {
+	case <-done:
+		s.Fail("append finished while another holder had the lock")
+	case <-time.After(200 * time.Millisecond):
+	}
+	s.Require().NoError(lock.Unlock())
+	s.Require().NoError(<-done)
+	s.Equal("{\"a\":1}\n", s.read(dayOne))
+}
+
+func (s *StoreSuite) TestScanCallbackMayAppend() {
+	st := s.open()
+	s.Require().NoError(st.Append([]byte(`{"n":1}`)))
+	done := make(chan error, 1)
+	go func() {
+		done <- st.Scan("", "", func(string, []byte) error {
+			return st.Append([]byte(`{"n":2}`))
+		})
+	}()
+	select {
+	case err := <-done:
+		s.Require().NoError(err)
+	case <-time.After(5 * time.Second):
+		s.FailNow("scan callback blocked an append")
+	}
+	s.Equal("{\"n\":1}\n{\"n\":2}\n", s.read(dayOne))
+}
+
+func (s *StoreSuite) TestScanStopsAtItsSnapshot() {
+	st := s.open()
+	s.Require().NoError(st.Append([]byte(`{"n":1}`)))
+	var got []string
+	s.Require().NoError(st.Scan("", "", func(_ string, rec []byte) error {
+		got = append(got, string(rec))
+		return st.Append([]byte(`{"n":2}`))
+	}))
+	s.Equal([]string{`{"n":1}`}, got)
+}
+
+func (s *StoreSuite) TestScanRefusesOversizedLine() {
+	st := s.open()
+	line := bytes.Repeat([]byte("x"), MaxLineBytes+10)
+	s.Require().
+		NoError(os.WriteFile(filepath.Join(s.dir, dayOne+fileExt), append(line, '\n'), fileMode))
+	s.ErrorIs(st.Scan("", "", func(string, []byte) error { return nil }), errLineTooLong)
+}
+
+func (s *StoreSuite) TestSymlinksAreRefused() {
+	if runtime.GOOS == goosWindows {
+		s.T().Skip("symlinks need privileges on windows")
+	}
+	st := s.open()
+	target := filepath.Join(s.T().TempDir(), "target")
+	s.Require().NoError(os.WriteFile(target, nil, fileMode))
+	s.Require().NoError(os.Symlink(target, filepath.Join(s.dir, dayOne+fileExt)))
+	s.Error(st.Append([]byte(`{"a":1}`)))
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, dayOne+fileExt)))
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, lockName)))
+	s.Require().NoError(os.Symlink(target, filepath.Join(s.dir, lockName)))
+	s.Error(st.Append([]byte(`{"a":1}`)))
+	info, err := os.Stat(target)
+	s.Require().NoError(err)
+	s.Zero(info.Size(), "a symlinked path must not be written through")
 }
 
 func (s *StoreSuite) TestRefusesBadRecords() {
@@ -155,7 +249,7 @@ func (s *StoreSuite) TestDaysIgnoresOtherFiles() {
 }
 
 func (s *StoreSuite) TestOpenRefusesWritableDirectory() {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == goosWindows {
 		s.T().Skip("no unix permission bits")
 	}
 	s.Require().NoError(os.MkdirAll(s.dir, dirMode))
@@ -172,6 +266,13 @@ func (s *StoreSuite) TestHostIDIsMintedOnceAndKept() {
 	again, err := LoadOrCreateHostID(path)
 	s.Require().NoError(err)
 	s.Equal(first, again)
+}
+
+func (s *StoreSuite) TestHostIDFileIsBounded() {
+	path := filepath.Join(s.T().TempDir(), "host-id")
+	s.Require().NoError(os.WriteFile(path, bytes.Repeat([]byte("a"), 1<<20), fileMode))
+	_, err := LoadOrCreateHostID(path)
+	s.Error(err)
 }
 
 func (s *StoreSuite) TestHostIDNeverReplaced() {

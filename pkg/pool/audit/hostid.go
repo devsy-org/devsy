@@ -3,6 +3,7 @@ package audit
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,7 +13,10 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-const hostIDPrefix = "h_"
+const (
+	hostIDPrefix       = "h_"
+	maxHostIDFileBytes = 128
+)
 
 var hostIDPattern = regexp.MustCompile(`^h_[0-9A-HJKMNP-TV-Z]{26}$`)
 
@@ -33,9 +37,14 @@ func LoadOrCreateHostID(path string) (string, error) {
 }
 
 func readHostID(path string) (string, error) {
-	data, err := os.ReadFile(filepath.Clean(path))
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, maxHostIDFileBytes))
+	if err != nil {
+		return "", fmt.Errorf("read host id file: %w", err)
 	}
 	id := strings.TrimSpace(string(data))
 	if !hostIDPattern.MatchString(id) {
