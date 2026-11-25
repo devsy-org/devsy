@@ -1,13 +1,16 @@
 package session
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,11 +19,13 @@ import (
 
 const (
 	fileExt      = ".json"
+	sessionsName = "sessions"
 	tempPrefix   = ".tmp-"
 	maxFileBytes = 64 << 10
 	dirMode      = 0o700
 	fileMode     = 0o600
 	idAttempts   = 3
+	tempAttempts = 10
 )
 
 // Errors a caller can test with errors.Is.
@@ -33,34 +38,42 @@ var (
 	errUnexpectedEntry = errors.New("unexpected entry in the session directory")
 	errLockNotHeld     = errors.New("the pool lock is not held")
 	errForeignLock     = errors.New("the pool lock belongs to another pool directory")
+	errNotDirectory    = errors.New("session path is not a directory")
 	errNotRegular      = errors.New("session path is not a regular file")
 	errTooLarge        = fmt.Errorf("session file is longer than %d bytes", maxFileBytes)
 )
 
-// renameFile is os.Rename, replaceable so a test can fail a publish.
-var renameFile = os.Rename
+// renameFile is Root.Rename, replaceable so a test can fail or pause a
+// publish.
+var renameFile = func(root *os.Root, oldName, newName string) error {
+	return root.Rename(oldName, newName)
+}
 
-// tempPattern matches the names stage creates with os.CreateTemp.
+// tempPattern matches the names stage gives its temp files.
 var tempPattern = regexp.MustCompile(`^\.tmp-[0-9]+$`)
 
 // Store keeps one JSON file per session. Every write goes to a temp file in
 // the same directory, is synced, and is then linked or renamed into place, so
 // a reader sees the old file or the new one, never a partial one. A Store is
-// bound to the held pool lock of its pool directory: only the lock holder can
-// open one, every write checks that the lock is still held, and Release waits
-// for a write in flight. That lock is the only thing that excludes other
-// processes, and it also serializes the Stores opened on it in this process.
+// bound to the held pool lock: only the lock holder can open one, it works
+// through the session directory that was open when the lock was checked, every
+// write checks that the lock is still held and still names the same lock file,
+// and Release waits for a write in flight. That lock is the only thing that
+// excludes other processes, and it also serializes the Stores opened on it in
+// this process.
 type Store struct {
 	lock *Lock
-	dir  string
+	root *os.Root
 	pool string
 	now  func() time.Time
 }
 
-// OpenStore creates dir when needed, refuses one that other users can write
-// to, and removes temp files a crashed writer left behind. dir must sit in the
-// pool directory the lock covers. It refuses a nil, released or foreign lock
-// before touching disk, and refuses on Windows the same way.
+// OpenStore opens the session directory of the pool the lock covers, creating
+// it when needed, and removes temp files a crashed writer left behind. dir
+// must be <pool directory>/sessions for the locked pool directory and must
+// not be a symlink. It refuses a nil, released, replaced or foreign lock
+// before changing anything on disk, and refuses on Windows the same way. The
+// caller closes the Store.
 func OpenStore(dir, pool string, lock *Lock) (*Store, error) {
 	if err := checkPlatform(); err != nil {
 		return nil, err
@@ -68,36 +81,56 @@ func OpenStore(dir, pool string, lock *Lock) (*Store, error) {
 	if !poolconfig.ValidPoolName(pool) {
 		return nil, errInvalidPool
 	}
-	if err := lock.covers(dir, pool); err != nil {
-		return nil, err
-	}
 	unlock, err := lock.hold()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	if err := prepareDir(dir); err != nil {
+	if err := lock.covers(dir, pool); err != nil {
 		return nil, err
 	}
-	s := &Store{lock: lock, dir: dir, pool: pool, now: time.Now}
+	root, err := openSessionsRoot(lock.root)
+	if err != nil {
+		return nil, err
+	}
+	s := &Store{lock: lock, root: root, pool: pool, now: time.Now}
 	if err := s.removeStrayTemps(); err != nil {
+		_ = root.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
-func prepareDir(dir string) error {
-	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return fmt.Errorf("create session directory: %w", err)
+// openSessionsRoot opens the sessions directory inside the pool directory. A
+// symlink there is refused, so a link cannot send the store into another pool.
+func openSessionsRoot(pool *os.Root) (*os.Root, error) {
+	info, err := pool.Lstat(sessionsName)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		if err := pool.Mkdir(sessionsName, dirMode); err != nil {
+			return nil, fmt.Errorf("create session directory: %w", err)
+		}
+		if err := syncRoot(pool); err != nil {
+			return nil, fmt.Errorf("sync pool directory: %w", err)
+		}
+	case err != nil:
+		return nil, fmt.Errorf("stat session directory: %w", err)
+	case !info.IsDir():
+		return nil, errNotDirectory
 	}
-	if err := checkDirMode(dir); err != nil {
-		return err
+	root, err := pool.OpenRoot(sessionsName)
+	if err != nil {
+		return nil, fmt.Errorf("open session directory: %w", err)
 	}
-	if err := syncDir(dir); err != nil {
-		return fmt.Errorf("sync session directory: %w", err)
+	if err := checkRoot(root); err != nil {
+		_ = root.Close()
+		return nil, err
 	}
-	return nil
+	return root, nil
 }
+
+// Close releases the session directory. It does not release the lock.
+func (s *Store) Close() error { return s.root.Close() }
 
 // Create writes a new queued session under a fresh ID.
 func (s *Store) Create() (Session, error) {
@@ -135,9 +168,9 @@ func (s *Store) Load(id string) (Session, error) {
 // List reads every session in ID order. A file that is not a valid session
 // stops the listing: the pool cannot tell what state it holds.
 func (s *Store) List() ([]Session, error) {
-	entries, err := os.ReadDir(s.dir)
+	entries, err := s.entries()
 	if err != nil {
-		return nil, fmt.Errorf("read session directory: %w", err)
+		return nil, err
 	}
 	var out []Session
 	for _, entry := range entries {
@@ -183,18 +216,36 @@ func (s *Store) Transition(id string, from, to State, reason string) (Session, e
 	return next, s.replace(next)
 }
 
+// entries lists the session directory in name order.
+func (s *Store) entries() ([]fs.DirEntry, error) {
+	dir, err := s.root.Open(".")
+	if err != nil {
+		return nil, fmt.Errorf("open session directory: %w", err)
+	}
+	defer func() { _ = dir.Close() }()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return nil, fmt.Errorf("read session directory: %w", err)
+	}
+	slices.SortFunc(
+		entries,
+		func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) },
+	)
+	return entries, nil
+}
+
 // removeStrayTemps deletes temp files a killed writer left behind. The caller
 // holds the lock, so no live writer owns one.
 func (s *Store) removeStrayTemps() error {
-	entries, err := os.ReadDir(s.dir)
+	entries, err := s.entries()
 	if err != nil {
-		return fmt.Errorf("read session directory: %w", err)
+		return err
 	}
 	for _, entry := range entries {
 		if !tempPattern.MatchString(entry.Name()) || !entry.Type().IsRegular() {
 			continue
 		}
-		err := os.Remove(filepath.Join(s.dir, entry.Name()))
+		err := s.root.Remove(entry.Name())
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove stray temp file: %w", err)
 		}
@@ -202,16 +253,16 @@ func (s *Store) removeStrayTemps() error {
 	return nil
 }
 
-func (s *Store) path(id string) string { return filepath.Join(s.dir, id+fileExt) }
+func fileName(id string) string { return id + fileExt }
 
 func (s *Store) read(id string) (Session, error) {
-	data, err := readRegular(s.path(id))
+	data, err := readRegular(s.root, fileName(id))
 	if err != nil {
 		return Session{}, err
 	}
 	sess, err := decode(data)
 	if err != nil || sess.ID != id || sess.Pool != s.pool {
-		return Session{}, fmt.Errorf("%w: %s", errInvalidSession, id+fileExt)
+		return Session{}, fmt.Errorf("%w: %s", errInvalidSession, fileName(id))
 	}
 	return sess, nil
 }
@@ -222,15 +273,15 @@ func (s *Store) publish(sess Session) error {
 	if err != nil {
 		return err
 	}
-	linkErr := os.Link(tmp, s.path(sess.ID))
-	_ = os.Remove(tmp)
+	linkErr := s.root.Link(tmp, fileName(sess.ID))
+	_ = s.root.Remove(tmp)
 	if errors.Is(linkErr, fs.ErrExist) {
 		return ErrExists
 	}
 	if linkErr != nil {
 		return fmt.Errorf("publish session file: %w", linkErr)
 	}
-	return syncDir(s.dir)
+	return syncRoot(s.root)
 }
 
 func (s *Store) replace(sess Session) error {
@@ -238,11 +289,11 @@ func (s *Store) replace(sess Session) error {
 	if err != nil {
 		return err
 	}
-	if err := renameFile(tmp, s.path(sess.ID)); err != nil {
-		_ = os.Remove(tmp)
+	if err := renameFile(s.root, tmp, fileName(sess.ID)); err != nil {
+		_ = s.root.Remove(tmp)
 		return fmt.Errorf("publish session file: %w", err)
 	}
-	return syncDir(s.dir)
+	return syncRoot(s.root)
 }
 
 // stage writes and syncs a temp file next to the final path.
@@ -251,9 +302,9 @@ func (s *Store) stage(sess Session) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	f, err := os.CreateTemp(s.dir, tempPrefix+"*")
+	f, name, err := s.createTemp()
 	if err != nil {
-		return "", fmt.Errorf("create session temp file: %w", err)
+		return "", err
 	}
 	_, err = f.Write(data)
 	if err == nil {
@@ -263,16 +314,45 @@ func (s *Store) stage(sess Session) (string, error) {
 		err = cerr
 	}
 	if err != nil {
-		_ = os.Remove(f.Name())
+		_ = s.root.Remove(name)
 		return "", fmt.Errorf("write session temp file: %w", err)
 	}
-	return f.Name(), nil
+	return name, nil
 }
 
-// readRegular opens without following a link and refuses anything that is not
-// a regular file within the size cap.
-func readRegular(path string) ([]byte, error) {
-	f, err := os.OpenFile(filepath.Clean(path), os.O_RDONLY|noFollow|nonBlock, 0)
+// createTemp makes a new file named like tempPattern and returns its name
+// inside the session directory. It never reuses a name.
+func (s *Store) createTemp() (*os.File, string, error) {
+	for range tempAttempts {
+		var raw [4]byte
+		if _, err := rand.Read(raw[:]); err != nil {
+			return nil, "", fmt.Errorf("name session temp file: %w", err)
+		}
+		name := tempPrefix + strconv.FormatUint(uint64(binary.BigEndian.Uint32(raw[:])), 10)
+		f, err := s.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("create session temp file: %w", err)
+		}
+		return f, name, nil
+	}
+	return nil, "", fmt.Errorf("create session temp file: %w", fs.ErrExist)
+}
+
+// isRegularFile reports whether name is a regular file and the open file is
+// that same file, not something a link led to.
+func isRegularFile(root *os.Root, name string, opened fs.FileInfo) bool {
+	link, err := root.Lstat(name)
+	return err == nil && link.Mode().IsRegular() && opened.Mode().IsRegular() &&
+		os.SameFile(link, opened)
+}
+
+// readRegular refuses a link, which Root follows inside the directory, and
+// anything else that is not a regular file within the size cap.
+func readRegular(root *os.Root, name string) ([]byte, error) {
+	f, err := root.OpenFile(name, os.O_RDONLY|nonBlock, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, ErrNotFound
 	}
@@ -284,7 +364,7 @@ func readRegular(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stat session file: %w", err)
 	}
-	if !info.Mode().IsRegular() {
+	if !isRegularFile(root, name, info) {
 		return nil, errNotRegular
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))

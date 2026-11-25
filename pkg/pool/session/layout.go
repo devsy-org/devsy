@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,17 +29,22 @@ func NewLayout(root, pool string) (Layout, error) {
 }
 
 func (l Layout) Dir() string         { return l.dir }
-func (l Layout) SessionsDir() string { return filepath.Join(l.dir, "sessions") }
+func (l Layout) SessionsDir() string { return filepath.Join(l.dir, sessionsName) }
 func (l Layout) KeysDir() string     { return filepath.Join(l.dir, "keys") }
 func (l Layout) AuditDir() string    { return filepath.Join(l.dir, "audit") }
 func (l Layout) SocketPath() string  { return filepath.Join(l.dir, "pool.sock") }
 
-// Lock is the pool's single-owner lock. Stores opened on it share its mutex
-// and stop writing once it is released.
+// Lock is the pool's single-owner lock. It keeps the pool directory open, so
+// what a Store writes to is the directory that was locked, and it remembers
+// the lock file so a Store can tell when the path no longer leads to it. The
+// lock file must stay in place while the pool is active. Stores opened on a
+// Lock share its mutex and stop writing once it is released.
 type Lock struct {
 	mu       sync.Mutex
 	file     *flock.Flock
 	dir      string
+	root     *os.Root
+	lockInfo fs.FileInfo
 	released bool
 }
 
@@ -48,13 +54,41 @@ func (l Layout) Lock() (*Lock, error) {
 	if err := checkPlatform(); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(l.dir, dirMode); err != nil {
-		return nil, fmt.Errorf("create pool directory: %w", err)
+	dir, err := filepath.Abs(l.dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve pool directory: %w", err)
 	}
-	if err := checkDirMode(l.dir); err != nil {
+	root, err := openPoolRoot(dir)
+	if err != nil {
 		return nil, err
 	}
-	file := flock.New(filepath.Join(l.dir, lockName))
+	k, err := acquire(root, dir)
+	if err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	return k, nil
+}
+
+func openPoolRoot(dir string) (*os.Root, error) {
+	if err := os.MkdirAll(dir, dirMode); err != nil {
+		return nil, fmt.Errorf("create pool directory: %w", err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("open pool directory: %w", err)
+	}
+	if err := checkRoot(root); err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	return root, nil
+}
+
+// acquire locks the file by path, then checks that the path still leads to
+// the lock file inside the directory held open.
+func acquire(root *os.Root, dir string) (*Lock, error) {
+	file := flock.New(filepath.Join(dir, lockName))
 	ok, err := file.TryLock()
 	if err != nil {
 		return nil, fmt.Errorf("lock pool directory: %w", err)
@@ -62,7 +96,17 @@ func (l Layout) Lock() (*Lock, error) {
 	if !ok {
 		return nil, ErrPoolLocked
 	}
-	return &Lock{file: file, dir: l.dir}, nil
+	info, err := root.Stat(lockName)
+	if err != nil || !sameLockFile(dir, info) {
+		_ = file.Close()
+		return nil, errForeignLock
+	}
+	return &Lock{file: file, dir: dir, root: root, lockInfo: info}, nil
+}
+
+func sameLockFile(dir string, want fs.FileInfo) bool {
+	cur, err := os.Stat(filepath.Join(dir, lockName))
+	return err == nil && os.SameFile(cur, want)
 }
 
 // Release drops the lock after any write in flight finishes. It is safe to
@@ -74,32 +118,32 @@ func (k *Lock) Release() error {
 		return nil
 	}
 	k.released = true
-	return k.file.Close()
+	return errors.Join(k.file.Close(), k.root.Close())
 }
 
-// hold takes the write mutex and refuses once the lock is released. The
-// caller runs the returned function when its write is done.
+// hold takes the write mutex and refuses once the lock is released or the
+// pool path no longer leads to the lock file this Lock took. The caller runs
+// the returned function when its write is done.
 func (k *Lock) hold() (func(), error) {
 	if k == nil {
 		return nil, errLockNotHeld
 	}
 	k.mu.Lock()
-	if k.released {
+	if k.released || !sameLockFile(k.dir, k.lockInfo) {
 		k.mu.Unlock()
 		return nil, errLockNotHeld
 	}
 	return k.mu.Unlock, nil
 }
 
-// covers checks that dir is a direct child of the locked pool directory and
-// that pool is that directory's name.
+// covers checks that dir is the sessions directory of the locked pool
+// directory and that pool is that directory's name. The caller holds the lock.
 func (k *Lock) covers(dir, pool string) error {
-	if k == nil {
-		return errLockNotHeld
-	}
-	parent, perr := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(dir)))
-	own, oerr := filepath.EvalSymlinks(k.dir)
-	if perr != nil || oerr != nil || parent != own || pool != filepath.Base(k.dir) {
+	clean := filepath.Clean(dir)
+	parent, err := os.Stat(filepath.Dir(clean))
+	own, ownErr := k.root.Stat(".")
+	if err != nil || ownErr != nil || !os.SameFile(parent, own) ||
+		filepath.Base(clean) != sessionsName || pool != filepath.Base(k.dir) {
 		return errForeignLock
 	}
 	return nil

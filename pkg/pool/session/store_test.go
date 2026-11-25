@@ -116,8 +116,7 @@ func (s *StoreSuite) TestRefusedTransitionsLeaveTheFileByteIdentical() {
 func (s *StoreSuite) TestFailedPublishKeepsTheOldFileAndLeavesNoTempFile() {
 	sess := s.create()
 	before := s.snapshot()
-	renameFile = func(string, string) error { return errors.New("disk full") }
-	s.T().Cleanup(func() { renameFile = os.Rename })
+	s.stubRename(func(*os.Root, string, string) error { return errors.New("disk full") })
 	_, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
 	s.Require().ErrorContains(err, "disk full")
 	s.Equal(before, s.snapshot())
@@ -206,7 +205,13 @@ func (s *StoreSuite) TestLoadRefusesUnsafeFiles() {
 	link := "p-pool-dddddddddd"
 	s.Require().NoError(os.Symlink(path, filepath.Join(s.dir, link+fileExt)))
 	_, err = s.store.Load(link)
-	s.Require().ErrorIs(err, syscall.ELOOP)
+	s.Require().Error(err, "an absolute link is refused")
+	s.NotErrorIs(err, ErrNotFound)
+
+	inside := "p-pool-gggggggggg"
+	s.Require().NoError(os.Symlink(sess.ID+fileExt, filepath.Join(s.dir, inside+fileExt)))
+	_, err = s.store.Load(inside)
+	s.Require().ErrorIs(err, errNotRegular, "a link to a file in the same directory is refused")
 
 	fifo := "p-pool-eeeeeeeeee"
 	s.Require().NoError(syscall.Mkfifo(filepath.Join(s.dir, fifo+fileExt), fileMode))
@@ -246,19 +251,26 @@ func (s *StoreSuite) TestOpenStoreRefusesALockThatDoesNotCoverTheDirectory() {
 	released, err := spare.Lock()
 	s.Require().NoError(err)
 	s.Require().NoError(released.Release())
+	s.Require().NoError(os.RemoveAll(s.dir))
 
-	dir := s.layout.KeysDir()
 	cases := map[string]struct {
 		dir, pool string
 		lock      *Lock
 		want      error
 	}{
-		"nil":            {dir, storePool, nil, errLockNotHeld},
-		"released":       {spare.KeysDir(), "spare", released, errLockNotHeld},
-		"other pool dir": {dir, storePool, foreign, errForeignLock},
-		"other pool":     {dir, "other", s.lock, errForeignLock},
-		"not a child":    {filepath.Join(s.dir, "sub"), storePool, s.lock, errForeignLock},
-		"the pool dir":   {s.layout.Dir(), storePool, s.lock, errForeignLock},
+		"nil":            {s.dir, storePool, nil, errLockNotHeld},
+		"released":       {spare.SessionsDir(), "spare", released, errLockNotHeld},
+		"other pool dir": {elsewhere.SessionsDir(), storePool, s.lock, errForeignLock},
+		"foreign lock":   {s.dir, storePool, foreign, errForeignLock},
+		"other pool":     {s.dir, "other", s.lock, errForeignLock},
+		"not sessions":   {s.layout.KeysDir(), storePool, s.lock, errForeignLock},
+		"not a child": {
+			filepath.Join(s.dir, "sub", sessionsName),
+			storePool,
+			s.lock,
+			errForeignLock,
+		},
+		"the pool dir": {s.layout.Dir(), storePool, s.lock, errForeignLock},
 	}
 	for name, tc := range cases {
 		_, err := OpenStore(tc.dir, tc.pool, tc.lock)
@@ -267,6 +279,99 @@ func (s *StoreSuite) TestOpenStoreRefusesALockThatDoesNotCoverTheDirectory() {
 			s.NoDirExists(tc.dir, name)
 		}
 	}
+	s.Equal([]string{lockName}, s.poolNames(), "a refusal changes nothing in the pool directory")
+}
+
+func (s *StoreSuite) TestOpenStoreRefusesASessionsLinkToAnotherPool() {
+	elsewhere := s.newLayout(storePool)
+	foreign, err := elsewhere.Lock()
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = foreign.Release() })
+	other, err := OpenStore(elsewhere.SessionsDir(), storePool, foreign)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = other.Close() })
+	kept, err := other.Create()
+	s.Require().NoError(err)
+	before := dirNames(s, elsewhere.SessionsDir())
+
+	s.Require().NoError(os.RemoveAll(s.dir))
+	s.Require().NoError(os.Symlink(elsewhere.SessionsDir(), s.dir))
+	_, err = OpenStore(s.dir, storePool, s.lock)
+	s.Require().ErrorIs(err, errNotDirectory)
+	s.Equal(before, dirNames(s, elsewhere.SessionsDir()))
+	got, err := other.Load(kept.ID)
+	s.Require().NoError(err)
+	s.Equal(kept, got)
+}
+
+func (s *StoreSuite) TestWritesStopWhenThePoolPathLeadsElsewhere() {
+	sess := s.create()
+	moved := s.layout.Dir() + "-moved"
+	s.Require().NoError(os.Rename(s.layout.Dir(), moved))
+	replacement, err := s.layout.Lock()
+	s.Require().NoError(err, "the moved directory's lock file is a different file")
+	s.T().Cleanup(func() { _ = replacement.Release() })
+
+	_, err = s.store.Create()
+	s.Require().ErrorIs(err, errLockNotHeld)
+	_, err = s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	s.Require().ErrorIs(err, errLockNotHeld)
+	_, err = OpenStore(s.dir, storePool, s.lock)
+	s.Require().ErrorIs(err, errLockNotHeld)
+
+	s.Equal([]string{lockName}, s.poolNames(), "the replacement pool is untouched")
+	s.Equal([]string{sess.ID + fileExt}, dirNames(s, filepath.Join(moved, sessionsName)))
+	fresh, err := OpenStore(s.dir, storePool, replacement)
+	s.Require().NoError(err)
+	s.Require().NoError(fresh.Close())
+}
+
+func (s *StoreSuite) TestWritesStopWhenThePoolLockFileIsReplaced() {
+	path := filepath.Join(s.layout.Dir(), lockName)
+	s.Require().NoError(os.Remove(path))
+	_, err := s.store.Create()
+	s.Require().ErrorIs(err, errLockNotHeld, "removed")
+	s.Require().NoError(os.WriteFile(path, nil, fileMode))
+	_, err = s.store.Create()
+	s.Require().ErrorIs(err, errLockNotHeld, "replaced by another file")
+	s.Empty(dirNames(s, s.dir))
+}
+
+func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
+	sess := s.create()
+	entered, proceed := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	finish := func() { once.Do(func() { close(proceed) }) }
+	s.T().Cleanup(finish)
+	s.stubRename(func(root *os.Root, oldName, newName string) error {
+		close(entered)
+		<-proceed
+		return root.Rename(oldName, newName)
+	})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		_, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+		s.NoError(err)
+	})
+	<-entered
+	released := make(chan error, 1)
+	go func() { released <- s.lock.Release() }()
+	for range 20 {
+		_, err := s.layout.Lock()
+		s.Require().ErrorIs(err, ErrPoolLocked, "another owner must wait for the write")
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case <-released:
+		s.Fail("Release returned before the write finished")
+	default:
+	}
+	finish()
+	wg.Wait()
+	s.Require().NoError(<-released)
+	again, err := s.layout.Lock()
+	s.Require().NoError(err)
+	s.Require().NoError(again.Release())
 }
 
 func (s *StoreSuite) TestWritesStopWhenTheLockIsReleased() {
@@ -425,8 +530,12 @@ func (s *StoreSuite) newLayout(pool string) Layout {
 	return l
 }
 
-func (s *StoreSuite) names() []string {
-	entries, err := os.ReadDir(s.dir)
+func (s *StoreSuite) names() []string { return dirNames(s, s.dir) }
+
+func (s *StoreSuite) poolNames() []string { return dirNames(s, s.layout.Dir()) }
+
+func dirNames(s *StoreSuite, dir string) []string {
+	entries, err := os.ReadDir(dir)
 	s.Require().NoError(err)
 	var out []string
 	for _, e := range entries {
@@ -435,9 +544,16 @@ func (s *StoreSuite) names() []string {
 	return out
 }
 
+func (s *StoreSuite) stubRename(stub func(*os.Root, string, string) error) {
+	orig := renameFile
+	renameFile = stub
+	s.T().Cleanup(func() { renameFile = orig })
+}
+
 func (s *StoreSuite) open() *Store {
 	st, err := OpenStore(s.dir, storePool, s.lock)
 	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = st.Close() })
 	st.now = func() time.Time { return s.clock }
 	return st
 }

@@ -107,6 +107,7 @@ func raceRound(layout Layout) (int, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
+	defer func() { _ = store.Close() }()
 	return moveQueued(store)
 }
 
@@ -156,8 +157,10 @@ type helpers struct {
 func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 	lock, err := s.layout.Lock()
 	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = lock.Release() })
 	store, err := OpenStore(s.layout.SessionsDir(), helperPool, lock)
 	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = store.Close() })
 	var created []Session
 	for range helperSessions {
 		sess, err := store.Create()
@@ -184,6 +187,7 @@ func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 		_, err := store.Create()
 		s.Require().NoError(err)
 	}
+	s.Require().NoError(store.Close())
 	s.Require().NoError(lock.Release())
 	s.assertEveryQueuedSessionMovedOnce()
 }
@@ -202,6 +206,7 @@ func (s *ProcessSuite) assertEveryQueuedSessionMovedOnce() {
 	defer func() { _ = lock.Release() }()
 	store, err := OpenStore(s.layout.SessionsDir(), helperPool, lock)
 	s.Require().NoError(err)
+	defer func() { _ = store.Close() }()
 	list, err := store.List()
 	s.Require().NoError(err)
 	s.Len(list, 2*helperSessions)
@@ -224,6 +229,12 @@ func (s *ProcessSuite) start(mode string, n int) *helpers {
 			Stderr: out,
 		}
 		s.Require().NoError(cmd.Start())
+		s.T().Cleanup(func() {
+			if cmd.ProcessState == nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			}
+		})
 		h.cmds, h.outs = append(h.cmds, cmd), append(h.outs, out)
 	}
 	return h
