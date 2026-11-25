@@ -54,11 +54,24 @@ func syncDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	err = tolerateUnsupportedSync(fsyncDir(d))
+	err = syncOpenDir(d)
 	if cerr := d.Close(); err == nil {
 		err = cerr
 	}
 	return err
+}
+
+// syncOpenDir checks that d is a directory first: EINVAL from any other file
+// type is a real failure, not an unsupported directory fsync.
+func syncOpenDir(d *os.File) error {
+	info, err := d.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("not a directory: %s", d.Name())
+	}
+	return tolerateUnsupportedSync(fsyncDir(d))
 }
 
 // tolerateUnsupportedSync drops the EINVAL and ENOTSUP that some filesystems

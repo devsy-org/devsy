@@ -197,7 +197,8 @@ func openDayFile(path string) (*os.File, error) {
 }
 
 // openFile opens path without following a final symlink and without blocking
-// on a FIFO, so a planted entry fails the open instead of redirecting it.
+// on a FIFO, so a planted entry fails the open instead of redirecting it. A
+// FIFO or device is refused by the regular-file check after the open.
 func openFile(path string, flag int, perm os.FileMode) (*os.File, error) {
 	return os.OpenFile(filepath.Clean(path), flag|noFollow|nonBlock, perm)
 }

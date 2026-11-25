@@ -62,6 +62,25 @@ func (s *StoreSuite) TestDirectoryFsyncOtherErrorsStillFail() {
 	s.ErrorIs(syncDir(s.T().TempDir()), syscall.EACCES)
 }
 
+func (s *StoreSuite) TestDirectoryFsyncToleranceNeedsADirectory() {
+	s.injectDirFsync(syscall.EINVAL)
+	file := filepath.Join(s.T().TempDir(), "plain")
+	s.Require().NoError(os.WriteFile(file, nil, fileMode))
+	s.Error(syncDir(file), "EINVAL from a regular file is not an unsupported directory fsync")
+}
+
+func (s *StoreSuite) TestFlockOpenRefusesALinkPlantedAfterTheCheck() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, "lock")
+	lock, err := newFlock(path)
+	s.Require().NoError(err)
+	target := filepath.Join(dir, "target")
+	s.Require().NoError(os.WriteFile(target, nil, fileMode))
+	s.Require().NoError(os.Symlink(target, path))
+	_, err = lock.TryLock()
+	s.ErrorIs(err, syscall.ELOOP, "the lock open itself must not follow a link")
+}
+
 func (s *StoreSuite) TestOpenFileRefusesASymlink() {
 	dir := s.T().TempDir()
 	target := filepath.Join(dir, "target")

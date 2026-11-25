@@ -495,21 +495,26 @@ func (s *StoreSuite) TestOpenUsesTheDefaultLockWait() {
 func (s *StoreSuite) TestHostIDRemovesStaleTempFiles() {
 	dir := s.T().TempDir()
 	path := filepath.Join(dir, "host-id")
-	stale := []string{".host-id-host-id-123", ".host-id-host-id-4567890"}
-	keep := []string{".host-id-other-123", ".host-id-host-id-x1", ".host-id-host-id-", "notes"}
-	for _, name := range append(append([]string{}, stale...), keep...) {
-		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte("x"), fileMode))
+	tmp := tempDir(path)
+	s.Require().NoError(os.Mkdir(tmp, dirMode))
+	s.Require().NoError(os.Mkdir(filepath.Join(tmp, "sub"), dirMode))
+	for _, name := range []string{"123", "partial"} {
+		s.Require().NoError(os.WriteFile(filepath.Join(tmp, name), []byte("h_0"), fileMode))
 	}
-	s.Require().NoError(os.Mkdir(filepath.Join(dir, ".host-id-host-id-999"), dirMode))
+	const sibling = "h_01ARZ3NDEKTSV4RRFFQ69G5FAV\n"
+	for _, name := range []string{".host-id-host-id-123", "notes"} {
+		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte(sibling), fileMode))
+	}
 	_, err := LoadOrCreateHostID(path)
 	s.Require().NoError(err)
-	for _, name := range stale {
-		s.NoFileExists(filepath.Join(dir, name))
+	s.NoFileExists(filepath.Join(tmp, "123"))
+	s.NoFileExists(filepath.Join(tmp, "partial"))
+	s.DirExists(filepath.Join(tmp, "sub"), "only files are removed")
+	for _, name := range []string{".host-id-host-id-123", "notes"} {
+		data, readErr := os.ReadFile(filepath.Clean(filepath.Join(dir, name)))
+		s.Require().NoError(readErr)
+		s.Equal(sibling, string(data), "a file outside the reserved directory is never touched")
 	}
-	for _, name := range keep {
-		s.FileExists(filepath.Join(dir, name))
-	}
-	s.DirExists(filepath.Join(dir, ".host-id-host-id-999"), "only files are removed")
 }
 
 func (s *StoreSuite) TestHostIDRemovesStaleTempFilesWhenTheIDExists() {
@@ -517,11 +522,64 @@ func (s *StoreSuite) TestHostIDRemovesStaleTempFilesWhenTheIDExists() {
 	path := filepath.Join(dir, "host-id")
 	_, err := LoadOrCreateHostID(path)
 	s.Require().NoError(err)
-	stale := filepath.Join(dir, ".host-id-host-id-42")
+	s.Require().NoError(os.Mkdir(tempDir(path), dirMode))
+	stale := filepath.Join(tempDir(path), "42")
 	s.Require().NoError(os.WriteFile(stale, []byte("x"), fileMode))
 	_, err = LoadOrCreateHostID(path)
 	s.Require().NoError(err)
 	s.NoFileExists(stale)
+	s.NoDirExists(tempDir(path), "an emptied reserved directory is removed")
+}
+
+func (s *StoreSuite) TestHostIDSweepDoesNotFollowALinkedTempDirectory() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, "host-id")
+	_, err := LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	elsewhere := s.T().TempDir()
+	keep := filepath.Join(elsewhere, "keep")
+	s.Require().NoError(os.WriteFile(keep, []byte("x"), fileMode))
+	s.Require().NoError(os.Symlink(elsewhere, tempDir(path)))
+	_, err = LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	s.FileExists(keep)
+	s.Require().NoError(os.Remove(path))
+	_, err = LoadOrCreateHostID(path)
+	s.ErrorContains(err, "not a directory", "publish must not stage through a link")
+	s.FileExists(keep)
+}
+
+func (s *StoreSuite) TestHostIDStagesInTheReservedDirectory() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, "host-id")
+	var staged string
+	orig := renameFunc
+	s.T().Cleanup(func() { renameFunc = orig })
+	renameFunc = func(oldpath, _ string) error {
+		staged = oldpath
+		return errors.New("injected rename failure")
+	}
+	_, err := LoadOrCreateHostID(path)
+	s.Require().ErrorContains(err, "injected rename failure")
+	s.Equal(tempDir(path), filepath.Dir(staged))
+	s.NoFileExists(staged)
+	s.NoDirExists(tempDir(path))
+	s.NoFileExists(path)
+}
+
+func (s *StoreSuite) TestHostIDLongBaseNameIsAccepted() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, strings.Repeat("h", 240))
+	id, err := LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	s.Regexp(hostIDPattern, id)
+}
+
+func (s *StoreSuite) TestTempDirNameHasFixedLength() {
+	short := filepath.Base(tempDir(filepath.Join("d", "a")))
+	long := filepath.Base(tempDir(filepath.Join("d", strings.Repeat("a", 255))))
+	s.Len(long, len(short))
+	s.NotEqual(short, long)
 }
 
 func (s *StoreSuite) TestHostIDRefusesSymlinkedLock() {
