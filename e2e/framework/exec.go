@@ -25,41 +25,20 @@ const execWaitDelay = 30 * time.Second
 
 // ExecCommand executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (string, error) {
-	var execOut bytes.Buffer
-
-	//nolint:gosec // e2e harness runs its own test commands by design
-	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
-	docker.PrepareForGroupCancellation(cmd)
-	cmd.WaitDelay = execWaitDelay
-	outTee := livetee.New(&execOut, os.Stdout)
-	cmd.Stdout = outTee
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
-	f.liveStdoutDropped.Add(outTee.Close())
+	out, _, err := f.execCommandCapture(ctx, args, true)
 	if err != nil {
 		if ctx.Err() != nil {
-			return execOut.String(), ctx.Err()
+			return out, ctx.Err()
 		}
 		return "", err
 	}
-
-	return execOut.String(), nil
+	return out, nil
 }
 
 // ExecCommandStdout executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error {
-	//nolint:gosec // e2e harness runs its own test commands by design
-	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
-	docker.PrepareForGroupCancellation(cmd)
-	cmd.WaitDelay = execWaitDelay
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	return nil
+	_, _, err := f.execCommandCapture(ctx, args, false)
+	return err
 }
 
 // ExecCommandContaining executes the command string with the devsy test binary and
@@ -69,26 +48,11 @@ func (f *Framework) ExecCommandContaining(
 	searchString string,
 	args []string,
 ) error {
-	var execOut bytes.Buffer
-
-	//nolint:gosec // e2e harness runs its own test commands by design
-	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
-	docker.PrepareForGroupCancellation(cmd)
-	cmd.WaitDelay = execWaitDelay
-	outTee := livetee.New(&execOut, os.Stdout)
-	cmd.Stdout = outTee
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
-	f.liveStdoutDropped.Add(outTee.Close())
+	out, _, err := f.execCommandCapture(ctx, args, true)
 	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
 		return err
 	}
-
-	if !strings.Contains(execOut.String(), searchString) {
+	if !strings.Contains(out, searchString) {
 		return fmt.Errorf("expected to find string %s in output", searchString)
 	}
 
@@ -98,7 +62,7 @@ func (f *Framework) ExecCommandContaining(
 // ExecCommandCapture executes the command string with the devsy test binary, and returns
 // stdout, stderr, and any error that occurred.
 func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (string, string, error) {
-	return f.execCommandCapture(ctx, args, false)
+	return f.execCommandCapture(ctx, args, true)
 }
 
 func (f *Framework) ExecCommandDiagnosticCapture(
@@ -111,7 +75,7 @@ func (f *Framework) ExecCommandDiagnosticCapture(
 func (f *Framework) execCommandCapture(
 	ctx context.Context,
 	args []string,
-	diagnostic bool,
+	capture bool,
 ) (string, string, error) {
 	var execOut bytes.Buffer
 	var execErr bytes.Buffer
@@ -120,19 +84,20 @@ func (f *Framework) execCommandCapture(
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
-	var redactor *redact.Redactor
-	if diagnostic {
-		redactor = redact.New(redact.Options{Environment: cmd.Environ()})
+	redactor := redact.New(redact.Options{Environment: cmd.Environ()})
+	var outWriter, errWriter io.Writer = &execOut, &execErr
+	if !capture {
+		outWriter, errWriter = io.Discard, io.Discard
 	}
-	stdout, closeStdout := captureCommandOutput(&execOut, os.Stdout, redactor)
-	stderr, closeStderr := captureCommandOutput(&execErr, os.Stderr, redactor)
+	stdout, closeStdout := captureCommandOutput(outWriter, os.Stdout, redactor)
+	stderr, closeStderr := captureCommandOutput(errWriter, os.Stderr, redactor)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 
 	err := cmd.Run()
 	f.liveStdoutDropped.Add(closeStdout())
 	f.liveStderrDropped.Add(closeStderr())
-	if err != nil && ctx.Err() != nil {
+	if capture && err != nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
 	return execOut.String(), execErr.String(), err
@@ -142,10 +107,6 @@ func captureCommandOutput(
 	capture, live io.Writer,
 	redactor *redact.Redactor,
 ) (io.Writer, func() int64) {
-	if redactor == nil {
-		tee := livetee.New(capture, live)
-		return tee, tee.Close
-	}
 	tee := livetee.New(io.Discard, live)
 	diagnostic := newLiveDiagnosticCapture(tee, redactor)
 	return io.MultiWriter(capture, diagnostic), diagnostic.close

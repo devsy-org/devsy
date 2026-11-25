@@ -22,6 +22,17 @@ const (
 
 func TestCaptureChild(t *testing.T) {
 	switch os.Getenv("DEVSY_CAPTURE_CHILD") {
+	case "default-mask":
+		const record = "{\"Cookie\":\"CANARY\"}\n{\"message\":\"public detail\"}\n" +
+			"[INFO] start\n{\n  \"Cookie\": \"CANARY\",\n  \"message\": \"public detail\"\n}\n" +
+			"public detail "
+		_, _ = fmt.Fprint(os.Stdout, record+os.Getenv("DEVSY_FIXTURE_TOKEN"))
+		_, _ = fmt.Fprint(os.Stderr, record+os.Getenv("DEVSY_FIXTURE_TOKEN"))
+		os.Exit(0)
+	case "json-mask":
+		_, _ = fmt.Fprint(os.Stdout, `{"Cookie":"CANARY","message":"public detail"}`)
+		_, _ = fmt.Fprint(os.Stderr, `{"Cookie":"CANARY","message":"public detail"}`)
+		os.Exit(0)
 	case "exit":
 		_, _ = fmt.Fprint(os.Stdout, "stdout")
 		_, _ = fmt.Fprint(os.Stderr, "stderr")
@@ -45,7 +56,7 @@ func TestCaptureChild(t *testing.T) {
 		os.Exit(0)
 	case "blocked":
 		_, _ = fmt.Fprint(os.Stdout, strings.Repeat("x", 2<<20))
-		_, _ = fmt.Fprint(os.Stderr, "ready")
+		_, _ = fmt.Fprint(os.Stderr, "ready\n")
 		time.Sleep(time.Minute)
 		os.Exit(0)
 	}
@@ -148,9 +159,9 @@ func (s *captureSuite) TestBlockedLiveOutput() {
 	}()
 	ready := make(chan error, 1)
 	go func() {
-		b := make([]byte, 5)
+		b := make([]byte, 6)
 		_, err := io.ReadFull(errRead, b)
-		if err == nil && string(b) != "ready" {
+		if err == nil && string(b) != "ready\n" {
 			err = fmt.Errorf("unexpected stderr %q", b)
 		}
 		ready <- err
@@ -166,7 +177,7 @@ func (s *captureSuite) TestBlockedLiveOutput() {
 	case got := <-done:
 		s.ErrorIs(got.err, context.Canceled)
 		s.Equal(strings.Repeat("x", 2<<20), got.out)
-		s.Equal("ready", got.stderr)
+		s.Equal("ready\n", got.stderr)
 		dropped, _ := f.LiveOutputDropped()
 		s.Positive(dropped)
 	case <-time.After(40 * time.Second):
