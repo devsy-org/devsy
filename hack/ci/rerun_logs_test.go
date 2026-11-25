@@ -190,5 +190,5 @@ func (s *rerunSuite) TestLogErrorFails() {
 
 	_, err := s.runRerun(fake)
 
-	s.Require().ErrorContains(err, "unexpected call: api "+winJobPath)
+	s.Require().ErrorContains(err, "unexpected call: api --allow-escape-sequences "+winJobPath)
 }
