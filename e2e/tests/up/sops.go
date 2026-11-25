@@ -171,6 +171,8 @@ var _ = ginkgo.Describe(
 )
 
 func useSOPSAgeIdentity() {
+	framework.RegisterSecret(sopsE2EPlaintext)
+	framework.RegisterSecret(sopsE2EMounted)
 	framework.SetEnvForSpec("SOPS_AGE_KEY", sopsE2EAgeIdentity)
 	framework.UnsetEnvForSpec("SOPS_AGE_KEY_FILE")
 	framework.UnsetEnvForSpec("SOPS_AGE_KEY_CMD")

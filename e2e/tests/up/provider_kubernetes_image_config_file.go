@@ -181,6 +181,7 @@ func (x *imageConfigFixture) startRegistry(ctx context.Context) {
 	root := x.root
 	password := "private-" + x.id
 	x.password = password
+	framework.RegisterSecret(password)
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	framework.ExpectNoError(err)
 	authDir := filepath.Join(root, "auth")

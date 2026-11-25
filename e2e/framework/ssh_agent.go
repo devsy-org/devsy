@@ -177,7 +177,9 @@ func OpenSSHControlMaster(
 	cmd.Stdout = io.Discard
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmpDir)
-		redactor := redact.New(redact.Options{Environment: cmd.Env})
+		redactor := redact.New(
+			redact.Options{Environment: cmd.Env, Values: registeredSecretValues()},
+		)
 		return "", nil, fmt.Errorf(
 			"ssh ControlMaster start: %w: %s",
 			err,

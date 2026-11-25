@@ -81,6 +81,7 @@ var _ = ginkgo.Describe(
 				before, err := tc.getAppContainer(ctx, workspace)
 				framework.ExpectNoError(err)
 
+				framework.RegisterSecret("sentinel-compose-late-secret")
 				secretName := "COMPOSE_SESSION_SECRET"
 				_, err = tc.f.ExecCommandOutput(ctx, []string{
 					composeSecretCommand,
@@ -177,6 +178,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(projectFiles).NotTo(gomega.BeEmpty())
 
+				framework.RegisterSecret("sentinel-compose-missing-app")
 				secretName := "COMPOSE_MISSING_APP_FILE_SECRET"
 				_, err = tc.f.ExecCommandOutput(ctx, []string{
 					composeSecretCommand,
@@ -231,6 +233,8 @@ var _ = ginkgo.Describe(
 				))
 				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, dockerValue))
 
+				framework.RegisterSecret("sentinel-compose-secret")
+				framework.RegisterSecret("sentinel-compose-file-secret")
 				secretName := "COMPOSE_SESSION_SECRET"
 				_, err := tc.f.ExecCommandOutput(ctx, []string{
 					composeSecretCommand,

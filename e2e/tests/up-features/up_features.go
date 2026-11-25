@@ -856,6 +856,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			ginkgo.GinkgoT().Setenv(
 				"DEVCONTAINER_FEATURE_SECRET__FEATURES_SECRET_TEST_SECRETTOKEN", "e2e-test-secret",
 			)
+			framework.RegisterSecret("e2e-test-secret")
 
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)

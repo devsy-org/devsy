@@ -23,9 +23,17 @@ import (
 // block Wait forever, letting a hung command outlive its spec timeout.
 const execWaitDelay = 30 * time.Second
 
+type commandCapture int
+
+const (
+	captureNone commandCapture = iota
+	captureStdout
+	captureBoth
+)
+
 // ExecCommand executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (string, error) {
-	out, _, err := f.execCommandCapture(ctx, args, true)
+	out, _, err := f.execCommandCapture(ctx, args, captureStdout)
 	if err != nil {
 		if ctx.Err() != nil {
 			return out, ctx.Err()
@@ -37,7 +45,7 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 
 // ExecCommandStdout executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error {
-	_, _, err := f.execCommandCapture(ctx, args, false)
+	_, _, err := f.execCommandCapture(ctx, args, captureNone)
 	return err
 }
 
@@ -48,7 +56,7 @@ func (f *Framework) ExecCommandContaining(
 	searchString string,
 	args []string,
 ) error {
-	out, _, err := f.execCommandCapture(ctx, args, true)
+	out, _, err := f.execCommandCapture(ctx, args, captureStdout)
 	if err != nil {
 		return err
 	}
@@ -62,20 +70,20 @@ func (f *Framework) ExecCommandContaining(
 // ExecCommandCapture executes the command string with the devsy test binary, and returns
 // stdout, stderr, and any error that occurred.
 func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (string, string, error) {
-	return f.execCommandCapture(ctx, args, true)
+	return f.execCommandCapture(ctx, args, captureBoth)
 }
 
 func (f *Framework) ExecCommandDiagnosticCapture(
 	ctx context.Context,
 	args []string,
 ) (string, string, error) {
-	return f.execCommandCapture(ctx, args, true)
+	return f.execCommandCapture(ctx, args, captureBoth)
 }
 
 func (f *Framework) execCommandCapture(
 	ctx context.Context,
 	args []string,
-	capture bool,
+	capture commandCapture,
 ) (string, string, error) {
 	var execOut bytes.Buffer
 	var execErr bytes.Buffer
@@ -84,10 +92,15 @@ func (f *Framework) execCommandCapture(
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
-	redactor := redact.New(redact.Options{Environment: cmd.Environ()})
+	redactor := redact.New(
+		redact.Options{Environment: cmd.Environ(), Values: registeredSecretValues()},
+	)
 	var outWriter, errWriter io.Writer = &execOut, &execErr
-	if !capture {
+	switch capture {
+	case captureNone:
 		outWriter, errWriter = io.Discard, io.Discard
+	case captureStdout:
+		errWriter = io.Discard
 	}
 	stdout, closeStdout := captureCommandOutput(outWriter, os.Stdout, redactor)
 	stderr, closeStderr := captureCommandOutput(errWriter, os.Stderr, redactor)
@@ -97,7 +110,7 @@ func (f *Framework) execCommandCapture(
 	err := cmd.Run()
 	f.liveStdoutDropped.Add(closeStdout())
 	f.liveStderrDropped.Add(closeStderr())
-	if capture && err != nil && ctx.Err() != nil {
+	if capture != captureNone && err != nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
 	return execOut.String(), execErr.String(), err
@@ -113,7 +126,9 @@ func captureCommandOutput(
 }
 
 func externalCommandDiagnostic(value string) string {
-	redactor := redact.New(redact.Options{Environment: os.Environ()})
+	redactor := redact.New(
+		redact.Options{Environment: os.Environ(), Values: registeredSecretValues()},
+	)
 	return ReportText(redactor, value)
 }
 

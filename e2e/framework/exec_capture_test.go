@@ -21,6 +21,7 @@ const (
 )
 
 func TestCaptureChild(t *testing.T) {
+	registeredCaptureChild()
 	switch os.Getenv("DEVSY_CAPTURE_CHILD") {
 	case "default-mask":
 		const record = "{\"Cookie\":\"CANARY\"}\n{\"message\":\"public detail\"}\n" +
@@ -55,9 +56,29 @@ func TestCaptureChild(t *testing.T) {
 		_, _ = fmt.Fprint(os.Stderr, record)
 		os.Exit(0)
 	case "blocked":
-		_, _ = fmt.Fprint(os.Stdout, strings.Repeat("x", 2<<20))
+		_, _ = fmt.Fprint(os.Stdout, blockedCaptureOutput())
 		_, _ = fmt.Fprint(os.Stderr, "ready\n")
 		time.Sleep(time.Minute)
+		os.Exit(0)
+	}
+}
+
+func blockedCaptureOutput() string {
+	return strings.Repeat(strings.Repeat("x", 4095)+"\n", 512)
+}
+
+func registeredCaptureChild() {
+	switch os.Getenv("DEVSY_CAPTURE_CHILD") {
+	case "registered":
+		for _, output := range []*os.File{os.Stdout, os.Stderr} {
+			_, _ = fmt.Fprint(output, "registered-fixture-")
+			_, _ = fmt.Fprint(output, "value\npublic detail\n")
+		}
+		os.Exit(0)
+	case "registered-multiline":
+		_, _ = fmt.Fprint(os.Stdout, "multi-fixture\n")
+		_, _ = fmt.Fprint(os.Stdout, "second-part\npublic detail\n")
+		_, _ = fmt.Fprint(os.Stderr, "multi-fixture\nsecond-part\npublic detail\n")
 		os.Exit(0)
 	}
 }
@@ -74,6 +95,15 @@ func (s *captureSuite) TestExit() {
 	s.Equal(3, exit.ExitCode())
 	s.Equal("stdout", out)
 	s.Equal("stderr", stderr)
+}
+
+func (s *captureSuite) TestStdoutCaptureDiscardsRawStderr() {
+	s.T().Setenv("DEVSY_CAPTURE_CHILD", "exit")
+	out, stderr, err := s.framework().
+		execCommandCapture(context.Background(), []string{captureChildArg}, captureStdout)
+	s.Require().Error(err)
+	s.Equal("stdout", out)
+	s.Empty(stderr)
 }
 
 func (s *captureSuite) TestCaptureMasksOnlyLiveDiagnosticCopies() {
@@ -131,6 +161,8 @@ func (s *captureSuite) TestLiveDiagnosticsMaskUnterminatedJSONRecord() {
 }
 
 func (s *captureSuite) TestBlockedLiveOutput() {
+	restoreRegisteredSecrets(s.T())
+	RegisterSecret("blocked-fixture-first\nblocked-fixture-second")
 	s.T().Setenv("DEVSY_CAPTURE_CHILD", "blocked")
 	outRead, outWrite, err := os.Pipe()
 	s.Require().NoError(err)
@@ -176,7 +208,7 @@ func (s *captureSuite) TestBlockedLiveOutput() {
 	select {
 	case got := <-done:
 		s.ErrorIs(got.err, context.Canceled)
-		s.Equal(strings.Repeat("x", 2<<20), got.out)
+		s.Equal(blockedCaptureOutput(), got.out)
 		s.Equal("ready\n", got.stderr)
 		dropped, _ := f.LiveOutputDropped()
 		s.Positive(dropped)

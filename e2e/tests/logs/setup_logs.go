@@ -243,6 +243,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It("never exposes a known secret in output or stored files",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
+				framework.RegisterSecret(secretValue)
 				ws, f, err := framework.SetupDockerWorkspace(testdataSecret, initialDir)
 				framework.ExpectNoError(err)
 

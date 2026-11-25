@@ -399,6 +399,7 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			tempDir, f := setupCIFrom(initialDir, "tests/ci/testdata/secrets")
 
 			secretsFile := filepath.Join(tempDir, "ci.secrets.json")
+			framework.RegisterSecret("s3cr3t")
 			err := os.WriteFile(secretsFile, []byte(`{"MY_SECRET":"s3cr3t"}`), 0o600)
 			framework.ExpectNoError(err)
 
@@ -416,6 +417,7 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			framework.UseFileSecretsBackend()
 			tempDir, f := setupCIFrom(initialDir, "tests/ci/testdata/secrets")
 
+			framework.RegisterSecret("managed-ci-42")
 			_, err := f.ExecCommandOutput(ctx,
 				[]string{secretCmd, "set", ciSecretName, "--value", "managed-ci-42"})
 			framework.ExpectNoError(err)
