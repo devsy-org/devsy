@@ -782,7 +782,19 @@ func (s *StoreSuite) holdLockInChild(path string) (release func()) {
 	stdout, err := cmd.StdoutPipe()
 	s.Require().NoError(err)
 	s.Require().NoError(cmd.Start())
-	s.T().Cleanup(func() { _ = cmd.Process.Kill() })
+	var once sync.Once
+	stop := func(kill bool) {
+		once.Do(func() {
+			_ = stdin.Close()
+			if kill {
+				_ = cmd.Process.Kill()
+			}
+			if err := cmd.Wait(); !kill {
+				s.NoError(err, "the child exits cleanly when released")
+			}
+		})
+	}
+	s.T().Cleanup(func() { stop(true) })
 	ready := make(chan string, 1)
 	go func() {
 		line, _ := bufio.NewReader(stdout).ReadString('\n')
@@ -794,8 +806,5 @@ func (s *StoreSuite) holdLockInChild(path string) (release func()) {
 	case <-time.After(30 * time.Second):
 		s.FailNow("child did not take the lock")
 	}
-	return func() {
-		_ = stdin.Close()
-		_ = cmd.Wait()
-	}
+	return func() { stop(false) }
 }
