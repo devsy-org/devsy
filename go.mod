@@ -409,7 +409,7 @@ require (
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oklog/run v1.1.0 // indirect
-	github.com/oklog/ulid/v2 v2.1.1 // indirect
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
