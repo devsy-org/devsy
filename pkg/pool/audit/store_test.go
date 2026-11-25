@@ -173,14 +173,17 @@ func (s *StoreSuite) TestScanLineLimitIsExact() {
 func (s *StoreSuite) TestScanKeepsRepairedTailOutOfSnapshot() {
 	st := s.open()
 	path := filepath.Join(s.dir, dayOne+fileExt)
-	s.Require().NoError(os.WriteFile(path, []byte("{\"a\":1}\n{\"torn\":"), fileMode))
+	// A maximum-size record forces the reader to refill after the callback,
+	// which is when a repaired tail would show up in a physical-size snapshot.
+	first := `{"a":"` + strings.Repeat("x", MaxLineBytes-len(`{"a":""}`)) + `"}`
+	s.Require().NoError(os.WriteFile(path, []byte(first+"\n{\"torn\":\"xxxxxxxxxxxx"), fileMode))
 	var got []string
 	err := st.Scan("", "", func(_ string, rec []byte) error {
 		got = append(got, string(rec))
-		return st.Append([]byte(`{"new":1}`))
+		return st.Append([]byte(`{"n":1}`))
 	})
 	s.ErrorIs(err, io.ErrUnexpectedEOF)
-	s.Equal([]string{`{"a":1}`}, got)
+	s.Equal([]string{first}, got)
 }
 
 func (s *StoreSuite) TestSymlinksAreRefused() {
