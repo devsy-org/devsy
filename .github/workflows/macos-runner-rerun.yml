@@ -1,7 +1,9 @@
 name: macOS Runner Rerun
 
 # A run cannot rerun its own jobs before it completes, so this reacts to the
-# finished Pull Request run instead of living in pr-ci.yml.
+# finished Pull Request run instead of living in pr-ci.yml. It also retries a
+# Windows job once when its log shows a Go runtime crash on an AMX host
+# (golang/go#81238); the workflow reads job logs, which actions: write covers.
 on:
   workflow_run:
     workflows: [Pull Request]
@@ -11,7 +13,7 @@ permissions: {}
 
 jobs:
   rerun-no-runner:
-    name: Rerun macOS jobs that got no runner
+    name: Rerun jobs that got no runner or hit an AMX host crash
     if: github.event.workflow_run.run_attempt == 1 && github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -27,7 +29,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Rerun failed jobs once when only macOS runner assignment failed
+      - name: Rerun failed jobs once when only those failures happened
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}

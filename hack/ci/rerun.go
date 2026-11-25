@@ -14,7 +14,13 @@ import (
 	"strings"
 )
 
-const noRunnerReason = "every failed job is a macOS job cancelled before a runner picked it up"
+const (
+	noRunnerReason = "every failed job is a macOS job cancelled before a runner picked it up"
+	amxCrashReason = "every failed job is a Windows job that hit a Go runtime fatal error on a host " +
+		"with AMX state on"
+	mixedReason = "every failed job is a macOS job cancelled before a runner picked it up " +
+		"or a Windows job that hit a Go runtime fatal error on a host with AMX state on"
+)
 
 // ghRun holds the workflow run fields the rerun decision reads.
 type ghRun struct {
@@ -29,10 +35,14 @@ type ghRun struct {
 
 // ghJob holds the job fields the rerun decision reads.
 type ghJob struct {
+	ID         int64    `json:"id"`
 	Name       string   `json:"name"`
 	Conclusion string   `json:"conclusion"`
 	RunnerName string   `json:"runner_name"`
 	Labels     []string `json:"labels"`
+
+	// amxCrash is set from the job log, not from the API.
+	amxCrash bool
 }
 
 type rerunPlan struct {
@@ -48,7 +58,8 @@ type rerunOptions struct {
 	dryRun bool
 }
 
-// rerunCommand reruns a run's failed jobs once when only macOS runner assignment failed.
+// rerunCommand reruns a run's failed jobs once when every failure is a macOS job
+// that never got a runner or a Windows job that hit golang/go#81238.
 type rerunCommand struct {
 	runner commandRunner
 	stdout io.Writer
@@ -101,16 +112,9 @@ func (c rerunCommand) run(ctx context.Context, opts rerunOptions) error {
 	if err := c.getJSON(ctx, &run, c.runPath(opts)); err != nil {
 		return err
 	}
-	jobs, err := c.firstAttemptJobs(ctx, opts)
+	plan, err := c.plan(ctx, opts, run)
 	if err != nil {
 		return err
-	}
-	plan := selectNoRunnerRerun(run, jobs, opts.ignore)
-	if plan.rerun && run.Event == "pull_request" {
-		plan, err = c.skipSuperseded(ctx, opts, run, plan)
-		if err != nil {
-			return err
-		}
 	}
 	c.report(run, plan)
 	if !plan.rerun || opts.dryRun {
@@ -119,41 +123,87 @@ func (c rerunCommand) run(ctx context.Context, opts rerunOptions) error {
 	return c.gh(ctx, nil, "-X", "POST", c.runPath(opts)+"/rerun-failed-jobs")
 }
 
-// selectNoRunnerRerun decides whether the failed jobs of a run's first attempt
-// failed only because GitHub never assigned a macOS runner.
-func selectNoRunnerRerun(run ghRun, jobs []ghJob, ignore map[string]bool) rerunPlan {
-	if run.Attempt != 1 {
-		return rerunPlan{reason: fmt.Sprintf("attempt %d is not the first attempt", run.Attempt)}
+func (c rerunCommand) plan(ctx context.Context, opts rerunOptions, run ghRun) (rerunPlan, error) {
+	jobs, err := c.firstAttemptJobs(ctx, opts)
+	if err != nil {
+		return rerunPlan{}, err
 	}
-	if run.Status != "completed" || run.Conclusion != "failure" {
-		return rerunPlan{
-			reason: fmt.Sprintf("run is %s/%s, not completed/failure", run.Status, run.Conclusion),
+	if runBlocker(run) == "" {
+		if err := c.markAMXCrashes(ctx, opts, jobs); err != nil {
+			return rerunPlan{}, err
 		}
 	}
-	names, blocker := noRunnerJobs(jobs, ignore)
+	plan := selectRerun(run, jobs, opts.ignore)
+	if plan.rerun && run.Event == "pull_request" {
+		return c.skipSuperseded(ctx, opts, run, plan)
+	}
+	return plan, nil
+}
+
+// runBlocker explains why a run is not a first-attempt failure, or returns "".
+func runBlocker(run ghRun) string {
+	if run.Attempt != 1 {
+		return fmt.Sprintf("attempt %d is not the first attempt", run.Attempt)
+	}
+	if run.Status != "completed" || run.Conclusion != "failure" {
+		return fmt.Sprintf("run is %s/%s, not completed/failure", run.Status, run.Conclusion)
+	}
+	return ""
+}
+
+// selectRerun decides whether the failed jobs of a run's first attempt failed
+// only because GitHub never assigned a macOS runner or a Windows job crashed
+// in the Go runtime on an AMX host.
+func selectRerun(run ghRun, jobs []ghJob, ignore map[string]bool) rerunPlan {
+	if blocker := runBlocker(run); blocker != "" {
+		return rerunPlan{reason: blocker}
+	}
+	set, blocker := retryableJobs(jobs, ignore)
 	if blocker != "" {
 		return rerunPlan{reason: blocker}
 	}
-	if len(names) == 0 {
+	if len(set.names) == 0 {
 		return rerunPlan{reason: "no failed jobs outside the ignored ones"}
 	}
-	return rerunPlan{rerun: true, reason: noRunnerReason, jobs: names}
+	return rerunPlan{rerun: true, reason: set.reason(), jobs: set.names}
 }
 
-// noRunnerJobs lists the failed jobs, or describes the first failure that is
-// not a macOS job GitHub cancelled before assigning a runner.
-func noRunnerJobs(jobs []ghJob, ignore map[string]bool) ([]string, string) {
-	var names []string
+type retryableSet struct {
+	names    []string
+	noRunner bool
+	amxCrash bool
+}
+
+func (s retryableSet) reason() string {
+	switch {
+	case s.noRunner && s.amxCrash:
+		return mixedReason
+	case s.amxCrash:
+		return amxCrashReason
+	default:
+		return noRunnerReason
+	}
+}
+
+// retryableJobs lists the failed jobs, or describes the first failure that is
+// neither a macOS job cancelled before getting a runner nor an AMX crash.
+func retryableJobs(jobs []ghJob, ignore map[string]bool) (retryableSet, string) {
+	var set retryableSet
 	for _, job := range jobs {
 		if ignore[job.Name] || passed(job.Conclusion) {
 			continue
 		}
-		if !noRunnerMacOS(job) {
-			return nil, job.describe()
+		switch {
+		case noRunnerMacOS(job):
+			set.noRunner = true
+		case job.amxCrash:
+			set.amxCrash = true
+		default:
+			return retryableSet{}, job.describe()
 		}
-		names = append(names, job.Name)
+		set.names = append(set.names, job.Name)
 	}
-	return names, ""
+	return set, ""
 }
 
 func (job ghJob) describe() string {
