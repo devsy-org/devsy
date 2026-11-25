@@ -20,7 +20,16 @@ const (
 	hostIDPrefix       = "h_"
 	hostIDLockSuffix   = ".lock"
 	maxHostIDFileBytes = 128
+
+	// hostIDTempPattern names the file a publish stages. Only the call that
+	// created it removes it: a directory sweep could not tell it from a file
+	// the caller put there.
+	hostIDTempPattern = ".host-id-*"
 )
+
+// renameFunc is os.Rename, replaceable so tests can see where a publish
+// stages its file.
+var renameFunc = os.Rename
 
 var (
 	hostIDPattern = regexp.MustCompile(`^h_[0-9A-HJKMNP-TV-Z]{26}$`)
@@ -28,8 +37,20 @@ var (
 	// a host ID, the shapes a crash can leave behind. A ULID starts with 0-7.
 	hostIDPartialPattern = regexp.MustCompile(`^(h(_([0-7][0-9A-HJKMNP-TV-Z]{0,24})?)?)?$`)
 
-	errHostIDPartial = errors.New("host id file is empty or partial")
+	errHostIDPartial      = errors.New("host id file is empty or partial")
+	errReservedHostIDName = errors.New("host id file name is reserved for locks")
 )
+
+// checkHostIDName refuses a name ending in the lock suffix. Another path's
+// lock file has that name, and publishing renames over the path, which would
+// give later callers a new lock inode while an earlier caller still holds the
+// old one. The comparison folds case because the file system may.
+func checkHostIDName(path string) error {
+	if strings.HasSuffix(strings.ToLower(filepath.Base(path)), hostIDLockSuffix) {
+		return fmt.Errorf("%w: %s", errReservedHostIDName, filepath.Base(path))
+	}
+	return nil
+}
 
 // NewID returns a new ULID string, the dedupe key of a record. The random part
 // comes from crypto/rand, which does not return an error on supported Go
@@ -44,7 +65,8 @@ func NewID() string {
 // an error: a real ID is never replaced, so earlier records keep correlating.
 // Callers in separate processes agree on one ID through a lock next to path.
 // The directory must pass the same owner and mode check as the audit
-// directory, and the file must be a regular file, not a link.
+// directory, and the file must be a regular file, not a link. A name ending
+// in .lock is refused because it is the name of a lock file.
 func LoadOrCreateHostID(path string) (string, error) {
 	id, _, err := loadOrCreateHostID(path)
 	// Hook for the repair audit record: write it when the ID was repaired,
@@ -53,6 +75,12 @@ func LoadOrCreateHostID(path string) (string, error) {
 }
 
 func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
+	if err := checkPlatform(); err != nil {
+		return "", false, err
+	}
+	if err := checkHostIDName(path); err != nil {
+		return "", false, err
+	}
 	dir := filepath.Dir(path)
 	if err := checkDirMode(dir); err != nil {
 		return "", false, err
@@ -87,7 +115,7 @@ func readHostID(path string) (string, error) {
 	if err := checkRegular(path); err != nil {
 		return "", err
 	}
-	f, err := os.OpenFile(filepath.Clean(path), os.O_RDONLY|noFollow|nonBlock, 0)
+	f, err := openFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +144,7 @@ func readHostID(path string) (string, error) {
 func publishHostID(path string) (string, error) {
 	id := hostIDPrefix + NewID()
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".host-id-*")
+	tmp, err := os.CreateTemp(dir, hostIDTempPattern)
 	if err != nil {
 		return "", fmt.Errorf("create host id file: %w", err)
 	}
@@ -124,7 +152,7 @@ func publishHostID(path string) (string, error) {
 	if err := writeSynced(tmp, id+"\n"); err != nil {
 		return "", fmt.Errorf("write host id file: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err := renameFunc(tmp.Name(), path); err != nil {
 		return "", fmt.Errorf("publish host id file: %w", err)
 	}
 	if err := syncDirFunc(dir); err != nil {

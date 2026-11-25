@@ -3,6 +3,7 @@
 package audit
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,8 @@ const (
 	// regular-file check after the open then refuses it.
 	nonBlock = syscall.O_NONBLOCK
 )
+
+func checkPlatform() error { return nil }
 
 func ownedByCurrentUser(path string) bool {
 	info, err := os.Stat(path)
@@ -39,15 +42,46 @@ func checkDirMode(dir string) error {
 	return nil
 }
 
-// syncDir persists the directory entries created or renamed in dir.
+// fsyncDir is the directory fsync, replaceable so tests can inject the errors
+// some filesystems return.
+var fsyncDir = func(d *os.File) error { return d.Sync() }
+
+// syncDir persists the directory entries created or renamed in dir. A
+// filesystem that cannot fsync a directory is not an error, see
+// tolerateUnsupportedSync.
 func syncDir(dir string) error {
 	d, err := os.Open(filepath.Clean(dir))
 	if err != nil {
 		return err
 	}
-	err = d.Sync()
+	err = syncOpenDir(d)
 	if cerr := d.Close(); err == nil {
 		err = cerr
+	}
+	return err
+}
+
+// syncOpenDir checks that d is a directory first: EINVAL from any other file
+// type is a real failure, not an unsupported directory fsync.
+func syncOpenDir(d *os.File) error {
+	info, err := d.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("not a directory: %s", d.Name())
+	}
+	return tolerateUnsupportedSync(fsyncDir(d))
+}
+
+// tolerateUnsupportedSync drops the EINVAL and ENOTSUP that some filesystems
+// and network mounts return for a directory fsync: they hold no stronger
+// guarantee to wait for. Every other error still fails.
+func tolerateUnsupportedSync(err error) error {
+	if errors.Is(err, syscall.EINVAL) ||
+		errors.Is(err, syscall.ENOTSUP) ||
+		errors.Is(err, syscall.EOPNOTSUPP) {
+		return nil
 	}
 	return err
 }
