@@ -41,9 +41,10 @@ var renameFile = os.Rename
 // Store keeps one JSON file per session. Every write goes to a temp file in
 // the same directory, is synced, and is then linked or renamed into place, so
 // a reader sees the old file or the new one, never a partial one. The store
-// serializes calls in one process; the pool lock excludes other processes.
+// serializes calls on one directory in this process, across every Store opened
+// on it; the pool lock excludes other processes.
 type Store struct {
-	mu   sync.Mutex
+	mu   *sync.Mutex
 	dir  string
 	pool string
 	now  func() time.Time
@@ -67,7 +68,24 @@ func OpenStore(dir, pool string) (*Store, error) {
 	if err := syncDir(dir); err != nil {
 		return nil, fmt.Errorf("sync session directory: %w", err)
 	}
-	return &Store{dir: dir, pool: pool, now: time.Now}, nil
+	mu, err := dirMutex(dir)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{mu: mu, dir: dir, pool: pool, now: time.Now}, nil
+}
+
+// dirMutexes holds one mutex per real directory, so two Stores opened on the
+// same directory still take turns.
+var dirMutexes sync.Map
+
+func dirMutex(dir string) (*sync.Mutex, error) {
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session directory: %w", err)
+	}
+	mu, _ := dirMutexes.LoadOrStore(real, new(sync.Mutex))
+	return mu.(*sync.Mutex), nil
 }
 
 // Create writes a new queued session under a fresh ID.
@@ -128,7 +146,8 @@ func (s *Store) List() ([]Session, error) {
 // Transition moves a session from one state to another. It refuses an edge
 // the state machine does not allow, and a session that is not in from. On any
 // error the file on disk is unchanged, except that a failed directory sync
-// after the rename may leave the new state on disk.
+// after the rename may leave the new state on disk. A caller must treat an
+// error as "state unknown" and reload, not retry blindly.
 func (s *Store) Transition(id string, from, to State, reason string) (Session, error) {
 	if !CanTransition(from, to) {
 		return Session{}, ErrIllegalTransition
@@ -167,12 +186,13 @@ func (s *Store) publish(sess Session) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(tmp) }()
-	if err := os.Link(tmp, s.path(sess.ID)); err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return ErrExists
-		}
-		return fmt.Errorf("publish session file: %w", err)
+	linkErr := os.Link(tmp, s.path(sess.ID))
+	_ = os.Remove(tmp)
+	if errors.Is(linkErr, fs.ErrExist) {
+		return ErrExists
+	}
+	if linkErr != nil {
+		return fmt.Errorf("publish session file: %w", linkErr)
 	}
 	return syncDir(s.dir)
 }

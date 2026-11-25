@@ -219,12 +219,16 @@ func (s *StoreSuite) TestOpenStoreChecksTheDirectory() {
 	s.Require().NoError(os.Mkdir(loose, dirMode))
 	s.Require().NoError(os.Chmod(loose, dirMode|0o070))
 	_, err = OpenStore(loose, storePool)
-	s.Require().ErrorContains(err, "must not be writable by group or others")
+	s.Require().ErrorContains(err, "accessible only by its owner")
 
-	readable := filepath.Join(s.T().TempDir(), "readable")
-	s.Require().NoError(os.Mkdir(readable, 0o750))
-	_, err = OpenStore(readable, storePool)
-	s.Require().NoError(err)
+	for _, extra := range []os.FileMode{0o050, 0o005, 0o040, 0o001} {
+		shared := filepath.Join(s.T().TempDir(), "shared")
+		s.Require().NoError(os.Mkdir(shared, dirMode))
+		s.Require().NoError(os.Chmod(shared, dirMode|extra))
+		_, err = OpenStore(shared, storePool)
+		s.Require().ErrorContains(err, "accessible only by its owner", "%o", extra)
+		s.NoFileExists(filepath.Join(shared, "x"))
+	}
 
 	nested := filepath.Join(s.T().TempDir(), "a", "b", "sessions")
 	_, err = OpenStore(nested, storePool)
@@ -259,6 +263,36 @@ func (s *StoreSuite) TestRacingTransitionsHaveOneWinner() {
 	}
 	s.Equal(1, wins)
 	s.Equal(15, conflicts)
+}
+
+func (s *StoreSuite) TestTwoStoresOnOneDirectoryTakeTurns() {
+	for range 30 {
+		sess := s.create()
+		other := s.open()
+		var wg sync.WaitGroup
+		results := make(chan error, 8)
+		for i := range 8 {
+			store, to := s.store, StateSpawning
+			if i%2 == 1 {
+				store, to = other, StateReclaiming
+			}
+			wg.Go(func() {
+				_, err := store.Transition(sess.ID, StateQueued, to, "")
+				results <- err
+			})
+		}
+		wg.Wait()
+		close(results)
+		wins := 0
+		for err := range results {
+			if err == nil {
+				wins++
+			} else {
+				s.Require().ErrorIs(err, ErrStateConflict)
+			}
+		}
+		s.Require().Equal(1, wins)
+	}
 }
 
 func (s *StoreSuite) TestConcurrentCreatesMakeDistinctSessions() {

@@ -24,8 +24,8 @@ func checkDirMode(dir string) error {
 	if err != nil {
 		return fmt.Errorf("stat pool directory: %w", err)
 	}
-	if info.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("pool directory must not be writable by group or others: %s", dir)
+	if info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("pool directory must be accessible only by its owner: %s", dir)
 	}
 	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Geteuid() {
 		return fmt.Errorf("pool directory must be owned by the current user: %s", dir)

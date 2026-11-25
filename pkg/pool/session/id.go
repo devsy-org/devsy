@@ -14,8 +14,6 @@ import (
 const (
 	idPrefix    = "p-"
 	idSuffixLen = 10
-	// maxIDLength is the workspace ID limit.
-	maxIDLength = 48
 )
 
 var (
@@ -47,5 +45,8 @@ func NewID(pool string) (string, error) {
 // ValidID reports whether id has the shape NewID returns. It is the only
 // check between a caller-supplied ID and a file name.
 func ValidID(id string) bool {
-	return len(id) <= maxIDLength && idPattern.MatchString(id)
+	if !idPattern.MatchString(id) {
+		return false
+	}
+	return poolconfig.ValidPoolName(id[len(idPrefix) : len(id)-idSuffixLen-1])
 }

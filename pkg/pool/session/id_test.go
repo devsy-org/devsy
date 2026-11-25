@@ -93,7 +93,10 @@ func (s *IDSuite) TestValidIDRefusesAnythingThatIsNotAnID() {
 	for _, id := range []string{
 		"", "p-pool-aaaaaaaaa", "p-pool-aaaaaaaaaaa", "p-pool-AAAAAAAAAA", "p-pool-aaaaaaaaa1",
 		"p--aaaaaaaaaa", "p-pool-aaaaaaaaaa\n", "../p-pool-aaaaaaaaaa", "p-pool/x-aaaaaaaaaa",
-		"p-pool-aaaaaaaaaa.json", "x-pool-aaaaaaaaaa", "p-" + strings.Repeat("a", 40) + "-aaaaaaaaaa",
+		"p-pool-aaaaaaaaaa.json", "x-pool-aaaaaaaaaa",
+		"p-" + strings.Repeat("a", 33) + "-aaaaaaaaaa",
+		"p-" + strings.Repeat("a", 34) + "-aaaaaaaaaa",
+		"p-" + strings.Repeat("a", 35) + "-aaaaaaaaaa", "p-" + strings.Repeat("a", 40) + "-aaaaaaaaaa",
 	} {
 		s.False(ValidID(id), "%q", id)
 	}

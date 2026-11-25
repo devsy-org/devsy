@@ -63,9 +63,9 @@ func (s *LayoutSuite) TestDifferentPoolsDoNotShareALock() {
 func (s *LayoutSuite) TestLockRefusesAGroupWritableDirectory() {
 	l := s.layout("pool")
 	s.Require().NoError(os.MkdirAll(l.Dir(), dirMode))
-	s.Require().NoError(os.Chmod(l.Dir(), dirMode|0o070))
+	s.Require().NoError(os.Chmod(l.Dir(), dirMode|0o050))
 	_, err := l.Lock()
-	s.Require().ErrorContains(err, "must not be writable by group or others")
+	s.Require().ErrorContains(err, "accessible only by its owner")
 	s.NoFileExists(filepath.Join(l.Dir(), lockName))
 }
 

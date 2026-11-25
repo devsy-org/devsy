@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,13 +38,17 @@ func (s *SessionSuite) TestInvalidFieldsAreRefused() {
 		"id other pool":  func(x *Session) { x.ID = "p-other-aaaaaaaaaa" },
 		"id prefix pool": func(x *Session) { x.Pool = "poo" },
 		"pool empty":     func(x *Session) { x.Pool = "" },
-		"state":          func(x *Session) { x.State = "running" },
-		"state empty":    func(x *Session) { x.State = "" },
-		"reason spaces":  func(x *Session) { x.Reason = "free text here" },
-		"reason upper":   func(x *Session) { x.Reason = "Pool_restart" },
-		"reason long":    func(x *Session) { x.Reason = "a" + string(make([]byte, 64)) },
-		"created":        func(x *Session) { x.Created = time.Time{} },
-		"updated":        func(x *Session) { x.Updated = time.Time{} },
+		"pool too long": func(x *Session) {
+			x.Pool = strings.Repeat("a", 33)
+			x.ID = "p-" + x.Pool + "-aaaaaaaaaa"
+		},
+		"state":         func(x *Session) { x.State = "running" },
+		"state empty":   func(x *Session) { x.State = "" },
+		"reason spaces": func(x *Session) { x.Reason = "free text here" },
+		"reason upper":  func(x *Session) { x.Reason = "Pool_restart" },
+		"reason long":   func(x *Session) { x.Reason = "a" + string(make([]byte, 64)) },
+		"created":       func(x *Session) { x.Created = time.Time{} },
+		"updated":       func(x *Session) { x.Updated = time.Time{} },
 	} {
 		sess := validSession()
 		mutate(&sess)
