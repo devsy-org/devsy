@@ -774,7 +774,15 @@ jobs:
           GH_USERNAME: ${{ github.repository_owner }}
           GH_ACCESS_TOKEN: ${{ github.token }}
           GH_CREDENTIAL_USERNAME: x-access-token
-        run: '"$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e'
+        run: |
+          export DEVSY_E2E_SENTINEL_FILE="${RUNNER_TEMP}/e2e-sentinels.jsonl"
+          (umask 077; : > "$DEVSY_E2E_SENTINEL_FILE")
+          set +e
+          "$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e 2>&1 | tee "${RUNNER_TEMP}/e2e-output.log"
+          status=("${PIPESTATUS[@]}")
+          "$CI_TOOL" e2e sentinel-check "$DEVSY_E2E_SENTINEL_FILE" "${RUNNER_TEMP}/e2e-output.log"
+          check=$?
+          (( status[0] == 0 && status[1] == 0 && check == 0 ))
 
   prepare-microsandbox-provider:
     name: Prepare MicroSandbox provider assets
@@ -926,7 +934,15 @@ jobs:
           TEST_TIMEOUT: ${{ matrix.test_timeout }}
           DEVSY_REQUIRE_MICROSANDBOX: "true"
           DEVSY_E2E_PROVIDER_DOWNLOAD_CACHE: ${{ runner.temp }}/microsandbox-provider/cache
-        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" run --label "${{ matrix.name }}" --expected-count "${{ matrix.expected_spec_count }}" --provider-mode "${{ matrix.provider_mode }}"'
+        run: |
+          export DEVSY_E2E_SENTINEL_FILE="${RUNNER_TEMP}/e2e-sentinels.jsonl"
+          (umask 077; : > "$DEVSY_E2E_SENTINEL_FILE")
+          set +e
+          "${RUNNER_TEMP}/devsy-ci-microsandbox" run --label "${{ matrix.name }}" --expected-count "${{ matrix.expected_spec_count }}" --provider-mode "${{ matrix.provider_mode }}" 2>&1 | tee "${RUNNER_TEMP}/e2e-output.log"
+          status=("${PIPESTATUS[@]}")
+          "$CI_TOOL" e2e sentinel-check "$DEVSY_E2E_SENTINEL_FILE" "${RUNNER_TEMP}/e2e-output.log"
+          check=$?
+          (( status[0] == 0 && status[1] == 0 && check == 0 ))
 
       - name: upload MicroSandbox test evidence
         if: always()
@@ -1217,7 +1233,15 @@ jobs:
           GH_USERNAME: ${{ github.repository_owner }}
           GH_ACCESS_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           GH_CREDENTIAL_USERNAME: x-access-token
-        run: '"$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e'
+        run: |
+          export DEVSY_E2E_SENTINEL_FILE="${RUNNER_TEMP}/e2e-sentinels.jsonl"
+          (umask 077; : > "$DEVSY_E2E_SENTINEL_FILE")
+          set +e
+          "$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e 2>&1 | tee "${RUNNER_TEMP}/e2e-output.log"
+          status=("${PIPESTATUS[@]}")
+          "$CI_TOOL" e2e sentinel-check "$DEVSY_E2E_SENTINEL_FILE" "${RUNNER_TEMP}/e2e-output.log"
+          check=$?
+          (( status[0] == 0 && status[1] == 0 && check == 0 ))
 
       - name: tear down Docker WSL SSH fixture
         if: always() && matrix.setup_docker_wsl
