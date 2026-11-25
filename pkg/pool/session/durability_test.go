@@ -10,23 +10,34 @@ import (
 var errInjectedIO = errors.New("injected I/O failure")
 
 func (s *StoreSuite) TestAdmitRetriesSyncAfterFreshKeyLink() {
-	s.checkKeySyncRetries()
+	var written bool
+	orig := linkFile
+	linkFile = func(root *os.Root, from, to string) error {
+		written = written || root == s.store.keys
+		return orig(root, from, to)
+	}
+	s.T().Cleanup(func() { linkFile = orig })
+	s.checkKeySyncRetries(&written)
 }
 
 func (s *StoreSuite) TestAdmitRetriesSyncAfterExpiredKeyRename() {
 	s.writeReservation(canaryKey, s.clock.Add(-KeyRetention))
 	renames := 0
+	var written bool
 	s.stubRename(func(root *os.Root, from, to string) error {
 		s.Same(s.store.keys, root)
 		s.Equal(keyFile(canaryKey), to)
 		renames++
+		written = true
 		return root.Rename(from, to)
 	})
-	s.checkKeySyncRetries()
+	s.checkKeySyncRetries(&written)
 	s.Equal(1, renames)
 }
 
-func (s *StoreSuite) checkKeySyncRetries() {
+// checkKeySyncRetries fails every key directory sync once the key record is
+// written, so the record is visible but not durable.
+func (s *StoreSuite) checkKeySyncRetries(written *bool) {
 	useSource(s.T(), fixedReader{0xff})
 	lim := Limits{MaxConcurrent: 1}
 	fail := true
@@ -35,18 +46,18 @@ func (s *StoreSuite) checkKeySyncRetries() {
 		synced = append(synced, root)
 		if root == s.store.keys {
 			s.Empty(s.names(), "the key directory must sync before the session is published")
-			if fail {
+			if fail && *written {
 				return errInjectedIO
 			}
 		}
 		return syncDirectory(root)
 	})
 
-	for range 2 {
+	for _, want := range [][]*os.Root{{s.store.keys, s.store.keys}, {s.store.keys}} {
 		got, err := s.store.Admit(canaryKey, lim)
 		s.Require().ErrorIs(err, errInjectedIO)
 		s.Zero(got)
-		s.Equal([]*os.Root{s.store.keys}, synced)
+		s.Equal(want, synced)
 		s.Empty(s.names())
 		synced = nil
 	}
@@ -73,11 +84,12 @@ func (s *StoreSuite) TestAdmitRetriesSyncBeforeAcknowledgingExistingSession() {
 		}
 		return syncDirectory(root)
 	})
-	for range 2 {
+	keys, sessions := s.store.keys, s.store.root
+	for _, want := range [][]*os.Root{{keys, keys, sessions}, {keys, sessions}} {
 		got, err := s.store.Admit(canaryKey, lim)
 		s.Require().ErrorIs(err, errInjectedIO)
 		s.Zero(got)
-		s.Equal([]*os.Root{s.store.keys, s.store.root}, synced)
+		s.Equal(want, synced)
 		s.Require().Len(s.names(), 1)
 		synced = nil
 	}
