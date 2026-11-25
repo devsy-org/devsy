@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -543,6 +544,109 @@ func (s *StoreSuite) TestNewIDIsULID() {
 		s.Len(id, 26)
 		s.False(seen[id], "ids must not repeat")
 		seen[id] = true
+	}
+}
+
+// failSyncOnce makes the next directory sync fail and records every call.
+func failSyncOnce(t *testing.T) *[]string {
+	var calls []string
+	failed := false
+	orig := syncDirFunc
+	t.Cleanup(func() { syncDirFunc = orig })
+	syncDirFunc = func(dir string) error {
+		calls = append(calls, dir)
+		if !failed {
+			failed = true
+			return errors.New("injected sync failure")
+		}
+		return nil
+	}
+	return &calls
+}
+
+func recordSyncs(t *testing.T) *[]string {
+	var calls []string
+	orig := syncDirFunc
+	t.Cleanup(func() { syncDirFunc = orig })
+	syncDirFunc = func(dir string) error {
+		calls = append(calls, dir)
+		return nil
+	}
+	return &calls
+}
+
+func (s *StoreSuite) TestOpenSyncsTheDirectoryChain() {
+	calls := recordSyncs(s.T())
+	root := s.T().TempDir()
+	nested := filepath.Join(root, "a", "b", "audit")
+	_, err := Open(nested)
+	s.Require().NoError(err)
+	s.Contains(*calls, nested)
+	if runtime.GOOS != goosWindows {
+		s.Contains(*calls, filepath.Join(root, "a", "b"))
+		s.Contains(*calls, filepath.Join(root, "a"))
+		s.Contains(*calls, root)
+	}
+}
+
+func (s *StoreSuite) TestOpenRetriesSyncAfterAFailure() {
+	calls := failSyncOnce(s.T())
+	_, err := Open(s.dir)
+	s.Require().ErrorContains(err, "injected sync failure")
+	before := len(*calls)
+	_, err = Open(s.dir)
+	s.Require().NoError(err, "the existing directory must be synced again")
+	s.Greater(len(*calls), before)
+}
+
+func (s *StoreSuite) TestAppendRetriesDirectorySyncAfterAFailure() {
+	st := s.open()
+	calls := failSyncOnce(s.T())
+	s.Require().ErrorContains(st.Append([]byte(`{"n":1}`)), "injected sync failure")
+	s.Require().NoError(st.Append([]byte(`{"n":2}`)))
+	s.Equal([]string{s.dir, s.dir}, *calls)
+	s.Require().NoError(st.Append([]byte(`{"n":3}`)))
+	s.Len(*calls, 2, "a synced day is not synced again")
+}
+
+func (s *StoreSuite) TestRecreatedDayFileIsSyncedAgain() {
+	st := s.open()
+	calls := recordSyncs(s.T())
+	s.Require().NoError(st.Append([]byte(`{"n":1}`)))
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, dayOne+fileExt)))
+	s.Require().NoError(st.Append([]byte(`{"n":2}`)))
+	s.Len(*calls, 2)
+}
+
+func (s *StoreSuite) TestHostIDRetriesDirectorySyncAfterAFailure() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, "host-id")
+	calls := failSyncOnce(s.T())
+	_, err := LoadOrCreateHostID(path)
+	s.Require().ErrorContains(err, "injected sync failure")
+	id, err := LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	s.Regexp(hostIDPattern, id)
+	s.Equal([]string{dir, dir}, *calls, "the retry must sync before it returns the ID")
+}
+
+func (s *StoreSuite) TestHostIDBlankAndPrefixShapes() {
+	repaired := []string{"\f", "\v", "\u00a0", " \x00\n", "h_7", "h_0123456789"}
+	for _, content := range repaired {
+		path := filepath.Join(s.T().TempDir(), "host-id")
+		s.Require().NoError(os.WriteFile(path, []byte(content), fileMode))
+		_, wasRepaired, err := loadOrCreateHostID(path)
+		s.Require().NoError(err, "%q", content)
+		s.True(wasRepaired, "%q", content)
+	}
+	for _, content := range []string{"h_Z", "h_8", "h_8ZZZ", "hh", "h_0I"} {
+		path := filepath.Join(s.T().TempDir(), "host-id")
+		s.Require().NoError(os.WriteFile(path, []byte(content), fileMode))
+		_, err := LoadOrCreateHostID(path)
+		s.Error(err, "%q", content)
+		data, readErr := os.ReadFile(filepath.Clean(path))
+		s.Require().NoError(readErr)
+		s.Equal(content, string(data))
 	}
 }
 

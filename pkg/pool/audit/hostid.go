@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -24,8 +25,8 @@ const (
 var (
 	hostIDPattern = regexp.MustCompile(`^h_[0-9A-HJKMNP-TV-Z]{26}$`)
 	// hostIDPartialPattern matches the empty string or a cut-short prefix of
-	// a host ID, the shapes a crash can leave behind.
-	hostIDPartialPattern = regexp.MustCompile(`^(h|h_[0-9A-HJKMNP-TV-Z]{0,25})?$`)
+	// a host ID, the shapes a crash can leave behind. A ULID starts with 0-7.
+	hostIDPartialPattern = regexp.MustCompile(`^(h(_([0-7][0-9A-HJKMNP-TV-Z]{0,24})?)?)?$`)
 
 	errHostIDPartial = errors.New("host id file is empty or partial")
 )
@@ -42,6 +43,8 @@ func NewID() string {
 // host ID, left by a crash, is replaced with a fresh ID. Any other content is
 // an error: a real ID is never replaced, so earlier records keep correlating.
 // Callers in separate processes agree on one ID through a lock next to path.
+// The directory must pass the same owner and mode check as the audit
+// directory, and the file must be a regular file, not a link.
 func LoadOrCreateHostID(path string) (string, error) {
 	id, _, err := loadOrCreateHostID(path)
 	// TODO: write an audit record when the ID was repaired, once the shared
@@ -50,6 +53,10 @@ func LoadOrCreateHostID(path string) (string, error) {
 }
 
 func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
+	dir := filepath.Dir(path)
+	if err := checkDirMode(dir); err != nil {
+		return "", false, err
+	}
 	lock, err := newFlock(path + hostIDLockSuffix)
 	if err != nil {
 		return "", false, err
@@ -61,6 +68,10 @@ func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
 	id, err = readHostID(path)
 	switch {
 	case err == nil:
+		// An earlier call may have renamed the file and failed to sync.
+		if err := syncDirFunc(dir); err != nil {
+			return "", false, fmt.Errorf("sync host id directory: %w", err)
+		}
 		return id, false, nil
 	case errors.Is(err, fs.ErrNotExist):
 		id, err = publishHostID(path)
@@ -73,11 +84,17 @@ func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
 }
 
 func readHostID(path string) (string, error) {
-	f, err := os.Open(filepath.Clean(path))
+	if err := checkRegular(path); err != nil {
+		return "", err
+	}
+	f, err := os.OpenFile(filepath.Clean(path), os.O_RDONLY|noFollow|nonBlock, 0)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
+	if _, err := statRegular(f); err != nil {
+		return "", err
+	}
 	data, err := io.ReadAll(io.LimitReader(f, maxHostIDFileBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("read host id file: %w", err)
@@ -86,7 +103,7 @@ func readHostID(path string) (string, error) {
 		if id := strings.TrimSpace(string(data)); hostIDPattern.MatchString(id) {
 			return id, nil
 		}
-		if hostIDPartialPattern.MatchString(strings.Trim(string(data), "\x00 \t\r\n")) {
+		if hostIDPartialPattern.MatchString(strings.TrimFunc(string(data), isBlank)) {
 			return "", errHostIDPartial
 		}
 	}
@@ -110,11 +127,13 @@ func publishHostID(path string) (string, error) {
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return "", fmt.Errorf("publish host id file: %w", err)
 	}
-	if err := syncDir(dir); err != nil {
+	if err := syncDirFunc(dir); err != nil {
 		return "", fmt.Errorf("sync host id directory: %w", err)
 	}
 	return id, nil
 }
+
+func isBlank(r rune) bool { return r == 0 || unicode.IsSpace(r) }
 
 func writeSynced(f *os.File, content string) error {
 	_, err := f.WriteString(content)
