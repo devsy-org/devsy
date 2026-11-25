@@ -175,8 +175,9 @@ func (c *capacity) add(sess Session) {
 			c.oldest = sess
 		}
 	default:
-		// Legacy records without Started take no slot; no production data predates it.
-		if sess.Started {
+		// Legacy records lack Started: count them by state. A legacy reclaiming or
+		// orphaned record cannot show whether it ever started, so it takes no slot.
+		if sess.Started || sess.State.requiresStarted() {
 			c.active++
 		}
 	}

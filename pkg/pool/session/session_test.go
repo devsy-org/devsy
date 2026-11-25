@@ -74,6 +74,18 @@ func (s *SessionSuite) TestDecodeAllowsSequencedUnstartedReclaimPath() {
 	}
 }
 
+func (s *SessionSuite) TestDecodeRefusesStartedQueuedRecord() {
+	for _, seq := range []uint64{0, 1} {
+		sess := validSession()
+		sess.Seq, sess.Started = seq, true
+		data, err := json.Marshal(sess)
+		s.Require().NoError(err)
+		got, err := decode(data)
+		s.ErrorIs(err, errInvalidSession, "seq %d", seq)
+		s.Zero(got)
+	}
+}
+
 func (s *SessionSuite) TestInvalidAttemptsAreRefused() {
 	for _, edit := range []struct {
 		state    State

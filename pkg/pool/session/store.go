@@ -47,7 +47,9 @@ var (
 // a read never sees a write half done and Release waits for a call in flight.
 // Load and List need the live lock; a read-only inspector needs a separate
 // path. OpenStore removes regular files named .tmp-<digits> in the sessions and
-// keys directories while holding the lock.
+// keys directories while holding the lock. Records written with seq, started or
+// attempts are not readable by older code: a downgrade fails closed on them
+// instead of ignoring the fields and mis-counting capacity.
 type Store struct {
 	lock   *Lock
 	root   *os.Root
@@ -278,7 +280,7 @@ func (s *Store) transition(id string, from, to State, reason string) (Session, e
 	}
 	next := cur
 	next.State, next.Reason, next.Updated = to, reason, s.now().UTC()
-	if from == StateQueued && to == StateSpawning {
+	if from.requiresStarted() || (from == StateQueued && to == StateSpawning) {
 		next.Started = true
 	}
 	return s.replaceSession(next)

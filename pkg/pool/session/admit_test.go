@@ -112,6 +112,39 @@ func (s *StoreSuite) TestAdmitCapacityCountsStartedFailedReclaimingAndOrphanedUn
 	s.False(s.admit(canaryKey).Existing)
 }
 
+func (s *StoreSuite) TestLegacyStartedStatesHoldCapacityWithoutStartedFlag() {
+	s.store = s.openWith(Limits{MaxConcurrent: 4, MaxQueued: 1})
+	for i, state := range []State{StateSpawning, StateReady, StateBusy, StateIdle} {
+		legacy := validSession()
+		legacy.ID = "p-pool-" + strings.Repeat(string(rune('a'+i)), idSuffixLen)
+		legacy.State = state
+		s.writeSession(legacy)
+	}
+	useSource(s.T(), fixedReader{0xff})
+	queued := s.admit(canaryKey).Session
+	s.Equal(StateQueued, queued.State)
+	next, ok, err := s.store.Promote()
+	s.Require().NoError(err)
+	s.False(ok)
+	s.Zero(next)
+}
+
+func (s *StoreSuite) TestLegacyStartedSessionKeepsSlotWhenReclaimed() {
+	s.store = s.openWith(Limits{MaxConcurrent: 1, MaxQueued: 1})
+	legacy := validSession()
+	legacy.State = StateSpawning
+	s.writeSession(legacy)
+	s.admit("waiting")
+
+	reclaiming := s.move(legacy.ID, StateSpawning, StateReclaiming)
+	s.True(reclaiming.Started)
+	s.assertPoolFull()
+	next, ok, err := s.store.Promote()
+	s.Require().NoError(err)
+	s.False(ok)
+	s.Zero(next)
+}
+
 func (s *StoreSuite) TestLegacyReclaimingSessionDoesNotHoldCapacity() {
 	legacy := validSession()
 	legacy.State = StateReclaiming

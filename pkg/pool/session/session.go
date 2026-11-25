@@ -44,13 +44,22 @@ func (s Session) validate() error {
 		!strings.HasPrefix(s.ID, prefix),
 		len(s.ID) != len(prefix)+idSuffixLen,
 		!s.State.Known(),
-		s.Seq != 0 && !s.Started && s.State.requiresStarted(),
+		s.startedFlagInconsistent(),
 		s.Reason != "" && !reasonPattern.MatchString(s.Reason),
 		s.Created.IsZero(),
 		s.Updated.IsZero():
 		return errInvalidSession
 	}
 	return s.validateAttempts()
+}
+
+// startedFlagInconsistent reports a Started flag that contradicts the state.
+// Legacy records (Seq zero) predate the flag and may lack it in started states.
+func (s Session) startedFlagInconsistent() bool {
+	if s.Started {
+		return s.State == StateQueued
+	}
+	return s.Seq != 0 && s.State.requiresStarted()
 }
 
 func (s Session) validateAttempts() error {
