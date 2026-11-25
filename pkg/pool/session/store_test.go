@@ -61,7 +61,7 @@ func (s *StoreSuite) TestCreateNeverReplacesAnExistingSession() {
 	useSource(s.T(), fixedReader{0x00})
 	first := s.create()
 	before := s.snapshot()
-	got, err := s.store.Create()
+	got, err := s.store.create()
 	s.Require().ErrorIs(err, ErrExists)
 	s.Zero(got)
 	s.Equal(before, s.snapshot())
@@ -71,7 +71,7 @@ func (s *StoreSuite) TestCreateNeverReplacesAnExistingSession() {
 func (s *StoreSuite) TestCreateReturnsZeroSessionWhenEncodingFails() {
 	before := s.poolSnapshot()
 	s.clock = time.Time{}
-	got, err := s.store.Create()
+	got, err := s.store.create()
 	s.Require().ErrorIs(err, errInvalidSession)
 	s.Zero(got)
 	s.Equal(before, s.poolSnapshot())
@@ -80,19 +80,19 @@ func (s *StoreSuite) TestCreateReturnsZeroSessionWhenEncodingFails() {
 func (s *StoreSuite) TestTransitionWritesTheNewStateAndKeepsCreated() {
 	sess := s.create()
 	s.clock = s.clock.Add(time.Minute)
-	next, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	next, err := s.store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 	s.Require().NoError(err)
-	s.Equal(StateSpawning, next.State)
+	s.Equal(StateReclaiming, next.State)
 	s.True(next.Created.Equal(sess.Created))
 	s.True(next.Updated.Equal(s.clock))
 	got, err := s.store.Load(sess.ID)
 	s.Require().NoError(err)
 	s.Equal(next, got)
-	_, err = s.store.Transition(sess.ID, StateSpawning, StateFailed, "spawn_timeout")
+	_, err = s.store.Transition(sess.ID, StateReclaiming, StateOrphaned, "reclaim_timeout")
 	s.Require().NoError(err)
 	got, err = s.store.Load(sess.ID)
 	s.Require().NoError(err)
-	s.Equal("spawn_timeout", got.Reason)
+	s.Equal("reclaim_timeout", got.Reason)
 }
 
 func (s *StoreSuite) TestRefusedTransitionsLeaveTheFileByteIdentical() {
@@ -108,7 +108,7 @@ func (s *StoreSuite) TestRefusedTransitionsLeaveTheFileByteIdentical() {
 			return err
 		},
 		"bad reason": func() error {
-			_, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "free text")
+			_, err := s.store.Transition(sess.ID, StateQueued, StateReclaiming, "free text")
 			return err
 		},
 	}
@@ -127,7 +127,7 @@ func (s *StoreSuite) TestFailedPublishKeepsTheOldFileAndLeavesNoTempFile() {
 	sess := s.create()
 	before := s.snapshot()
 	s.stubRename(func(*os.Root, string, string) error { return errors.New("disk full") })
-	next, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	next, err := s.store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 	s.Require().ErrorContains(err, "disk full")
 	s.Zero(next)
 	s.Equal(before, s.snapshot())
@@ -139,12 +139,12 @@ func (s *StoreSuite) TestFailedPublishKeepsTheOldFileAndLeavesNoTempFile() {
 func (s *StoreSuite) TestMissingAndInvalidIDs() {
 	_, err := s.store.Load("p-pool-aaaaaaaaaa")
 	s.Require().ErrorIs(err, ErrNotFound)
-	_, err = s.store.Transition("p-pool-aaaaaaaaaa", StateQueued, StateSpawning, "")
+	_, err = s.store.Transition("p-pool-aaaaaaaaaa", StateQueued, StateReclaiming, "")
 	s.Require().ErrorIs(err, ErrNotFound)
 	for _, id := range []string{"", "../x", "p-pool-aaaaaaaaaa/../x", "p-pool-AAAAAAAAAA"} {
 		_, err = s.store.Load(id)
 		s.Require().ErrorIs(err, errInvalidID, id)
-		_, err = s.store.Transition(id, StateQueued, StateSpawning, "")
+		_, err = s.store.Transition(id, StateQueued, StateReclaiming, "")
 		s.Require().ErrorIs(err, errInvalidID, id)
 	}
 }
@@ -156,7 +156,7 @@ func (s *StoreSuite) TestTornTempFilesAreIgnored() {
 	s.Require().NoError(err)
 	s.Require().Len(list, 1)
 	s.Equal(sess, list[0])
-	_, err = s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	_, err = s.store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 	s.Require().NoError(err)
 }
 
@@ -303,7 +303,7 @@ func (s *StoreSuite) TestOpenStoreRefusesASessionsLinkToAnotherPool() {
 	other, err := OpenStore(elsewhere.SessionsDir(), storePool, foreign)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = other.Close() })
-	kept, err := other.Create()
+	kept, err := other.create()
 	s.Require().NoError(err)
 	before := dirNames(s, elsewhere.SessionsDir())
 
@@ -325,9 +325,9 @@ func (s *StoreSuite) TestWritesStopWhenThePoolPathLeadsElsewhere() {
 	s.Require().NoError(err, "the moved directory's lock file is a different file")
 	s.T().Cleanup(func() { _ = replacement.Release() })
 
-	_, err = s.store.Create()
+	_, err = s.store.create()
 	s.Require().ErrorIs(err, errLockNotHeld)
-	_, err = s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	_, err = s.store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 	s.Require().ErrorIs(err, errLockNotHeld)
 	_, err = OpenStore(s.dir, storePool, s.lock)
 	s.Require().ErrorIs(err, errLockNotHeld)
@@ -342,10 +342,10 @@ func (s *StoreSuite) TestWritesStopWhenThePoolPathLeadsElsewhere() {
 func (s *StoreSuite) TestWritesStopWhenThePoolLockFileIsReplaced() {
 	path := filepath.Join(s.layout.Dir(), lockName)
 	s.Require().NoError(os.Remove(path))
-	_, err := s.store.Create()
+	_, err := s.store.create()
 	s.Require().ErrorIs(err, errLockNotHeld, "removed")
 	s.Require().NoError(os.WriteFile(path, nil, fileMode))
-	_, err = s.store.Create()
+	_, err = s.store.create()
 	s.Require().ErrorIs(err, errLockNotHeld, "replaced by another file")
 	s.Empty(dirNames(s, s.dir))
 }
@@ -356,7 +356,7 @@ func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
 	s.Require().NoError(err)
 	store, err := OpenStore(layout.SessionsDir(), storePool, lock)
 	s.Require().NoError(err)
-	sess, err := store.Create()
+	sess, err := store.create()
 	s.Require().NoError(err)
 
 	entered, proceed := make(chan struct{}), make(chan struct{})
@@ -374,7 +374,7 @@ func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
 		return root.Rename(oldName, newName)
 	})
 	go func() {
-		_, err := store.Transition(sess.ID, StateQueued, StateSpawning, "")
+		_, err := store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 		writer <- err
 	}()
 	s.waitSignal(entered, "the write never reached the rename")
@@ -430,9 +430,9 @@ func (s *StoreSuite) TestStoreStopsWhenItsDirectoryMovesToAnotherPool() {
 	s.Require().NoError(os.Rename(s.dir, elsewhere.SessionsDir()))
 	before := dirNames(s, elsewhere.SessionsDir())
 
-	_, err = s.store.Create()
+	_, err = s.store.create()
 	s.Require().ErrorIs(err, errStoreMoved)
-	_, err = s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	_, err = s.store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 	s.Require().ErrorIs(err, errStoreMoved)
 	_, err = s.store.Load(sess.ID)
 	s.Require().ErrorIs(err, errStoreMoved)
@@ -444,13 +444,16 @@ func (s *StoreSuite) TestStoreStopsWhenItsDirectoryMovesToAnotherPool() {
 
 func (s *StoreSuite) TestReadsNeverFailWhileSessionsAreTransitioning() {
 	sess := s.create()
-	path := []State{StateSpawning, StateReady, StateBusy}
+	_, started, err := s.store.Promote(Limits{MaxConcurrent: 1})
+	s.Require().NoError(err)
+	s.Require().True(started)
+	path := []State{StateReady, StateBusy}
 	for range 100 {
 		path = append(path, StateIdle, StateBusy)
 	}
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		from := StateQueued
+		from := StateSpawning
 		for _, to := range path {
 			_, err := s.store.Transition(sess.ID, from, to, "")
 			s.NoError(err)
@@ -482,9 +485,9 @@ func (s *StoreSuite) TestWritesStopWhenTheLockIsReleased() {
 	sess := s.create()
 	before := s.snapshot()
 	s.Require().NoError(s.lock.Release())
-	_, err := s.store.Create()
+	_, err := s.store.create()
 	s.Require().ErrorIs(err, errLockNotHeld)
-	_, err = s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	_, err = s.store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 	s.Require().ErrorIs(err, errLockNotHeld)
 	s.Equal(before, s.snapshot())
 	_, err = s.store.Load(sess.ID)
@@ -503,7 +506,7 @@ func (s *StoreSuite) TestReleaseWaitsForWritesInFlightAndStopsTheRest() {
 	for range 4 {
 		wg.Go(func() {
 			for range 50 {
-				_, err := s.store.Create()
+				_, err := s.store.create()
 				errs <- err
 				once.Do(func() { close(started) })
 			}
@@ -546,7 +549,7 @@ func (s *StoreSuite) TestOpenStoreDoesNotRemoveAWritersTempFile() {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for range 200 {
-			_, err := s.store.Create()
+			_, err := s.store.create()
 			s.NoError(err)
 		}
 	})
@@ -565,7 +568,7 @@ func (s *StoreSuite) TestRacingTransitionsHaveOneWinner() {
 	results := make(chan error, 16)
 	for range 16 {
 		wg.Go(func() {
-			_, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+			_, err := s.store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 			results <- err
 		})
 	}
@@ -593,12 +596,12 @@ func (s *StoreSuite) TestTwoStoresOnOneDirectoryTakeTurns() {
 		var wg sync.WaitGroup
 		results := make(chan error, 8)
 		for i := range 8 {
-			store, to := s.store, StateSpawning
+			store := s.store
 			if i%2 == 1 {
-				store, to = other, StateReclaiming
+				store = other
 			}
 			wg.Go(func() {
-				_, err := store.Transition(sess.ID, StateQueued, to, "")
+				_, err := store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 				results <- err
 			})
 		}
@@ -620,7 +623,7 @@ func (s *StoreSuite) TestConcurrentCreatesMakeDistinctSessions() {
 	var wg sync.WaitGroup
 	for range 40 {
 		wg.Go(func() {
-			_, err := s.store.Create()
+			_, err := s.store.create()
 			s.NoError(err)
 		})
 	}
@@ -683,7 +686,7 @@ func (s *StoreSuite) open() *Store {
 }
 
 func (s *StoreSuite) create() Session {
-	sess, err := s.store.Create()
+	sess, err := s.store.create()
 	s.Require().NoError(err)
 	return sess
 }

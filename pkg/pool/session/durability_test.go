@@ -169,7 +169,7 @@ func (s *StoreSuite) TestCreateSyncsKeysBeforeChoosingAnID() {
 
 	useSource(s.T(), fixedReader{0})
 	synced = nil
-	got, err := s.store.Create()
+	got, err := s.store.create()
 	s.Require().ErrorIs(err, errInjectedIO)
 	s.Zero(got)
 	s.Equal([]*os.Root{s.store.keys}, synced)
@@ -177,7 +177,7 @@ func (s *StoreSuite) TestCreateSyncsKeysBeforeChoosingAnID() {
 
 	fail = false
 	synced = nil
-	_, err = s.store.Create()
+	_, err = s.store.create()
 	s.Require().NoError(err)
 	s.Equal(s.store.keys, synced[0])
 }
@@ -197,7 +197,7 @@ func (s *StoreSuite) TestCreateSyncsKeysAfterAnExpiredReservationIsReplaced() {
 	s.Zero(got)
 
 	useSource(s.T(), fixedReader{0})
-	created, err := s.store.Create()
+	created, err := s.store.create()
 	s.Require().ErrorIs(err, errInjectedIO)
 	s.Zero(created)
 	s.Empty(s.names())

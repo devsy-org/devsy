@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -77,7 +78,11 @@ func (s *StoreSuite) TestAdmitAndPromoteValidateLimits() {
 func (s *StoreSuite) TestAdmitCapacityCountsFailedAndOrphanedUntilDeleted() {
 	lim := Limits{MaxConcurrent: 2, MaxQueued: 1}
 	first := s.admit("first", lim).Session
-	s.move(first.ID, StateQueued, StateSpawning, StateFailed)
+	started, ok, err := s.store.Promote(lim)
+	s.Require().NoError(err)
+	s.Require().True(ok)
+	s.Equal(first.ID, started.ID)
+	s.move(first.ID, StateSpawning, StateFailed)
 	second := s.admit("second", lim).Session
 	s.move(second.ID, StateQueued, StateReclaiming, StateOrphaned)
 	s.admit("third", lim)
@@ -97,6 +102,46 @@ func (s *StoreSuite) TestAdmitCapacityCountsFailedAndOrphanedUntilDeleted() {
 	s.False(s.admit(canaryKey, lim).Existing)
 	s.move(second.ID, StateOrphaned, StateDeleted)
 	s.False(s.admit("fifth", lim).Existing)
+}
+
+func (s *StoreSuite) TestTransitionCannotBypassPromotionLimit() {
+	lim := Limits{MaxConcurrent: 1, MaxQueued: 1}
+	first := s.admit("first", lim).Session
+	s.clock = s.clock.Add(time.Second)
+	waiting := s.admit("waiting", lim).Session
+	before := s.snapshot()
+	for range 5 {
+		next, err := s.store.Transition(waiting.ID, StateQueued, StateSpawning, "")
+		s.Require().ErrorIs(err, ErrUsePromote)
+		s.Zero(next)
+		s.Equal(before, s.snapshot())
+	}
+
+	started, ok, err := s.store.Promote(lim)
+	s.Require().NoError(err)
+	s.Require().True(ok)
+	s.Equal(first.ID, started.ID)
+	s.Equal(StateSpawning, started.State)
+	next, ok, err := s.store.Promote(lim)
+	s.Require().NoError(err)
+	s.False(ok)
+	s.Zero(next)
+	got, err := s.store.Load(waiting.ID)
+	s.Require().NoError(err)
+	s.Equal(waiting, got)
+}
+
+func (s *StoreSuite) TestStoreDoesNotExposeCapacityFreeCreation() {
+	_, exported := reflect.TypeFor[*Store]().MethodByName("Create")
+	s.False(exported)
+}
+
+func (s *StoreSuite) TestTransitionRefusesStartingWithoutCheckingTheLock() {
+	sess := s.create()
+	s.Require().NoError(s.lock.Release())
+	next, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	s.Require().ErrorIs(err, ErrUsePromote)
+	s.Zero(next)
 }
 
 func (s *StoreSuite) TestPromoteUsesCreatedThenIDAndRespectsActiveLimit() {

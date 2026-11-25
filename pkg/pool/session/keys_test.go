@@ -125,7 +125,7 @@ func (s *StoreSuite) TestNewIDsFailClosedWhenUnrelatedKeyIsInvalid() {
 	name := keyFile("alpha")
 	s.Require().NoError(s.store.keys.WriteFile(name, []byte(`{"v":1}`), fileMode))
 	before := s.poolSnapshot()
-	created, err := s.store.Create()
+	created, err := s.store.create()
 	s.Require().ErrorIs(err, errInvalidKeyRecord)
 	s.Zero(created)
 	got, err := s.store.Admit("beta", Limits{MaxConcurrent: 2})

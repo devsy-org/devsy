@@ -20,5 +20,8 @@ func TestStoreAndLockRefuseOnWindows(t *testing.T) {
 	lock, err := layout.Lock()
 	require.ErrorIs(t, err, errWindowsUnsupported)
 	require.Nil(t, lock)
+	sess, err := (&Store{}).create()
+	require.ErrorIs(t, err, errLockNotHeld)
+	require.Zero(t, sess)
 	require.NoDirExists(t, filepath.Join(root, "pool"), "a refused call creates no directory")
 }

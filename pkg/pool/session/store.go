@@ -29,6 +29,7 @@ var (
 	ErrExists            = errors.New("session already exists")
 	ErrStateConflict     = errors.New("session is not in the expected state")
 	ErrIllegalTransition = errors.New("session state transition is not allowed")
+	ErrUsePromote        = errors.New("a queued session starts only through Promote")
 
 	errUnexpectedEntry = errors.New("unexpected entry in the record directory")
 	errLockNotHeld     = errors.New("the pool lock is not held")
@@ -97,21 +98,6 @@ func openLockedStore(lock *Lock, pool string) (*Store, error) {
 // Close releases both directory roots. It does not release the lock.
 func (s *Store) Close() error { return errors.Join(s.root.Close(), s.keys.Close()) }
 
-// Create writes a queued session without reserving an idempotency key or checking capacity.
-// Production requests go through Admit.
-func (s *Store) Create() (Session, error) {
-	unlock, err := s.hold()
-	if err != nil {
-		return Session{}, err
-	}
-	defer unlock()
-	id, err := s.freshID()
-	if err != nil {
-		return Session{}, err
-	}
-	return s.createQueued(id, s.now().UTC())
-}
-
 // Load reads one session.
 func (s *Store) Load(id string) (Session, error) {
 	unlock, err := s.hold()
@@ -133,19 +119,37 @@ func (s *Store) List() ([]Session, error) {
 	return s.list()
 }
 
-// Transition moves a session from one state to another. It refuses an edge
-// the state machine does not allow, and a session that is not in from. On any
-// error the file on disk is unchanged, except that a failed directory sync
+// Transition moves a session from one state to another. It refuses a move
+// from queued to spawning; use Promote for that edge. It also refuses an
+// illegal edge or a session that is not in from. On error the file on disk
+// is unchanged, except that a failed directory sync
 // after the rename may leave the new state on disk. A caller must treat an
 // error as "state unknown" and reload, not retry blindly.
-// Production requests go through Promote for queued-to-spawning moves to enforce the active limit.
 func (s *Store) Transition(id string, from, to State, reason string) (Session, error) {
+	if from == StateQueued && to == StateSpawning {
+		return Session{}, ErrUsePromote
+	}
 	unlock, err := s.hold()
 	if err != nil {
 		return Session{}, err
 	}
 	defer unlock()
 	return s.transition(id, from, to, reason)
+}
+
+// create writes a queued session without reserving an idempotency key or checking capacity.
+// Production requests go through Admit.
+func (s *Store) create() (Session, error) {
+	unlock, err := s.hold()
+	if err != nil {
+		return Session{}, err
+	}
+	defer unlock()
+	id, err := s.freshID()
+	if err != nil {
+		return Session{}, err
+	}
+	return s.createQueued(id, s.now().UTC())
 }
 
 // freshID picks an ID no session file or key record holds. The key directory

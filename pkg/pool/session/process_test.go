@@ -147,24 +147,13 @@ func admitUnderLock(layout Layout, lock *Lock) int {
 // moveQueued moves up to perRound queued sessions and reports whether more
 // are left.
 func moveQueued(store *Store) (int, bool, error) {
-	list, err := store.List()
-	if err != nil {
-		return 0, false, err
-	}
-	wins := 0
-	for _, sess := range list {
-		if sess.State != StateQueued {
-			continue
-		}
-		if wins == perRound {
-			return wins, true, nil
-		}
-		if _, err := store.Transition(sess.ID, StateQueued, StateSpawning, ""); err != nil {
+	for wins := range perRound {
+		_, ok, err := store.Promote(Limits{MaxConcurrent: 2 * helperSessions})
+		if err != nil || !ok {
 			return wins, false, err
 		}
-		wins++
 	}
-	return wins, false, nil
+	return perRound, true, nil
 }
 
 type ProcessSuite struct {
@@ -218,17 +207,16 @@ func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 	store, err := OpenStore(s.layout.SessionsDir(), helperPool, lock)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = store.Close() })
-	var created []Session
 	for range helperSessions {
-		sess, err := store.Create()
+		_, err := store.create()
 		s.Require().NoError(err)
-		created = append(created, sess)
 	}
 
 	contenders := s.start("contend", helperProcs)
-	for _, sess := range created {
-		_, err := store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	for range helperSessions {
+		_, ok, err := store.Promote(Limits{MaxConcurrent: helperSessions})
 		s.Require().NoError(err, "no other process may touch a session the holder owns")
+		s.Require().True(ok)
 	}
 	for _, line := range s.wait(contenders) {
 		s.Equal("refused "+strconv.Itoa(contendTries), line)
@@ -241,7 +229,7 @@ func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 	}
 
 	for range helperSessions {
-		_, err := store.Create()
+		_, err := store.create()
 		s.Require().NoError(err)
 	}
 	s.Require().NoError(store.Close())
