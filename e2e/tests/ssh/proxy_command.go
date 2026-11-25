@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -160,7 +159,7 @@ const (
 )
 
 func proxyCommandExcerpt(redactor *redact.Redactor, text string) string {
-	quoted := strconv.QuoteToASCII(diagnosticredact.Record(redactor, text))
+	quoted := strconv.QuoteToASCII(framework.ReportText(redactor, text))
 	if len(quoted) <= proxyCommandExcerptLimit {
 		return quoted
 	}

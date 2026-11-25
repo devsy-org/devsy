@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -87,7 +86,7 @@ var _ = ginkgo.Describe(
 				)
 				ginkgo.GinkgoWriter.Printf(
 					"session A stderr: %s\n",
-					diagnosticredact.Record(redactor, errA),
+					framework.ReportText(redactor, errA),
 				)
 				framework.ExpectNoError(err)
 				s1 := strings.TrimSpace(outA)
@@ -120,7 +119,7 @@ var _ = ginkgo.Describe(
 				)
 				ginkgo.GinkgoWriter.Printf(
 					"session B explicit-S1 stderr: %s\n",
-					diagnosticredact.Record(redactor, errB),
+					framework.ReportText(redactor, errB),
 				)
 				framework.ExpectNoError(err, "session B: socket from session A must still work")
 				expectSSHSubstring(

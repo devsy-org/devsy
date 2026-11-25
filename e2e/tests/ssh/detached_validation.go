@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -87,7 +86,7 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 			}
 			redactor := redact.New(redact.Options{Environment: detachedValidationEnvironment(home)})
 			gomega.Expect(err).NotTo(gomega.HaveOccurred(), "CLI output: %s",
-				diagnosticredact.Record(redactor, out),
+				framework.ReportText(redactor, out),
 			)
 			var envelope struct {
 				Kind string `json:"kind"`

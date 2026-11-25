@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
@@ -666,13 +665,13 @@ func buildTildeSigningScript(privKeyBase64, pubKey string) string {
 
 func reportSSHCommandOutput(label, stdout, stderr string) {
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
-	ginkgo.GinkgoWriter.Printf("%s stdout: %s\n", label, diagnosticredact.Record(redactor, stdout))
-	ginkgo.GinkgoWriter.Printf("%s stderr: %s\n", label, diagnosticredact.Record(redactor, stderr))
+	ginkgo.GinkgoWriter.Printf("%s stdout: %s\n", label, framework.ReportText(redactor, stdout))
+	ginkgo.GinkgoWriter.Printf("%s stderr: %s\n", label, framework.ReportText(redactor, stderr))
 }
 
 func sshDiagnostic(value string) string {
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
-	return diagnosticredact.Record(redactor, value)
+	return framework.ReportText(redactor, value)
 }
 
 func expectSSHSubstring(output, fragment, description string, present bool) {

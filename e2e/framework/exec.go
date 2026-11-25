@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/livetee"
@@ -154,7 +153,7 @@ func captureCommandOutput(
 
 func externalCommandDiagnostic(value string) string {
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
-	return diagnosticredact.Record(redactor, maskRecordText(redactor, value))
+	return ReportText(redactor, value)
 }
 
 // ExecCommandJSON runs the devsy test binary and decodes its stdout as a JSON object.

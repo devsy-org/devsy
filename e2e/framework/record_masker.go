@@ -192,3 +192,9 @@ func maskRecordText(redactor *redact.Redactor, value string) string {
 	masker.finish()
 	return out.String()
 }
+
+// ReportText masks value for failure reports. JSON records are masked first
+// because the whole-buffer scan misses records mixed with log lines.
+func ReportText(redactor *redact.Redactor, value string) string {
+	return diagnosticredact.Record(redactor, maskRecordText(redactor, value))
+}

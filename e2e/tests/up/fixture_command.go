@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
@@ -64,7 +64,7 @@ func remoteAgentRemovalError(output string, err error) error {
 
 func fixtureDiagnostic(env []string, value string) string {
 	redactor := redact.New(redact.Options{Environment: append(os.Environ(), env...)})
-	return diagnosticredact.Record(redactor, value)
+	return framework.ReportText(redactor, value)
 }
 
 // expectFixtureOutput fails the spec when ok is false and prints only the redacted output.
