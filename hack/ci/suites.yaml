@@ -160,6 +160,13 @@ unit:
       require_tests: [TestWSLgSuite, TestWSLgPreflightBeforeWorkspaceProvisioning]
       args: [-race, -count=1, -timeout=5m]
 
+    - name: windows-pool-audit
+      description: native Windows refusal of the pool audit store, reader and writer
+      os: [windows]
+      packages: [./pkg/pool/audit]
+      require_tests: [TestOpenRefusesOnWindows, TestOpenReaderRefusesWindows, TestWriterCannotBeBuiltOnWindows]
+      args: [-race, -count=1, -timeout=5m]
+
     - name: ci-tooling-windows
       description: Go CI helpers that also run on Windows
       os: [windows]
