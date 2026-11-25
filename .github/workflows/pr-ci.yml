@@ -309,6 +309,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
       - uses: ./.github/actions/relocate-tmp
       - name: setup Go
         id: go
@@ -370,6 +371,7 @@ jobs:
       NATIVE_CREDENTIAL_TESTS: ${{ matrix.os == 'darwin' && needs.changes.outputs.gh_credentials == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
 
       - uses: ./.github/actions/relocate-tmp
 
@@ -496,19 +498,11 @@ jobs:
             go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
             go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
 
-      # golang/go#81238 corrupts the heap only on hosts that enable AMX
-      # (XTILEDATA), so every run records the host features next to its result.
-      - name: record toolchain, runner image and CPU features
+      - uses: ./.github/actions/host-features
+
+      - name: record Go version
         shell: pwsh
-        run: |
-          go version
-          "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
-          $os = Get-CimInstance Win32_OperatingSystem
-          "Windows $($os.Caption) $($os.Version) build $($os.BuildNumber)"
-          Get-CimInstance Win32_Processor | ForEach-Object { "CPU $($_.Name)" }
-          Add-Type -Namespace Native -Name Kernel32 -MemberDefinition '[DllImport("kernel32.dll")] public static extern ulong GetEnabledXStateFeatures();'
-          $mask = [uint64][Native.Kernel32]::GetEnabledXStateFeatures()
-          "XSTATE features=0x{0:x} XTILECFG={1} XTILEDATA={2}" -f $mask, (($mask -band [uint64]0x20000) -ne 0), (($mask -band [uint64]0x40000) -ne 0)
+        run: go version
 
       - name: enable Windows Error Reporting dumps for test binaries
         shell: pwsh
@@ -575,6 +569,7 @@ jobs:
     timeout-minutes: ${{ matrix.job_timeout_minutes || 20 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
 
       - uses: ./.github/actions/relocate-tmp
 
@@ -984,6 +979,7 @@ jobs:
           large-packages: false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
 
       - name: install gnupg2
         if: matrix.os == 'linux'
