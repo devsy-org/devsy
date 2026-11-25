@@ -190,36 +190,33 @@ func (t *Tee) enqueue(p []byte, live io.Writer) {
 	t.signal()
 }
 
-// admit queues a prefix of p and returns its length. Past the byte bound the
-// prefix is counted as dropped, so a slow writer never blocks the command.
+// admit consumes a prefix of p and returns its length. Bytes past the queue
+// bound are counted as dropped, so a slow writer never blocks the command. The
+// bound covers payload only, not chunk records.
 func (t *Tee) admit(p []byte, live io.Writer) int {
-	if n := t.coalesce(p, live); n > 0 {
-		return n
-	}
 	n := min(len(p), chunkSize)
-	if t.queued+int64(n) > maxQueuedBytes {
-		t.dropped += int64(n)
-		return n
+	keep := int(min(int64(n), maxQueuedBytes-t.queued))
+	t.dropped += int64(n - keep)
+	if keep > 0 {
+		t.store(p[:keep], live)
 	}
-	t.pending = append(t.pending, chunk{data: append([]byte(nil), p[:n]...), live: live})
-	t.queued += int64(n)
 	return n
 }
 
-// coalesce appends to the tail chunk, which the drain has not taken yet, so
-// bursts of small writes cost bytes, not queue slots.
-func (t *Tee) coalesce(p []byte, live io.Writer) int {
-	if len(t.pending) == 0 {
-		return 0
+// store extends the tail chunk, which the drain has not taken yet, so bursts
+// of small writes cost bytes, not queue slots.
+func (t *Tee) store(p []byte, live io.Writer) {
+	t.queued += int64(len(p))
+	if len(t.pending) > 0 {
+		tail := &t.pending[len(t.pending)-1]
+		if n := min(chunkSize-len(tail.data), len(p)); n > 0 && sameWriter(tail.live, live) {
+			tail.data = append(tail.data, p[:n]...)
+			p = p[n:]
+		}
 	}
-	tail := &t.pending[len(t.pending)-1]
-	n := min(chunkSize-len(tail.data), len(p))
-	if n <= 0 || !sameWriter(tail.live, live) || t.queued+int64(n) > maxQueuedBytes {
-		return 0
+	if len(p) > 0 {
+		t.pending = append(t.pending, chunk{data: append([]byte(nil), p...), live: live})
 	}
-	tail.data = append(tail.data, p[:n]...)
-	t.queued += int64(n)
-	return n
 }
 
 func sameWriter(a, b io.Writer) bool {

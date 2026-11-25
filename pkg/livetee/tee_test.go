@@ -33,6 +33,47 @@ func (w *blockedWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+type sliceWriter struct{ buf []byte }
+
+func (w sliceWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+type anyWriter struct{ v any }
+
+func (w anyWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+func (s *teeSuite) TestNonComparableWritersDoNotPanic() {
+	blocked := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	tee := New(io.Discard, nil)
+	_, err := tee.Writer(blocked).Write([]byte("x"))
+	s.Require().NoError(err)
+	s.waitEntered(blocked)
+	for _, live := range []io.Writer{sliceWriter{[]byte("a")}, anyWriter{[]int{1}}} {
+		for range 2 {
+			_, err = tee.Writer(live).Write([]byte("y"))
+			s.Require().NoError(err)
+		}
+	}
+	close(blocked.release)
+	s.Require().NoError(tee.Finish())
+}
+
+func (s *teeSuite) TestOverflowDropsOnlyTheExcess() {
+	w := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	tee := New(io.Discard, w)
+	_, err := tee.Write([]byte("x"))
+	s.Require().NoError(err)
+	s.waitEntered(w)
+	_, err = tee.Write(make([]byte, maxQueuedBytes))
+	s.Require().NoError(err)
+	tee.mu.Lock()
+	dropped, queued := tee.dropped, tee.queued
+	tee.mu.Unlock()
+	s.Equal(int64(1), dropped)
+	s.Equal(int64(maxQueuedBytes), queued)
+	close(w.release)
+	s.Equal(int64(1), tee.Close())
+}
+
 func (s *teeSuite) TestBlockedDropsAndReleases() {
 	w := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
 	var captured bytes.Buffer
@@ -103,7 +144,7 @@ func (s *teeSuite) TestOrderAcrossWritersIsPreserved() {
 	tee := New(io.Discard, nil)
 	_, err := tee.Writer(blocked).Write([]byte("x"))
 	s.Require().NoError(err)
-	<-blocked.entered
+	s.waitEntered(blocked)
 	for i := range 6 {
 		w := a
 		if i%3 == 2 {
@@ -122,7 +163,7 @@ func (s *teeSuite) TestStalledWriterDropsPastByteBoundAndCountsBytes() {
 	tee := New(io.Discard, w)
 	_, err := tee.Write([]byte("first"))
 	s.Require().NoError(err)
-	<-w.entered
+	s.waitEntered(w)
 	total := int64(len("first"))
 	for range maxQueuedBytes / 2 {
 		_, err = tee.Write([]byte("abcd"))
@@ -270,5 +311,13 @@ func (s *teeSuite) TestBlockedCloseHookIsBounded() {
 	case <-tee.done:
 	case <-time.After(5 * time.Second):
 		s.FailNow("close hook did not finish")
+	}
+}
+
+func (s *teeSuite) waitEntered(w *blockedWriter) {
+	select {
+	case <-w.entered:
+	case <-time.After(5 * time.Second):
+		s.FailNow("writer not entered")
 	}
 }
