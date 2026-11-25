@@ -61,19 +61,21 @@ func NewWriter(store *Store, cfg WriterConfig) (*Writer, error) {
 // Write appends an event, including local-only events. On error the caller
 // must refuse the action. A store sync failure may leave the record on disk.
 func (w *Writer) Write(e Event) error {
-	switch {
-	case !slices.Contains(envelope.AuditTypes(), e.Type):
-		return errors.New("write audit event: unregistered type")
-	case envelope.AuditTypeRequiresSession(e.Type) && e.Session == "":
-		return fmt.Errorf("write audit event %s: session is required", e.Type)
-	case !e.Actor.Kind.Known():
-		return fmt.Errorf("write audit event %s: unknown actor kind", e.Type)
+	if err := checkEvent(e); err != nil {
+		return err
+	}
+	if e.Data == nil {
+		e.Data = map[string]any{}
 	}
 	// Validator and JSON errors can contain raw event values.
 	if err := w.cfg.Validate(e.Type, e.Data); err != nil {
 		return fmt.Errorf("write audit event %s: data validation failed", e.Type)
 	}
-	line, err := json.Marshal(w.envelope(e))
+	id := w.cfg.NewID()
+	if id == "" {
+		return fmt.Errorf("write audit event %s: id is empty", e.Type)
+	}
+	line, err := json.Marshal(w.envelope(e, id))
 	if err != nil {
 		return fmt.Errorf("write audit event %s: marshal envelope failed", e.Type)
 	}
@@ -83,12 +85,24 @@ func (w *Writer) Write(e Event) error {
 	return nil
 }
 
-func (w *Writer) envelope(e Event) envelope.Envelope {
+func checkEvent(e Event) error {
+	switch {
+	case !slices.Contains(envelope.AuditTypes(), e.Type):
+		return errors.New("write audit event: unregistered type")
+	case envelope.AuditTypeRequiresSession(e.Type) && e.Session == "":
+		return fmt.Errorf("write audit event %s: session is required", e.Type)
+	case !e.Actor.Kind.Known():
+		return fmt.Errorf("write audit event %s: unknown actor kind", e.Type)
+	}
+	return nil
+}
+
+func (w *Writer) envelope(e Event, id string) envelope.Envelope {
 	return envelope.Envelope{
 		V:             envelope.Version,
 		Kind:          envelope.KindAudit,
 		Type:          e.Type,
-		ID:            w.cfg.NewID(),
+		ID:            id,
 		TS:            envelope.FormatTime(w.cfg.Now()),
 		Src:           "pool",
 		TraceID:       e.TraceID,

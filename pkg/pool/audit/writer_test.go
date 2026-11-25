@@ -167,6 +167,39 @@ func (s *WriterSuite) TestRefusesMarshalErrorWithoutLeakingValues() {
 	s.Empty(s.lines())
 }
 
+func (s *WriterSuite) TestNilDataIsValidatedAndWrittenAsAnEmptyObject() {
+	event := writerTestEvent(envelope.AuditSessionRequest)
+	event.Data = nil
+	s.cfg.Validate = func(_ string, data map[string]any) error {
+		s.NotNil(data, "the validator must see an empty map, not nil")
+		return nil
+	}
+	s.Require().NoError(s.writer().Write(event))
+	lines := s.lines()
+	s.Require().Len(lines, 1)
+	s.Contains(lines[0], `"data":{}`)
+}
+
+func (s *WriterSuite) TestRefusesAnEmptyID() {
+	s.cfg.NewID = func() string { return "" }
+	err := s.writer().Write(writerTestEvent(envelope.AuditSessionRequest))
+	s.ErrorContains(err, "id is empty")
+	s.Empty(s.lines())
+}
+
+func (s *WriterSuite) TestValidatorSeesEveryRegisteredType() {
+	var seen []string
+	s.cfg.Validate = func(typ string, _ map[string]any) error {
+		seen = append(seen, typ)
+		return nil
+	}
+	w := s.writer()
+	for _, typ := range envelope.AuditTypes() {
+		s.Require().NoError(w.Write(writerTestEvent(typ)), typ)
+	}
+	s.Equal(envelope.AuditTypes(), seen)
+}
+
 func (s *WriterSuite) TestRefusesIncompleteConfig() {
 	for field, clearField := range map[string]func(*WriterConfig){
 		"pool":           func(c *WriterConfig) { c.Pool = "" },
