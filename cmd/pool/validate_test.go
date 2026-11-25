@@ -46,6 +46,7 @@ func (s *ValidateCmdSuite) TestPlainOutput() {
 	s.Require().NoError(cmd.Run(&out))
 	s.Contains(out.String(), "pool demo is valid")
 	s.Contains(out.String(), "policy version: sha256:")
+	s.Contains(out.String(), "config version: sha256:")
 }
 
 func (s *ValidateCmdSuite) TestJSONOutput() {
@@ -56,6 +57,8 @@ func (s *ValidateCmdSuite) TestJSONOutput() {
 	s.Require().NoError(json.Unmarshal(out.Bytes(), &got))
 	s.Equal("demo", got.Name)
 	s.Regexp(`^sha256:[0-9a-f]{64}$`, got.PolicyVersion)
+	s.Regexp(`^sha256:[0-9a-f]{64}$`, got.ConfigVersion)
+	s.NotEqual(got.PolicyVersion, got.ConfigVersion)
 }
 
 func (s *ValidateCmdSuite) TestInvalidFileFails() {

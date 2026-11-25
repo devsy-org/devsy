@@ -28,7 +28,7 @@ var (
 		"true": true, "True": true, "TRUE": true,
 		"false": false, "False": false, "FALSE": false,
 	}
-	decimalPattern = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
+	decimalPattern = regexp.MustCompile(`^(0|-?[1-9][0-9]*)$`)
 )
 
 // fieldPath locates a node. key holds map keys as written, for the line

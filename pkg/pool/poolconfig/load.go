@@ -2,8 +2,6 @@ package poolconfig
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,13 +20,21 @@ const (
 	defaultTTL          = 8 * time.Hour
 	defaultJobTimeout   = 2 * time.Hour
 	defaultRetainDays   = 30
+	maxFileSize         = 1 << 20
 )
+
+var errFileTooLarge = fmt.Errorf("pool config is larger than %d bytes", maxFileSize)
 
 var yamlLinePattern = regexp.MustCompile(`^(?:error converting YAML to JSON: )?yaml: line (\d+):`)
 
 // Load reads, defaults and validates a pool.yaml file.
 func Load(path string) (*Pool, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is the pool file the operator named
+	f, err := os.Open(path) //nolint:gosec // path is the pool file the operator named
+	if err != nil {
+		return nil, fmt.Errorf("read pool config: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, maxFileSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read pool config: %w", err)
 	}
@@ -38,6 +44,9 @@ func Load(path string) (*Pool, error) {
 // Parse decodes pool.yaml content, rejecting unknown fields, then applies
 // defaults and validates the result. Errors give the line where one exists.
 func Parse(data []byte) (*Pool, error) {
+	if len(data) > maxFileSize {
+		return nil, errFileTooLarge
+	}
 	tree, lines, err := decodeDocument(data)
 	if err != nil {
 		return nil, fmt.Errorf("parse pool config: %w", err)
@@ -55,17 +64,6 @@ func Parse(data []byte) (*Pool, error) {
 		return nil, err
 	}
 	return &p, nil
-}
-
-// PolicyVersion hashes the defaulted pool, so files that differ only in
-// formatting, key order or spelled-out defaults share a version.
-func (p *Pool) PolicyVersion() (string, error) {
-	data, err := json.Marshal(p)
-	if err != nil {
-		return "", fmt.Errorf("encode pool config: %w", err)
-	}
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
 func (p *Pool) ApplyDefaults() {

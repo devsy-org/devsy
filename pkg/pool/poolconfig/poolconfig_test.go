@@ -1,6 +1,8 @@
 package poolconfig
 
 import (
+	"encoding/json"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -64,14 +66,143 @@ spec:
 }
 
 func (s *PoolConfigSuite) TestPolicyVersionChangesWithPolicy() {
+	for name, mutate := range map[string]func(*Pool){
+		"egress": func(p *Pool) { allow(p, AllowRule{Host: "x.example.com", Ports: []int{443}}) },
+		"env":    func(p *Pool) { setAgent(p, func(a *Agent) { a.Env["MODE"] = "fast" }) },
+		"repo":   func(p *Pool) { p.Spec.Source.Repo = "https://github.com/acme/web" },
+		"ttl":    func(p *Pool) { p.Spec.Lifecycle.TTL = dur(time.Hour) },
+		"idle":   func(p *Pool) { p.Spec.Lifecycle.IdleTimeout = dur(time.Minute) },
+		"job":    func(p *Pool) { p.Spec.Lifecycle.JobTimeout = dur(time.Minute) },
+		"spawn":  func(p *Pool) { p.Spec.Lifecycle.SpawnTimeout = dur(time.Minute) },
+		"perm":   func(p *Pool) { p.Spec.Credentials[0].GitHubApp.Scope.Permissions["issues"] = permRead },
+	} {
+		policy, config := s.versions(s.loadExample())
+		p := s.loadExample()
+		mutate(p)
+		newPolicy, newConfig := s.versions(p)
+		s.NotEqual(policy, newPolicy, name)
+		s.NotEqual(config, newConfig, name)
+		s.Regexp(`^sha256:[0-9a-f]{64}$`, newPolicy)
+	}
+}
+
+func (s *PoolConfigSuite) TestOperationalChangesKeepPolicyVersion() {
+	for name, mutate := range map[string]func(*Pool){
+		"capacity":  func(p *Pool) { p.Spec.Capacity.MaxQueued++ },
+		"audit dir": func(p *Pool) { p.Spec.Audit.Dir = "/var/log/pool" },
+		"retain":    func(p *Pool) { p.Spec.Audit.RetainDays++ },
+		"name":      func(p *Pool) { p.Metadata.Name = "other" },
+	} {
+		policy, config := s.versions(s.loadExample())
+		p := s.loadExample()
+		mutate(p)
+		newPolicy, newConfig := s.versions(p)
+		s.Equal(policy, newPolicy, name)
+		s.NotEqual(config, newConfig, name)
+	}
+}
+
+func (s *PoolConfigSuite) TestVersionsIgnoreSetOrderAndDuplicates() {
+	policy, config := s.versions(s.loadExample())
 	p := s.loadExample()
-	before, err := p.PolicyVersion()
+	p.Spec.Egress.Allow[2].Ports = []int{22, 443, 22}
+	c := &p.Spec.Credentials[0]
+	c.Deliver = []string{DeliverGHEnv, DeliverGitHelper, DeliverGHEnv}
+	c.GitHubApp.Scope.Repositories = []string{repoWeb, "ACME/API", repoWeb}
+	setAgent(p, func(a *Agent) { a.Credentials = []string{credAnthropic, credGitHub, credGitHub} })
+	q := s.loadExample()
+	q.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{repoAPI, repoWeb}
+	wantPolicy, wantConfig := s.versions(q)
+	gotPolicy, gotConfig := s.versions(p)
+	s.Equal(wantPolicy, gotPolicy)
+	s.Equal(wantConfig, gotConfig)
+	s.NotEqual(policy, gotPolicy)
+	s.NotEqual(config, gotConfig)
+	s.Equal(
+		[]int{22, 443, 22},
+		p.Spec.Egress.Allow[2].Ports,
+		"normalizing must not change the pool",
+	)
+}
+
+func (s *PoolConfigSuite) TestVersionsDoNotChangeThePool() {
+	p := s.loadExample()
+	p.Spec.Egress.Allow[2].Ports = []int{443, 22, 443}
+	p.Spec.Credentials[0].Deliver = []string{DeliverGHEnv, DeliverGitHelper, DeliverGHEnv}
+	p.Spec.Credentials[0].GitHubApp.Scope.Repositories = []string{repoWeb, "ACME/API", repoWeb}
+	setAgent(p, func(a *Agent) { a.Credentials = []string{credGitHub, credAnthropic, credGitHub} })
+	before, err := json.Marshal(p)
 	s.Require().NoError(err)
-	p.Spec.Capacity.MaxQueued++
-	after, err := p.PolicyVersion()
+	_, _ = s.versions(p)
+	after, err := json.Marshal(p)
 	s.Require().NoError(err)
-	s.NotEqual(before, after)
-	s.Regexp(`^sha256:[0-9a-f]{64}$`, after)
+	s.JSONEq(string(before), string(after))
+}
+
+func (s *PoolConfigSuite) TestOrderSensitiveListsChangeVersions() {
+	for name, mutate := range map[string]func(*Pool){
+		"allow order": func(p *Pool) {
+			a := p.Spec.Egress.Allow
+			a[0], a[1] = a[1], a[0]
+		},
+		"command order": func(p *Pool) {
+			setAgent(p, func(a *Agent) { a.Command[1], a.Command[2] = a.Command[2], a.Command[1] })
+		},
+	} {
+		policy, config := s.versions(s.loadExample())
+		p := s.loadExample()
+		mutate(p)
+		newPolicy, newConfig := s.versions(p)
+		s.NotEqual(policy, newPolicy, name)
+		s.NotEqual(config, newConfig, name)
+	}
+}
+
+func (s *PoolConfigSuite) TestEquivalentCIDRSpellingsShareVersions() {
+	a, b := s.loadExample(), s.loadExample()
+	allow(a, AllowRule{CIDR: "2001:db8::/32"})
+	allow(b, AllowRule{CIDR: "2001:0db8:0:0:0:0:0:0/32"})
+	policyA, configA := s.versions(a)
+	policyB, configB := s.versions(b)
+	s.Equal(policyA, policyB)
+	s.Equal(configA, configB)
+}
+
+func (s *PoolConfigSuite) TestDuplicateCIDRSpellingsRefused() {
+	p := s.loadExample()
+	allow(p, AllowRule{CIDR: "2001:db8::/32"})
+	allow(p, AllowRule{CIDR: "2001:0db8:0:0:0:0:0:0/32"})
+	s.ErrorContains(p.Validate(), "spec.egress.allow[5]: duplicates another rule's host or cidr")
+}
+
+func (s *PoolConfigSuite) TestDuplicateItemsGiveLines() {
+	extra := "  egress:\n    allow:\n      - host: a.example.com\n        ports: [443, 443]\n"
+	_, err := Parse(append(s.readMinimal(), []byte(extra)...))
+	s.Require().
+		ErrorContains(err, "spec.egress.allow[0].ports[1] (line 16): duplicates another port")
+}
+
+func (s *PoolConfigSuite) TestDuplicateListItemsRefused() {
+	p := s.loadExample()
+	p.Spec.Egress.Allow[2].Ports = []int{443, 22, 443}
+	allow(p, AllowRule{Host: "github.com", Ports: []int{80}})
+	allow(p, AllowRule{CIDR: "10.20.0.0/16"})
+	c := &p.Spec.Credentials[0]
+	c.Deliver = []string{DeliverGitHelper, DeliverGitHelper}
+	c.GitHubApp.Scope.Repositories = []string{repoAPI, "Acme/API"}
+	setAgent(p, func(a *Agent) { a.Credentials = []string{credGitHub, credAnthropic, credGitHub} })
+	err := p.Validate()
+	s.Require().Error(err)
+	for _, want := range []string{
+		"spec.egress.allow[2].ports[2]: duplicates another port",
+		"spec.egress.allow[4]: duplicates another rule's host or cidr",
+		"spec.egress.allow[5]: duplicates another rule's host or cidr",
+		"spec.credentials[0].deliver[1]: duplicates another target",
+		"spec.credentials[0].githubApp.scope.repositories[1]: duplicates another repository",
+		"spec.agents.<key>.credentials[2]: duplicates another credential",
+	} {
+		s.ErrorContains(err, want)
+	}
 }
 
 func (s *PoolConfigSuite) TestSourceRef() {
@@ -124,6 +255,12 @@ var repoTargetRejections = map[string][]string{
 		"https://ex_ample.com/x",
 		"https://a..example.com/x",
 		"https://\uff11\uff12\uff17.1/x",
+		"https://github.com:0/acme/api",
+		"https://github.com:65536/acme/api",
+		"ssh://git@github.com:99999/acme/api",
+		"ssh://git@github.com:0/acme/api",
+		"https://github.com:0443/acme/api",
+		"https://github.com:+443/acme/api",
 	},
 	errRepoScheme: {
 		"file:///etc", "http://169.254.169.254/x", "http://github.com/acme/api",
@@ -131,6 +268,15 @@ var repoTargetRejections = map[string][]string{
 	},
 	errRepoHost: {
 		"https://localhost/x",
+		"https://intranet/acme/api",
+		"git@gitserver:acme/api",
+		"https://gitlab.example.internal/acme/api",
+		"https://git.corp.local/acme/api",
+		"https://git.svc/acme/api",
+		"https://git.default.svc.cluster.local/acme/api",
+		"https://git.corp.localdomain/acme/api",
+		"https://git.home.arpa/acme/api",
+		"https://x.metadata.goog/acme/api",
 		"https://LocalHost./x",
 		"https://api.localhost/x",
 		"https://169.254.169.254/x",
@@ -172,26 +318,80 @@ var repoTargetRejections = map[string][]string{
 	},
 }
 
+func lastAddr(p netip.Prefix) netip.Addr {
+	b := p.Masked().Addr().AsSlice()
+	for i := p.Bits(); i < len(b)*8; i++ {
+		b[i/8] |= 0x80 >> (i % 8)
+	}
+	a, _ := netip.AddrFromSlice(b)
+	return a
+}
+
+func repoURLFor(a netip.Addr) string {
+	if a.Is4() {
+		return "https://" + a.String() + "/acme/api"
+	}
+	return "https://[" + a.String() + "]/acme/api"
+}
+
+// The first and last address of each range must stay refused, and the
+// addresses just outside must stay allowed, so a widened or dropped range
+// fails here.
+func (s *PoolConfigSuite) TestRepoBlockedRangesPinned() {
+	pinned := map[string][]string{
+		"fec0::/10":       {"fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff"},
+		"2001::/23":       {"2001:200::1"},
+		"100::/64":        {"100:0:0:1::1"},
+		"198.18.0.0/15":   {"198.17.255.255", "198.20.0.1"},
+		"64:ff9b:1::/48":  {"64:ff9b:2::1", "64:ff9b:0:ffff:ffff:ffff:ffff:ffff"},
+		"::ffff:0:0:0/96": {"0:0:0:fffe::1", "::ffff:1:0:0"},
+		"192.0.0.0/24":    {"192.0.1.1"},
+	}
+	for cidr, outsides := range pinned {
+		prefix := netip.MustParsePrefix(cidr)
+		s.Contains(blockedRepoPrefixes, prefix, cidr)
+		for _, a := range []netip.Addr{prefix.Masked().Addr(), lastAddr(prefix)} {
+			p := s.loadExample()
+			p.Spec.Source.Repo = repoURLFor(a)
+			s.ErrorContains(p.Validate(), "spec.source.repo: "+errRepoHost, a.String())
+		}
+		for _, outside := range outsides {
+			p := s.loadExample()
+			p.Spec.Source.Repo = repoURLFor(netip.MustParseAddr(outside))
+			s.NoError(p.Validate(), outside)
+		}
+	}
+}
+
 func (s *PoolConfigSuite) TestRepoTargetRefused() {
 	for want, repos := range repoTargetRejections {
 		for _, repo := range repos {
 			p := s.loadExample()
 			p.Spec.Source.Repo = repo
 			err := p.Validate()
-			s.ErrorContains(err, "spec.source.repo: "+want, repo)
+			s.Require().ErrorContains(err, "spec.source.repo: "+want, repo)
 			s.NotContains(err.Error(), repo)
 		}
 	}
 	for _, repo := range []string{
 		"https://8.8.8.8/acme/api", "https://[2606:4700::1111]/acme/api", "git@[2606:4700::1111]:acme/api",
 		"ssh://git@github.com:22/acme/api", "https://github.com./acme/api", "https://github.com/acme/-api",
-		"https://gitlab.example.internal/acme/api", "https://example.\u307f\u3093\u306a/acme/api",
+		"https://github.com:1/acme/api", "https://github.com:65535/acme/api",
+		"https://internal.example.com/acme/api", "https://example.\u307f\u3093\u306a/acme/api",
 		"https://example.xn--q9jyb4c/acme/api", "https://\u212aube.example.com/acme/api",
 	} {
 		p := s.loadExample()
 		p.Spec.Source.Repo = repo
 		s.NoError(p.Validate(), repo)
 	}
+}
+
+func (s *PoolConfigSuite) TestSourceRefParseErrorGivesLine() {
+	data, err := os.ReadFile("testdata/pool.yaml")
+	s.Require().NoError(err)
+	_, err = Parse([]byte(strings.Replace(string(data), "ref: main", "ref: CANARY..x", 1)))
+	s.Require().ErrorContains(err, "spec.source.ref (line 8): must be a valid git ref name")
+	s.NotContains(err.Error(), "CANARY")
 }
 
 func (s *PoolConfigSuite) TestRepoCredentialsRefused() {
@@ -496,6 +696,10 @@ func (s *PoolConfigSuite) TestRejections() {
 }
 
 const (
+	credGitHub      = "github"
+	credAnthropic   = "anthropic"
+	repoAPI         = "acme/api"
+	repoWeb         = "acme/web"
 	wantInvalidYAML = "invalid YAML"
 	wantEnvField    = "env.<key> (line 13): must be a string"
 )
@@ -574,6 +778,33 @@ func (s *PoolConfigSuite) TestDecoderErrorsDoNotEchoValues() {
 	}
 }
 
+func (s *PoolConfigSuite) TestNegativeZeroRefused() {
+	_, err := Parse(append(s.readMinimal(), []byte("  capacity: {maxQueued: -0}\n")...))
+	s.Require().ErrorContains(err, "spec.capacity.maxQueued (line 13)")
+}
+
+func (s *PoolConfigSuite) TestLoadRefusesLargeFile() {
+	base := s.readMinimal()
+	pad := func(size int) []byte {
+		out := slices.Clone(base)
+		out = append(out, '#')
+		for len(out) < size-1 {
+			out = append(out, 'x')
+		}
+		return append(out, '\n')
+	}
+	dir := s.T().TempDir()
+	atCap, overCap := filepath.Join(dir, "at.yaml"), filepath.Join(dir, "over.yaml")
+	s.Require().NoError(os.WriteFile(atCap, pad(maxFileSize), 0o600))
+	s.Require().NoError(os.WriteFile(overCap, pad(maxFileSize+1), 0o600))
+	_, err := Load(atCap)
+	s.Require().NoError(err)
+	_, err = Load(overCap)
+	s.Require().ErrorIs(err, errFileTooLarge)
+	_, err = Parse(pad(maxFileSize + 1))
+	s.Require().ErrorIs(err, errFileTooLarge)
+}
+
 func (s *PoolConfigSuite) loadExample() *Pool {
 	p, err := Load(filepath.Join("testdata", "pool.yaml"))
 	s.Require().NoError(err)
@@ -592,6 +823,14 @@ func (s *PoolConfigSuite) parseMinimal(extra string) *Pool {
 	p, err := Parse(append(s.readMinimal(), []byte(extra)...))
 	s.Require().NoError(err)
 	return p
+}
+
+func (s *PoolConfigSuite) versions(p *Pool) (string, string) {
+	policy, err := p.PolicyVersion()
+	s.Require().NoError(err)
+	config, err := p.ConfigVersion()
+	s.Require().NoError(err)
+	return policy, config
 }
 
 func (s *PoolConfigSuite) version(content string) string {

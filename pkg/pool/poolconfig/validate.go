@@ -3,6 +3,7 @@ package poolconfig
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -281,13 +282,14 @@ func (s *Spec) validateAgents(errs *fieldErrors) {
 	if len(s.Agents) == 0 {
 		errs.add("spec.agents", "must define at least one agent")
 	}
-	for name, agent := range s.Agents {
+	for _, name := range sortedKeys(s.Agents) {
+		agent := s.Agents[name]
 		path := agentPath(name)
 		validateNameAt(errs, path, name, maxNameLength)
 		if len(agent.Command) == 0 || agent.Command[0] == "" {
 			errs.addAt(path.field("command"), "is required")
 		}
-		for key := range agent.Env {
+		for _, key := range sortedKeys(agent.Env) {
 			switch {
 			case secrets.ValidateName(key) != nil:
 				errs.addAt(envPath(path, key), errEnvName)
@@ -297,6 +299,40 @@ func (s *Spec) validateAgents(errs *fieldErrors) {
 			}
 		}
 	}
+}
+
+// duplicates lists the index of each item whose key repeats an earlier one.
+func duplicates[T any](items []T, key func(T) string) []int {
+	var out []int
+	seen := make(map[string]bool, len(items))
+	for i, item := range items {
+		k := key(item)
+		if seen[k] {
+			out = append(out, i)
+		}
+		seen[k] = true
+	}
+	return out
+}
+
+// addDuplicates never shows the repeated value.
+func addDuplicates(errs *fieldErrors, at fieldPath, indexes []int, what string) {
+	for _, i := range indexes {
+		errs.addAt(at.index(i), "duplicates another %s", what)
+	}
+}
+
+func plainPath(path string) fieldPath {
+	return fieldPath{key: path, shown: path}
+}
+
+func identity(s string) string {
+	return s
+}
+
+// sortedKeys keeps the error order the same from run to run.
+func sortedKeys[V any](m map[string]V) []string {
+	return slices.Sorted(maps.Keys(m))
 }
 
 // agentPath never shows the name: a pasted token can be a valid agent name.
