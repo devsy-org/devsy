@@ -59,15 +59,17 @@ func Open(dir string) (*Store, error) {
 
 // Append writes one record and syncs it before returning. Any error means
 // the record is not stored, so the caller must refuse the action it covers.
+// A crash can leave an unterminated tail, which Append cuts before writing;
+// it was never acknowledged. A tail longer than one record with no newline
+// makes every append for that day fail until the file is repaired by hand.
 func (s *Store) Append(record []byte) error {
 	if err := checkRecord(record); err != nil {
 		return err
 	}
-	lockPath := filepath.Join(s.dir, lockName)
-	if err := checkRegular(lockPath); err != nil {
+	lock, err := s.newLock()
+	if err != nil {
 		return err
 	}
-	lock := flock.New(lockPath, flock.SetPermissions(fileMode))
 	defer func() { _ = lock.Close() }()
 	if err := lock.Lock(); err != nil {
 		return fmt.Errorf("lock audit directory: %w", err)
@@ -87,21 +89,16 @@ func checkRecord(record []byte) error {
 	return nil
 }
 
-// appendLine writes the record and its newline in one call. A torn tail from
-// an earlier crash is cut off first, and a failed or short write is cut back,
-// so a record never joins a partial line. A sync error is returned after the
-// line is written, so the record may exist although the caller must refuse.
+// appendLine writes the record and its newline in one call at the end of the
+// file, which is safe without O_APPEND because the caller holds the exclusive
+// directory lock. A torn tail from an earlier crash is cut off first, and a
+// failed or short write is cut back, so a record never joins a partial line.
+// A sync error is returned after the line is written, so the record may exist
+// although the caller must refuse.
 func appendLine(path string, record []byte) (err error) {
-	if err := checkRegular(path); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(
-		filepath.Clean(path),
-		os.O_RDWR|os.O_APPEND|os.O_CREATE|noFollow,
-		fileMode,
-	)
+	f, err := openDayFile(path)
 	if err != nil {
-		return fmt.Errorf("open audit file: %w", err)
+		return err
 	}
 	defer func() {
 		if cerr := f.Close(); err == nil && cerr != nil {
@@ -111,6 +108,9 @@ func appendLine(path string, record []byte) (err error) {
 	size, err := trimTornTail(f)
 	if err != nil {
 		return err
+	}
+	if _, err := f.Seek(size, io.SeekStart); err != nil {
+		return fmt.Errorf("seek audit file: %w", err)
 	}
 	line := append(append(make([]byte, 0, len(record)+1), record...), '\n')
 	if _, err := f.Write(line); err != nil {
@@ -123,6 +123,17 @@ func appendLine(path string, record []byte) (err error) {
 	return nil
 }
 
+func openDayFile(path string) (*os.File, error) {
+	if err := checkRegular(path); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Clean(path), os.O_RDWR|os.O_CREATE|noFollow, fileMode)
+	if err != nil {
+		return nil, fmt.Errorf("open audit file: %w", err)
+	}
+	return f, nil
+}
+
 // trimTornTail removes bytes after the last newline, a record cut short by a
 // crash, and returns the size that remains.
 func trimTornTail(f *os.File) (int64, error) {
@@ -130,7 +141,19 @@ func trimTornTail(f *os.File) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("stat audit file: %w", err)
 	}
-	size := info.Size()
+	end, err := completeEnd(f, info.Size())
+	if err != nil || end == info.Size() {
+		return end, err
+	}
+	if err := f.Truncate(end); err != nil {
+		return 0, fmt.Errorf("cut torn audit record: %w", err)
+	}
+	return end, nil
+}
+
+// completeEnd returns the offset just after the last newline in the first
+// size bytes. A newline must lie within one record length of the end.
+func completeEnd(f *os.File, size int64) (int64, error) {
 	if size == 0 {
 		return 0, nil
 	}
@@ -140,17 +163,10 @@ func trimTornTail(f *os.File) (int64, error) {
 		return 0, fmt.Errorf("read audit file tail: %w", err)
 	}
 	last := bytes.LastIndexByte(buf, '\n')
-	if last == len(buf)-1 {
-		return size, nil
-	}
 	if last < 0 && window < size {
-		return 0, errTornTail
+		return size, errTornTail
 	}
-	keep := size - window + int64(last+1)
-	if err := f.Truncate(keep); err != nil {
-		return 0, fmt.Errorf("cut torn audit record: %w", err)
-	}
-	return keep, nil
+	return size - window + int64(last+1), nil
 }
 
 // checkRegular refuses a path that exists as anything but a regular file,
@@ -203,38 +219,76 @@ func (s *Store) Scan(from, to string, fn func(day string, record []byte) error) 
 	return nil
 }
 
-// scanDay fixes the file size under the shared lock, then releases it before
-// calling fn, so a callback never blocks or deadlocks an append. The file only
-// grows, so the first size bytes are the snapshot.
+func (s *Store) newLock() (*flock.Flock, error) {
+	path := filepath.Join(s.dir, lockName)
+	if err := checkRegular(path); err != nil {
+		return nil, err
+	}
+	return flock.New(path, flock.SetPermissions(fileMode)), nil
+}
+
+type snapshot struct {
+	f    *os.File
+	end  int64
+	torn bool
+}
+
+// scanDay fixes the snapshot under the shared lock, then releases it before
+// calling fn, so a callback never blocks or deadlocks an append. The snapshot
+// ends at the last newline: bytes before it never change, while an append may
+// cut the unterminated tail after it. A tail left after the snapshot is
+// reported as io.ErrUnexpectedEOF once the complete lines are done.
 func (s *Store) scanDay(day string, fn func(string, []byte) error) error {
-	f, size, err := s.openSnapshot(day)
+	snap, err := s.openSnapshot(day)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	return eachLine(io.LimitReader(f, size), func(line []byte) error { return fn(day, line) })
+	defer func() { _ = snap.f.Close() }()
+	lines := io.LimitReader(snap.f, snap.end)
+	if err := eachLine(lines, func(line []byte) error { return fn(day, line) }); err != nil {
+		return err
+	}
+	if snap.torn {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
 
-func (s *Store) openSnapshot(day string) (*os.File, int64, error) {
-	lock := flock.New(filepath.Join(s.dir, lockName), flock.SetPermissions(fileMode))
+func (s *Store) openSnapshot(day string) (*snapshot, error) {
+	lock, err := s.newLock()
+	if err != nil {
+		return nil, err
+	}
 	defer func() { _ = lock.Close() }()
 	if err := lock.RLock(); err != nil {
-		return nil, 0, fmt.Errorf("lock audit directory: %w", err)
+		return nil, fmt.Errorf("lock audit directory: %w", err)
 	}
 	path := filepath.Clean(filepath.Join(s.dir, day+fileExt))
 	if err := checkRegular(path); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, 0, fmt.Errorf("read audit file: %w", err)
+		return nil, fmt.Errorf("read audit file: %w", err)
 	}
-	info, err := f.Stat()
+	snap, err := takeSnapshot(f)
 	if err != nil {
 		_ = f.Close()
-		return nil, 0, fmt.Errorf("stat audit file: %w", err)
+		return nil, err
 	}
-	return f, info.Size(), nil
+	return snap, nil
+}
+
+func takeSnapshot(f *os.File) (*snapshot, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat audit file: %w", err)
+	}
+	end, err := completeEnd(f, info.Size())
+	if err != nil {
+		return nil, err
+	}
+	return &snapshot{f: f, end: end, torn: end < info.Size()}, nil
 }
 
 // eachLine passes each line without its newline. The slice is valid only
@@ -246,7 +300,11 @@ func eachLine(r io.Reader, fn func([]byte) error) error {
 		if err != nil {
 			return endOfLines(line, err)
 		}
-		if ferr := fn(line[:len(line)-1]); ferr != nil {
+		record := line[:len(line)-1]
+		if len(record) > MaxLineBytes {
+			return errLineTooLong
+		}
+		if ferr := fn(record); ferr != nil {
 			return ferr
 		}
 	}

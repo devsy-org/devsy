@@ -42,9 +42,12 @@ func readHostID(path string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, maxHostIDFileBytes))
+	data, err := io.ReadAll(io.LimitReader(f, maxHostIDFileBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("read host id file: %w", err)
+	}
+	if len(data) > maxHostIDFileBytes {
+		return "", fmt.Errorf("host id file %s does not hold a host ID", path)
 	}
 	id := strings.TrimSpace(string(data))
 	if !hostIDPattern.MatchString(id) {

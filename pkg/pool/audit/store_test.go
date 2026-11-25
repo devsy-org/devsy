@@ -136,6 +136,53 @@ func (s *StoreSuite) TestScanRefusesOversizedLine() {
 	s.ErrorIs(st.Scan("", "", func(string, []byte) error { return nil }), errLineTooLong)
 }
 
+func (s *StoreSuite) TestScanRefusesHugeUnterminatedTail() {
+	st := s.open()
+	tail := bytes.Repeat([]byte("x"), MaxLineBytes+10)
+	s.Require().NoError(os.WriteFile(filepath.Join(s.dir, dayOne+fileExt), tail, fileMode))
+	s.ErrorIs(st.Scan("", "", func(string, []byte) error { return nil }), errTornTail)
+}
+
+func (s *StoreSuite) TestScanRefusesSymlinkedLock() {
+	if runtime.GOOS == goosWindows {
+		s.T().Skip("symlinks need privileges on windows")
+	}
+	st := s.open()
+	s.Require().NoError(st.Append([]byte(`{"a":1}`)))
+	target := filepath.Join(s.T().TempDir(), "target")
+	s.Require().NoError(os.WriteFile(target, nil, fileMode))
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, lockName)))
+	s.Require().NoError(os.Symlink(target, filepath.Join(s.dir, lockName)))
+	s.Error(st.Scan("", "", func(string, []byte) error { return nil }))
+}
+
+func (s *StoreSuite) TestScanLineLimitIsExact() {
+	st := s.open()
+	path := filepath.Join(s.dir, dayOne+fileExt)
+	pad := func(n int) []byte {
+		return []byte(`{"a":"` + strings.Repeat("x", n-len(`{"a":""}`)) + `"}`)
+	}
+	atLimit := append(pad(MaxLineBytes), '\n')
+	s.Require().NoError(os.WriteFile(path, atLimit, fileMode))
+	s.NoError(st.Scan("", "", func(string, []byte) error { return nil }))
+	over := append(pad(MaxLineBytes+1), '\n')
+	s.Require().NoError(os.WriteFile(path, over, fileMode))
+	s.ErrorIs(st.Scan("", "", func(string, []byte) error { return nil }), errLineTooLong)
+}
+
+func (s *StoreSuite) TestScanKeepsRepairedTailOutOfSnapshot() {
+	st := s.open()
+	path := filepath.Join(s.dir, dayOne+fileExt)
+	s.Require().NoError(os.WriteFile(path, []byte("{\"a\":1}\n{\"torn\":"), fileMode))
+	var got []string
+	err := st.Scan("", "", func(_ string, rec []byte) error {
+		got = append(got, string(rec))
+		return st.Append([]byte(`{"new":1}`))
+	})
+	s.ErrorIs(err, io.ErrUnexpectedEOF)
+	s.Equal([]string{`{"a":1}`}, got)
+}
+
 func (s *StoreSuite) TestSymlinksAreRefused() {
 	if runtime.GOOS == goosWindows {
 		s.T().Skip("symlinks need privileges on windows")
@@ -273,6 +320,15 @@ func (s *StoreSuite) TestHostIDFileIsBounded() {
 	s.Require().NoError(os.WriteFile(path, bytes.Repeat([]byte("a"), 1<<20), fileMode))
 	_, err := LoadOrCreateHostID(path)
 	s.Error(err)
+}
+
+func (s *StoreSuite) TestHostIDPaddedPastLimitRefused() {
+	path := filepath.Join(s.T().TempDir(), "host-id")
+	id := hostIDPrefix + NewID()
+	s.Require().NoError(os.WriteFile(path, []byte(id+strings.Repeat(" ", 200)+"CANARY"), fileMode))
+	_, err := LoadOrCreateHostID(path)
+	s.Require().Error(err)
+	s.NotContains(err.Error(), "CANARY")
 }
 
 func (s *StoreSuite) TestHostIDNeverReplaced() {
