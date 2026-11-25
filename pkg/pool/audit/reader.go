@@ -63,9 +63,11 @@ func (r *Reader) Scan(filter ReaderFilter, emit func([]byte) error, warn func(er
 	if err != nil {
 		return fmt.Errorf("read audit directory: %w", err)
 	}
+	// The newest file comes from this listing. It keeps the silent torn-tail
+	// rule even if it is removed before it is read.
 	newest := newestReaderDay(entries)
-	// A clock step between stamping the record and choosing the file can put
-	// a matching timestamp in a file named for an earlier day.
+	// Files are not skipped by name: a clock step between stamping a record
+	// and choosing its file can put a matching timestamp in an earlier day.
 	for _, entry := range entries {
 		name := entry.Name()
 		if !dayFilePattern.MatchString(name) {
