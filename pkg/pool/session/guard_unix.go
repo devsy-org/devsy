@@ -49,10 +49,10 @@ func checkRoot(root *os.Root) error {
 	return nil
 }
 
-// syncRoot persists the entries created or renamed in the directory. A
+// syncDirectory persists the entries created or renamed in the directory. A
 // filesystem that cannot fsync a directory has no stronger guarantee to wait
 // for.
-func syncRoot(root *os.Root) error {
+func syncDirectory(root *os.Root) error {
 	d, err := root.Open(".")
 	if err != nil {
 		return err

@@ -20,6 +20,11 @@ var renameFile = func(root *os.Root, oldName, newName string) error {
 	return root.Rename(oldName, newName)
 }
 
+var (
+	linkFile = (*os.Root).Link
+	syncRoot = syncDirectory
+)
+
 // tempPattern matches the names stage gives its temp files.
 var tempPattern = regexp.MustCompile(`^\.tmp-[0-9]+$`)
 
@@ -68,7 +73,7 @@ func publish(root *os.Root, name string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	linkErr := root.Link(tmp, name)
+	linkErr := linkFile(root, tmp, name)
 	_ = root.Remove(tmp)
 	if errors.Is(linkErr, fs.ErrExist) {
 		return ErrExists

@@ -73,6 +73,10 @@ func OpenStore(dir, pool string, lock *Lock) (*Store, error) {
 	if err := lock.covers(dir, pool); err != nil {
 		return nil, err
 	}
+	return openLockedStore(lock, pool)
+}
+
+func openLockedStore(lock *Lock, pool string) (*Store, error) {
 	root, err := openStoreRoot(lock.root, sessionsName)
 	if err != nil {
 		return nil, err
@@ -82,21 +86,26 @@ func OpenStore(dir, pool string, lock *Lock) (*Store, error) {
 		_ = root.Close()
 		return nil, err
 	}
-	return &Store{lock: lock, root: root, keys: keys, pool: pool, now: time.Now}, nil
+	store := &Store{lock: lock, root: root, keys: keys, pool: pool, now: time.Now}
+	if err := syncRoot(lock.root); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("sync pool directory: %w", err)
+	}
+	return store, nil
 }
 
 // Close releases both directory roots. It does not release the lock.
 func (s *Store) Close() error { return errors.Join(s.root.Close(), s.keys.Close()) }
 
-// Create writes a new queued session under a fresh ID. It skips the
-// idempotency index and the limits; the pool admits requests through Admit.
+// Create writes a queued session without reserving an idempotency key or checking capacity.
+// Production requests go through Admit.
 func (s *Store) Create() (Session, error) {
 	unlock, err := s.hold()
 	if err != nil {
 		return Session{}, err
 	}
 	defer unlock()
-	id, err := s.freshID("")
+	id, err := s.freshID()
 	if err != nil {
 		return Session{}, err
 	}
@@ -129,6 +138,7 @@ func (s *Store) List() ([]Session, error) {
 // error the file on disk is unchanged, except that a failed directory sync
 // after the rename may leave the new state on disk. A caller must treat an
 // error as "state unknown" and reload, not retry blindly.
+// Production requests go through Promote for queued-to-spawning moves to enforce the active limit.
 func (s *Store) Transition(id string, from, to State, reason string) (Session, error) {
 	unlock, err := s.hold()
 	if err != nil {
@@ -138,13 +148,21 @@ func (s *Store) Transition(id string, from, to State, reason string) (Session, e
 	return s.transition(id, from, to, reason)
 }
 
-func (s *Store) freshID(exclude string) (string, error) {
+func (s *Store) freshID() (string, error) {
+	records, err := s.keyRecords()
+	if err != nil {
+		return "", err
+	}
+	reserved := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		reserved[record.Session] = struct{}{}
+	}
 	for range idAttempts {
 		id, err := NewID(s.pool)
 		if err != nil {
 			return "", err
 		}
-		if id == exclude {
+		if _, held := reserved[id]; held {
 			continue
 		}
 		_, err = s.root.Lstat(fileName(id))

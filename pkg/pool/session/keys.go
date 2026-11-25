@@ -121,11 +121,29 @@ func (s *Store) PruneKeys() (int, error) {
 }
 
 func (s *Store) expiredKeys(now time.Time) ([]string, error) {
-	list, err := entries(s.keys)
+	records, err := s.keyRecords()
 	if err != nil {
 		return nil, err
 	}
 	var names []string
+	for _, record := range records {
+		_, expired, err := s.keySession(record, now)
+		if err != nil {
+			return nil, err
+		}
+		if expired {
+			names = append(names, fileName(record.Hash))
+		}
+	}
+	return names, nil
+}
+
+func (s *Store) keyRecords() ([]keyRecord, error) {
+	list, err := entries(s.keys)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]keyRecord, 0, len(list))
 	for _, entry := range list {
 		if isTemp(entry) {
 			continue
@@ -133,26 +151,19 @@ func (s *Store) expiredKeys(now time.Time) ([]string, error) {
 		if !entry.Type().IsRegular() {
 			return nil, errUnexpectedEntry
 		}
-		expired, err := s.keyExpired(entry.Name(), now)
+		record, err := s.loadNamedKey(entry.Name())
 		if err != nil {
 			return nil, err
 		}
-		if expired {
-			names = append(names, entry.Name())
-		}
+		records = append(records, record)
 	}
-	return names, nil
+	return records, nil
 }
 
-func (s *Store) keyExpired(name string, now time.Time) (bool, error) {
+func (s *Store) loadNamedKey(name string) (keyRecord, error) {
 	hash, ok := strings.CutSuffix(name, fileExt)
 	if !ok || !hashPattern.MatchString(hash) {
-		return false, errUnexpectedEntry
+		return keyRecord{}, errUnexpectedEntry
 	}
-	record, err := s.loadKey(hash)
-	if err != nil {
-		return false, err
-	}
-	_, expired, err := s.keySession(record, now)
-	return expired, err
+	return s.loadKey(hash)
 }

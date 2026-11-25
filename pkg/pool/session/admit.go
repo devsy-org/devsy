@@ -62,13 +62,20 @@ func (s *Store) retryAdmission(record keyRecord, lim Limits, now time.Time) (Adm
 		return Admission{}, err
 	case expired:
 		return s.reserve(record, lim, now)
-	case sess.ID != "":
-		return Admission{Session: sess, Existing: true}, nil
+	case sess.ID == "":
+		if err := s.checkCapacity(lim); err != nil {
+			return Admission{}, err
+		}
 	}
-	if err := s.checkCapacity(lim); err != nil {
+	// A failed directory sync can leave a visible, non-durable entry.
+	if err := syncRoot(s.keys); err != nil {
 		return Admission{}, err
 	}
-	sess, err = s.createQueued(record.Session, now)
+	if sess.ID == "" {
+		sess, err = s.createQueued(record.Session, now)
+	} else {
+		err = syncRoot(s.root)
+	}
 	if err != nil {
 		return Admission{}, err
 	}
@@ -79,7 +86,7 @@ func (s *Store) reserve(previous keyRecord, lim Limits, now time.Time) (Admissio
 	if err := s.checkCapacity(lim); err != nil {
 		return Admission{}, err
 	}
-	id, err := s.freshID(previous.Session)
+	id, err := s.freshID()
 	if err != nil {
 		return Admission{}, err
 	}

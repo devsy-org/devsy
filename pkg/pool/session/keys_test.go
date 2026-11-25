@@ -81,7 +81,7 @@ func (s *StoreSuite) TestAdmitRepairsIncompleteReservationOnlyWhenCapacityAllows
 func (s *StoreSuite) TestAdmitReplacesExpiredIncompleteReservation() {
 	s.writeReservation(canaryKey, s.clock)
 	s.clock = s.clock.Add(KeyRetention)
-	useSource(s.T(), bytes.NewReader(append(make([]byte, 7), bytes.Repeat([]byte{0xff}, 7)...)))
+	s.useReservedIDFirst()
 	got := s.admit(canaryKey, Limits{MaxConcurrent: 1})
 	s.False(got.Existing)
 	s.NotEqual(reservedID, got.Session.ID)
@@ -95,6 +95,47 @@ func (s *StoreSuite) TestAdmitChecksIDCollisionsBeforeReservingKey() {
 	s.Require().ErrorIs(err, ErrExists)
 	s.Zero(got)
 	s.Equal(before, s.poolSnapshot())
+}
+
+func (s *StoreSuite) TestAdmitSkipsIDReservedByAnotherKey() {
+	s.writeReservation("alpha", s.clock)
+	s.useReservedIDFirst()
+	lim := Limits{MaxConcurrent: 2}
+	beta := s.admit("beta", lim)
+	s.NotEqual(reservedID, beta.Session.ID)
+	alpha := s.admit("alpha", lim)
+	s.True(alpha.Existing)
+	s.Equal(reservedID, alpha.Session.ID)
+	s.Equal(Admission{Session: beta.Session, Existing: true}, s.admit("beta", lim))
+	s.Len(s.names(), 2)
+}
+
+func (s *StoreSuite) TestCreateSkipsIDReservedByKey() {
+	s.writeReservation("alpha", s.clock)
+	s.useReservedIDFirst()
+	created := s.create()
+	s.NotEqual(reservedID, created.ID)
+	alpha := s.admit("alpha", Limits{MaxConcurrent: 2})
+	s.True(alpha.Existing)
+	s.Equal(reservedID, alpha.Session.ID)
+	s.Len(s.names(), 2)
+}
+
+func (s *StoreSuite) TestNewIDsFailClosedWhenUnrelatedKeyIsInvalid() {
+	name := keyFile("alpha")
+	s.Require().NoError(s.store.keys.WriteFile(name, []byte(`{"v":1}`), fileMode))
+	before := s.poolSnapshot()
+	created, err := s.store.Create()
+	s.Require().ErrorIs(err, errInvalidKeyRecord)
+	s.Zero(created)
+	got, err := s.store.Admit("beta", Limits{MaxConcurrent: 2})
+	s.Require().ErrorIs(err, errInvalidKeyRecord)
+	s.Zero(got)
+	s.Equal(before, s.poolSnapshot())
+}
+
+func (s *StoreSuite) useReservedIDFirst() {
+	useSource(s.T(), bytes.NewReader(append(make([]byte, 7), bytes.Repeat([]byte{0xff}, 7)...)))
 }
 
 func (s *StoreSuite) TestPruneKeysRemovesOnlyExpiredRecords() {
