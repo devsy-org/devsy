@@ -2,8 +2,6 @@ package audit
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -23,8 +21,10 @@ const (
 	hostIDLockSuffix   = ".lock"
 	maxHostIDFileBytes = 128
 
-	hostIDTempPrefix = ".host-id-tmp-"
-	tempDigestBytes  = 8
+	// hostIDTempPattern names the file a publish stages. Only the call that
+	// created it removes it: a directory sweep could not tell it from a file
+	// the caller put there.
+	hostIDTempPattern = ".host-id-*"
 )
 
 // renameFunc is os.Rename, replaceable so tests can see where a publish
@@ -65,9 +65,6 @@ func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
 	if err := checkPlatform(); err != nil {
 		return "", false, err
 	}
-	if err := checkHostIDPath(path); err != nil {
-		return "", false, err
-	}
 	dir := filepath.Dir(path)
 	if err := checkDirMode(dir); err != nil {
 		return "", false, err
@@ -80,7 +77,6 @@ func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
 	if err := acquire(lock, defaultLockWait, false); err != nil {
 		return "", false, err
 	}
-	removeStaleTemps(path)
 	id, err = readHostID(path)
 	switch {
 	case err == nil:
@@ -132,7 +128,7 @@ func readHostID(path string) (string, error) {
 func publishHostID(path string) (string, error) {
 	id := hostIDPrefix + NewID()
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, tempPrefix(path)+"*")
+	tmp, err := os.CreateTemp(dir, hostIDTempPattern)
 	if err != nil {
 		return "", fmt.Errorf("create host id file: %w", err)
 	}
@@ -147,48 +143,6 @@ func publishHostID(path string) (string, error) {
 		return "", fmt.Errorf("sync host id directory: %w", err)
 	}
 	return id, nil
-}
-
-// checkHostIDPath refuses a path in the namespace of the temporary files, so
-// the sweep in removeStaleTemps can never reach a host ID file.
-func checkHostIDPath(path string) error {
-	if strings.HasPrefix(filepath.Base(path), hostIDTempPrefix) {
-		return fmt.Errorf("host id file name must not start with %q", hostIDTempPrefix)
-	}
-	return nil
-}
-
-// tempPrefix starts the temporary file names of one host ID path. A digest of
-// the base name keeps the length fixed and keeps two paths in one directory
-// from sweeping each other's files.
-func tempPrefix(path string) string {
-	sum := sha256.Sum256([]byte(filepath.Base(path)))
-	return hostIDTempPrefix + hex.EncodeToString(sum[:tempDigestBytes]) + "-"
-}
-
-// removeStaleTemps deletes the temporary files a crashed publish left next to
-// path. The caller holds the host ID lock that every publish for path also
-// holds, so none is in flight. It is best effort: a leftover file is harmless
-// clutter, and failing here must not block the host ID.
-func removeStaleTemps(path string) {
-	dir := filepath.Dir(path)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	prefix := tempPrefix(path)
-	for _, e := range entries {
-		suffix, found := strings.CutPrefix(e.Name(), prefix)
-		if found && e.Type().IsRegular() && isDigits(suffix) {
-			_ = os.Remove(filepath.Join(dir, e.Name()))
-		}
-	}
-}
-
-// isDigits reports whether s is a non-empty run of decimal digits, the suffix
-// os.CreateTemp appends.
-func isDigits(s string) bool {
-	return s != "" && strings.Trim(s, "0123456789") == ""
 }
 
 func isBlank(r rune) bool { return r == 0 || unicode.IsSpace(r) }

@@ -492,62 +492,26 @@ func (s *StoreSuite) TestOpenUsesTheDefaultLockWait() {
 	s.Equal(defaultLockWait, st.lockWait)
 }
 
-func (s *StoreSuite) TestHostIDRemovesStaleTempFiles() {
+func (s *StoreSuite) TestHostIDLeavesOtherFilesAlone() {
 	dir := s.T().TempDir()
 	path := filepath.Join(dir, "host-id")
-	stale := []string{tempPrefix(path) + "123", tempPrefix(path) + "4567890"}
 	const sibling = "h_01ARZ3NDEKTSV4RRFFQ69G5FAV\n"
-	keep := []string{
-		".host-id-host-id-123",
-		tempPrefix(filepath.Join(dir, "other")) + "123",
-		tempPrefix(path) + "x1",
-		tempPrefix(path),
-		"notes",
-	}
-	for _, name := range stale {
-		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte("h_0"), fileMode))
-	}
-	for _, name := range keep {
+	names := []string{".host-id-host-id-123", ".host-id-123", ".host-id-keep", "notes"}
+	for _, name := range names {
 		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte(sibling), fileMode))
 	}
-	s.Require().NoError(os.Mkdir(filepath.Join(dir, tempPrefix(path)+"999"), dirMode))
 	_, err := LoadOrCreateHostID(path)
 	s.Require().NoError(err)
-	for _, name := range stale {
-		s.NoFileExists(filepath.Join(dir, name))
-	}
-	for _, name := range keep {
+	_, err = LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	for _, name := range names {
 		data, readErr := os.ReadFile(filepath.Clean(filepath.Join(dir, name)))
 		s.Require().NoError(readErr)
 		s.Equal(sibling, string(data), "%s must be left alone", name)
 	}
-	s.DirExists(filepath.Join(dir, tempPrefix(path)+"999"), "only files are removed")
 }
 
-func (s *StoreSuite) TestHostIDRemovesStaleTempFilesWhenTheIDExists() {
-	dir := s.T().TempDir()
-	path := filepath.Join(dir, "host-id")
-	_, err := LoadOrCreateHostID(path)
-	s.Require().NoError(err)
-	stale := filepath.Join(dir, tempPrefix(path)+"42")
-	s.Require().NoError(os.WriteFile(stale, []byte("x"), fileMode))
-	_, err = LoadOrCreateHostID(path)
-	s.Require().NoError(err)
-	s.NoFileExists(stale)
-}
-
-func (s *StoreSuite) TestHostIDRefusesTheTempNamespace() {
-	dir := s.T().TempDir()
-	path := filepath.Join(dir, hostIDTempPrefix+"123")
-	_, err := LoadOrCreateHostID(path)
-	s.Require().ErrorContains(err, "must not start with")
-	s.NoFileExists(path)
-	entries, readErr := os.ReadDir(dir)
-	s.Require().NoError(readErr)
-	s.Empty(entries, "a refused path must not write anything")
-}
-
-func (s *StoreSuite) TestHostIDStagesNextToTheIDFile() {
+func (s *StoreSuite) TestHostIDStagesNextToTheIDFileAndRemovesIt() {
 	dir := s.T().TempDir()
 	path := filepath.Join(dir, "host-id")
 	var staged string
@@ -560,8 +524,8 @@ func (s *StoreSuite) TestHostIDStagesNextToTheIDFile() {
 	_, err := LoadOrCreateHostID(path)
 	s.Require().ErrorContains(err, "injected rename failure")
 	s.Equal(dir, filepath.Dir(staged), "the checked directory is the only staging place")
-	s.True(strings.HasPrefix(filepath.Base(staged), tempPrefix(path)))
-	s.NoFileExists(staged)
+	s.True(strings.HasPrefix(filepath.Base(staged), ".host-id-"))
+	s.NoFileExists(staged, "a failed publish removes the file it created")
 	s.NoFileExists(path)
 }
 
@@ -571,13 +535,6 @@ func (s *StoreSuite) TestHostIDLongBaseNameIsAccepted() {
 	id, err := LoadOrCreateHostID(path)
 	s.Require().NoError(err)
 	s.Regexp(hostIDPattern, id)
-}
-
-func (s *StoreSuite) TestTempPrefixHasFixedLength() {
-	short := tempPrefix(filepath.Join("d", "a"))
-	long := tempPrefix(filepath.Join("d", strings.Repeat("a", 255)))
-	s.Len(long, len(short))
-	s.NotEqual(short, long)
 }
 
 func (s *StoreSuite) TestHostIDRefusesSymlinkedLock() {
