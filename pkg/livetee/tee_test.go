@@ -127,8 +127,8 @@ func (s *teeSuite) TestBudgetIsReleasedAsTheDrainProgresses() {
 		}
 		_, err := tee.Writer(w).Write(line)
 		s.Require().NoError(err)
-		if i%100 == 0 {
-			time.Sleep(time.Millisecond)
+		if i%100 == 99 {
+			s.waitDrained(tee)
 		}
 	}
 	s.Require().NoError(tee.Finish())
@@ -158,7 +158,9 @@ func (s *teeSuite) TestAlternatingWritersKeepRecordsBounded() {
 	s.Equal(int64(writes-records-extra), u.dropped)
 	s.Equal(int64(maxQueuedBytes), u.used)
 	close(stall.release)
-	s.Equal(int64(writes-records-extra), tee.Close())
+	closed, abandoned := tee.CloseWithStatus()
+	s.False(abandoned)
+	s.Equal(int64(writes-records-extra), closed)
 	s.Equal(records+extra, a.Len()+b.Len())
 	s.Equal(usage{dropped: int64(writes - records - extra)}, snapshot(tee))
 }
@@ -309,6 +311,7 @@ func (s *teeSuite) TestAbandonedCloseRunsOnce() {
 	}
 	_, abandoned := tee.CloseWithStatus()
 	s.True(abandoned)
+	s.Equal(usage{dropped: 4}, snapshot(tee))
 	s.Zero(count.Load())
 	close(w.release)
 	select {
@@ -418,4 +421,14 @@ func (s *teeSuite) stalledTee() (*Tee, *blockedWriter) {
 	s.Require().NoError(err)
 	s.waitEntered(w)
 	return tee, w
+}
+
+func (s *teeSuite) waitDrained(tee *Tee) {
+	deadline := time.Now().Add(5 * time.Second)
+	for snapshot(tee).chunks > 0 {
+		if time.Now().After(deadline) {
+			s.FailNow("drain did not catch up")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
