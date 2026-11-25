@@ -33,4 +33,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-        run: go run ./hack/ci rerun-no-runner --run-id "$RUN_ID" --ignore "CI Success"
+        run: |
+          # Reading Windows job logs needs gh api --allow-escape-sequences.
+          gh --version
+          go run ./hack/ci rerun-no-runner --run-id "$RUN_ID" --ignore "CI Success"

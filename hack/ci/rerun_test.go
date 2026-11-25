@@ -333,6 +333,7 @@ func (s *rerunSuite) assertOnlyOwnCommands(out string) {
 		if strings.HasPrefix(trimmed, "::") {
 			s.True(
 				strings.HasPrefix(trimmed, "::notice::run 7: ") ||
+					strings.HasPrefix(trimmed, "::warning::run 7: ") ||
 					strings.HasPrefix(trimmed, "::error::exit status 1: "),
 				"unexpected command line %q", line,
 			)

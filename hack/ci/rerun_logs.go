@@ -47,20 +47,37 @@ func (job ghJob) windowsFailure() bool {
 }
 
 // markAMXCrashes reads the log of each failed Windows job and flags the ones
-// that crashed in the Go runtime on an AMX host.
-func (c rerunCommand) markAMXCrashes(ctx context.Context, opts rerunOptions, jobs []ghJob) error {
+// that crashed in the Go runtime on an AMX host. A log that cannot be read
+// (expired, missing, a server error) only means that job is not flagged, so
+// it never stops the rest of the decision.
+func (c rerunCommand) markAMXCrashes(ctx context.Context, opts rerunOptions, jobs []ghJob) {
 	for i := range jobs {
 		if opts.ignore[jobs[i].Name] || !jobs[i].windowsFailure() {
 			continue
 		}
-		var probe logProbe
-		path := fmt.Sprintf("repos/%s/actions/jobs/%d/logs", opts.repo, jobs[i].ID)
-		// Job logs carry terminal escape sequences, which gh refuses to write
-		// unless told to; the probe is the only reader.
-		if err := c.gh(ctx, &probe, "--allow-escape-sequences", path); err != nil {
-			return err
+		crash, err := c.crashedOnAMX(ctx, opts, jobs[i])
+		if err != nil {
+			_, _ = fmt.Fprintf(
+				c.stdout,
+				"::warning::run %d: cannot read the log of %s, so it is not an AMX crash: %v\n",
+				opts.runID, logSafe(jobs[i].Name), err,
+			)
 		}
-		jobs[i].amxCrash = probe.crashOnAMX()
+		jobs[i].amxCrash = crash
 	}
-	return nil
+}
+
+func (c rerunCommand) crashedOnAMX(
+	ctx context.Context,
+	opts rerunOptions,
+	job ghJob,
+) (bool, error) {
+	var probe logProbe
+	path := fmt.Sprintf("repos/%s/actions/jobs/%d/logs", opts.repo, job.ID)
+	// Job logs carry terminal escape sequences, which gh refuses to write
+	// unless told to; the probe is the only reader.
+	if err := c.gh(ctx, &probe, "--allow-escape-sequences", path); err != nil {
+		return false, err
+	}
+	return probe.crashOnAMX(), nil
 }

@@ -183,12 +183,25 @@ func (s *rerunSuite) TestLogsAreOnlyReadForRetryableWindowsFailures() {
 	}
 }
 
-func (s *rerunSuite) TestLogErrorFails() {
+func (s *rerunSuite) TestUnreadableLogOnlyWarns() {
+	second := strings.NewReplacer(`"id":11`, `"id":13`, winUnitName, "Windows Integration").
+		Replace(winJobJSON)
 	fake := &rerunFakeRunner{outputs: map[string]string{
-		testRunPath: failedRun, testJobsPath: winJobJSON,
+		testRunPath:                      failedRun,
+		testJobsPath:                     winJobJSON + "\n" + second + "\n" + noRunnerJob,
+		"repos/o/r/actions/jobs/13/logs": amxHostLog + runtimeCrash,
 	}}
 
-	_, err := s.runRerun(fake)
+	out, err := s.runRerun(fake)
 
-	s.Require().ErrorContains(err, "unexpected call: api --allow-escape-sequences "+winJobPath)
+	s.Require().NoError(err)
+	s.Contains(
+		out,
+		"::warning::run 7: cannot read the log of \""+winUnitName+"\", so it is not an AMX crash: ",
+	)
+	s.NotContains(out, "Integration\", so it is not")
+	s.Contains(strings.Join(fake.calls, "\n"), "jobs/13/logs")
+	s.Contains(out, "no rerun: \""+winUnitName+"\" ended \"failure\"")
+	s.NotContains(strings.Join(fake.calls, "\n"), "rerun-failed-jobs")
+	s.assertOnlyOwnCommands(out)
 }

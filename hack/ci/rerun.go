@@ -129,9 +129,7 @@ func (c rerunCommand) plan(ctx context.Context, opts rerunOptions, run ghRun) (r
 		return rerunPlan{}, err
 	}
 	if runBlocker(run) == "" {
-		if err := c.markAMXCrashes(ctx, opts, jobs); err != nil {
-			return rerunPlan{}, err
-		}
+		c.markAMXCrashes(ctx, opts, jobs)
 	}
 	plan := selectRerun(run, jobs, opts.ignore)
 	if plan.rerun && run.Event == "pull_request" {
