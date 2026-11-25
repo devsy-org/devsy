@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/gofrs/flock"
@@ -50,9 +49,6 @@ type Store struct {
 	dir      string
 	now      func() time.Time
 	lockWait time.Duration
-
-	mu     sync.Mutex
-	synced map[string]struct{}
 }
 
 // Open creates the directory when needed and refuses one that other users can
@@ -74,7 +70,6 @@ func Open(dir string) (*Store, error) {
 		dir:      dir,
 		now:      time.Now,
 		lockWait: defaultLockWait,
-		synced:   map[string]struct{}{},
 	}, nil
 }
 
@@ -83,13 +78,13 @@ var syncDirFunc = syncDir
 
 // syncDirChain syncs dir, then each parent while the directory below it is
 // owned by the current user: those are the entries this process could have
-// created. A parent the user does not own is synced too, but its failure is
-// ignored because it may not be readable.
+// created. The first parent the user does not own is synced too, because it
+// holds the entry of the last owned directory. A permission error there is
+// ignored, since such a parent may not be readable.
 func syncDirChain(dir string) error {
-	first := filepath.Clean(dir)
-	for p := first; ; {
+	for p := filepath.Clean(dir); ; {
 		owned := ownedByCurrentUser(p)
-		if err := syncDirFunc(p); err != nil && (owned || p == first) {
+		if err := syncDirFunc(p); err != nil && (owned || !errors.Is(err, fs.ErrPermission)) {
 			return err
 		}
 		parent := filepath.Dir(p)
@@ -120,10 +115,7 @@ func (s *Store) Append(record []byte) error {
 		return err
 	}
 	day := s.now().UTC().Format(dayLayout)
-	if err := s.appendDay(day, record); err != nil {
-		return err
-	}
-	return s.syncDayEntry(day)
+	return s.appendDay(day, record)
 }
 
 // acquire takes the lock, polling until wait runs out.
@@ -186,25 +178,16 @@ func writeRecord(f *os.File, record []byte) (err error) {
 	return nil
 }
 
-// openDayFile opens the day file and reports whether this call created it. A
-// new file's directory entry is not durable until the directory is synced.
-func openDayFile(path string) (f *os.File, created bool, err error) {
+func openDayFile(path string) (*os.File, error) {
 	if err := checkRegular(path); err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	clean := filepath.Clean(path)
-	f, err = os.OpenFile(clean, os.O_RDWR|os.O_CREATE|os.O_EXCL|noFollow, fileMode)
-	if err == nil {
-		return f, true, nil
-	}
-	if !errors.Is(err, fs.ErrExist) {
-		return nil, false, fmt.Errorf("open audit file: %w", err)
-	}
-	f, err = os.OpenFile(clean, os.O_RDWR|noFollow|nonBlock, fileMode)
+	f, err := os.OpenFile(
+		filepath.Clean(path), os.O_RDWR|os.O_CREATE|noFollow|nonBlock, fileMode)
 	if err != nil {
-		return nil, false, fmt.Errorf("open audit file: %w", err)
+		return nil, fmt.Errorf("open audit file: %w", err)
 	}
-	return f, false, nil
+	return f, nil
 }
 
 // trimTornTail removes bytes after the last newline, a record cut short by a
@@ -306,36 +289,21 @@ func (s *Store) Scan(from, to string, fn func(day string, record []byte) error) 
 	return nil
 }
 
+// appendDay writes the record, then syncs the directory on every append. A
+// file sync alone does not persist a new name, and another process may have
+// created or recreated the day file since this Store last synced, so no
+// per-day cache is safe.
 func (s *Store) appendDay(day string, record []byte) error {
-	f, created, err := openDayFile(filepath.Join(s.dir, day+fileExt))
-	if created {
-		s.forgetSynced(day)
-	}
+	f, err := openDayFile(filepath.Join(s.dir, day+fileExt))
 	if err != nil {
 		return err
 	}
-	return writeRecord(f, record)
-}
-
-func (s *Store) forgetSynced(day string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.synced, day)
-}
-
-// syncDayEntry makes the day file's directory entry durable. It syncs the
-// first time this Store appends to a day and again whenever a file was created
-// or an earlier sync failed. A file sync alone does not persist a new name.
-func (s *Store) syncDayEntry(day string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.synced[day]; ok {
-		return nil
+	if err := writeRecord(f, record); err != nil {
+		return err
 	}
 	if err := syncDirFunc(s.dir); err != nil {
 		return fmt.Errorf("sync audit directory: %w", err)
 	}
-	s.synced[day] = struct{}{}
 	return nil
 }
 

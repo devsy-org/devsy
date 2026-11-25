@@ -47,8 +47,8 @@ func NewID() string {
 // directory, and the file must be a regular file, not a link.
 func LoadOrCreateHostID(path string) (string, error) {
 	id, _, err := loadOrCreateHostID(path)
-	// TODO: write an audit record when the ID was repaired, once the shared
-	// audit contract defines the event.
+	// Hook for the repair audit record: write it when the ID was repaired,
+	// once the shared audit contract defines the event.
 	return id, err
 }
 

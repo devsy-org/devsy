@@ -3,11 +3,39 @@
 package audit
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
 	"time"
 )
+
+func (s *StoreSuite) syncFailsOnForeignDirs(err error) {
+	if os.Geteuid() == 0 {
+		s.T().Skip("every directory is owned by the current user")
+	}
+	orig := syncDirFunc
+	s.T().Cleanup(func() { syncDirFunc = orig })
+	syncDirFunc = func(dir string) error {
+		if ownedByCurrentUser(dir) {
+			return nil
+		}
+		return err
+	}
+}
+
+func (s *StoreSuite) TestOpenFailsWhenAForeignParentCannotBeSynced() {
+	s.syncFailsOnForeignDirs(errors.New("injected sync failure"))
+	_, err := Open(s.dir)
+	s.ErrorContains(err, "injected sync failure")
+}
+
+func (s *StoreSuite) TestOpenIgnoresAForeignParentThatCannotBeRead() {
+	s.syncFailsOnForeignDirs(fs.ErrPermission)
+	_, err := Open(s.dir)
+	s.NoError(err)
+}
 
 func (s *StoreSuite) TestHostIDFifoIsRefusedWithoutHanging() {
 	path := filepath.Join(s.T().TempDir(), "host-id")
@@ -28,18 +56,18 @@ func (s *StoreSuite) TestHostIDFifoIsRefusedWithoutHanging() {
 func (s *StoreSuite) TestHostIDSymlinkIsRefusedAndKept() {
 	dir := s.T().TempDir()
 	path := filepath.Join(dir, "host-id")
-	real := filepath.Join(s.T().TempDir(), "real")
-	s.Require().NoError(os.WriteFile(real, []byte("h_01ARZ3NDEKTSV4RRFFQ69G5FAV\n"), fileMode))
-	s.Require().NoError(os.Symlink(real, path))
+	target := filepath.Join(s.T().TempDir(), "real")
+	s.Require().NoError(os.WriteFile(target, []byte("h_01ARZ3NDEKTSV4RRFFQ69G5FAV\n"), fileMode))
+	s.Require().NoError(os.Symlink(target, path))
 	_, err := LoadOrCreateHostID(path)
 	s.Error(err, "a linked host id file must not be read")
 	s.Require().NoError(os.Remove(path))
 	s.Require().NoError(os.Symlink(filepath.Join(dir, "missing"), path))
 	_, err = LoadOrCreateHostID(path)
 	s.Error(err)
-	target, err := os.Readlink(path)
+	linked, err := os.Readlink(path)
 	s.Require().NoError(err)
-	s.Equal(filepath.Join(dir, "missing"), target, "a dangling link must not be replaced")
+	s.Equal(filepath.Join(dir, "missing"), linked, "a dangling link must not be replaced")
 }
 
 func (s *StoreSuite) TestHostIDRefusesSharedDirectory() {

@@ -156,14 +156,24 @@ func (s *StoreSuite) TestScanErrorsNameTheDay() {
 	s.NotContains(err.Error(), dayOne)
 }
 
-func (s *StoreSuite) TestFirstAppendOfADaySyncsTheDirectoryEntry() {
+func (s *StoreSuite) TestEveryAppendSyncsTheDirectory() {
 	st := s.open()
-	s.Require().NoError(st.Append([]byte(`{"n":1}`)))
-	s.Contains(st.synced, dayOne)
-	s.clock = s.clock.Add(2 * time.Minute)
-	s.Require().NoError(st.Append([]byte(`{"n":2}`)))
-	s.Contains(st.synced, dayTwo)
-	s.Len(st.synced, 2)
+	calls := recordSyncs(s.T())
+	for i := range 3 {
+		s.Require().NoError(st.Append([]byte(fmt.Sprintf(`{"n":%d}`, i))))
+	}
+	s.Equal([]string{s.dir, s.dir, s.dir}, *calls)
+}
+
+func (s *StoreSuite) TestAppendSyncsAfterAnotherStoreFailedToSync() {
+	first := s.open()
+	s.Require().NoError(first.Append([]byte(`{"n":1}`)))
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, dayOne+fileExt)))
+	second := s.open()
+	calls := failSyncOnce(s.T())
+	s.Require().ErrorContains(second.Append([]byte(`{"n":2}`)), "injected sync failure")
+	s.Require().NoError(first.Append([]byte(`{"n":3}`)))
+	s.Equal([]string{s.dir, s.dir}, *calls, "the older store must not trust its own earlier sync")
 }
 
 func (s *StoreSuite) TestOpenCreatesNestedDirectories() {
@@ -605,8 +615,6 @@ func (s *StoreSuite) TestAppendRetriesDirectorySyncAfterAFailure() {
 	s.Require().ErrorContains(st.Append([]byte(`{"n":1}`)), "injected sync failure")
 	s.Require().NoError(st.Append([]byte(`{"n":2}`)))
 	s.Equal([]string{s.dir, s.dir}, *calls)
-	s.Require().NoError(st.Append([]byte(`{"n":3}`)))
-	s.Len(*calls, 2, "a synced day is not synced again")
 }
 
 func (s *StoreSuite) TestRecreatedDayFileIsSyncedAgain() {
