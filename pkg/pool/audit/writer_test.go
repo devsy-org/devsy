@@ -5,7 +5,7 @@ package audit
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,12 +13,21 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy-signals/envelope"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
 const (
-	writerTestID     = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	writerTestCanary = "private-test-canary"
+	writerTestID      = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	writerTestCanary  = "private-test-canary"
+	writerTestVersion = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+	writerTestTime    = "2026-11-22T10:15:03.123Z"
+	writerTestAgent   = "devsy.agent.name"
+	writerTestHost    = "example.com"
+	writerTestGrant   = "devsy.credential.grant"
+	writerTestAddrKey = "server.address"
+	writerTestPortKey = "server.port"
+	writerTestGrantID = "grant"
 )
 
 type WriterSuite struct {
@@ -51,9 +60,8 @@ func (s *WriterSuite) SetupTest() {
 	s.cfg = WriterConfig{
 		Pool:          "test-pool",
 		Host:          "test-host",
-		PolicyVersion: "test-policy",
-		ConfigVersion: "test-config",
-		Validate:      acceptAuditDataForTest,
+		PolicyVersion: writerTestVersion,
+		ConfigVersion: writerTestVersion,
 		Now:           now,
 		NewID:         func() string { return writerTestID },
 	}
@@ -66,6 +74,7 @@ func (s *WriterSuite) TestEveryAuditTypeMatchesGoldenJSON() {
 	var want []string
 	for _, typ := range types {
 		event := writerTestEvent(typ)
+		data := mustJSONForTest(s.T(), event.Data)
 		event.TraceID = "4bf92f3577b34da6a3ce929d0e0e4736"
 		event.OperationID = "00f067aa0ba902b7"
 		event.Workspace = "test-workspace"
@@ -76,7 +85,7 @@ func (s *WriterSuite) TestEveryAuditTypeMatchesGoldenJSON() {
 			event.Session = ""
 		}
 		s.Require().NoError(w.Write(event), typ)
-		want = append(want, goldenAuditLine(typ, session))
+		want = append(want, goldenAuditLine(typ, session, data))
 	}
 	s.Equal(want, s.lines())
 }
@@ -88,22 +97,24 @@ func (s *WriterSuite) TestWrittenEnvelopeRoundTripsThroughScan() {
 
 	lines := s.lines()
 	s.Require().Len(lines, 1)
-	var got envelope.Envelope
-	s.Require().NoError(json.Unmarshal([]byte(lines[0]), &got))
+	got, err := envelope.DecodeStrict([]byte(lines[0]))
+	s.Require().NoError(err)
+	s.Require().NoError(got.Validate())
+	s.JSONEq(mustJSONForTest(s.T(), event.Data), mustJSONForTest(s.T(), got.Data))
 	s.Equal(envelope.Envelope{
 		V:             envelope.Version,
 		Kind:          envelope.KindAudit,
 		Type:          event.Type,
 		Src:           "pool",
 		ID:            writerTestID,
-		TS:            "2026-11-22T10:15:03.123Z",
+		TS:            writerTestTime,
 		Pool:          s.cfg.Pool,
 		Host:          s.cfg.Host,
 		PolicyVersion: s.cfg.PolicyVersion,
 		ConfigVersion: s.cfg.ConfigVersion,
 		Session:       event.Session,
 		Actor:         &event.Actor,
-		Data:          event.Data,
+		Data:          got.Data,
 	}, got)
 }
 
@@ -143,41 +154,62 @@ func (s *WriterSuite) TestRefusesUnknownActorWithoutLeakingValues() {
 }
 
 func (s *WriterSuite) TestRefusesInvalidDataWithoutLeakingValues() {
-	event := writerTestEvent(envelope.AuditSessionRequest)
-	event.Data[""] = writerTestCanary
-	s.cfg.Validate = func(typ string, data map[string]any) error {
-		s.Equal(event.Type, typ)
-		s.Equal(event.Data, data)
-		return fmt.Errorf("refused %v", data[""])
+	for name, mutate := range map[string]func(map[string]any){
+		"unlisted key":   func(d map[string]any) { d["not.allowed"] = writerTestCanary },
+		"bad enum value": func(d map[string]any) { d["devsy.request.outcome"] = writerTestCanary },
+		"missing key":    func(d map[string]any) { delete(d, writerTestAgent) },
+		"empty key":      func(d map[string]any) { d[""] = writerTestCanary },
+	} {
+		event := writerTestEvent(envelope.AuditSessionRequest)
+		mutate(event.Data)
+		err := s.writer().Write(event)
+		s.Require().ErrorContains(err, "validation failed", name)
+		s.NotContains(err.Error(), writerTestCanary, name)
+		s.NoError(errors.Unwrap(err), name)
 	}
-	err := s.writer().Write(event)
-	s.Require().ErrorContains(err, "data validation failed")
-	s.NotContains(err.Error(), writerTestCanary)
-	s.NoError(errors.Unwrap(err))
 	s.Empty(s.lines())
 }
 
-func (s *WriterSuite) TestRefusesMarshalErrorWithoutLeakingValues() {
+func (s *WriterSuite) TestRefusesEmptyDataForEveryType() {
+	w := s.writer()
+	for _, typ := range envelope.AuditTypes() {
+		event := writerTestEvent(typ)
+		event.Data = map[string]any{}
+		s.ErrorContains(w.Write(event), "validation failed", typ)
+	}
+	s.Empty(s.lines())
+}
+
+func (s *WriterSuite) TestRefusesCustomMarshalerWithoutLeakingValues() {
 	event := writerTestEvent(envelope.AuditSessionRequest)
-	event.Data[""] = failingAuditValueForTest(writerTestCanary)
+	event.Data[writerTestAgent] = failingAuditValueForTest(writerTestCanary)
 	err := s.writer().Write(event)
-	s.Require().ErrorContains(err, "marshal envelope failed")
+	s.Require().ErrorContains(err, "validation failed")
 	s.NotContains(err.Error(), writerTestCanary)
 	s.NoError(errors.Unwrap(err))
 	s.Empty(s.lines())
 }
 
-func (s *WriterSuite) TestNilDataIsValidatedAndWrittenAsAnEmptyObject() {
+func (s *WriterSuite) TestRefusesNilData() {
 	event := writerTestEvent(envelope.AuditSessionRequest)
 	event.Data = nil
-	s.cfg.Validate = func(_ string, data map[string]any) error {
-		s.NotNil(data, "the validator must see an empty map, not nil")
-		return nil
-	}
+	s.ErrorContains(s.writer().Write(event), "validation failed")
+	s.Empty(s.lines())
+}
+
+func (s *WriterSuite) TestStoresHTMLCharactersUnescaped() {
+	const text = "<a href=\"x\">&</a> \\u003c"
+	event := writerTestEvent(envelope.AuditSessionRequest)
+	event.Data[writerTestAgent] = text
 	s.Require().NoError(s.writer().Write(event))
 	lines := s.lines()
 	s.Require().Len(lines, 1)
-	s.Contains(lines[0], `"data":{}`)
+	s.Contains(lines[0], `"devsy.agent.name":"<a href=\"x\">&</a> \\u003c"`)
+	s.NotContains(lines[0], `\u003c<`)
+	s.NotContains(lines[0], "\\u0026")
+	got, err := envelope.DecodeStrict([]byte(lines[0]))
+	s.Require().NoError(err)
+	s.Equal(text, got.Data[writerTestAgent])
 }
 
 func (s *WriterSuite) TestRefusesAnEmptyActorID() {
@@ -195,26 +227,12 @@ func (s *WriterSuite) TestRefusesAnEmptyID() {
 	s.Empty(s.lines())
 }
 
-func (s *WriterSuite) TestValidatorSeesEveryRegisteredType() {
-	var seen []string
-	s.cfg.Validate = func(typ string, _ map[string]any) error {
-		seen = append(seen, typ)
-		return nil
-	}
-	w := s.writer()
-	for _, typ := range envelope.AuditTypes() {
-		s.Require().NoError(w.Write(writerTestEvent(typ)), typ)
-	}
-	s.Equal(envelope.AuditTypes(), seen)
-}
-
 func (s *WriterSuite) TestRefusesIncompleteConfig() {
 	for field, clearField := range map[string]func(*WriterConfig){
-		"pool":           func(c *WriterConfig) { c.Pool = "" },
-		"host":           func(c *WriterConfig) { c.Host = "" },
-		"policyVersion":  func(c *WriterConfig) { c.PolicyVersion = "" },
-		"configVersion":  func(c *WriterConfig) { c.ConfigVersion = "" },
-		"data validator": func(c *WriterConfig) { c.Validate = nil },
+		"pool":          func(c *WriterConfig) { c.Pool = "" },
+		"host":          func(c *WriterConfig) { c.Host = "" },
+		"policyVersion": func(c *WriterConfig) { c.PolicyVersion = "" },
+		"configVersion": func(c *WriterConfig) { c.ConfigVersion = "" },
 	} {
 		cfg := s.cfg
 		clearField(&cfg)
@@ -227,11 +245,11 @@ func (s *WriterSuite) TestRefusesIncompleteConfig() {
 	s.Nil(w)
 }
 
-func (s *WriterSuite) TestStoreRejectsOversizedEnvelope() {
+func (s *WriterSuite) TestRefusesOversizedEnvelopeWithoutLeakingValues() {
 	event := writerTestEvent(envelope.AuditSessionRequest)
-	event.Data[""] = writerTestCanary + strings.Repeat("x", MaxLineBytes)
+	event.Data[writerTestAgent] = writerTestCanary + strings.Repeat("x", MaxLineBytes)
 	err := s.writer().Write(event)
-	s.Require().ErrorIs(err, errLineTooLong)
+	s.Require().ErrorContains(err, "validation failed")
 	s.NotContains(err.Error(), writerTestCanary)
 	s.Empty(s.lines())
 }
@@ -249,7 +267,7 @@ func (s *WriterSuite) TestConcurrentWritesDoNotInterleave() {
 	s.cfg.NewID = nil
 	w := s.writer()
 	event := writerTestEvent(envelope.AuditSessionRequest)
-	event.Data[""] = strings.Repeat("p", 4096)
+	event.Data[writerTestAgent] = strings.Repeat("p", 200)
 	results := make(chan error, writers*perWriter)
 	var wg sync.WaitGroup
 	for range writers {
@@ -268,9 +286,10 @@ func (s *WriterSuite) TestConcurrentWritesDoNotInterleave() {
 	lines := s.lines()
 	s.Require().Len(lines, writers*perWriter)
 	for _, line := range lines {
-		var got envelope.Envelope
-		s.Require().NoError(json.Unmarshal([]byte(line), &got))
-		s.Equal(event.Data, got.Data)
+		got, err := envelope.DecodeStrict([]byte(line))
+		s.Require().NoError(err)
+		s.Require().NoError(got.Validate())
+		s.Equal(event.Data[writerTestAgent], got.Data[writerTestAgent])
 		s.Len(got.ID, 26)
 		seen[got.ID] = struct{}{}
 	}
@@ -293,12 +312,12 @@ func (s *WriterSuite) lines() []string {
 	return got
 }
 
-func goldenAuditLine(typ, session string) string {
+func goldenAuditLine(typ, session, data string) string {
 	return `{"v":1,"kind":"audit","type":"` + typ + `","id":"` + writerTestID +
 		`","ts":"2026-11-22T10:15:03.123Z","src":"pool","traceId":"4bf92f3577b34da6a3ce929d0e0e4736"` +
 		`,"operationId":"00f067aa0ba902b7","workspace":"test-workspace"` + session +
-		`,"pool":"test-pool","host":"test-host","policyVersion":"test-policy","configVersion":"test-config"` +
-		`,"actor":{"kind":"agent","id":"test-agent"},"data":{}}`
+		`,"pool":"test-pool","host":"test-host","policyVersion":"` + writerTestVersion +
+		`","configVersion":"` + writerTestVersion + `","actor":{"kind":"agent","id":"test-agent"},"data":` + data + `}`
 }
 
 func writerTestEvent(typ string) Event {
@@ -306,11 +325,107 @@ func writerTestEvent(typ string) Event {
 		Type:    typ,
 		Session: "test-session",
 		Actor:   envelope.Actor{Kind: envelope.ActorAgent, ID: "test-agent"},
-		Data:    map[string]any{},
+		Data:    validAuditDataForTest(typ),
 	}
 }
 
-func acceptAuditDataForTest(string, map[string]any) error { return nil }
+func mustJSONForTest(t *testing.T, v any) string {
+	t.Helper()
+	out, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(out)
+}
+
+// validAuditDataForTest returns the smallest data the shared allow-list
+// accepts for a type. An unregistered type gets no data.
+func validAuditDataForTest(typ string) map[string]any {
+	for _, group := range []map[string]map[string]any{
+		sessionAuditDataForTest(), poolAuditDataForTest(), credentialAuditDataForTest(),
+		egressAuditDataForTest(),
+	} {
+		if data, ok := group[typ]; ok {
+			return data
+		}
+	}
+	return map[string]any{}
+}
+
+func sessionAuditDataForTest() map[string]map[string]any {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	return map[string]map[string]any{
+		envelope.AuditSessionRequest: {
+			"devsy.request.id_hash": strings.Repeat("a", 64), "devsy.request.outcome": "new",
+			writerTestAgent: "claude", "devsy.requester.kind": "local_user",
+			"user.id": "operator", "vcs.repository.name": "owner/name",
+		},
+		envelope.AuditSessionSpawn: {"devsy.provider.name": "docker"},
+		envelope.AuditSessionReady: {
+			"devsy.provider.name": "docker", "container.image.id": digest, "devsy.duration_ms": 10,
+		},
+		envelope.AuditSessionStart: {
+			"process.executable.name": "devsy", "devsy.job.timeout_ms": 1000,
+		},
+		envelope.AuditSessionIdle: {"devsy.idle_since": writerTestTime},
+		envelope.AuditSessionEnd: {
+			"devsy.session.end_reason": "completed", "devsy.duration_ms": 10,
+		},
+		envelope.AuditSessionReclaim: {
+			"devsy.reclaim.result": "deleted", "devsy.reclaim.attempts": 1,
+			"devsy.reclaim.orphaned": false,
+		},
+	}
+}
+
+func poolAuditDataForTest() map[string]map[string]any {
+	return map[string]map[string]any{
+		envelope.AuditPolicyApply: {
+			"devsy.policy.allow_rule_count": 1, "devsy.policy.grant_names": []any{},
+			"devsy.policy.verify_result": "ok",
+		},
+		envelope.AuditPoolStart: {
+			"devsy.pool.sessions_loaded": 1, "devsy.pool.sessions_failed": 0,
+			"devsy.pool.orphans_found": 0,
+		},
+	}
+}
+
+func credentialAuditDataForTest() map[string]map[string]any {
+	const fingerprint = "0123456789ab"
+	return map[string]map[string]any{
+		envelope.AuditCredentialIssue: {
+			writerTestGrant: writerTestGrantID, "devsy.credential.mode": "inject",
+			"devsy.credential.permissions": []any{}, "devsy.credential.repository_count": 1,
+			"devsy.credential.ttl_ms": 1000, "devsy.credential.expires_at": writerTestTime,
+			"devsy.credential.fingerprint": fingerprint,
+		},
+		envelope.AuditCredentialUse: {
+			writerTestGrant: writerTestGrantID, "devsy.route.name": "route",
+			"http.request.method": "GET", "http.request.body.size": 0,
+			"http.response.body.size": 0,
+		},
+		envelope.AuditCredentialDeny: {"devsy.credential.deny_reason": "not_granted"},
+		envelope.AuditCredentialRevoke: {
+			writerTestGrant: writerTestGrantID, "devsy.credential.fingerprint": fingerprint,
+			"devsy.credential.revoke_result": "revoked",
+		},
+	}
+}
+
+func egressAuditDataForTest() map[string]map[string]any {
+	dest := func(extra map[string]any) map[string]any {
+		data := map[string]any{writerTestAddrKey: writerTestHost, writerTestPortKey: 443}
+		maps.Copy(data, extra)
+		return data
+	}
+	return map[string]map[string]any{
+		envelope.AuditEgressDeny: dest(map[string]any{"devsy.egress.reason": "not_allowed"}),
+		envelope.AuditEgressAllowSummary: dest(map[string]any{
+			"devsy.egress.count": 1, "devsy.egress.first_seen": writerTestTime,
+			"devsy.egress.last_seen": writerTestTime,
+		}),
+		envelope.AuditEgressAllow: dest(map[string]any{"network.peer.address": "93.184.216.34"}),
+	}
+}
 
 type failingAuditValueForTest string
 

@@ -148,13 +148,19 @@ func publishHostID(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create host id file: %w", err)
 	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
+	published := false
+	defer func() {
+		if !published {
+			_ = os.Remove(tmp.Name())
+		}
+	}()
 	if err := writeSynced(tmp, id+"\n"); err != nil {
 		return "", fmt.Errorf("write host id file: %w", err)
 	}
 	if err := renameFunc(tmp.Name(), path); err != nil {
 		return "", fmt.Errorf("publish host id file: %w", err)
 	}
+	published = true
 	if err := syncDirFunc(dir); err != nil {
 		return "", fmt.Errorf("sync host id directory: %w", err)
 	}

@@ -418,8 +418,8 @@ github.com/devsy-org/apiserver v1.5.4 h1:/bEPrSRSlfii2QHxc9qAiXlQawNJfIaPLraR3bY
 github.com/devsy-org/apiserver v1.5.4/go.mod h1:sDFCTjCN13wAHhno4KX0Z756gCI8ttW/c7NwTzo16K0=
 github.com/devsy-org/devsy-runtime-sdk v1.6.0 h1:iEV4Y0Sc3LJNkTLadJSKcWcAf/oCXvC/AkHilrg/KyM=
 github.com/devsy-org/devsy-runtime-sdk v1.6.0/go.mod h1:MiBP/fiY83DAS0TueEiJZSHYZ1vq85UR4KJTMfHIM+E=
-github.com/devsy-org/devsy-signals v0.1.0-rc.1.0.20261125121048-989a6020b25f h1:UQ6P2+9nRbZuhBCxm0SsJ1JmfgQu8lk1DIB5E+xcqrM=
-github.com/devsy-org/devsy-signals v0.1.0-rc.1.0.20261125121048-989a6020b25f/go.mod h1:0ABcpLu5ulYlD0ufqfCzTeFIrV5Cm0bEovUUqtnCcQs=
+github.com/devsy-org/devsy-signals v0.1.0-rc.2 h1:0TU/a85qKlRHNc0Bi33n1lHleSa1323IqipRdRdGFzY=
+github.com/devsy-org/devsy-signals v0.1.0-rc.2/go.mod h1:0ABcpLu5ulYlD0ufqfCzTeFIrV5Cm0bEovUUqtnCcQs=
 github.com/devsy-org/devsy/logging v0.0.0-20261121080943-b1a01fb92a98 h1:Z+uG77rbf+Msu7LSoWnAe4MylASfsr8gin37+DA4ikk=
 github.com/devsy-org/devsy/logging v0.0.0-20261121080943-b1a01fb92a98/go.mod h1:kpwoMhSdrhnJfTJ014ht04BLw0DS7FyF33RqIIe8CKs=
 github.com/devsy-org/ssh v1.2.10 h1:fCxyqx8ti6qzKhVts55q0zDpx72q1YHNM7VK6TGkAps=

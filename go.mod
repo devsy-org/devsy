@@ -25,7 +25,7 @@ require (
 	github.com/devsy-org/api v1.1.0
 	github.com/devsy-org/apiserver v1.5.4
 	github.com/devsy-org/devsy-runtime-sdk v1.6.0
-	github.com/devsy-org/devsy-signals v0.1.0-rc.1.0.20261125121048-989a6020b25f
+	github.com/devsy-org/devsy-signals v0.1.0-rc.2
 	github.com/devsy-org/ssh v1.2.10
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.8.2+incompatible

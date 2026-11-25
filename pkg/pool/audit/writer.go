@@ -1,7 +1,6 @@
 package audit
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -10,16 +9,12 @@ import (
 	"github.com/devsy-org/devsy-signals/envelope"
 )
 
-// DataValidator checks the audit data for a registered event type.
-type DataValidator func(typ string, data map[string]any) error
-
 // WriterConfig sets the envelope fields shared by every event.
 type WriterConfig struct {
 	Pool          string
 	Host          string
 	PolicyVersion string
 	ConfigVersion string
-	Validate      DataValidator
 	Now           func() time.Time
 	NewID         func() string
 }
@@ -41,7 +36,7 @@ type Writer struct {
 	cfg   WriterConfig
 }
 
-// NewWriter requires a store, shared envelope fields and a data validator.
+// NewWriter requires a store and the shared envelope fields.
 func NewWriter(store *Store, cfg WriterConfig) (*Writer, error) {
 	if store == nil {
 		return nil, errors.New("audit writer requires a store")
@@ -60,24 +55,23 @@ func NewWriter(store *Store, cfg WriterConfig) (*Writer, error) {
 
 // Write appends an event, including local-only events. On error the caller
 // must refuse the action. A store sync failure may leave the record on disk.
-// The caller keeps e.Data and its values unchanged until Write returns, and
-// the configured callbacks must be safe for concurrent use.
+// The envelope must pass envelope.Validate. The caller keeps e.Data and its
+// values unchanged until Write returns, and the configured callbacks must be
+// safe for concurrent use.
 func (w *Writer) Write(e Event) error {
 	if err := checkEvent(e); err != nil {
 		return err
-	}
-	if e.Data == nil {
-		e.Data = map[string]any{}
-	}
-	// Validator and JSON errors can contain raw event values.
-	if err := w.cfg.Validate(e.Type, e.Data); err != nil {
-		return fmt.Errorf("write audit event %s: data validation failed", e.Type)
 	}
 	id := w.cfg.NewID()
 	if id == "" {
 		return fmt.Errorf("write audit event %s: id is empty", e.Type)
 	}
-	line, err := json.Marshal(w.envelope(e, id))
+	env := w.envelope(e, id)
+	// Validation and JSON errors can contain raw event values.
+	if err := env.Validate(); err != nil {
+		return fmt.Errorf("write audit event %s: validation failed", e.Type)
+	}
+	line, err := env.MarshalJSON()
 	if err != nil {
 		return fmt.Errorf("write audit event %s: marshal envelope failed", e.Type)
 	}
@@ -132,8 +126,6 @@ func (cfg WriterConfig) validate() error {
 		return errors.New("audit writer requires policyVersion")
 	case cfg.ConfigVersion == "":
 		return errors.New("audit writer requires configVersion")
-	case cfg.Validate == nil:
-		return errors.New("audit writer requires a data validator")
 	}
 	return nil
 }
