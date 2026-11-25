@@ -250,6 +250,8 @@ var _ = ginkgo.Describe(
 				ginkgo.It( //nolint:dupl // rootful and rootless lifecycle suites mirror each other
 					"should inject secrets-file env into lifecycle commands",
 					func(ctx context.Context) {
+						framework.RegisterSecret("test-value-12345")
+						framework.RegisterSecret("second-secret-42")
 						tempDir, err := setupWorkspace(
 							"tests/up/testdata/docker-secrets-file",
 							initialDir,

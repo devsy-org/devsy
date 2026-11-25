@@ -287,6 +287,7 @@ func storeMicrosandboxSecret(
 	f *framework.Framework,
 	name, value string,
 ) {
+	framework.RegisterSecret(value)
 	_, err := f.ExecCommandOutput(
 		ctx,
 		[]string{secretCmd, microsandboxSecretSetCommand, name, names.Flag(names.Value), value},

@@ -245,6 +245,9 @@ func configuredKubeconfig() (string, error) {
 
 func suiteSpecificEnvironment(cfg suiteConfig) []string {
 	var values []string
+	if value := os.Getenv("DEVSY_E2E_SENTINEL_FILE"); value != "" {
+		values = append(values, "DEVSY_E2E_SENTINEL_FILE="+value)
+	}
 	if value := os.Getenv(providerDownloadCacheEnv); value != "" {
 		values = append(values, providerDownloadCacheEnv+"="+value)
 	}

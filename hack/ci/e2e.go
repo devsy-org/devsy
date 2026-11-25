@@ -67,6 +67,8 @@ func e2eCLI(args []string, stdout, stderr io.Writer) int {
 		return e2ePrepareCLI(args[1:], stdout, stderr)
 	case "run":
 		return e2eRunCLI(args[1:], stdout, stderr)
+	case "sentinel-check":
+		return sentinelCLI(args[1:], stderr)
 	default:
 		_, _ = fmt.Fprintf(stderr, "unknown e2e subcommand: %s\n", args[0])
 		return 2
@@ -359,6 +361,9 @@ func (r e2eRunner) e2eEnv(suite Suite) []string {
 		"GH_CREDENTIAL_USERNAME=" + r.getenv("GH_CREDENTIAL_USERNAME"),
 		"KUBECONFIG=" + r.kubeconfig(),
 		"PATH=" + r.getenv("PATH"),
+	}
+	if value := r.getenv("DEVSY_E2E_SENTINEL_FILE"); value != "" {
+		env = append(env, "DEVSY_E2E_SENTINEL_FILE="+value)
 	}
 	return append(env, r.dockerEnv(suite)...)
 }

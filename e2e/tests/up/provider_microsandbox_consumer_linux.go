@@ -180,6 +180,7 @@ func runMicrosandboxConsumerAttempt(ctx context.Context, attempt microsandboxCon
 }
 
 func newMicrosandboxConsumerRegistry(handler http.Handler) *registryfixture.Server {
+	framework.RegisterSecret("case-a-private-fixture-secret")
 	fixture, err := registryfixture.Start(handler, registryfixture.Config{
 		Username: "case-a-fixture-user", Password: "case-a-private-fixture-secret",
 	})

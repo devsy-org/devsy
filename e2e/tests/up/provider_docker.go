@@ -888,6 +888,8 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("secrets-file injects env into lifecycle commands", func(ctx context.Context) {
+			framework.RegisterSecret("test-value-12345")
+			framework.RegisterSecret("second-secret-42")
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-secrets-file",
 				dtc.initialDir,
@@ -1239,6 +1241,7 @@ printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ
 				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
 
 				dtc.storeSecret(ctx, "SESSION_SCOPE_SECRET", "sentinel-explicit-secret")
+				framework.RegisterSecret("sentinel-file-secret")
 				secretsFile := filepath.Join(tempDir, "session-scope.secrets.json")
 				framework.ExpectNoError(os.WriteFile(
 					secretsFile, []byte(`{"SESSION_FILE_SECRET":"sentinel-file-secret"}`), 0o600,
