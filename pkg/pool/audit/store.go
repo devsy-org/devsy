@@ -57,8 +57,9 @@ func Open(dir string) (*Store, error) {
 	return &Store{dir: dir, now: time.Now}, nil
 }
 
-// Append writes one record and syncs it before returning. Any error means
-// the record is not stored, so the caller must refuse the action it covers.
+// Append writes one record and syncs it before returning. On any error the
+// caller must refuse the action the record covers. After a sync or close
+// error the record may still be on disk, so a refused action can have one.
 // A crash can leave an unterminated tail, which Append cuts before writing;
 // it was never acknowledged. A tail longer than one record with no newline
 // makes every append for that day fail until the file is repaired by hand.
@@ -163,7 +164,7 @@ func completeEnd(f *os.File, size int64) (int64, error) {
 		return 0, fmt.Errorf("read audit file tail: %w", err)
 	}
 	last := bytes.LastIndexByte(buf, '\n')
-	if last < 0 && window < size {
+	if last < 0 && size > int64(MaxLineBytes) {
 		return size, errTornTail
 	}
 	return size - window + int64(last+1), nil

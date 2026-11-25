@@ -83,6 +83,20 @@ func (s *StoreSuite) TestAppendRefusesHugeUnterminatedTail() {
 	s.Equal(string(tail), s.read(dayOne))
 }
 
+func (s *StoreSuite) TestTornTailBoundary() {
+	st := s.open()
+	path := filepath.Join(s.dir, dayOne+fileExt)
+	over := bytes.Repeat([]byte("x"), MaxLineBytes+1)
+	s.Require().NoError(os.WriteFile(path, over, fileMode))
+	s.Require().ErrorIs(st.Append([]byte(`{"a":1}`)), errTornTail)
+	s.Equal(string(over), s.read(dayOne))
+	s.ErrorIs(st.Scan("", "", func(string, []byte) error { return nil }), errTornTail)
+	atLimit := bytes.Repeat([]byte("x"), MaxLineBytes)
+	s.Require().NoError(os.WriteFile(path, atLimit, fileMode))
+	s.Require().NoError(st.Append([]byte(`{"a":1}`)))
+	s.Equal("{\"a\":1}\n", s.read(dayOne))
+}
+
 func (s *StoreSuite) TestAppendWaitsForTheDirectoryLock() {
 	st := s.open()
 	lock := flock.New(filepath.Join(s.dir, lockName), flock.SetPermissions(fileMode))
