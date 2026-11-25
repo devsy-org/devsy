@@ -235,18 +235,18 @@ func (s *StoreSuite) TestLoadRefusesUnsafeFiles() {
 }
 
 func (s *StoreSuite) TestOpenStoreChecksThePoolAndTheDirectory() {
-	_, err := OpenStore(s.dir, "Bad Pool", s.lock)
+	_, err := OpenStore(s.dir, "Bad Pool", s.lock, Limits{MaxConcurrent: 1})
 	s.Require().ErrorIs(err, errInvalidPool)
 
 	for _, extra := range []os.FileMode{0o070, 0o050, 0o005, 0o040, 0o001} {
 		s.Require().NoError(os.Chmod(s.dir, dirMode|extra))
-		_, err = OpenStore(s.dir, storePool, s.lock)
+		_, err = OpenStore(s.dir, storePool, s.lock, Limits{MaxConcurrent: 1})
 		s.Require().ErrorContains(err, "accessible only by its owner", "%o", extra)
 	}
 	s.Require().NoError(os.Chmod(s.dir, dirMode))
 
 	s.Require().NoError(os.RemoveAll(s.dir))
-	fresh, err := OpenStore(s.dir, storePool, s.lock)
+	fresh, err := OpenStore(s.dir, storePool, s.lock, Limits{MaxConcurrent: 1})
 	s.Require().NoError(err)
 	s.Require().NoError(fresh.Close())
 	info, err := os.Stat(s.dir)
@@ -286,7 +286,7 @@ func (s *StoreSuite) TestOpenStoreRefusesALockThatDoesNotCoverTheDirectory() {
 		"the pool dir": {s.layout.Dir(), storePool, s.lock, errForeignLock},
 	}
 	for name, tc := range cases {
-		_, err := OpenStore(tc.dir, tc.pool, tc.lock)
+		_, err := OpenStore(tc.dir, tc.pool, tc.lock, Limits{MaxConcurrent: 1})
 		s.Require().ErrorIs(err, tc.want, name)
 		if tc.dir != s.layout.Dir() {
 			s.NoDirExists(tc.dir, name)
@@ -300,7 +300,7 @@ func (s *StoreSuite) TestOpenStoreRefusesASessionsLinkToAnotherPool() {
 	foreign, err := elsewhere.Lock()
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = foreign.Release() })
-	other, err := OpenStore(elsewhere.SessionsDir(), storePool, foreign)
+	other, err := OpenStore(elsewhere.SessionsDir(), storePool, foreign, Limits{MaxConcurrent: 1})
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = other.Close() })
 	kept, err := other.create()
@@ -309,7 +309,7 @@ func (s *StoreSuite) TestOpenStoreRefusesASessionsLinkToAnotherPool() {
 
 	s.Require().NoError(os.RemoveAll(s.dir))
 	s.Require().NoError(os.Symlink(elsewhere.SessionsDir(), s.dir))
-	_, err = OpenStore(s.dir, storePool, s.lock)
+	_, err = OpenStore(s.dir, storePool, s.lock, Limits{MaxConcurrent: 1})
 	s.Require().ErrorIs(err, errNotDirectory)
 	s.Equal(before, dirNames(s, elsewhere.SessionsDir()))
 	got, err := other.Load(kept.ID)
@@ -329,12 +329,12 @@ func (s *StoreSuite) TestWritesStopWhenThePoolPathLeadsElsewhere() {
 	s.Require().ErrorIs(err, errLockNotHeld)
 	_, err = s.store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 	s.Require().ErrorIs(err, errLockNotHeld)
-	_, err = OpenStore(s.dir, storePool, s.lock)
+	_, err = OpenStore(s.dir, storePool, s.lock, Limits{MaxConcurrent: 1})
 	s.Require().ErrorIs(err, errLockNotHeld)
 
 	s.Equal([]string{lockName}, s.poolNames(), "the replacement pool is untouched")
 	s.Equal([]string{sess.ID + fileExt}, dirNames(s, filepath.Join(moved, sessionsName)))
-	fresh, err := OpenStore(s.dir, storePool, replacement)
+	fresh, err := OpenStore(s.dir, storePool, replacement, Limits{MaxConcurrent: 1})
 	s.Require().NoError(err)
 	s.Require().NoError(fresh.Close())
 }
@@ -354,7 +354,7 @@ func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
 	layout := s.newLayout(storePool)
 	lock, err := layout.Lock()
 	s.Require().NoError(err)
-	store, err := OpenStore(layout.SessionsDir(), storePool, lock)
+	store, err := OpenStore(layout.SessionsDir(), storePool, lock, Limits{MaxConcurrent: 1})
 	s.Require().NoError(err)
 	sess, err := store.create()
 	s.Require().NoError(err)
@@ -417,7 +417,7 @@ func waitFor(chs ...<-chan error) {
 func (s *StoreSuite) TestOpenStoreRefusesASessionsLinkInsideThePool() {
 	s.Require().NoError(os.Rename(s.dir, filepath.Join(s.layout.Dir(), "real")))
 	s.Require().NoError(os.Symlink("real", s.dir))
-	_, err := OpenStore(s.dir, storePool, s.lock)
+	_, err := OpenStore(s.dir, storePool, s.lock, Limits{MaxConcurrent: 1})
 	s.Require().ErrorIs(err, errNotDirectory)
 }
 
@@ -444,7 +444,7 @@ func (s *StoreSuite) TestStoreStopsWhenItsDirectoryMovesToAnotherPool() {
 
 func (s *StoreSuite) TestReadsNeverFailWhileSessionsAreTransitioning() {
 	sess := s.create()
-	_, started, err := s.store.Promote(Limits{MaxConcurrent: 1})
+	_, started, err := s.store.Promote()
 	s.Require().NoError(err)
 	s.Require().True(started)
 	path := []State{StateReady, StateBusy}
@@ -494,7 +494,7 @@ func (s *StoreSuite) TestWritesStopWhenTheLockIsReleased() {
 	s.Require().ErrorIs(err, errLockNotHeld)
 	_, err = s.store.List()
 	s.Require().ErrorIs(err, errLockNotHeld)
-	_, err = OpenStore(s.dir, storePool, s.lock)
+	_, err = OpenStore(s.dir, storePool, s.lock, Limits{MaxConcurrent: 1})
 	s.Require().ErrorIs(err, errLockNotHeld)
 }
 
@@ -678,7 +678,11 @@ func (s *StoreSuite) stubRename(stub func(*os.Root, string, string) error) {
 }
 
 func (s *StoreSuite) open() *Store {
-	st, err := OpenStore(s.dir, storePool, s.lock)
+	return s.openWith(Limits{MaxConcurrent: 1})
+}
+
+func (s *StoreSuite) openWith(lim Limits) *Store {
+	st, err := OpenStore(s.dir, storePool, s.lock, lim)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = st.Close() })
 	st.now = func() time.Time { return s.clock }

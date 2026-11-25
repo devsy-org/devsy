@@ -41,6 +41,10 @@ func (s State) Known() bool {
 	return ok
 }
 
+func (s State) canCountReclaimAttempt() bool {
+	return s == StateReclaiming || s == StateOrphaned
+}
+
 // CanTransition reports whether the state machine allows from to go to to.
 func CanTransition(from, to State) bool {
 	return slices.Contains(transitions[from], to)

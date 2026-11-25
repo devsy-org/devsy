@@ -11,18 +11,20 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
 )
 
 const canaryKey = "private-key-canary-f50d"
 
 func (s *StoreSuite) TestAdmitReusesKeyAndStoresOnlyItsHash() {
-	lim := Limits{MaxConcurrent: 1, MaxQueued: 1}
-	first := s.admit(canaryKey, lim)
-	other := s.admit("other key", lim)
+	s.store = s.openWith(Limits{MaxConcurrent: 1, MaxQueued: 1})
+	first := s.admit(canaryKey)
+	other := s.admit("other key")
 	s.False(first.Existing)
 	s.False(other.Existing)
 	s.NotEqual(first.Session.ID, other.Session.ID)
-	retry := s.admit(canaryKey, lim)
+	retry := s.admit(canaryKey)
 	s.Equal(Admission{Session: first.Session, Existing: true}, retry)
 	list, err := s.store.List()
 	s.Require().NoError(err)
@@ -44,71 +46,95 @@ func (s *StoreSuite) TestAdmitReusesKeyAndStoresOnlyItsHash() {
 }
 
 func (s *StoreSuite) TestAdmitRefusesInvalidKeysWithoutEchoingThem() {
-	lim := Limits{MaxConcurrent: 8}
+	s.store = s.openWith(Limits{MaxConcurrent: 8})
 	before := s.poolSnapshot()
 	for _, key := range []string{
 		"", canaryKey + "\n", canaryKey + "\u0085", canaryKey + "\xff", strings.Repeat(canaryKey, 30),
 	} {
-		got, err := s.store.Admit(key, lim)
+		got, err := s.store.Admit(key)
 		s.Require().ErrorIs(err, ErrInvalidKey)
 		s.Zero(got)
 		s.NotContains(err.Error(), canaryKey)
 	}
 	s.Equal(before, s.poolSnapshot())
 	for _, key := range []string{"x", strings.Repeat("\u00e9", 128)} {
-		s.False(s.admit(key, lim).Existing)
+		s.False(s.admit(key).Existing)
 	}
 }
 
-func (s *StoreSuite) TestAdmitAndPromoteValidateLimits() {
+func (s *StoreSuite) TestOpenStoreValidatesLimitsBeforePreparingDirectories() {
+	s.writeFile(".tmp-1", "keep on refusal")
+	s.Require().NoError(os.Remove(s.layout.KeysDir()))
 	before := s.poolSnapshot()
 	for _, lim := range []Limits{{}, {MaxConcurrent: -1}, {MaxConcurrent: 1, MaxQueued: -1}} {
-		got, err := s.store.Admit(canaryKey, lim)
+		got, err := OpenStore(s.dir, storePool, s.lock, lim)
 		s.Require().ErrorIs(err, errInvalidLimits)
-		s.Zero(got)
-		next, ok, err := s.store.Promote(lim)
-		s.Require().ErrorIs(err, errInvalidLimits)
-		s.Zero(next)
-		s.False(ok)
+		s.Nil(got)
 	}
+	_, err := OpenStore(s.dir, "Bad Pool", nil, Limits{})
+	s.Require().ErrorIs(err, errInvalidPool)
+	_, err = OpenStore(s.dir, storePool, nil, Limits{})
+	s.Require().ErrorIs(err, errLockNotHeld)
 	s.Equal(before, s.poolSnapshot())
-	s.False(s.admit(canaryKey, Limits{MaxConcurrent: math.MaxInt, MaxQueued: math.MaxInt}).Existing)
+
+	s.store = s.openWith(Limits{MaxConcurrent: math.MaxInt, MaxQueued: math.MaxInt})
+	s.False(s.admit(canaryKey).Existing)
 }
 
-func (s *StoreSuite) TestAdmitCapacityCountsFailedAndOrphanedUntilDeleted() {
-	lim := Limits{MaxConcurrent: 2, MaxQueued: 1}
-	first := s.admit("first", lim).Session
-	started, ok, err := s.store.Promote(lim)
-	s.Require().NoError(err)
-	s.Require().True(ok)
-	s.Equal(first.ID, started.ID)
-	s.move(first.ID, StateSpawning, StateFailed)
-	second := s.admit("second", lim).Session
-	s.move(second.ID, StateQueued, StateReclaiming, StateOrphaned)
-	s.admit("third", lim)
+func (s *StoreSuite) TestLimitsFromUsesOnlyAdmissionLimits() {
+	got := LimitsFrom(poolconfig.Capacity{MaxConcurrent: 3, MaxQueued: 4, Warm: 2})
+	s.Equal(Limits{MaxConcurrent: 3, MaxQueued: 4}, got)
+}
 
-	for _, state := range []State{StateFailed, StateReclaiming, StateOrphaned} {
-		before := s.poolSnapshot()
-		got, err := s.store.Admit(canaryKey, lim)
-		s.Require().ErrorIs(err, ErrPoolFull, state)
-		s.Zero(got)
-		s.NotContains(err.Error(), canaryKey)
-		s.Equal(before, s.poolSnapshot())
-		if state == StateFailed {
-			s.move(first.ID, StateFailed, StateReclaiming)
-		}
+func (s *StoreSuite) TestAdmitReleasesCapacityWhenUnstartedSessionLeavesQueue() {
+	s.store = s.openWith(Limits{MaxConcurrent: 1, MaxQueued: 1})
+	s.admit("first")
+	s.promote()
+	waiting := s.admit("waiting").Session
+	s.assertPoolFull()
+	reclaiming := s.move(waiting.ID, StateQueued, StateReclaiming)
+	s.False(reclaiming.Started)
+	s.False(s.admit(canaryKey).Existing)
+}
+
+func (s *StoreSuite) TestAdmitCapacityCountsStartedFailedReclaimingAndOrphanedUntilDeleted() {
+	s.store = s.openWith(Limits{MaxConcurrent: 1, MaxQueued: 1})
+	first := s.admit("first").Session
+	s.Equal(first.ID, s.promote().ID)
+	s.admit("waiting")
+
+	states := []State{StateSpawning, StateFailed, StateReclaiming, StateOrphaned, StateDeleted}
+	for i, to := range states[1:] {
+		s.assertPoolFull()
+		next := s.move(first.ID, states[i], to)
+		s.True(next.Started)
 	}
-	s.move(first.ID, StateReclaiming, StateDeleted)
-	s.False(s.admit(canaryKey, lim).Existing)
-	s.move(second.ID, StateOrphaned, StateDeleted)
-	s.False(s.admit("fifth", lim).Existing)
+	s.False(s.admit(canaryKey).Existing)
+}
+
+func (s *StoreSuite) TestLegacyReclaimingSessionDoesNotHoldCapacity() {
+	legacy := validSession()
+	legacy.State = StateReclaiming
+	s.writeSession(legacy)
+	useSource(s.T(), fixedReader{0xff})
+	queued := s.admit(canaryKey).Session
+	s.Equal(queued.ID, s.promote().ID)
+}
+
+func (s *StoreSuite) assertPoolFull() {
+	before := s.poolSnapshot()
+	got, err := s.store.Admit(canaryKey)
+	s.Require().ErrorIs(err, ErrPoolFull)
+	s.Zero(got)
+	s.NotContains(err.Error(), canaryKey)
+	s.Equal(before, s.poolSnapshot())
 }
 
 func (s *StoreSuite) TestTransitionCannotBypassPromotionLimit() {
-	lim := Limits{MaxConcurrent: 1, MaxQueued: 1}
-	first := s.admit("first", lim).Session
+	s.store = s.openWith(Limits{MaxConcurrent: 1, MaxQueued: 1})
+	first := s.admit("first").Session
 	s.clock = s.clock.Add(time.Second)
-	waiting := s.admit("waiting", lim).Session
+	waiting := s.admit("waiting").Session
 	before := s.snapshot()
 	for range 5 {
 		next, err := s.store.Transition(waiting.ID, StateQueued, StateSpawning, "")
@@ -117,12 +143,12 @@ func (s *StoreSuite) TestTransitionCannotBypassPromotionLimit() {
 		s.Equal(before, s.snapshot())
 	}
 
-	started, ok, err := s.store.Promote(lim)
+	started, ok, err := s.store.Promote()
 	s.Require().NoError(err)
 	s.Require().True(ok)
 	s.Equal(first.ID, started.ID)
 	s.Equal(StateSpawning, started.State)
-	next, ok, err := s.store.Promote(lim)
+	next, ok, err := s.store.Promote()
 	s.Require().NoError(err)
 	s.False(ok)
 	s.Zero(next)
@@ -144,44 +170,70 @@ func (s *StoreSuite) TestTransitionRefusesStartingWithoutCheckingTheLock() {
 	s.Zero(next)
 }
 
-func (s *StoreSuite) TestPromoteUsesCreatedThenIDAndRespectsActiveLimit() {
-	lim := Limits{MaxConcurrent: 1, MaxQueued: 3}
-	s.clock = s.clock.Add(time.Minute)
+func (s *StoreSuite) TestPromoteUsesSequenceWhenClockMovesBackward() {
+	lim := Limits{MaxConcurrent: 1, MaxQueued: 1}
+	s.store = s.openWith(lim)
 	useSource(s.T(), fixedReader{0x00})
-	newer := s.admit("newer", lim).Session
+	first := s.admit("first").Session
 	s.clock = s.clock.Add(-time.Minute)
-	useSource(s.T(), fixedReader{0x80})
-	tieLater := s.admit("tie later", lim).Session
-	useSource(s.T(), fixedReader{0x40})
-	tieFirst := s.admit("tie first", lim).Session
+	s.Require().NoError(s.store.Close())
+	s.store = s.openWith(lim)
+	useSource(s.T(), fixedReader{0xff})
+	second := s.admit("second").Session
+	s.Equal(uint64(1), first.Seq)
+	s.Equal(uint64(2), second.Seq)
+	s.True(second.Created.Before(first.Created))
+	s.Equal(first.ID, s.promote().ID)
+}
+
+func (s *StoreSuite) TestPromoteUsesCreatedAndIDForLegacyRecordsBeforeSequencedRecords() {
+	s.store = s.openWith(Limits{MaxConcurrent: 1, MaxQueued: 3})
+	useSource(s.T(), fixedReader{0xff})
+	sequenced := s.admit("sequenced").Session
+	newer, tieFirst, tieLater := validSession(), validSession(), validSession()
+	newer.Created = newer.Created.Add(time.Minute)
+	tieFirst.ID = "p-pool-bbbbbbbbbb"
+	tieLater.ID = "p-pool-cccccccccc"
+	for _, sess := range []Session{newer, tieLater, tieFirst} {
+		s.writeSession(sess)
+	}
 	s.clock = s.clock.Add(time.Hour)
-	for _, want := range []Session{tieFirst, tieLater, newer} {
-		next, ok, err := s.store.Promote(lim)
-		s.Require().NoError(err)
-		s.True(ok)
+	for _, want := range []Session{tieFirst, tieLater, newer, sequenced} {
+		next := s.promote()
 		s.Equal(want.ID, next.ID)
 		s.Equal(StateSpawning, next.State)
 		s.Empty(next.Reason)
 		s.Equal(s.clock, next.Updated)
 		before := s.poolSnapshot()
-		next, ok, err = s.store.Promote(lim)
+		next, ok, err := s.store.Promote()
 		s.Require().NoError(err)
 		s.False(ok)
 		s.Zero(next)
 		s.Equal(before, s.poolSnapshot())
 		s.move(want.ID, StateSpawning, StateReclaiming, StateDeleted)
 	}
-	next, ok, err := s.store.Promote(lim)
+	next, ok, err := s.store.Promote()
 	s.Require().NoError(err)
 	s.False(ok)
 	s.Zero(next)
+}
+
+func (s *StoreSuite) TestAdmitRefusesSequenceOverflowWithoutWriting() {
+	exhausted := validSession()
+	exhausted.State, exhausted.Seq = StateDeleted, math.MaxUint64
+	s.writeSession(exhausted)
+	before := s.poolSnapshot()
+	got, err := s.store.Admit(canaryKey)
+	s.Require().ErrorIs(err, errSeqExhausted)
+	s.Zero(got)
+	s.Equal(before, s.poolSnapshot())
 }
 
 func (s *StoreSuite) TestPromoteReturnsZeroSessionOnPublishFailure() {
 	s.create()
 	before := s.poolSnapshot()
 	s.stubRename(func(*os.Root, string, string) error { return errors.New("disk full") })
-	next, ok, err := s.store.Promote(Limits{MaxConcurrent: 1})
+	next, ok, err := s.store.Promote()
 	s.Require().ErrorContains(err, "disk full")
 	s.Zero(next)
 	s.False(ok)
@@ -190,13 +242,13 @@ func (s *StoreSuite) TestPromoteReturnsZeroSessionOnPublishFailure() {
 
 func (s *StoreSuite) TestConcurrentAdmitDoesNotOverfillPool() {
 	const n = 32
-	lim := Limits{MaxConcurrent: 2, MaxQueued: 1}
+	s.store = s.openWith(Limits{MaxConcurrent: 2, MaxQueued: 1})
 	results := make(chan error, n)
 	start := make(chan struct{})
 	for i := range n {
 		go func() {
 			<-start
-			_, err := s.store.Admit(fmt.Sprintf("key-%d", i), lim)
+			_, err := s.store.Admit(fmt.Sprintf("key-%d", i))
 			results <- err
 		}()
 	}
@@ -217,10 +269,24 @@ func (s *StoreSuite) TestConcurrentAdmitDoesNotOverfillPool() {
 	s.Len(dirNames(s, s.layout.KeysDir()), 3)
 }
 
-func (s *StoreSuite) admit(key string, lim Limits) Admission {
-	got, err := s.store.Admit(key, lim)
+func (s *StoreSuite) admit(key string) Admission {
+	got, err := s.store.Admit(key)
 	s.Require().NoError(err)
 	return got
+}
+
+func (s *StoreSuite) promote() Session {
+	next, ok, err := s.store.Promote()
+	s.Require().NoError(err)
+	s.Require().True(ok)
+	s.True(next.Started)
+	return next
+}
+
+func (s *StoreSuite) writeSession(sess Session) {
+	data, err := encode(sess)
+	s.Require().NoError(err)
+	s.writeFile(fileName(sess.ID), string(data))
 }
 
 func (s *StoreSuite) move(id string, states ...State) Session {

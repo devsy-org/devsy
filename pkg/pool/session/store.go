@@ -40,26 +40,29 @@ var (
 	errTooLarge        = fmt.Errorf("record file is longer than %d bytes", maxFileBytes)
 )
 
-// Store keeps session and idempotency records in pinned directories. Writes
-// publish synced files by link or rename. Each operation except Close takes
-// the lock mutex and checks the lock and both directories before using them, so
+// Store keeps session and idempotency records in pinned directories and uses
+// pool limits from config at open. Writes publish synced files by link or
+// rename. Each operation except Close takes the lock mutex and checks the
+// lock and both directories before using them, so
 // a read never sees a write half done and Release waits for a call in flight.
 // Load and List need the live lock; a read-only inspector needs a separate
 // path. OpenStore removes regular files named .tmp-<digits> in the sessions and
 // keys directories while holding the lock.
 type Store struct {
-	lock *Lock
-	root *os.Root
-	keys *os.Root
-	pool string
-	now  func() time.Time
+	lock   *Lock
+	root   *os.Root
+	keys   *os.Root
+	pool   string
+	now    func() time.Time
+	limits Limits
 }
 
 // OpenStore opens or creates the sessions and keys directories of the locked
-// pool. While holding the lock, it removes regular files named .tmp-<digits>
-// in the sessions and keys directories. dir must be the locked pool's sessions
-// directory. Neither subdirectory may be a symlink. The caller closes the Store.
-func OpenStore(dir, pool string, lock *Lock) (*Store, error) {
+// pool with limits from config. While holding the lock, it removes regular
+// files named .tmp-<digits> in both directories. dir must be the locked pool's
+// sessions directory. Neither subdirectory may be a symlink. The caller closes
+// the Store.
+func OpenStore(dir, pool string, lock *Lock, lim Limits) (*Store, error) {
 	if err := checkPlatform(); err != nil {
 		return nil, err
 	}
@@ -71,13 +74,16 @@ func OpenStore(dir, pool string, lock *Lock) (*Store, error) {
 		return nil, err
 	}
 	defer unlock()
+	if err := lim.validate(); err != nil {
+		return nil, err
+	}
 	if err := lock.covers(dir, pool); err != nil {
 		return nil, err
 	}
-	return openLockedStore(lock, pool)
+	return openLockedStore(lock, pool, lim)
 }
 
-func openLockedStore(lock *Lock, pool string) (*Store, error) {
+func openLockedStore(lock *Lock, pool string, lim Limits) (*Store, error) {
 	root, err := openStoreRoot(lock.root, sessionsName)
 	if err != nil {
 		return nil, err
@@ -87,7 +93,7 @@ func openLockedStore(lock *Lock, pool string) (*Store, error) {
 		_ = root.Close()
 		return nil, err
 	}
-	store := &Store{lock: lock, root: root, keys: keys, pool: pool, now: time.Now}
+	store := &Store{lock: lock, root: root, keys: keys, pool: pool, now: time.Now, limits: lim}
 	if err := syncRoot(lock.root); err != nil {
 		_ = store.Close()
 		return nil, fmt.Errorf("sync pool directory: %w", err)
@@ -137,6 +143,26 @@ func (s *Store) Transition(id string, from, to State, reason string) (Session, e
 	return s.transition(id, from, to, reason)
 }
 
+// CountReclaimAttempt records one attempt on a reclaiming or orphaned session.
+// As with Transition, reload after a write error before retrying.
+func (s *Store) CountReclaimAttempt(id string) (Session, error) {
+	unlock, err := s.hold()
+	if err != nil {
+		return Session{}, err
+	}
+	defer unlock()
+	cur, err := s.load(id)
+	if err != nil {
+		return Session{}, err
+	}
+	if !cur.State.canCountReclaimAttempt() {
+		return Session{}, ErrStateConflict
+	}
+	cur.Attempts++
+	cur.Updated = s.now().UTC()
+	return s.replaceSession(cur)
+}
+
 // create writes a queued session without reserving an idempotency key or checking capacity.
 // Production requests go through Admit.
 func (s *Store) create() (Session, error) {
@@ -149,7 +175,15 @@ func (s *Store) create() (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	return s.createQueued(id, s.now().UTC())
+	stats, err := s.capacity()
+	if err != nil {
+		return Session{}, err
+	}
+	seq, err := stats.nextSeq()
+	if err != nil {
+		return Session{}, err
+	}
+	return s.createQueued(id, s.now().UTC(), seq)
 }
 
 // freshID picks an ID no session file or key record holds. The key directory
@@ -193,10 +227,10 @@ func (s *Store) reservedIDs() (map[string]struct{}, error) {
 	return reserved, nil
 }
 
-func (s *Store) createQueued(id string, now time.Time) (Session, error) {
+func (s *Store) createQueued(id string, now time.Time, seq uint64) (Session, error) {
 	sess := Session{
 		V: schemaVersion, ID: id, Pool: s.pool, State: StateQueued,
-		Created: now, Updated: now,
+		Created: now, Updated: now, Seq: seq,
 	}
 	data, err := encode(sess)
 	if err != nil {
@@ -244,11 +278,18 @@ func (s *Store) transition(id string, from, to State, reason string) (Session, e
 	}
 	next := cur
 	next.State, next.Reason, next.Updated = to, reason, s.now().UTC()
+	if from == StateQueued && to == StateSpawning {
+		next.Started = true
+	}
+	return s.replaceSession(next)
+}
+
+func (s *Store) replaceSession(next Session) (Session, error) {
 	data, err := encode(next)
 	if err != nil {
 		return Session{}, err
 	}
-	if err := replace(s.root, fileName(id), data); err != nil {
+	if err := replace(s.root, fileName(next.ID), data); err != nil {
 		return Session{}, err
 	}
 	return next, nil

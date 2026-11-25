@@ -12,7 +12,7 @@ import (
 func TestStoreAndLockRefuseOnWindows(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "pools")
 	dir := filepath.Join(root, "pool", "sessions")
-	store, err := OpenStore(dir, "pool", nil)
+	store, err := OpenStore(dir, "Bad Pool", nil, Limits{})
 	require.ErrorIs(t, err, errWindowsUnsupported)
 	require.Nil(t, store)
 	layout, err := NewLayout(root, "pool")

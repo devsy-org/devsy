@@ -39,7 +39,6 @@ func (s *StoreSuite) TestAdmitRetriesSyncAfterExpiredKeyRename() {
 // written, so the record is visible but not durable.
 func (s *StoreSuite) checkKeySyncRetries(written *bool) {
 	useSource(s.T(), fixedReader{0xff})
-	lim := Limits{MaxConcurrent: 1}
 	fail := true
 	var synced []*os.Root
 	s.stubSync(func(root *os.Root) error {
@@ -54,7 +53,7 @@ func (s *StoreSuite) checkKeySyncRetries(written *bool) {
 	})
 
 	for _, want := range [][]*os.Root{{s.store.keys, s.store.keys}, {s.store.keys}} {
-		got, err := s.store.Admit(canaryKey, lim)
+		got, err := s.store.Admit(canaryKey)
 		s.Require().ErrorIs(err, errInjectedIO)
 		s.Zero(got)
 		s.Equal(want, synced)
@@ -66,7 +65,7 @@ func (s *StoreSuite) checkKeySyncRetries(written *bool) {
 	s.NotEqual(reservedID, record.Session)
 	s.Equal(s.clock, record.Created)
 	fail = false
-	got := s.admit(canaryKey, lim)
+	got := s.admit(canaryKey)
 	s.True(got.Existing)
 	s.Equal(record.Session, got.Session.ID)
 	s.Equal([]*os.Root{s.store.keys, s.store.root}, synced)
@@ -74,7 +73,6 @@ func (s *StoreSuite) checkKeySyncRetries(written *bool) {
 }
 
 func (s *StoreSuite) TestAdmitRetriesSyncBeforeAcknowledgingExistingSession() {
-	lim := Limits{MaxConcurrent: 1}
 	fail := true
 	var synced []*os.Root
 	s.stubSync(func(root *os.Root) error {
@@ -86,7 +84,7 @@ func (s *StoreSuite) TestAdmitRetriesSyncBeforeAcknowledgingExistingSession() {
 	})
 	keys, sessions := s.store.keys, s.store.root
 	for _, want := range [][]*os.Root{{keys, keys, sessions}, {keys, sessions}} {
-		got, err := s.store.Admit(canaryKey, lim)
+		got, err := s.store.Admit(canaryKey)
 		s.Require().ErrorIs(err, errInjectedIO)
 		s.Zero(got)
 		s.Equal(want, synced)
@@ -95,7 +93,7 @@ func (s *StoreSuite) TestAdmitRetriesSyncBeforeAcknowledgingExistingSession() {
 	}
 
 	fail = false
-	got := s.admit(canaryKey, lim)
+	got := s.admit(canaryKey)
 	s.True(got.Existing)
 	s.Equal([]*os.Root{s.store.keys, s.store.root}, synced)
 	s.Equal([]string{fileName(got.Session.ID)}, s.names())
@@ -113,7 +111,7 @@ func (s *StoreSuite) TestOpenStoreRetriesPoolDirectorySync() {
 		return syncDirectory(root)
 	})
 	for range 2 {
-		store, err := OpenStore(s.dir, storePool, s.lock)
+		store, err := OpenStore(s.dir, storePool, s.lock, Limits{MaxConcurrent: 1})
 		s.Require().ErrorIs(err, errInjectedIO)
 		s.Nil(store)
 		s.DirExists(s.layout.KeysDir())
@@ -126,7 +124,7 @@ func (s *StoreSuite) TestOpenStoreRetriesPoolDirectorySync() {
 }
 
 func (s *StoreSuite) TestAdmitDoesNotPublishSessionWhenFreshKeyLinkFails() {
-	lim := Limits{MaxConcurrent: 2}
+	s.store = s.openWith(Limits{MaxConcurrent: 2})
 	fail := true
 	orig := linkFile
 	linkFile = func(root *os.Root, from, to string) error {
@@ -137,14 +135,14 @@ func (s *StoreSuite) TestAdmitDoesNotPublishSessionWhenFreshKeyLinkFails() {
 	}
 	s.T().Cleanup(func() { linkFile = orig })
 
-	got, err := s.store.Admit(canaryKey, lim)
+	got, err := s.store.Admit(canaryKey)
 	s.Require().ErrorIs(err, errInjectedIO)
 	s.Zero(got)
 	s.Empty(s.names())
 	s.Empty(dirNames(s, s.layout.KeysDir()))
 
 	fail = false
-	got = s.admit(canaryKey, lim)
+	got = s.admit(canaryKey)
 	s.False(got.Existing)
 	s.Equal([]string{fileName(got.Session.ID)}, s.names())
 	s.Equal([]string{keyFile(canaryKey)}, dirNames(s, s.layout.KeysDir()))
@@ -183,6 +181,7 @@ func (s *StoreSuite) TestCreateSyncsKeysBeforeChoosingAnID() {
 }
 
 func (s *StoreSuite) TestCreateSyncsKeysAfterAnExpiredReservationIsReplaced() {
+	s.store = s.openWith(Limits{MaxConcurrent: 2})
 	s.writeReservation(canaryKey, s.clock.Add(-KeyRetention))
 	fail := true
 	s.stubSync(func(root *os.Root) error {
@@ -192,7 +191,7 @@ func (s *StoreSuite) TestCreateSyncsKeysAfterAnExpiredReservationIsReplaced() {
 		return syncDirectory(root)
 	})
 	useSource(s.T(), fixedReader{0xff})
-	got, err := s.store.Admit(canaryKey, Limits{MaxConcurrent: 2})
+	got, err := s.store.Admit(canaryKey)
 	s.Require().ErrorIs(err, errInjectedIO)
 	s.Zero(got)
 

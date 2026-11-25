@@ -67,7 +67,12 @@ func contend(layout Layout) int {
 		if lock != nil || !errors.Is(err, ErrPoolLocked) {
 			return failHelper(fmt.Errorf("lock was not refused: %v", err))
 		}
-		if _, err := OpenStore(layout.SessionsDir(), helperPool, nil); err == nil {
+		if _, err := OpenStore(
+			layout.SessionsDir(),
+			helperPool,
+			nil,
+			Limits{MaxConcurrent: 1},
+		); err == nil {
 			return failHelper(errors.New("store opened without a lock"))
 		}
 	}
@@ -105,7 +110,12 @@ func raceRound(layout Layout) (int, bool, error) {
 		return 0, false, err
 	}
 	defer func() { _ = lock.Release() }()
-	store, err := OpenStore(layout.SessionsDir(), helperPool, lock)
+	store, err := OpenStore(
+		layout.SessionsDir(),
+		helperPool,
+		lock,
+		Limits{MaxConcurrent: 2 * helperSessions},
+	)
 	if err != nil {
 		return 0, false, err
 	}
@@ -131,12 +141,12 @@ func raceAdmit(layout Layout) int {
 }
 
 func admitUnderLock(layout Layout, lock *Lock) int {
-	store, err := OpenStore(layout.SessionsDir(), helperPool, lock)
+	store, err := OpenStore(layout.SessionsDir(), helperPool, lock, Limits{MaxConcurrent: 1})
 	if err != nil {
 		return failHelper(err)
 	}
 	defer func() { _ = store.Close() }()
-	got, err := store.Admit("shared key", Limits{MaxConcurrent: 1})
+	got, err := store.Admit("shared key")
 	if err != nil {
 		return failHelper(err)
 	}
@@ -148,7 +158,7 @@ func admitUnderLock(layout Layout, lock *Lock) int {
 // are left.
 func moveQueued(store *Store) (int, bool, error) {
 	for wins := range perRound {
-		_, ok, err := store.Promote(Limits{MaxConcurrent: 2 * helperSessions})
+		_, ok, err := store.Promote()
 		if err != nil || !ok {
 			return wins, false, err
 		}
@@ -187,7 +197,7 @@ func (s *ProcessSuite) TestAdmitSharesOneSessionAcrossLockHolders() {
 	again, err := s.layout.Lock()
 	s.Require().NoError(err)
 	defer func() { _ = again.Release() }()
-	store, err := OpenStore(s.layout.SessionsDir(), helperPool, again)
+	store, err := OpenStore(s.layout.SessionsDir(), helperPool, again, Limits{MaxConcurrent: 1})
 	s.Require().NoError(err)
 	defer func() { _ = store.Close() }()
 	list, err := store.List()
@@ -204,7 +214,12 @@ func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 	lock, err := s.layout.Lock()
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = lock.Release() })
-	store, err := OpenStore(s.layout.SessionsDir(), helperPool, lock)
+	store, err := OpenStore(
+		s.layout.SessionsDir(),
+		helperPool,
+		lock,
+		Limits{MaxConcurrent: helperSessions},
+	)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = store.Close() })
 	for range helperSessions {
@@ -214,7 +229,7 @@ func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 
 	contenders := s.start("contend", helperProcs)
 	for range helperSessions {
-		_, ok, err := store.Promote(Limits{MaxConcurrent: helperSessions})
+		_, ok, err := store.Promote()
 		s.Require().NoError(err, "no other process may touch a session the holder owns")
 		s.Require().True(ok)
 	}
@@ -249,7 +264,12 @@ func (s *ProcessSuite) assertEveryQueuedSessionMovedOnce() {
 	lock, err := s.layout.Lock()
 	s.Require().NoError(err)
 	defer func() { _ = lock.Release() }()
-	store, err := OpenStore(s.layout.SessionsDir(), helperPool, lock)
+	store, err := OpenStore(
+		s.layout.SessionsDir(),
+		helperPool,
+		lock,
+		Limits{MaxConcurrent: 2 * helperSessions},
+	)
 	s.Require().NoError(err)
 	defer func() { _ = store.Close() }()
 	list, err := store.List()
