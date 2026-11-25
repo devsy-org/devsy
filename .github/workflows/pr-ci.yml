@@ -21,6 +21,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.run_attempt == 1 && format('pr-{0}', github.head_ref) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# The pipe makes the go command fall back to a direct fetch on any proxy error.
+# With a comma it only falls back on 404 or 410, so a proxy.golang.org stream
+# error (INTERNAL_ERROR) fails the job.
+env:
+  GOPROXY: https://proxy.golang.org|direct
+
 jobs:
   changes:
     runs-on: ubuntu-latest
