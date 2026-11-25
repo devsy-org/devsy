@@ -165,7 +165,7 @@ unit:
       os: [windows]
       packages: [./pkg/pool/audit]
       require_tests: [TestOpenRefusesOnWindows, TestOpenReaderRefusesWindows, TestWriterCannotBeBuiltOnWindows]
-      args: [-race, -count=1, -timeout=5m]
+      args: [-race, -count=1, -timeout=5m, -v]
 
     - name: ci-tooling-windows
       description: Go CI helpers that also run on Windows
