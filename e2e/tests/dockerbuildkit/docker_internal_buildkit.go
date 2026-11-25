@@ -42,14 +42,16 @@ const (
 // environment, mirroring how the provider configures Devsy's own invocations.
 func dockerOutput(ctx context.Context, env []string, args ...string) string {
 	out, err := dockerRun(ctx, env, args...)
-	redactor := redact.New(redact.Options{Environment: append(os.Environ(), env...)})
-	framework.ExpectNoError(
-		err,
-		"docker %s: %s",
-		framework.ReportText(redactor, strings.Join(args, " ")),
-		framework.ReportText(redactor, out),
-	)
-	return framework.ReportText(redactor, out)
+	if err != nil {
+		redactor := redact.New(redact.Options{Environment: append(os.Environ(), env...)})
+		framework.ExpectNoError(
+			err,
+			"docker %s: %s",
+			framework.ReportText(redactor, strings.Join(args, " ")),
+			framework.ReportText(redactor, out),
+		)
+	}
+	return out
 }
 
 func dockerRun(ctx context.Context, env []string, args ...string) (string, error) {
