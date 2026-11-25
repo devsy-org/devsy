@@ -179,16 +179,20 @@ func TestSessionConnCloseUnblocksStalledWrite(t *testing.T) {
 	}
 }
 
-// With the window full and the peer frozen, a Write that starts after Close
-// returns net.ErrClosed instead of queuing behind the stalled Write.
-func TestSessionConnWriteAfterCloseReturnsErrClosed(t *testing.T) {
+// A Write that starts after Close returns net.ErrClosed without waiting for
+// writeMu. The test holds the lock itself, standing in for a Write stalled on
+// the peer's window, so a Write that queued on it would never return.
+func TestSessionConnWriteAfterCloseDoesNotWaitForWriteLock(t *testing.T) {
 	release := make(chan struct{})
 	client := startExecServer(t, func(xssh.Channel) { <-release })
 	t.Cleanup(func() { close(release) })
-	conn, err := OpenSessionConn(t.Context(), client, SessionConnOptions{Command: innerCommand})
+	opened, err := OpenSessionConn(t.Context(), client, SessionConnOptions{Command: innerCommand})
 	require.NoError(t, err)
+	conn, ok := opened.(*sessionConn)
+	require.True(t, ok)
 
-	writeDone := fillWindow(t, conn)
+	conn.writeMu.Lock()
+	defer conn.writeMu.Unlock()
 	require.NoError(t, conn.Close())
 	lateDone := make(chan error, 1)
 	go func() {
@@ -199,9 +203,8 @@ func TestSessionConnWriteAfterCloseReturnsErrClosed(t *testing.T) {
 	case err := <-lateDone:
 		require.ErrorIs(t, err, net.ErrClosed)
 	case <-time.After(execServerTimeout):
-		t.Fatal("Write after Close blocked")
+		t.Fatal("Write after Close waited for the write lock")
 	}
-	require.Error(t, <-writeDone)
 }
 
 func waitForTestSignal(t *testing.T, signal <-chan struct{}, failure string) {
