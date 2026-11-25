@@ -496,7 +496,13 @@ func (s *StoreSuite) TestHostIDLeavesOtherFilesAlone() {
 	dir := s.T().TempDir()
 	path := filepath.Join(dir, "host-id")
 	const sibling = "h_01ARZ3NDEKTSV4RRFFQ69G5FAV\n"
-	names := []string{".host-id-host-id-123", ".host-id-123", ".host-id-keep", "notes"}
+	names := []string{
+		".host-id-tmp-f75e587e8440e822-123",
+		".host-id-host-id-123",
+		".host-id-123",
+		".host-id-keep",
+		"notes",
+	}
 	for _, name := range names {
 		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte(sibling), fileMode))
 	}
