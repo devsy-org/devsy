@@ -26,6 +26,7 @@ const (
 	testRepo      = "o/r"
 	runIDFlag     = "--run-id"
 	statusDone    = "completed"
+	failureState  = "failure"
 	aggregator    = "CI Success"
 	macUnitTests  = "Unit Tests (macos-latest)"
 	passedJob     = `{"name":"Lint","conclusion":"success","runner_name":"r2","labels":["ubuntu-latest"]}`
@@ -74,7 +75,7 @@ type selectionCase struct {
 }
 
 func selectionCases() []selectionCase {
-	run := ghRun{ID: 7, Attempt: 1, Status: statusDone, Conclusion: "failure"}
+	run := ghRun{ID: 7, Attempt: 1, Status: statusDone, Conclusion: failureState}
 	noRunner := job(macUnitTests, "cancelled", "", "macos-latest")
 	return []selectionCase{
 		{
@@ -92,7 +93,7 @@ func selectionCases() []selectionCase {
 		},
 		{
 			name:   "second attempt",
-			run:    ghRun{Attempt: 2, Status: statusDone, Conclusion: "failure"},
+			run:    ghRun{Attempt: 2, Status: statusDone, Conclusion: failureState},
 			jobs:   []ghJob{noRunner},
 			reason: "attempt 2 is not the first attempt",
 		},
@@ -137,7 +138,7 @@ func (s *rerunSuite) TestSelection() {
 	ignore := map[string]bool{aggregator: true}
 	for _, tt := range selectionCases() {
 		s.Run(tt.name, func() {
-			plan := selectNoRunnerRerun(tt.run, tt.jobs, ignore)
+			plan := selectRerun(tt.run, tt.jobs, ignore)
 
 			s.Equal(tt.rerun, plan.rerun)
 			s.Contains(plan.reason, tt.reason)
@@ -332,6 +333,7 @@ func (s *rerunSuite) assertOnlyOwnCommands(out string) {
 		if strings.HasPrefix(trimmed, "::") {
 			s.True(
 				strings.HasPrefix(trimmed, "::notice::run 7: ") ||
+					strings.HasPrefix(trimmed, "::warning::run 7: ") ||
 					strings.HasPrefix(trimmed, "::error::exit status 1: "),
 				"unexpected command line %q", line,
 			)
