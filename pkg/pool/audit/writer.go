@@ -60,6 +60,8 @@ func NewWriter(store *Store, cfg WriterConfig) (*Writer, error) {
 
 // Write appends an event, including local-only events. On error the caller
 // must refuse the action. A store sync failure may leave the record on disk.
+// The caller keeps e.Data and its values unchanged until Write returns, and
+// the configured callbacks must be safe for concurrent use.
 func (w *Writer) Write(e Event) error {
 	if err := checkEvent(e); err != nil {
 		return err
@@ -93,6 +95,8 @@ func checkEvent(e Event) error {
 		return fmt.Errorf("write audit event %s: session is required", e.Type)
 	case !e.Actor.Kind.Known():
 		return fmt.Errorf("write audit event %s: unknown actor kind", e.Type)
+	case e.Actor.ID == "":
+		return fmt.Errorf("write audit event %s: actor id is empty", e.Type)
 	}
 	return nil
 }

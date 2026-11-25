@@ -180,6 +180,14 @@ func (s *WriterSuite) TestNilDataIsValidatedAndWrittenAsAnEmptyObject() {
 	s.Contains(lines[0], `"data":{}`)
 }
 
+func (s *WriterSuite) TestRefusesAnEmptyActorID() {
+	event := writerTestEvent(envelope.AuditSessionRequest)
+	event.Actor.ID = ""
+	err := s.writer().Write(event)
+	s.ErrorContains(err, "actor id is empty")
+	s.Empty(s.lines())
+}
+
 func (s *WriterSuite) TestRefusesAnEmptyID() {
 	s.cfg.NewID = func() string { return "" }
 	err := s.writer().Write(writerTestEvent(envelope.AuditSessionRequest))
