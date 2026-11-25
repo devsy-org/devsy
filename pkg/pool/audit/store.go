@@ -79,12 +79,13 @@ var syncDirFunc = syncDir
 // syncDirChain syncs dir, then each parent while the directory below it is
 // owned by the current user: those are the entries this process could have
 // created. The first parent the user does not own is synced too, because it
-// holds the entry of the last owned directory. A permission error there is
-// ignored, since such a parent may not be readable.
+// holds the entry of the last owned directory. Every error propagates,
+// including a permission error on that parent: its entry cannot be made
+// durable, so Open fails closed.
 func syncDirChain(dir string) error {
 	for p := filepath.Clean(dir); ; {
 		owned := ownedByCurrentUser(p)
-		if err := syncDirFunc(p); err != nil && (owned || !errors.Is(err, fs.ErrPermission)) {
+		if err := syncDirFunc(p); err != nil {
 			return err
 		}
 		parent := filepath.Dir(p)

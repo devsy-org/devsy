@@ -31,10 +31,10 @@ func (s *StoreSuite) TestOpenFailsWhenAForeignParentCannotBeSynced() {
 	s.ErrorContains(err, "injected sync failure")
 }
 
-func (s *StoreSuite) TestOpenIgnoresAForeignParentThatCannotBeRead() {
+func (s *StoreSuite) TestOpenFailsWhenAForeignParentCannotBeRead() {
 	s.syncFailsOnForeignDirs(fs.ErrPermission)
 	_, err := Open(s.dir)
-	s.NoError(err)
+	s.ErrorIs(err, fs.ErrPermission)
 }
 
 func (s *StoreSuite) TestHostIDFifoIsRefusedWithoutHanging() {
