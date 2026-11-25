@@ -82,21 +82,29 @@ func (s *ReaderSuite) TestInvalidEnvelopeFailsEvenForNonmatchingSession() {
 	s.Equal([]string{first}, got)
 }
 
-func (s *ReaderSuite) TestDecodeErrorDoesNotEchoRecordValue() {
-	const canary = "918273645e999"
-	s.writeDay(dayTwo, `{"data":{"number":`+canary+"}}\n")
-	got, err := s.scan(ReaderFilter{Session: readerSession})
-	s.Require().ErrorContains(err, "not a valid audit envelope")
-	s.NotContains(err.Error(), canary)
-	s.checkLocation(err, dayTwo, 0)
-	s.Empty(got)
+func (s *ReaderSuite) TestDecodeErrorsDoNotEchoRecordValues() {
+	const canary = "918273645"
+	base := s.appendEvent(dayTwo, readerSession, s.now)
+	for name, bad := range map[string]string{
+		"unknown source":    strings.Replace(base, `"src":"pool"`, `"src":"x`+canary+`"`, 1),
+		"unlisted data key": strings.Replace(base, `"devsy.request.outcome"`, `"k`+canary+`"`, 1),
+		"data number":       strings.Replace(base, `"devsy.request.outcome":"new"`, `"devsy.request.outcome":918273645`, 1),
+	} {
+		s.Require().NotEqual(base, bad, name)
+		s.writeDay(dayTwo, bad+"\n")
+		got, err := s.scan(ReaderFilter{Session: readerSession})
+		s.Require().ErrorContains(err, "not a valid audit envelope", name)
+		s.NotContains(err.Error(), canary, name)
+		s.checkLocation(err, dayTwo, 0)
+		s.Empty(got, name)
+	}
 }
 
 func (s *ReaderSuite) TestFilteredReadRefusesRecordsThatFailValidation() {
 	base := s.appendEvent(dayTwo, readerSession, s.now)
 	tsKey := `"ts":"` + envelope.FormatTime(s.now) + `"`
 	for name, bad := range map[string]string{
-		"wrong kind":      strings.Replace(base, `"kind":"audit"`, `"kind":"log"`, 1),
+		"valid log":       s.logRecord(readerSession),
 		"unknown source":  strings.Replace(base, `"src":"pool"`, `"src":"nope"`, 1),
 		"unknown field":   strings.Replace(base, `{"v":1`, `{"extra":1,"v":1`, 1),
 		"data not listed": strings.Replace(base, `"devsy.request.outcome":"new"`, `"devsy.request.outcome":"bogus"`, 1),
@@ -400,6 +408,17 @@ func (s *ReaderSuite) appendEvent(day, session string, ts time.Time) string {
 	s.Require().NoError(writer.Write(event))
 	content := strings.TrimSuffix(s.readFile(filepath.Join(s.dir, day+fileExt)), "\n")
 	return content[strings.LastIndexByte(content, '\n')+1:]
+}
+
+func (s *ReaderSuite) logRecord(session string) string {
+	e := envelope.Envelope{
+		V: envelope.Version, Kind: envelope.KindLog, Src: "pool", Session: session,
+		TS: envelope.FormatTime(s.now), Level: envelope.LevelInfo, Msg: "hello",
+	}
+	s.Require().NoError(e.Validate())
+	body, err := e.MarshalJSON()
+	s.Require().NoError(err)
+	return string(body)
 }
 
 func (s *ReaderSuite) checkLocation(err error, day string, offset int) {

@@ -121,6 +121,19 @@ func (s *AuditCmdSuite) TestSinceDateAndNonUTCOffset() {
 	}
 }
 
+func (s *AuditCmdSuite) TestSinceComparesSubMillisecondCutoffs() {
+	s.skipWindows()
+	record := s.record("one", auditTestDate+"T00:00:00.123Z")
+	s.Require().
+		NoError(os.WriteFile(filepath.Join(s.dir, auditTestDate+".jsonl"), []byte(record+"\n"), 0o600))
+	got, err := s.execute("--dir", s.dir, "--since", auditTestDate+"T00:00:00.123Z")
+	s.Require().NoError(err)
+	s.Equal(record+"\n", got)
+	got, err = s.execute("--dir", s.dir, "--since", auditTestDate+"T00:00:00.123000001Z")
+	s.Require().NoError(err)
+	s.Empty(got)
+}
+
 func (s *AuditCmdSuite) TestErrorKeepsEarlierOutput() {
 	s.skipWindows()
 	good := s.record("one", auditTestTime) + "\n"

@@ -34,6 +34,9 @@ func NewAuditCmd() *cobra.Command {
 		Short: "Read local pool audit records as newline-delimited JSON",
 		Long: `Read local pool audit records as newline-delimited JSON.
 
+With --session or --since, each record must be a valid audit record and the
+first invalid one stops the scan. Without a filter, records are printed as stored
+and are not checked against the schema.
 Warnings go to stderr. Do not merge stderr into stdout.
 The directory must be owned by the current user and must not be group or world writable.`,
 		Args:         cobra.NoArgs,
