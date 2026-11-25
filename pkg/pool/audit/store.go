@@ -32,6 +32,9 @@ const (
 
 	defaultLockWait = 5 * time.Second
 	lockRetry       = 5 * time.Millisecond
+
+	// lockFlags never follows a symlink and never blocks on a FIFO.
+	lockFlags = os.O_CREATE | os.O_RDWR | noFollow | nonBlock
 )
 
 var (
@@ -52,11 +55,14 @@ type Store struct {
 }
 
 // Open creates the directory when needed and refuses one that other users can
-// write to. The ownership and mode check runs on Unix only; the Windows build
-// does not inspect the directory ACL. It syncs the directory and each parent
-// the current user owns on every call, so a directory whose earlier sync
-// failed is never trusted just because it exists.
+// write to. The ownership and mode check runs on Unix only. The Windows build
+// refuses to open a store: it has no owner-only ACL check yet. It syncs the
+// directory and each parent the current user owns on every call, so a
+// directory whose earlier sync failed is never trusted just because it exists.
 func Open(dir string) (*Store, error) {
+	if err := checkPlatform(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return nil, fmt.Errorf("create audit directory: %w", err)
 	}
@@ -183,12 +189,17 @@ func openDayFile(path string) (*os.File, error) {
 	if err := checkRegular(path); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(
-		filepath.Clean(path), os.O_RDWR|os.O_CREATE|noFollow|nonBlock, fileMode)
+	f, err := openFile(path, os.O_RDWR|os.O_CREATE, fileMode)
 	if err != nil {
 		return nil, fmt.Errorf("open audit file: %w", err)
 	}
 	return f, nil
+}
+
+// openFile opens path without following a final symlink and without blocking
+// on a FIFO, so a planted entry fails the open instead of redirecting it.
+func openFile(path string, flag int, perm os.FileMode) (*os.File, error) {
+	return os.OpenFile(filepath.Clean(path), flag|noFollow|nonBlock, perm)
 }
 
 // trimTornTail removes bytes after the last newline, a record cut short by a
@@ -321,7 +332,7 @@ func newFlock(path string) (*flock.Flock, error) {
 	return flock.New(
 		path,
 		flock.SetPermissions(fileMode),
-		flock.SetFlag(os.O_CREATE|os.O_RDWR|noFollow|nonBlock),
+		flock.SetFlag(lockFlags),
 	), nil
 }
 
@@ -365,7 +376,7 @@ func (s *Store) openSnapshot(day string) (*snapshot, error) {
 	if err := checkRegular(path); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_RDONLY|noFollow|nonBlock, 0)
+	f, err := openFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("read audit file: %w", err)
 	}

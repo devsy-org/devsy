@@ -1,3 +1,5 @@
+//go:build !windows
+
 package audit
 
 import (
@@ -8,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -19,9 +20,8 @@ import (
 )
 
 const (
-	goosWindows = "windows"
-	dayOne      = "2026-11-22"
-	dayTwo      = "2026-11-23"
+	dayOne = "2026-11-22"
+	dayTwo = "2026-11-23"
 )
 
 type StoreSuite struct {
@@ -45,11 +45,9 @@ func (s *StoreSuite) TestAppendWritesOneLinePerRecord() {
 	s.Require().NoError(st.Append([]byte(`{"a":1}`)))
 	s.Require().NoError(st.Append([]byte(`{"b":"x y"}`)))
 	s.Equal("{\"a\":1}\n{\"b\":\"x y\"}\n", s.read(dayOne))
-	if runtime.GOOS != goosWindows {
-		info, err := os.Stat(filepath.Join(s.dir, dayOne+fileExt))
-		s.Require().NoError(err)
-		s.Equal(os.FileMode(fileMode), info.Mode().Perm())
-	}
+	info, err := os.Stat(filepath.Join(s.dir, dayOne+fileExt))
+	s.Require().NoError(err)
+	s.Equal(os.FileMode(fileMode), info.Mode().Perm())
 }
 
 func (s *StoreSuite) TestRotatesAtUTCMidnight() {
@@ -188,9 +186,6 @@ func (s *StoreSuite) TestOpenCreatesNestedDirectories() {
 }
 
 func (s *StoreSuite) TestScanRefusesNonRegularDayFile() {
-	if runtime.GOOS == goosWindows {
-		s.T().Skip("symlinks need privileges on windows")
-	}
 	st := s.open()
 	target := filepath.Join(s.T().TempDir(), "target")
 	s.Require().NoError(os.WriteFile(target, []byte("{\"a\":1}\n"), fileMode))
@@ -246,9 +241,6 @@ func (s *StoreSuite) TestScanRefusesHugeUnterminatedTail() {
 }
 
 func (s *StoreSuite) TestScanRefusesSymlinkedLock() {
-	if runtime.GOOS == goosWindows {
-		s.T().Skip("symlinks need privileges on windows")
-	}
 	st := s.open()
 	s.Require().NoError(st.Append([]byte(`{"a":1}`)))
 	target := filepath.Join(s.T().TempDir(), "target")
@@ -289,9 +281,6 @@ func (s *StoreSuite) TestScanKeepsRepairedTailOutOfSnapshot() {
 }
 
 func (s *StoreSuite) TestSymlinksAreRefused() {
-	if runtime.GOOS == goosWindows {
-		s.T().Skip("symlinks need privileges on windows")
-	}
 	st := s.open()
 	target := filepath.Join(s.T().TempDir(), "target")
 	s.Require().NoError(os.WriteFile(target, nil, fileMode))
@@ -401,9 +390,6 @@ func (s *StoreSuite) TestDaysIgnoresOtherFiles() {
 }
 
 func (s *StoreSuite) TestOpenRefusesWritableDirectory() {
-	if runtime.GOOS == goosWindows {
-		s.T().Skip("no unix permission bits")
-	}
 	s.Require().NoError(os.MkdirAll(s.dir, dirMode))
 	s.Require().NoError(os.Chmod(s.dir, dirMode|0o070))
 	_, err := Open(s.dir)
@@ -500,10 +486,45 @@ func (s *StoreSuite) TestHostIDPublishLeavesNoTemporaryFiles() {
 	s.ElementsMatch([]string{"host-id", "host-id" + hostIDLockSuffix}, names)
 }
 
-func (s *StoreSuite) TestHostIDRefusesSymlinkedLock() {
-	if runtime.GOOS == goosWindows {
-		s.T().Skip("symlinks need privileges on windows")
+func (s *StoreSuite) TestOpenUsesTheDefaultLockWait() {
+	st := s.open()
+	s.Equal(5*time.Second, defaultLockWait)
+	s.Equal(defaultLockWait, st.lockWait)
+}
+
+func (s *StoreSuite) TestHostIDRemovesStaleTempFiles() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, "host-id")
+	stale := []string{".host-id-host-id-123", ".host-id-host-id-4567890"}
+	keep := []string{".host-id-other-123", ".host-id-host-id-x1", ".host-id-host-id-", "notes"}
+	for _, name := range append(append([]string{}, stale...), keep...) {
+		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte("x"), fileMode))
 	}
+	s.Require().NoError(os.Mkdir(filepath.Join(dir, ".host-id-host-id-999"), dirMode))
+	_, err := LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	for _, name := range stale {
+		s.NoFileExists(filepath.Join(dir, name))
+	}
+	for _, name := range keep {
+		s.FileExists(filepath.Join(dir, name))
+	}
+	s.DirExists(filepath.Join(dir, ".host-id-host-id-999"), "only files are removed")
+}
+
+func (s *StoreSuite) TestHostIDRemovesStaleTempFilesWhenTheIDExists() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, "host-id")
+	_, err := LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	stale := filepath.Join(dir, ".host-id-host-id-42")
+	s.Require().NoError(os.WriteFile(stale, []byte("x"), fileMode))
+	_, err = LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	s.NoFileExists(stale)
+}
+
+func (s *StoreSuite) TestHostIDRefusesSymlinkedLock() {
 	dir := s.T().TempDir()
 	target := filepath.Join(s.T().TempDir(), "target")
 	s.Require().NoError(os.WriteFile(target, nil, fileMode))
@@ -592,11 +613,9 @@ func (s *StoreSuite) TestOpenSyncsTheDirectoryChain() {
 	_, err := Open(nested)
 	s.Require().NoError(err)
 	s.Contains(*calls, nested)
-	if runtime.GOOS != goosWindows {
-		s.Contains(*calls, filepath.Join(root, "a", "b"))
-		s.Contains(*calls, filepath.Join(root, "a"))
-		s.Contains(*calls, root)
-	}
+	s.Contains(*calls, filepath.Join(root, "a", "b"))
+	s.Contains(*calls, filepath.Join(root, "a"))
+	s.Contains(*calls, root)
 }
 
 func (s *StoreSuite) TestOpenRetriesSyncAfterAFailure() {

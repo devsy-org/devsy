@@ -53,6 +53,9 @@ func LoadOrCreateHostID(path string) (string, error) {
 }
 
 func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
+	if err := checkPlatform(); err != nil {
+		return "", false, err
+	}
 	dir := filepath.Dir(path)
 	if err := checkDirMode(dir); err != nil {
 		return "", false, err
@@ -65,6 +68,7 @@ func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
 	if err := acquire(lock, defaultLockWait, false); err != nil {
 		return "", false, err
 	}
+	removeStaleTemps(path)
 	id, err = readHostID(path)
 	switch {
 	case err == nil:
@@ -87,7 +91,7 @@ func readHostID(path string) (string, error) {
 	if err := checkRegular(path); err != nil {
 		return "", err
 	}
-	f, err := os.OpenFile(filepath.Clean(path), os.O_RDONLY|noFollow|nonBlock, 0)
+	f, err := openFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +120,7 @@ func readHostID(path string) (string, error) {
 func publishHostID(path string) (string, error) {
 	id := hostIDPrefix + NewID()
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".host-id-*")
+	tmp, err := os.CreateTemp(dir, tempPrefix(path)+"*")
 	if err != nil {
 		return "", fmt.Errorf("create host id file: %w", err)
 	}
@@ -131,6 +135,35 @@ func publishHostID(path string) (string, error) {
 		return "", fmt.Errorf("sync host id directory: %w", err)
 	}
 	return id, nil
+}
+
+// tempPrefix names the temporary files of one host ID path, so cleaning up
+// after one path never touches another path's file in the same directory.
+func tempPrefix(path string) string { return ".host-id-" + filepath.Base(path) + "-" }
+
+// removeStaleTemps deletes temporary files a crashed publish left behind. The
+// caller holds the host ID lock that every publish for path also holds, so none
+// is in flight. It is best effort: a leftover file is harmless clutter, and
+// failing here must not block the host ID.
+func removeStaleTemps(path string) {
+	dir := filepath.Dir(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	prefix := tempPrefix(path)
+	for _, e := range entries {
+		suffix, found := strings.CutPrefix(e.Name(), prefix)
+		if found && e.Type().IsRegular() && isDigits(suffix) {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
+// isDigits reports whether s is a non-empty run of decimal digits, the suffix
+// os.CreateTemp appends.
+func isDigits(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789") == ""
 }
 
 func isBlank(r rune) bool { return r == 0 || unicode.IsSpace(r) }
