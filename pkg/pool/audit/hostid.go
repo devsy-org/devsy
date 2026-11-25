@@ -23,8 +23,8 @@ const (
 	hostIDLockSuffix   = ".lock"
 	maxHostIDFileBytes = 128
 
-	hostIDTempDirPrefix = ".host-id-tmp-"
-	tempDirDigestBytes  = 6
+	hostIDTempPrefix = ".host-id-tmp-"
+	tempDigestBytes  = 8
 )
 
 // renameFunc is os.Rename, replaceable so tests can see where a publish
@@ -63,6 +63,9 @@ func LoadOrCreateHostID(path string) (string, error) {
 
 func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
 	if err := checkPlatform(); err != nil {
+		return "", false, err
+	}
+	if err := checkHostIDPath(path); err != nil {
 		return "", false, err
 	}
 	dir := filepath.Dir(path)
@@ -129,12 +132,7 @@ func readHostID(path string) (string, error) {
 func publishHostID(path string) (string, error) {
 	id := hostIDPrefix + NewID()
 	dir := filepath.Dir(path)
-	tmpDir, err := ensureTempDir(path)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = os.Remove(tmpDir) }()
-	tmp, err := os.CreateTemp(tmpDir, "*")
+	tmp, err := os.CreateTemp(dir, tempPrefix(path)+"*")
 	if err != nil {
 		return "", fmt.Errorf("create host id file: %w", err)
 	}
@@ -151,52 +149,46 @@ func publishHostID(path string) (string, error) {
 	return id, nil
 }
 
-// tempDir is the directory that holds the temporary files of one host ID
-// path. It is reserved for them, so a sweep never reaches a file the caller
-// chose, and a digest of the base name keeps its length fixed.
-func tempDir(path string) string {
+// checkHostIDPath refuses a path in the namespace of the temporary files, so
+// the sweep in removeStaleTemps can never reach a host ID file.
+func checkHostIDPath(path string) error {
+	if strings.HasPrefix(filepath.Base(path), hostIDTempPrefix) {
+		return fmt.Errorf("host id file name must not start with %q", hostIDTempPrefix)
+	}
+	return nil
+}
+
+// tempPrefix starts the temporary file names of one host ID path. A digest of
+// the base name keeps the length fixed and keeps two paths in one directory
+// from sweeping each other's files.
+func tempPrefix(path string) string {
 	sum := sha256.Sum256([]byte(filepath.Base(path)))
-	name := hostIDTempDirPrefix + hex.EncodeToString(sum[:tempDirDigestBytes])
-	return filepath.Join(filepath.Dir(path), name)
+	return hostIDTempPrefix + hex.EncodeToString(sum[:tempDigestBytes]) + "-"
 }
 
-// ensureTempDir creates the reserved directory and refuses anything there that
-// is not a plain directory, such as a link.
-func ensureTempDir(path string) (string, error) {
-	dir := tempDir(path)
-	if err := os.Mkdir(dir, dirMode); err != nil && !errors.Is(err, fs.ErrExist) {
-		return "", fmt.Errorf("create host id temp directory: %w", err)
-	}
-	if !isPlainDir(dir) {
-		return "", fmt.Errorf("host id temp path is not a directory: %s", dir)
-	}
-	return dir, nil
-}
-
-func isPlainDir(path string) bool {
-	info, err := os.Lstat(path)
-	return err == nil && info.IsDir()
-}
-
-// removeStaleTemps deletes the files a crashed publish left in the reserved
-// directory. The caller holds the host ID lock that every publish for path also
+// removeStaleTemps deletes the temporary files a crashed publish left next to
+// path. The caller holds the host ID lock that every publish for path also
 // holds, so none is in flight. It is best effort: a leftover file is harmless
 // clutter, and failing here must not block the host ID.
 func removeStaleTemps(path string) {
-	dir := tempDir(path)
-	if !isPlainDir(dir) {
-		return
-	}
+	dir := filepath.Dir(path)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
+	prefix := tempPrefix(path)
 	for _, e := range entries {
-		if e.Type().IsRegular() {
+		suffix, found := strings.CutPrefix(e.Name(), prefix)
+		if found && e.Type().IsRegular() && isDigits(suffix) {
 			_ = os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
-	_ = os.Remove(dir)
+}
+
+// isDigits reports whether s is a non-empty run of decimal digits, the suffix
+// os.CreateTemp appends.
+func isDigits(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789") == ""
 }
 
 func isBlank(r rune) bool { return r == 0 || unicode.IsSpace(r) }

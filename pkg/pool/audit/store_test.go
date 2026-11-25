@@ -495,26 +495,33 @@ func (s *StoreSuite) TestOpenUsesTheDefaultLockWait() {
 func (s *StoreSuite) TestHostIDRemovesStaleTempFiles() {
 	dir := s.T().TempDir()
 	path := filepath.Join(dir, "host-id")
-	tmp := tempDir(path)
-	s.Require().NoError(os.Mkdir(tmp, dirMode))
-	s.Require().NoError(os.Mkdir(filepath.Join(tmp, "sub"), dirMode))
-	for _, name := range []string{"123", "partial"} {
-		s.Require().NoError(os.WriteFile(filepath.Join(tmp, name), []byte("h_0"), fileMode))
-	}
+	stale := []string{tempPrefix(path) + "123", tempPrefix(path) + "4567890"}
 	const sibling = "h_01ARZ3NDEKTSV4RRFFQ69G5FAV\n"
-	for _, name := range []string{".host-id-host-id-123", "notes"} {
+	keep := []string{
+		".host-id-host-id-123",
+		tempPrefix(filepath.Join(dir, "other")) + "123",
+		tempPrefix(path) + "x1",
+		tempPrefix(path),
+		"notes",
+	}
+	for _, name := range stale {
+		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte("h_0"), fileMode))
+	}
+	for _, name := range keep {
 		s.Require().NoError(os.WriteFile(filepath.Join(dir, name), []byte(sibling), fileMode))
 	}
+	s.Require().NoError(os.Mkdir(filepath.Join(dir, tempPrefix(path)+"999"), dirMode))
 	_, err := LoadOrCreateHostID(path)
 	s.Require().NoError(err)
-	s.NoFileExists(filepath.Join(tmp, "123"))
-	s.NoFileExists(filepath.Join(tmp, "partial"))
-	s.DirExists(filepath.Join(tmp, "sub"), "only files are removed")
-	for _, name := range []string{".host-id-host-id-123", "notes"} {
+	for _, name := range stale {
+		s.NoFileExists(filepath.Join(dir, name))
+	}
+	for _, name := range keep {
 		data, readErr := os.ReadFile(filepath.Clean(filepath.Join(dir, name)))
 		s.Require().NoError(readErr)
-		s.Equal(sibling, string(data), "a file outside the reserved directory is never touched")
+		s.Equal(sibling, string(data), "%s must be left alone", name)
 	}
+	s.DirExists(filepath.Join(dir, tempPrefix(path)+"999"), "only files are removed")
 }
 
 func (s *StoreSuite) TestHostIDRemovesStaleTempFilesWhenTheIDExists() {
@@ -522,34 +529,25 @@ func (s *StoreSuite) TestHostIDRemovesStaleTempFilesWhenTheIDExists() {
 	path := filepath.Join(dir, "host-id")
 	_, err := LoadOrCreateHostID(path)
 	s.Require().NoError(err)
-	s.Require().NoError(os.Mkdir(tempDir(path), dirMode))
-	stale := filepath.Join(tempDir(path), "42")
+	stale := filepath.Join(dir, tempPrefix(path)+"42")
 	s.Require().NoError(os.WriteFile(stale, []byte("x"), fileMode))
 	_, err = LoadOrCreateHostID(path)
 	s.Require().NoError(err)
 	s.NoFileExists(stale)
-	s.NoDirExists(tempDir(path), "an emptied reserved directory is removed")
 }
 
-func (s *StoreSuite) TestHostIDSweepDoesNotFollowALinkedTempDirectory() {
+func (s *StoreSuite) TestHostIDRefusesTheTempNamespace() {
 	dir := s.T().TempDir()
-	path := filepath.Join(dir, "host-id")
+	path := filepath.Join(dir, hostIDTempPrefix+"123")
 	_, err := LoadOrCreateHostID(path)
-	s.Require().NoError(err)
-	elsewhere := s.T().TempDir()
-	keep := filepath.Join(elsewhere, "keep")
-	s.Require().NoError(os.WriteFile(keep, []byte("x"), fileMode))
-	s.Require().NoError(os.Symlink(elsewhere, tempDir(path)))
-	_, err = LoadOrCreateHostID(path)
-	s.Require().NoError(err)
-	s.FileExists(keep)
-	s.Require().NoError(os.Remove(path))
-	_, err = LoadOrCreateHostID(path)
-	s.ErrorContains(err, "not a directory", "publish must not stage through a link")
-	s.FileExists(keep)
+	s.Require().ErrorContains(err, "must not start with")
+	s.NoFileExists(path)
+	entries, readErr := os.ReadDir(dir)
+	s.Require().NoError(readErr)
+	s.Empty(entries, "a refused path must not write anything")
 }
 
-func (s *StoreSuite) TestHostIDStagesInTheReservedDirectory() {
+func (s *StoreSuite) TestHostIDStagesNextToTheIDFile() {
 	dir := s.T().TempDir()
 	path := filepath.Join(dir, "host-id")
 	var staged string
@@ -561,9 +559,9 @@ func (s *StoreSuite) TestHostIDStagesInTheReservedDirectory() {
 	}
 	_, err := LoadOrCreateHostID(path)
 	s.Require().ErrorContains(err, "injected rename failure")
-	s.Equal(tempDir(path), filepath.Dir(staged))
+	s.Equal(dir, filepath.Dir(staged), "the checked directory is the only staging place")
+	s.True(strings.HasPrefix(filepath.Base(staged), tempPrefix(path)))
 	s.NoFileExists(staged)
-	s.NoDirExists(tempDir(path))
 	s.NoFileExists(path)
 }
 
@@ -575,9 +573,9 @@ func (s *StoreSuite) TestHostIDLongBaseNameIsAccepted() {
 	s.Regexp(hostIDPattern, id)
 }
 
-func (s *StoreSuite) TestTempDirNameHasFixedLength() {
-	short := filepath.Base(tempDir(filepath.Join("d", "a")))
-	long := filepath.Base(tempDir(filepath.Join("d", strings.Repeat("a", 255))))
+func (s *StoreSuite) TestTempPrefixHasFixedLength() {
+	short := tempPrefix(filepath.Join("d", "a"))
+	long := tempPrefix(filepath.Join("d", strings.Repeat("a", 255)))
 	s.Len(long, len(short))
 	s.NotEqual(short, long)
 }
