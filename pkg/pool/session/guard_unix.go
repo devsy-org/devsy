@@ -15,6 +15,24 @@ const nonBlock = syscall.O_NONBLOCK
 
 func checkPlatform() error { return nil }
 
+// tryLock takes an exclusive flock on f without waiting and reports false when
+// another open file holds it. Closing f drops the lock.
+func tryLock(f *os.File) (bool, error) {
+	for {
+		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, syscall.EINTR):
+			continue
+		case errors.Is(err, syscall.EWOULDBLOCK):
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+}
+
 // checkRoot refuses a directory that other users can reach or that another
 // user owns. It checks the open directory, not a path that could change.
 func checkRoot(root *os.Root) error {

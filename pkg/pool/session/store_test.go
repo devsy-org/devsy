@@ -235,8 +235,9 @@ func (s *StoreSuite) TestOpenStoreChecksThePoolAndTheDirectory() {
 	s.Require().NoError(os.Chmod(s.dir, dirMode))
 
 	s.Require().NoError(os.RemoveAll(s.dir))
-	_, err = OpenStore(s.dir, storePool, s.lock)
+	fresh, err := OpenStore(s.dir, storePool, s.lock)
 	s.Require().NoError(err)
+	s.Require().NoError(fresh.Close())
 	info, err := os.Stat(s.dir)
 	s.Require().NoError(err)
 	s.Equal(os.FileMode(dirMode), info.Mode().Perm())
@@ -341,23 +342,33 @@ func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
 	sess := s.create()
 	entered, proceed := make(chan struct{}), make(chan struct{})
 	var once sync.Once
+	var wg sync.WaitGroup
 	finish := func() { once.Do(func() { close(proceed) }) }
-	s.T().Cleanup(finish)
+	s.T().Cleanup(func() {
+		finish()
+		wg.Wait()
+	})
 	s.stubRename(func(root *os.Root, oldName, newName string) error {
 		close(entered)
 		<-proceed
 		return root.Rename(oldName, newName)
 	})
-	var wg sync.WaitGroup
 	wg.Go(func() {
 		_, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
 		s.NoError(err)
 	})
-	<-entered
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		s.FailNow("the write never reached the rename")
+	}
 	released := make(chan error, 1)
 	go func() { released <- s.lock.Release() }()
 	for range 20 {
-		_, err := s.layout.Lock()
+		other, err := s.layout.Lock()
+		if err == nil {
+			_ = other.Release()
+		}
 		s.Require().ErrorIs(err, ErrPoolLocked, "another owner must wait for the write")
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -374,6 +385,70 @@ func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
 	s.Require().NoError(again.Release())
 }
 
+func (s *StoreSuite) TestOpenStoreRefusesASessionsLinkInsideThePool() {
+	s.Require().NoError(os.Rename(s.dir, filepath.Join(s.layout.Dir(), "real")))
+	s.Require().NoError(os.Symlink("real", s.dir))
+	_, err := OpenStore(s.dir, storePool, s.lock)
+	s.Require().ErrorIs(err, errNotDirectory)
+}
+
+func (s *StoreSuite) TestStoreStopsWhenItsDirectoryMovesToAnotherPool() {
+	sess := s.create()
+	elsewhere := s.newLayout(storePool)
+	foreign, err := elsewhere.Lock()
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = foreign.Release() })
+	s.Require().NoError(os.Rename(s.dir, elsewhere.SessionsDir()))
+	before := dirNames(s, elsewhere.SessionsDir())
+
+	_, err = s.store.Create()
+	s.Require().ErrorIs(err, errStoreMoved)
+	_, err = s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	s.Require().ErrorIs(err, errStoreMoved)
+	_, err = s.store.Load(sess.ID)
+	s.Require().ErrorIs(err, errStoreMoved)
+	_, err = s.store.List()
+	s.Require().ErrorIs(err, errStoreMoved)
+	s.Equal(before, dirNames(s, elsewhere.SessionsDir()))
+	s.NoDirExists(s.dir)
+}
+
+func (s *StoreSuite) TestReadsNeverFailWhileSessionsAreTransitioning() {
+	sess := s.create()
+	path := []State{StateSpawning, StateReady, StateBusy}
+	for range 100 {
+		path = append(path, StateIdle, StateBusy)
+	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		from := StateQueued
+		for _, to := range path {
+			_, err := s.store.Transition(sess.ID, from, to, "")
+			s.NoError(err)
+			from = to
+		}
+	})
+	for range 3 {
+		wg.Go(func() {
+			for range 300 {
+				_, err := s.store.Load(sess.ID)
+				s.NoError(err)
+				_, err = s.store.List()
+				s.NoError(err)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func (s *StoreSuite) TestTheLockIsHeldOnTheFileInThePinnedDirectory() {
+	held, err := s.lock.file.Stat()
+	s.Require().NoError(err)
+	entry, err := os.Stat(filepath.Join(s.layout.Dir(), lockName))
+	s.Require().NoError(err)
+	s.True(os.SameFile(held, entry))
+}
+
 func (s *StoreSuite) TestWritesStopWhenTheLockIsReleased() {
 	sess := s.create()
 	before := s.snapshot()
@@ -384,7 +459,9 @@ func (s *StoreSuite) TestWritesStopWhenTheLockIsReleased() {
 	s.Require().ErrorIs(err, errLockNotHeld)
 	s.Equal(before, s.snapshot())
 	_, err = s.store.Load(sess.ID)
-	s.Require().NoError(err)
+	s.Require().ErrorIs(err, errLockNotHeld)
+	_, err = s.store.List()
+	s.Require().ErrorIs(err, errLockNotHeld)
 	_, err = OpenStore(s.dir, storePool, s.lock)
 	s.Require().ErrorIs(err, errLockNotHeld)
 }

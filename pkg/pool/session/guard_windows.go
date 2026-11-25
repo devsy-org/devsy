@@ -16,6 +16,8 @@ var errWindowsUnsupported = errors.New(
 // build can check or set an owner-only ACL.
 func checkPlatform() error { return errWindowsUnsupported }
 
+func tryLock(*os.File) (bool, error) { return false, errWindowsUnsupported }
+
 func checkRoot(*os.Root) error { return nil }
 
 func syncRoot(*os.Root) error { return nil }

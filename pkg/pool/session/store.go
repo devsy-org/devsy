@@ -39,6 +39,7 @@ var (
 	errLockNotHeld     = errors.New("the pool lock is not held")
 	errForeignLock     = errors.New("the pool lock belongs to another pool directory")
 	errNotDirectory    = errors.New("session path is not a directory")
+	errStoreMoved      = errors.New("the session directory is no longer in the pool directory")
 	errNotRegular      = errors.New("session path is not a regular file")
 	errTooLarge        = fmt.Errorf("session file is longer than %d bytes", maxFileBytes)
 )
@@ -55,12 +56,13 @@ var tempPattern = regexp.MustCompile(`^\.tmp-[0-9]+$`)
 // Store keeps one JSON file per session. Every write goes to a temp file in
 // the same directory, is synced, and is then linked or renamed into place, so
 // a reader sees the old file or the new one, never a partial one. A Store is
-// bound to the held pool lock: only the lock holder can open one, it works
-// through the session directory that was open when the lock was checked, every
-// write checks that the lock is still held and still names the same lock file,
-// and Release waits for a write in flight. That lock is the only thing that
-// excludes other processes, and it also serializes the Stores opened on it in
-// this process.
+// bound to the held pool lock: only the lock holder can open one, and it works
+// through the session directory that was open when the lock was checked. Every
+// call checks that the lock is still held, still names the same lock file, and
+// that the session directory is still the one in the pool directory. Calls
+// take the lock's mutex, so reads never see a write half done and Release
+// waits for a call in flight. The lock is the only thing that excludes other
+// processes. Moving the directories of a live pool by hand is not supported.
 type Store struct {
 	lock *Lock
 	root *os.Root
@@ -104,23 +106,16 @@ func OpenStore(dir, pool string, lock *Lock) (*Store, error) {
 // openSessionsRoot opens the sessions directory inside the pool directory. A
 // symlink there is refused, so a link cannot send the store into another pool.
 func openSessionsRoot(pool *os.Root) (*os.Root, error) {
-	info, err := pool.Lstat(sessionsName)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		if err := pool.Mkdir(sessionsName, dirMode); err != nil {
-			return nil, fmt.Errorf("create session directory: %w", err)
-		}
-		if err := syncRoot(pool); err != nil {
-			return nil, fmt.Errorf("sync pool directory: %w", err)
-		}
-	case err != nil:
-		return nil, fmt.Errorf("stat session directory: %w", err)
-	case !info.IsDir():
-		return nil, errNotDirectory
+	if err := ensureSessionsDir(pool); err != nil {
+		return nil, err
 	}
 	root, err := pool.OpenRoot(sessionsName)
 	if err != nil {
 		return nil, fmt.Errorf("open session directory: %w", err)
+	}
+	if !inPool(pool, root) {
+		_ = root.Close()
+		return nil, errStoreMoved
 	}
 	if err := checkRoot(root); err != nil {
 		_ = root.Close()
@@ -129,12 +124,43 @@ func openSessionsRoot(pool *os.Root) (*os.Root, error) {
 	return root, nil
 }
 
+func ensureSessionsDir(pool *os.Root) error {
+	info, err := pool.Lstat(sessionsName)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return makeSessionsDir(pool)
+	case err != nil:
+		return fmt.Errorf("stat session directory: %w", err)
+	case !info.IsDir():
+		return errNotDirectory
+	}
+	return nil
+}
+
+func makeSessionsDir(pool *os.Root) error {
+	if err := pool.Mkdir(sessionsName, dirMode); err != nil {
+		return fmt.Errorf("create session directory: %w", err)
+	}
+	if err := syncRoot(pool); err != nil {
+		return fmt.Errorf("sync pool directory: %w", err)
+	}
+	return nil
+}
+
+// inPool reports whether the open sessions directory is the directory the
+// pool directory names sessions, not a link or a replacement.
+func inPool(pool, sessions *os.Root) bool {
+	entry, err := pool.Lstat(sessionsName)
+	own, ownErr := sessions.Stat(".")
+	return err == nil && ownErr == nil && entry.IsDir() && os.SameFile(entry, own)
+}
+
 // Close releases the session directory. It does not release the lock.
 func (s *Store) Close() error { return s.root.Close() }
 
 // Create writes a new queued session under a fresh ID.
 func (s *Store) Create() (Session, error) {
-	unlock, err := s.lock.hold()
+	unlock, err := s.hold()
 	if err != nil {
 		return Session{}, err
 	}
@@ -159,15 +185,22 @@ func (s *Store) Create() (Session, error) {
 
 // Load reads one session.
 func (s *Store) Load(id string) (Session, error) {
-	if !ValidID(id) {
-		return Session{}, errInvalidID
+	unlock, err := s.hold()
+	if err != nil {
+		return Session{}, err
 	}
-	return s.read(id)
+	defer unlock()
+	return s.load(id)
 }
 
 // List reads every session in ID order. A file that is not a valid session
 // stops the listing: the pool cannot tell what state it holds.
 func (s *Store) List() ([]Session, error) {
+	unlock, err := s.hold()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	entries, err := s.entries()
 	if err != nil {
 		return nil, err
@@ -199,12 +232,12 @@ func (s *Store) Transition(id string, from, to State, reason string) (Session, e
 	if !CanTransition(from, to) {
 		return Session{}, ErrIllegalTransition
 	}
-	unlock, err := s.lock.hold()
+	unlock, err := s.hold()
 	if err != nil {
 		return Session{}, err
 	}
 	defer unlock()
-	cur, err := s.Load(id)
+	cur, err := s.load(id)
 	if err != nil {
 		return Session{}, err
 	}
@@ -214,6 +247,27 @@ func (s *Store) Transition(id string, from, to State, reason string) (Session, e
 	next := cur
 	next.State, next.Reason, next.Updated = to, reason, s.now().UTC()
 	return next, s.replace(next)
+}
+
+// hold takes the lock's mutex after checking the lock and the directory. The
+// caller runs the returned function when its call is done.
+func (s *Store) hold() (func(), error) {
+	unlock, err := s.lock.hold()
+	if err != nil {
+		return nil, err
+	}
+	if !inPool(s.lock.root, s.root) {
+		unlock()
+		return nil, errStoreMoved
+	}
+	return unlock, nil
+}
+
+func (s *Store) load(id string) (Session, error) {
+	if !ValidID(id) {
+		return Session{}, errInvalidID
+	}
+	return s.read(id)
 }
 
 // entries lists the session directory in name order.

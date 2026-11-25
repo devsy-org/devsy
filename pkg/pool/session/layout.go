@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
-	"github.com/gofrs/flock"
 )
 
 const lockName = "pool.lock"
@@ -34,14 +33,15 @@ func (l Layout) KeysDir() string     { return filepath.Join(l.dir, "keys") }
 func (l Layout) AuditDir() string    { return filepath.Join(l.dir, "audit") }
 func (l Layout) SocketPath() string  { return filepath.Join(l.dir, "pool.sock") }
 
-// Lock is the pool's single-owner lock. It keeps the pool directory open, so
-// what a Store writes to is the directory that was locked, and it remembers
-// the lock file so a Store can tell when the path no longer leads to it. The
-// lock file must stay in place while the pool is active. Stores opened on a
-// Lock share its mutex and stop writing once it is released.
+// Lock is the pool's single-owner lock. It keeps the pool directory open and
+// locks the lock file opened inside it, so what a Store works on is the
+// directory that was locked, and it remembers that file so a Store can tell
+// when the pool path no longer leads to it. The lock file must stay in place
+// while the pool is active. Stores opened on a Lock share its mutex, and stop
+// reading and writing once it is released.
 type Lock struct {
 	mu       sync.Mutex
-	file     *flock.Flock
+	file     *os.File
 	dir      string
 	root     *os.Root
 	lockInfo fs.FileInfo
@@ -85,23 +85,37 @@ func openPoolRoot(dir string) (*os.Root, error) {
 	return root, nil
 }
 
-// acquire locks the file by path, then checks that the path still leads to
-// the lock file inside the directory held open.
+// acquire opens the lock file inside the pinned directory and locks that open
+// file, so the lock is on the file the directory holds.
 func acquire(root *os.Root, dir string) (*Lock, error) {
-	file := flock.New(filepath.Join(dir, lockName))
-	ok, err := file.TryLock()
+	f, err := root.OpenFile(lockName, os.O_RDWR|os.O_CREATE, fileMode)
+	if err != nil {
+		return nil, fmt.Errorf("open pool lock file: %w", err)
+	}
+	k, err := lockOpenFile(f, root, dir)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return k, nil
+}
+
+// lockOpenFile takes the lock, then checks that the directory entry and the
+// pool path still lead to the file that was locked.
+func lockOpenFile(f *os.File, root *os.Root, dir string) (*Lock, error) {
+	ok, err := tryLock(f)
 	if err != nil {
 		return nil, fmt.Errorf("lock pool directory: %w", err)
 	}
 	if !ok {
 		return nil, ErrPoolLocked
 	}
-	info, err := root.Stat(lockName)
-	if err != nil || !sameLockFile(dir, info) {
-		_ = file.Close()
+	info, err := f.Stat()
+	entry, entryErr := root.Stat(lockName)
+	if err != nil || entryErr != nil || !os.SameFile(info, entry) || !sameLockFile(dir, info) {
 		return nil, errForeignLock
 	}
-	return &Lock{file: file, dir: dir, root: root, lockInfo: info}, nil
+	return &Lock{file: f, dir: dir, root: root, lockInfo: info}, nil
 }
 
 func sameLockFile(dir string, want fs.FileInfo) bool {
