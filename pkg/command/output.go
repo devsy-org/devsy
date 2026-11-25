@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"unicode/utf8"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 )
 
@@ -31,7 +32,7 @@ func Output(cmd *exec.Cmd, includeStdout bool) ([]byte, error) {
 	if includeStdout {
 		wrapped.stdout = stdout
 	}
-	stderr := maskJSONRecords(redactor, wrapped.stderr())
+	stderr := diagnosticredact.Records(redactor, wrapped.stderr())
 	if capture != nil {
 		stderr = capture.finish(err, redactor)
 	}
@@ -60,7 +61,7 @@ func (c *stderrCapture) finish(cause error, redactor *redact.Redactor) string {
 		exit.Stderr = []byte(raw)
 	}
 	if c.raw.omitted == 0 {
-		return maskJSONRecords(redactor, raw)
+		return diagnosticredact.Records(redactor, raw)
 	}
 	if c.structured.found || c.structured.isCandidate() {
 		return redactor.Mask()
@@ -114,7 +115,8 @@ func (s *structuredLineStart) take(value byte) {
 }
 
 func (s *structuredLineStart) isCandidate() bool {
-	return s.length > 0 && !s.skip && looksLikeStructuredJSON(string(s.prefix[:s.length]))
+	return s.length > 0 && !s.skip &&
+		diagnosticredact.LooksLikeStructuredJSON(string(s.prefix[:s.length]))
 }
 
 type boundedCapture struct {

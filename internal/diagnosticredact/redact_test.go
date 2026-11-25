@@ -46,3 +46,116 @@ func TestRecordKeepsOrdinaryPrefixAtTerminalFold(t *testing.T) {
 	assert.NotContains(t, output, canary)
 	assert.Contains(t, output, detail)
 }
+
+func TestEnvironmentRecordsMaskJSONRecordsAfterPlainLines(t *testing.T) {
+	const canary = "synthetic-record-bearer"
+	for name, separator := range map[string]string{"LF": "\n", "CR": "\r", "CRLF": "\r\n"} {
+		t.Run(name, func(t *testing.T) {
+			input := "public diagnostic" + separator +
+				`{"Authorization":"Bearer ` + canary + `"}` + separator + "public tail"
+			for label, output := range map[string]string{
+				"EnvironmentRecord":       EnvironmentRecord(input),
+				"RecordWithEnvironment":   RecordWithEnvironment(nil, input),
+				"RecordsThenRecord":       Record(redact.FromEntries(nil), Records(redact.FromEntries(nil), input)),
+				"RecordsWithOnlyPlainEOL": Records(redact.FromEntries(nil), "plain"+separator+"text"),
+			} {
+				assert.NotContains(t, output, canary, label)
+			}
+			output := RecordWithEnvironment(nil, input)
+			assert.Contains(t, output, "public diagnostic"+separator)
+			assert.Contains(t, output, separator+"public tail")
+		})
+	}
+}
+
+func TestRecordMasksJSONCredentialRecordsBeforePublicText(t *testing.T) {
+	const canary = "synthetic-cookie-record"
+	for name, separator := range map[string]string{"LF": "\n", "CR": "\r", "CRLF": "\r\n"} {
+		t.Run(name, func(t *testing.T) {
+			input := `{"Cookie":"` + canary + `"}` + separator + "public text"
+			output := Record(redact.FromEntries(nil), input)
+			assert.NotContains(t, output, canary)
+			assert.Contains(t, output, separator+"public text")
+		})
+	}
+}
+
+func TestRecordsMaskRegisteredMultilineValueBeforeSplittingRecords(t *testing.T) {
+	const single = "synthetic-single-record-value"
+	const cookie = "synthetic-registered-cookie"
+	const tail = "synthetic registered plain tail"
+	registered := `{"Cookie":"` + cookie + `"}` + "\n" + tail
+	redactor := redact.New(redact.Options{
+		Values: []string{single, registered},
+	})
+	input := "public before\n" + single + "\n" + registered + "\npublic after"
+	for name, mask := range map[string]func(*redact.Redactor, string) string{
+		"Record":  Record,
+		"Records": Records,
+	} {
+		t.Run(name, func(t *testing.T) {
+			output := mask(redactor, input)
+			assert.NotContains(t, output, single)
+			assert.NotContains(t, output, cookie)
+			assert.NotContains(t, output, tail)
+			assert.Contains(t, output, "public before")
+			assert.Contains(t, output, "public after")
+		})
+	}
+}
+
+func TestRecordsMaskEscapedRegisteredValueBeforeProcessingJSON(t *testing.T) {
+	const registered = "\"Authorization: Bearer synthetic-initial\"\n synthetic-continuation"
+	redactor := redact.New(redact.Options{Values: []string{registered}})
+	encoded, err := json.Marshal(registered)
+	require.NoError(t, err)
+	record := `{"detail":` + string(encoded) + `,"Cookie":"synthetic-cookie","public":"keep"}`
+	for name, mask := range map[string]func(*redact.Redactor, string) string{
+		"Record":  Record,
+		"Records": Records,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, input := range []string{record, "public head\n" + record + "\npublic tail"} {
+				output := mask(redactor, input)
+				assert.NotContains(t, output, "synthetic-initial")
+				assert.NotContains(t, output, "synthetic-continuation")
+				assert.NotContains(t, output, "synthetic-cookie")
+				assert.Contains(t, output, `"public":"keep"`)
+			}
+		})
+	}
+}
+
+func TestRecordsMaskJSONFieldsBeforeTextPatternsCrossFieldBoundaries(t *testing.T) {
+	cases := map[string]struct{ input, canary string }{
+		"cookie after a URL field": {
+			input: `pull failed` + "\n" +
+				`{"url":"https://api.example.test/v1","Cookie":"email=bob@example.test; session=synthetic-cookie-tail"}` + "\n",
+			canary: "synthetic-cookie-tail",
+		},
+		"authorization after a git URL field": {
+			input:  "x\n" + `{"u":"git://host.test/r","Authorization":"Bearer abc@synthetic-auth-tail"}`,
+			canary: "synthetic-auth-tail",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			redactor := redact.FromEntries(nil)
+			assert.NotContains(t, Record(redactor, tc.input), tc.canary)
+			assert.NotContains(t, Records(redactor, tc.input), tc.canary)
+			assert.NotContains(t, RecordWithEnvironment(nil, tc.input), tc.canary)
+		})
+	}
+}
+
+func TestRecordsKeepFieldMaskingWhenARegisteredValueIsPresent(t *testing.T) {
+	const canary = "synthetic-registered-present-tail"
+	redactor := redact.New(redact.Options{
+		Environment: []string{"DEVSY_FIXTURE_TOKEN=synthetic-registered-present"},
+	})
+	input := "synthetic-registered-present\n" +
+		`{"url":"https://api.example.test/v1","Cookie":"email=bob@example.test; session=` + canary + `"}` + "\n"
+	output := Record(redactor, input)
+	assert.NotContains(t, output, "synthetic-registered-present\n")
+	assert.NotContains(t, output, canary)
+}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/hash"
@@ -257,9 +258,10 @@ func (cmd *StartCmd) prepareDocker() error {
 		)
 	}
 
-	output, err := exec.Command("docker", "ps").CombinedOutput()
+	output, err := platformToolCommand(context.Background(), "docker", "ps").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("seems like there are issues with your docker cli: \n\n%s", output)
+		detail := diagnosticredact.EnvironmentRecord(string(output))
+		return fmt.Errorf("seems like there are issues with your docker cli: \n\n%s", detail)
 	}
 
 	return nil
@@ -446,7 +448,7 @@ func (e *Error) Error() string {
 		message += string(exitError.Stderr) + "\n"
 	}
 
-	return message + e.err.Error()
+	return diagnosticredact.EnvironmentRecord(message + e.err.Error())
 }
 
 func (e *Error) Unwrap() error {

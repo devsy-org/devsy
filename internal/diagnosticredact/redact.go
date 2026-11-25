@@ -21,6 +21,17 @@ func Record(redactor *redact.Redactor, value string) string {
 	if redactor == nil {
 		return value
 	}
+	value = redactor.RedactRegistered(value)
+	if json.Valid([]byte(value)) {
+		return wholeRecord(redactor, value)
+	}
+	return wholeRecord(redactor, maskRecords(redactor, value))
+}
+
+func wholeRecord(redactor *redact.Redactor, value string) string {
+	if redactor == nil {
+		return value
+	}
 	conservative := redactor.Redact(value)
 	folded := redactor.RedactDiagnostic(value)
 	switch {

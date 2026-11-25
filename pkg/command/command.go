@@ -1,10 +1,8 @@
 package command
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"slices"
@@ -31,22 +29,45 @@ func WrapCommandErrorWithEnvironment(stdout []byte, err error, environment []str
 	}
 	wrapped := &Error{stdout: stdout, err: err}
 	redactor := redact.New(redact.Options{Environment: environment})
-	wrapped.setDisplay(redactor, maskJSONRecords(redactor, wrapped.stderr()))
+	wrapped.setDisplay(redactor, diagnosticredact.Records(redactor, wrapped.stderr()))
 	return wrapped
 }
 
+func WrapCombinedOutputError(output string, err error, environment []string) error {
+	if err == nil || output == "" {
+		return err
+	}
+	redactor := redact.New(redact.Options{Environment: environment})
+	masked := strings.TrimSpace(
+		diagnosticredact.Record(redactor, output),
+	)
+	if masked == "" {
+		return err
+	}
+	return &Error{
+		captured:      output,
+		maskedCapture: masked,
+		err:           err,
+	}
+}
+
 type Error struct {
-	stdout       []byte
-	err          error
-	maskedOutput *string
+	stdout        []byte
+	captured      string
+	maskedCapture string
+	maskedOutput  *string
+	err           error
 }
 
 func (e *Error) Error() string {
 	if e.maskedOutput != nil {
 		return *e.maskedOutput
 	}
+	if e.captured != "" {
+		return e.maskedCapture + ": " + e.err.Error()
+	}
 	redactor := redact.New(redact.Options{Environment: os.Environ()})
-	return e.display(redactor, maskJSONRecords(redactor, e.stderr()))
+	return e.display(redactor, diagnosticredact.Records(redactor, e.stderr()))
 }
 
 func (e *Error) Unwrap() error {
@@ -73,6 +94,9 @@ func matchOriginalCommandOutput(err error, match func(string) bool) bool {
 }
 
 func (e *Error) output() string {
+	if e.captured != "" {
+		return e.captured + ": " + e.err.Error()
+	}
 	return commandErrorOutput(string(e.stdout), e.stderr(), e.err.Error())
 }
 
@@ -89,8 +113,8 @@ func (e *Error) setDisplay(redactor *redact.Redactor, stderr string) {
 }
 
 func (e *Error) display(redactor *redact.Redactor, stderr string) string {
-	stdout := maskJSONRecords(redactor, string(e.stdout))
-	cause := maskJSONRecords(redactor, e.err.Error())
+	stdout := diagnosticredact.Records(redactor, string(e.stdout))
+	cause := diagnosticredact.Records(redactor, e.err.Error())
 	return diagnosticredact.Record(redactor, commandErrorOutput(stdout, stderr, cause))
 }
 
@@ -103,91 +127,6 @@ func commandErrorOutput(stdout, stderr, cause string) string {
 		message += stderr + "\n"
 	}
 	return message + cause
-}
-
-func maskJSONRecords(redactor *redact.Redactor, value string) string {
-	if json.Valid([]byte(value)) {
-		return diagnosticredact.Record(redactor, value)
-	}
-	var output strings.Builder
-	for value != "" {
-		if looksLikeStructuredJSON(value) {
-			if consumed := maskStructuredRecord(redactor, value, &output); consumed > 0 {
-				value = value[consumed:]
-				continue
-			}
-		}
-		record, separator, rest := splitDiagnosticRecord(value)
-		if json.Valid([]byte(record)) {
-			record = diagnosticredact.Record(redactor, record)
-		}
-		output.WriteString(record)
-		output.WriteString(separator)
-		value = rest
-	}
-	return output.String()
-}
-
-func splitDiagnosticRecord(value string) (record, separator, rest string) {
-	end := strings.IndexAny(value, "\r\n")
-	if end < 0 {
-		return value, "", ""
-	}
-	next := end + 1
-	if strings.HasPrefix(value[end:], "\r\n") {
-		next++
-	}
-	return value[:end], value[end:next], value[next:]
-}
-
-func looksLikeStructuredJSON(value string) bool {
-	value = strings.TrimLeft(value, " \t")
-	if value == "" {
-		return false
-	}
-	rest := strings.TrimLeft(value[1:], " \t\r\n")
-	switch value[0] {
-	case '{':
-		return rest == "" || rest[0] == '"' || rest[0] == '}'
-	case '[':
-		return looksLikeJSONList(rest)
-	case '"':
-		return true
-	default:
-		return false
-	}
-}
-
-func looksLikeJSONList(rest string) bool {
-	if rest == "" || strings.ContainsRune(`{[]"`, rune(rest[0])) {
-		return true
-	}
-	if !strings.ContainsRune(`-0123456789tfn`, rune(rest[0])) {
-		return false
-	}
-	decoder := json.NewDecoder(strings.NewReader(rest))
-	var first json.RawMessage
-	if err := decoder.Decode(&first); err != nil {
-		return errors.Is(err, io.ErrUnexpectedEOF)
-	}
-	tail := strings.TrimLeft(rest[int(decoder.InputOffset()):], " \t\r\n")
-	return tail == "" || tail[0] == ',' || tail[0] == ']'
-}
-
-func maskStructuredRecord(redactor *redact.Redactor, value string, output *strings.Builder) int {
-	decoder := json.NewDecoder(strings.NewReader(value))
-	var record json.RawMessage
-	if err := decoder.Decode(&record); err != nil {
-		if strings.HasPrefix(strings.TrimLeft(value, " \t"), `"`) {
-			return 0
-		}
-		output.WriteString(redactor.Mask())
-		return len(value)
-	}
-	end := int(decoder.InputOffset())
-	output.WriteString(value[:end-len(record)])
-	output.WriteString(diagnosticredact.Record(redactor, string(record)))
-	return end
 }
 
 func formatTaskkillDiagnostic(pid int, err error, output []byte) error {

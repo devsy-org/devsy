@@ -11,7 +11,99 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/command"
 	"gotest.tools/assert"
+	"gotest.tools/assert/cmp"
 )
+
+var lfsPullArgs = []string{"lfs", "pull"}
+
+const (
+	lfsFoldedFixtureValue = "synthetic-lfs-folded-value"
+	lfsDiagnosticDetail   = "public Git LFS detail"
+)
+
+type lfsSplitRunner struct{ err error }
+
+func (r lfsSplitRunner) Run(context.Context, RunOptions) (RunResult, error) {
+	return RunResult{
+		Stdout: []byte("Authorization:\n"),
+		Stderr: []byte(" Bearer " + lfsFoldedFixtureValue + "\n\n" + lfsDiagnosticDetail),
+	}, r.err
+}
+
+func TestLFSFailureMasksFoldedOutputAcrossStreams(t *testing.T) {
+	cause := errors.New("fixture LFS process failure")
+	repo := At(t.TempDir(), WithRunner(lfsSplitRunner{err: cause}))
+	err := repo.lfs(t.Context(), "pull")
+	assert.Assert(t, errors.Is(err, cause))
+	assert.Assert(t, cmp.Contains(err.Error(), lfsDiagnosticDetail))
+	assert.Assert(t, !strings.Contains(err.Error(), lfsFoldedFixtureValue))
+	assert.NilError(t, At(t.TempDir(), WithRunner(lfsSplitRunner{})).lfs(t.Context(), "pull"))
+}
+
+type lfsCommandErrorRunner struct{ cause error }
+
+func (r lfsCommandErrorRunner) Run(context.Context, RunOptions) (RunResult, error) {
+	stderr := "Authorization:\n Bearer " + lfsFoldedFixtureValue + "\n\n" + lfsDiagnosticDetail
+	return RunResult{Stderr: []byte(stderr)}, &CommandError{
+		Args:     lfsPullArgs,
+		ExitCode: 2,
+		Stderr:   stderr,
+		Err:      r.cause,
+	}
+}
+
+func TestLFSFailureMasksStderrCarriedByTheCommandError(t *testing.T) {
+	cause := errors.New("fixture LFS process failure")
+	repo := At(t.TempDir(), WithRunner(lfsCommandErrorRunner{cause: cause}))
+	err := repo.lfs(t.Context(), "pull")
+	assert.Assert(t, errors.Is(err, cause))
+	var commandErr *CommandError
+	assert.Assert(t, errors.As(err, &commandErr))
+	assert.Equal(t, 2, commandErr.ExitCode)
+	assert.Equal(t, 1, strings.Count(err.Error(), lfsDiagnosticDetail))
+	assert.Assert(t, cmp.Contains(err.Error(), lfsDiagnosticDetail))
+	assert.Assert(t, !strings.Contains(err.Error(), lfsFoldedFixtureValue))
+}
+
+type lfsJSONStderrRunner struct {
+	result RunResult
+	err    error
+}
+
+func (r lfsJSONStderrRunner) Run(context.Context, RunOptions) (RunResult, error) {
+	return r.result, r.err
+}
+
+func TestLFSFailureMasksJSONStderrRecordCarriedByTheCommandError(t *testing.T) {
+	const stderr = "{\"Cookie\":\"synthetic-lfs-cookie\"}\npublic lfs tail\n"
+	original := &CommandError{
+		Args:     lfsPullArgs,
+		ExitCode: 23,
+		Stderr:   stderr,
+		Err:      errors.New("exit status 23"),
+	}
+	repo := At(t.TempDir(), WithRunner(lfsJSONStderrRunner{
+		result: RunResult{Stderr: []byte(stderr)},
+		err:    original,
+	}))
+	err := repo.lfs(t.Context(), "pull")
+	assert.Assert(t, !strings.Contains(err.Error(), "synthetic-lfs-cookie"))
+	assert.Assert(t, cmp.Contains(err.Error(), "public lfs tail"))
+	assert.Assert(t, cmp.Contains(err.Error(), "exit status 23"))
+	var commandErr *CommandError
+	assert.Assert(t, errors.As(err, &commandErr))
+	assert.Equal(t, stderr, commandErr.Stderr)
+}
+
+func TestLFSFailureKeepsRunnerStderrThatTheErrorDoesNotCarry(t *testing.T) {
+	repo := At(t.TempDir(), WithRunner(lfsJSONStderrRunner{
+		result: RunResult{Stderr: []byte("public runner detail")},
+		err:    &CommandError{Args: lfsPullArgs, Err: errors.New("fixture")},
+	}))
+	err := repo.lfs(t.Context(), "pull")
+	assert.Assert(t, cmp.Contains(err.Error(), "public runner detail"))
+	assert.Assert(t, cmp.Contains(err.Error(), "fixture"))
+}
 
 func TestLFSModeResolution(t *testing.T) {
 	cases := []struct {

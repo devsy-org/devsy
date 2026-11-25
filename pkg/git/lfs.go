@@ -3,10 +3,10 @@ package git
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/command"
@@ -95,9 +95,32 @@ func ensureLFSBinary(ctx context.Context, allowInstall bool) bool {
 func (r *Repo) lfs(ctx context.Context, args ...string) error {
 	res, err := r.run(ctx, append([]string{"lfs"}, args...)...)
 	if err != nil {
-		return fmt.Errorf("%w: %s%s", err, res.Stdout, res.Stderr)
+		return lfsFailure(res, err, append(os.Environ(), r.env...))
 	}
 	return nil
+}
+
+type lfsError struct {
+	message string
+	err     error
+}
+
+func (e *lfsError) Error() string { return e.message }
+
+func (e *lfsError) Unwrap() error { return e.err }
+
+func lfsFailure(res RunResult, err error, environment []string) error {
+	cause := err
+	if commandErr, ok := err.(*CommandError); ok {
+		cause = &CommandError{
+			Args:     commandErr.Args,
+			ExitCode: commandErr.ExitCode,
+			Err:      commandErr.Err,
+		}
+	}
+	output := append(slices.Clone(res.Stdout), res.Stderr...)
+	masked := command.WrapCommandErrorWithEnvironment(output, cause, environment)
+	return &lfsError{message: masked.Error(), err: err}
 }
 
 // lfsDetectMaxDepth bounds how deep repoUsesLFS descends looking for .gitattributes.

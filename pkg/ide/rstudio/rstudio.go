@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	copypkg "github.com/devsy-org/devsy/pkg/copy"
@@ -142,16 +143,11 @@ func (o *RStudioServer) installSteps(debPath string) error {
 func ensureGdebi() error {
 	if !command.Exists("gdebi") {
 		log.Info("Installing dependency gdebi-core")
-		out, err := exec.Command("apt", "update").CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("apt update: %w: %s", err, string(out))
+		if err := runInstallerCommand("apt update", exec.Command("apt", "update")); err != nil {
+			return err
 		}
-
-		out, err = exec.Command("apt", "-y", "install", "--no-install-recommends", "gdebi-core").
-			CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("install gdebi core: %w: %s", err, string(out))
-		}
+		return runInstallerCommand("install gdebi core",
+			exec.Command("apt", "-y", "install", "--no-install-recommends", "gdebi-core"))
 	}
 
 	return nil
@@ -244,22 +240,24 @@ func installDeb(debPath string) error {
 	log.Info("Installing deb")
 
 	//nolint:gosec // debPath is the file this process just downloaded into its own install folder
-	out, err := exec.Command("gdebi", "--non-interactive", debPath).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("install deb: %w: %s", err, string(out))
+	install := exec.Command("gdebi", "--non-interactive", debPath)
+	if err := runInstallerCommand("install deb", install); err != nil {
+		return err
 	}
 
 	// The installer unfortunately automatically starts a new rstudio process without reading the configuration.
 	// We're stopping that so that our process can take over later on
-	out, err = exec.Command(defaultBinaryPathRStudioServer, "stop").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("stop initial RStudio process: %w: %s", err, string(out))
+	if err := runInstallerCommand(
+		"stop initial RStudio process",
+		exec.Command(defaultBinaryPathRStudioServer, "stop"),
+	); err != nil {
+		return err
 	}
 
 	// The RStudio deb installs into /usr/lib/rstudio-server/bin/rstudio-server by default
 	// and symlinks the binaries to /usr/sbin.
 	// We need to symlink to /usr/local/bin to ensure remoteUser has access later on
-	err = os.Symlink(defaultBinaryPathRStudioServer, "/usr/local/bin/rstudio-server")
+	err := os.Symlink(defaultBinaryPathRStudioServer, "/usr/local/bin/rstudio-server")
 	if err != nil {
 		return fmt.Errorf("symlink rstudio-server: %w", err)
 	}
@@ -268,6 +266,19 @@ func installDeb(debPath string) error {
 		return fmt.Errorf("symlink rserver: %w", err)
 	}
 
+	return nil
+}
+
+func runInstallerCommand(operation string, cmd *exec.Cmd) error {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf(
+			"%s: %w: %s",
+			operation,
+			err,
+			diagnosticredact.EnvironmentRecord(string(out)),
+		)
+	}
 	return nil
 }
 

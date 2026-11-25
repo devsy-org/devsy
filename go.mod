@@ -229,7 +229,7 @@ require (
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa // indirect
 	github.com/devsy-org/admin-apis v1.2.0 // indirect
-	github.com/devsy-org/devsy/logging v0.0.0-20261121080943-b1a01fb92a98
+	github.com/devsy-org/devsy/logging v0.0.0-20261122052847-badb828ea923
 	github.com/dghubble/go-twitter v0.0.0-20211115160449-93a8679adecb // indirect
 	github.com/dghubble/oauth1 v0.7.3 // indirect
 	github.com/dghubble/sling v1.4.0 // indirect

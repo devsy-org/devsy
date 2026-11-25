@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
 )
 
 const defaultSigningNamespace = "git"
@@ -51,15 +53,22 @@ func (req *GitSSHSignatureRequest) SignWithHostKey(
 		"-n",
 		namespace,
 	)
-	cmd.Stdin = strings.NewReader(req.Content)
+	return runSigningCommand(cmd, req.Content)
+}
 
+func runSigningCommand(cmd *exec.Cmd, content string) (*GitSSHSignatureResponse, error) {
+	cmd.Stdin = strings.NewReader(content)
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to sign commit: %w, stderr: %s", err, stderr.String())
+		return nil, fmt.Errorf(
+			"failed to sign commit: %w, stderr: %s",
+			err,
+			diagnosticredact.EnvironmentRecord(stderr.String()),
+		)
 	}
 
 	return &GitSSHSignatureResponse{

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/diagnosticredact"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
@@ -40,11 +42,11 @@ func (h *AppleHelper) EnsureSystemRunning(ctx context.Context) error {
 
 	cctx, cancel := context.WithTimeout(ctx, systemStartTimeout)
 	defer cancel()
-	out, err := h.buildCmd(cctx, "system", "start").CombinedOutput()
+	out, err := h.diagnosticOutput(cctx, "system", "start")
 	if err != nil {
 		return fmt.Errorf(
 			"start container system service (run `container system start` manually): %s: %w",
-			strings.TrimSpace(string(out)), err,
+			out, err,
 		)
 	}
 	return nil
@@ -99,25 +101,25 @@ func (h *AppleHelper) Push(ctx context.Context, image string, stdout, stderr io.
 }
 
 func (h *AppleHelper) Tag(ctx context.Context, image, tag string) error {
-	out, err := h.buildCmd(ctx, "image", "tag", image, tag).CombinedOutput()
+	out, err := h.diagnosticOutput(ctx, "image", "tag", image, tag)
 	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("%s: %w", out, err)
 	}
 	return nil
 }
 
 func (h *AppleHelper) Stop(ctx context.Context, id string) error {
-	out, err := h.buildCmd(ctx, "stop", id).CombinedOutput()
+	out, err := h.diagnosticOutput(ctx, "stop", id)
 	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("%s: %w", out, err)
 	}
 	return nil
 }
 
 func (h *AppleHelper) Remove(ctx context.Context, id string) error {
-	out, err := h.buildCmd(ctx, "delete", id).CombinedOutput()
+	out, err := h.diagnosticOutput(ctx, "delete", id)
 	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("%s: %w", out, err)
 	}
 	return nil
 }
@@ -143,9 +145,9 @@ func (h *AppleHelper) RunWithDir(ctx context.Context, dir string, args []string,
 }
 
 func (h *AppleHelper) StartContainer(ctx context.Context, id string) error {
-	out, err := h.buildCmd(ctx, "start", id).CombinedOutput()
+	out, err := h.diagnosticOutput(ctx, "start", id)
 	if err != nil {
-		return fmt.Errorf("failed to start container: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("failed to start container: %s: %w", out, err)
 	}
 	return nil
 }
@@ -352,14 +354,15 @@ func parseImageTag(ref string) string {
 // EnsureBuilderRunning starts the BuildKit builder; an already-running builder is
 // a no-op, other failures are returned so a build never runs against a dead builder.
 func (h *AppleHelper) EnsureBuilderRunning(ctx context.Context) error {
-	out, err := h.buildCmd(ctx, "builder", "start").CombinedOutput()
+	cmd := h.buildCmd(ctx, "builder", "start")
+	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return nil
 	}
 	if strings.Contains(strings.ToLower(string(out)), "already running") {
 		return nil
 	}
-	return fmt.Errorf("start container builder: %s: %w", strings.TrimSpace(string(out)), err)
+	return fmt.Errorf("start container builder: %s: %w", appleCommandDiagnostic(cmd, out), err)
 }
 
 // SystemRunning reports whether the container system service is running.
@@ -380,6 +383,20 @@ func (h *AppleHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 		cmd.Env = append(os.Environ(), h.Environment...)
 	}
 	return cmd
+}
+
+func (h *AppleHelper) diagnosticOutput(ctx context.Context, args ...string) (string, error) {
+	cmd := h.buildCmd(ctx, args...)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return "", nil
+	}
+	return appleCommandDiagnostic(cmd, out), err
+}
+
+func appleCommandDiagnostic(cmd *exec.Cmd, value []byte) string {
+	redactor := redact.New(redact.Options{Environment: cmd.Environ()})
+	return strings.TrimSpace(diagnosticredact.Record(redactor, string(value)))
 }
 
 func (h *AppleHelper) listContainers(ctx context.Context) ([]containerInspect, error) {

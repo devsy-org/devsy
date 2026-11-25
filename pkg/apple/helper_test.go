@@ -5,11 +5,47 @@ package apple
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestAppleMasksReturnedFailureOutput(t *testing.T) {
+	const foldedValue = "synthetic-apple-command-folded-value"
+	const registeredValue = "synthetic-apple-command-registered-value"
+	const detail = "public Apple command detail"
+	const output = "Authorization:\n Bearer " + foldedValue + "\n\n" + detail + " " + registeredValue
+	helper := &AppleHelper{
+		Command:     stubContainer(t, output, 23),
+		Environment: []string{"DEVSY_APPLE_TEST_TOKEN=" + registeredValue},
+	}
+	for _, tc := range []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{"system", helper.EnsureSystemRunning},
+		{"builder", helper.EnsureBuilderRunning},
+		{"start", func(ctx context.Context) error { return helper.StartContainer(ctx, "fixture-container") }},
+		{"stop", func(ctx context.Context) error { return helper.Stop(ctx, "fixture-container") }},
+		{"remove", func(ctx context.Context) error { return helper.Remove(ctx, "fixture-container") }},
+		{"tag", func(ctx context.Context) error { return helper.Tag(ctx, "fixture-image", "fixture-tag") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run(t.Context())
+			var exitErr *exec.ExitError
+			require.ErrorAs(t, err, &exitErr)
+			require.Equal(t, 23, exitErr.ExitCode())
+			require.Contains(t, err.Error(), detail)
+			require.NotContains(t, err.Error(), foldedValue)
+			require.NotContains(t, err.Error(), registeredValue)
+		})
+	}
+}
 
 func TestMatchesLabels(t *testing.T) {
 	labels := map[string]string{"dev.containers.id": "ws-1", "k": "v"}
@@ -159,5 +195,15 @@ func TestEnsureBuilderRunning(t *testing.T) {
 	alreadyHelper := &AppleHelper{Command: stubContainer(t, "builder already running", 1)}
 	if err := alreadyHelper.EnsureBuilderRunning(context.Background()); err != nil {
 		t.Errorf("already-running must be tolerated, got %v", err)
+	}
+}
+
+func TestAppleCommandDiagnosticMasksJSONCredentialRecordBeforePublicText(t *testing.T) {
+	const canary = "synthetic-apple-cookie"
+	cmd := exec.Command("container", "list")
+	out := []byte(`{"Cookie":"` + canary + `"}` + "\n" + "public apple detail")
+	got := appleCommandDiagnostic(cmd, out)
+	if strings.Contains(got, canary) || !strings.Contains(got, "public apple detail") {
+		t.Fatalf("unexpected diagnostic %q", got)
 	}
 }
