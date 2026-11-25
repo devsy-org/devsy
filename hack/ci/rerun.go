@@ -253,11 +253,16 @@ func (c rerunCommand) getJSON(ctx context.Context, target any, path string) erro
 }
 
 func (c rerunCommand) gh(ctx context.Context, stdout io.Writer, args ...string) error {
+	return ghAPI(ctx, c.runner, stdout, args...)
+}
+
+// ghAPI runs "gh api" and folds its escaped stderr into the error.
+func ghAPI(ctx context.Context, runner commandRunner, stdout io.Writer, args ...string) error {
 	if stdout == nil {
 		stdout = io.Discard
 	}
 	var stderr bytes.Buffer
-	err := c.runner.Run(ctx, commandSpec{
+	err := runner.Run(ctx, commandSpec{
 		Name:   "gh",
 		Args:   append([]string{"api"}, args...),
 		Stdout: stdout,
