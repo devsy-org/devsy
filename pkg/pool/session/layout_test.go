@@ -32,7 +32,7 @@ func (s *LayoutSuite) TestPoolNameIsCheckedBeforeItBecomesADirectory() {
 }
 
 func (s *LayoutSuite) TestSecondOwnerIsRefusedUntilTheFirstReleases() {
-	l := s.layout("pool")
+	l := s.layout()
 	first, err := l.Lock()
 	s.Require().NoError(err)
 	info, err := os.Stat(filepath.Join(l.Dir(), lockName))
@@ -61,7 +61,7 @@ func (s *LayoutSuite) TestDifferentPoolsDoNotShareALock() {
 }
 
 func (s *LayoutSuite) TestLockRefusesAGroupWritableDirectory() {
-	l := s.layout("pool")
+	l := s.layout()
 	s.Require().NoError(os.MkdirAll(l.Dir(), dirMode))
 	s.Require().NoError(os.Chmod(l.Dir(), dirMode|0o050))
 	_, err := l.Lock()
@@ -69,8 +69,43 @@ func (s *LayoutSuite) TestLockRefusesAGroupWritableDirectory() {
 	s.NoFileExists(filepath.Join(l.Dir(), lockName))
 }
 
-func (s *LayoutSuite) layout(pool string) Layout {
-	l, err := NewLayout(filepath.Join(s.T().TempDir(), "pools"), pool)
+func (s *LayoutSuite) TestLockRefusesAFileThePoolPathNoLongerLeadsTo() {
+	l := s.layout()
+	root, f := s.openedLockFile(l)
+	s.Require().NoError(os.Rename(l.Dir(), l.Dir()+"-moved"))
+	s.Require().NoError(os.Mkdir(l.Dir(), dirMode))
+	s.Require().NoError(os.WriteFile(filepath.Join(l.Dir(), lockName), nil, fileMode))
+	_, err := lockOpenFile(f, root, l.Dir())
+	s.Require().ErrorIs(err, errForeignLock)
+}
+
+func (s *LayoutSuite) TestLockRefusesAFileTheDirectoryNoLongerHolds() {
+	l := s.layout()
+	root, f := s.openedLockFile(l)
+	path := filepath.Join(l.Dir(), lockName)
+	alt := l.Dir() + "-alt"
+	s.Require().NoError(os.Mkdir(alt, dirMode))
+	s.Require().NoError(os.Link(path, filepath.Join(alt, lockName)))
+	s.Require().NoError(os.Remove(path))
+	s.Require().NoError(os.WriteFile(path, nil, fileMode))
+	_, err := lockOpenFile(f, root, alt)
+	s.Require().ErrorIs(err, errForeignLock)
+}
+
+func (s *LayoutSuite) layout() Layout {
+	l, err := NewLayout(filepath.Join(s.T().TempDir(), "pools"), "pool")
 	s.Require().NoError(err)
 	return l
+}
+
+func (s *LayoutSuite) openedLockFile(l Layout) (*os.Root, *os.File) {
+	root, err := openPoolRoot(l.Dir())
+	s.Require().NoError(err)
+	f, err := root.OpenFile(lockName, os.O_RDWR|os.O_CREATE, fileMode)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() {
+		_ = f.Close()
+		_ = root.Close()
+	})
+	return root, f
 }

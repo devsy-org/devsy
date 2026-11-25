@@ -339,33 +339,36 @@ func (s *StoreSuite) TestWritesStopWhenThePoolLockFileIsReplaced() {
 }
 
 func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
-	sess := s.create()
+	layout := s.newLayout(storePool)
+	lock, err := layout.Lock()
+	s.Require().NoError(err)
+	store, err := OpenStore(layout.SessionsDir(), storePool, lock)
+	s.Require().NoError(err)
+	sess, err := store.Create()
+	s.Require().NoError(err)
+
 	entered, proceed := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	var wg sync.WaitGroup
 	finish := func() { once.Do(func() { close(proceed) }) }
+	writer := make(chan error, 1)
+	released := make(chan error, 1)
 	s.T().Cleanup(func() {
 		finish()
-		wg.Wait()
+		waitFor(writer, released)
 	})
 	s.stubRename(func(root *os.Root, oldName, newName string) error {
 		close(entered)
 		<-proceed
 		return root.Rename(oldName, newName)
 	})
-	wg.Go(func() {
-		_, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
-		s.NoError(err)
-	})
-	select {
-	case <-entered:
-	case <-time.After(10 * time.Second):
-		s.FailNow("the write never reached the rename")
-	}
-	released := make(chan error, 1)
-	go func() { released <- s.lock.Release() }()
+	go func() {
+		_, err := store.Transition(sess.ID, StateQueued, StateSpawning, "")
+		writer <- err
+	}()
+	s.waitSignal(entered, "the write never reached the rename")
+	go func() { released <- lock.Release() }()
 	for range 20 {
-		other, err := s.layout.Lock()
+		other, err := layout.Lock()
 		if err == nil {
 			_ = other.Release()
 		}
@@ -378,11 +381,25 @@ func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
 	default:
 	}
 	finish()
-	wg.Wait()
-	s.Require().NoError(<-released)
-	again, err := s.layout.Lock()
+	s.Require().NoError(s.receive(writer, "the write never finished"))
+	s.Require().NoError(s.receive(released, "Release never returned"))
+	again, err := layout.Lock()
 	s.Require().NoError(err)
 	s.Require().NoError(again.Release())
+	s.Require().NoError(store.Close())
+}
+
+// waitFor gives a stuck goroutine a few seconds to finish and then leaves it
+// behind, so a deadlock fails one test and does not hang the package.
+func waitFor(chs ...<-chan error) {
+	deadline := time.After(5 * time.Second)
+	for _, ch := range chs {
+		select {
+		case <-ch:
+		case <-deadline:
+			return
+		}
+	}
 }
 
 func (s *StoreSuite) TestOpenStoreRefusesASessionsLinkInsideThePool() {
@@ -599,6 +616,24 @@ func (s *StoreSuite) TestConcurrentCreatesMakeDistinctSessions() {
 	list, err := s.store.List()
 	s.Require().NoError(err)
 	s.Len(list, 40, fmt.Sprint(len(s.snapshot())))
+}
+
+func (s *StoreSuite) waitSignal(ch <-chan struct{}, msg string) {
+	select {
+	case <-ch:
+	case <-time.After(10 * time.Second):
+		s.FailNow(msg)
+	}
+}
+
+func (s *StoreSuite) receive(ch <-chan error, msg string) error {
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(10 * time.Second):
+		s.FailNow(msg)
+		return nil
+	}
 }
 
 func (s *StoreSuite) newLayout(pool string) Layout {

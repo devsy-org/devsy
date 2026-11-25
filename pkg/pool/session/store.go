@@ -59,10 +59,12 @@ var tempPattern = regexp.MustCompile(`^\.tmp-[0-9]+$`)
 // bound to the held pool lock: only the lock holder can open one, and it works
 // through the session directory that was open when the lock was checked. Every
 // call checks that the lock is still held, still names the same lock file, and
-// that the session directory is still the one in the pool directory. Calls
-// take the lock's mutex, so reads never see a write half done and Release
-// waits for a call in flight. The lock is the only thing that excludes other
-// processes. Moving the directories of a live pool by hand is not supported.
+// that the session directory is still the one in the pool directory. OpenStore,
+// Create, Load, List and Transition take the lock's mutex, so a read never
+// sees a write half done and Release waits for a call in flight; Close does
+// not. Load and List need the live lock, so a read-only inspector needs a
+// separate path. The lock is the only thing that excludes other processes.
+// Moving the directories of a live pool by hand is not supported.
 type Store struct {
 	lock *Lock
 	root *os.Root
