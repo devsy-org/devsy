@@ -25,6 +25,12 @@ type sessionConn struct {
 	session *xssh.Session
 	cancel  context.CancelFunc
 
+	// writeMu guards closed and writes so Close never sends stdin EOF while a
+	// Write is in flight; x/crypto does not synchronize the two.
+	writeMu sync.Mutex
+	closed  bool
+	writes  int
+
 	closeOnce sync.Once
 	waitOnce  sync.Once
 	waitDone  chan struct{}
@@ -115,15 +121,39 @@ func startSession(
 	return &startedSession{session: session, stdin: stdin, stdout: stdout}, nil
 }
 
-func (c *sessionConn) Read(p []byte) (int, error)  { return c.stdout.Read(p) }
-func (c *sessionConn) Write(p []byte) (int, error) { return c.stdin.Write(p) }
+func (c *sessionConn) Read(p []byte) (int, error) { return c.stdout.Read(p) }
 
+func (c *sessionConn) Write(p []byte) (int, error) {
+	c.writeMu.Lock()
+	if c.closed {
+		c.writeMu.Unlock()
+		return 0, net.ErrClosed
+	}
+	c.writes++
+	c.writeMu.Unlock()
+	defer func() {
+		c.writeMu.Lock()
+		c.writes--
+		c.writeMu.Unlock()
+	}()
+	return c.stdin.Write(p)
+}
+
+// Close sends stdin EOF only when no Write is in flight. Otherwise it closes
+// the session directly, so the pending Write ends once the channel closes
+// instead of Close waiting on it.
 func (c *sessionConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		c.cancel()
-		if closeErr := c.stdin.Close(); closeErr != nil {
-			err = closeErr
+		c.writeMu.Lock()
+		c.closed = true
+		idle := c.writes == 0
+		c.writeMu.Unlock()
+		if idle {
+			if closeErr := c.stdin.Close(); closeErr != nil {
+				err = closeErr
+			}
 		}
 		if closeErr := c.session.Close(); err == nil && closeErr != nil {
 			err = closeErr
