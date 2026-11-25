@@ -74,6 +74,37 @@ func (s *teeSuite) TestOverflowDropsOnlyTheExcess() {
 	s.Equal(int64(1), tee.Close())
 }
 
+func (s *teeSuite) TestWriteSplitsAcrossTailAndNewChunk() {
+	tee, stall := s.stalledTee()
+	var live bytes.Buffer
+	first := make([]byte, chunkSize-2)
+	for i := range first {
+		first[i] = byte('a' + i%26)
+	}
+	for _, part := range [][]byte{first, []byte("ABCDE")} {
+		_, err := tee.Writer(&live).Write(part)
+		s.Require().NoError(err)
+	}
+	close(stall.release)
+	s.Require().NoError(tee.Finish())
+	s.Equal(string(first)+"ABCDE", live.String())
+}
+
+func (s *teeSuite) TestExactFitIsKeptAndNextWriteDropped() {
+	tee, stall := s.stalledTee()
+	_, err := tee.Writer(io.Discard).Write(make([]byte, maxQueuedBytes-1))
+	s.Require().NoError(err)
+	tee.mu.Lock()
+	dropped, queued := tee.dropped, tee.queued
+	tee.mu.Unlock()
+	s.Zero(dropped)
+	s.Equal(int64(maxQueuedBytes), queued)
+	_, err = tee.Writer(io.Discard).Write([]byte("abcd"))
+	s.Require().NoError(err)
+	close(stall.release)
+	s.Equal(int64(4), tee.Close())
+}
+
 func (s *teeSuite) TestBlockedDropsAndReleases() {
 	w := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
 	var captured bytes.Buffer
@@ -320,4 +351,13 @@ func (s *teeSuite) waitEntered(w *blockedWriter) {
 	case <-time.After(5 * time.Second):
 		s.FailNow("writer not entered")
 	}
+}
+
+func (s *teeSuite) stalledTee() (*Tee, *blockedWriter) {
+	w := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	tee := New(io.Discard, nil)
+	_, err := tee.Writer(w).Write([]byte("x"))
+	s.Require().NoError(err)
+	s.waitEntered(w)
+	return tee, w
 }
