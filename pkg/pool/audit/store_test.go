@@ -3,12 +3,14 @@
 package audit
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -552,6 +554,65 @@ func (s *StoreSuite) TestHostIDRefusesSymlinkedLock() {
 	s.Error(err)
 }
 
+const lockHolderEnv = "AUDIT_TEST_LOCK_HOLDER"
+
+// childCommand re-runs this test binary, so the command is never input.
+var childCommand = exec.Command
+
+// TestHostIDLockHolderHelper is the child half of the cross-process lock
+// test: it holds the lock named by the environment until its stdin closes.
+func TestHostIDLockHolderHelper(t *testing.T) {
+	path := os.Getenv(lockHolderEnv)
+	if path == "" {
+		t.Skip("runs only as a child of the lock test")
+	}
+	lock, err := newFlock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := acquire(lock, defaultLockWait, false); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = os.Stdout.WriteString("locked\n")
+	_, _ = io.Copy(io.Discard, os.Stdin)
+}
+
+func (s *StoreSuite) TestHostIDRefusesLockNamesAndKeepsTheLockExclusive() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, "host-id")
+	lockPath := path + hostIDLockSuffix
+	s.Require().NoError(os.WriteFile(lockPath, nil, fileMode))
+	release := s.holdLockInChild(lockPath)
+	before, err := os.Stat(lockPath)
+	s.Require().NoError(err)
+
+	for _, name := range []string{"host-id.lock", "host-id.LOCK", "host-id.loc\u212a", ".lock"} {
+		_, err := LoadOrCreateHostID(filepath.Join(dir, name))
+		s.ErrorIs(err, errReservedHostIDName, name)
+	}
+
+	after, err := os.Stat(lockPath)
+	s.Require().NoError(err)
+	s.True(os.SameFile(before, after), "the lock file must stay the same inode")
+	data, err := os.ReadFile(filepath.Clean(lockPath))
+	s.Require().NoError(err)
+	s.Empty(data, "the lock file must not be written")
+	entries, err := os.ReadDir(dir)
+	s.Require().NoError(err)
+	s.Len(entries, 1, "a refused name must not create files")
+
+	contender, err := newFlock(lockPath)
+	s.Require().NoError(err)
+	s.Error(acquire(contender, 100*time.Millisecond, false), "the child still holds the lock")
+	release()
+	s.Require().NoError(acquire(contender, defaultLockWait, false))
+	s.Require().NoError(contender.Close())
+
+	id, err := LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	s.Regexp(hostIDPattern, id)
+}
+
 func (s *StoreSuite) TestHostIDConcurrentRepairAgrees() {
 	path := filepath.Join(s.T().TempDir(), "host-id")
 	s.Require().NoError(os.WriteFile(path, nil, fileMode))
@@ -707,4 +768,34 @@ func (s *StoreSuite) read(day string) string {
 	data, err := os.ReadFile(filepath.Clean(filepath.Join(s.dir, day+fileExt)))
 	s.Require().NoError(err)
 	return string(data)
+}
+
+// holdLockInChild starts a separate process that holds the flock at path and
+// returns a function that releases it and waits for the process to exit.
+func (s *StoreSuite) holdLockInChild(path string) (release func()) {
+	executable, err := os.Executable()
+	s.Require().NoError(err)
+	cmd := childCommand(executable, "-test.run=^TestHostIDLockHolderHelper$")
+	cmd.Env = append(os.Environ(), lockHolderEnv+"="+path)
+	stdin, err := cmd.StdinPipe()
+	s.Require().NoError(err)
+	stdout, err := cmd.StdoutPipe()
+	s.Require().NoError(err)
+	s.Require().NoError(cmd.Start())
+	s.T().Cleanup(func() { _ = cmd.Process.Kill() })
+	ready := make(chan string, 1)
+	go func() {
+		line, _ := bufio.NewReader(stdout).ReadString('\n')
+		ready <- line
+	}()
+	select {
+	case line := <-ready:
+		s.Require().Equal("locked\n", line)
+	case <-time.After(30 * time.Second):
+		s.FailNow("child did not take the lock")
+	}
+	return func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	}
 }

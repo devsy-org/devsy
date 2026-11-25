@@ -37,8 +37,20 @@ var (
 	// a host ID, the shapes a crash can leave behind. A ULID starts with 0-7.
 	hostIDPartialPattern = regexp.MustCompile(`^(h(_([0-7][0-9A-HJKMNP-TV-Z]{0,24})?)?)?$`)
 
-	errHostIDPartial = errors.New("host id file is empty or partial")
+	errHostIDPartial      = errors.New("host id file is empty or partial")
+	errReservedHostIDName = errors.New("host id file name is reserved for locks")
 )
+
+// checkHostIDName refuses a name ending in the lock suffix. Another path's
+// lock file has that name, and publishing renames over the path, which would
+// give later callers a new lock inode while an earlier caller still holds the
+// old one. The comparison folds case because the file system may.
+func checkHostIDName(path string) error {
+	if strings.HasSuffix(strings.ToLower(filepath.Base(path)), hostIDLockSuffix) {
+		return fmt.Errorf("%w: %s", errReservedHostIDName, filepath.Base(path))
+	}
+	return nil
+}
 
 // NewID returns a new ULID string, the dedupe key of a record. The random part
 // comes from crypto/rand, which does not return an error on supported Go
@@ -53,7 +65,8 @@ func NewID() string {
 // an error: a real ID is never replaced, so earlier records keep correlating.
 // Callers in separate processes agree on one ID through a lock next to path.
 // The directory must pass the same owner and mode check as the audit
-// directory, and the file must be a regular file, not a link.
+// directory, and the file must be a regular file, not a link. A name ending
+// in .lock is refused because it is the name of a lock file.
 func LoadOrCreateHostID(path string) (string, error) {
 	id, _, err := loadOrCreateHostID(path)
 	// Hook for the repair audit record: write it when the ID was repaired,
@@ -63,6 +76,9 @@ func LoadOrCreateHostID(path string) (string, error) {
 
 func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
 	if err := checkPlatform(); err != nil {
+		return "", false, err
+	}
+	if err := checkHostIDName(path); err != nil {
 		return "", false, err
 	}
 	dir := filepath.Dir(path)
