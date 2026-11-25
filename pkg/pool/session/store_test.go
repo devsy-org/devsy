@@ -61,10 +61,20 @@ func (s *StoreSuite) TestCreateNeverReplacesAnExistingSession() {
 	useSource(s.T(), fixedReader{0x00})
 	first := s.create()
 	before := s.snapshot()
-	_, err := s.store.Create()
+	got, err := s.store.Create()
 	s.Require().ErrorIs(err, ErrExists)
+	s.Zero(got)
 	s.Equal(before, s.snapshot())
 	s.Equal("p-pool-aaaaaaaaaa", first.ID)
+}
+
+func (s *StoreSuite) TestCreateReturnsZeroSessionWhenEncodingFails() {
+	before := s.poolSnapshot()
+	s.clock = time.Time{}
+	got, err := s.store.Create()
+	s.Require().ErrorIs(err, errInvalidSession)
+	s.Zero(got)
+	s.Equal(before, s.poolSnapshot())
 }
 
 func (s *StoreSuite) TestTransitionWritesTheNewStateAndKeepsCreated() {
@@ -117,8 +127,9 @@ func (s *StoreSuite) TestFailedPublishKeepsTheOldFileAndLeavesNoTempFile() {
 	sess := s.create()
 	before := s.snapshot()
 	s.stubRename(func(*os.Root, string, string) error { return errors.New("disk full") })
-	_, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	next, err := s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
 	s.Require().ErrorContains(err, "disk full")
+	s.Zero(next)
 	s.Equal(before, s.snapshot())
 	got, err := s.store.Load(sess.ID)
 	s.Require().NoError(err)
@@ -253,6 +264,7 @@ func (s *StoreSuite) TestOpenStoreRefusesALockThatDoesNotCoverTheDirectory() {
 	s.Require().NoError(err)
 	s.Require().NoError(released.Release())
 	s.Require().NoError(os.RemoveAll(s.dir))
+	s.Require().NoError(os.Remove(s.layout.KeysDir()))
 
 	cases := map[string]struct {
 		dir, pool string

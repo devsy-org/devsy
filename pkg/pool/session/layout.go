@@ -29,7 +29,7 @@ func NewLayout(root, pool string) (Layout, error) {
 
 func (l Layout) Dir() string         { return l.dir }
 func (l Layout) SessionsDir() string { return filepath.Join(l.dir, sessionsName) }
-func (l Layout) KeysDir() string     { return filepath.Join(l.dir, "keys") }
+func (l Layout) KeysDir() string     { return filepath.Join(l.dir, keysName) }
 func (l Layout) AuditDir() string    { return filepath.Join(l.dir, "audit") }
 func (l Layout) SocketPath() string  { return filepath.Join(l.dir, "pool.sock") }
 
@@ -74,15 +74,86 @@ func openPoolRoot(dir string) (*os.Root, error) {
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return nil, fmt.Errorf("create pool directory: %w", err)
 	}
+	before, err := os.Lstat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("stat pool directory: %w", err)
+	}
+	if !before.IsDir() {
+		return nil, errNotDirectory
+	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, fmt.Errorf("open pool directory: %w", err)
+	}
+	if !samePoolRoot(dir, root, before) {
+		_ = root.Close()
+		return nil, errForeignLock
 	}
 	if err := checkRoot(root); err != nil {
 		_ = root.Close()
 		return nil, err
 	}
 	return root, nil
+}
+
+func samePoolRoot(dir string, root *os.Root, before fs.FileInfo) bool {
+	after, err := os.Lstat(dir)
+	own, ownErr := root.Stat(".")
+	return err == nil && ownErr == nil && os.SameFile(before, own) && os.SameFile(after, own)
+}
+
+func openStoreRoot(pool *os.Root, name string) (*os.Root, error) {
+	if err := ensureStoreDir(pool, name); err != nil {
+		return nil, err
+	}
+	root, err := pool.OpenRoot(name)
+	if err != nil {
+		return nil, fmt.Errorf("open %s directory: %w", name, err)
+	}
+	if err := prepareStoreRoot(pool, root, name); err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	return root, nil
+}
+
+func prepareStoreRoot(pool, root *os.Root, name string) error {
+	if !inPool(pool, root, name) {
+		return errStoreMoved
+	}
+	if err := checkRoot(root); err != nil {
+		return err
+	}
+	return removeStrayTemps(root)
+}
+
+func ensureStoreDir(pool *os.Root, name string) error {
+	info, err := pool.Lstat(name)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return makeStoreDir(pool, name)
+	case err != nil:
+		return fmt.Errorf("stat %s directory: %w", name, err)
+	case !info.IsDir():
+		return errNotDirectory
+	}
+	return nil
+}
+
+func makeStoreDir(pool *os.Root, name string) error {
+	if err := pool.Mkdir(name, dirMode); err != nil {
+		return fmt.Errorf("create %s directory: %w", name, err)
+	}
+	if err := syncRoot(pool); err != nil {
+		return fmt.Errorf("sync pool directory: %w", err)
+	}
+	return nil
+}
+
+func inPool(pool, root *os.Root, name string) bool {
+	entry, err := pool.Lstat(name)
+	own, ownErr := root.Stat(".")
+	return err == nil && ownErr == nil && entry.IsDir() && os.SameFile(entry, own)
 }
 
 // acquire opens the lock file inside the pinned directory and locks that open
