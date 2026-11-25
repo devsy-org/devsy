@@ -3,6 +3,7 @@ package livetee
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"sync/atomic"
 	"testing"
@@ -43,10 +44,10 @@ func (s *teeSuite) TestBlockedDropsAndReleases() {
 	case <-time.After(5 * time.Second):
 		s.FailNow("writer not entered")
 	}
-	payload := bytes.Repeat([]byte("x"), (queueChunks+2)*chunkSize)
+	payload := bytes.Repeat([]byte("x"), maxQueuedBytes+2*chunkSize)
 	_, err = tee.Write(payload)
 	s.Require().NoError(err)
-	s.Equal(int64(len("first")+(queueChunks+2)*chunkSize), tee.Close())
+	s.Equal(int64(len("first")+len(payload)), tee.Close())
 	s.Equal(append([]byte("first"), payload...), captured.Bytes())
 	close(w.release)
 	select {
@@ -55,6 +56,87 @@ func (s *teeSuite) TestBlockedDropsAndReleases() {
 	case <-time.After(5 * time.Second):
 		s.FailNow("writer did not finish")
 	}
+}
+
+func (s *teeSuite) TestTinyWritesToFastWriterDropNothing() {
+	var live bytes.Buffer
+	tee := New(io.Discard, nil)
+	w := tee.Writer(&live)
+	var want bytes.Buffer
+	for i := range 1000 {
+		line := fmt.Sprintf("%03d\n", i%1000)
+		want.WriteString(line)
+		_, err := w.Write([]byte(line))
+		s.Require().NoError(err)
+	}
+	s.Require().NoError(tee.Finish())
+	s.Equal(want.String(), live.String())
+}
+
+func (s *teeSuite) TestTinyWritesToDiscardDropNothing() {
+	for range 50 {
+		tee := New(io.Discard, nil)
+		w := tee.Writer(io.Discard)
+		for range 400 {
+			_, err := w.Write([]byte("abcd"))
+			s.Require().NoError(err)
+		}
+		s.Require().NoError(tee.Finish())
+	}
+}
+
+type tagWriter struct {
+	tag string
+	out *bytes.Buffer
+}
+
+func (w *tagWriter) Write(p []byte) (int, error) {
+	w.out.WriteString(w.tag)
+	w.out.Write(p)
+	return len(p), nil
+}
+
+func (s *teeSuite) TestOrderAcrossWritersIsPreserved() {
+	var out bytes.Buffer
+	a, b := &tagWriter{"a:", &out}, &tagWriter{"b:", &out}
+	blocked := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	tee := New(io.Discard, nil)
+	_, err := tee.Writer(blocked).Write([]byte("x"))
+	s.Require().NoError(err)
+	<-blocked.entered
+	for i := range 6 {
+		w := a
+		if i%3 == 2 {
+			w = b
+		}
+		_, err := tee.Writer(w).Write([]byte{byte('0' + i)})
+		s.Require().NoError(err)
+	}
+	close(blocked.release)
+	s.Require().NoError(tee.Finish())
+	s.Equal("a:01b:2a:34b:5", out.String())
+}
+
+func (s *teeSuite) TestStalledWriterDropsPastByteBoundAndCountsBytes() {
+	w := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	tee := New(io.Discard, w)
+	_, err := tee.Write([]byte("first"))
+	s.Require().NoError(err)
+	<-w.entered
+	total := int64(len("first"))
+	for range maxQueuedBytes / 2 {
+		_, err = tee.Write([]byte("abcd"))
+		s.Require().NoError(err)
+		total += 4
+	}
+	tee.mu.Lock()
+	dropped, queued := tee.dropped, tee.queued
+	tee.mu.Unlock()
+	s.Positive(dropped)
+	s.LessOrEqual(queued, int64(maxQueuedBytes))
+	s.Equal(total, dropped+queued)
+	s.Equal(total, tee.Close())
+	close(w.release)
 }
 
 func (s *teeSuite) TestLiveOrder() {

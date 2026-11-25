@@ -4,14 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"sync"
 	"time"
 )
 
 const (
-	chunkSize    = 8 << 10
-	queueChunks  = 128
-	DrainTimeout = 100 * time.Millisecond
+	chunkSize      = 8 << 10
+	maxQueuedBytes = 1 << 20
+	DrainTimeout   = 100 * time.Millisecond
 )
 
 type chunk struct {
@@ -22,7 +23,8 @@ type chunk struct {
 type Tee struct {
 	capture  io.Writer
 	live     io.Writer
-	chunks   chan chunk
+	pending  []chunk
+	wake     chan struct{}
 	done     chan struct{}
 	mu       sync.Mutex
 	queued   int64
@@ -41,7 +43,7 @@ func NewWithClose(capture, live io.Writer, closeLive func() error) *Tee {
 	t := &Tee{
 		capture: capture,
 		live:    live,
-		chunks:  make(chan chunk, queueChunks),
+		wake:    make(chan struct{}, 1),
 		done:    make(chan struct{}),
 	}
 	go t.run(closeLive)
@@ -77,7 +79,7 @@ func (t *Tee) CloseWithStatus() (int64, bool) {
 	t.mu.Lock()
 	if !t.closed {
 		t.closed = true
-		close(t.chunks)
+		t.signal()
 	}
 	t.mu.Unlock()
 	timer := time.NewTimer(DrainTimeout)
@@ -88,6 +90,8 @@ func (t *Tee) CloseWithStatus() (int64, bool) {
 		t.stopped = true
 		t.dropped += t.queued
 		t.queued = 0
+		t.pending = nil
+		t.signal()
 		t.mu.Unlock()
 	}
 
@@ -121,11 +125,9 @@ func (t *Tee) run(closeLive func() error) {
 			t.mu.Unlock()
 		}()
 	}
-	for chunk := range t.chunks {
-		t.mu.Lock()
-		stopped := t.stopped
-		t.mu.Unlock()
-		if stopped {
+	for {
+		chunk, ok := t.next()
+		if !ok {
 			return
 		}
 		n, err := chunk.live.Write(chunk.data)
@@ -142,6 +144,36 @@ func (t *Tee) run(closeLive func() error) {
 	}
 }
 
+func (t *Tee) next() (chunk, bool) {
+	for {
+		t.mu.Lock()
+		if t.stopped {
+			t.mu.Unlock()
+			return chunk{}, false
+		}
+		if len(t.pending) > 0 {
+			c := t.pending[0]
+			t.pending[0] = chunk{}
+			t.pending = t.pending[1:]
+			t.mu.Unlock()
+			return c, true
+		}
+		closed := t.closed
+		t.mu.Unlock()
+		if closed {
+			return chunk{}, false
+		}
+		<-t.wake
+	}
+}
+
+func (t *Tee) signal() {
+	select {
+	case t.wake <- struct{}{}:
+	default:
+	}
+}
+
 func (t *Tee) enqueue(p []byte, live io.Writer) {
 	if live == nil {
 		return
@@ -149,21 +181,49 @@ func (t *Tee) enqueue(p []byte, live io.Writer) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for len(p) > 0 {
-		size := min(len(p), chunkSize)
 		if t.closed {
 			t.dropped += int64(len(p))
 			return
 		}
-		if len(t.chunks) == cap(t.chunks) {
-			t.dropped += int64(size)
-		} else {
-			data := append([]byte(nil), p[:size]...)
-			t.chunks <- chunk{data: data, live: live}
-			t.queued += int64(size)
-		}
-
-		p = p[size:]
+		p = p[t.admit(p, live):]
 	}
+	t.signal()
+}
+
+// admit queues a prefix of p and returns its length. Past the byte bound the
+// prefix is counted as dropped, so a slow writer never blocks the command.
+func (t *Tee) admit(p []byte, live io.Writer) int {
+	if n := t.coalesce(p, live); n > 0 {
+		return n
+	}
+	n := min(len(p), chunkSize)
+	if t.queued+int64(n) > maxQueuedBytes {
+		t.dropped += int64(n)
+		return n
+	}
+	t.pending = append(t.pending, chunk{data: append([]byte(nil), p[:n]...), live: live})
+	t.queued += int64(n)
+	return n
+}
+
+// coalesce appends to the tail chunk, which the drain has not taken yet, so
+// bursts of small writes cost bytes, not queue slots.
+func (t *Tee) coalesce(p []byte, live io.Writer) int {
+	if len(t.pending) == 0 {
+		return 0
+	}
+	tail := &t.pending[len(t.pending)-1]
+	n := min(chunkSize-len(tail.data), len(p))
+	if n <= 0 || !sameWriter(tail.live, live) || t.queued+int64(n) > maxQueuedBytes {
+		return 0
+	}
+	tail.data = append(tail.data, p[:n]...)
+	t.queued += int64(n)
+	return n
+}
+
+func sameWriter(a, b io.Writer) bool {
+	return reflect.ValueOf(a).Comparable() && reflect.ValueOf(b).Comparable() && a == b
 }
 
 func (t *Tee) waitForDrain(deadline <-chan time.Time) bool {
