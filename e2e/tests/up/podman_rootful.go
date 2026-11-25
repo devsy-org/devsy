@@ -512,8 +512,9 @@ func recoverPodmanCleanup(
 
 // Redact before truncation so a clipped URL cannot expose partial credentials.
 func redactPodmanDiagnostics(text string) string {
-	return redact.Combine(redact.FromEntries(podmanEndpointSecrets(os.Getenv("DOCKER_HOST"))),
-		redact.New(redact.Options{Environment: os.Environ()})).RedactDiagnostic(text)
+	redactor := redact.Combine(redact.FromEntries(podmanEndpointSecrets(os.Getenv("DOCKER_HOST"))),
+		redact.New(redact.Options{Environment: os.Environ()}))
+	return framework.ReportText(redactor, text)
 }
 
 func podmanEndpointSecrets(value string) []string {

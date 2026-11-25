@@ -28,3 +28,13 @@ func TestFixtureDiagnosticMasksRecordShapes(t *testing.T) {
 		})
 	}
 }
+
+func TestPodmanDiagnosticMasksRecordShapes(t *testing.T) {
+	for _, tc := range reportShapes {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactPodmanDiagnostics(tc.in)
+			assert.NotContains(t, got, "CANARY")
+			assert.Contains(t, got, tc.public)
+		})
+	}
+}

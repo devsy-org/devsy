@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/logging/redact"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -176,7 +177,12 @@ func OpenSSHControlMaster(
 	cmd.Stdout = io.Discard
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", nil, fmt.Errorf("ssh ControlMaster start: %w: %s", err, stderr.String())
+		redactor := redact.New(redact.Options{Environment: cmd.Env})
+		return "", nil, fmt.Errorf(
+			"ssh ControlMaster start: %w: %s",
+			err,
+			ReportText(redactor, stderr.String()),
+		)
 	}
 
 	closer = func() {

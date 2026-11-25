@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/devcontainer/buildkit"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -41,8 +42,14 @@ const (
 // environment, mirroring how the provider configures Devsy's own invocations.
 func dockerOutput(ctx context.Context, env []string, args ...string) string {
 	out, err := dockerRun(ctx, env, args...)
-	framework.ExpectNoError(err, "docker %s: %s", strings.Join(args, " "), out)
-	return out
+	redactor := redact.New(redact.Options{Environment: append(os.Environ(), env...)})
+	framework.ExpectNoError(
+		err,
+		"docker %s: %s",
+		framework.ReportText(redactor, strings.Join(args, " ")),
+		framework.ReportText(redactor, out),
+	)
+	return framework.ReportText(redactor, out)
 }
 
 func dockerRun(ctx context.Context, env []string, args ...string) (string, error) {

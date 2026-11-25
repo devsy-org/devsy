@@ -366,7 +366,11 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("devsy provider add failed: %w: %s", err, stderr)
+		return fmt.Errorf(
+			"devsy provider add failed: %w: %s",
+			err,
+			externalCommandDiagnostic(stderr),
+		)
 	}
 	return nil
 }

@@ -69,6 +69,33 @@ func TestRecordGuardScanSource(t *testing.T) {
 		"named alias call":  {otherFile, "dr ", "dr.Record(nil, \"\")", true},
 		"dot import":        {otherFile, ". ", "Record(nil, \"\")", true},
 		"unused dot import": {otherFile, ". ", "", true},
+		"second alias": {
+			otherFile,
+			"a \"" + redactPkgImport + "\"\nimport b ",
+			"b.Record(nil, \"\")",
+			true,
+		},
+		"second dot import": {
+			otherFile,
+			"a \"" + redactPkgImport + "\"\nimport . ",
+			"",
+			true,
+		},
+		"blank import": {otherFile, "_ ", "", true},
+		"environment record": {
+			otherFile,
+			"",
+			"diagnosticredact.EnvironmentRecord(\"\")",
+			true,
+		},
+		"record with environment": {
+			otherFile,
+			"",
+			"diagnosticredact.RecordWithEnvironment(nil, \"\")",
+			true,
+		},
+		"function value": {otherFile, "", "_ = diagnosticredact.Record", true},
+		"stream allowed": {otherFile, "", "diagnosticredact.Stream(nil)", false},
 		"allowed file": {
 			reportHelperFile,
 			"",
@@ -85,35 +112,34 @@ func TestRecordGuardScanSource(t *testing.T) {
 	}
 }
 
-func redactImport(file *ast.File) *ast.ImportSpec {
+func redactImports(file *ast.File) (map[string]bool, []token.Pos) {
+	names := make(map[string]bool)
+	var found []token.Pos
 	for _, spec := range file.Imports {
-		if path, _ := strconv.Unquote(spec.Path.Value); path == redactPkgImport {
-			return spec
+		if path, _ := strconv.Unquote(spec.Path.Value); path != redactPkgImport {
+			continue
 		}
+		name := "diagnosticredact"
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		if name == "." || name == "_" {
+			found = append(found, spec.Pos())
+			continue
+		}
+		names[name] = true
 	}
-	return nil
+	return names, found
 }
 
-// A dot import hides Record behind a bare identifier, so it is rejected outright.
 func recordCalls(file *ast.File) []token.Pos {
-	spec := redactImport(file)
-	if spec == nil {
-		return nil
-	}
-	name := "diagnosticredact"
-	if spec.Name != nil {
-		name = spec.Name.Name
-	}
-	if name == "." {
-		return []token.Pos{spec.Pos()}
-	}
-	var calls []token.Pos
+	names, calls := redactImports(file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Record" {
+		if !ok || sel.Sel.Name == "Stream" {
 			return true
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && id.Name == name {
+		if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] {
 			calls = append(calls, sel.Pos())
 		}
 		return true

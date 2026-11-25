@@ -312,7 +312,7 @@ exit 1
 		assert.NotContains(t, text, "fixture@password")
 		assert.NotContains(t, text, "fixture%40password")
 	}
-	assert.Contains(t, diagnostics, "podman.example")
+	assert.Contains(t, diagnostics, "cannot connect")
 }
 
 //nolint:gosec // Synthetic credentials cover noncanonical URL escaping.
