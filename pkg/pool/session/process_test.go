@@ -47,6 +47,8 @@ func runHelper(root, mode string) int {
 		return contend(layout)
 	case "race":
 		return race(layout)
+	case "admit":
+		return raceAdmit(layout)
 	}
 	return failHelper(fmt.Errorf("unknown mode %q", mode))
 }
@@ -111,27 +113,47 @@ func raceRound(layout Layout) (int, bool, error) {
 	return moveQueued(store)
 }
 
+func raceAdmit(layout Layout) int {
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		lock, err := layout.Lock()
+		if errors.Is(err, ErrPoolLocked) {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		if err != nil {
+			return failHelper(err)
+		}
+		defer func() { _ = lock.Release() }()
+		return admitUnderLock(layout, lock)
+	}
+	return failHelper(errors.New("timed out"))
+}
+
+func admitUnderLock(layout Layout, lock *Lock) int {
+	store, err := OpenStore(layout.SessionsDir(), helperPool, lock)
+	if err != nil {
+		return failHelper(err)
+	}
+	defer func() { _ = store.Close() }()
+	got, err := store.Admit("shared key", Limits{MaxConcurrent: 1})
+	if err != nil {
+		return failHelper(err)
+	}
+	say(got.Session.ID, got.Existing)
+	return 0
+}
+
 // moveQueued moves up to perRound queued sessions and reports whether more
 // are left.
 func moveQueued(store *Store) (int, bool, error) {
-	list, err := store.List()
-	if err != nil {
-		return 0, false, err
-	}
-	wins := 0
-	for _, sess := range list {
-		if sess.State != StateQueued {
-			continue
-		}
-		if wins == perRound {
-			return wins, true, nil
-		}
-		if _, err := store.Transition(sess.ID, StateQueued, StateSpawning, ""); err != nil {
+	for wins := range perRound {
+		_, ok, err := store.Promote(Limits{MaxConcurrent: 2 * helperSessions})
+		if err != nil || !ok {
 			return wins, false, err
 		}
-		wins++
 	}
-	return wins, false, nil
+	return perRound, true, nil
 }
 
 type ProcessSuite struct {
@@ -154,6 +176,30 @@ type helpers struct {
 	outs []*bytes.Buffer
 }
 
+func (s *ProcessSuite) TestAdmitSharesOneSessionAcrossLockHolders() {
+	lock, err := s.layout.Lock()
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = lock.Release() })
+	children := s.start("admit", helperProcs)
+	s.Require().NoError(lock.Release())
+	results := s.wait(children)
+
+	again, err := s.layout.Lock()
+	s.Require().NoError(err)
+	defer func() { _ = again.Release() }()
+	store, err := OpenStore(s.layout.SessionsDir(), helperPool, again)
+	s.Require().NoError(err)
+	defer func() { _ = store.Close() }()
+	list, err := store.List()
+	s.Require().NoError(err)
+	s.Require().Len(list, 1)
+	want := []string{list[0].ID + " false"}
+	for range helperProcs - 1 {
+		want = append(want, list[0].ID+" true")
+	}
+	s.ElementsMatch(want, results)
+}
+
 func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 	lock, err := s.layout.Lock()
 	s.Require().NoError(err)
@@ -161,17 +207,16 @@ func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 	store, err := OpenStore(s.layout.SessionsDir(), helperPool, lock)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = store.Close() })
-	var created []Session
 	for range helperSessions {
-		sess, err := store.Create()
+		_, err := store.create()
 		s.Require().NoError(err)
-		created = append(created, sess)
 	}
 
 	contenders := s.start("contend", helperProcs)
-	for _, sess := range created {
-		_, err := store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	for range helperSessions {
+		_, ok, err := store.Promote(Limits{MaxConcurrent: helperSessions})
 		s.Require().NoError(err, "no other process may touch a session the holder owns")
+		s.Require().True(ok)
 	}
 	for _, line := range s.wait(contenders) {
 		s.Equal("refused "+strconv.Itoa(contendTries), line)
@@ -184,7 +229,7 @@ func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
 	}
 
 	for range helperSessions {
-		_, err := store.Create()
+		_, err := store.create()
 		s.Require().NoError(err)
 	}
 	s.Require().NoError(store.Close())
@@ -247,6 +292,8 @@ func (s *ProcessSuite) wait(h *helpers) []string {
 	var wg sync.WaitGroup
 	for i, cmd := range h.cmds {
 		wg.Go(func() {
+			timer := time.AfterFunc(40*time.Second, func() { _ = cmd.Process.Kill() })
+			defer timer.Stop()
 			err := cmd.Wait()
 			out := strings.TrimSpace(h.outs[i].String())
 			lines[i] = out[strings.LastIndex(out, "\n")+1:]

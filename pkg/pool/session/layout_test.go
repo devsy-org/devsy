@@ -60,6 +60,22 @@ func (s *LayoutSuite) TestDifferentPoolsDoNotShareALock() {
 	s.Require().NoError(lb.Release())
 }
 
+func (s *LayoutSuite) TestLockRefusesASymlinkPoolDirectory() {
+	l := s.layout()
+	target := s.T().TempDir()
+	s.Require().NoError(os.Chmod(target, dirMode))
+	s.Require().NoError(os.MkdirAll(filepath.Dir(l.Dir()), dirMode))
+	s.Require().NoError(os.Symlink(target, l.Dir()))
+	lock, err := l.Lock()
+	if lock != nil {
+		s.Require().NoError(lock.Release())
+	}
+	s.Require().ErrorIs(err, errNotDirectory)
+	entries, err := os.ReadDir(target)
+	s.Require().NoError(err)
+	s.Empty(entries)
+}
+
 func (s *LayoutSuite) TestLockRefusesAGroupWritableDirectory() {
 	l := s.layout()
 	s.Require().NoError(os.MkdirAll(l.Dir(), dirMode))

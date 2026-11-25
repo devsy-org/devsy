@@ -20,4 +20,4 @@ func tryLock(*os.File) (bool, error) { return false, errWindowsUnsupported }
 
 func checkRoot(*os.Root) error { return nil }
 
-func syncRoot(*os.Root) error { return nil }
+func syncDirectory(*os.Root) error { return nil }
