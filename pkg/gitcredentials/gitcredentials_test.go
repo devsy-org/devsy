@@ -276,6 +276,21 @@ func TestGetHTTPPath_ReturnsRepositoryPathWhenUseHttpPathEnabled(t *testing.T) {
 	assert.Equal(t, httpPathTestRepoPath, got)
 }
 
+func TestGetHTTPPath_IgnoresCredentialNamedFlagInEnvironment(t *testing.T) {
+	t.Setenv("NATIVE_CREDENTIAL_TESTS", "true")
+	httpPathTestEnv(t, `[credential "https://github.com"]
+	useHttpPath = true
+`)
+
+	got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:       httpPathTestHost,
+		Protocol:   httpPathTestProtocol,
+		Repository: httpPathTestRepository,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, httpPathTestRepoPath, got)
+}
+
 func TestGetHTTPPath_EmptyPathWhenRepositoryHasNoPath(t *testing.T) {
 	httpPathTestEnv(t, `[credential "https://github.com"]
 	useHttpPath = true
