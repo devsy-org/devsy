@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -101,16 +102,103 @@ func (s *StoreSuite) TestAppendWaitsForTheDirectoryLock() {
 	st := s.open()
 	lock := flock.New(filepath.Join(s.dir, lockName), flock.SetPermissions(fileMode))
 	s.Require().NoError(lock.Lock())
+	defer func() { _ = lock.Unlock() }()
 	done := make(chan error, 1)
 	go func() { done <- st.Append([]byte(`{"a":1}`)) }()
 	select {
 	case <-done:
-		s.Fail("append finished while another holder had the lock")
+		s.FailNow("append finished while another holder had the lock")
 	case <-time.After(200 * time.Millisecond):
 	}
 	s.Require().NoError(lock.Unlock())
 	s.Require().NoError(<-done)
 	s.Equal("{\"a\":1}\n", s.read(dayOne))
+}
+
+func (s *StoreSuite) TestAppendLockWaitIsBounded() {
+	st := s.open()
+	st.lockWait = 50 * time.Millisecond
+	lock := flock.New(filepath.Join(s.dir, lockName), flock.SetPermissions(fileMode))
+	s.Require().NoError(lock.Lock())
+	defer func() { _ = lock.Unlock() }()
+	start := time.Now()
+	err := st.Append([]byte(`{"a":1}`))
+	s.Require().ErrorIs(err, errLockTimeout)
+	s.ErrorContains(err, "waited 50ms")
+	s.Less(time.Since(start), 5*time.Second)
+	_, statErr := os.Stat(filepath.Join(s.dir, dayOne+fileExt))
+	s.True(os.IsNotExist(statErr), "a timed out append must not create a file")
+	err = st.Scan("", "", func(string, []byte) error { return nil })
+	s.NoError(err, "a shared lock waits only for exclusive holders, and no day file exists yet")
+}
+
+func (s *StoreSuite) TestScanLockWaitIsBounded() {
+	st := s.open()
+	s.Require().NoError(st.Append([]byte(`{"a":1}`)))
+	st.lockWait = 50 * time.Millisecond
+	lock := flock.New(filepath.Join(s.dir, lockName), flock.SetPermissions(fileMode))
+	s.Require().NoError(lock.Lock())
+	defer func() { _ = lock.Unlock() }()
+	err := st.Scan("", "", func(string, []byte) error { return nil })
+	s.ErrorIs(err, errLockTimeout)
+	s.ErrorContains(err, dayOne)
+}
+
+func (s *StoreSuite) TestScanErrorsNameTheDay() {
+	st := s.open()
+	s.Require().NoError(st.Append([]byte(`{"a":1}`)))
+	s.clock = s.clock.Add(time.Minute)
+	s.Require().NoError(os.WriteFile(
+		filepath.Join(s.dir, dayTwo+fileExt), []byte("{\"a\":1}\n{\"b\""), fileMode))
+	err := st.Scan("", "", func(string, []byte) error { return nil })
+	s.Require().ErrorIs(err, io.ErrUnexpectedEOF)
+	s.ErrorContains(err, dayTwo)
+	s.NotContains(err.Error(), dayOne)
+}
+
+func (s *StoreSuite) TestEveryAppendSyncsTheDirectory() {
+	st := s.open()
+	calls := recordSyncs(s.T())
+	for i := range 3 {
+		s.Require().NoError(st.Append([]byte(fmt.Sprintf(`{"n":%d}`, i))))
+	}
+	s.Equal([]string{s.dir, s.dir, s.dir}, *calls)
+}
+
+func (s *StoreSuite) TestAppendSyncsAfterAnotherStoreFailedToSync() {
+	first := s.open()
+	s.Require().NoError(first.Append([]byte(`{"n":1}`)))
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, dayOne+fileExt)))
+	second := s.open()
+	calls := failSyncOnce(s.T())
+	s.Require().ErrorContains(second.Append([]byte(`{"n":2}`)), "injected sync failure")
+	s.Require().NoError(first.Append([]byte(`{"n":3}`)))
+	s.Equal([]string{s.dir, s.dir}, *calls, "the older store must not trust its own earlier sync")
+}
+
+func (s *StoreSuite) TestOpenCreatesNestedDirectories() {
+	nested := filepath.Join(s.T().TempDir(), "a", "b", "audit")
+	_, err := Open(nested)
+	s.Require().NoError(err)
+	info, err := os.Stat(nested)
+	s.Require().NoError(err)
+	s.True(info.IsDir())
+	_, err = Open(nested)
+	s.NoError(err)
+}
+
+func (s *StoreSuite) TestScanRefusesNonRegularDayFile() {
+	if runtime.GOOS == goosWindows {
+		s.T().Skip("symlinks need privileges on windows")
+	}
+	st := s.open()
+	target := filepath.Join(s.T().TempDir(), "target")
+	s.Require().NoError(os.WriteFile(target, []byte("{\"a\":1}\n"), fileMode))
+	s.Require().NoError(os.Symlink(target, filepath.Join(s.dir, dayOne+fileExt)))
+	s.NoError(st.Scan(dayOne, dayOne, func(string, []byte) error { return nil }),
+		"Days skips a symlink, so Scan never opens it")
+	_, err := st.openSnapshot(dayOne)
+	s.Error(err, "a symlinked day file must not be opened")
 }
 
 func (s *StoreSuite) TestScanCallbackMayAppend() {
@@ -286,7 +374,7 @@ func (s *StoreSuite) TestScanOrderAndBounds() {
 	s.Equal([]string{dayTwo + " {\"n\":2}", dayTwo + " {\"n\":3}"}, collect(dayTwo, ""))
 	s.Equal([]string{dayOne + " {\"n\":1}"}, collect("", dayOne))
 	stop := fmt.Errorf("stop")
-	s.Equal(stop, st.Scan("", "", func(string, []byte) error { return stop }))
+	s.ErrorIs(st.Scan("", "", func(string, []byte) error { return stop }), stop)
 }
 
 func (s *StoreSuite) TestScanReportsPartialLine() {
@@ -359,6 +447,89 @@ func (s *StoreSuite) TestHostIDNeverReplaced() {
 	s.True(bytes.Equal([]byte("CANARY"), data))
 }
 
+func (s *StoreSuite) TestHostIDEmptyOrPartialFileIsRepaired() {
+	cases := map[string]string{
+		"empty":      "",
+		"blank":      " \n",
+		"nuls":       "\x00\x00\x00\x00",
+		"one char":   "h",
+		"prefix":     "h_",
+		"half":       "h_01ARZ3NDEKTSV",
+		"cut by one": "h_01ARZ3NDEKTSV4RRFFQ69G5FA",
+	}
+	for name, content := range cases {
+		path := filepath.Join(s.T().TempDir(), "host-id")
+		s.Require().NoError(os.WriteFile(path, []byte(content), fileMode), name)
+		id, repaired, err := loadOrCreateHostID(path)
+		s.Require().NoError(err, name)
+		s.True(repaired, name)
+		s.Regexp(hostIDPattern, id, name)
+		again, repaired, err := loadOrCreateHostID(path)
+		s.Require().NoError(err, name)
+		s.False(repaired, name)
+		s.Equal(id, again, name)
+	}
+}
+
+func (s *StoreSuite) TestHostIDPartialDoesNotMatchOtherContent() {
+	others := []string{"x", "H_", "h_01arz", "h_01ARZ3NDEKTSV4RRFFQ69G5FAVX"}
+	for _, content := range others {
+		if hostIDPattern.MatchString(strings.TrimSpace(content)) {
+			continue
+		}
+		path := filepath.Join(s.T().TempDir(), "host-id")
+		s.Require().NoError(os.WriteFile(path, []byte(content), fileMode))
+		_, err := LoadOrCreateHostID(path)
+		s.Error(err, content)
+		data, readErr := os.ReadFile(filepath.Clean(path))
+		s.Require().NoError(readErr)
+		s.Equal(content, string(data), "other content must be left alone")
+	}
+}
+
+func (s *StoreSuite) TestHostIDPublishLeavesNoTemporaryFiles() {
+	dir := s.T().TempDir()
+	_, err := LoadOrCreateHostID(filepath.Join(dir, "host-id"))
+	s.Require().NoError(err)
+	entries, err := os.ReadDir(dir)
+	s.Require().NoError(err)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	s.ElementsMatch([]string{"host-id", "host-id" + hostIDLockSuffix}, names)
+}
+
+func (s *StoreSuite) TestHostIDRefusesSymlinkedLock() {
+	if runtime.GOOS == goosWindows {
+		s.T().Skip("symlinks need privileges on windows")
+	}
+	dir := s.T().TempDir()
+	target := filepath.Join(s.T().TempDir(), "target")
+	s.Require().NoError(os.WriteFile(target, nil, fileMode))
+	s.Require().NoError(os.Symlink(target, filepath.Join(dir, "host-id"+hostIDLockSuffix)))
+	_, err := LoadOrCreateHostID(filepath.Join(dir, "host-id"))
+	s.Error(err)
+}
+
+func (s *StoreSuite) TestHostIDConcurrentRepairAgrees() {
+	path := filepath.Join(s.T().TempDir(), "host-id")
+	s.Require().NoError(os.WriteFile(path, nil, fileMode))
+	ids := make([]string, 8)
+	var wg sync.WaitGroup
+	for i := range ids {
+		wg.Go(func() {
+			id, err := LoadOrCreateHostID(path)
+			s.NoError(err)
+			ids[i] = id
+		})
+	}
+	wg.Wait()
+	for _, id := range ids {
+		s.Equal(ids[0], id)
+	}
+}
+
 func (s *StoreSuite) TestHostIDConcurrentFirstUseAgrees() {
 	path := filepath.Join(s.T().TempDir(), "host-id")
 	ids := make([]string, 8)
@@ -377,9 +548,114 @@ func (s *StoreSuite) TestHostIDConcurrentFirstUseAgrees() {
 }
 
 func (s *StoreSuite) TestNewIDIsULID() {
-	a, b := NewID(), NewID()
-	s.Len(a, 26)
-	s.NotEqual(a, b)
+	seen := map[string]bool{}
+	for range 1000 {
+		id := NewID()
+		s.Len(id, 26)
+		s.False(seen[id], "ids must not repeat")
+		seen[id] = true
+	}
+}
+
+// failSyncOnce makes the next directory sync fail and records every call.
+func failSyncOnce(t *testing.T) *[]string {
+	var calls []string
+	failed := false
+	orig := syncDirFunc
+	t.Cleanup(func() { syncDirFunc = orig })
+	syncDirFunc = func(dir string) error {
+		calls = append(calls, dir)
+		if !failed {
+			failed = true
+			return errors.New("injected sync failure")
+		}
+		return nil
+	}
+	return &calls
+}
+
+func recordSyncs(t *testing.T) *[]string {
+	var calls []string
+	orig := syncDirFunc
+	t.Cleanup(func() { syncDirFunc = orig })
+	syncDirFunc = func(dir string) error {
+		calls = append(calls, dir)
+		return nil
+	}
+	return &calls
+}
+
+func (s *StoreSuite) TestOpenSyncsTheDirectoryChain() {
+	calls := recordSyncs(s.T())
+	root := s.T().TempDir()
+	nested := filepath.Join(root, "a", "b", "audit")
+	_, err := Open(nested)
+	s.Require().NoError(err)
+	s.Contains(*calls, nested)
+	if runtime.GOOS != goosWindows {
+		s.Contains(*calls, filepath.Join(root, "a", "b"))
+		s.Contains(*calls, filepath.Join(root, "a"))
+		s.Contains(*calls, root)
+	}
+}
+
+func (s *StoreSuite) TestOpenRetriesSyncAfterAFailure() {
+	calls := failSyncOnce(s.T())
+	_, err := Open(s.dir)
+	s.Require().ErrorContains(err, "injected sync failure")
+	before := len(*calls)
+	_, err = Open(s.dir)
+	s.Require().NoError(err, "the existing directory must be synced again")
+	s.Greater(len(*calls), before)
+}
+
+func (s *StoreSuite) TestAppendRetriesDirectorySyncAfterAFailure() {
+	st := s.open()
+	calls := failSyncOnce(s.T())
+	s.Require().ErrorContains(st.Append([]byte(`{"n":1}`)), "injected sync failure")
+	s.Require().NoError(st.Append([]byte(`{"n":2}`)))
+	s.Equal([]string{s.dir, s.dir}, *calls)
+}
+
+func (s *StoreSuite) TestRecreatedDayFileIsSyncedAgain() {
+	st := s.open()
+	calls := recordSyncs(s.T())
+	s.Require().NoError(st.Append([]byte(`{"n":1}`)))
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, dayOne+fileExt)))
+	s.Require().NoError(st.Append([]byte(`{"n":2}`)))
+	s.Len(*calls, 2)
+}
+
+func (s *StoreSuite) TestHostIDRetriesDirectorySyncAfterAFailure() {
+	dir := s.T().TempDir()
+	path := filepath.Join(dir, "host-id")
+	calls := failSyncOnce(s.T())
+	_, err := LoadOrCreateHostID(path)
+	s.Require().ErrorContains(err, "injected sync failure")
+	id, err := LoadOrCreateHostID(path)
+	s.Require().NoError(err)
+	s.Regexp(hostIDPattern, id)
+	s.Equal([]string{dir, dir}, *calls, "the retry must sync before it returns the ID")
+}
+
+func (s *StoreSuite) TestHostIDBlankAndPrefixShapes() {
+	repaired := []string{"\f", "\v", "\u00a0", " \x00\n", "h_7", "h_0123456789"}
+	for _, content := range repaired {
+		path := filepath.Join(s.T().TempDir(), "host-id")
+		s.Require().NoError(os.WriteFile(path, []byte(content), fileMode))
+		_, wasRepaired, err := loadOrCreateHostID(path)
+		s.Require().NoError(err, "%q", content)
+		s.True(wasRepaired, "%q", content)
+	}
+	for _, content := range []string{"h_Z", "h_8", "h_8ZZZ", "hh", "h_0I"} {
+		path := filepath.Join(s.T().TempDir(), "host-id")
+		s.Require().NoError(os.WriteFile(path, []byte(content), fileMode))
+		_, err := LoadOrCreateHostID(path)
+		s.Error(err, "%q", content)
+		data, readErr := os.ReadFile(filepath.Clean(path))
+		s.Require().NoError(readErr)
+		s.Equal(content, string(data))
+	}
 }
 
 func (s *StoreSuite) open() *Store {

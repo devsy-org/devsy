@@ -6,6 +6,7 @@ package audit
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,9 @@ const (
 	lockName  = ".lock"
 	dirMode   = 0o700
 	fileMode  = 0o600
+
+	defaultLockWait = 5 * time.Second
+	lockRetry       = 5 * time.Millisecond
 )
 
 var (
@@ -37,16 +41,21 @@ var (
 	errLineTooLong = fmt.Errorf("audit record is longer than %d bytes", MaxLineBytes)
 	errLineShape   = errors.New("audit record must be one single-line JSON object")
 	errTornTail    = errors.New("audit file ends in an unterminated record longer than one record")
+	errLockTimeout = errors.New("timed out waiting for the audit lock, another process holds it")
 )
 
 // Store appends records to <dir>/<YYYY-MM-DD>.jsonl, one file per UTC day.
 type Store struct {
-	dir string
-	now func() time.Time
+	dir      string
+	now      func() time.Time
+	lockWait time.Duration
 }
 
-// Open creates the directory when needed and refuses one that other users
-// can write to.
+// Open creates the directory when needed and refuses one that other users can
+// write to. The ownership and mode check runs on Unix only; the Windows build
+// does not inspect the directory ACL. It syncs the directory and each parent
+// the current user owns on every call, so a directory whose earlier sync
+// failed is never trusted just because it exists.
 func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return nil, fmt.Errorf("create audit directory: %w", err)
@@ -54,7 +63,37 @@ func Open(dir string) (*Store, error) {
 	if err := checkDirMode(dir); err != nil {
 		return nil, err
 	}
-	return &Store{dir: dir, now: time.Now}, nil
+	if err := syncDirChain(dir); err != nil {
+		return nil, fmt.Errorf("sync audit directory: %w", err)
+	}
+	return &Store{
+		dir:      dir,
+		now:      time.Now,
+		lockWait: defaultLockWait,
+	}, nil
+}
+
+// syncDirFunc is syncDir, replaceable so tests can inject a failure.
+var syncDirFunc = syncDir
+
+// syncDirChain syncs dir, then each parent while the directory below it is
+// owned by the current user: those are the entries this process could have
+// created. The first parent the user does not own is synced too, because it
+// holds the entry of the last owned directory. Every error propagates,
+// including a permission error on that parent: its entry cannot be made
+// durable, so Open fails closed.
+func syncDirChain(dir string) error {
+	for p := filepath.Clean(dir); ; {
+		owned := ownedByCurrentUser(p)
+		if err := syncDirFunc(p); err != nil {
+			return err
+		}
+		parent := filepath.Dir(p)
+		if !owned || parent == p {
+			return nil
+		}
+		p = parent
+	}
 }
 
 // Append writes one record and syncs it before returning. On any error the
@@ -63,6 +102,7 @@ func Open(dir string) (*Store, error) {
 // A crash can leave an unterminated tail, which Append cuts before writing;
 // it was never acknowledged. A tail longer than one record with no newline
 // makes every append for that day fail until the file is repaired by hand.
+// It waits a bounded time for the directory lock and then fails.
 func (s *Store) Append(record []byte) error {
 	if err := checkRecord(record); err != nil {
 		return err
@@ -72,10 +112,29 @@ func (s *Store) Append(record []byte) error {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	if err := lock.Lock(); err != nil {
+	if err := acquire(lock, s.lockWait, false); err != nil {
+		return err
+	}
+	day := s.now().UTC().Format(dayLayout)
+	return s.appendDay(day, record)
+}
+
+// acquire takes the lock, polling until wait runs out.
+func acquire(lock *flock.Flock, wait time.Duration, shared bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	try := lock.TryLockContext
+	if shared {
+		try = lock.TryRLockContext
+	}
+	ok, err := try(ctx, lockRetry)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || (err == nil && !ok):
+		return fmt.Errorf("%w (waited %s)", errLockTimeout, wait)
+	case err != nil:
 		return fmt.Errorf("lock audit directory: %w", err)
 	}
-	return appendLine(filepath.Join(s.dir, s.now().UTC().Format(dayLayout)+fileExt), record)
+	return nil
 }
 
 func checkRecord(record []byte) error {
@@ -90,17 +149,13 @@ func checkRecord(record []byte) error {
 	return nil
 }
 
-// appendLine writes the record and its newline in one call at the end of the
+// writeRecord writes the record and its newline in one call at the end of the
 // file, which is safe without O_APPEND because the caller holds the exclusive
 // directory lock. A torn tail from an earlier crash is cut off first, and a
 // failed or short write is cut back, so a record never joins a partial line.
 // A sync error is returned after the line is written, so the record may exist
 // although the caller must refuse.
-func appendLine(path string, record []byte) (err error) {
-	f, err := openDayFile(path)
-	if err != nil {
-		return err
-	}
+func writeRecord(f *os.File, record []byte) (err error) {
 	defer func() {
 		if cerr := f.Close(); err == nil && cerr != nil {
 			err = fmt.Errorf("close audit file: %w", cerr)
@@ -128,7 +183,8 @@ func openDayFile(path string) (*os.File, error) {
 	if err := checkRegular(path); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Clean(path), os.O_RDWR|os.O_CREATE|noFollow, fileMode)
+	f, err := os.OpenFile(
+		filepath.Clean(path), os.O_RDWR|os.O_CREATE|noFollow|nonBlock, fileMode)
 	if err != nil {
 		return nil, fmt.Errorf("open audit file: %w", err)
 	}
@@ -138,9 +194,9 @@ func openDayFile(path string) (*os.File, error) {
 // trimTornTail removes bytes after the last newline, a record cut short by a
 // crash, and returns the size that remains.
 func trimTornTail(f *os.File) (int64, error) {
-	info, err := f.Stat()
+	info, err := statRegular(f)
 	if err != nil {
-		return 0, fmt.Errorf("stat audit file: %w", err)
+		return 0, err
 	}
 	end, err := completeEnd(f, info.Size())
 	if err != nil || end == info.Size() {
@@ -168,6 +224,19 @@ func completeEnd(f *os.File, size int64) (int64, error) {
 		return size, errTornTail
 	}
 	return size - window + int64(last+1), nil
+}
+
+// statRegular checks the open file itself, which closes the gap between the
+// path check and the open.
+func statRegular(f *os.File) (os.FileInfo, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat audit file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("audit path is not a regular file: %s", f.Name())
+	}
+	return info, nil
 }
 
 // checkRegular refuses a path that exists as anything but a regular file,
@@ -203,7 +272,8 @@ func (s *Store) Days() ([]string, error) {
 
 // Scan calls fn for every record of each day in [from, to], oldest first. An
 // empty bound is open. It stops at the first error from fn. A line cut short
-// by a crash is reported as io.ErrUnexpectedEOF.
+// by a crash is reported as io.ErrUnexpectedEOF. Each error names the day it
+// came from and wraps the cause, including an error returned by fn.
 func (s *Store) Scan(from, to string, fn func(day string, record []byte) error) error {
 	days, err := s.Days()
 	if err != nil {
@@ -214,18 +284,45 @@ func (s *Store) Scan(from, to string, fn func(day string, record []byte) error) 
 			continue
 		}
 		if err := s.scanDay(day, fn); err != nil {
-			return err
+			return fmt.Errorf("audit day %s: %w", day, err)
 		}
 	}
 	return nil
 }
 
+// appendDay writes the record, then syncs the directory on every append. A
+// file sync alone does not persist a new name, and another process may have
+// created or recreated the day file since this Store last synced, so no
+// per-day cache is safe.
+func (s *Store) appendDay(day string, record []byte) error {
+	f, err := openDayFile(filepath.Join(s.dir, day+fileExt))
+	if err != nil {
+		return err
+	}
+	if err := writeRecord(f, record); err != nil {
+		return err
+	}
+	if err := syncDirFunc(s.dir); err != nil {
+		return fmt.Errorf("sync audit directory: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) newLock() (*flock.Flock, error) {
-	path := filepath.Join(s.dir, lockName)
+	return newFlock(filepath.Join(s.dir, lockName))
+}
+
+// newFlock refuses a lock path that is not a regular file and never follows
+// a symlink when it opens one.
+func newFlock(path string) (*flock.Flock, error) {
 	if err := checkRegular(path); err != nil {
 		return nil, err
 	}
-	return flock.New(path, flock.SetPermissions(fileMode)), nil
+	return flock.New(
+		path,
+		flock.SetPermissions(fileMode),
+		flock.SetFlag(os.O_CREATE|os.O_RDWR|noFollow|nonBlock),
+	), nil
 }
 
 type snapshot struct {
@@ -261,14 +358,14 @@ func (s *Store) openSnapshot(day string) (*snapshot, error) {
 		return nil, err
 	}
 	defer func() { _ = lock.Close() }()
-	if err := lock.RLock(); err != nil {
-		return nil, fmt.Errorf("lock audit directory: %w", err)
+	if err := acquire(lock, s.lockWait, true); err != nil {
+		return nil, err
 	}
 	path := filepath.Clean(filepath.Join(s.dir, day+fileExt))
 	if err := checkRegular(path); err != nil {
 		return nil, err
 	}
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|noFollow|nonBlock, 0)
 	if err != nil {
 		return nil, fmt.Errorf("read audit file: %w", err)
 	}
@@ -281,9 +378,9 @@ func (s *Store) openSnapshot(day string) (*snapshot, error) {
 }
 
 func takeSnapshot(f *os.File) (*snapshot, error) {
-	info, err := f.Stat()
+	info, err := statRegular(f)
 	if err != nil {
-		return nil, fmt.Errorf("stat audit file: %w", err)
+		return nil, err
 	}
 	end, err := completeEnd(f, info.Size())
 	if err != nil {
