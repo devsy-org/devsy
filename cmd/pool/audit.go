@@ -18,7 +18,15 @@ const (
 	auditSinceFlag   = "since"
 )
 
-var errAuditSince = errors.New("--since must be an RFC3339 timestamp or a YYYY-MM-DD UTC date")
+var (
+	errAuditSince   = errors.New("--since must be an RFC3339 timestamp or a YYYY-MM-DD UTC date")
+	errAuditSession = errors.New("--session must not be empty")
+)
+
+type auditFlagsSet struct {
+	session bool
+	since   bool
+}
 
 type auditCmd struct {
 	dir     string
@@ -45,7 +53,10 @@ The directory must be owned by the current user and must not be group or world w
 			return cmd.Run(
 				cobraCmd.OutOrStdout(),
 				cobraCmd.ErrOrStderr(),
-				cobraCmd.Flags().Changed(auditSinceFlag),
+				auditFlagsSet{
+					session: cobraCmd.Flags().Changed(auditSessionFlag),
+					since:   cobraCmd.Flags().Changed(auditSinceFlag),
+				},
 			)
 		},
 	}
@@ -68,20 +79,16 @@ The directory must be owned by the current user and must not be group or world w
 	return command
 }
 
-func (cmd *auditCmd) Run(w, stderr io.Writer, sinceSet bool) error {
+func (cmd *auditCmd) Run(w, stderr io.Writer, set auditFlagsSet) error {
 	if cmd.output != output.ModeJSON {
 		return errors.New("pool audit only supports --output json")
 	}
 	if cmd.dir == "" {
 		return errors.New("--dir must not be empty")
 	}
-	filter := audit.ReaderFilter{Session: cmd.session}
-	if sinceSet {
-		since, err := parseAuditSince(cmd.since)
-		if err != nil {
-			return err
-		}
-		filter.Since = since
+	filter, err := cmd.filter(set)
+	if err != nil {
+		return err
 	}
 	reader, err := audit.OpenReader(cmd.dir)
 	if err != nil {
@@ -96,6 +103,21 @@ func (cmd *auditCmd) Run(w, stderr io.Writer, sinceSet bool) error {
 			_, _ = fmt.Fprintf(stderr, "warning: %v\n", warning)
 		},
 	)
+}
+
+func (cmd *auditCmd) filter(set auditFlagsSet) (audit.ReaderFilter, error) {
+	filter := audit.ReaderFilter{Session: cmd.session}
+	if set.session && cmd.session == "" {
+		return filter, errAuditSession
+	}
+	if set.since {
+		since, err := parseAuditSince(cmd.since)
+		if err != nil {
+			return filter, err
+		}
+		filter.Since = since
+	}
+	return filter, nil
 }
 
 func writeAuditRecord(w io.Writer, record []byte) error {

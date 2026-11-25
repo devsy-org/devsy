@@ -88,6 +88,16 @@ func (s *AuditCmdSuite) TestInvalidSince() {
 	}
 }
 
+func (s *AuditCmdSuite) TestEmptySessionIsRejected() {
+	s.skipWindows()
+	s.writeDay(auditTestDate, s.record("one", auditTestTime)+"\n")
+	for _, args := range [][]string{{"--session", ""}, {"--session="}} {
+		got, err := s.execute(append([]string{"--dir", s.dir}, args...)...)
+		s.Require().ErrorIs(err, errAuditSession)
+		s.Empty(got)
+	}
+}
+
 func (s *AuditCmdSuite) TestOutputMatchesStoredBytes() {
 	s.skipWindows()
 	st, err := audit.Open(s.dir)
