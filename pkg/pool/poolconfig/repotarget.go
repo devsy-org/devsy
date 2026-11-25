@@ -82,10 +82,14 @@ func repoTargetError(raw, normalized string) string {
 	return repoHostError(t.host)
 }
 
-// validRepoPort accepts no port or one in 1 to 65535.
+// validRepoPort accepts no port or a plain decimal in 1 to 65535, so
+// 0443 and +443 do not give one port two spellings.
 func validRepoPort(port string) bool {
 	if port == "" {
 		return true
+	}
+	if port[0] == '0' || port[0] == '+' {
+		return false
 	}
 	n, err := strconv.Atoi(port)
 	return err == nil && n >= 1 && n <= maxPort

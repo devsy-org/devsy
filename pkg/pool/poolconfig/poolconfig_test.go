@@ -259,6 +259,8 @@ var repoTargetRejections = map[string][]string{
 		"https://github.com:65536/acme/api",
 		"ssh://git@github.com:99999/acme/api",
 		"ssh://git@github.com:0/acme/api",
+		"https://github.com:0443/acme/api",
+		"https://github.com:+443/acme/api",
 	},
 	errRepoScheme: {
 		"file:///etc", "http://169.254.169.254/x", "http://github.com/acme/api",
@@ -336,16 +338,16 @@ func repoURLFor(a netip.Addr) string {
 // addresses just outside must stay allowed, so a widened or dropped range
 // fails here.
 func (s *PoolConfigSuite) TestRepoBlockedRangesPinned() {
-	pinned := map[string]string{
-		"fec0::/10":       "",
-		"2001::/23":       "2001:200::1",
-		"100::/64":        "100:0:0:1::1",
-		"198.18.0.0/15":   "198.20.0.1",
-		"64:ff9b:1::/48":  "64:ff9b:2::1",
-		"::ffff:0:0:0/96": "0:0:0:fffe::1",
-		"192.0.0.0/24":    "192.0.1.1",
+	pinned := map[string][]string{
+		"fec0::/10":       {"fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff"},
+		"2001::/23":       {"2001:200::1"},
+		"100::/64":        {"100:0:0:1::1"},
+		"198.18.0.0/15":   {"198.17.255.255", "198.20.0.1"},
+		"64:ff9b:1::/48":  {"64:ff9b:2::1", "64:ff9b:0:ffff:ffff:ffff:ffff:ffff"},
+		"::ffff:0:0:0/96": {"0:0:0:fffe::1", "::ffff:1:0:0"},
+		"192.0.0.0/24":    {"192.0.1.1"},
 	}
-	for cidr, outside := range pinned {
+	for cidr, outsides := range pinned {
 		prefix := netip.MustParsePrefix(cidr)
 		s.Contains(blockedRepoPrefixes, prefix, cidr)
 		for _, a := range []netip.Addr{prefix.Masked().Addr(), lastAddr(prefix)} {
@@ -353,15 +355,12 @@ func (s *PoolConfigSuite) TestRepoBlockedRangesPinned() {
 			p.Spec.Source.Repo = repoURLFor(a)
 			s.ErrorContains(p.Validate(), "spec.source.repo: "+errRepoHost, a.String())
 		}
-		if outside != "" {
+		for _, outside := range outsides {
 			p := s.loadExample()
 			p.Spec.Source.Repo = repoURLFor(netip.MustParseAddr(outside))
 			s.NoError(p.Validate(), outside)
 		}
 	}
-	p := s.loadExample()
-	p.Spec.Source.Repo = "https://198.17.255.255/acme/api"
-	s.NoError(p.Validate())
 }
 
 func (s *PoolConfigSuite) TestRepoTargetRefused() {
