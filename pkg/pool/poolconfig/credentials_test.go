@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
 const (
@@ -96,7 +98,7 @@ var credentialRejections = []rejection{
 	{
 		"upstream port",
 		func(p *Pool) { p.Spec.Credentials[1].Route.Upstream = "https://x.com:99999" },
-		"outside",
+		"port must be a plain number",
 	},
 	{
 		"upstream allowed",
@@ -207,7 +209,7 @@ func (s *PoolConfigSuite) TestCredentialErrorsDoNotEchoValues() {
 	err := p.Validate()
 	s.ErrorContains(err, "deliver[0]: unknown target")
 	s.ErrorContains(err, "repositories[1]: must be owner/repo")
-	s.ErrorContains(err, "port is outside")
+	s.ErrorContains(err, "port must be a plain number")
 	s.ErrorContains(err, "must not also be matched")
 	s.ErrorContains(err, "must reference a declared credential")
 	s.ErrorContains(err, wantDeniedPermission)
@@ -357,6 +359,7 @@ func (s *PoolConfigSuite) TestSecretRefsMustBeQualified() {
 	for _, ref := range []string{
 		"ANTHROPIC_API_KEY", "sk_live_CANARY0123", "vault:pool/CANARY", "ghp_CANARY:src/name",
 		"local:pool/CANARY", " sops:pool/CANARY", "sops:pool/CANARY ", "sops:pool", "sops:/CANARY",
+		"sops:local/CANARY",
 	} {
 		p := s.loadExample()
 		p.Spec.Credentials[1].Secret = ref
@@ -375,6 +378,28 @@ func (s *PoolConfigSuite) TestSecretRefsMustBeQualified() {
 		p := s.loadExample()
 		p.Spec.Credentials[1].Secret = ref
 		s.NoError(p.Validate(), ref)
+	}
+}
+
+func (s *PoolConfigSuite) TestSopsLocalRefAgreesWithResolver() {
+	src := secrets.NewSOPSDataSource("local", "x.json", "json", nil)
+	err := secrets.NewResolver().Register(secrets.LocalSourceName, secrets.SOPSFormatter, src)
+	s.Require().ErrorContains(err, "is reserved")
+	s.Require().NoError(secrets.ValidateSourceType("team-a", secrets.SOPSFormatter))
+	local := secrets.LocalSourceName
+	s.Require().NoError(secrets.ValidateSourceType(local, local))
+}
+
+func (s *PoolConfigSuite) TestPaddedUpstreamPortsRefused() {
+	for _, port := range []string{"0443", "00443", "0", "65536"} {
+		p := s.loadExample()
+		p.Spec.Credentials[1].Route.Upstream = "https://api.anthropic.com:" + port
+		s.ErrorContains(p.Validate(), "route.upstream: port must be a plain number", port)
+	}
+	for _, port := range []string{"1", "443", "8443", "65535"} {
+		p := s.loadExample()
+		p.Spec.Credentials[1].Route.Upstream = "https://api.anthropic.com:" + port
+		s.NoError(p.Validate(), port)
 	}
 }
 

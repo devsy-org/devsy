@@ -13,6 +13,13 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	cidrNAT64Local = "64:ff9b:1::/48"
+	cidrMappedZero = "::ffff:0:0:0/96"
+	cidrCompatV6   = "::/96"
+	cidrDocV6      = "2001:db8::/32"
+)
+
 type PoolConfigSuite struct {
 	suite.Suite
 }
@@ -160,7 +167,7 @@ func (s *PoolConfigSuite) TestOrderSensitiveListsChangeVersions() {
 
 func (s *PoolConfigSuite) TestEquivalentCIDRSpellingsShareVersions() {
 	a, b := s.loadExample(), s.loadExample()
-	allow(a, AllowRule{CIDR: "2001:db8::/32"})
+	allow(a, AllowRule{CIDR: cidrDocV6})
 	allow(b, AllowRule{CIDR: "2001:0db8:0:0:0:0:0:0/32"})
 	policyA, configA := s.versions(a)
 	policyB, configB := s.versions(b)
@@ -170,7 +177,7 @@ func (s *PoolConfigSuite) TestEquivalentCIDRSpellingsShareVersions() {
 
 func (s *PoolConfigSuite) TestDuplicateCIDRSpellingsRefused() {
 	p := s.loadExample()
-	allow(p, AllowRule{CIDR: "2001:db8::/32"})
+	allow(p, AllowRule{CIDR: cidrDocV6})
 	allow(p, AllowRule{CIDR: "2001:0db8:0:0:0:0:0:0/32"})
 	s.ErrorContains(p.Validate(), "spec.egress.allow[5]: duplicates another rule's host or cidr")
 }
@@ -339,13 +346,13 @@ func repoURLFor(a netip.Addr) string {
 // fails here.
 func (s *PoolConfigSuite) TestRepoBlockedRangesPinned() {
 	pinned := map[string][]string{
-		"fec0::/10":       {"fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff"},
-		"2001::/23":       {"2001:200::1"},
-		"100::/64":        {"100:0:0:1::1"},
-		"198.18.0.0/15":   {"198.17.255.255", "198.20.0.1"},
-		"64:ff9b:1::/48":  {"64:ff9b:2::1", "64:ff9b:0:ffff:ffff:ffff:ffff:ffff"},
-		"::ffff:0:0:0/96": {"0:0:0:fffe::1", "::ffff:1:0:0"},
-		"192.0.0.0/24":    {"192.0.1.1"},
+		"fec0::/10":     {"fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff"},
+		"2001::/23":     {"2001:200::1"},
+		"100::/64":      {"100:0:0:1::1"},
+		"198.18.0.0/15": {"198.17.255.255", "198.20.0.1"},
+		cidrNAT64Local:  {"64:ff9b:2::1", "64:ff9b:0:ffff:ffff:ffff:ffff:ffff"},
+		cidrMappedZero:  {"0:0:0:fffe::1", "::ffff:1:0:0"},
+		"192.0.0.0/24":  {"192.0.1.1"},
 	}
 	for cidr, outsides := range pinned {
 		prefix := netip.MustParsePrefix(cidr)
@@ -359,6 +366,43 @@ func (s *PoolConfigSuite) TestRepoBlockedRangesPinned() {
 			p := s.loadExample()
 			p.Spec.Source.Repo = repoURLFor(netip.MustParseAddr(outside))
 			s.NoError(p.Validate(), outside)
+		}
+	}
+}
+
+// expectedRepoBlocked is kept apart from blockedRepoPrefixes so that adding,
+// dropping or widening a range there fails until this list changes too.
+var expectedRepoBlocked = []string{
+	"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "168.63.129.16/32",
+	"169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24",
+	"192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4",
+	"240.0.0.0/4", cidrCompatV6, cidrMappedZero, "64:ff9b::/96", cidrNAT64Local, "100::/64",
+	"2001::/23", cidrDocV6, "2002::/16", "3fff::/20", "fc00::/7", "fe80::/10",
+	"fec0::/10", "ff00::/8",
+}
+
+func (s *PoolConfigSuite) TestRepoBlockedPrefixesAllPinned() {
+	expected := make([]netip.Prefix, 0, len(expectedRepoBlocked))
+	for _, cidr := range expectedRepoBlocked {
+		expected = append(expected, netip.MustParsePrefix(cidr))
+	}
+	s.ElementsMatch(expected, blockedRepoPrefixes)
+	inExpected := func(a netip.Addr) bool {
+		return slices.ContainsFunc(expected, func(p netip.Prefix) bool { return p.Contains(a) })
+	}
+	for _, prefix := range expected {
+		first, last := prefix.Masked().Addr(), lastAddr(prefix)
+		for _, a := range []netip.Addr{first, last, first.Prev(), last.Next()} {
+			if !a.IsValid() {
+				continue
+			}
+			p := s.loadExample()
+			p.Spec.Source.Repo = repoURLFor(a)
+			if inExpected(a) {
+				s.ErrorContains(p.Validate(), "spec.source.repo: "+errRepoHost, a.String())
+			} else {
+				s.NoError(p.Validate(), a.String())
+			}
 		}
 	}
 }

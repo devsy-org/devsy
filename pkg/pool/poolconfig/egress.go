@@ -185,7 +185,7 @@ func isInternalName(name string) bool {
 		return name == m || strings.HasSuffix(name, "."+m)
 	}) ||
 		slices.ContainsFunc(internalSuffixes, func(suffix string) bool {
-			return strings.HasSuffix(name, suffix)
+			return name == suffix[1:] || strings.HasSuffix(name, suffix)
 		})
 }
 

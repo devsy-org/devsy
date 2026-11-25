@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -301,8 +300,8 @@ func checkURLPort(port string) string {
 	if port == "" {
 		return ""
 	}
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > maxPort {
-		return fmt.Sprintf("port is outside 1 to %d", maxPort)
+	if !validRepoPort(port) {
+		return fmt.Sprintf("port must be a plain number from 1 to %d", maxPort)
 	}
 	return ""
 }
@@ -314,6 +313,7 @@ func validateSecretRef(errs *fieldErrors, path, ref string) {
 	parsed, err := secrets.ParseRef(ref)
 	if err != nil || !strings.Contains(ref, ":") || ref != strings.TrimSpace(ref) ||
 		!slices.Contains(secretRefTypes, parsed.Type) ||
+		secrets.ValidateSourceType(parsed.Source, parsed.Type) != nil ||
 		(parsed.Type == secrets.LocalSourceName && parsed.Source != secrets.LocalSourceName) {
 		errs.add(path, "must be a TYPE:SOURCE/NAME reference with type %s, such as %s",
 			strings.Join(secretRefTypes, " or "), "sops:pool/API_KEY")
