@@ -3,7 +3,6 @@ package audit
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +20,7 @@ var (
 	errReaderUnsupportedOS = errors.New("reading pool audit files is not supported on Windows")
 	errReaderTornTail      = errors.New("skipped unterminated audit record")
 	errReaderFileChanged   = errors.New("audit file changed while reading")
+	errReaderInvalidRecord = errors.New("audit record is not a valid audit envelope")
 )
 
 // Reader reads daily audit files without taking the writer's lock.
@@ -194,17 +194,24 @@ func (f ReaderFilter) matches(record []byte) (bool, error) {
 	if f.Session == "" && f.Since == nil {
 		return true, nil
 	}
-	var e envelope.Envelope
-	if err := json.Unmarshal(record, &e); err != nil {
-		return false, errors.New("decode audit envelope")
-	}
-	sessionMatches := f.Session == "" || e.Session == f.Session
-	if f.Since == nil {
-		return sessionMatches, nil
-	}
-	ts, err := time.Parse(time.RFC3339, e.TS)
+	e, ts, err := decodeReaderRecord(record)
 	if err != nil {
-		return false, errors.New("audit envelope timestamp must be RFC3339")
+		return false, err
 	}
-	return sessionMatches && !ts.Before(*f.Since), nil
+	if f.Session != "" && e.Session != f.Session {
+		return false, nil
+	}
+	return f.Since == nil || !ts.Before(*f.Since), nil
+}
+
+func decodeReaderRecord(record []byte) (envelope.Envelope, time.Time, error) {
+	e, err := envelope.DecodeStrict(record)
+	if err != nil || e.Kind != envelope.KindAudit || e.Validate() != nil {
+		return envelope.Envelope{}, time.Time{}, errReaderInvalidRecord
+	}
+	ts, err := time.Parse(envelope.TimeLayout, e.TS)
+	if err != nil {
+		return envelope.Envelope{}, time.Time{}, errReaderInvalidRecord
+	}
+	return e, ts, nil
 }

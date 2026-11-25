@@ -69,14 +69,14 @@ func (s *ReaderSuite) TestSinceKeepsMatchingTimestampInEarlierDayFile() {
 	s.Equal([]string{earlierFile, want}, got)
 }
 
-func (s *ReaderSuite) TestInvalidTimestampFailsEvenForNonmatchingSession() {
+func (s *ReaderSuite) TestInvalidEnvelopeFailsEvenForNonmatchingSession() {
 	const canary = "private-timestamp-canary"
 	first := s.appendEvent(dayTwo, readerSession, s.now)
 	bad, err := json.Marshal(envelope.Envelope{Session: "ignore", TS: canary})
 	s.Require().NoError(err)
 	s.writeDay(dayTwo, first+"\n"+string(bad)+"\n")
 	got, err := s.scan(ReaderFilter{Session: readerSession, Since: &s.now})
-	s.Require().ErrorContains(err, "timestamp must be RFC3339")
+	s.Require().ErrorContains(err, "not a valid audit envelope")
 	s.NotContains(err.Error(), canary)
 	s.checkLocation(err, dayTwo, len(first)+1)
 	s.Equal([]string{first}, got)
@@ -86,10 +86,32 @@ func (s *ReaderSuite) TestDecodeErrorDoesNotEchoRecordValue() {
 	const canary = "918273645e999"
 	s.writeDay(dayTwo, `{"data":{"number":`+canary+"}}\n")
 	got, err := s.scan(ReaderFilter{Session: readerSession})
-	s.Require().ErrorContains(err, "decode audit envelope")
+	s.Require().ErrorContains(err, "not a valid audit envelope")
 	s.NotContains(err.Error(), canary)
 	s.checkLocation(err, dayTwo, 0)
 	s.Empty(got)
+}
+
+func (s *ReaderSuite) TestFilteredReadRefusesRecordsThatFailValidation() {
+	base := s.appendEvent(dayTwo, readerSession, s.now)
+	tsKey := `"ts":"` + envelope.FormatTime(s.now) + `"`
+	for name, bad := range map[string]string{
+		"wrong kind":      strings.Replace(base, `"kind":"audit"`, `"kind":"log"`, 1),
+		"unknown source":  strings.Replace(base, `"src":"pool"`, `"src":"nope"`, 1),
+		"unknown field":   strings.Replace(base, `{"v":1`, `{"extra":1,"v":1`, 1),
+		"data not listed": strings.Replace(base, `"devsy.request.outcome":"new"`, `"devsy.request.outcome":"bogus"`, 1),
+		"offset time":     strings.Replace(base, tsKey, `"ts":"2026-11-22T10:15:03+01:00"`, 1),
+	} {
+		s.Require().NotEqual(base, bad, name)
+		s.writeDay(dayTwo, bad+"\n")
+		got, err := s.scan(ReaderFilter{Session: readerSession})
+		s.Require().ErrorContains(err, "not a valid audit envelope", name)
+		s.checkLocation(err, dayTwo, 0)
+		s.Empty(got, name)
+		got, err = s.scan(ReaderFilter{})
+		s.Require().NoError(err, name)
+		s.Equal([]string{bad}, got, name)
+	}
 }
 
 func (s *ReaderSuite) TestOpaqueRecordIsNotDecodedWithoutFilters() {
@@ -368,9 +390,8 @@ func (s *ReaderSuite) appendEvent(day, session string, ts time.Time) string {
 	writer, err := NewWriter(st, WriterConfig{
 		Pool:          "test-pool",
 		Host:          "test-host",
-		PolicyVersion: "test-policy",
-		ConfigVersion: "test-config",
-		Validate:      acceptAuditDataForTest,
+		PolicyVersion: writerTestVersion,
+		ConfigVersion: writerTestVersion,
 		Now:           func() time.Time { return ts },
 	})
 	s.Require().NoError(err)

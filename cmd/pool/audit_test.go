@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +19,8 @@ import (
 
 const (
 	auditTestDate = "2026-11-23"
-	auditTestTime = auditTestDate + "T00:00:00Z"
+	auditTestTime = auditTestDate + "T00:00:00.000Z"
+	auditTestHash = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
 	auditTestNext = "2026-11-24"
 	auditTestTail = `{"torn":`
 )
@@ -104,7 +106,7 @@ func (s *AuditCmdSuite) TestOutputMatchesStoredBytes() {
 
 func (s *AuditCmdSuite) TestSinceDateAndNonUTCOffset() {
 	s.skipWindows()
-	early := s.record("one", "2026-11-22T23:59:59Z")
+	early := s.record("one", "2026-11-22T23:59:59.000Z")
 	keep := s.record("two", auditTestTime)
 	stored := early + "\n" + keep + "\n"
 	s.Require().
@@ -187,7 +189,14 @@ func (s *AuditCmdSuite) record(session, ts string) string {
 		Src:     "pool",
 		TS:      ts,
 		Session: session,
-		Data:    map[string]any{},
+		Pool:    "test-pool", Host: "test-host",
+		PolicyVersion: auditTestHash, ConfigVersion: auditTestHash,
+		Actor: &envelope.Actor{Kind: envelope.ActorAgent, ID: "test-agent"},
+		Data: map[string]any{
+			"devsy.request.id_hash": strings.Repeat("a", 64), "devsy.request.outcome": "new",
+			"devsy.agent.name": "claude", "devsy.requester.kind": "local_user",
+			"user.id": "operator", "vcs.repository.name": "owner/name",
+		},
 	})
 	s.Require().NoError(err)
 	return "{  " + string(body[1:]) + " \t"
