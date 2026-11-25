@@ -21,6 +21,7 @@ const (
 	readerSession     = "keep"
 	readerFragment    = `{"torn":`
 	readerFirstRecord = `{"n":1}`
+	readerSource      = "pool"
 )
 
 type ReaderSuite struct {
@@ -412,7 +413,7 @@ func (s *ReaderSuite) appendEvent(day, session string, ts time.Time) string {
 
 func (s *ReaderSuite) logRecord(session string) string {
 	e := envelope.Envelope{
-		V: envelope.Version, Kind: envelope.KindLog, Src: "pool", Session: session,
+		V: envelope.Version, Kind: envelope.KindLog, Src: readerSource, Session: session,
 		TS: envelope.FormatTime(s.now), Level: envelope.LevelInfo, Msg: "hello",
 	}
 	s.Require().NoError(e.Validate())
