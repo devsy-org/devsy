@@ -2,10 +2,12 @@ package audit
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +20,7 @@ import (
 var (
 	errReaderUnsupportedOS = errors.New("reading pool audit files is not supported on Windows")
 	errReaderTornTail      = errors.New("skipped unterminated audit record")
+	errReaderFileChanged   = errors.New("audit file changed while reading")
 )
 
 // Reader reads daily audit files without taking the writer's lock.
@@ -53,15 +56,19 @@ func OpenReader(dir string) (*Reader, error) {
 // newlines. Each slice is valid only until emit returns. It skips torn tails,
 // calling warn if non-nil for each affected file other than the newest.
 func (r *Reader) Scan(filter ReaderFilter, emit func([]byte) error, warn func(error)) error {
+	if err := checkDirMode(r.dir); err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(r.dir)
 	if err != nil {
 		return fmt.Errorf("read audit directory: %w", err)
 	}
 	newest := newestReaderDay(entries)
-	from := filter.firstDay()
+	// A clock step between stamping the record and choosing the file can put
+	// a matching timestamp in a file named for an earlier day.
 	for _, entry := range entries {
 		name := entry.Name()
-		if !dayFilePattern.MatchString(name) || name[:len(dayLayout)] < from {
+		if !dayFilePattern.MatchString(name) {
 			continue
 		}
 		err := scanReaderDay(filepath.Join(r.dir, name), filter, emit)
@@ -92,61 +99,82 @@ func handleReaderDay(err error, newest bool, warn func(error)) error {
 }
 
 func scanReaderDay(path string, filter ReaderFilter, emit func([]byte) error) error {
-	if err := checkRegular(path); err != nil {
-		return err
+	f, err := openReaderDay(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
 	}
-	f, err := os.OpenFile(filepath.Clean(path), os.O_RDONLY|noFollow|nonBlock, 0)
 	if err != nil {
 		return fmt.Errorf("open audit file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	if _, err := statRegular(f); err != nil {
+	info, err := statRegular(f)
+	if err != nil {
 		return err
 	}
-	return scanReaderLines(f, filter, emit)
+	end, err := readerSnapshotEnd(f, info.Size())
+	if err != nil {
+		return err
+	}
+	if err := scanReaderLines(f, end, filter, emit); err != nil {
+		return err
+	}
+	if end < info.Size() {
+		return readerOffsetError(f, end, errReaderTornTail)
+	}
+	return nil
 }
 
-func scanReaderLines(f *os.File, filter ReaderFilter, emit func([]byte) error) error {
-	lines := bufio.NewReaderSize(f, MaxLineBytes+2)
+func openReaderDay(path string) (*os.File, error) {
+	if err := checkRegular(path); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filepath.Clean(path), os.O_RDONLY|noFollow|nonBlock, 0)
+}
+
+// Only the newline-terminated prefix is stable while a writer repairs a tail.
+func readerSnapshotEnd(f *os.File, size int64) (int64, error) {
+	var chunk [4096]byte
+	for end := size; end > 0; {
+		start := max(0, end-int64(len(chunk)))
+		n, err := f.ReadAt(chunk[:end-start], start)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return 0, readerOffsetError(f, start, err)
+		}
+		if last := bytes.LastIndexByte(chunk[:n], '\n'); last >= 0 {
+			return start + int64(last) + 1, nil
+		}
+		end = start
+	}
+	return 0, nil
+}
+
+func scanReaderLines(f *os.File, end int64, filter ReaderFilter, emit func([]byte) error) error {
+	lines := bufio.NewReaderSize(io.NewSectionReader(f, 0, end), MaxLineBytes+2)
 	var offset int64
 	for {
 		line, err := lines.ReadSlice('\n')
 		if err != nil {
-			if err := readerTailError(lines, line, err); err != nil {
-				return fmt.Errorf("audit file %s at byte offset %d: %w", f.Name(), offset, err)
+			if offset == end && len(line) == 0 && errors.Is(err, io.EOF) {
+				return nil
 			}
-			return nil
+			return readerOffsetError(f, offset, readerLineError(err))
 		}
 		if err := emitReaderRecord(line[:len(line)-1], filter, emit); err != nil {
-			return fmt.Errorf("audit file %s at byte offset %d: %w", f.Name(), offset, err)
+			return readerOffsetError(f, offset, err)
 		}
 		offset += int64(len(line))
 	}
 }
 
-func readerTailError(lines *bufio.Reader, line []byte, err error) error {
-	if errors.Is(err, bufio.ErrBufferFull) {
-		return finishOverlongReaderLine(lines)
+func readerLineError(err error) error {
+	if errors.Is(err, io.EOF) {
+		return errReaderFileChanged
 	}
-	if errors.Is(err, io.EOF) && len(line) != 0 {
-		return errReaderTornTail
-	}
-	return endOfLines(line, err)
+	return endOfLines(nil, err)
 }
 
-// Discard chunks to distinguish a torn fragment from an oversized record.
-func finishOverlongReaderLine(lines *bufio.Reader) error {
-	for {
-		_, err := lines.ReadSlice('\n')
-		switch {
-		case err == nil:
-			return errLineTooLong
-		case errors.Is(err, io.EOF):
-			return errReaderTornTail
-		case !errors.Is(err, bufio.ErrBufferFull):
-			return endOfLines(nil, err)
-		}
-	}
+func readerOffsetError(f *os.File, offset int64, err error) error {
+	return fmt.Errorf("audit file %s at byte offset %d: %w", f.Name(), offset, err)
 }
 
 func emitReaderRecord(record []byte, filter ReaderFilter, emit func([]byte) error) error {
@@ -158,13 +186,6 @@ func emitReaderRecord(record []byte, filter ReaderFilter, emit func([]byte) erro
 		return err
 	}
 	return emit(record)
-}
-
-func (f ReaderFilter) firstDay() string {
-	if f.Since == nil {
-		return ""
-	}
-	return f.Since.UTC().Format(dayLayout)
 }
 
 func (f ReaderFilter) matches(record []byte) (bool, error) {

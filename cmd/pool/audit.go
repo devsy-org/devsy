@@ -30,15 +30,20 @@ type auditCmd struct {
 func NewAuditCmd() *cobra.Command {
 	cmd := &auditCmd{}
 	command := &cobra.Command{
-		Use:          "audit",
-		Short:        "Read local pool audit records as newline-delimited JSON",
+		Use:   "audit",
+		Short: "Read local pool audit records as newline-delimited JSON",
+		Long: `Read local pool audit records as newline-delimited JSON.
+
+Warnings go to stderr. Do not merge stderr into stdout.
+The directory must be owned by the current user and must not be group or world writable.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
-			if cobraCmd.Flags().Changed(auditSinceFlag) && cmd.since == "" {
-				return errAuditSince
-			}
-			return cmd.Run(cobraCmd.OutOrStdout(), cobraCmd.ErrOrStderr())
+			return cmd.Run(
+				cobraCmd.OutOrStdout(),
+				cobraCmd.ErrOrStderr(),
+				cobraCmd.Flags().Changed(auditSinceFlag),
+			)
 		},
 	}
 	f := command.Flags()
@@ -60,30 +65,29 @@ func NewAuditCmd() *cobra.Command {
 	return command
 }
 
-func (cmd *auditCmd) Run(w, stderr io.Writer) error {
+func (cmd *auditCmd) Run(w, stderr io.Writer, sinceSet bool) error {
+	if cmd.output != output.ModeJSON {
+		return errors.New("pool audit only supports --output json")
+	}
 	if cmd.dir == "" {
 		return errors.New("--dir must not be empty")
 	}
-	mode, err := output.ResolveMode(cmd.output)
-	if err != nil {
-		return err
-	}
-	if mode != output.ModeJSON {
-		return errors.New("pool audit only supports --output json")
-	}
-	since, err := parseAuditSince(cmd.since)
-	if err != nil {
-		return err
+	filter := audit.ReaderFilter{Session: cmd.session}
+	if sinceSet {
+		since, err := parseAuditSince(cmd.since)
+		if err != nil {
+			return err
+		}
+		filter.Since = since
 	}
 	reader, err := audit.OpenReader(cmd.dir)
 	if err != nil {
 		return err
 	}
 	return reader.Scan(
-		audit.ReaderFilter{Session: cmd.session, Since: since},
+		filter,
 		func(line []byte) error {
-			_, err := w.Write(append(line, '\n'))
-			return err
+			return writeAuditRecord(w, line)
 		},
 		func(warning error) {
 			_, _ = fmt.Fprintf(stderr, "warning: %v\n", warning)
@@ -91,10 +95,15 @@ func (cmd *auditCmd) Run(w, stderr io.Writer) error {
 	)
 }
 
-func parseAuditSince(value string) (*time.Time, error) {
-	if value == "" {
-		return nil, nil
+func writeAuditRecord(w io.Writer, record []byte) error {
+	if _, err := w.Write(record); err != nil {
+		return err
 	}
+	_, err := io.WriteString(w, "\n")
+	return err
+}
+
+func parseAuditSince(value string) (*time.Time, error) {
 	if t, err := time.Parse(time.DateOnly, value); err == nil {
 		return &t, nil
 	}

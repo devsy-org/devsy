@@ -47,9 +47,35 @@ func (s *AuditCmdSuite) TestDirectoryFlagRequired() {
 }
 
 func (s *AuditCmdSuite) TestUnsupportedOutput() {
+	for _, mode := range []string{"plain", "auto", ""} {
+		got, err := s.execute("--dir", s.dir, "--output", mode)
+		s.Require().ErrorContains(err, "only supports --output json")
+		s.Empty(got)
+	}
+}
+
+func (s *AuditCmdSuite) TestDesktopRequiresJSONOutput() {
+	s.T().Setenv("DEVSY_UI", "true")
 	got, err := s.execute("--dir", s.dir, "--output", "plain")
 	s.Require().ErrorContains(err, "only supports --output json")
 	s.Empty(got)
+
+	s.skipWindows()
+	record := s.record("two", auditTestTime) + "\n"
+	s.writeDay(auditTestDate, record)
+	got, err = s.execute("--dir", s.dir, "--output", "json")
+	s.Require().NoError(err)
+	s.Equal(record, got)
+}
+
+func (s *AuditCmdSuite) TestWriteAuditRecordDoesNotChangeBackingBuffer() {
+	const original = "{ \"n\": 1 }!"
+	backing := []byte(original)
+	record := backing[:len(backing)-1]
+	var out bytes.Buffer
+	s.Require().NoError(writeAuditRecord(&out, record))
+	s.Equal(original, string(backing))
+	s.Equal(original[:len(original)-1]+"\n", out.String())
 }
 
 func (s *AuditCmdSuite) TestInvalidSince() {
