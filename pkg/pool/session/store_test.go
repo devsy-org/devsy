@@ -20,15 +20,22 @@ const storePool = "pool"
 
 type StoreSuite struct {
 	suite.Suite
-	dir   string
-	store *Store
-	clock time.Time
+	layout Layout
+	lock   *Lock
+	dir    string
+	store  *Store
+	clock  time.Time
 }
 
 func TestStoreSuite(t *testing.T) { suite.Run(t, new(StoreSuite)) }
 
 func (s *StoreSuite) SetupTest() {
-	s.dir = filepath.Join(s.T().TempDir(), "sessions")
+	s.layout = s.newLayout(storePool)
+	lock, err := s.layout.Lock()
+	s.Require().NoError(err)
+	s.lock = lock
+	s.T().Cleanup(func() { _ = lock.Release() })
+	s.dir = s.layout.SessionsDir()
 	s.clock = time.Date(2026, time.November, 25, 12, 0, 0, 0, time.UTC)
 	s.store = s.open()
 }
@@ -211,31 +218,134 @@ func (s *StoreSuite) TestLoadRefusesUnsafeFiles() {
 	s.Require().ErrorIs(err, errInvalidSession)
 }
 
-func (s *StoreSuite) TestOpenStoreChecksTheDirectory() {
-	_, err := OpenStore(s.dir, "Bad Pool")
+func (s *StoreSuite) TestOpenStoreChecksThePoolAndTheDirectory() {
+	_, err := OpenStore(s.dir, "Bad Pool", s.lock)
 	s.Require().ErrorIs(err, errInvalidPool)
 
-	loose := filepath.Join(s.T().TempDir(), "loose")
-	s.Require().NoError(os.Mkdir(loose, dirMode))
-	s.Require().NoError(os.Chmod(loose, dirMode|0o070))
-	_, err = OpenStore(loose, storePool)
-	s.Require().ErrorContains(err, "accessible only by its owner")
-
-	for _, extra := range []os.FileMode{0o050, 0o005, 0o040, 0o001} {
-		shared := filepath.Join(s.T().TempDir(), "shared")
-		s.Require().NoError(os.Mkdir(shared, dirMode))
-		s.Require().NoError(os.Chmod(shared, dirMode|extra))
-		_, err = OpenStore(shared, storePool)
+	for _, extra := range []os.FileMode{0o070, 0o050, 0o005, 0o040, 0o001} {
+		s.Require().NoError(os.Chmod(s.dir, dirMode|extra))
+		_, err = OpenStore(s.dir, storePool, s.lock)
 		s.Require().ErrorContains(err, "accessible only by its owner", "%o", extra)
-		s.NoFileExists(filepath.Join(shared, "x"))
 	}
+	s.Require().NoError(os.Chmod(s.dir, dirMode))
 
-	nested := filepath.Join(s.T().TempDir(), "a", "b", "sessions")
-	_, err = OpenStore(nested, storePool)
+	s.Require().NoError(os.RemoveAll(s.dir))
+	_, err = OpenStore(s.dir, storePool, s.lock)
 	s.Require().NoError(err)
-	info, err := os.Stat(filepath.Dir(nested))
+	info, err := os.Stat(s.dir)
 	s.Require().NoError(err)
 	s.Equal(os.FileMode(dirMode), info.Mode().Perm())
+}
+
+func (s *StoreSuite) TestOpenStoreRefusesALockThatDoesNotCoverTheDirectory() {
+	elsewhere := s.newLayout(storePool)
+	foreign, err := elsewhere.Lock()
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = foreign.Release() })
+	spare := s.newLayout("spare")
+	released, err := spare.Lock()
+	s.Require().NoError(err)
+	s.Require().NoError(released.Release())
+
+	dir := s.layout.KeysDir()
+	cases := map[string]struct {
+		dir, pool string
+		lock      *Lock
+		want      error
+	}{
+		"nil":            {dir, storePool, nil, errLockNotHeld},
+		"released":       {spare.KeysDir(), "spare", released, errLockNotHeld},
+		"other pool dir": {dir, storePool, foreign, errForeignLock},
+		"other pool":     {dir, "other", s.lock, errForeignLock},
+		"not a child":    {filepath.Join(s.dir, "sub"), storePool, s.lock, errForeignLock},
+		"the pool dir":   {s.layout.Dir(), storePool, s.lock, errForeignLock},
+	}
+	for name, tc := range cases {
+		_, err := OpenStore(tc.dir, tc.pool, tc.lock)
+		s.Require().ErrorIs(err, tc.want, name)
+		if tc.dir != s.layout.Dir() {
+			s.NoDirExists(tc.dir, name)
+		}
+	}
+}
+
+func (s *StoreSuite) TestWritesStopWhenTheLockIsReleased() {
+	sess := s.create()
+	before := s.snapshot()
+	s.Require().NoError(s.lock.Release())
+	_, err := s.store.Create()
+	s.Require().ErrorIs(err, errLockNotHeld)
+	_, err = s.store.Transition(sess.ID, StateQueued, StateSpawning, "")
+	s.Require().ErrorIs(err, errLockNotHeld)
+	s.Equal(before, s.snapshot())
+	_, err = s.store.Load(sess.ID)
+	s.Require().NoError(err)
+	_, err = OpenStore(s.dir, storePool, s.lock)
+	s.Require().ErrorIs(err, errLockNotHeld)
+}
+
+func (s *StoreSuite) TestReleaseWaitsForWritesInFlightAndStopsTheRest() {
+	var wg sync.WaitGroup
+	var once sync.Once
+	started := make(chan struct{})
+	errs := make(chan error, 200)
+	for range 4 {
+		wg.Go(func() {
+			for range 50 {
+				_, err := s.store.Create()
+				errs <- err
+				once.Do(func() { close(started) })
+			}
+		})
+	}
+	<-started
+	s.Require().NoError(s.lock.Release())
+	frozen := s.snapshot()
+	wg.Wait()
+	close(errs)
+	s.Equal(frozen, s.snapshot(), "nothing is written after Release returns")
+	for err := range errs {
+		if err != nil {
+			s.Require().ErrorIs(err, errLockNotHeld)
+		}
+	}
+}
+
+func (s *StoreSuite) TestOpenStoreRemovesStrayTempFilesOnly() {
+	keep := s.create()
+	s.writeFile(".tmp-1", "torn")
+	s.writeFile(".tmp-4294967295", "torn")
+	s.writeFile(".tmp-abc", "not ours")
+	s.writeFile(".tmp-12a", "not ours")
+	target := filepath.Join(s.dir, keep.ID+fileExt)
+	s.Require().NoError(os.Symlink(target, filepath.Join(s.dir, ".tmp-7")))
+	s.Require().NoError(os.Mkdir(filepath.Join(s.dir, ".tmp-8"), dirMode))
+
+	s.open()
+
+	s.ElementsMatch(
+		[]string{keep.ID + fileExt, ".tmp-abc", ".tmp-12a", ".tmp-7", ".tmp-8"},
+		s.names(),
+	)
+	_, err := s.store.List()
+	s.Require().ErrorIs(err, errUnexpectedEntry, "foreign names are refused")
+}
+
+func (s *StoreSuite) TestOpenStoreDoesNotRemoveAWritersTempFile() {
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 200 {
+			_, err := s.store.Create()
+			s.NoError(err)
+		}
+	})
+	for range 200 {
+		s.open()
+	}
+	wg.Wait()
+	list, err := s.store.List()
+	s.Require().NoError(err)
+	s.Len(list, 200)
 }
 
 func (s *StoreSuite) TestRacingTransitionsHaveOneWinner() {
@@ -309,8 +419,24 @@ func (s *StoreSuite) TestConcurrentCreatesMakeDistinctSessions() {
 	s.Len(list, 40, fmt.Sprint(len(s.snapshot())))
 }
 
+func (s *StoreSuite) newLayout(pool string) Layout {
+	l, err := NewLayout(filepath.Join(s.T().TempDir(), "pools"), pool)
+	s.Require().NoError(err)
+	return l
+}
+
+func (s *StoreSuite) names() []string {
+	entries, err := os.ReadDir(s.dir)
+	s.Require().NoError(err)
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
+}
+
 func (s *StoreSuite) open() *Store {
-	st, err := OpenStore(s.dir, storePool)
+	st, err := OpenStore(s.dir, storePool, s.lock)
 	s.Require().NoError(err)
 	st.now = func() time.Time { return s.clock }
 	return st

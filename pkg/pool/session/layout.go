@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
 	"github.com/gofrs/flock"
@@ -32,8 +33,14 @@ func (l Layout) KeysDir() string     { return filepath.Join(l.dir, "keys") }
 func (l Layout) AuditDir() string    { return filepath.Join(l.dir, "audit") }
 func (l Layout) SocketPath() string  { return filepath.Join(l.dir, "pool.sock") }
 
-// Lock is the pool's single-owner lock.
-type Lock struct{ file *flock.Flock }
+// Lock is the pool's single-owner lock. Stores opened on it share its mutex
+// and stop writing once it is released.
+type Lock struct {
+	mu       sync.Mutex
+	file     *flock.Flock
+	dir      string
+	released bool
+}
 
 // Lock takes the pool lock without waiting. It creates the pool directory
 // when needed and refuses one that other users can write to.
@@ -55,8 +62,45 @@ func (l Layout) Lock() (*Lock, error) {
 	if !ok {
 		return nil, ErrPoolLocked
 	}
-	return &Lock{file: file}, nil
+	return &Lock{file: file, dir: l.dir}, nil
 }
 
-// Release drops the lock.
-func (k *Lock) Release() error { return k.file.Close() }
+// Release drops the lock after any write in flight finishes. It is safe to
+// call twice.
+func (k *Lock) Release() error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.released {
+		return nil
+	}
+	k.released = true
+	return k.file.Close()
+}
+
+// hold takes the write mutex and refuses once the lock is released. The
+// caller runs the returned function when its write is done.
+func (k *Lock) hold() (func(), error) {
+	if k == nil {
+		return nil, errLockNotHeld
+	}
+	k.mu.Lock()
+	if k.released {
+		k.mu.Unlock()
+		return nil, errLockNotHeld
+	}
+	return k.mu.Unlock, nil
+}
+
+// covers checks that dir is a direct child of the locked pool directory and
+// that pool is that directory's name.
+func (k *Lock) covers(dir, pool string) error {
+	if k == nil {
+		return errLockNotHeld
+	}
+	parent, perr := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(dir)))
+	own, oerr := filepath.EvalSymlinks(k.dir)
+	if perr != nil || oerr != nil || parent != own || pool != filepath.Base(k.dir) {
+		return errForeignLock
+	}
+	return nil
+}

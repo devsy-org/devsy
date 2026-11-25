@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -53,20 +52,18 @@ func encode(s Session) ([]byte, error) {
 	return json.Marshal(s)
 }
 
-// decode refuses unknown fields and trailing data. Errors never carry file
+// decode accepts only the exact bytes encode writes. That refuses unknown
+// fields, trailing data, duplicate keys and keys that differ only in case,
+// which the JSON decoder alone would merge or ignore. Errors never carry file
 // content.
 func decode(data []byte) (Session, error) {
 	var s Session
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&s); err != nil {
+	if err := json.Unmarshal(data, &s); err != nil {
 		return Session{}, errInvalidSession
 	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+	canonical, err := encode(s)
+	if err != nil || !bytes.Equal(canonical, data) {
 		return Session{}, errInvalidSession
-	}
-	if err := s.validate(); err != nil {
-		return Session{}, err
 	}
 	return s, nil
 }

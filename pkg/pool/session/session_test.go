@@ -71,7 +71,29 @@ func (s *SessionSuite) TestDecodeRefusesUnknownFieldsAndTrailingData() {
 		"not json":      "p-pool",
 		"empty":         "",
 		"array":         "[]",
+		"null":          "null",
 	} {
+		_, err := decode([]byte(bad))
+		s.Require().ErrorIs(err, errInvalidSession, name)
+	}
+}
+
+func (s *SessionSuite) TestDecodeRefusesAnythingButTheCanonicalBytes() {
+	canonical, err := encode(validSession())
+	s.Require().NoError(err)
+	text := string(canonical)
+	for name, bad := range map[string]string{
+		"duplicate key":     strings.Replace(text, `"state":"queued"`, `"state":"busy","state":"queued"`, 1),
+		"duplicate id":      strings.Replace(text, `{"v":1,`, `{"v":1,"id":"p-pool-bbbbbbbbbb",`, 1),
+		"case variant key":  strings.Replace(text, `"state":`, `"State":`, 1),
+		"case variant dup":  strings.Replace(text, `"v":1,`, `"v":1,"V":2,`, 1),
+		"whitespace":        strings.Replace(text, `,`, `, `, 1),
+		"trailing newline":  text + "\n",
+		"key order":         `{"id":"p-pool-aaaaaaaaaa","v":1,` + text[len(`{"v":1,"id":"p-pool-aaaaaaaaaa",`):],
+		"zone offset":       strings.Replace(text, "12:00:00Z", "12:00:00+00:00", 1),
+		"escaped character": strings.Replace(text, "queued", "\\u0071ueued", 1),
+	} {
+		s.Require().NotEqual(text, bad, name)
 		_, err := decode([]byte(bad))
 		s.Require().ErrorIs(err, errInvalidSession, name)
 	}

@@ -1,0 +1,247 @@
+//go:build !windows
+
+package session
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/suite"
+)
+
+const (
+	helperRootEnv  = "SESSION_TEST_HELPER_ROOT"
+	helperModeEnv  = "SESSION_TEST_HELPER_MODE"
+	helperPool     = "pool"
+	helperProcs    = 6
+	helperSessions = 30
+	contendTries   = 300
+	perRound       = 4
+)
+
+// TestHelperProcess is the body of the child processes ProcessSuite starts.
+func TestHelperProcess(t *testing.T) {
+	root := os.Getenv(helperRootEnv)
+	if root == "" {
+		t.Skip("runs only as a child of ProcessSuite")
+	}
+	os.Exit(runHelper(root, os.Getenv(helperModeEnv)))
+}
+
+func runHelper(root, mode string) int {
+	layout, err := NewLayout(root, helperPool)
+	if err != nil {
+		return failHelper(err)
+	}
+	switch mode {
+	case "contend":
+		return contend(layout)
+	case "race":
+		return race(layout)
+	}
+	return failHelper(fmt.Errorf("unknown mode %q", mode))
+}
+
+func say(args ...any) { _, _ = fmt.Fprintln(os.Stdout, args...) }
+
+func failHelper(err error) int {
+	say("error:", err)
+	return 1
+}
+
+// contend must be refused the lock, and a store without it, every time.
+func contend(layout Layout) int {
+	for range contendTries {
+		lock, err := layout.Lock()
+		if lock != nil || !errors.Is(err, ErrPoolLocked) {
+			return failHelper(fmt.Errorf("lock was not refused: %v", err))
+		}
+		if _, err := OpenStore(layout.SessionsDir(), helperPool, nil); err == nil {
+			return failHelper(errors.New("store opened without a lock"))
+		}
+	}
+	say("refused", contendTries)
+	return 0
+}
+
+// race takes the lock in turns with its siblings and moves a few queued
+// sessions each time. With the lock held no transition may ever conflict.
+func race(layout Layout) int {
+	wins := 0
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		n, queued, err := raceRound(layout)
+		if err != nil {
+			return failHelper(err)
+		}
+		wins += n
+		if !queued {
+			say("wins", wins)
+			return 0
+		}
+	}
+	return failHelper(errors.New("timed out"))
+}
+
+// raceRound reports how many sessions it moved and whether any were queued.
+func raceRound(layout Layout) (int, bool, error) {
+	lock, err := layout.Lock()
+	if errors.Is(err, ErrPoolLocked) {
+		time.Sleep(time.Millisecond)
+		return 0, true, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	defer func() { _ = lock.Release() }()
+	store, err := OpenStore(layout.SessionsDir(), helperPool, lock)
+	if err != nil {
+		return 0, false, err
+	}
+	return moveQueued(store)
+}
+
+// moveQueued moves up to perRound queued sessions and reports whether more
+// are left.
+func moveQueued(store *Store) (int, bool, error) {
+	list, err := store.List()
+	if err != nil {
+		return 0, false, err
+	}
+	wins := 0
+	for _, sess := range list {
+		if sess.State != StateQueued {
+			continue
+		}
+		if wins == perRound {
+			return wins, true, nil
+		}
+		if _, err := store.Transition(sess.ID, StateQueued, StateSpawning, ""); err != nil {
+			return wins, false, err
+		}
+		wins++
+	}
+	return wins, false, nil
+}
+
+type ProcessSuite struct {
+	suite.Suite
+	root   string
+	layout Layout
+}
+
+func TestProcessSuite(t *testing.T) { suite.Run(t, new(ProcessSuite)) }
+
+func (s *ProcessSuite) SetupTest() {
+	s.root = filepath.Join(s.T().TempDir(), "pools")
+	layout, err := NewLayout(s.root, helperPool)
+	s.Require().NoError(err)
+	s.layout = layout
+}
+
+type helpers struct {
+	cmds []*exec.Cmd
+	outs []*bytes.Buffer
+}
+
+func (s *ProcessSuite) TestOnlyTheLockHolderCanWriteSessions() {
+	lock, err := s.layout.Lock()
+	s.Require().NoError(err)
+	store, err := OpenStore(s.layout.SessionsDir(), helperPool, lock)
+	s.Require().NoError(err)
+	var created []Session
+	for range helperSessions {
+		sess, err := store.Create()
+		s.Require().NoError(err)
+		created = append(created, sess)
+	}
+
+	contenders := s.start("contend", helperProcs)
+	for _, sess := range created {
+		_, err := store.Transition(sess.ID, StateQueued, StateSpawning, "")
+		s.Require().NoError(err, "no other process may touch a session the holder owns")
+	}
+	for _, line := range s.wait(contenders) {
+		s.Equal("refused "+strconv.Itoa(contendTries), line)
+	}
+	list, err := store.List()
+	s.Require().NoError(err)
+	s.Len(list, helperSessions)
+	for _, sess := range list {
+		s.Equal(StateSpawning, sess.State)
+	}
+
+	for range helperSessions {
+		_, err := store.Create()
+		s.Require().NoError(err)
+	}
+	s.Require().NoError(lock.Release())
+	s.assertEveryQueuedSessionMovedOnce()
+}
+
+func (s *ProcessSuite) assertEveryQueuedSessionMovedOnce() {
+	total := 0
+	for _, line := range s.wait(s.start("race", helperProcs)) {
+		n, err := strconv.Atoi(strings.TrimPrefix(line, "wins "))
+		s.Require().NoError(err, line)
+		total += n
+	}
+	s.Equal(helperSessions, total, "each queued session is won by exactly one process")
+
+	lock, err := s.layout.Lock()
+	s.Require().NoError(err)
+	defer func() { _ = lock.Release() }()
+	store, err := OpenStore(s.layout.SessionsDir(), helperPool, lock)
+	s.Require().NoError(err)
+	list, err := store.List()
+	s.Require().NoError(err)
+	s.Len(list, 2*helperSessions)
+	for _, sess := range list {
+		s.Equal(StateSpawning, sess.State)
+	}
+}
+
+func (s *ProcessSuite) start(mode string, n int) *helpers {
+	exe, err := os.Executable()
+	s.Require().NoError(err)
+	h := &helpers{}
+	for range n {
+		out := new(bytes.Buffer)
+		cmd := &exec.Cmd{
+			Path:   exe,
+			Args:   []string{exe, "-test.run=^TestHelperProcess$", "-test.count=1"},
+			Env:    append(os.Environ(), helperRootEnv+"="+s.root, helperModeEnv+"="+mode),
+			Stdout: out,
+			Stderr: out,
+		}
+		s.Require().NoError(cmd.Start())
+		h.cmds, h.outs = append(h.cmds, cmd), append(h.outs, out)
+	}
+	return h
+}
+
+// wait returns the last output line of every helper and fails the test for any
+// helper that exited with an error.
+func (s *ProcessSuite) wait(h *helpers) []string {
+	lines := make([]string, len(h.cmds))
+	var wg sync.WaitGroup
+	for i, cmd := range h.cmds {
+		wg.Go(func() {
+			err := cmd.Wait()
+			out := strings.TrimSpace(h.outs[i].String())
+			lines[i] = out[strings.LastIndex(out, "\n")+1:]
+			s.NoError(err, out)
+		})
+	}
+	wg.Wait()
+	return lines
+}

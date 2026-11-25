@@ -7,8 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
@@ -31,6 +31,8 @@ var (
 	ErrIllegalTransition = errors.New("session state transition is not allowed")
 
 	errUnexpectedEntry = errors.New("unexpected entry in the session directory")
+	errLockNotHeld     = errors.New("the pool lock is not held")
+	errForeignLock     = errors.New("the pool lock belongs to another pool directory")
 	errNotRegular      = errors.New("session path is not a regular file")
 	errTooLarge        = fmt.Errorf("session file is longer than %d bytes", maxFileBytes)
 )
@@ -38,60 +40,72 @@ var (
 // renameFile is os.Rename, replaceable so a test can fail a publish.
 var renameFile = os.Rename
 
+// tempPattern matches the names stage creates with os.CreateTemp.
+var tempPattern = regexp.MustCompile(`^\.tmp-[0-9]+$`)
+
 // Store keeps one JSON file per session. Every write goes to a temp file in
 // the same directory, is synced, and is then linked or renamed into place, so
-// a reader sees the old file or the new one, never a partial one. The store
-// serializes calls on one directory in this process, across every Store opened
-// on it; the pool lock excludes other processes.
+// a reader sees the old file or the new one, never a partial one. A Store is
+// bound to the held pool lock of its pool directory: only the lock holder can
+// open one, every write checks that the lock is still held, and Release waits
+// for a write in flight. That lock is the only thing that excludes other
+// processes, and it also serializes the Stores opened on it in this process.
 type Store struct {
-	mu   *sync.Mutex
+	lock *Lock
 	dir  string
 	pool string
 	now  func() time.Time
 }
 
-// OpenStore creates dir when needed and refuses one that other users can
-// write to. It refuses on Windows before touching disk.
-func OpenStore(dir, pool string) (*Store, error) {
+// OpenStore creates dir when needed, refuses one that other users can write
+// to, and removes temp files a crashed writer left behind. dir must sit in the
+// pool directory the lock covers. It refuses a nil, released or foreign lock
+// before touching disk, and refuses on Windows the same way.
+func OpenStore(dir, pool string, lock *Lock) (*Store, error) {
 	if err := checkPlatform(); err != nil {
 		return nil, err
 	}
 	if !poolconfig.ValidPoolName(pool) {
 		return nil, errInvalidPool
 	}
-	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return nil, fmt.Errorf("create session directory: %w", err)
-	}
-	if err := checkDirMode(dir); err != nil {
+	if err := lock.covers(dir, pool); err != nil {
 		return nil, err
 	}
-	if err := syncDir(dir); err != nil {
-		return nil, fmt.Errorf("sync session directory: %w", err)
-	}
-	mu, err := dirMutex(dir)
+	unlock, err := lock.hold()
 	if err != nil {
 		return nil, err
 	}
-	return &Store{mu: mu, dir: dir, pool: pool, now: time.Now}, nil
+	defer unlock()
+	if err := prepareDir(dir); err != nil {
+		return nil, err
+	}
+	s := &Store{lock: lock, dir: dir, pool: pool, now: time.Now}
+	if err := s.removeStrayTemps(); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
-// dirMutexes holds one mutex per real directory, so two Stores opened on the
-// same directory still take turns.
-var dirMutexes sync.Map
-
-func dirMutex(dir string) (*sync.Mutex, error) {
-	real, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve session directory: %w", err)
+func prepareDir(dir string) error {
+	if err := os.MkdirAll(dir, dirMode); err != nil {
+		return fmt.Errorf("create session directory: %w", err)
 	}
-	mu, _ := dirMutexes.LoadOrStore(real, new(sync.Mutex))
-	return mu.(*sync.Mutex), nil
+	if err := checkDirMode(dir); err != nil {
+		return err
+	}
+	if err := syncDir(dir); err != nil {
+		return fmt.Errorf("sync session directory: %w", err)
+	}
+	return nil
 }
 
 // Create writes a new queued session under a fresh ID.
 func (s *Store) Create() (Session, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lock.hold()
+	if err != nil {
+		return Session{}, err
+	}
+	defer unlock()
 	for range idAttempts {
 		id, err := NewID(s.pool)
 		if err != nil {
@@ -127,7 +141,7 @@ func (s *Store) List() ([]Session, error) {
 	}
 	var out []Session
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), tempPrefix) {
+		if tempPattern.MatchString(entry.Name()) {
 			continue
 		}
 		id, ok := strings.CutSuffix(entry.Name(), fileExt)
@@ -152,8 +166,11 @@ func (s *Store) Transition(id string, from, to State, reason string) (Session, e
 	if !CanTransition(from, to) {
 		return Session{}, ErrIllegalTransition
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lock.hold()
+	if err != nil {
+		return Session{}, err
+	}
+	defer unlock()
 	cur, err := s.Load(id)
 	if err != nil {
 		return Session{}, err
@@ -164,6 +181,25 @@ func (s *Store) Transition(id string, from, to State, reason string) (Session, e
 	next := cur
 	next.State, next.Reason, next.Updated = to, reason, s.now().UTC()
 	return next, s.replace(next)
+}
+
+// removeStrayTemps deletes temp files a killed writer left behind. The caller
+// holds the lock, so no live writer owns one.
+func (s *Store) removeStrayTemps() error {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return fmt.Errorf("read session directory: %w", err)
+	}
+	for _, entry := range entries {
+		if !tempPattern.MatchString(entry.Name()) || !entry.Type().IsRegular() {
+			continue
+		}
+		err := os.Remove(filepath.Join(s.dir, entry.Name()))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove stray temp file: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) path(id string) string { return filepath.Join(s.dir, id+fileExt) }
