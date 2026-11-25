@@ -5,6 +5,7 @@ package audit
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
@@ -22,4 +23,17 @@ func checkDirMode(dir string) error {
 		return fmt.Errorf("audit directory must be owned by the current user: %s", dir)
 	}
 	return nil
+}
+
+// syncDir persists the directory entries created or renamed in dir.
+func syncDir(dir string) error {
+	d, err := os.Open(filepath.Clean(dir))
+	if err != nil {
+		return err
+	}
+	err = d.Sync()
+	if cerr := d.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }

@@ -6,6 +6,7 @@ package audit
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/gofrs/flock"
@@ -28,6 +30,9 @@ const (
 	lockName  = ".lock"
 	dirMode   = 0o700
 	fileMode  = 0o600
+
+	defaultLockWait = 5 * time.Second
+	lockRetry       = 5 * time.Millisecond
 )
 
 var (
@@ -37,24 +42,74 @@ var (
 	errLineTooLong = fmt.Errorf("audit record is longer than %d bytes", MaxLineBytes)
 	errLineShape   = errors.New("audit record must be one single-line JSON object")
 	errTornTail    = errors.New("audit file ends in an unterminated record longer than one record")
+	errLockTimeout = errors.New("timed out waiting for the audit lock, another process holds it")
 )
 
 // Store appends records to <dir>/<YYYY-MM-DD>.jsonl, one file per UTC day.
 type Store struct {
-	dir string
-	now func() time.Time
+	dir      string
+	now      func() time.Time
+	lockWait time.Duration
+
+	mu     sync.Mutex
+	synced map[string]struct{}
 }
 
-// Open creates the directory when needed and refuses one that other users
-// can write to.
+// Open creates the directory when needed, syncing each directory it creates,
+// and refuses one that other users can write to. The ownership and mode check
+// runs on Unix only; the Windows build does not inspect the directory ACL.
 func Open(dir string) (*Store, error) {
-	if err := os.MkdirAll(dir, dirMode); err != nil {
+	if err := mkdirAllDurable(dir); err != nil {
 		return nil, fmt.Errorf("create audit directory: %w", err)
 	}
 	if err := checkDirMode(dir); err != nil {
 		return nil, err
 	}
-	return &Store{dir: dir, now: time.Now}, nil
+	return &Store{
+		dir:      dir,
+		now:      time.Now,
+		lockWait: defaultLockWait,
+		synced:   map[string]struct{}{},
+	}, nil
+}
+
+func mkdirAllDurable(dir string) error {
+	missing, err := missingDirs(dir)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, dirMode); err != nil {
+		return err
+	}
+	for _, p := range missing {
+		if err := syncDir(p); err != nil {
+			return err
+		}
+		if err := syncDir(filepath.Dir(p)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// missingDirs lists dir and each ancestor that does not exist yet.
+func missingDirs(dir string) ([]string, error) {
+	var missing []string
+	for p := filepath.Clean(dir); ; {
+		_, err := os.Stat(p)
+		if err == nil {
+			return missing, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		missing = append(missing, p)
+		parent := filepath.Dir(p)
+		if parent == p {
+			return missing, nil
+		}
+		p = parent
+	}
 }
 
 // Append writes one record and syncs it before returning. On any error the
@@ -63,6 +118,7 @@ func Open(dir string) (*Store, error) {
 // A crash can leave an unterminated tail, which Append cuts before writing;
 // it was never acknowledged. A tail longer than one record with no newline
 // makes every append for that day fail until the file is repaired by hand.
+// It waits a bounded time for the directory lock and then fails.
 func (s *Store) Append(record []byte) error {
 	if err := checkRecord(record); err != nil {
 		return err
@@ -72,10 +128,32 @@ func (s *Store) Append(record []byte) error {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	if err := lock.Lock(); err != nil {
+	if err := acquire(lock, s.lockWait, false); err != nil {
+		return err
+	}
+	day := s.now().UTC().Format(dayLayout)
+	if err := appendLine(filepath.Join(s.dir, day+fileExt), record); err != nil {
+		return err
+	}
+	return s.syncDayEntry(day)
+}
+
+// acquire takes the lock, polling until wait runs out.
+func acquire(lock *flock.Flock, wait time.Duration, shared bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	try := lock.TryLockContext
+	if shared {
+		try = lock.TryRLockContext
+	}
+	ok, err := try(ctx, lockRetry)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || (err == nil && !ok):
+		return fmt.Errorf("%w (waited %s)", errLockTimeout, wait)
+	case err != nil:
 		return fmt.Errorf("lock audit directory: %w", err)
 	}
-	return appendLine(filepath.Join(s.dir, s.now().UTC().Format(dayLayout)+fileExt), record)
+	return nil
 }
 
 func checkRecord(record []byte) error {
@@ -138,9 +216,9 @@ func openDayFile(path string) (*os.File, error) {
 // trimTornTail removes bytes after the last newline, a record cut short by a
 // crash, and returns the size that remains.
 func trimTornTail(f *os.File) (int64, error) {
-	info, err := f.Stat()
+	info, err := statRegular(f)
 	if err != nil {
-		return 0, fmt.Errorf("stat audit file: %w", err)
+		return 0, err
 	}
 	end, err := completeEnd(f, info.Size())
 	if err != nil || end == info.Size() {
@@ -168,6 +246,19 @@ func completeEnd(f *os.File, size int64) (int64, error) {
 		return size, errTornTail
 	}
 	return size - window + int64(last+1), nil
+}
+
+// statRegular checks the open file itself, which closes the gap between the
+// path check and the open.
+func statRegular(f *os.File) (os.FileInfo, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat audit file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("audit path is not a regular file: %s", f.Name())
+	}
+	return info, nil
 }
 
 // checkRegular refuses a path that exists as anything but a regular file,
@@ -203,7 +294,8 @@ func (s *Store) Days() ([]string, error) {
 
 // Scan calls fn for every record of each day in [from, to], oldest first. An
 // empty bound is open. It stops at the first error from fn. A line cut short
-// by a crash is reported as io.ErrUnexpectedEOF.
+// by a crash is reported as io.ErrUnexpectedEOF. Each error names the day it
+// came from and wraps the cause, including an error returned by fn.
 func (s *Store) Scan(from, to string, fn func(day string, record []byte) error) error {
 	days, err := s.Days()
 	if err != nil {
@@ -214,18 +306,42 @@ func (s *Store) Scan(from, to string, fn func(day string, record []byte) error) 
 			continue
 		}
 		if err := s.scanDay(day, fn); err != nil {
-			return err
+			return fmt.Errorf("audit day %s: %w", day, err)
 		}
 	}
 	return nil
 }
 
+// syncDayEntry makes the day file's directory entry durable once per day for
+// this Store. A file sync alone does not persist a newly created name.
+func (s *Store) syncDayEntry(day string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.synced[day]; ok {
+		return nil
+	}
+	if err := syncDir(s.dir); err != nil {
+		return fmt.Errorf("sync audit directory: %w", err)
+	}
+	s.synced[day] = struct{}{}
+	return nil
+}
+
 func (s *Store) newLock() (*flock.Flock, error) {
-	path := filepath.Join(s.dir, lockName)
+	return newFlock(filepath.Join(s.dir, lockName))
+}
+
+// newFlock refuses a lock path that is not a regular file and never follows
+// a symlink when it opens one.
+func newFlock(path string) (*flock.Flock, error) {
 	if err := checkRegular(path); err != nil {
 		return nil, err
 	}
-	return flock.New(path, flock.SetPermissions(fileMode)), nil
+	return flock.New(
+		path,
+		flock.SetPermissions(fileMode),
+		flock.SetFlag(os.O_CREATE|os.O_RDWR|noFollow),
+	), nil
 }
 
 type snapshot struct {
@@ -261,14 +377,14 @@ func (s *Store) openSnapshot(day string) (*snapshot, error) {
 		return nil, err
 	}
 	defer func() { _ = lock.Close() }()
-	if err := lock.RLock(); err != nil {
-		return nil, fmt.Errorf("lock audit directory: %w", err)
+	if err := acquire(lock, s.lockWait, true); err != nil {
+		return nil, err
 	}
 	path := filepath.Clean(filepath.Join(s.dir, day+fileExt))
 	if err := checkRegular(path); err != nil {
 		return nil, err
 	}
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|noFollow, 0)
 	if err != nil {
 		return nil, fmt.Errorf("read audit file: %w", err)
 	}
@@ -281,9 +397,9 @@ func (s *Store) openSnapshot(day string) (*snapshot, error) {
 }
 
 func takeSnapshot(f *os.File) (*snapshot, error) {
-	info, err := f.Stat()
+	info, err := statRegular(f)
 	if err != nil {
-		return nil, fmt.Errorf("stat audit file: %w", err)
+		return nil, err
 	}
 	end, err := completeEnd(f, info.Size())
 	if err != nil {

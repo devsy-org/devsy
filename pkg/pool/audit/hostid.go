@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -9,31 +10,66 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 )
 
 const (
 	hostIDPrefix       = "h_"
+	hostIDLockSuffix   = ".lock"
 	maxHostIDFileBytes = 128
 )
 
-var hostIDPattern = regexp.MustCompile(`^h_[0-9A-HJKMNP-TV-Z]{26}$`)
+var (
+	hostIDPattern = regexp.MustCompile(`^h_[0-9A-HJKMNP-TV-Z]{26}$`)
+	// hostIDPartialPattern matches the empty string or a cut-short prefix of
+	// a host ID, the shapes a crash can leave behind.
+	hostIDPartialPattern = regexp.MustCompile(`^(h|h_[0-9A-HJKMNP-TV-Z]{0,25})?$`)
 
-// NewID returns a new ULID string, the dedupe key of a record.
+	errHostIDPartial = errors.New("host id file is empty or partial")
+)
+
+// NewID returns a new ULID string, the dedupe key of a record. The random part
+// comes from crypto/rand, which does not return an error on supported Go
+// versions, so MustNew cannot panic here.
 func NewID() string {
-	return ulid.Make().String()
+	return ulid.MustNew(ulid.Timestamp(time.Now()), rand.Reader).String()
 }
 
 // LoadOrCreateHostID returns the local host ID stored at path, minting
-// h_<ULID> on first use. A stored value that is not a host ID is an error:
-// the ID is never replaced, so earlier records keep correlating.
+// h_<ULID> on first use. A file that is empty or holds only the start of a
+// host ID, left by a crash, is replaced with a fresh ID. Any other content is
+// an error: a real ID is never replaced, so earlier records keep correlating.
+// Callers in separate processes agree on one ID through a lock next to path.
 func LoadOrCreateHostID(path string) (string, error) {
-	id, err := readHostID(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return createHostID(path)
-	}
+	id, _, err := loadOrCreateHostID(path)
+	// TODO: write an audit record when the ID was repaired, once the shared
+	// audit contract defines the event.
 	return id, err
+}
+
+func loadOrCreateHostID(path string) (id string, repaired bool, err error) {
+	lock, err := newFlock(path + hostIDLockSuffix)
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { _ = lock.Close() }()
+	if err := acquire(lock, defaultLockWait, false); err != nil {
+		return "", false, err
+	}
+	id, err = readHostID(path)
+	switch {
+	case err == nil:
+		return id, false, nil
+	case errors.Is(err, fs.ErrNotExist):
+		id, err = publishHostID(path)
+		return id, false, err
+	case errors.Is(err, errHostIDPartial):
+		id, err = publishHostID(path)
+		return id, err == nil, err
+	}
+	return "", false, err
 }
 
 func readHostID(path string) (string, error) {
@@ -46,39 +82,47 @@ func readHostID(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read host id file: %w", err)
 	}
-	if len(data) > maxHostIDFileBytes {
-		return "", fmt.Errorf("host id file %s does not hold a host ID", path)
+	if len(data) <= maxHostIDFileBytes {
+		if id := strings.TrimSpace(string(data)); hostIDPattern.MatchString(id) {
+			return id, nil
+		}
+		if hostIDPartialPattern.MatchString(strings.Trim(string(data), "\x00 \t\r\n")) {
+			return "", errHostIDPartial
+		}
 	}
-	id := strings.TrimSpace(string(data))
-	if !hostIDPattern.MatchString(id) {
-		return "", fmt.Errorf("host id file %s does not hold a host ID", path)
-	}
-	return id, nil
+	return "", fmt.Errorf("host id file %s does not hold a host ID", path)
 }
 
-// createHostID writes the ID to a temporary file and links it into place, so
-// a concurrent first start never reads a half-written file and only one
-// minted ID wins.
-func createHostID(path string) (string, error) {
+// publishHostID syncs the ID into a temporary file, renames it over path and
+// syncs the directory, so a reader never sees a half-written file and the
+// result survives a crash.
+func publishHostID(path string) (string, error) {
 	id := hostIDPrefix + NewID()
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".host-id-*")
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".host-id-*")
 	if err != nil {
 		return "", fmt.Errorf("create host id file: %w", err)
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
-	_, werr := tmp.WriteString(id + "\n")
-	if cerr := tmp.Close(); werr == nil {
-		werr = cerr
+	if err := writeSynced(tmp, id+"\n"); err != nil {
+		return "", fmt.Errorf("write host id file: %w", err)
 	}
-	if werr != nil {
-		return "", fmt.Errorf("write host id file: %w", werr)
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return "", fmt.Errorf("publish host id file: %w", err)
 	}
-	err = os.Link(tmp.Name(), path)
-	if errors.Is(err, fs.ErrExist) {
-		return readHostID(path)
-	}
-	if err != nil {
-		return "", fmt.Errorf("create host id file: %w", err)
+	if err := syncDir(dir); err != nil {
+		return "", fmt.Errorf("sync host id directory: %w", err)
 	}
 	return id, nil
+}
+
+func writeSynced(f *os.File, content string) error {
+	_, err := f.WriteString(content)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
