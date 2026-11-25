@@ -33,6 +33,16 @@ func ValidateSourceName(name string) error {
 	return nil
 }
 
+// ValidateSourceType refuses the reserved local source name for any other
+// source type. Register applies it, so callers can check a reference the
+// same way before a source exists.
+func ValidateSourceType(name, typeName string) error {
+	if name == LocalSourceName && typeName != LocalSourceName {
+		return fmt.Errorf("secret source name %q is reserved", LocalSourceName)
+	}
+	return nil
+}
+
 func (r *Resolver) Register(name, typeName string, source Source) error {
 	if err := ValidateSourceName(name); err != nil {
 		return err
@@ -43,8 +53,8 @@ func (r *Resolver) Register(name, typeName string, source Source) error {
 	if _, exists := r.sources[name]; exists {
 		return fmt.Errorf("secret source %q already exists", name)
 	}
-	if name == LocalSourceName && typeName != LocalSourceName {
-		return fmt.Errorf("secret source name %q is reserved", LocalSourceName)
+	if err := ValidateSourceType(name, typeName); err != nil {
+		return err
 	}
 	r.sources[name] = registeredSource{typeName: typeName, source: source}
 	return nil

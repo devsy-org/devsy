@@ -69,7 +69,7 @@ var egressRejections = []rejection{
 	{
 		"local nat64",
 		func(p *Pool) { allow(p, AllowRule{CIDR: "64:ff9b:1::/64"}) },
-		"64:ff9b:1::/48",
+		cidrNAT64Local,
 	},
 	{
 		"zone id",
@@ -79,7 +79,7 @@ var egressRejections = []rejection{
 	{
 		"translated metadata",
 		func(p *Pool) { allow(p, AllowRule{CIDR: "::ffff:0:a9fe:a9fe/128"}) },
-		"::ffff:0:0:0/96",
+		cidrMappedZero,
 	},
 	{
 		"nat64 metadata",
@@ -87,11 +87,11 @@ var egressRejections = []rejection{
 		"64:ff9b::/96",
 	},
 	{"6to4", func(p *Pool) { allow(p, AllowRule{CIDR: "2002:a9fe:a9fe::/48"}) }, "2002::/16"},
-	{"unspecified ipv6", func(p *Pool) { allow(p, AllowRule{CIDR: "::/128"}) }, "::/96"},
+	{"unspecified ipv6", func(p *Pool) { allow(p, AllowRule{CIDR: "::/128"}) }, cidrCompatV6},
 	{
 		"ipv4 compatible",
 		func(p *Pool) { allow(p, AllowRule{CIDR: "::192.0.2.1/128"}) },
-		"::/96",
+		cidrCompatV6,
 	},
 	{
 		"teredo",
@@ -194,7 +194,7 @@ func (s *PoolConfigSuite) TestEgressParseErrorsGiveLines() {
 func (s *PoolConfigSuite) TestInternalNamesRefused() {
 	for _, host := range []string{
 		"metadata.google.internal", "*.ec2.internal", "kubernetes.default.svc", "*.svc.cluster.local",
-		"printer.local", "a.localdomain", "router.home.arpa", "metadata.goog",
+		"printer.local", "a.localdomain", "router.home.arpa", "home.arpa", "metadata.goog",
 		"x.metadata.goog", "*.metadata.goog",
 	} {
 		p := s.loadExample()
