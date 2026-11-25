@@ -148,6 +148,40 @@ func (s *StoreSuite) TestAdmitDoesNotPublishSessionWhenFreshKeyLinkFails() {
 	s.Equal([]string{keyFile(canaryKey)}, dirNames(s, s.layout.KeysDir()))
 }
 
+func (s *StoreSuite) TestRepairAssignsNextSequenceAfterCreateAndFreshAdmit() {
+	lim := Limits{MaxConcurrent: 3}
+	s.store = s.openWith(lim)
+	interruptedRoot := s.store.root
+	orig := linkFile
+	linkFile = func(root *os.Root, from, to string) error {
+		if root == interruptedRoot {
+			return errInjectedIO
+		}
+		return orig(root, from, to)
+	}
+	s.T().Cleanup(func() { linkFile = orig })
+
+	useSource(s.T(), fixedReader{0x00})
+	got, err := s.store.Admit(canaryKey)
+	s.Require().ErrorIs(err, errInjectedIO)
+	s.Zero(got)
+	s.Empty(s.names())
+	s.Require().NoError(s.store.Close())
+	s.store = s.openWith(lim)
+	record, err := s.store.loadKey(keyDigest(canaryKey))
+	s.Require().NoError(err)
+
+	useSource(s.T(), fixedReader{0x40})
+	created := s.create()
+	useSource(s.T(), fixedReader{0xff})
+	fresh := s.admit("fresh key")
+	repaired := s.admit(canaryKey)
+	s.False(fresh.Existing)
+	s.True(repaired.Existing)
+	s.Equal(record.Session, repaired.Session.ID)
+	s.Equal([]uint64{1, 2, 3}, []uint64{created.Seq, fresh.Session.Seq, repaired.Session.Seq})
+}
+
 func (s *StoreSuite) TestCreateSyncsKeysBeforeChoosingAnID() {
 	s.writeReservation("old", s.clock)
 	s.clock = s.clock.Add(KeyRetention)

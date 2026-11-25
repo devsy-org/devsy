@@ -11,6 +11,8 @@ import (
 
 type SessionSuite struct{ suite.Suite }
 
+var postPromotionStates = [...]State{StateSpawning, StateReady, StateBusy, StateIdle, StateFailed}
+
 func TestSessionSuite(t *testing.T) { suite.Run(t, new(SessionSuite)) }
 
 func validSession() Session {
@@ -42,6 +44,34 @@ func (s *SessionSuite) TestLegacyV1RoundTripsByteIdentically() {
 	got, err := encode(sess)
 	s.Require().NoError(err)
 	s.Equal(legacy, got)
+}
+
+func (s *SessionSuite) TestDecodeRefusesSequencedPostPromotionStatesWithoutStarted() {
+	for _, state := range postPromotionStates {
+		sess := validSession()
+		sess.State, sess.Seq = state, 1
+		data, err := json.Marshal(sess)
+		s.Require().NoError(err)
+		got, err := decode(data)
+		s.ErrorIs(err, errInvalidSession, "%s", state)
+		s.Zero(got, "%s", state)
+	}
+}
+
+func (s *SessionSuite) TestDecodeAllowsLegacyPostPromotionStatesWithoutStarted() {
+	for _, state := range postPromotionStates {
+		sess := validSession()
+		sess.State = state
+		s.assertDecodes(sess)
+	}
+}
+
+func (s *SessionSuite) TestDecodeAllowsSequencedUnstartedReclaimPath() {
+	for _, state := range []State{StateReclaiming, StateOrphaned, StateDeleted} {
+		sess := validSession()
+		sess.State, sess.Seq = state, 1
+		s.assertDecodes(sess)
+	}
 }
 
 func (s *SessionSuite) TestInvalidAttemptsAreRefused() {
@@ -151,4 +181,12 @@ func (s *SessionSuite) TestDecodeErrorDoesNotEchoContent() {
 	_, err := decode([]byte(`{"v":1,"id":"canary-918273","state":"canary-918273"}`))
 	s.Require().Error(err)
 	s.NotContains(err.Error(), "canary-918273")
+}
+
+func (s *SessionSuite) assertDecodes(sess Session) {
+	data, err := json.Marshal(sess)
+	s.Require().NoError(err)
+	got, err := decode(data)
+	s.Require().NoError(err, "%s", sess.State)
+	s.Equal(sess, got)
 }

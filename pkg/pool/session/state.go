@@ -45,6 +45,15 @@ func (s State) canCountReclaimAttempt() bool {
 	return s == StateReclaiming || s == StateOrphaned
 }
 
+func (s State) requiresStarted() bool {
+	switch s {
+	case StateSpawning, StateReady, StateBusy, StateIdle, StateFailed:
+		return true
+	default:
+		return false
+	}
+}
+
 // CanTransition reports whether the state machine allows from to go to to.
 func CanTransition(from, to State) bool {
 	return slices.Contains(transitions[from], to)

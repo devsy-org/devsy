@@ -4,6 +4,7 @@ package session
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -165,9 +166,24 @@ func (s *StoreSuite) TestListReturnsEverySessionInIDOrderAcrossReopen() {
 	first := s.create()
 	useSource(s.T(), fixedReader{0xff})
 	second := s.create()
+	s.Equal(uint64(1), first.Seq)
+	s.Equal(first.Seq+1, second.Seq)
 	list, err := s.open().List()
 	s.Require().NoError(err)
 	s.Equal([]Session{second, first}, list, "7 sorts before a")
+}
+
+func (s *StoreSuite) TestLoadRefusesSequencedPostPromotionStatesWithoutStarted() {
+	for _, state := range postPromotionStates {
+		sess := validSession()
+		sess.State, sess.Seq = state, 1
+		data, err := json.Marshal(sess)
+		s.Require().NoError(err)
+		s.writeFile(fileName(sess.ID), string(data))
+		got, err := s.store.Load(sess.ID)
+		s.ErrorIs(err, errInvalidSession, "%s", state)
+		s.Zero(got, "%s", state)
+	}
 }
 
 func (s *StoreSuite) TestListStopsOnFilesThatAreNotValidSessions() {

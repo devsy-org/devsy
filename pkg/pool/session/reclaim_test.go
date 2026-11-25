@@ -46,6 +46,30 @@ func (s *StoreSuite) TestCountReclaimAttemptRefusesOtherStatesWithoutWriting() {
 	s.assertAttemptRefused(sess.ID, ErrStateConflict)
 }
 
+func (s *StoreSuite) TestCountReclaimAttemptPreservesStartedAndKeepsSlotOccupied() {
+	s.store = s.openWith(Limits{MaxConcurrent: 1, MaxQueued: 1})
+	first := s.admit("first").Session
+	s.Require().Equal(first.ID, s.promote().ID)
+	s.admit("waiting")
+
+	states := []State{StateSpawning, StateReclaiming, StateOrphaned}
+	for i, to := range states[1:] {
+		s.move(first.ID, states[i], to)
+		counted, err := s.store.CountReclaimAttempt(first.ID)
+		s.Require().NoError(err)
+		loaded, err := s.store.Load(first.ID)
+		s.Require().NoError(err)
+		s.Equal(counted, loaded)
+		s.True(loaded.Started, "%s", to)
+		s.Equal(i+1, loaded.Attempts)
+
+		next, ok, err := s.store.Promote()
+		s.Require().NoError(err)
+		s.False(ok, "%s", to)
+		s.Zero(next)
+	}
+}
+
 func (s *StoreSuite) TestCountReclaimAttemptRefusesToExceedTheCap() {
 	sess := validSession()
 	sess.State, sess.Attempts = StateReclaiming, maxReclaimAttempts

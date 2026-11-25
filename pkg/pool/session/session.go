@@ -44,6 +44,7 @@ func (s Session) validate() error {
 		!strings.HasPrefix(s.ID, prefix),
 		len(s.ID) != len(prefix)+idSuffixLen,
 		!s.State.Known(),
+		s.Seq != 0 && !s.Started && s.State.requiresStarted(),
 		s.Reason != "" && !reasonPattern.MatchString(s.Reason),
 		s.Created.IsZero(),
 		s.Updated.IsZero():
