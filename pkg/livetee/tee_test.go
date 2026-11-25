@@ -57,21 +57,30 @@ func (s *teeSuite) TestNonComparableWritersDoNotPanic() {
 	s.Require().NoError(tee.Finish())
 }
 
-func (s *teeSuite) TestOverflowDropsOnlyTheExcess() {
-	w := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
-	tee := New(io.Discard, w)
-	_, err := tee.Write([]byte("x"))
-	s.Require().NoError(err)
-	s.waitEntered(w)
-	_, err = tee.Write(make([]byte, maxQueuedBytes))
-	s.Require().NoError(err)
+type usage struct {
+	dropped, queued, used int64
+	chunks                int
+}
+
+func snapshot(tee *Tee) usage {
 	tee.mu.Lock()
-	dropped, queued := tee.dropped, tee.queued
-	tee.mu.Unlock()
-	s.Equal(int64(1), dropped)
-	s.Equal(int64(maxQueuedBytes), queued)
-	close(w.release)
-	s.Equal(int64(1), tee.Close())
+	defer tee.mu.Unlock()
+	return usage{tee.dropped, tee.queued, tee.used, len(tee.pending)}
+}
+
+// With one byte in flight (65 charged) the budget holds 126 full chunks and a
+// last chunk of 8191 bytes (8255 left minus the 64 byte record).
+func (s *teeSuite) TestOverflowDropsOnlyTheExcess() {
+	tee, stall := s.stalledTee()
+	_, err := tee.Writer(io.Discard).Write(make([]byte, maxQueuedBytes))
+	s.Require().NoError(err)
+	u := snapshot(tee)
+	kept := int64(1 + 126*chunkSize + chunkSize - 1)
+	s.Equal(kept, u.queued)
+	s.Equal(int64(1+maxQueuedBytes)-kept, u.dropped)
+	s.LessOrEqual(u.used, int64(maxQueuedBytes))
+	close(stall.release)
+	s.Equal(u.dropped, tee.Close())
 }
 
 func (s *teeSuite) TestWriteSplitsAcrossTailAndNewChunk() {
@@ -92,17 +101,66 @@ func (s *teeSuite) TestWriteSplitsAcrossTailAndNewChunk() {
 
 func (s *teeSuite) TestExactFitIsKeptAndNextWriteDropped() {
 	tee, stall := s.stalledTee()
-	_, err := tee.Writer(io.Discard).Write(make([]byte, maxQueuedBytes-1))
+	const records = 127
+	payload := maxQueuedBytes - (1 + chunkOverhead) - records*chunkOverhead
+	_, err := tee.Writer(io.Discard).Write(make([]byte, payload))
 	s.Require().NoError(err)
-	tee.mu.Lock()
-	dropped, queued := tee.dropped, tee.queued
-	tee.mu.Unlock()
-	s.Zero(dropped)
-	s.Equal(int64(maxQueuedBytes), queued)
+	u := snapshot(tee)
+	s.Zero(u.dropped)
+	s.Equal(int64(1+payload), u.queued)
+	s.Equal(int64(maxQueuedBytes), u.used)
+	s.Equal(records, u.chunks)
 	_, err = tee.Writer(io.Discard).Write([]byte("abcd"))
 	s.Require().NoError(err)
 	close(stall.release)
 	s.Equal(int64(4), tee.Close())
+}
+
+func (s *teeSuite) TestBudgetIsReleasedAsTheDrainProgresses() {
+	tee := New(io.Discard, nil)
+	a, b := &bytes.Buffer{}, &bytes.Buffer{}
+	line := bytes.Repeat([]byte("q"), 1000)
+	for i := range 3 * maxQueuedBytes / len(line) {
+		w := io.Writer(a)
+		if i%2 == 1 {
+			w = b
+		}
+		_, err := tee.Writer(w).Write(line)
+		s.Require().NoError(err)
+		if i%100 == 0 {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	s.Require().NoError(tee.Finish())
+	s.Equal(usage{}, snapshot(tee))
+	s.Equal(3*maxQueuedBytes/len(line)*len(line), a.Len()+b.Len())
+}
+
+func (s *teeSuite) TestAlternatingWritersKeepRecordsBounded() {
+	tee, stall := s.stalledTee()
+	a, b := &bytes.Buffer{}, &bytes.Buffer{}
+	const writes = 100000
+	for i := range writes {
+		w := io.Writer(a)
+		if i%2 == 1 {
+			w = b
+		}
+		_, err := tee.Writer(w).Write([]byte("z"))
+		s.Require().NoError(err)
+	}
+	// Each record costs 65 with its byte. The 61 left over extend the tail,
+	// because the tail's writer comes round again two writes later.
+	budget := maxQueuedBytes - (1 + chunkOverhead)
+	records, extra := budget/(1+chunkOverhead), budget%(1+chunkOverhead)
+	u := snapshot(tee)
+	s.Equal(records, u.chunks)
+	s.Equal(int64(1+records+extra), u.queued)
+	s.Equal(int64(writes-records-extra), u.dropped)
+	s.Equal(int64(maxQueuedBytes), u.used)
+	close(stall.release)
+	s.Equal(int64(writes-records-extra), tee.Close())
+	s.Equal(records+extra, a.Len()+b.Len())
+	s.Equal(usage{dropped: int64(writes - records - extra)}, snapshot(tee))
 }
 
 func (s *teeSuite) TestBlockedDropsAndReleases() {

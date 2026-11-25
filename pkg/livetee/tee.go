@@ -12,6 +12,7 @@ import (
 const (
 	chunkSize      = 8 << 10
 	maxQueuedBytes = 1 << 20
+	chunkOverhead  = 64
 	DrainTimeout   = 100 * time.Millisecond
 )
 
@@ -28,6 +29,7 @@ type Tee struct {
 	done     chan struct{}
 	mu       sync.Mutex
 	queued   int64
+	used     int64
 	dropped  int64
 	stopped  bool
 	closed   bool
@@ -90,6 +92,7 @@ func (t *Tee) CloseWithStatus() (int64, bool) {
 		t.stopped = true
 		t.dropped += t.queued
 		t.queued = 0
+		t.used = 0
 		t.pending = nil
 		t.signal()
 		t.mu.Unlock()
@@ -138,6 +141,7 @@ func (t *Tee) run(closeLive func() error) {
 		}
 		if !t.stopped {
 			t.queued -= int64(len(chunk.data))
+			t.used -= int64(len(chunk.data) + chunkOverhead)
 			t.dropped += int64(len(chunk.data) - n)
 		}
 		t.mu.Unlock()
@@ -190,33 +194,43 @@ func (t *Tee) enqueue(p []byte, live io.Writer) {
 	t.signal()
 }
 
-// admit consumes a prefix of p and returns its length. Bytes past the queue
-// bound are counted as dropped, so a slow writer never blocks the command. The
-// bound covers payload only, not chunk records.
+// admit consumes a prefix of p and returns its length. Bytes that do not fit
+// the queue budget are counted as dropped, so a slow writer never blocks the
+// command. Each chunk record is charged chunkOverhead against the same budget.
 func (t *Tee) admit(p []byte, live io.Writer) int {
 	n := min(len(p), chunkSize)
-	keep := int(min(int64(n), maxQueuedBytes-t.queued))
-	t.dropped += int64(n - keep)
-	if keep > 0 {
-		t.store(p[:keep], live)
-	}
+	t.dropped += int64(n - t.store(p[:n], live))
 	return n
 }
 
-// store extends the tail chunk, which the drain has not taken yet, so bursts
-// of small writes cost bytes, not queue slots.
-func (t *Tee) store(p []byte, live io.Writer) {
-	t.queued += int64(len(p))
-	if len(t.pending) > 0 {
-		tail := &t.pending[len(t.pending)-1]
-		if n := min(chunkSize-len(tail.data), len(p)); n > 0 && sameWriter(tail.live, live) {
-			tail.data = append(tail.data, p[:n]...)
-			p = p[n:]
-		}
+// store queues as much of p as the budget allows and returns that length.
+func (t *Tee) store(p []byte, live io.Writer) int {
+	kept := t.extendTail(p, live)
+	p = p[kept:]
+	if room := min(int64(len(p)), maxQueuedBytes-t.used-chunkOverhead); room > 0 {
+		t.pending = append(t.pending, chunk{data: append([]byte(nil), p[:room]...), live: live})
+		t.queued += room
+		t.used += room + chunkOverhead
+		kept += int(room)
 	}
-	if len(p) > 0 {
-		t.pending = append(t.pending, chunk{data: append([]byte(nil), p...), live: live})
+	return kept
+}
+
+// extendTail appends to the tail chunk, which the drain has not taken yet, so
+// bursts of small writes cost bytes, not queue slots.
+func (t *Tee) extendTail(p []byte, live io.Writer) int {
+	if len(t.pending) == 0 {
+		return 0
 	}
+	tail := &t.pending[len(t.pending)-1]
+	n := min(int64(chunkSize-len(tail.data)), int64(len(p)), maxQueuedBytes-t.used)
+	if n <= 0 || !sameWriter(tail.live, live) {
+		return 0
+	}
+	tail.data = append(tail.data, p[:n]...)
+	t.queued += n
+	t.used += n
+	return int(n)
 }
 
 func sameWriter(a, b io.Writer) bool {
