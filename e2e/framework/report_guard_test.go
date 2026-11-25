@@ -15,7 +15,7 @@ import (
 
 const (
 	redactPkgImport  = "github.com/devsy-org/devsy/internal/diagnosticredact"
-	reportHelperFile = "framework/record_masker.go"
+	reportHelperFile = "framework/recordmask/record_masker.go"
 )
 
 func TestOnlyRecordMaskerCallsDiagnosticredactRecord(t *testing.T) {
@@ -39,7 +39,7 @@ func TestOnlyRecordMaskerCallsDiagnosticredactRecord(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-	require.Empty(t, offenders, "call framework.ReportText instead of diagnosticredact.Record")
+	require.Empty(t, offenders, "call recordmask.ReportText instead of diagnosticredact.Record")
 }
 
 func redactImportName(file *ast.File) string {

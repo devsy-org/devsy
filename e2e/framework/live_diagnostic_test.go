@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/devsy-org/devsy/e2e/framework/recordmask"
 	"github.com/devsy-org/devsy/internal/diagnosticredact"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/livetee"
@@ -111,7 +112,7 @@ func TestRecordMaskerMatchesTheDiagnosticStreamForFoldedHeaders(t *testing.T) {
 			redactor := redact.New(redact.Options{})
 			stream := diagnosticredact.Stream(redactor)
 			want := stream.RedactChunk(input) + stream.Flush()
-			got := maskRecordText(redactor, input)
+			got := recordmask.Text(redactor, input)
 			assert.Equal(t, want, got)
 			assert.NotContains(t, got, "fold-")
 			assert.Contains(t, got, "public tail")

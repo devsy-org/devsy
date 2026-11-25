@@ -1,4 +1,4 @@
-package framework
+package recordmask
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 
 const maxJSONRecordBytes = 64 << 10
 
-type recordMasker struct {
+type Masker struct {
 	redactor *redact.Redactor
 	stream   *redact.Stream
 	emit     func(string)
@@ -57,30 +57,30 @@ func (s *recordSkipper) advance(c byte) bool {
 	return false
 }
 
-func newRecordMasker(redactor *redact.Redactor, emit func(string)) *recordMasker {
-	return &recordMasker{
+func New(redactor *redact.Redactor, emit func(string)) *Masker {
+	return &Masker{
 		redactor: redactor,
 		stream:   diagnosticredact.Stream(redactor),
 		emit:     emit,
 	}
 }
 
-func (m *recordMasker) write(text string) {
+func (m *Masker) Write(text string) {
 	m.pending += text
 	m.drain(false)
 }
 
-func (m *recordMasker) finish() {
+func (m *Masker) Finish() {
 	m.drain(true)
 	m.emit(m.stream.Flush())
 }
 
-func (m *recordMasker) drain(final bool) {
+func (m *Masker) drain(final bool) {
 	for m.pending != "" && m.step(final) {
 	}
 }
 
-func (m *recordMasker) step(final bool) bool {
+func (m *Masker) step(final bool) bool {
 	if m.skip != nil {
 		rest, closed := m.skip.consume(m.pending)
 		m.pending = rest
@@ -105,7 +105,7 @@ func (m *recordMasker) step(final bool) bool {
 	return m.maskRecord(start, final)
 }
 
-func (m *recordMasker) copyLine() bool {
+func (m *Masker) copyLine() bool {
 	end := strings.IndexAny(m.pending, "\r\n")
 	if end < 0 {
 		m.plain(m.pending)
@@ -123,11 +123,11 @@ func (m *recordMasker) copyLine() bool {
 	return true
 }
 
-func (m *recordMasker) plain(text string) {
+func (m *Masker) plain(text string) {
 	m.emit(m.stream.RedactChunk(text))
 }
 
-func (m *recordMasker) maskRecord(start string, final bool) bool {
+func (m *Masker) maskRecord(start string, final bool) bool {
 	if !final && !strings.ContainsAny(m.pending, "\r\n") {
 		return m.holdOrOverflow()
 	}
@@ -152,7 +152,7 @@ func (m *recordMasker) maskRecord(start string, final bool) bool {
 	}
 }
 
-func (m *recordMasker) holdOrOverflow() bool {
+func (m *Masker) holdOrOverflow() bool {
 	if len(m.pending) <= maxJSONRecordBytes {
 		return false
 	}
@@ -179,22 +179,22 @@ func couldBeJSON(text string) bool {
 	return err == nil || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
-func (m *recordMasker) maskPending() {
+func (m *Masker) maskPending() {
 	m.pending = ""
 	m.emit(m.stream.Flush())
 	m.emit(m.redactor.Mask() + "\n")
 }
 
-func maskRecordText(redactor *redact.Redactor, value string) string {
+func Text(redactor *redact.Redactor, value string) string {
 	var out strings.Builder
-	masker := newRecordMasker(redactor, func(text string) { out.WriteString(text) })
-	masker.write(value)
-	masker.finish()
+	masker := New(redactor, func(text string) { out.WriteString(text) })
+	masker.Write(value)
+	masker.Finish()
 	return out.String()
 }
 
 // ReportText masks value for failure reports. JSON records are masked first
 // because the whole-buffer scan misses records mixed with log lines.
 func ReportText(redactor *redact.Redactor, value string) string {
-	return diagnosticredact.Record(redactor, maskRecordText(redactor, value))
+	return diagnosticredact.Record(redactor, Text(redactor, value))
 }

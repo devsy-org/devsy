@@ -1,4 +1,4 @@
-package framework
+package recordmask
 
 import (
 	"strings"
@@ -11,11 +11,11 @@ func runMasker(t *testing.T, chunks []string) string {
 	t.Helper()
 	var out strings.Builder
 	redactor := redact.New(redact.Options{})
-	masker := newRecordMasker(redactor, func(text string) { out.WriteString(text) })
+	masker := New(redactor, func(text string) { out.WriteString(text) })
 	for _, chunk := range chunks {
-		masker.write(chunk)
+		masker.Write(chunk)
 	}
-	masker.finish()
+	masker.Finish()
 	return out.String()
 }
 

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/e2e/framework/recordmask"
 	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/livetee"
@@ -200,5 +200,5 @@ func Redact(s string, secrets ...string) string {
 	for _, r := range redactions {
 		s = r.re.ReplaceAllString(s, r.with)
 	}
-	return framework.ReportText(diagnosticRedactor, s)
+	return recordmask.ReportText(diagnosticRedactor, s)
 }
