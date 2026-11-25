@@ -12,6 +12,7 @@ import (
 
 const maxJSONRecordBytes = 64 << 10
 
+// Masker masks JSON records and plain text from streamed output.
 type Masker struct {
 	redactor *redact.Redactor
 	stream   *redact.Stream
@@ -57,6 +58,7 @@ func (s *recordSkipper) advance(c byte) bool {
 	return false
 }
 
+// New returns a Masker that sends masked text to emit.
 func New(redactor *redact.Redactor, emit func(string)) *Masker {
 	return &Masker{
 		redactor: redactor,
@@ -65,11 +67,13 @@ func New(redactor *redact.Redactor, emit func(string)) *Masker {
 	}
 }
 
+// Write feeds output to the masker; masked text reaches emit as records complete.
 func (m *Masker) Write(text string) {
 	m.pending += text
 	m.drain(false)
 }
 
+// Finish flushes the pending record. Call it once after the last Write.
 func (m *Masker) Finish() {
 	m.drain(true)
 	m.emit(m.stream.Flush())
@@ -185,6 +189,7 @@ func (m *Masker) maskPending() {
 	m.emit(m.redactor.Mask() + "\n")
 }
 
+// Text masks value in one pass.
 func Text(redactor *redact.Redactor, value string) string {
 	var out strings.Builder
 	masker := New(redactor, func(text string) { out.WriteString(text) })
