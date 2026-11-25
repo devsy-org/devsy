@@ -348,7 +348,7 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 		return fmt.Errorf("devsy provider add failed: %w", err)
 	}
 	capture := func(ctx context.Context) (string, string, error) {
-		return f.ExecCommandCapture(ctx, baseArgs)
+		return f.ExecCommandDiagnosticCapture(ctx, baseArgs)
 	}
 	stderr, err := execWithProviderAddRetry(ctx, capture)
 	if err != nil {

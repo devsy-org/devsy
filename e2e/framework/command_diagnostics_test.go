@@ -150,6 +150,55 @@ func TestWorkspaceEditDecodeErrorMasksDiagnosticCopy(t *testing.T) {
 	require.NotContains(t, err.Error(), diagnosticFixtureValue)
 }
 
+func TestProviderAddMasksLiveOutputAndMatchesRawStderr(t *testing.T) {
+	for _, tc := range []struct {
+		name, secret string
+		deleteCalled bool
+	}{
+		{"failure", "synthetic-provider-secret-12345", false},
+		{"already exists", "synthetic already exists secret-12345", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := externalCommandFixture(t)
+			t.Setenv("DEVSY_E2E_PROVIDER_DOWNLOAD_CACHE", "")
+			t.Setenv("PROVIDER_TEST_TOKEN", tc.secret)
+			marker := filepath.Join(bin, "deleted")
+			t.Setenv("PROVIDER_TEST_MARKER", marker)
+			writeDiagnosticFixture(
+				t,
+				bin,
+				diagnosticFixtureExecutable,
+				"if [ \"$2\" = delete ]; then printf deleted > \"$PROVIDER_TEST_MARKER\"; exit 0; fi\n"+
+					"printf 'public stdout %s\\n' \"$PROVIDER_TEST_TOKEN\"\n"+
+					"printf 'public stderr %s\\n' \"$PROVIDER_TEST_TOKEN\" >&2\nexit 42\n",
+			)
+			f := &Framework{DevsyBinDir: bin, DevsyBinName: diagnosticFixtureExecutable}
+			live, err := captureProviderAddOutput(t, f)
+			require.ErrorContains(t, err, "exit status 42")
+			require.NotContains(t, err.Error(), tc.secret)
+			require.Contains(t, live, "public stdout")
+			require.Contains(t, live, "public stderr")
+			require.NotContains(t, live, tc.secret)
+			_, statErr := os.Stat(marker)
+			require.Equal(t, tc.deleteCalled, statErr == nil)
+		})
+	}
+}
+
+func captureProviderAddOutput(t *testing.T, f *Framework) (string, error) {
+	t.Helper()
+	out, err := os.CreateTemp(t.TempDir(), "live")
+	require.NoError(t, err)
+	defer func() { _ = out.Close() }()
+	oldOut, oldErr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = out, out
+	defer func() { os.Stdout, os.Stderr = oldOut, oldErr }()
+	addErr := f.DevsyProviderAdd(t.Context(), "docker", "--name", "fixture-provider")
+	live, err := os.ReadFile(out.Name())
+	require.NoError(t, err)
+	return string(live), addErr
+}
+
 func externalCommandFixture(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
