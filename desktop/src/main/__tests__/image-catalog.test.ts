@@ -2,7 +2,12 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { __setFetchForTest, loadCatalog } from "../image-catalog.js"
+import {
+  __setFetchForTest,
+  DEFAULT_IMAGE_CATALOG_URL,
+  loadCatalog,
+  resolveCatalogUrl,
+} from "../image-catalog.js"
 
 const SEED = {
   version: 1,
@@ -178,5 +183,19 @@ describe("loadCatalog", () => {
       force: true,
     })
     expect(receivedSignal).toBeInstanceOf(AbortSignal)
+  })
+})
+
+describe("resolveCatalogUrl", () => {
+  it("defaults to the images site", () => {
+    expect(DEFAULT_IMAGE_CATALOG_URL).toBe(
+      "https://images.devsy.sh/catalog.json",
+    )
+    expect(resolveCatalogUrl({})).toBe(DEFAULT_IMAGE_CATALOG_URL)
+  })
+
+  it("lets DEVSY_IMAGE_CATALOG_URL override the default", () => {
+    const url = "http://127.0.0.1:9/catalog.json"
+    expect(resolveCatalogUrl({ DEVSY_IMAGE_CATALOG_URL: url })).toBe(url)
   })
 })
