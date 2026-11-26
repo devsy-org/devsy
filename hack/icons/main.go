@@ -416,7 +416,13 @@ func iconMarkup(svgPath string) (string, error) {
 	if end < 0 {
 		return "", errors.New("icon svg root element is not closed")
 	}
-	return strings.TrimSpace(src[open+end+1 : closing]), nil
+	body := src[open+end+1 : closing]
+	if from := strings.Index(body, "<title>"); from >= 0 {
+		if to := strings.Index(body, "</title>"); to > from {
+			body = body[:from] + body[to+len("</title>"):]
+		}
+	}
+	return strings.TrimSpace(body), nil
 }
 
 //nolint:lll // The fixed vector path data must remain inline in the generated SVG.

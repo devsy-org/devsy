@@ -200,6 +200,21 @@ func TestIconMarkupReturnsRootContents(t *testing.T) {
 	}
 }
 
+func TestIconMarkupDropsTitle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "icon.svg")
+	src := "<svg viewBox=\"0 0 8 8\"><title>Icon</title><path d=\"M0 0\"/></svg>"
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := iconMarkup(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "title") {
+		t.Errorf("markup keeps the title: %q", got)
+	}
+}
+
 func repoFile(parts ...string) string {
 	return filepath.Join(append([]string{"..", ".."}, parts...)...)
 }
