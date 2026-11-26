@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
 )
@@ -49,4 +50,10 @@ func ValidID(id string) bool {
 		return false
 	}
 	return poolconfig.ValidPoolName(id[len(idPrefix) : len(id)-idSuffixLen-1])
+}
+
+// OwnsID reports whether id is valid and belongs to exactly pool.
+func OwnsID(pool, id string) bool {
+	prefix := idPrefix + pool + "-"
+	return len(id) == len(prefix)+idSuffixLen && strings.HasPrefix(id, prefix) && ValidID(id)
 }

@@ -102,3 +102,25 @@ func (s *IDSuite) TestValidIDRefusesAnythingThatIsNotAnID() {
 	}
 	s.True(ValidID("p-pool-aaaaaaaaaa"))
 }
+
+func (s *IDSuite) TestOwnsID() {
+	for _, tt := range []struct {
+		name string
+		pool string
+		id   string
+		want bool
+	}{
+		{"same pool", "a", "p-a-xxxxxxxxxx", true},
+		{"hyphenated pool", "a-b", "p-a-b-xxxxxxxxxx", true},
+		{"pool prefix only", "a", "p-a-b-xxxxxxxxxx", false},
+		{"different pool", "b", "p-a-xxxxxxxxxx", false},
+		{"short suffix", "a", "p-a-xxxxxxxxx", false},
+		{"long suffix", "a", "p-a-xxxxxxxxxxx", false},
+		{"uppercase suffix", "a", "p-a-XXXXXXXXXX", false},
+		{"uppercase pool", "A", "p-A-xxxxxxxxxx", false},
+	} {
+		s.Run(tt.name, func() {
+			s.Equal(tt.want, OwnsID(tt.pool, tt.id))
+		})
+	}
+}
