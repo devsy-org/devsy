@@ -129,7 +129,7 @@ func (s *EngineSuite) TestReconcileReclaimsResourcesWithoutALiveRecord() {
 	s.fake.Add(s.workspace("lookalike", s.poolLabels(live.ID+"x")))
 	s.fake.Add(s.workspace("unlabelled", nil))
 	s.fake.Add(s.workspace("foreign", map[string]string{
-		provider.LabelPool: "other", provider.LabelSession: gone,
+		provider.LabelPool: otherPool, provider.LabelSession: gone,
 	}))
 
 	report, err := s.eng.Reconcile(context.Background())
@@ -208,7 +208,7 @@ func (s *EngineSuite) TestReconcileRefusesSessionsFromAnotherPool() {
 	s.spawn(cur.ID)
 	s.fake.Add(s.workspace("no-session", s.poolLabels("")))
 	eng, err := New(Config{
-		Pool: "other", Store: s.store, Audit: s.spy, Provider: s.fake,
+		Pool: otherPool, Store: s.store, Audit: s.spy, Provider: s.fake,
 		Now: func() time.Time { return s.now },
 	})
 	s.Require().NoError(err)

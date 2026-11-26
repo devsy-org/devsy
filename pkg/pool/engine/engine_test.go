@@ -27,6 +27,7 @@ const (
 const orphanAfter = 5
 
 const (
+	otherPool     = "other"
 	kindWorkspace = "workspace"
 	kindNetwork   = "network"
 )
@@ -411,7 +412,7 @@ func (s *EngineSuite) TestAnEngineRefusesASessionFromAnotherPool() {
 	reclaiming := s.sessionIn(session.StateReclaiming)
 	s.spawn(reclaiming.ID)
 	eng, err := New(Config{
-		Pool: "other", Store: s.store, Audit: s.spy, Provider: s.fake,
+		Pool: otherPool, Store: s.store, Audit: s.spy, Provider: s.fake,
 		Now: func() time.Time { return s.now },
 	})
 	s.Require().NoError(err)
