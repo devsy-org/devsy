@@ -41,9 +41,7 @@ func (p *logProbe) crashOnAMX() bool {
 }
 
 func (job ghJob) windowsFailure() bool {
-	return job.Conclusion == "failure" && slices.ContainsFunc(job.Labels, func(label string) bool {
-		return strings.HasPrefix(label, "windows")
-	})
+	return job.Conclusion == "failure" && job.isWindows()
 }
 
 // markAMXCrashes reads the log of each failed Windows job and flags the ones

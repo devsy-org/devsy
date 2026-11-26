@@ -12,14 +12,20 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
-	noRunnerReason = "every failed job is a macOS job cancelled before a runner picked it up"
-	amxCrashReason = "every failed job is a Windows job that hit a Go runtime fatal error on a host " +
-		"with AMX state on"
-	mixedReason = "every failed job is a macOS job cancelled before a runner picked it up " +
-		"or a Windows job that hit a Go runtime fatal error on a host with AMX state on"
+	cancelledState = "cancelled"
+
+	noRunnerCause = "a macOS job cancelled before a runner picked it up"
+	amxCrashCause = "a Windows job that hit a Go runtime fatal error on a host with AMX state on"
+	wedgeCause    = "a Windows job cancelled by its time limit while a setup step ran far " +
+		"past its own timeout"
+
+	noRunnerReason = "every failed job is " + noRunnerCause
+	amxCrashReason = "every failed job is " + amxCrashCause
+	mixedReason    = "every failed job is " + noRunnerCause + " or " + amxCrashCause
 )
 
 // ghRun holds the workflow run fields the rerun decision reads.
@@ -35,11 +41,13 @@ type ghRun struct {
 
 // ghJob holds the job fields the rerun decision reads.
 type ghJob struct {
-	ID         int64    `json:"id"`
-	Name       string   `json:"name"`
-	Conclusion string   `json:"conclusion"`
-	RunnerName string   `json:"runner_name"`
-	Labels     []string `json:"labels"`
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Conclusion  string    `json:"conclusion"`
+	RunnerName  string    `json:"runner_name"`
+	Labels      []string  `json:"labels"`
+	Steps       []ghStep  `json:"steps"`
+	CompletedAt time.Time `json:"completed_at"`
 
 	// amxCrash is set from the job log, not from the API.
 	amxCrash bool
@@ -59,7 +67,8 @@ type rerunOptions struct {
 }
 
 // rerunCommand reruns a run's failed jobs once when every failure is a macOS job
-// that never got a runner or a Windows job that hit golang/go#81238.
+// that never got a runner, a Windows job that hit golang/go#81238, or a Windows
+// job whose host stopped responding during WSL2 setup.
 type rerunCommand struct {
 	runner commandRunner
 	stdout io.Writer
@@ -143,15 +152,22 @@ func runBlocker(run ghRun) string {
 	if run.Attempt != 1 {
 		return fmt.Sprintf("attempt %d is not the first attempt", run.Attempt)
 	}
-	if run.Status != "completed" || run.Conclusion != "failure" {
+	if run.Status != "completed" || !retryableConclusion(run) {
 		return fmt.Sprintf("run is %s/%s, not completed/failure", run.Status, run.Conclusion)
 	}
 	return ""
 }
 
+// retryableConclusion accepts a failed run, or a cancelled main push: a job that
+// hits its time limit cancels the run, and a pull request run is also cancelled
+// whenever a newer push replaces it.
+func retryableConclusion(run ghRun) bool {
+	return run.Conclusion == "failure" || run.Conclusion == cancelledState && run.Event == "push"
+}
+
 // selectRerun decides whether the failed jobs of a run's first attempt failed
-// only because GitHub never assigned a macOS runner or a Windows job crashed
-// in the Go runtime on an AMX host.
+// only because GitHub never assigned a macOS runner, a Windows job crashed in
+// the Go runtime on an AMX host, or a Windows host stopped responding.
 func selectRerun(run ghRun, jobs []ghJob, ignore map[string]bool) rerunPlan {
 	if blocker := runBlocker(run); blocker != "" {
 		return rerunPlan{reason: blocker}
@@ -170,10 +186,13 @@ type retryableSet struct {
 	names    []string
 	noRunner bool
 	amxCrash bool
+	wedged   bool
 }
 
 func (s retryableSet) reason() string {
 	switch {
+	case s.wedged:
+		return "every failed job is " + strings.Join(s.causes(), " or ")
 	case s.noRunner && s.amxCrash:
 		return mixedReason
 	case s.amxCrash:
@@ -181,6 +200,20 @@ func (s retryableSet) reason() string {
 	default:
 		return noRunnerReason
 	}
+}
+
+func (s retryableSet) causes() []string {
+	var causes []string
+	if s.noRunner {
+		causes = append(causes, noRunnerCause)
+	}
+	if s.amxCrash {
+		causes = append(causes, amxCrashCause)
+	}
+	if s.wedged {
+		causes = append(causes, wedgeCause)
+	}
+	return causes
 }
 
 // retryableJobs lists the failed jobs, or describes the first failure that is
@@ -196,6 +229,8 @@ func retryableJobs(jobs []ghJob, ignore map[string]bool) (retryableSet, string) 
 			set.noRunner = true
 		case job.amxCrash:
 			set.amxCrash = true
+		case job.wedgedSetup():
+			set.wedged = true
 		default:
 			return retryableSet{}, job.describe()
 		}

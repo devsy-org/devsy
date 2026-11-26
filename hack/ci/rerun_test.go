@@ -99,7 +99,7 @@ func selectionCases() []selectionCase {
 		},
 		{
 			name:   "cancelled run",
-			run:    ghRun{Attempt: 1, Status: statusDone, Conclusion: "cancelled"},
+			run:    ghRun{Attempt: 1, Status: statusDone, Conclusion: cancelledState},
 			jobs:   []ghJob{noRunner},
 			reason: "not completed/failure",
 		},
