@@ -10,7 +10,8 @@ import (
 
 // Sweep gives every reclaiming and orphaned session one reclaim attempt if it
 // is due. It returns the earliest time another attempt falls due, or the zero
-// time when none waits. An incomplete attempt or one not yet due is normal; an
+// time when none waits. An incomplete attempt, one not yet due and a session
+// another caller already moved on from (a stale listing) are normal; an
 // audit, store or context error stops the pass, and a context canceled during
 // the pass is returned even when every attempt looked normal.
 func (e *Engine) Sweep(ctx context.Context) (time.Time, error) {
@@ -25,7 +26,7 @@ func (e *Engine) Sweep(ctx context.Context) (time.Time, error) {
 		}
 		got, err := e.Reclaim(ctx, s.ID)
 		switch {
-		case err == nil:
+		case err == nil, errors.Is(err, ErrNotReclaimable):
 		case waiting(err):
 			next = earliest(next, Due(got))
 		default:

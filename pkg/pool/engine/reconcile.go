@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/devsy-org/devsy-signals/attrkey"
 	"github.com/devsy-org/devsy-signals/envelope"
@@ -19,10 +20,15 @@ type Report struct {
 	Orphans  int
 }
 
+type orphanSession struct {
+	id        string
+	resources []provider.Resource
+}
+
 type restartPlan struct {
 	failFirst       []string
 	reclaim         []string
-	orphanSessions  []string
+	orphanSessions  []orphanSession
 	orphanResources []provider.Orphan
 	report          Report
 }
@@ -34,10 +40,12 @@ type restartPlan struct {
 // keep it warm. Queued sessions stay queued; reclaiming and orphaned sessions
 // are left to Sweep. A resource whose session ID has no live record, or whose
 // session label is missing or invalid, is an orphan. The first is reclaimed by
-// its exact session ID with a session.reclaim event. The second is deleted
-// one object at a time by UID and is counted in pool.start only, since it has
-// no session to name. It stops at the first audit or store error and returns
-// the report so far.
+// its exact session ID. Its session.reclaim event is written first, with
+// result partial and what is about to go, then a final one with the outcome,
+// so a failed or canceled removal never loses the record and the next
+// Reconcile finds the orphan again. The second is deleted one object at a time
+// by UID and is counted in pool.start only, since it has no session to name.
+// It stops at the first audit or store error and returns the report so far.
 func (e *Engine) Reconcile(ctx context.Context) (Report, error) {
 	sessions, err := e.store.List()
 	if err != nil {
@@ -77,11 +85,13 @@ func (e *Engine) planRestart(ctx context.Context, sessions []session.Session) (r
 	}
 	for id, resources := range owned {
 		if !live[id] {
-			plan.orphanSessions = append(plan.orphanSessions, id)
+			plan.orphanSessions = append(plan.orphanSessions, orphanSession{id, resources})
 			plan.report.Orphans += len(resources)
 		}
 	}
-	slices.Sort(plan.orphanSessions)
+	slices.SortFunc(plan.orphanSessions, func(a, b orphanSession) int {
+		return strings.Compare(a.id, b.id)
+	})
 	plan.report.Orphans += len(orphans)
 	return plan, nil
 }
@@ -134,9 +144,11 @@ func (e *Engine) restartStep(ctx context.Context, step func() error) error {
 }
 
 func (e *Engine) reclaimOrphans(ctx context.Context, plan restartPlan) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	var incomplete bool
-	for _, id := range plan.orphanSessions {
-		done, err := e.reclaimOrphanSession(ctx, id)
+	for _, o := range plan.orphanSessions {
+		done, err := e.reclaimOrphanSession(ctx, o)
 		if err != nil {
 			return err
 		}
@@ -168,19 +180,30 @@ func (e *Engine) deleteStrays(ctx context.Context, strays []provider.Orphan) (bo
 }
 
 // reclaimOrphanSession reclaims by exact session ID. A session without a
-// record has no attempt count to store, so the event always says attempt one
-// and a later Reconcile retries what is left.
-func (e *Engine) reclaimOrphanSession(ctx context.Context, id string) (bool, error) {
+// record has no attempt count to store, so the events always say attempt one
+// and a later Reconcile retries what is left. The first event is written
+// before any provider call, so an audit failure removes nothing. If the
+// removal is canceled the resources stay and the next Reconcile writes the
+// first event again.
+func (e *Engine) reclaimOrphanSession(ctx context.Context, o orphanSession) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	out := e.removeResources(ctx, id)
+	intent := outcome{result: resultPartial, remaining: kindsOf(o.resources)}
+	if err := e.auditOrphan(o.id, intent); err != nil {
+		return false, err
+	}
+	out := e.removeResources(ctx, o.id)
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	data := reclaimData(session.Session{Attempts: 1}, out, true)
-	if err := e.audit(envelope.AuditSessionReclaim, id, data); err != nil {
+	if err := e.auditOrphan(o.id, out); err != nil {
 		return false, err
 	}
 	return out.result == resultDeleted, nil
+}
+
+func (e *Engine) auditOrphan(id string, out outcome) error {
+	data := reclaimData(session.Session{Attempts: 1}, out, true)
+	return e.audit(envelope.AuditSessionReclaim, id, data)
 }

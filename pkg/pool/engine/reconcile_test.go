@@ -5,12 +5,16 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/pool/provider"
 	"github.com/devsy-org/devsy/pkg/pool/provider/providertest"
 	"github.com/devsy-org/devsy/pkg/pool/session"
 )
+
+const eventReclaim = "session.reclaim"
 
 // restartStates is every state a restart can find, with the state it must
 // leave each session in once Reconcile returns.
@@ -148,7 +152,7 @@ func (s *EngineSuite) TestReconcileReclaimsResourcesWithoutALiveRecord() {
 
 	reclaims := map[string]recordedEvent{}
 	for _, ev := range s.events() {
-		if ev.Type == "session.reclaim" {
+		if ev.Type == eventReclaim {
 			reclaims[ev.Session] = ev
 		}
 	}
@@ -438,4 +442,230 @@ func (s *EngineSuite) TestSweepContinuesPastAnIncompleteAttemptAndReportsTheEarl
 	}
 	s.True(next.Equal(earliest), "next=%v want=%v", next, earliest)
 	s.False(errors.Is(err, ErrReclaimIncomplete))
+}
+
+// listHook runs after once, right after the first List returns, so a test can
+// change the store behind a listing that is already stale.
+type listHook struct {
+	*session.Store
+	after func()
+}
+
+func (l *listHook) List() ([]session.Session, error) {
+	got, err := l.Store.List()
+	if l.after != nil {
+		run := l.after
+		l.after = nil
+		run()
+	}
+	return got, err
+}
+
+type listFails struct{ *session.Store }
+
+func (listFails) List() ([]session.Session, error) { return nil, errBoom }
+
+func (s *EngineSuite) orphanID() string {
+	s.T().Helper()
+	id, err := session.NewID(testPool)
+	s.Require().NoError(err)
+	s.spawn(id)
+	return id
+}
+
+func (s *EngineSuite) reclaimEvents(id string) []recordedEvent {
+	s.T().Helper()
+	var out []recordedEvent
+	for _, ev := range s.events() {
+		if ev.Type == eventReclaim && ev.Session == id {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func (s *EngineSuite) TestAnOrphanSessionIsAuditedBeforeItsResourcesGo() {
+	id := s.orphanID()
+	var before []recordedEvent
+	s.fake.SetHook(func(_ context.Context, c providertest.Call) {
+		if c.Method == providertest.MethodReclaim {
+			before = s.reclaimEvents(id)
+		}
+	})
+	_, err := s.eng.Reconcile(context.Background())
+	s.Require().NoError(err)
+	s.Require().Len(before, 1, "one event exists when the provider is first asked to remove")
+	s.Equal("partial", before[0].Data["devsy.reclaim.result"])
+	s.ElementsMatch([]any{kindContainer, kindNetwork}, before[0].Data["devsy.reclaim.remaining"])
+	s.Equal(true, before[0].Data["devsy.reclaim.orphaned"])
+
+	all := s.reclaimEvents(id)
+	s.Require().Len(all, 2)
+	s.Equal("deleted", all[1].Data["devsy.reclaim.result"])
+	s.Empty(s.fake.Snapshot())
+}
+
+func (s *EngineSuite) TestAnOrphanAuditFailureRemovesNothingAndTheNextPassRetries() {
+	id := s.orphanID()
+	writes := 0
+	s.spy.onWrite = func() {
+		writes++
+		s.spy.err = nil
+		if writes == 2 {
+			s.spy.err = errBoom
+		}
+	}
+	_, err := s.eng.Reconcile(context.Background())
+	s.Require().ErrorIs(err, ErrAuditFailed)
+	s.Len(s.fake.Snapshot(), 2, "the resources are still there")
+	s.Zero(s.reclaimCalls())
+	s.Empty(s.reclaimEvents(id))
+
+	s.spy.onWrite, s.spy.err = nil, nil
+	_, err = s.eng.Reconcile(context.Background())
+	s.Require().NoError(err)
+	s.Empty(s.fake.Snapshot())
+	events := s.reclaimEvents(id)
+	s.Require().Len(events, 2)
+	s.Equal("deleted", events[1].Data["devsy.reclaim.result"])
+}
+
+func (s *EngineSuite) TestACancelAfterTheOrphanAuditLeavesTheResourcesForTheNextPass() {
+	id := s.orphanID()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.fake.SetHook(func(_ context.Context, c providertest.Call) {
+		if c.Method == providertest.MethodReclaim {
+			cancel()
+		}
+	})
+	_, err := s.eng.Reconcile(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+	s.Len(s.fake.Snapshot(), 2)
+	s.Len(s.reclaimEvents(id), 1, "only the first event was written")
+
+	s.fake.SetHook(nil)
+	_, err = s.eng.Reconcile(context.Background())
+	s.Require().NoError(err)
+	s.Empty(s.fake.Snapshot())
+	s.Len(s.reclaimEvents(id), 3, "the first event is written again, then the outcome")
+}
+
+func (s *EngineSuite) TestACancelBetweenRemovalAndTheOutcomeKeepsTheFirstEvent() {
+	id := s.orphanID()
+	ctx, cancel := context.WithCancel(context.Background())
+	lists := 0
+	s.fake.SetHook(func(_ context.Context, c providertest.Call) {
+		if c.Method == providertest.MethodList {
+			lists++
+			if lists == 2 {
+				cancel()
+			}
+		}
+	})
+	_, err := s.eng.Reconcile(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+	s.Len(s.reclaimEvents(id), 1, "no outcome event after the cancel")
+}
+
+func (s *EngineSuite) TestAnOrphanSessionThatCannotBeRemovedIsReported() {
+	id := s.orphanID()
+	s.fake.SetError(providertest.MethodReclaim, errBoom)
+	_, err := s.eng.Reconcile(context.Background())
+	s.Require().ErrorIs(err, ErrReclaimIncomplete)
+	events := s.reclaimEvents(id)
+	s.Require().Len(events, 2)
+	s.Equal("partial", events[1].Data["devsy.reclaim.result"])
+	s.Len(s.fake.Snapshot(), 2)
+}
+
+func (s *EngineSuite) TestACancelDuringPoolStartLeavesAnOrphanSessionAlone() {
+	id := s.orphanID()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.spy.onWrite = cancel
+	_, err := s.eng.Reconcile(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+	s.Empty(s.reclaimEvents(id))
+	s.Len(s.fake.Snapshot(), 2)
+	s.Zero(s.reclaimCalls())
+}
+
+func (s *EngineSuite) TestOrphanSessionsAreReclaimedInIDOrder() {
+	var ids []string
+	for range 3 {
+		id, err := session.NewID(testPool)
+		s.Require().NoError(err)
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	// Names run opposite to the IDs, so the provider lists the newest ID first
+	// and only a sort in the engine gives ID order.
+	for i, id := range ids {
+		s.fake.Add(s.workspace(fmt.Sprintf("w-%d", len(ids)-i), s.poolLabels(id)))
+	}
+	_, err := s.eng.Reconcile(context.Background())
+	s.Require().NoError(err)
+	var order []string
+	for _, ev := range s.events() {
+		if ev.Type == eventReclaim && !slices.Contains(order, ev.Session) {
+			order = append(order, ev.Session)
+		}
+	}
+	s.Equal(ids, order)
+}
+
+func (s *EngineSuite) TestReconcileSkipsASessionThatChangedAfterTheListing() {
+	cur := s.sessionIn(session.StateBusy)
+	store := &listHook{Store: s.store, after: func() {
+		_, err := s.store.Transition(cur.ID, session.StateBusy, session.StateFailed, "failed")
+		s.Require().NoError(err)
+		_, err = s.store.Transition(cur.ID, session.StateFailed, session.StateReclaiming, "failed")
+		s.Require().NoError(err)
+	}}
+	_, err := s.build(store).Reconcile(context.Background())
+	s.Require().NoError(err, "a session that moved on is skipped")
+	s.Equal(session.StateReclaiming, s.load(cur.ID).State)
+	for _, ev := range s.events() {
+		s.NotEqual("session.end", ev.Type)
+	}
+}
+
+func (s *EngineSuite) TestSweepStopsWhenTheSessionsCannotBeListed() {
+	_, err := s.build(listFails{Store: s.store}).Sweep(context.Background())
+	s.Require().ErrorIs(err, errBoom)
+}
+
+func (s *EngineSuite) TestSweepSkipsASessionAnotherCallerAlreadyFinished() {
+	stale := s.sessionIn(session.StateReclaiming)
+	other := s.sessionIn(session.StateReclaiming)
+	s.spawn(stale.ID)
+	s.spawn(other.ID)
+	s.now = other.Updated
+	store := &listHook{Store: s.store, after: func() {
+		_, err := s.store.Transition(stale.ID, session.StateReclaiming, session.StateDeleted, "ttl")
+		s.Require().NoError(err)
+	}}
+	_, err := s.build(store).Sweep(context.Background())
+	s.Require().NoError(err, "a stale listing is not an error")
+	s.Equal(session.StateDeleted, s.load(other.ID).State, "the rest of the pass still ran")
+}
+
+func (s *EngineSuite) TestTheOrphanPhaseHoldsTheEngineLock() {
+	s.orphanID()
+	s.fake.Add(s.workspace("stray", s.poolLabels("")))
+	held := map[providertest.Method]bool{}
+	s.fake.SetHook(func(_ context.Context, c providertest.Call) {
+		if c.Method != providertest.MethodReclaim && c.Method != providertest.MethodDelete {
+			return
+		}
+		got := s.eng.mu.TryLock()
+		if got {
+			s.eng.mu.Unlock()
+		}
+		held[c.Method] = !got
+	})
+	_, err := s.eng.Reconcile(context.Background())
+	s.Require().NoError(err)
+	s.Equal(map[providertest.Method]bool{
+		providertest.MethodReclaim: true, providertest.MethodDelete: true,
+	}, held, "Reclaim and Delete both run under the lock")
 }
