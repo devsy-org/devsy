@@ -53,7 +53,7 @@ func (s *scopeSuite) SetupSuite() {
 }
 
 func (s *scopeSuite) classify(before string, history fakeHistory) scopeDecision {
-	return classifyPush(context.Background(), history, s.selection, before, scopeTestSHA)
+	return classifyPush(context.Background(), history, s.selection, pushRange{before, scopeTestSHA})
 }
 
 func singleCommit(files ...string) fakeHistory {
@@ -76,6 +76,8 @@ func (s *scopeSuite) TestChangedFiles() {
 			true,
 		},
 		{"go file", []string{"pkg/shell/shell.go"}, false},
+		{"go test under docs", []string{"docs/example/example_test.go"}, false},
+		{"go file under sites", []string{"sites/tools/gen.go"}, false},
 		{"docs and go", []string{"README.md", "cmd/root.go"}, false},
 		{"install script", []string{"sites/docs-devsy-sh/public/install.sh"}, false},
 		{
@@ -161,7 +163,10 @@ func (s *scopeSuite) TestUncertainDiffRunsInFull() {
 
 func (s *scopeSuite) TestMissingShaRunsInFull() {
 	decision := classifyPush(
-		context.Background(), singleCommit("README.md"), s.selection, scopeTestBefore, "",
+		context.Background(),
+		singleCommit("README.md"),
+		s.selection,
+		pushRange{scopeTestBefore, ""},
 	)
 
 	s.False(decision.Light)
@@ -246,7 +251,13 @@ func (s *scopeSuite) TestWorkflowWiresScopeAndSchedule() {
 	s.Contains(workflow, "go run ./hack/ci scope")
 	s.Contains(
 		workflow,
-		"id: scope\n        if: github.event_name == 'push'\n        continue-on-error: true",
+		"id: scope\n        if: github.event_name == 'push' && !github.event.forced && "+
+			"steps.scope_go.outcome == 'success'\n        continue-on-error: true",
+	)
+	s.Contains(
+		workflow,
+		"id: scope_go\n        if: github.event_name == 'push' && !github.event.forced\n"+
+			"        continue-on-error: true",
 	)
 	s.Contains(workflow, "schedule:\n    - cron:")
 }

@@ -50,13 +50,15 @@ jobs:
       # Only a push to main can skip the heavy jobs. Scheduled and manual runs
       # never skip, and a failed or missing result here means a full run.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        if: github.event_name == 'push'
+        id: scope_go
+        if: github.event_name == 'push' && !github.event.forced
+        continue-on-error: true
         with:
           go-version-file: go.mod
 
       - name: decide whether this push needs the Go, e2e and microsandbox jobs
         id: scope
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && !github.event.forced && steps.scope_go.outcome == 'success'
         continue-on-error: true
         env:
           BEFORE_SHA: ${{ github.event.before }}

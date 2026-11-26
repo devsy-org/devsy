@@ -21,6 +21,7 @@ selection:
     - '**/*.mdx'
     - renovate.json
   light_run_excludes:
+    - '**/*.go'
     - sites/docs-devsy-sh/public/install.sh
     - sites/docs-devsy-sh/content/docs/managing-providers/microsandbox.mdx
     - AGENTS.md

@@ -340,18 +340,27 @@ func (m *Manifest) resolve() error {
 	return nil
 }
 
+func (s SelectionConfig) validate() error {
+	lists := []struct {
+		name  string
+		globs []string
+	}{
+		{"full_run_paths", s.FullRunPaths},
+		{"core_paths", s.CorePaths},
+		{"light_run_paths", s.LightRunPaths},
+		{"light_run_excludes", s.LightRunExcludes},
+	}
+	for _, list := range lists {
+		if err := validateGlobs(list.globs); err != nil {
+			return fmt.Errorf("%s: %w", list.name, err)
+		}
+	}
+	return nil
+}
+
 func (m *Manifest) validate() error {
-	if err := validateGlobs(m.Selection.FullRunPaths); err != nil {
-		return fmt.Errorf("full_run_paths: %w", err)
-	}
-	if err := validateGlobs(m.Selection.CorePaths); err != nil {
-		return fmt.Errorf("core_paths: %w", err)
-	}
-	if err := validateGlobs(m.Selection.LightRunPaths); err != nil {
-		return fmt.Errorf("light_run_paths: %w", err)
-	}
-	if err := validateGlobs(m.Selection.LightRunExcludes); err != nil {
-		return fmt.Errorf("light_run_excludes: %w", err)
+	if err := m.Selection.validate(); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, s := range m.E2E.Suites {

@@ -61,14 +61,13 @@ func TestClassifyPushOnShallowCheckout(t *testing.T) {
 			before := commitFile(t, origin, "README.md", "one")
 			sha := commitFile(t, origin, tt.file, "two")
 			clone := filepath.Join(t.TempDir(), "clone")
-			runGit(t, origin, "clone", "-q", "--depth=1", "file://"+origin, clone)
+			runGit(t, origin, "clone", "-q", "--no-local", "--depth=1", origin, clone)
 
 			decision := classifyPush(
 				context.Background(),
 				gitHistory{runner: execRunner{}, dir: clone},
 				manifest.Selection,
-				before,
-				sha,
+				pushRange{before, sha},
 			)
 
 			require.Equal(t, tt.light, decision.Light, decision.Reason)
