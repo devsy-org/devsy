@@ -150,9 +150,10 @@ async function handleCreate() {
     {:else}
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each filteredContexts as ctx (ctx.name)}
+        <div class="relative rounded-xl border bg-card p-6 text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full">
         <button
           type="button"
-          class="rounded-xl border bg-card p-6 text-left text-card-foreground shadow-sm transition-colors hover:bg-accent/50 w-full"
+          class="block w-full text-left outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-ring"
           onclick={() => openSheet(ctx.name)}
         >
           <div class="flex items-start justify-between gap-3">
@@ -178,14 +179,15 @@ async function handleCreate() {
             <p class="mt-2 text-sm text-muted-foreground">No options configured</p>
           {/if}
 
+        </button>
           {#if ctx.name !== $activeContext}
-            <div class="mt-4">
+            <div class="relative z-10 mt-4">
               <Button variant="outline" size="sm" onclick={(e) => handleUse(e, ctx.name)}>
                 Set Active
               </Button>
             </div>
           {/if}
-        </button>
+        </div>
       {/each}
     </div>
     {/if}

@@ -20,12 +20,10 @@ const browser = typeof window !== "undefined"
 
 export type Theme = "light" | "dark" | "system"
 export type EffectiveTheme = "light" | "dark"
-export type ColorScheme = "default" | "emerald" | "purple"
 export type UIScale = "xs" | "sm" | "md" | "lg" | "xl"
 export type SidebarPosition = "left" | "right"
 
 const STORAGE_KEY = "devsy-theme"
-const COLOR_SCHEME_KEY = "devsy-color-scheme"
 const UI_SCALE_KEY = "devsy-ui-scale"
 const SIDEBAR_KEY = "devsy-sidebar-position"
 const AUTO_UPDATE_KEY = "devsy-auto-update"
@@ -107,29 +105,6 @@ export function cycleTheme() {
     applyTheme(next)
     return next
   })
-}
-
-// Color scheme (accent) - picker is hidden in Settings; force purple for all
-// users regardless of any previously persisted value.
-export const colorScheme = writable<ColorScheme>("purple")
-
-const COLOR_SCHEME_CLASSES: ColorScheme[] = ["emerald", "purple"]
-
-export function applyColorScheme(value: ColorScheme) {
-  if (!browser) return
-  localStorage.setItem(COLOR_SCHEME_KEY, value)
-  const root = document.documentElement
-  for (const cls of COLOR_SCHEME_CLASSES) {
-    root.classList.remove(`theme-${cls}`)
-  }
-  if (value !== "default") {
-    root.classList.add(`theme-${value}`)
-  }
-}
-
-export function setColorScheme(value: ColorScheme) {
-  colorScheme.set(value)
-  applyColorScheme(value)
 }
 
 // UI Scale
@@ -456,15 +431,11 @@ export function initSettings() {
   const unsubTheme = theme.subscribe((value) => {
     applyTheme(value)
   })
-  const unsubColor = colorScheme.subscribe((value) => {
-    applyColorScheme(value)
-  })
   const unsubScale = uiScale.subscribe((value) => {
     applyUIScale(value)
   })
   const unsubscribe = () => {
     unsubTheme()
-    unsubColor()
     unsubScale()
   }
 
