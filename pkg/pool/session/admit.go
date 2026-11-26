@@ -2,18 +2,30 @@ package session
 
 import (
 	"errors"
+	"math"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
 )
 
 // ErrPoolFull means admission can be retried after capacity is freed.
 var ErrPoolFull = errors.New("pool full")
 
-var errInvalidLimits = errors.New("pool limits require MaxConcurrent >= 1 and MaxQueued >= 0")
+var (
+	errInvalidLimits = errors.New("pool limits require MaxConcurrent >= 1 and MaxQueued >= 0")
+	errSeqExhausted  = errors.New("session admission sequence exhausted")
+)
 
-// Limits bounds active sessions and total admissions.
+// Limits bounds active sessions and total admissions. It comes from config
+// when opening a Store.
 type Limits struct {
 	MaxConcurrent int
 	MaxQueued     int
+}
+
+// LimitsFrom takes the store limits from the pool capacity config.
+func LimitsFrom(c poolconfig.Capacity) Limits {
+	return Limits{MaxConcurrent: c.MaxConcurrent, MaxQueued: c.MaxQueued}
 }
 
 func (l Limits) validate() error {
@@ -31,15 +43,12 @@ type Admission struct {
 
 // Admit returns the session for key, or reserves a queued session if there
 // is capacity. An unfinished reservation is completed with its original ID.
-func (s *Store) Admit(key string, lim Limits) (Admission, error) {
+func (s *Store) Admit(key string) (Admission, error) {
 	unlock, err := s.hold()
 	if err != nil {
 		return Admission{}, err
 	}
 	defer unlock()
-	if err := lim.validate(); err != nil {
-		return Admission{}, err
-	}
 	hash, err := hashKey(key)
 	if err != nil {
 		return Admission{}, err
@@ -47,23 +56,25 @@ func (s *Store) Admit(key string, lim Limits) (Admission, error) {
 	now := s.now().UTC()
 	record, err := s.loadKey(hash)
 	if errors.Is(err, ErrNotFound) {
-		return s.reserve(keyRecord{Hash: hash}, lim, now)
+		return s.reserve(keyRecord{Hash: hash}, now)
 	}
 	if err != nil {
 		return Admission{}, err
 	}
-	return s.retryAdmission(record, lim, now)
+	return s.retryAdmission(record, now)
 }
 
-func (s *Store) retryAdmission(record keyRecord, lim Limits, now time.Time) (Admission, error) {
+func (s *Store) retryAdmission(record keyRecord, now time.Time) (Admission, error) {
 	sess, expired, err := s.keySession(record, now)
+	var seq uint64
 	switch {
 	case err != nil:
 		return Admission{}, err
 	case expired:
-		return s.reserve(record, lim, now)
+		return s.reserve(record, now)
 	case sess.ID == "":
-		if err := s.checkCapacity(lim); err != nil {
+		seq, err = s.admissionSeq()
+		if err != nil {
 			return Admission{}, err
 		}
 	}
@@ -72,7 +83,7 @@ func (s *Store) retryAdmission(record keyRecord, lim Limits, now time.Time) (Adm
 		return Admission{}, err
 	}
 	if sess.ID == "" {
-		sess, err = s.createQueued(record.Session, now)
+		sess, err = s.createQueued(record.Session, now, seq)
 	} else {
 		err = syncRoot(s.root)
 	}
@@ -82,8 +93,9 @@ func (s *Store) retryAdmission(record keyRecord, lim Limits, now time.Time) (Adm
 	return Admission{Session: sess, Existing: true}, nil
 }
 
-func (s *Store) reserve(previous keyRecord, lim Limits, now time.Time) (Admission, error) {
-	if err := s.checkCapacity(lim); err != nil {
+func (s *Store) reserve(previous keyRecord, now time.Time) (Admission, error) {
+	seq, err := s.admissionSeq()
+	if err != nil {
 		return Admission{}, err
 	}
 	id, err := s.freshID()
@@ -95,36 +107,33 @@ func (s *Store) reserve(previous keyRecord, lim Limits, now time.Time) (Admissio
 	if err := s.writeKey(record, previous.Session != ""); err != nil {
 		return Admission{}, err
 	}
-	sess, err := s.createQueued(id, now)
+	sess, err := s.createQueued(id, now, seq)
 	return Admission{Session: sess}, err
 }
 
-func (s *Store) checkCapacity(lim Limits) error {
+func (s *Store) admissionSeq() (uint64, error) {
 	stats, err := s.capacity()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if uint(stats.active+stats.queued) >= uint(lim.MaxConcurrent)+uint(lim.MaxQueued) {
-		return ErrPoolFull
+	if uint(stats.active+stats.queued) >= uint(s.limits.MaxConcurrent)+uint(s.limits.MaxQueued) {
+		return 0, ErrPoolFull
 	}
-	return nil
+	return stats.nextSeq()
 }
 
-// Promote starts the oldest queued session if an active slot is free.
-func (s *Store) Promote(lim Limits) (Session, bool, error) {
+// Promote starts the first queued session in admission order if an active slot is free.
+func (s *Store) Promote() (Session, bool, error) {
 	unlock, err := s.hold()
 	if err != nil {
 		return Session{}, false, err
 	}
 	defer unlock()
-	if err := lim.validate(); err != nil {
-		return Session{}, false, err
-	}
 	stats, err := s.capacity()
 	if err != nil {
 		return Session{}, false, err
 	}
-	if stats.active >= lim.MaxConcurrent || stats.queued == 0 {
+	if stats.active >= s.limits.MaxConcurrent || stats.queued == 0 {
 		return Session{}, false, nil
 	}
 	next, err := s.transition(stats.oldest.ID, StateQueued, StateSpawning, "")
@@ -134,6 +143,14 @@ func (s *Store) Promote(lim Limits) (Session, bool, error) {
 type capacity struct {
 	active, queued int
 	oldest         Session
+	maxSeq         uint64
+}
+
+func (c capacity) nextSeq() (uint64, error) {
+	if c.maxSeq == math.MaxUint64 {
+		return 0, errSeqExhausted
+	}
+	return c.maxSeq + 1, nil
 }
 
 func (s *Store) capacity() (capacity, error) {
@@ -143,17 +160,35 @@ func (s *Store) capacity() (capacity, error) {
 	}
 	var stats capacity
 	for _, sess := range list {
-		switch sess.State {
-		case StateDeleted:
-		case StateQueued:
-			stats.queued++
-			// The list is in ID order, so keeping the first breaks ties.
-			if stats.queued == 1 || sess.Created.Before(stats.oldest.Created) {
-				stats.oldest = sess
-			}
-		default:
-			stats.active++
-		}
+		stats.add(sess)
 	}
 	return stats, nil
+}
+
+func (c *capacity) add(sess Session) {
+	c.maxSeq = max(c.maxSeq, sess.Seq)
+	switch sess.State {
+	case StateDeleted:
+	case StateQueued:
+		c.queued++
+		if c.queued == 1 || queuedBefore(sess, c.oldest) {
+			c.oldest = sess
+		}
+	default:
+		// Legacy records lack Started: count them by state. A legacy reclaiming or
+		// orphaned record cannot show whether it ever started, so it takes no slot.
+		if sess.Started || sess.State.requiresStarted() {
+			c.active++
+		}
+	}
+}
+
+func queuedBefore(a, b Session) bool {
+	if a.Seq != b.Seq {
+		return a.Seq < b.Seq
+	}
+	if cmp := a.Created.Compare(b.Created); cmp != 0 {
+		return cmp < 0
+	}
+	return a.ID < b.ID
 }

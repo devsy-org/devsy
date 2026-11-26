@@ -11,6 +11,8 @@ import (
 
 type SessionSuite struct{ suite.Suite }
 
+var postPromotionStates = [...]State{StateSpawning, StateReady, StateBusy, StateIdle, StateFailed}
+
 func TestSessionSuite(t *testing.T) { suite.Run(t, new(SessionSuite)) }
 
 func validSession() Session {
@@ -23,12 +25,86 @@ func validSession() Session {
 
 func (s *SessionSuite) TestRoundTrip() {
 	want := validSession()
+	want.State = StateReclaiming
+	want.Seq, want.Started, want.Attempts = 42, true, maxReclaimAttempts
 	want.Reason = "pool_restart"
 	data, err := encode(want)
 	s.Require().NoError(err)
 	got, err := decode(data)
 	s.Require().NoError(err)
 	s.Equal(want, got)
+}
+
+func (s *SessionSuite) TestLegacyV1RoundTripsByteIdentically() {
+	legacy := []byte(`{"v":1,"id":"p-pool-aaaaaaaaaa","pool":"pool","state":"queued",` +
+		`"created":"2026-11-25T12:00:00Z","updated":"2026-11-25T12:00:00Z"}`)
+	sess, err := decode(legacy)
+	s.Require().NoError(err)
+	s.Equal(validSession(), sess)
+	got, err := encode(sess)
+	s.Require().NoError(err)
+	s.Equal(legacy, got)
+}
+
+func (s *SessionSuite) TestDecodeRefusesSequencedPostPromotionStatesWithoutStarted() {
+	for _, state := range postPromotionStates {
+		sess := validSession()
+		sess.State, sess.Seq = state, 1
+		data, err := json.Marshal(sess)
+		s.Require().NoError(err)
+		got, err := decode(data)
+		s.ErrorIs(err, errInvalidSession, "%s", state)
+		s.Zero(got, "%s", state)
+	}
+}
+
+func (s *SessionSuite) TestDecodeAllowsLegacyPostPromotionStatesWithoutStarted() {
+	for _, state := range postPromotionStates {
+		sess := validSession()
+		sess.State = state
+		s.assertDecodes(sess)
+	}
+}
+
+func (s *SessionSuite) TestDecodeAllowsSequencedUnstartedReclaimPath() {
+	for _, state := range []State{StateReclaiming, StateOrphaned, StateDeleted} {
+		sess := validSession()
+		sess.State, sess.Seq = state, 1
+		s.assertDecodes(sess)
+	}
+}
+
+func (s *SessionSuite) TestDecodeRefusesStartedQueuedRecord() {
+	for _, seq := range []uint64{0, 1} {
+		sess := validSession()
+		sess.Seq, sess.Started = seq, true
+		data, err := json.Marshal(sess)
+		s.Require().NoError(err)
+		got, err := decode(data)
+		s.ErrorIs(err, errInvalidSession, "seq %d", seq)
+		s.Zero(got)
+	}
+}
+
+func (s *SessionSuite) TestInvalidAttemptsAreRefused() {
+	for _, edit := range []struct {
+		state    State
+		attempts int
+	}{
+		{StateReclaiming, -1},
+		{StateOrphaned, maxReclaimAttempts + 1},
+		{StateReady, 1},
+	} {
+		sess := validSession()
+		sess.State, sess.Attempts = edit.state, edit.attempts
+		_, err := encode(sess)
+		s.Require().ErrorIs(err, errInvalidSession)
+		data, err := json.Marshal(sess)
+		s.Require().NoError(err)
+		got, err := decode(data)
+		s.Require().ErrorIs(err, errInvalidSession)
+		s.Zero(got)
+	}
 }
 
 func (s *SessionSuite) TestInvalidFieldsAreRefused() {
@@ -99,8 +175,30 @@ func (s *SessionSuite) TestDecodeRefusesAnythingButTheCanonicalBytes() {
 	}
 }
 
+func (s *SessionSuite) TestDecodeRefusesDuplicateAndCaseVariantNewFields() {
+	sess := validSession()
+	sess.State, sess.Seq, sess.Started, sess.Attempts = StateReclaiming, 1, true, 2
+	data, err := encode(sess)
+	s.Require().NoError(err)
+	for _, field := range []string{`"seq":1`, `"started":true`, `"attempts":2`} {
+		for _, replacement := range []string{field + "," + field, strings.ToUpper(field[:2]) + field[2:]} {
+			got, err := decode([]byte(strings.Replace(string(data), field, replacement, 1)))
+			s.Require().ErrorIs(err, errInvalidSession)
+			s.Zero(got)
+		}
+	}
+}
+
 func (s *SessionSuite) TestDecodeErrorDoesNotEchoContent() {
 	_, err := decode([]byte(`{"v":1,"id":"canary-918273","state":"canary-918273"}`))
 	s.Require().Error(err)
 	s.NotContains(err.Error(), "canary-918273")
+}
+
+func (s *SessionSuite) assertDecodes(sess Session) {
+	data, err := json.Marshal(sess)
+	s.Require().NoError(err)
+	got, err := decode(data)
+	s.Require().NoError(err, "%s", sess.State)
+	s.Equal(sess, got)
 }
