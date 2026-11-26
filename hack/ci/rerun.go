@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -41,13 +40,13 @@ type ghRun struct {
 
 // ghJob holds the job fields the rerun decision reads.
 type ghJob struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Conclusion  string    `json:"conclusion"`
-	RunnerName  string    `json:"runner_name"`
-	Labels      []string  `json:"labels"`
-	Steps       []ghStep  `json:"steps"`
-	CompletedAt time.Time `json:"completed_at"`
+	ID          int64           `json:"id"`
+	Name        string          `json:"name"`
+	Conclusion  string          `json:"conclusion"`
+	RunnerName  string          `json:"runner_name"`
+	Labels      []string        `json:"labels"`
+	Steps       []ghStep        `json:"steps"`
+	CompletedAt json.RawMessage `json:"completed_at"`
 
 	// amxCrash is set from the job log, not from the API.
 	amxCrash bool
@@ -159,8 +158,9 @@ func runBlocker(run ghRun) string {
 }
 
 // retryableConclusion accepts a failed run, or a cancelled main push: a job that
-// hits its time limit cancels the run, and a pull request run is also cancelled
-// whenever a newer push replaces it.
+// hits its time limit cancels the run. A cancelled pull request run is left alone
+// because a newer push cancels it too; a failed one is retried only while it is
+// the latest run for its branch.
 func retryableConclusion(run ghRun) bool {
 	return run.Conclusion == "failure" || run.Conclusion == cancelledState && run.Event == "push"
 }
