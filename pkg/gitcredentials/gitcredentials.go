@@ -2,6 +2,7 @@ package gitcredentials
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	netURL "net/url"
 	"os"
@@ -262,6 +263,8 @@ func (Resolver) Resolve(
 	return creds.Username, creds.Password, nil
 }
 
+var errInvalidRepositoryURL = errors.New("parse workspace repository: invalid repository URL")
+
 type GetHttpPathParameters struct {
 	Host        string
 	Protocol    string
@@ -288,7 +291,8 @@ func GetHTTPPath(ctx context.Context, params GetHttpPathParameters) (string, err
 
 	parsed, err := netURL.Parse(params.Repository)
 	if err != nil {
-		return "", fmt.Errorf("parse workspace repository: %w", err)
+		// The parse error embeds the raw URL, which can carry a token in its userinfo.
+		return "", errInvalidRepositoryURL
 	}
 	return parsed.Path, nil
 }
