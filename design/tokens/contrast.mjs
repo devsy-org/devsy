@@ -3,16 +3,41 @@ import { readFileSync } from "node:fs"
 const file = process.argv[2] ?? new URL("./tokens.css", import.meta.url)
 const css = readFileSync(file, "utf8")
 
-function block(selector) {
+function declarations(selector) {
   const start = css.indexOf(`${selector} {`)
   if (start < 0) throw new Error(`no ${selector} block in tokens file`)
   const end = css.indexOf("}", start)
+  const decls = new Map()
+  for (const m of css.slice(start, end).matchAll(/--([\w-]+):\s*([^;]+);/g)) {
+    decls.set(m[1], m[2].trim())
+  }
+  return decls
+}
+
+function parseOklch(name, value) {
+  const m = value.match(/^oklch\(([^)]*)\)$/)
+  if (!m) return null
+  if (m[1].includes("/")) {
+    throw new Error(`--${name}: alpha is not supported (${value})`)
+  }
+  const parts = m[1].trim().split(/\s+/).map(Number)
+  if (parts.length !== 3 || parts.some(Number.isNaN)) {
+    throw new Error(`--${name}: cannot read ${value}`)
+  }
+  const [l, c, h] = parts
+  return { l, c, h }
+}
+
+function block(selector) {
   const vars = {}
-  for (const m of css
-    .slice(start, end)
-    .matchAll(/--([\w-]+):\s*oklch\(([^)]+)\)/g)) {
-    const [l, c, h] = m[2].trim().split(/\s+/).map(Number)
-    vars[m[1]] = { l, c, h }
+  for (const [name, value] of declarations(selector)) {
+    const color = parseOklch(name, value)
+    if (color) vars[name] = color
+    else if (selector === ".dark") {
+      throw new Error(
+        `${selector} --${name}: ${value} is not an oklch color, so the check cannot read it`,
+      )
+    }
   }
   return vars
 }
@@ -71,6 +96,12 @@ const pairs = [
   ["warning-dot", "card", ui],
   ["danger-dot", "card", ui],
   ["info-dot", "card", ui],
+  ["neutral-dot", "card", ui],
+  ["success-dot", "success-bg", ui],
+  ["warning-dot", "warning-bg", ui],
+  ["danger-dot", "danger-bg", ui],
+  ["info-dot", "info-bg", ui],
+  ["neutral-dot", "neutral-bg", ui],
   ["input", "card", ui],
   ["input", "background", ui],
   ["muted-foreground", "sidebar", text],
@@ -85,7 +116,22 @@ const pairs = [
   ["sidebar-ring", "sidebar", ui],
 ]
 
-let failed = 0
+const motion = { "duration-fast": "150ms", "duration-panel": "200ms" }
+
+function checkMotion() {
+  const root = declarations(":root")
+  let bad = 0
+  for (const [name, want] of Object.entries(motion)) {
+    const ok = root.get(name) === want
+    if (!ok) bad++
+    console.log(
+      `:root  --${name} ${ok ? "ok" : `FAIL, want ${want}, got ${root.get(name)}`}`,
+    )
+  }
+  return bad
+}
+
+let failed = checkMotion()
 for (const theme of [":root", ".dark"]) {
   const vars = { ...block(":root"), ...block(theme) }
   for (const [fg, bg, min] of pairs) {
