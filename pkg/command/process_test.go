@@ -58,21 +58,29 @@ func TestKillTreeTerminatesGroupAfterWorkerExits(t *testing.T) {
 	cmd := exec.Command(
 		"sh",
 		"-c",
-		`trap '' TERM; sleep 60 >/dev/null 2>&1 & echo $! > "$1"; exit 0`,
+		`trap '' TERM; sleep 60 >/dev/null 2>&1 & echo $! > "$1"; read _; exit 0`,
 		"sh",
 		childPIDFile,
 	)
 	prepareBackgroundTree(cmd)
+	release, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("worker stdin: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start worker: %v", err)
 	}
 	workerPID := strconv.Itoa(cmd.Process.Pid)
+	// The worker stays alive until released so its identity is read before it exits.
 	identity, err := ProcessTreeIdentity(cmd.Process.Pid)
 	if err != nil {
 		t.Fatalf("process tree identity: %v", err)
 	}
 	t.Cleanup(func() { _ = killTreeAfterWorkerExit(workerPID, "detached-task", identity) })
 
+	if err := release.Close(); err != nil {
+		t.Fatalf("release worker: %v", err)
+	}
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("wait for worker exit: %v", err)
 	}
