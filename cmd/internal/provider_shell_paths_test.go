@@ -8,6 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	flagScriptFile     = "--script-file"
+	flagForceFile      = "--force-file"
+	flagAckFile        = "--ack-file"
+	flagParentPID      = "--parent-pid"
+	flagExecutablePath = "--executable-path"
+)
+
 func TestParseExecutablePaths(t *testing.T) {
 	paths, err := parseExecutablePaths([]string{"A=/a b/x", "B=/p=q"})
 
@@ -44,10 +52,10 @@ func TestProviderShellCommandPassesExecutablePathsToTheShell(t *testing.T) {
 		return nil
 	})
 	command.SetArgs([]string{
-		"--script-file", "s", "--force-file", "f", "--ack-file", "a", "--parent-pid", "7",
-		"--executable-path", "SSH_PROVIDER=C:\\Jane Doe\\a=b\\provider.exe",
-		"--executable-path", "OTHER=/x y/z",
-		"--executable-path", "EMPTY=",
+		flagScriptFile, "s", flagForceFile, "f", flagAckFile, "a", flagParentPID, "7",
+		flagExecutablePath, "SSH_PROVIDER=C:\\Jane Doe\\a=b\\provider.exe",
+		flagExecutablePath, "OTHER=/x y/z",
+		flagExecutablePath, "EMPTY=",
 	})
 
 	require.NoError(t, command.Execute())
@@ -68,8 +76,8 @@ func TestProviderShellCommandRejectsMalformedExecutablePath(t *testing.T) {
 		return nil
 	})
 	command.SetArgs([]string{
-		"--script-file", "s", "--force-file", "f", "--ack-file", "a", "--parent-pid", "7",
-		"--executable-path", "no-separator",
+		flagScriptFile, "s", flagForceFile, "f", flagAckFile, "a", flagParentPID, "7",
+		flagExecutablePath, "no-separator",
 	})
 
 	require.ErrorContains(t, command.Execute(), "want NAME=PATH")

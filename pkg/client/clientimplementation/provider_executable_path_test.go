@@ -3,6 +3,7 @@ package clientimplementation
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,11 +24,28 @@ func spacedProviderExecutable(t *testing.T) string {
 	}
 	self, err := os.Executable()
 	require.NoError(t, err)
-	content, err := os.ReadFile(self)
-	require.NoError(t, err)
 	target := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(target, content, 0o700))
+	copyExecutable(t, self, target)
 	return target
+}
+
+func copyExecutable(t *testing.T, source, target string) {
+	t.Helper()
+	srcRoot, err := os.OpenRoot(filepath.Dir(source))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, srcRoot.Close()) }()
+	src, err := srcRoot.Open(filepath.Base(source))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, src.Close()) }()
+	dstRoot, err := os.OpenRoot(filepath.Dir(target))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, dstRoot.Close()) }()
+	dst, err := dstRoot.OpenFile(filepath.Base(target), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	require.NoError(t, err)
+	_, err = io.Copy(dst, src)
+	require.NoError(t, err)
+	require.NoError(t, dst.Chmod(0o700))
+	require.NoError(t, dst.Close())
 }
 
 func runSpacedProvider(
@@ -90,7 +108,8 @@ func TestProviderShellArgsCarryBinaryPathsInSortedOrder(t *testing.T) {
 	args := providerShellArgs("devsy", files, opts)
 
 	require.Equal(t, []string{
-		"--executable-path", "A_BIN=/a", "--executable-path", "B_BIN=/b path/x",
+		providerShellExecutablePathFlag, "A_BIN=/a",
+		providerShellExecutablePathFlag, "B_BIN=/b path/x",
 	}, args[len(args)-4:])
 }
 
@@ -99,5 +118,5 @@ func TestProviderShellArgsOmitBinaryPathsWhenNoneConfigured(t *testing.T) {
 
 	args := providerShellArgs("devsy", files, RunCommandOptions{Environ: []string{"A=1"}})
 
-	require.NotContains(t, args, "--executable-path")
+	require.NotContains(t, args, providerShellExecutablePathFlag)
 }

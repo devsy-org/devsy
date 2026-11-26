@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 func providerShellTestExecutablePaths(extra []string) map[string]string {
 	paths := map[string]string{}
 	for i := 0; i+1 < len(extra); i += 2 {
-		if extra[i] != "--executable-path" {
+		if extra[i] != providerShellExecutablePathFlag {
 			return nil
 		}
 		name, path, _ := strings.Cut(extra[i+1], "=")

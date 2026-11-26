@@ -970,6 +970,8 @@ func runSupervisedProviderShell(
 	return waitSupervisedProviderShell(ctx, cmd, providerAction(opts.Environ))
 }
 
+const providerShellExecutablePathFlag = "--executable-path"
+
 func providerShellArgs(
 	binary string,
 	files *providerShellInvocation,
@@ -990,7 +992,7 @@ func providerShellArgs(
 	}
 	paths := providerBinaryPaths(opts.Environ, opts.ProviderBinaries)
 	for _, name := range slices.Sorted(maps.Keys(paths)) {
-		args = append(args, "--executable-path", name+"="+paths[name])
+		args = append(args, providerShellExecutablePathFlag, name+"="+paths[name])
 	}
 	return args
 }
