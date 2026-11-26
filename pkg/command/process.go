@@ -1,5 +1,7 @@
 package command
 
+import "context"
+
 // ProcessTreeKind identifies the platform primitive that owns a worker tree.
 type ProcessTreeKind string
 
@@ -21,7 +23,7 @@ type ProcessRef struct {
 // ProcessController provides the two operations needed by task cancellation.
 type ProcessController interface {
 	Terminate(ProcessRef) error
-	CleanupAfterExit(ProcessRef) error
+	CleanupAfterExit(context.Context, ProcessRef) error
 }
 
 type processController struct{}
@@ -32,8 +34,8 @@ func (processController) Terminate(ref ProcessRef) error {
 	return terminateProcessRef(ref)
 }
 
-func (processController) CleanupAfterExit(ref ProcessRef) error {
-	return cleanupExitedProcessRef(ref)
+func (processController) CleanupAfterExit(ctx context.Context, ref ProcessRef) error {
+	return cleanupExitedProcessRef(ctx, ref)
 }
 
 func IsRunning(pid string) (bool, error) {

@@ -325,7 +325,7 @@ func (t *Task) CancelContext(ctx context.Context) error {
 	if err := t.store.CleanupCanceledWorkerTree(ctx, t.id); err != nil {
 		return err
 	}
-	return t.store.CleanupExitedWorkerTree(t.id)
+	return t.store.CleanupExitedWorkerTree(ctx, t.id)
 }
 
 func quiesceCancellation(t *Task, ctx context.Context) error {
@@ -426,6 +426,9 @@ func terminateWorker(
 		if lockErr == nil && finalized {
 			return nil
 		}
+		if isContextError(lockErr) {
+			return lockErr
+		}
 		return fmt.Errorf("cancel task %s: terminate worker tree: %w", t.id, err)
 	}
 	return nil
@@ -441,7 +444,7 @@ func cancelWithoutWorker(t *Task, ctx context.Context, workerLock *flock.Flock) 
 		return nil
 	}
 	if ref, ok := state.ProcessReference(); ok {
-		if err := t.store.processController.CleanupAfterExit(ref); err != nil {
+		if err := t.store.processController.CleanupAfterExit(ctx, ref); err != nil {
 			return fmt.Errorf("cancel task %s: clean up worker tree: %w", t.id, err)
 		}
 	}
@@ -452,7 +455,7 @@ func waitForLaunch(t *Task, ctx context.Context) (*State, error) {
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		state, done, err := waitForLaunchStep(t)
+		state, done, err := waitForLaunchStep(ctx, t)
 		if err != nil {
 			return nil, err
 		}
@@ -471,7 +474,7 @@ func waitForLaunch(t *Task, ctx context.Context) (*State, error) {
 	}
 }
 
-func waitForLaunchStep(t *Task) (*State, bool, error) {
+func waitForLaunchStep(ctx context.Context, t *Task) (*State, bool, error) {
 	state, err := t.store.Get(t.id)
 	if err != nil {
 		return nil, false, fmt.Errorf("cancel task %s: read state: %w", t.id, err)
@@ -479,7 +482,7 @@ func waitForLaunchStep(t *Task) (*State, bool, error) {
 	if state.Status.Terminal() || !state.LaunchPending {
 		return state, true, nil
 	}
-	resolved, err := clearAbandonedLaunch(t)
+	resolved, err := clearAbandonedLaunch(ctx, t)
 	if err != nil {
 		return nil, false, err
 	}
@@ -489,16 +492,20 @@ func waitForLaunchStep(t *Task) (*State, bool, error) {
 	return nil, false, nil
 }
 
-func clearAbandonedLaunch(t *Task) (bool, error) {
+func clearAbandonedLaunch(ctx context.Context, t *Task) (bool, error) {
 	state, err := t.store.Get(t.id)
 	if err != nil {
 		return false, err
 	}
 	if state.LaunchProtocol == 1 {
-		current, err := t.store.reconcilePendingLaunch(context.Background(), t.id)
+		current, err := t.store.reconcilePendingLaunch(ctx, t.id)
 		return current != nil && !current.LaunchPending, err
 	}
 	return false, errors.New("cannot verify cleanup of a legacy abandoned launch")
+}
+
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func waitForCancellation(ctx context.Context) error {

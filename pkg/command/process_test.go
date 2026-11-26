@@ -3,6 +3,7 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -296,7 +297,7 @@ func TestCleanupExitedIdentitylessGroupReportsSurvivingDescendants(t *testing.T)
 		TreeID:   strconv.Itoa(pid),
 	}
 
-	err := cleanupExitedProcessRef(ref)
+	err := cleanupExitedProcessRef(context.Background(), ref)
 	if err == nil {
 		t.Fatal("cleanupExitedProcessRef = nil for an identityless group with survivors")
 	}

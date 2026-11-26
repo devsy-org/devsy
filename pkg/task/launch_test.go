@@ -352,3 +352,15 @@ func advanceCrashWorker(t *testing.T, tk *Task, state *State) bool {
 	}
 	return true
 }
+
+func TestCleanupExitedWorkerTreePassesTheCallerContextToLaunchCleanup(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.CreateLaunch(CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, tk.PublishProcess(command.ProcessRef{PID: 123, Identity: "fixture"}))
+	require.NoError(t, releaseLauncherLock(tk))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.ErrorIs(t, store.CleanupExitedWorkerTree(ctx, tk.ID()), context.Canceled)
+}

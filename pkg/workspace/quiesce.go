@@ -83,7 +83,7 @@ func quiesceTask(
 	if err := store.CleanupCanceledWorkerTree(ctx, state.ID); err != nil {
 		return err
 	}
-	return store.CleanupExitedWorkerTree(state.ID)
+	return store.CleanupExitedWorkerTree(ctx, state.ID)
 }
 
 type UpTaskQuiescer interface {

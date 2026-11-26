@@ -166,7 +166,7 @@ func (s *Store) cleanupPendingLaunch(ctx context.Context, state *State) error {
 		if err := s.processController.Terminate(ref); err != nil {
 			return err
 		}
-		if err := s.processController.CleanupAfterExit(ref); err != nil {
+		if err := s.processController.CleanupAfterExit(ctx, ref); err != nil {
 			return err
 		}
 	}
@@ -282,12 +282,12 @@ func (s *State) checkDeletion(force bool) error {
 	return nil
 }
 
-func (s *Store) stateAfterLaunchCleanup(id string) (*State, error) {
+func (s *Store) stateAfterLaunchCleanup(ctx context.Context, id string) (*State, error) {
 	state, err := s.Get(id)
 	if err != nil || !state.LaunchPending {
 		return state, err
 	}
-	state, err = s.reconcilePendingLaunch(context.Background(), id)
+	state, err = s.reconcilePendingLaunch(ctx, id)
 	if err != nil {
 		return nil, err
 	}
