@@ -33,7 +33,9 @@ var ErrUnconfirmed = errors.New("could not confirm removal from the OS keychain"
 // ErrKeychainUnreadable means no login was found and the OS keychain could not
 // be read, so a login may still be stored there. It wraps ErrNotLoggedIn, so a
 // caller that only checks for that still takes the log-in path, which writes the
-// file fallback when the keychain stays unavailable.
+// file fallback when the keychain stays unavailable. Callers must test for this
+// error before ErrNotLoggedIn, and must still call Delete on logout, because a
+// token may sit in the locked keychain.
 var ErrKeychainUnreadable = fmt.Errorf(
 	"%w: could not read the OS keychain; unlock it or log in again", ErrNotLoggedIn,
 )

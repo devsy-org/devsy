@@ -71,6 +71,7 @@ func TestStoreSuite(t *testing.T) {
 
 func (s *StoreSuite) SetupTest() {
 	s.dir = s.T().TempDir()
+	s.ticks = 0
 	s.fake = &fakeKeychain{}
 	s.cred = Credential{
 		GatewayURL: testGateway,
@@ -433,6 +434,26 @@ func (s *StoreSuite) TestDeleteRemovesTemporaryFilesJustOverTheLimit() {
 	s.NoFileExists(old)
 }
 
+func (s *StoreSuite) TestDeleteKeepsTemporaryFilesSlightlyInTheFuture() {
+	skewed := s.writeTemp(s.dir, -50*time.Second)
+
+	s.Require().NoError(s.store().Delete())
+
+	s.FileExists(skewed)
+}
+
+func (s *StoreSuite) TestSaveSetsSavedAtFromTheClock() {
+	s.cred.SavedAt = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	_, err := s.store().Save(s.cred)
+	s.Require().NoError(err)
+	got, err := s.store().Load()
+
+	s.Require().NoError(err)
+	s.True(got.SavedAt.Equal(time.Date(2029, 1, 2, 3, 4, 6, 0, time.UTC)))
+	s.Equal(time.UTC, got.SavedAt.Location())
+}
+
 func (s *StoreSuite) TestDeleteRemovesFutureDatedTemporaryFiles() {
 	skewed := s.writeTemp(s.dir, -2*time.Hour)
 
@@ -457,7 +478,8 @@ func (s *StoreSuite) TestLoadPrefersNewerFileOverStaleKeychainEntry() {
 }
 
 func (s *StoreSuite) TestLoadKeepsKeychainEntryWhenFileIsNotNewer() {
-	s.writeCredentialFile(0o600)
+	older := []byte(s.entry("file-token", "2019-01-01T00:00:00Z"))
+	s.Require().NoError(os.WriteFile(s.file(), older, 0o600))
 	s.fake.value, s.fake.has = s.entry("keychain-token", "2020-01-01T00:00:00Z"), true
 
 	got, err := s.store().Load()
