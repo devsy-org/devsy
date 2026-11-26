@@ -564,7 +564,37 @@ func (s *EngineSuite) TestACancelBetweenRemovalAndTheOutcomeKeepsTheFirstEvent()
 	})
 	_, err := s.eng.Reconcile(ctx)
 	s.Require().ErrorIs(err, context.Canceled)
-	s.Len(s.reclaimEvents(id), 1, "no outcome event after the cancel")
+	s.Empty(s.fake.Snapshot(), "the removal had finished")
+	events := s.reclaimEvents(id)
+	s.Require().Len(events, 1, "no outcome event after the cancel")
+	s.Equal("partial", events[0].Data["devsy.reclaim.result"])
+
+	_, err = s.eng.Reconcile(context.Background())
+	s.Require().NoError(err)
+	s.Len(s.reclaimEvents(id), 1, "no later pass writes the outcome")
+}
+
+func (s *EngineSuite) TestAnOutcomeAuditFailureAfterRemovalKeepsOnlyTheFirstEvent() {
+	id := s.orphanID()
+	writes := 0
+	s.spy.onWrite = func() {
+		writes++
+		s.spy.err = nil
+		if writes == 3 {
+			s.spy.err = errBoom
+		}
+	}
+	_, err := s.eng.Reconcile(context.Background())
+	s.Require().ErrorIs(err, ErrAuditFailed)
+	s.Empty(s.fake.Snapshot(), "the removal had finished")
+	events := s.reclaimEvents(id)
+	s.Require().Len(events, 1)
+	s.Equal("partial", events[0].Data["devsy.reclaim.result"])
+
+	s.spy.onWrite, s.spy.err = nil, nil
+	_, err = s.eng.Reconcile(context.Background())
+	s.Require().NoError(err)
+	s.Len(s.reclaimEvents(id), 1, "no later pass writes the outcome")
 }
 
 func (s *EngineSuite) TestAnOrphanSessionThatCannotBeRemovedIsReported() {
@@ -591,14 +621,15 @@ func (s *EngineSuite) TestACancelDuringPoolStartLeavesAnOrphanSessionAlone() {
 
 func (s *EngineSuite) TestOrphanSessionsAreReclaimedInIDOrder() {
 	var ids []string
-	for range 3 {
+	for range 8 {
 		id, err := session.NewID(testPool)
 		s.Require().NoError(err)
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
-	// Names run opposite to the IDs, so the provider lists the newest ID first
-	// and only a sort in the engine gives ID order.
+	// The engine groups orphans in a map and the fake lists by name, so neither
+	// gives ID order. Names run opposite to the IDs, and with 8 orphans an
+	// unsorted pass matches by chance about once in 40000 runs.
 	for i, id := range ids {
 		s.fake.Add(s.workspace(fmt.Sprintf("w-%d", len(ids)-i), s.poolLabels(id)))
 	}

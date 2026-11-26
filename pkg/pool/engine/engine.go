@@ -14,9 +14,13 @@
 // A retry can log the same intended change again, as session.end possibly
 // with another reason, or as session.reclaim for the next attempt. An orphan
 // session has no record to retry from, so Reconcile writes its session.reclaim
-// first, with result partial, and then the outcome; a canceled pass leaves the
-// resources and the next one writes both again. Read state and reason from the
-// store, and treat repeated events for one session as retries.
+// first, with result partial, and then the outcome. A failure or cancel before
+// the removal finishes leaves the resources, and the next pass writes both
+// again. Once the removal has finished, a failed or canceled outcome write
+// leaves the partial event as the only one: nothing remains to find, so no
+// later pass writes the outcome, and partial does not prove anything is left.
+// Read state and reason from the store, and treat repeated events for one
+// session as retries.
 package engine
 
 import (

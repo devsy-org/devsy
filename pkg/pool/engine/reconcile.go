@@ -43,7 +43,8 @@ type restartPlan struct {
 // its exact session ID. Its session.reclaim event is written first, with
 // result partial and what is about to go, then a final one with the outcome,
 // so a failed or canceled removal never loses the record and the next
-// Reconcile finds the orphan again. The second is deleted one object at a time
+// Reconcile finds the orphan again. If the removal finishes and the outcome
+// write then fails or is canceled, only the partial event remains. The second is deleted one object at a time
 // by UID and is counted in pool.start only, since it has no session to name.
 // It stops at the first audit or store error and returns the report so far.
 func (e *Engine) Reconcile(ctx context.Context) (Report, error) {
@@ -184,7 +185,8 @@ func (e *Engine) deleteStrays(ctx context.Context, strays []provider.Orphan) (bo
 // and a later Reconcile retries what is left. The first event is written
 // before any provider call, so an audit failure removes nothing. If the
 // removal is canceled the resources stay and the next Reconcile writes the
-// first event again.
+// first event again. Once the removal has finished nothing is left to find, so
+// a failed or canceled outcome write leaves the first event as the only one.
 func (e *Engine) reclaimOrphanSession(ctx context.Context, o orphanSession) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
