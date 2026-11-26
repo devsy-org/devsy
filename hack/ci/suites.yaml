@@ -161,10 +161,10 @@ unit:
       args: [-race, -count=1, -timeout=5m]
 
     - name: windows-pool-audit
-      description: native Windows refusal of the pool audit store, reader and writer
+      description: native Windows refusal of the pool audit store, reader and writer, and of the session store and lock
       os: [windows]
-      packages: [./pkg/pool/audit]
-      require_tests: [TestOpenRefusesOnWindows, TestOpenReaderRefusesWindows, TestWriterCannotBeBuiltOnWindows]
+      packages: [./pkg/pool/audit, ./pkg/pool/session]
+      require_tests: [TestOpenRefusesOnWindows, TestOpenReaderRefusesWindows, TestWriterCannotBeBuiltOnWindows, TestStoreAndLockRefuseOnWindows]
       args: [-race, -count=1, -timeout=5m, -v]
 
     - name: ci-tooling-windows
