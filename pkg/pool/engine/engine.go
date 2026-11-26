@@ -44,6 +44,7 @@ type Auditor interface {
 // Store is the part of *session.Store the engine uses.
 type Store interface {
 	Load(id string) (session.Session, error)
+	List() ([]session.Session, error)
 	Transition(id string, from, to session.State, reason string) (session.Session, error)
 	CountReclaimAttempt(id string) (session.Session, error)
 }
