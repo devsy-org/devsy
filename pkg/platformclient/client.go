@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -20,10 +22,19 @@ const (
 	maxResponseBytes = 1 << 20
 	orgPageSize      = 100
 	maxOrgPages      = 20
+	maxRetryAfter    = 5 * time.Minute
+	maxErrorText     = 200
+)
+
+var (
+	errTokenRequired   = errors.New("session token is required")
+	errResponseTooBig  = errors.New("gateway response is too large")
+	errUnexpectedPages = errors.New("gateway returned too many organization pages")
 )
 
 // APIError is an error response from the gateway. It never carries request
-// data, so it is safe to show to the user.
+// data. Code and Message are shortened and stripped of control characters, so
+// they are safe to print to a terminal.
 type APIError struct {
 	Status  int
 	Code    string
@@ -51,38 +62,63 @@ type Client struct {
 	HTTP    *http.Client
 }
 
-// New returns a client for the gateway at baseURL. A nil httpClient selects one
-// with a timeout that does not follow redirects, so credentials are never
-// replayed to another host.
+// New returns a client for the gateway at baseURL, which callers should obtain
+// from NormalizeURL. A nil httpClient selects one with a timeout. The client
+// never follows redirects, so credentials are not replayed to another host. A
+// supplied httpClient is copied, and the caller's copy is left unchanged. Pass a
+// context with a deadline when the supplied client has no timeout.
 func New(baseURL string, httpClient *http.Client) *Client {
+	var clone http.Client
 	if httpClient == nil {
-		httpClient = &http.Client{
-			Timeout: defaultTimeout,
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
+		clone.Timeout = defaultTimeout
+	} else {
+		clone = *httpClient
 	}
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), HTTP: httpClient}
+	clone.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), HTTP: &clone}
 }
 
 // NormalizeURL validates a user-supplied gateway URL and returns it without a
-// trailing slash.
+// trailing slash. Plain http is accepted only for loopback hosts, because the
+// login sends a password. Errors never repeat the input, which may hold a
+// pasted password.
 func NormalizeURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return "", fmt.Errorf("invalid gateway URL %q: %w", raw, err)
-	}
-	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return "", fmt.Errorf("invalid gateway URL %q: expected http(s)://host[:port]", raw)
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return "", errors.New("invalid gateway URL: expected https://host[:port]")
 	}
 	if parsed.User != nil {
 		return "", errors.New("gateway URL must not contain credentials")
 	}
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
+	if err := checkScheme(parsed); err != nil {
+		return "", err
+	}
+	parsed.RawQuery, parsed.ForceQuery = "", false
+	parsed.Fragment, parsed.RawFragment = "", ""
 	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func checkScheme(parsed *url.URL) error {
+	switch {
+	case parsed.Scheme == "https":
+		return nil
+	case parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()):
+		return nil
+	case parsed.Scheme == "http":
+		return errors.New("gateway URL must use https unless the host is loopback")
+	default:
+		return errors.New("invalid gateway URL: expected https://host[:port]")
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Session is the result of a successful password login.
@@ -110,19 +146,25 @@ func (c *Client) Login(ctx context.Context, email, password string) (Session, er
 	if err != nil {
 		return Session{}, err
 	}
-	if session.Token == "" {
-		return Session{}, errors.New("gateway returned no session token")
+	if session.Token == "" || session.ExpiresAt.IsZero() {
+		return Session{}, errors.New("gateway returned an incomplete session")
 	}
 	return session, nil
 }
 
 // Logout revokes a session token.
 func (c *Client) Logout(ctx context.Context, token string) error {
+	if token == "" {
+		return errTokenRequired
+	}
 	return c.do(ctx, request{method: http.MethodPost, path: "/v1/auth/logout", bearer: token}, nil)
 }
 
 // ListOrgs lists every org the session's user belongs to, following pages.
 func (c *Client) ListOrgs(ctx context.Context, token string) ([]Org, error) {
+	if token == "" {
+		return nil, errTokenRequired
+	}
 	var orgs []Org
 	cursor := ""
 	for range maxOrgPages {
@@ -130,13 +172,16 @@ func (c *Client) ListOrgs(ctx context.Context, token string) ([]Org, error) {
 		if err != nil {
 			return nil, err
 		}
+		if len(page.Orgs) > orgPageSize || page.NextCursor == cursor && cursor != "" {
+			return nil, errUnexpectedPages
+		}
 		orgs = append(orgs, page.Orgs...)
 		if page.NextCursor == "" {
 			return orgs, nil
 		}
 		cursor = page.NextCursor
 	}
-	return nil, errors.New("gateway returned too many organization pages")
+	return nil, errUnexpectedPages
 }
 
 type orgPage struct {
@@ -181,9 +226,12 @@ func (c *Client) do(ctx context.Context, r request, out any) error {
 }
 
 func decodeResponse(resp *http.Response, out any) error {
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return fmt.Errorf("reading gateway response: %w", err)
+	}
+	if len(data) > maxResponseBytes {
+		return errResponseTooBig
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		apiErr := parseAPIError(resp.StatusCode, data)
@@ -233,8 +281,8 @@ func parseAPIError(status int, data []byte) *APIError {
 		Error errorBody `json:"error"`
 	}
 	if json.Unmarshal(data, &envelope) == nil {
-		apiErr.Code = envelope.Error.Code
-		apiErr.Message = envelope.Error.Message
+		apiErr.Code = printable(envelope.Error.Code)
+		apiErr.Message = printable(envelope.Error.Message)
 	}
 	return apiErr
 }
@@ -244,5 +292,24 @@ func retryAfter(value string) time.Duration {
 	if err != nil || seconds < 0 {
 		return 0
 	}
+	if seconds > int(maxRetryAfter/time.Second) {
+		return maxRetryAfter
+	}
 	return time.Duration(seconds) * time.Second
+}
+
+// printable replaces control characters, collapses whitespace and shortens
+// text from the gateway.
+func printable(text string) string {
+	text = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, text)
+	text = strings.Join(strings.Fields(text), " ")
+	if runes := []rune(text); len(runes) > maxErrorText {
+		return string(runes[:maxErrorText])
+	}
+	return text
 }

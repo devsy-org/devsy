@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const testGateway = "https://gw.example.test"
+
 type ClientSuite struct {
 	suite.Suite
 }
@@ -23,7 +25,7 @@ func (s *ClientSuite) TestNormalizeURL() {
 	tests := map[string]string{
 		local:                         local,
 		local + "/":                   local,
-		"  https://gw.example.test//": "https://gw.example.test",
+		"  https://gw.example.test//": testGateway,
 		"https://gw.example.test/a/":  "https://gw.example.test/a",
 	}
 	for raw, want := range tests {
