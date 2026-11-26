@@ -49,16 +49,8 @@ func (s *EngineSuite) states() map[string]session.State {
 	return got
 }
 
-func (s *EngineSuite) resource(kind, name string, labels map[string]string) provider.Resource {
-	return provider.Resource{Kind: kind, Name: name, Labels: labels}
-}
-
-func (s *EngineSuite) poolLabels(id string) map[string]string {
-	labels := map[string]string{provider.LabelPool: testPool}
-	if id != "" {
-		labels[provider.LabelSession] = id
-	}
-	return labels
+func (s *EngineSuite) workspace(name string, labels map[string]string) provider.Resource {
+	return provider.Resource{Kind: kindWorkspace, Name: name, Labels: labels}
 }
 
 func (s *EngineSuite) TestReconcileEndsWhatTheRestartCutOff() {
@@ -133,10 +125,10 @@ func (s *EngineSuite) TestReconcileReclaimsResourcesWithoutALiveRecord() {
 	s.spawn(gone)
 	s.spawn(done.ID)
 	s.spawn(live.ID)
-	s.fake.Add(s.resource("workspace", "no-session", s.poolLabels("")))
-	s.fake.Add(s.resource("workspace", "lookalike", s.poolLabels(live.ID+"x")))
-	s.fake.Add(s.resource("workspace", "unlabelled", nil))
-	s.fake.Add(s.resource("workspace", "foreign", map[string]string{
+	s.fake.Add(s.workspace("no-session", s.poolLabels("")))
+	s.fake.Add(s.workspace("lookalike", s.poolLabels(live.ID+"x")))
+	s.fake.Add(s.workspace("unlabelled", nil))
+	s.fake.Add(s.workspace("foreign", map[string]string{
 		provider.LabelPool: "other", provider.LabelSession: gone,
 	}))
 
@@ -149,7 +141,7 @@ func (s *EngineSuite) TestReconcileReclaimsResourcesWithoutALiveRecord() {
 	}
 	s.ElementsMatch([]string{
 		"unlabelled", "foreign",
-		s.nameOf(live.ID, "workspace"), s.nameOf(live.ID, "network"),
+		s.nameOf(live.ID, kindWorkspace), s.nameOf(live.ID, kindNetwork),
 	}, left)
 
 	reclaims := map[string]recordedEvent{}
@@ -187,7 +179,7 @@ func (s *EngineSuite) nameOf(id, kind string) string {
 
 func (s *EngineSuite) TestReconcileReportsAnOrphanThatCannotBeRemoved() {
 	cur := s.sessionIn(session.StateReady)
-	s.fake.Add(s.resource("workspace", "no-session", s.poolLabels("")))
+	s.fake.Add(s.workspace("no-session", s.poolLabels("")))
 	s.fake.SetError(providertest.MethodDelete, errBoom)
 	_, err := s.eng.Reconcile(context.Background())
 	s.Require().ErrorIs(err, ErrReclaimIncomplete)
@@ -209,6 +201,22 @@ func (s *EngineSuite) TestReconcileChangesNothingWhenTheListingFails() {
 	_, err = s.eng.Reconcile(ctx)
 	s.Require().ErrorIs(err, context.Canceled)
 	s.Equal(before, s.states())
+}
+
+func (s *EngineSuite) TestReconcileRefusesSessionsFromAnotherPool() {
+	cur := s.sessionIn(session.StateBusy)
+	s.spawn(cur.ID)
+	s.fake.Add(s.workspace("no-session", s.poolLabels("")))
+	eng, err := New(Config{
+		Pool: "other", Store: s.store, Audit: s.spy, Provider: s.fake,
+		Now: func() time.Time { return s.now },
+	})
+	s.Require().NoError(err)
+	_, err = eng.Reconcile(context.Background())
+	s.Require().ErrorIs(err, ErrForeignPool)
+	s.Equal(session.StateBusy, s.load(cur.ID).State)
+	s.Empty(s.events())
+	s.Len(s.fake.Snapshot(), 3)
 }
 
 func (s *EngineSuite) TestSweepReclaimsDueSessionsAndReportsTheNextWake() {
@@ -268,6 +276,7 @@ func (s *EngineSuite) TestAnInterruptedPoolEndsWithNoSessionLeftBehind() {
 		s.Equal(session.StateDeleted, state, id)
 	}
 	for _, r := range s.fake.Snapshot() {
-		s.Equal(session.StateQueued, want[r.Labels[provider.LabelSession]], "only a queued session may hold resources")
+		owner := want[r.Labels[provider.LabelSession]]
+		s.Equal(session.StateQueued, owner, "only a queued session may hold resources")
 	}
 }

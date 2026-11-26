@@ -69,6 +69,9 @@ func (e *Engine) planRestart(ctx context.Context, sessions []session.Session) (r
 	plan.report.Sessions = len(sessions)
 	live := make(map[string]bool, len(sessions))
 	for _, s := range sessions {
+		if s.Pool != e.pool {
+			return restartPlan{}, ErrForeignPool
+		}
 		live[s.ID] = s.State != session.StateDeleted
 		plan.add(s)
 	}
