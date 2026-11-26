@@ -24,6 +24,8 @@ type exitingWorker struct {
 	waitErr     error
 	terminated  bool
 	onWait      func()
+	onProbe     func(call int)
+	probeCalls  int
 }
 
 func (w *exitingWorker) probes() exitedJobProbes {
@@ -33,6 +35,10 @@ func (w *exitingWorker) probes() exitedJobProbes {
 			return w.terminated, nil
 		},
 		workerRunning: func(ProcessRef) (bool, error) {
+			w.probeCalls++
+			if w.onProbe != nil {
+				w.onProbe(w.probeCalls)
+			}
 			return w.running, w.probeErr
 		},
 		waitForExit: func(_ context.Context, _ ProcessRef, timeout time.Duration) error {
@@ -166,6 +172,42 @@ func TestCleanupExitedJobReturnsTheContextErrorWhenItEndsDuringTheWait(t *testin
 func TestCleanupExitedJobReturnsTheContextErrorWhenTheWorkerExitsAsItEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	worker := &exitingWorker{running: true, exitsOnWait: true, onWait: cancel}
+
+	err := cleanupExitedJob(ctx, cleanupTestRef(), worker.probes())
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestCleanupExitedJobContextWinsOverTheFinalProbeResult(t *testing.T) {
+	tests := []struct {
+		name        string
+		exitsOnWait bool
+		probeErr    error
+	}{
+		{"worker gone", true, nil},
+		{"probe error", false, errors.New("identity lookup failed")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			worker := &exitingWorker{running: true, exitsOnWait: tt.exitsOnWait}
+			worker.onProbe = func(call int) {
+				if call == 2 {
+					worker.probeErr = tt.probeErr
+					cancel()
+				}
+			}
+
+			err := cleanupExitedJob(ctx, cleanupTestRef(), worker.probes())
+
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	}
+}
+
+func TestCleanupExitedJobContextWinsOverAWaitError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	worker := &exitingWorker{running: true, waitErr: errors.New("wait failed"), onWait: cancel}
 
 	err := cleanupExitedJob(ctx, cleanupTestRef(), worker.probes())
 

@@ -51,17 +51,18 @@ func waitForWorkerToExit(ctx context.Context, ref ProcessRef, probes exitedJobPr
 	if err != nil {
 		return err
 	}
-	if err := probes.waitForExit(ctx, ref, wait); err != nil {
-		return err
-	}
+	waitErr := probes.waitForExit(ctx, ref, wait)
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if waitErr != nil {
+		return waitErr
 	}
 	running, err := probes.workerRunning(ref)
-	if err != nil || !running {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
+	if err != nil || !running {
 		return err
 	}
 	return fmt.Errorf(
