@@ -39,8 +39,12 @@ func runSpacedProvider(
 	executable := spacedProviderExecutable(t)
 	var stdout, stderr bytes.Buffer
 	err := RunCommand(context.Background(), RunCommandOptions{
-		Command:          types.StrArray{"${SSH_PROVIDER} init"},
-		Environ:          append(os.Environ(), "SSH_PROVIDER="+executable, providerExecutableHelperEnv+"=1"),
+		Command: types.StrArray{"${SSH_PROVIDER} init"},
+		Environ: append(
+			os.Environ(),
+			"SSH_PROVIDER="+executable,
+			providerExecutableHelperEnv+"=1",
+		),
 		ProviderBinaries: binaries,
 		Stdout:           &stdout,
 		Stderr:           &stderr,
