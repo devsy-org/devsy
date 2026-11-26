@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -37,12 +36,9 @@ type Session struct {
 }
 
 func (s Session) validate() error {
-	prefix := idPrefix + s.Pool + "-"
 	switch {
 	case s.V != schemaVersion,
-		!ValidID(s.ID),
-		!strings.HasPrefix(s.ID, prefix),
-		len(s.ID) != len(prefix)+idSuffixLen,
+		!OwnsID(s.Pool, s.ID),
 		!s.State.Known(),
 		s.startedFlagInconsistent(),
 		s.Reason != "" && !reasonPattern.MatchString(s.Reason),
