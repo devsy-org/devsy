@@ -163,6 +163,15 @@ func TestCleanupExitedJobReturnsTheContextErrorWhenItEndsDuringTheWait(t *testin
 	assert.NotContains(t, err.Error(), "unavailable while process")
 }
 
+func TestCleanupExitedJobReturnsTheContextErrorWhenTheWorkerExitsAsItEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	worker := &exitingWorker{running: true, exitsOnWait: true, onWait: cancel}
+
+	err := cleanupExitedJob(ctx, cleanupTestRef(), worker.probes())
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func TestWaitSliceMillisIsBounded(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -43,14 +43,18 @@ func cleanupExitedJob(ctx context.Context, ref ProcessRef, probes exitedJobProbe
 	return nil
 }
 
-// waitForWorkerToExit waits out the grace period and fails only when the
-// worker is still running afterwards and the context has not ended.
+// waitForWorkerToExit waits out the grace period. A context that ends during
+// the wait wins over the worker's state, so a canceled caller always sees the
+// context error. It fails otherwise only when the worker is still running.
 func waitForWorkerToExit(ctx context.Context, ref ProcessRef, probes exitedJobProbes) error {
 	wait, err := exitWait(ctx)
 	if err != nil {
 		return err
 	}
 	if err := probes.waitForExit(ctx, ref, wait); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	running, err := probes.workerRunning(ref)

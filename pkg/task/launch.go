@@ -282,12 +282,12 @@ func (s *State) checkDeletion(force bool) error {
 	return nil
 }
 
-func (s *Store) stateAfterLaunchCleanup(id string) (*State, error) {
+func (s *Store) stateAfterLaunchCleanup(ctx context.Context, id string) (*State, error) {
 	state, err := s.Get(id)
 	if err != nil || !state.LaunchPending {
 		return state, err
 	}
-	state, err = s.reconcilePendingLaunch(context.Background(), id)
+	state, err = s.reconcilePendingLaunch(ctx, id)
 	if err != nil {
 		return nil, err
 	}

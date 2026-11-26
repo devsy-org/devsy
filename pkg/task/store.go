@@ -182,7 +182,7 @@ func (s *Store) ReconcileState(state *State) *State {
 // Claiming the worker lock proves no worker is running, so a saved reference
 // that still points at live processes belongs to a crashed worker's tree.
 func (s *Store) CleanupExitedWorkerTree(ctx context.Context, id string) error {
-	state, err := s.stateAfterLaunchCleanup(id)
+	state, err := s.stateAfterLaunchCleanup(ctx, id)
 	if err != nil {
 		return err
 	}
