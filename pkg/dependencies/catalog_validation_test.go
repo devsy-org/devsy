@@ -48,6 +48,28 @@ func (s *catalogSuite) TestInvalidCatalogMetadata() {
 		"managed status":    func(d *catalogDocument) { d.ManagedStatus = "qualified" },
 		"missing binding":   func(d *catalogDocument) { d.Bindings = d.Bindings[:1] },
 		"duplicate binding": func(d *catalogDocument) { d.Bindings[1] = d.Bindings[0] },
+		"custom binding":    func(d *catalogDocument) { d.Bindings[0].ID = testCustom },
+		"source kind":       func(d *catalogDocument) { d.Bindings[0].Source.Kind = SourceGitHub },
+		"source spoof":      func(d *catalogDocument) { d.Bindings[4].Source.Repository += "-evil" },
+		"adapter range":     func(d *catalogDocument) { d.Bindings[4].AdapterSemverRange = ">=0.1.11" },
+		"runtime schema":    func(d *catalogDocument) { d.Bindings[4].RequiredRuntimeCheckSchema = 2 },
+		"execution":         func(d *catalogDocument) { d.Bindings[4].ExecutionContract = testShell },
+		"platform":          func(d *catalogDocument) { d.Bindings[0].Platforms[0] = "plan9/amd64" },
+		"apple platform":    func(d *catalogDocument) { d.Bindings[2].Platforms = []string{platformLinuxAMD64} },
+		"microsandbox without windows": func(d *catalogDocument) {
+			d.Bindings[4].Platforms = d.Bindings[4].Platforms[:3]
+		},
+		"microsandbox extra platform": func(d *catalogDocument) {
+			d.Bindings[4].Platforms = append(d.Bindings[4].Platforms, "windows/arm64")
+		},
+		"guidance":            func(d *catalogDocument) { d.Bindings[0].GuidanceID = "curl_install" },
+		"missing requirement": func(d *catalogDocument) { d.Bindings[0].Requirements = nil },
+		"option":              func(d *catalogDocument) { d.Bindings[0].Requirements[0].ExecutableOption = "SHELL" },
+		"probe":               func(d *catalogDocument) { d.Bindings[0].Requirements[0].ProbeID = "docker_start" },
+		"operation":           func(d *catalogDocument) { d.Bindings[0].Requirements[0].RequiredFor[0] = testShell },
+		"scope":               func(d *catalogDocument) { d.Bindings[5].Requirements[0].Scope = "guest" },
+		"purpose":             func(d *catalogDocument) { d.Bindings[5].Requirements[0].Purpose = "container_runtime" },
+		"kubernetes exec":     func(d *catalogDocument) { d.Bindings[3].Requirements[0].ProbeID = "exec_auth" },
 	}
 	for name, mutate := range cases {
 		s.Run(name, func() {

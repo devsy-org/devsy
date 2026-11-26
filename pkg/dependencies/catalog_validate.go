@@ -22,6 +22,9 @@ func (d catalogDocument) validateBindings() error {
 			return fmt.Errorf("duplicate binding %q", binding.ID)
 		}
 		identities[binding.ID] = true
+		if err := validateBinding(binding); err != nil {
+			return fmt.Errorf("binding %q: %w", binding.ID, err)
+		}
 	}
 	return nil
 }
