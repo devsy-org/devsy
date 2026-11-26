@@ -9,10 +9,12 @@
 //
 // The store holds the committed state and reason. An audit event is written
 // before its transition, so it records intent: a failed or interrupted
-// transition leaves an event for a change that did not commit, and a retry can
-// log the same intended change again, as session.end possibly with another
-// reason, or as session.reclaim for the next attempt. Read state and reason
-// from the store, and treat repeated events for one session as retries.
+// transition can leave an event for a change that did not commit, or a change
+// that did (a directory sync error after the rename), so reload to find out.
+// A retry can log the same intended change again, as session.end possibly
+// with another reason, or as session.reclaim for the next attempt. Read state
+// and reason from the store, and treat repeated events for one session as
+// retries.
 package engine
 
 import (

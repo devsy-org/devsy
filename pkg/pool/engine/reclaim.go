@@ -75,7 +75,8 @@ type outcome struct {
 // stored count, because it is written before the provider is touched, and
 // writes no event or state change. Such an attempt counts toward MaxFailures
 // and lengthens the next wait. A cancel that arrives during the result audit
-// does not stop it, and the transition then completes.
+// does not stop it, and the transition then runs unless the audit or store
+// fails.
 func (e *Engine) Reclaim(ctx context.Context, id string) (session.Session, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
