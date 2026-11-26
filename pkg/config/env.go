@@ -13,6 +13,8 @@ const (
 	// EnvBinaryPath is set to the path of the Devsy binary.
 	EnvBinaryPath = "DEVSY"
 
+	EnvProviderCancelFile = "DEVSY_PROVIDER_CANCEL_FILE"
+
 	// EnvHome overrides the default Devsy home directory.
 	EnvHome = "DEVSY_HOME"
 
@@ -39,8 +41,17 @@ const (
 	// EnvDisableTelemetry disables telemetry collection.
 	EnvDisableTelemetry = "DEVSY_DISABLE_TELEMETRY"
 
-	// EnvProRunner is set by the Devsy Pro runner pod to mark runner-side CLI invocations.
-	EnvProRunner = "DEVSY_PRO_RUNNER"
+	// EnvPlatformRunner is set by the Devsy Platform runner pod to mark runner-side CLI invocations.
+	EnvPlatformRunner = "DEVSY_PLATFORM_RUNNER"
+
+	// EnvPlatformRunnerLegacy is the pre-rename runner marker still set by existing runner pods.
+	EnvPlatformRunnerLegacy = "DEVSY_PRO_RUNNER"
+
+	// EnvPlatformEnabled exposes the platform command tree when set to "true".
+	EnvPlatformEnabled = "DEVSY_PLATFORM_ENABLED"
+
+	// EnvPlatformEnabledLegacy is the pre-rename switch for the platform command tree.
+	EnvPlatformEnabledLegacy = "DEVSY_PRO_ENABLED"
 
 	// EnvTelemetryDistinctID is set by the desktop app on spawned CLI
 	// processes so their events share the desktop's analytics identity.
@@ -83,6 +94,10 @@ const (
 	// EnvWorkspaceDaemonConfig holds the workspace daemon configuration.
 	EnvWorkspaceDaemonConfig = "DEVSY_WORKSPACE_DAEMON_CONFIG"
 
+	// EnvSetupRun passes the non-secret run reference (JSON) from the container
+	// setup process to the background hook workers it launches.
+	EnvSetupRun = "DEVSY_SETUP_RUN"
+
 	// EnvSecretsEnv passes base64-encoded KEY=VALUE secrets (newline-joined) to
 	// agent subprocesses via the environment (not argv, to keep them out of ps).
 	EnvSecretsEnv = "DEVSY_SECRETS_ENV" // #nosec G101 -- env var name, not a credential.
@@ -114,7 +129,7 @@ const (
 	// EnvFlagsStatus holds extra flags for the status command.
 	EnvFlagsStatus = "DEVSY_FLAGS_STATUS"
 
-	// EnvSubdomain is the subdomain configuration for Devsy Pro.
+	// EnvSubdomain is the subdomain configuration for Devsy Platform.
 	EnvSubdomain = "DEVSY_SUBDOMAIN"
 
 	// EnvPrefix is the base prefix for all Devsy environment variables.
@@ -171,11 +186,11 @@ const (
 	// EnvProviderFolder is the provider folder path passed to providers.
 	EnvProviderFolder = "PROVIDER_FOLDER"
 
-	// EnvLoftProject is the Devsy project name for pro features.
-	EnvLoftProject = "DEVSY_PROJECT"
+	// EnvProject is the Devsy project name for platform features.
+	EnvProject = "DEVSY_PROJECT"
 
-	// EnvLoftFilterByOwner enables filtering by owner in Devsy.
-	EnvLoftFilterByOwner = "DEVSY_FILTER_BY_OWNER"
+	// EnvFilterByOwner enables filtering by owner in Devsy.
+	EnvFilterByOwner = "DEVSY_FILTER_BY_OWNER"
 
 	// EnvDevcontainerID is the devcontainer identifier.
 	EnvDevcontainerID = "DEVCONTAINER_ID"

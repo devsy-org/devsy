@@ -42,10 +42,11 @@ var (
 )
 
 const (
-	fileURLScheme        = "file"
-	docsWordmarkWidth    = 1000
-	docsWordmarkHeight   = 329
-	docsIconCornerRadius = 180
+	fileURLScheme      = "file"
+	docsWordmarkWidth  = 1000
+	docsWordmarkHeight = 329
+	backgroundMin      = 235
+	edgeBandWidth      = 2
 )
 
 func findChromeBinary() (string, error) {
@@ -55,6 +56,8 @@ func findChromeBinary() (string, error) {
 		"/usr/bin/google-chrome",
 		"/usr/bin/chromium-browser",
 		"/usr/bin/chromium",
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Chromium.app/Contents/MacOS/Chromium",
 	}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
@@ -182,7 +185,23 @@ func renderMasterPNG(svgPath, outPNG string) error {
 	return renderSVGPNG(svgPath, outPNG, 1024, 1024)
 }
 
+// docsIconPNG removes the white the artwork was rendered on, so the rounded
+// corners are transparent. The corners are a squircle, so a circular mask would
+// leave a white fringe.
 func docsIconPNG(frame []byte) ([]byte, error) {
+	icon, err := decodeSquareNRGBA(frame)
+	if err != nil {
+		return nil, err
+	}
+	cutBackground(icon)
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, icon); err != nil {
+		return nil, fmt.Errorf("encode docs icon: %w", err)
+	}
+	return encoded.Bytes(), nil
+}
+
+func decodeSquareNRGBA(frame []byte) (*image.NRGBA, error) {
 	source, err := png.Decode(bytes.NewReader(frame))
 	if err != nil {
 		return nil, fmt.Errorf("decode docs icon: %w", err)
@@ -191,37 +210,145 @@ func docsIconPNG(frame []byte) ([]byte, error) {
 	if bounds.Dx() != bounds.Dy() {
 		return nil, fmt.Errorf("docs icon must be square, got %dx%d", bounds.Dx(), bounds.Dy())
 	}
-
 	icon := image.NewNRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			pixel := color.NRGBAModel.Convert(source.At(x, y)).(color.NRGBA)
-			alpha := roundedSquareAlpha(
-				x-bounds.Min.X,
-				y-bounds.Min.Y,
-				bounds.Dx(),
-				docsIconCornerRadius,
-			)
-			pixel.A = uint8(float64(pixel.A) * alpha)
-			icon.SetNRGBA(x, y, pixel)
+			icon.SetNRGBA(x, y, color.NRGBAModel.Convert(source.At(x, y)).(color.NRGBA))
 		}
 	}
-
-	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, icon); err != nil {
-		return nil, fmt.Errorf("encode docs icon: %w", err)
-	}
-	return encoded.Bytes(), nil
+	return icon, nil
 }
 
-func roundedSquareAlpha(x, y, size, radius int) float64 {
-	center := float64(radius) - 0.5
-	farCenter := float64(size-radius) - 0.5
-	px, py := float64(x), float64(y)
-	closestX := math.Max(center, math.Min(px, farCenter))
-	closestY := math.Max(center, math.Min(py, farCenter))
-	distance := math.Hypot(px-closestX, py-closestY)
-	return math.Max(0, math.Min(1, float64(radius)+0.5-distance))
+func cutBackground(icon *image.NRGBA) {
+	bounds := icon.Bounds()
+	for index, distance := range cornerBackground(icon) {
+		x, y := bounds.Min.X+index%bounds.Dx(), bounds.Min.Y+index/bounds.Dx()
+		switch {
+		case distance == 0:
+			icon.SetNRGBA(x, y, color.NRGBA{})
+		case distance > 0:
+			icon.SetNRGBA(x, y, unmatte(icon, x, y))
+		}
+	}
+}
+
+func isBackground(p color.NRGBA) bool {
+	return p.A == 0 || (p.R >= backgroundMin && p.G >= backgroundMin && p.B >= backgroundMin)
+}
+
+type point struct{ x, y int }
+
+var neighbours = []point{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+
+type grid struct{ w, h int }
+
+func (g grid) contains(p point) bool { return p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h }
+
+func (g grid) index(p point) int { return p.y*g.w + p.x }
+
+type searchLimits struct {
+	limit  int
+	accept func(point) bool
+}
+
+func newSteps(g grid) []int {
+	steps := make([]int, g.w*g.h)
+	for i := range steps {
+		steps[i] = -1
+	}
+	return steps
+}
+
+// spread runs a breadth-first search from seeds and returns each pixel's step
+// count, or -1 where accept refused it or it lies past the step limit.
+func spread(g grid, seeds []point, search searchLimits) []int {
+	steps := newSteps(g)
+	queue := make([]point, 0, len(seeds))
+	for _, p := range seeds {
+		steps[g.index(p)] = 0
+		queue = append(queue, p)
+	}
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		if steps[g.index(p)] == search.limit {
+			continue
+		}
+		for _, d := range neighbours {
+			n := point{p.x + d.x, p.y + d.y}
+			if g.contains(n) && steps[g.index(n)] < 0 && search.accept(n) {
+				steps[g.index(n)] = steps[g.index(p)] + 1
+				queue = append(queue, n)
+			}
+		}
+	}
+	return steps
+}
+
+// cornerBackground returns, per pixel in row-major order, 0 for background
+// connected to a corner, 1 to edgeBandWidth for the artwork pixels next to it,
+// and -1 elsewhere.
+func cornerBackground(icon *image.NRGBA) []int {
+	b := icon.Bounds()
+	w, h := b.Dx(), b.Dy()
+	at := func(p point) color.NRGBA { return icon.NRGBAAt(b.Min.X+p.x, b.Min.Y+p.y) }
+	corners := []point{{0, 0}, {w - 1, 0}, {0, h - 1}, {w - 1, h - 1}}
+	seeds := make([]point, 0, len(corners))
+	for _, c := range corners {
+		if isBackground(at(c)) {
+			seeds = append(seeds, c)
+		}
+	}
+	g := grid{w, h}
+	region := spread(
+		g,
+		seeds,
+		searchLimits{w * h, func(p point) bool { return isBackground(at(p)) }},
+	)
+	var edge []point
+	for i, v := range region {
+		if v >= 0 {
+			edge = append(edge, point{i % w, i / w})
+		}
+	}
+	band := spread(g, edge, searchLimits{edgeBandWidth, func(point) bool { return true }})
+	for i, v := range region {
+		if v >= 0 {
+			band[i] = 0
+		}
+	}
+	return band
+}
+
+// unmatte recovers the artwork colour and coverage of an anti-aliased edge
+// pixel that was blended with white.
+func unmatte(icon *image.NRGBA, x, y int) color.NRGBA {
+	p := icon.NRGBAAt(x, y)
+	reference := p.G
+	for dy := -edgeBandWidth - 1; dy <= edgeBandWidth+1; dy++ {
+		for dx := -edgeBandWidth - 1; dx <= edgeBandWidth+1; dx++ {
+			if n := icon.NRGBAAt(x+dx, y+dy); n.A == 255 && n.G < reference {
+				reference = n.G
+			}
+		}
+	}
+	if reference >= 250 {
+		return p
+	}
+	alpha := math.Min(1, float64(255-p.G)/float64(255-reference))
+	if alpha <= 0 {
+		return color.NRGBA{}
+	}
+	channel := func(v uint8) uint8 {
+		c := (float64(v) - (1-alpha)*255) / alpha
+		return uint8(math.Max(0, math.Min(255, math.Round(c))))
+	}
+	return color.NRGBA{
+		R: channel(p.R),
+		G: channel(p.G),
+		B: channel(p.B),
+		A: uint8(math.Round(alpha * 255)),
+	}
 }
 
 func resizePNG(inPNG, outPNG string, size int) error {
@@ -347,6 +474,23 @@ func resolveSVGPath(resourcesDir string) string {
 	return svgPath
 }
 
+// roundMasterPNG gives the rendered master transparent corners and rewrites it,
+// so every size scaled from it keeps them.
+func roundMasterPNG(masterPNG string) ([]byte, error) {
+	rendered, err := os.ReadFile(masterPNG)
+	if err != nil {
+		return nil, err
+	}
+	rounded, err := docsIconPNG(rendered)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(masterPNG, rounded, 0o600); err != nil {
+		return nil, err
+	}
+	return rounded, nil
+}
+
 func renderAllFrames(svgPath, tmpDir string) (map[int][]byte, error) {
 	masterPNG := filepath.Join(tmpDir, "master-1024.png")
 	log.Println("Rendering 1024x1024 master PNG using headless browser...")
@@ -356,7 +500,7 @@ func renderAllFrames(svgPath, tmpDir string) (map[int][]byte, error) {
 
 	log.Println("Rescaling icon resolutions...")
 	frames := make(map[int][]byte)
-	masterBytes, err := os.ReadFile(masterPNG)
+	masterBytes, err := roundMasterPNG(masterPNG)
 	if err != nil {
 		return nil, err
 	}

@@ -16,7 +16,7 @@ const unreadCount = notificationHistory.unreadCount
         size="sm"
         class="relative"
         aria-label={$unreadCount > 0
-          ? `Notifications (${unreadCount} unread)`
+          ? `Notifications (${$unreadCount} unread)`
           : "Notifications"}
         {...props}
       >

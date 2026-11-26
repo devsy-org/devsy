@@ -1,6 +1,8 @@
 <script lang="ts">
 import { ChevronRight } from "@lucide/svelte"
 import { location } from "$lib/router.js"
+import { workspaces } from "$lib/stores/workspaces.js"
+import { workspaceLabel } from "$lib/utils/workspaceLabel.js"
 
 interface Crumb {
   label: string
@@ -12,6 +14,7 @@ const LABELS: Record<string, string> = {
   providers: "Providers",
   machines: "Machines",
   contexts: "Contexts",
+  variables: "Workspace Variables",
   secrets: "Secrets",
   env: "Env Vars",
   terminals: "Terminals",
@@ -31,7 +34,14 @@ let crumbs = $derived.by(() => {
   for (let i = 0; i < parts.length; i++) {
     path += `/${parts[i]}`
     const isLast = i === parts.length - 1
-    const label = LABELS[parts[i]] ?? decodeURIComponent(parts[i])
+    const decoded = decodeURIComponent(parts[i])
+    const workspace =
+      parts[0] === "workspaces" && i === 1
+        ? $workspaces.find((candidate) => candidate.id === decoded)
+        : undefined
+    const label = workspace
+      ? workspaceLabel(workspace)
+      : (LABELS[parts[i]] ?? decoded)
     result.push({ label, href: isLast ? undefined : `#${path}` })
   }
 
@@ -40,15 +50,21 @@ let crumbs = $derived.by(() => {
 </script>
 
 {#if crumbs.length > 0}
-  <nav class="flex items-center gap-1 text-sm text-muted-foreground">
-    <a href="#/" class="hover:text-foreground transition-colors">Home</a>
-    {#each crumbs as crumb}
-      <ChevronRight class="h-3 w-3" />
-      {#if crumb.href}
-        <a href={crumb.href} class="hover:text-foreground transition-colors">{crumb.label}</a>
-      {:else}
-        <span class="text-foreground font-medium">{crumb.label}</span>
-      {/if}
-    {/each}
+  <nav aria-label="Breadcrumb" class="flex items-center gap-1 text-sm text-muted-foreground">
+    <ol class="flex items-center gap-1">
+      <li class="flex items-center gap-1">
+        <a href="#/" class="hover:text-foreground transition-colors">Home</a>
+      </li>
+      {#each crumbs as crumb}
+        <li class="flex items-center gap-1">
+          <ChevronRight class="h-3 w-3" aria-hidden="true" />
+          {#if crumb.href}
+            <a href={crumb.href} class="hover:text-foreground transition-colors">{crumb.label}</a>
+          {:else}
+            <span class="text-foreground font-medium" aria-current="page">{crumb.label}</span>
+          {/if}
+        </li>
+      {/each}
+    </ol>
   </nav>
 {/if}

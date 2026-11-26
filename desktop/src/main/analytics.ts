@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto"
 import { arch, homedir, platform } from "node:os"
 import { app } from "electron"
 import { PostHog } from "posthog-node"
+import { mainLog } from "./logging.js"
 import { machineIdSync } from "./machine-id.js"
 
 declare const __DEVSY_POSTHOG_API_KEY__: string | undefined
@@ -46,7 +47,7 @@ function isTelemetryDisabled(): boolean {
 export function initAnalytics(): void {
   if (isTelemetryDisabled()) return
   if (!DEVSY_POSTHOG_API_KEY) {
-    console.warn("[telemetry] analytics disabled: API key not configured")
+    mainLog.warn("[telemetry] analytics disabled: API key not configured")
     return
   }
 

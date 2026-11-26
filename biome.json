@@ -16,6 +16,18 @@
   },
   "overrides": [
     {
+      "includes": ["desktop/e2e/fixtures/**"],
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
+        "enabled": false
+      },
+      "assist": {
+        "enabled": false
+      }
+    },
+    {
       "includes": ["**/*.svelte"],
       "assist": {
         "actions": {

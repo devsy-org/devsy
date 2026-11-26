@@ -1,18 +1,154 @@
 package devcontainer
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net"
 	"reflect"
 	"testing"
+	"time"
 
+	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/version"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 )
 
-const testDockerHostEnvKey = "DOCKER_HOST"
+const (
+	stderrValue = "stderr"
+	none        = "none"
+)
+
+const (
+	testDockerHostEnvKey      = "DOCKER_HOST"
+	testSetupSSHServerCommand = "ssh-server --stdio"
+)
+
+type setupSSHDriver struct {
+	mockDriver
+	command func(context.Context, *driver.CommandParams) error
+}
+
+func (d *setupSSHDriver) CommandDevContainer(
+	ctx context.Context,
+	params *driver.CommandParams,
+) error {
+	return d.command(ctx, params)
+}
+
+type writeCloser struct{ io.Writer }
+
+func (writeCloser) Close() error { return nil }
+
+func TestExecSetupSSHServer_SilentExecReturnsStartupSilence(t *testing.T) {
+	stdin := bytes.NewBufferString("input")
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	var got *driver.CommandParams
+	d := &setupSSHDriver{command: func(ctx context.Context, params *driver.CommandParams) error {
+		got = params
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	r := newTestRunner(d)
+
+	err := r.execSetupSSHServer(
+		context.Background(), agent.ExecRequest{
+			Command: testSetupSSHServerCommand, Stdin: stdin, Stdout: stdout, Stderr: stderr,
+		},
+		agent.ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond},
+	)
+	var silenceErr *agent.ExecStartupSilenceError
+	require.ErrorAs(t, err, &silenceErr)
+	require.NotNil(t, got)
+	assert.Equal(t, r.id, got.WorkspaceID)
+	assert.Equal(t, "root", got.User)
+	assert.Equal(t, testSetupSSHServerCommand, got.Command)
+	assert.Same(t, stdin, got.Stdin)
+	assert.NotNil(t, got.Stdout)
+	assert.NotNil(t, got.Stderr)
+	assert.True(t, got.RawStdout)
+}
+
+func TestExecSetupSSHServer_SilentExecClosesStdin(t *testing.T) {
+	stdin, stdinPeer := net.Pipe()
+	defer func() { _ = stdinPeer.Close() }()
+	copyDone := make(chan struct{})
+	d := &setupSSHDriver{command: func(ctx context.Context, params *driver.CommandParams) error {
+		go func() {
+			_, _ = io.Copy(io.Discard, params.Stdin)
+			close(copyDone)
+		}()
+		<-ctx.Done()
+		<-copyDone
+		return ctx.Err()
+	}}
+	r := newTestRunner(d)
+
+	err := r.execSetupSSHServer(
+		context.Background(), agent.ExecRequest{Command: testSetupSSHServerCommand, Stdin: stdin},
+		agent.ExecStartupWatchdogOptions{
+			Timeout:                50 * time.Millisecond,
+			TerminationWaitTimeout: time.Second,
+		},
+	)
+	var silenceErr *agent.ExecStartupSilenceError
+	require.ErrorAs(t, err, &silenceErr)
+	select {
+	case <-copyDone:
+	default:
+		t.Fatal("closing setup stdin did not unblock the command input copy")
+	}
+}
+
+func TestExecSetupSSHServer_OutputDisarmsWatchdog(t *testing.T) {
+	for _, stream := range []string{"stdout", stderrValue} {
+		t.Run(stream, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			wrote := make(chan struct{})
+			d := &setupSSHDriver{command: func(
+				ctx context.Context,
+				params *driver.CommandParams,
+			) error {
+				output := params.Stdout
+				if stream == stderrValue {
+					output = params.Stderr
+				}
+				_, _ = io.WriteString(output, "SSH activity")
+				close(wrote)
+				<-ctx.Done()
+				return ctx.Err()
+			}}
+			r := newTestRunner(d)
+			result := make(chan error, 1)
+			go func() {
+				result <- r.execSetupSSHServer(ctx, agent.ExecRequest{
+					Command: testSetupSSHServerCommand, Stdout: io.Discard, Stderr: writeCloser{io.Discard},
+				}, agent.ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond})
+			}()
+			<-wrote
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+			err := <-result
+			assert.ErrorIs(t, err, context.Canceled)
+			var silenceErr *agent.ExecStartupSilenceError
+			assert.NotErrorAs(t, err, &silenceErr)
+		})
+	}
+}
 
 func TestNewAgentDelivery_RemoteDockerHostWiring(t *testing.T) {
 	cases := []struct {
@@ -108,10 +244,10 @@ func TestShouldChownWorkspace(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := shouldChownWorkspace(c.goos, c.isDockerDriver, c.isPodman, c.driverNeedsChown)
+			got := shouldChownWorkspace(c.goos, c.isPodman, !c.isDockerDriver || c.driverNeedsChown)
 			if got != c.want {
-				t.Errorf("shouldChownWorkspace(%q, %v, %v, %v) = %v, want %v",
-					c.goos, c.isDockerDriver, c.isPodman, c.driverNeedsChown, got, c.want)
+				t.Errorf("shouldChownWorkspace(%q, %v, %v) = %v, want %v",
+					c.goos, c.isPodman, !c.isDockerDriver || c.driverNeedsChown, got, c.want)
 			}
 		})
 	}
@@ -191,7 +327,7 @@ func TestBuildResult_DefaultUserEnvProbeOverride(t *testing.T) {
 	r := &runner{
 		workspaceConfig: &provider2.AgentWorkspaceInfo{
 			CLIOptions: provider2.CLIOptions{
-				DefaultUserEnvProbe: "none",
+				DefaultUserEnvProbe: none,
 			},
 		},
 	}
@@ -207,8 +343,8 @@ func TestBuildResult_DefaultUserEnvProbeOverride(t *testing.T) {
 	}
 
 	result := r.buildResult(params)
-	if result.MergedConfig.UserEnvProbe != "none" {
-		t.Errorf("expected UserEnvProbe=%q, got %q", "none", result.MergedConfig.UserEnvProbe)
+	if result.MergedConfig.UserEnvProbe != none {
+		t.Errorf("expected UserEnvProbe=%q, got %q", none, result.MergedConfig.UserEnvProbe)
 	}
 }
 
@@ -288,4 +424,358 @@ func TestAgentContainerPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+type capturePostStartDelivery struct {
+	delivery.AgentDelivery
+	usesBinarySource bool
+	called           bool
+	opts             delivery.PostStartOptions
+	err              error
+}
+
+func (d *capturePostStartDelivery) UsesBinarySource() bool { return d.usesBinarySource }
+
+func (d *capturePostStartDelivery) DeliverPostStart(
+	_ context.Context,
+	opts delivery.PostStartOptions,
+) error {
+	d.called = true
+	d.opts = opts
+	return d.err
+}
+
+func TestShellPrefetchSkipsArchitectureLookup(t *testing.T) {
+	for _, name := range []string{provider2.CustomDriver, provider2.AppleDriver} {
+		t.Run(name, func(t *testing.T) {
+			d := &architectureDriver{err: context.Canceled}
+			r := newTestRunner(d)
+			r.workspaceConfig.Agent.Driver = name
+			require.IsType(t, &delivery.LegacyShellDelivery{}, r.newAgentDelivery())
+			r.prefetchAgentBinary(context.Background())
+			assert.Zero(t, d.architectureCalls)
+		})
+	}
+}
+
+func TestPostStartDeliverySkipsUnusedBinarySource(t *testing.T) {
+	d := &architectureDriver{err: context.Canceled}
+	r := newTestRunner(d)
+	strategy := &capturePostStartDelivery{}
+	require.NoError(t, r.deliverPostStart(context.Background(), strategy))
+	assert.True(t, strategy.called)
+	assert.Zero(t, d.architectureCalls)
+	assert.Nil(t, strategy.opts.BinarySource)
+	assert.Empty(t, strategy.opts.Arch)
+	assert.Equal(t, r.id, strategy.opts.WorkspaceID)
+	strategy.err = context.DeadlineExceeded
+	assert.ErrorIs(t, r.deliverPostStart(context.Background(), strategy), strategy.err)
+}
+
+func TestPostStartDeliveryRetainsArchitectureForBinarySource(t *testing.T) {
+	d := &architectureDriver{arch: arm64}
+	r := newTestRunner(d)
+	strategy := &capturePostStartDelivery{usesBinarySource: true}
+	require.NoError(t, r.deliverPostStart(context.Background(), strategy))
+	assert.True(t, strategy.called)
+	assert.Equal(t, 1, d.architectureCalls)
+	assert.Equal(t, arm64, strategy.opts.Arch)
+	assert.NotNil(t, strategy.opts.BinarySource)
+	strategy.called = false
+	d.err = context.Canceled
+	assert.ErrorIs(t, r.deliverPostStart(context.Background(), strategy), d.err)
+	assert.False(t, strategy.called)
+}
+
+func TestPostStartDeliveryCustomAgentVersionPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		binaryPath  string
+		envURL      string
+		downloadURL string
+		wantSkip    bool
+	}{
+		{name: "release agent"},
+		{name: "empty local override", binaryPath: "  "},
+		{name: "local override", binaryPath: "/custom/devsy", wantSkip: true},
+		{name: "custom download", downloadURL: "http://localhost:8080/", wantSkip: true},
+		{name: "environment download override", envURL: "http://localhost:8080", wantSkip: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(pkgconfig.EnvAgentBinary, tc.binaryPath)
+			t.Setenv(pkgconfig.EnvAgentURL, tc.envURL)
+			r := newTestRunner(&architectureDriver{arch: arm64})
+			r.agentDownloadURL = tc.downloadURL
+			strategy := &capturePostStartDelivery{usesBinarySource: true}
+			require.NoError(t, r.deliverPostStart(context.Background(), strategy))
+			wantSkip := tc.wantSkip || version.GetVersion() == version.DevVersion
+			assert.Equal(t, wantSkip, strategy.opts.SkipVersionCheck)
+		})
+	}
+}
+
+func TestFallbackAgentDeliveryPreservesBothErrors(t *testing.T) {
+	nativeErr := errors.New("exec-stream delivery stalled")
+	legacyErr := errors.New("read ping: EOF")
+
+	err := fallbackAgentDelivery(
+		func() error { return nativeErr },
+		func() error { return legacyErr },
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, nativeErr)
+	assert.ErrorIs(t, err, legacyErr)
+	assert.Contains(t, err.Error(), "platform-native agent delivery failed")
+	assert.Contains(t, err.Error(), "legacy agent injection failed")
+}
+
+func TestFallbackAgentDeliverySuccessfulPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		nativeErr  error
+		wantLegacy bool
+	}{
+		{name: "native success"},
+		{name: "legacy recovery", nativeErr: errors.New("native failed"), wantLegacy: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			legacyCalled := false
+			err := fallbackAgentDelivery(
+				func() error { return tc.nativeErr },
+				func() error { legacyCalled = true; return nil },
+			)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantLegacy, legacyCalled)
+		})
+	}
+}
+
+type setupSSHArgvDriver struct {
+	setupSSHDriver
+	argv func(context.Context, string, []string, driver.Streams) error
+}
+
+func (d *setupSSHArgvDriver) CommandContainerArgv(
+	ctx context.Context, workspaceID string, argv []string, streams driver.Streams,
+) error {
+	return d.argv(ctx, workspaceID, argv, streams)
+}
+
+func setupSSHArgvRunner(d driver.Driver) *runner {
+	r := newTestRunner(d)
+	r.workspaceConfig.Agent.Driver = provider2.KubernetesDriver
+	r.workspaceConfig.Agent.Kubernetes.AgentInstallPath = "/agent dir/devsy';$(touch never)"
+	r.workspaceConfig.Workspace = &provider2.Workspace{}
+	r.workspaceConfig.Workspace.IDE.Name = string(pkgconfig.IDECodeServer)
+	r.workspaceConfig.CLIOptions.SSHAuthSockID = "auth sock';$(touch never)"
+	return r
+}
+
+func TestBuildSSHTunnelArgvPreservesLiteralArguments(t *testing.T) {
+	for _, debug := range []bool{false, true} {
+		level := zapcore.InfoLevel
+		if debug {
+			level = zapcore.DebugLevel
+		}
+		log.InitTestObserved(t, level)
+		r := setupSSHArgvRunner(&mockDriver{})
+		want := []string{
+			r.agentContainerPath(), "internal", "ssh-server", "--stdio",
+			"--reuse-ssh-auth-sock", r.workspaceConfig.CLIOptions.SSHAuthSockID,
+		}
+		if debug {
+			want = append(want, "--debug")
+		}
+		assert.Equal(t, want, r.buildSSHTunnelArgv())
+		r.workspaceConfig.Workspace.IDE.Name = none
+		want = []string{r.agentContainerPath(), "internal", "ssh-server", "--stdio"}
+		if debug {
+			want = append(want, "--debug")
+		}
+		assert.Equal(t, want, r.buildSSHTunnelArgv())
+	}
+}
+
+func TestExecSetupSSHServerGeneratedArgv(t *testing.T) {
+	var calls, shellCalls int
+	var gotID string
+	var gotArgv []string
+	input := bytes.NewBufferString("stdin payload")
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	payload := []byte{0, 255, 's', 'e', 'c', 'r', 'e', 't', '\n'}
+	d := &setupSSHArgvDriver{}
+	d.command = func(context.Context, *driver.CommandParams) error {
+		shellCalls++
+		return errors.New("bootstrap shell is absent")
+	}
+	d.argv = func(_ context.Context, id string, argv []string, streams driver.Streams) error {
+		calls++
+		gotID, gotArgv = id, append([]string(nil), argv...)
+		assert.Same(t, input, streams.Stdin)
+		if _, err := streams.Stdout.Write(payload); err != nil {
+			return err
+		}
+		_, err := streams.Stderr.Write(payload)
+		return err
+	}
+	r := setupSSHArgvRunner(d)
+	argv := r.buildSSHTunnelArgv()
+	err := r.execSetupSSHServer(context.Background(), agent.ExecRequest{
+		Command: shellescape.QuoteCommand(argv), Stdin: input, Stdout: stdout, Stderr: stderr,
+	}, agent.ExecStartupWatchdogOptions{}, argv...)
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+	assert.Zero(t, shellCalls)
+	assert.Equal(t, r.id, gotID)
+	assert.Equal(t, argv, gotArgv)
+	assert.Equal(t, payload, stdout.Bytes())
+	assert.Equal(t, payload, stderr.Bytes())
+}
+
+func TestExecSetupSSHServerArgvErrorDoesNotRetryShell(t *testing.T) {
+	var argvCalls, shellCalls int
+	wantErr := errors.New("agent exec failed")
+	d := &setupSSHArgvDriver{}
+	d.command = func(context.Context, *driver.CommandParams) error { shellCalls++; return nil }
+	d.argv = func(context.Context, string, []string, driver.Streams) error {
+		argvCalls++
+		return wantErr
+	}
+	r := setupSSHArgvRunner(d)
+	argv := r.buildSSHTunnelArgv()
+	err := r.execSetupSSHServer(context.Background(), agent.ExecRequest{
+		Command: shellescape.QuoteCommand(argv),
+	}, agent.ExecStartupWatchdogOptions{}, argv...)
+	assert.ErrorIs(t, err, wantErr)
+	assert.Equal(t, 1, argvCalls)
+	assert.Zero(t, shellCalls)
+}
+
+func TestExecSetupSSHServerGeneratedArgvFallsBackForUnsupportedDriver(t *testing.T) {
+	var got *driver.CommandParams
+	wantErr := errors.New("existing command result")
+	d := &setupSSHDriver{command: func(_ context.Context, params *driver.CommandParams) error {
+		got = params
+		return wantErr
+	}}
+	r := setupSSHArgvRunner(d)
+	argv := r.buildSSHTunnelArgv()
+	command := shellescape.QuoteCommand(argv)
+	err := r.execSetupSSHServer(context.Background(), agent.ExecRequest{
+		Command: command,
+	}, agent.ExecStartupWatchdogOptions{}, argv...)
+	assert.ErrorIs(t, err, wantErr)
+	require.NotNil(t, got)
+	assert.Equal(t, command, got.Command)
+	assert.Equal(t, r.id, got.WorkspaceID)
+	assert.Equal(t, containerRootUser, got.User)
+	assert.True(t, got.RawStdout)
+}
+
+func TestExecSetupSSHServerArgvStartupSilenceClosesOwnedInput(t *testing.T) {
+	stdin, peer := net.Pipe()
+	defer func() { _ = stdin.Close(); _ = peer.Close() }()
+	done := make(chan struct{})
+	d := &setupSSHArgvDriver{}
+	d.command = func(context.Context, *driver.CommandParams) error {
+		return errors.New("unexpected shell invocation")
+	}
+	d.argv = func(ctx context.Context, _ string, _ []string, streams driver.Streams) error {
+		defer close(done)
+		_, _ = io.Copy(io.Discard, streams.Stdin)
+		return ctx.Err()
+	}
+	r := newTestRunner(d)
+	err := r.execSetupSSHServer(context.Background(), agent.ExecRequest{Stdin: stdin},
+		agent.ExecStartupWatchdogOptions{
+			Timeout: 50 * time.Millisecond, TerminationWaitTimeout: time.Second,
+		}, "agent", "internal", "ssh-server", "--stdio")
+	var silenceErr *agent.ExecStartupSilenceError
+	assert.ErrorAs(t, err, &silenceErr)
+	select {
+	case <-done:
+	default:
+		t.Error("startup silence returned without joining the blocked input copy")
+	}
+	// Failure cleanup closes the owned input before the bounded join too.
+	_ = stdin.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("argv command did not join after owned input closure")
+	}
+}
+
+func TestExecSetupSSHServerArgvActivityRetainsCallerCancellation(t *testing.T) {
+	for _, output := range []string{"stdout", stderrValue} {
+		t.Run(output, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+			defer cancel()
+			done := make(chan struct{})
+			d := &setupSSHArgvDriver{}
+			d.command = func(context.Context, *driver.CommandParams) error {
+				return errors.New("unexpected shell invocation")
+			}
+			d.argv = func(ctx context.Context, _ string, _ []string, streams driver.Streams) error {
+				defer close(done)
+				writer := streams.Stdout
+				if output == stderrValue {
+					writer = streams.Stderr
+				}
+				if _, err := io.WriteString(writer, "ready"); err != nil {
+					return err
+				}
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			r := newTestRunner(d)
+			err := r.execSetupSSHServer(
+				ctx,
+				agent.ExecRequest{},
+				agent.ExecStartupWatchdogOptions{
+					Timeout: 50 * time.Millisecond,
+				},
+				"agent",
+				"--stdio",
+			)
+			assert.ErrorIs(t, err, context.DeadlineExceeded)
+			var silenceErr *agent.ExecStartupSilenceError
+			assert.NotErrorAs(t, err, &silenceErr)
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("argv command did not join caller cancellation")
+			}
+		})
+	}
+}
+
+func TestBuildSetupCommandKeepsQuotedAgentPath(t *testing.T) {
+	r := setupSSHArgvRunner(&mockDriver{})
+	command := r.buildSetupCommand("setup info", "workspace info")
+	assert.Contains(
+		t,
+		command,
+		shellescape.Quote(r.agentContainerPath())+" internal agent container setup ",
+	)
+}
+
+func TestExecSetupSSHServerWithoutGeneratedArgvKeepsShell(t *testing.T) {
+	var argvCalls, shellCalls int
+	command := "literal shell command; do not parse into argv"
+	d := &setupSSHArgvDriver{}
+	d.command = func(_ context.Context, params *driver.CommandParams) error {
+		shellCalls++
+		assert.Equal(t, command, params.Command)
+		assert.Equal(t, containerRootUser, params.User)
+		assert.True(t, params.RawStdout)
+		return nil
+	}
+	d.argv = func(context.Context, string, []string, driver.Streams) error { argvCalls++; return nil }
+	r := newTestRunner(d)
+	require.NoError(t, r.execSetupSSHServer(context.Background(), agent.ExecRequest{
+		Command: command,
+	}, agent.ExecStartupWatchdogOptions{}))
+	assert.Equal(t, 1, shellCalls)
+	assert.Zero(t, argvCalls)
 }

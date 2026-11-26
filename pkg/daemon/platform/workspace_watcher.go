@@ -10,7 +10,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	loftclient "github.com/devsy-org/api/pkg/clientset/versioned"
+	devsyclient "github.com/devsy-org/api/pkg/clientset/versioned"
 	typedmanagementv1 "github.com/devsy-org/api/pkg/clientset/versioned/typed/management/v1"
 	informers "github.com/devsy-org/api/pkg/informers/externalversions"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -27,15 +27,15 @@ import (
 	"tailscale.com/tailcfg"
 )
 
-type ProWorkspaceInstance struct {
+type WorkspaceInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
 
 	Spec   managementv1.DevsyWorkspaceInstanceSpec `json:"spec"`
-	Status ProWorkspaceInstanceStatus              `json:"status"`
+	Status WorkspaceInstanceStatus                 `json:"status"`
 }
 
-type ProWorkspaceInstanceStatus struct {
+type WorkspaceInstanceStatus struct {
 	managementv1.DevsyWorkspaceInstanceStatus `json:",inline"`
 
 	Source  *provider.WorkspaceSource       `json:"source,omitempty"`
@@ -51,7 +51,7 @@ type watchConfig struct {
 	OwnerFilter    platform.OwnerFilter
 }
 
-type changeFn func(instanceList []*ProWorkspaceInstance)
+type changeFn func(instanceList []*WorkspaceInstance)
 
 func startWorkspaceWatcher(ctx context.Context, config watchConfig, onChange changeFn) error {
 	self := config.PlatformClient.Self()
@@ -170,7 +170,7 @@ type instanceStore struct {
 	ownerFilter platform.OwnerFilter
 
 	m         sync.Mutex
-	instances map[string]*ProWorkspaceInstance
+	instances map[string]*WorkspaceInstance
 	tsClient  *local.Client
 
 	metricsMu        sync.RWMutex
@@ -207,7 +207,7 @@ func newStore(
 	return &instanceStore{
 		self:             self,
 		context:          context,
-		instances:        map[string]*ProWorkspaceInstance{},
+		instances:        map[string]*WorkspaceInstance{},
 		ownerFilter:      ownerFilter,
 		tsClient:         tsClient,
 		metrics:          map[string][]WorkspaceNetworkMetrics{},
@@ -236,11 +236,11 @@ func (s *instanceStore) Add(instance *managementv1.DevsyWorkspaceInstance) {
 		}
 	}
 
-	proInstance := &ProWorkspaceInstance{
+	platformInstance := &WorkspaceInstance{
 		TypeMeta:   instance.TypeMeta,
 		ObjectMeta: instance.ObjectMeta,
 		Spec:       instance.Spec,
-		Status: ProWorkspaceInstanceStatus{
+		Status: WorkspaceInstanceStatus{
 			DevsyWorkspaceInstanceStatus: instance.Status,
 			Source:                       source,
 			IDE:                          ideConfig,
@@ -249,7 +249,7 @@ func (s *instanceStore) Add(instance *managementv1.DevsyWorkspaceInstance) {
 
 	key := s.key(instance.Namespace, instance.Name)
 	s.m.Lock()
-	s.instances[key] = proInstance
+	s.instances[key] = platformInstance
 	s.m.Unlock()
 }
 
@@ -279,11 +279,11 @@ func (s *instanceStore) Delete(instance *managementv1.DevsyWorkspaceInstance) {
 	delete(s.metrics, key)
 }
 
-func (s *instanceStore) List() []*ProWorkspaceInstance {
+func (s *instanceStore) List() []*WorkspaceInstance {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	instanceList := []*ProWorkspaceInstance{}
+	instanceList := []*WorkspaceInstance{}
 	for _, instance := range s.instances {
 		instanceList = append(instanceList, s.convert(instance))
 	}
@@ -295,7 +295,7 @@ func (s *instanceStore) key(namespace, name string) string {
 	return fmt.Sprintf("%s/%s", namespace, name)
 }
 
-func (s *instanceStore) convert(instance *ProWorkspaceInstance) *ProWorkspaceInstance {
+func (s *instanceStore) convert(instance *WorkspaceInstance) *WorkspaceInstance {
 	if instance == nil {
 		return nil
 	}
@@ -368,7 +368,7 @@ func (s *instanceStore) updateWorkspaceLatencies(ctx context.Context) {
 		}
 
 		wg.Add(1)
-		go func(peer *ipnstate.PeerStatus, key string, instance *ProWorkspaceInstance) {
+		go func(peer *ipnstate.PeerStatus, key string, instance *WorkspaceInstance) {
 			defer wg.Done()
 			s.pingAndRecord(ctx, peer, key, instance)
 		}(peer, key, instance)
@@ -381,7 +381,7 @@ func (s *instanceStore) pingAndRecord(
 	ctx context.Context,
 	peer *ipnstate.PeerStatus,
 	key string,
-	instance *ProWorkspaceInstance,
+	instance *WorkspaceInstance,
 ) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -432,8 +432,8 @@ func (s *instanceStore) pingAndRecord(
 	s.metricsMu.Unlock()
 }
 
-func getClientSet(config *rest.Config) (loftclient.Interface, error) {
-	clientset, err := loftclient.NewForConfig(config)
+func getClientSet(config *rest.Config) (devsyclient.Interface, error) {
+	clientset, err := devsyclient.NewForConfig(config)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +449,7 @@ func getClientSet(config *rest.Config) (loftclient.Interface, error) {
 var _ rest.Interface = (*extendedRESTClient)(nil)
 
 type extendedClientset struct {
-	*loftclient.Clientset
+	*devsyclient.Clientset
 	ManagementClient typedmanagementv1.ManagementV1Interface
 }
 

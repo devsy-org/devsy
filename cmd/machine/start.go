@@ -21,7 +21,7 @@ func NewStartCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	startCmd := &cobra.Command{
 		Use:   "start [name]",
-		Short: "Starts an existing machine",
+		Short: "Start a machine",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

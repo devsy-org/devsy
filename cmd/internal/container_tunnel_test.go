@@ -4,14 +4,39 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 )
+
+func TestContainerRuntimeHealthCheck(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime-fake")
+	//nolint:gosec // G306: test executable
+	if err := os.WriteFile(
+		path,
+		[]byte("#!/bin/sh\necho 'Cannot connect to Podman' >&2\nexit 1\n"),
+		0o755,
+	); err != nil {
+		t.Fatal(err)
+	}
+	info := &provider2.AgentWorkspaceInfo{}
+	info.Agent.Docker.Path = path
+	check := containerRuntimeHealthCheck(info)
+	if check == nil || !errors.Is(check(context.Background()), docker.ErrRuntimeUnavailable) {
+		t.Fatal("Docker control-plane failure must be classified as runtime unavailable")
+	}
+	info.Agent.Driver = provider2.KubernetesDriver
+	if containerRuntimeHealthCheck(info) != nil {
+		t.Fatal("non-Docker driver must not probe Docker")
+	}
+}
 
 type blockingFindRunner struct{}
 
@@ -73,12 +98,40 @@ type stubRunner struct {
 	findErr    error
 	upErr      error
 	commandErr error
+	upOptions  *devcontainer.UpOptions
 }
 
 func (s stubRunner) Up(
-	context.Context, devcontainer.UpOptions, time.Duration, status.Reporter,
+	_ context.Context, options devcontainer.UpOptions, _ time.Duration, _ status.Reporter,
 ) (*config.Result, error) {
+	if s.upOptions != nil {
+		*s.upOptions = options
+	}
 	return nil, s.upErr
+}
+
+func TestStartDevContainerDoesNotReplayCreationOptions(t *testing.T) {
+	var received devcontainer.UpOptions
+	runner := stubRunner{
+		findResult: &config.ContainerDetails{State: config.ContainerDetailsState{
+			Status: config.ContainerStatusExited,
+		}},
+		upOptions: &received,
+	}
+	workspace := &provider2.AgentWorkspaceInfo{CLIOptions: provider2.CLIOptions{
+		Recreate:              true,
+		Reset:                 true,
+		ExtraDevContainerPath: "/deleted/overlay.json",
+	}}
+	if err := startDevContainer(context.Background(), workspace, runner); err != nil {
+		t.Fatal(err)
+	}
+	if !received.NoBuild || received.Recreate || received.Reset ||
+		received.ExtraDevContainerPath != "" {
+		t.Fatal(
+			"SSH restart must resume without replaying destructive or transient creation options",
+		)
+	}
 }
 
 func (stubRunner) Build(context.Context, provider2.BuildOptions) (string, error) {

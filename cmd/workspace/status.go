@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspacejournal"
 	"github.com/spf13/cobra"
 )
 
@@ -40,14 +41,20 @@ func NewStatusCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.execute(cobraCmd.Context(), args)
 		},
-		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(
+			rootCmd *cobra.Command,
+			args []string,
+			toComplete string,
+		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
@@ -96,18 +103,19 @@ func (cmd *StatusCmd) Run(
 		_, _ = fmt.Fprintln(os.Stdout, string(instanceStatus))
 	case output.ModeJSON:
 		status := client2.WorkspaceStatus{
-			ID:       client.Workspace(),
-			Context:  client.Context(),
-			Provider: client.Provider(),
-			State:    string(instanceStatus),
-			Recovery: cmd.resolveRecovery(client, instanceStatus),
+			ID:            client.Workspace(),
+			Context:       client.Context(),
+			Provider:      client.Provider(),
+			State:         string(instanceStatus),
+			Recovery:      cmd.resolveRecovery(client, instanceStatus),
+			LastOperation: cmd.lastOperation(client.Workspace()),
 		}
 		out, err := json.Marshal(&status)
 		if err != nil {
 			return err
 		}
 
-		fmt.Print(string(out))
+		_, _ = fmt.Fprint(os.Stdout, string(out))
 	}
 
 	return nil
@@ -128,6 +136,33 @@ func (cmd *StatusCmd) resolveRecovery(
 		return false
 	}
 	return result.RecoveryContainer
+}
+
+func (cmd *StatusCmd) lastOperation(workspaceID string) *client2.OperationSummary {
+	dir, err := workspacejournal.DefaultDir()
+	if err != nil {
+		return nil
+	}
+	event, err := workspacejournal.Last(dir, workspaceID)
+	if err != nil || event == nil {
+		return nil
+	}
+	summary := &client2.OperationSummary{
+		Timestamp:      event.Timestamp,
+		Pipeline:       string(event.Pipeline),
+		Phase:          string(event.Phase),
+		State:          string(event.State),
+		DurationMillis: event.DurationMillis,
+	}
+	if event.Error != nil {
+		summary.Error = &client2.ErrorInfo{
+			Code:    event.Error.Code,
+			Message: event.Error.Message,
+			Hint:    event.Error.Hint,
+			Context: event.Error.Context,
+		}
+	}
+	return summary
 }
 
 func (cmd *StatusCmd) execute(ctx context.Context, args []string) error {

@@ -3,6 +3,7 @@ package cmdinternal
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/file"
@@ -37,6 +38,6 @@ func (cmd *GetWorkspaceNameCommand) Run(ctx context.Context, args []string) erro
 
 	_, name := file.IsLocalDir(args[0])
 	workspaceID := workspace.ToID(name)
-	fmt.Print(workspaceID)
+	_, _ = fmt.Fprint(os.Stdout, workspaceID)
 	return nil
 }

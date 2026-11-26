@@ -1,6 +1,0 @@
-{
-  "name": "Compose v1 fallback",
-  "dockerComposeFile": ["./docker-compose.yml"],
-  "service": "app",
-  "workspaceFolder": "/workspaces"
-}

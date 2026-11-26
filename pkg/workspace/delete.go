@@ -14,16 +14,19 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
+	progress "github.com/devsy-org/devsy/pkg/status"
 )
 
 // DeleteOptions holds the parameters for deleting a workspace.
 type DeleteOptions struct {
 	DevsyConfig    *config.Config
 	Args           []string
+	Client         client2.BaseWorkspaceClient
 	IgnoreNotFound bool
 	Force          bool
 	ClientDelete   client2.DeleteOptions
 	Owner          platform.OwnerFilter
+	quiescer       UpTaskQuiescer
 }
 
 // Delete deletes a workspace, handling imported workspaces, single-machine
@@ -32,19 +35,25 @@ type DeleteOptions struct {
 // running -> stopped -> deleted lifecycle, and any detached browser tunnel
 // helper is reaped so its host ports do not outlive the workspace.
 func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
-	client, err := Get(ctx, GetOptions{
-		DevsyConfig: opts.DevsyConfig,
-		Args:        opts.Args,
-		Owner:       opts.Owner,
-	})
-	if err != nil {
-		return handleDeleteLoadError(ctx, opts, err)
+	client := opts.Client
+	if client == nil {
+		loaded, err := loadDeleteClient(ctx, opts)
+		if err != nil {
+			return handleDeleteLoadError(ctx, opts, err)
+		}
+		client = loaded
 	}
 
 	defer opener.KillBrowserTunnel(client.Context(), client.Workspace())
 
-	if id, done, err := deleteImportedWorkspace(client, opts); done {
-		return id, err
+	// A surviving detached up worker can recreate resources during or after
+	// the delete, so quiescence failure blocks even a forced delete.
+	if err := opts.quiesce(ctx, client.Workspace()); err != nil {
+		return "", err
+	}
+
+	if isImportedLocalDelete(opts, client) {
+		return removeImportedLocalWorkspace(ctx, client, opts)
 	}
 
 	unlock, status, err := checkBeforeDelete(ctx, client, opts)
@@ -53,14 +62,91 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 	}
 	defer unlock()
 
+	// Re-scan under the lock: a task may have become visible while lock
+	// acquisition waited.
+	if err := opts.quiesce(ctx, client.Workspace()); err != nil {
+		return "", err
+	}
+
 	stopIfRunning(ctx, client, status)
 
-	id, err := deleteWorkspace(ctx, client, opts)
-	if err == nil {
-		SweepOrphanWorkspaceDirs(opts.DevsyConfig.DefaultContext)
-		SweepOrphanContentDirs(opts.DevsyConfig.DefaultContext)
+	id, err := removeWorkspaceResources(ctx, client, opts)
+	if err != nil {
+		return id, err
 	}
+	return id, cleanupDeletedWorkspaceFiles(ctx, opts)
+}
+
+func loadDeleteClient(
+	ctx context.Context,
+	opts DeleteOptions,
+) (client2.BaseWorkspaceClient, error) {
+	var client client2.BaseWorkspaceClient
+	err := progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Loading workspace",
+		func(ctx context.Context) error {
+			var err error
+			client, err = Get(
+				ctx,
+				GetOptions{DevsyConfig: opts.DevsyConfig, Args: opts.Args, Owner: opts.Owner},
+			)
+			return err
+		},
+	)
+	return client, err
+}
+
+func removeImportedLocalWorkspace(
+	ctx context.Context,
+	client client2.BaseWorkspaceClient,
+	opts DeleteOptions,
+) (string, error) {
+	var id string
+	err := progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Removing local workspace",
+		func(context.Context) error {
+			var err error
+			id, _, err = deleteImportedWorkspace(client, opts)
+			return err
+		},
+	)
 	return id, err
+}
+
+func removeWorkspaceResources(
+	ctx context.Context,
+	client client2.BaseWorkspaceClient,
+	opts DeleteOptions,
+) (string, error) {
+	var id string
+	err := progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Removing workspace resources",
+		func(ctx context.Context) error {
+			var err error
+			id, err = deleteWorkspace(ctx, client, opts)
+			return err
+		},
+	)
+	return id, err
+}
+
+func cleanupDeletedWorkspaceFiles(ctx context.Context, opts DeleteOptions) error {
+	return progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Cleaning local files",
+		func(context.Context) error {
+			SweepOrphanWorkspaceDirs(opts.DevsyConfig.DefaultContext)
+			SweepOrphanContentDirs(opts.DevsyConfig.DefaultContext)
+			return nil
+		},
+	)
 }
 
 // stopIfRunning stops the workspace before deletion when it is currently
@@ -78,32 +164,46 @@ func stopIfRunning(
 		return
 	}
 
-	if err := client.Stop(ctx, client2.StopOptions{}); err != nil {
+	if err := progress.RunStep(
+		ctx,
+		progress.PhaseStoppingWorkspace,
+		"Stopping before deletion",
+		func(ctx context.Context) error {
+			return client.Stop(ctx, client2.StopOptions{})
+		},
+	); err != nil {
 		log.Debugf("stop workspace before delete failed, proceeding: %v", err)
 	}
 }
 
-// checkBeforeDelete acquires the lock and verifies the workspace exists
-// unless force-deletion is requested. It returns an unlock function that
-// must be called by the caller (typically deferred) to release the lock,
-// and the resolved workspace status so the caller can decide whether a
-// stop is required before delete.
+// checkBeforeDelete acquires the workspace lock and returns its status and an
+// unlock function. Force skips the status check, not the lock.
 func checkBeforeDelete(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
 	opts DeleteOptions,
 ) (func(), client2.Status, error) {
-	force := opts.Force || opts.ClientDelete.Force
-	if force {
-		return func() {}, "", nil
-	}
-
 	unlock, err := lockIfNeeded(ctx, client, opts)
 	if err != nil {
 		return nil, "", err
 	}
 
-	status, err := client.Status(ctx, client2.StatusOptions{})
+	force := opts.Force || opts.ClientDelete.Force
+	if force {
+		return unlock, "", nil
+	}
+
+	var status client2.Status
+	err = progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Checking workspace status",
+		func(ctx context.Context) error {
+			var err error
+			status, err = client.Status(ctx, client2.StatusOptions{})
+			return err
+		},
+	)
 	if err != nil {
 		unlock()
 		return nil, "", err
@@ -132,7 +232,12 @@ func lockIfNeeded(
 		return func() {}, nil
 	}
 
-	if err := client.Lock(ctx); err != nil {
+	if err := progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Waiting for workspace lock",
+		client.Lock,
+	); err != nil {
 		return nil, err
 	}
 
@@ -154,7 +259,7 @@ func handleDeleteLoadError(
 		)
 	}
 
-	workspaceID := Exists(ctx, opts.DevsyConfig, opts.Args, "", opts.Owner)
+	workspaceID := Exists(ctx, opts.DevsyConfig, LookupOptions{Args: opts.Args, Owner: opts.Owner})
 	if workspaceID == "" {
 		if opts.IgnoreNotFound {
 			return "", nil
@@ -171,13 +276,21 @@ func handleDeleteLoadError(
 		return "", loadErr
 	}
 
-	return forceDeleteFolder(opts, workspaceID)
+	return forceDeleteFolder(ctx, opts, workspaceID)
 }
 
 // forceDeleteFolder removes the workspace folder when the workspace client
 // cannot be loaded and --force is set.
-func forceDeleteFolder(opts DeleteOptions, workspaceID string) (string, error) {
+func forceDeleteFolder(
+	ctx context.Context,
+	opts DeleteOptions,
+	workspaceID string,
+) (string, error) {
 	log.Errorf("error retrieving workspace, force-deleting folder")
+
+	if err := opts.quiesce(ctx, workspaceID); err != nil {
+		return "", err
+	}
 
 	err := clientimplementation.DeleteWorkspaceFolder(
 		clientimplementation.DeleteWorkspaceFolderParams{
@@ -400,4 +513,25 @@ func removeIfContentOrphan(contextName, contentsDir string, entry os.DirEntry) {
 		return
 	}
 	log.Debugf("removed orphan content dir with no matching workspace: workspace=%s", entry.Name())
+}
+
+func (opts DeleteOptions) quiesce(ctx context.Context, workspaceID string) error {
+	quiescer := opts.quiescer
+	if quiescer == nil {
+		quiescer = StoreUpTaskQuiescer{}
+	}
+	if err := quiescer.Quiesce(ctx, workspaceID); err != nil {
+		return fmt.Errorf(
+			"cancel detached up tasks for workspace %s: %w",
+			workspaceID,
+			err,
+		)
+	}
+	return nil
+}
+
+// isImportedLocalDelete reports whether the delete only unlinks an imported
+// local workspace, which a force delete never does.
+func isImportedLocalDelete(opts DeleteOptions, client client2.BaseWorkspaceClient) bool {
+	return !opts.Force && client.WorkspaceConfig().Imported
 }

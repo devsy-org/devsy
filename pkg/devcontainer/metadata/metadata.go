@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"encoding/json"
+	"fmt"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -10,7 +11,38 @@ import (
 
 const ImageMetadataLabel = pkgconfig.DevcontainerMetadataLabel
 
+// CreationConfigLabel identifies a metadata chain ending with the creation-time workspace config.
+const CreationConfigLabel = pkgconfig.CreationConfigLabel
+
 const metadataLabelSizeWarningThreshold = 100 * 1024
+
+// ValidateImageMetadata is the strict counterpart to legacy permissive decoding.
+// Errors deliberately exclude metadata, which can contain commands and secrets.
+func ValidateImageMetadata(value string) error {
+	var entries []*config.ImageMetadata
+	if err := json.Unmarshal([]byte(value), &entries); err != nil {
+		var entry *config.ImageMetadata
+		if err := json.Unmarshal([]byte(value), &entry); err != nil || entry == nil {
+			return fmt.Errorf(
+				"invalid image metadata",
+			)
+		}
+		entries = []*config.ImageMetadata{entry}
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf(
+			"image metadata is empty",
+		)
+	}
+	for _, entry := range entries {
+		if entry == nil {
+			return fmt.Errorf(
+				"image metadata contains a null entry",
+			)
+		}
+	}
+	return nil
+}
 
 func MarshalImageMetadata(raw []*config.ImageMetadata) ([]byte, error) {
 	data, err := json.Marshal(raw)
@@ -127,28 +159,10 @@ func GetImageMetadataFromContainer(
 		return &config.ImageMetadataConfig{}, nil
 	}
 
-	imageMetadataConfig := &config.ImageMetadataConfig{}
-	multiple := []*config.ImageMetadata{}
-	err := json.Unmarshal([]byte(containerDetails.Config.Labels[ImageMetadataLabel]), &multiple)
-	if err != nil {
-		single := &config.ImageMetadata{}
-		err = json.Unmarshal([]byte(containerDetails.Config.Labels[ImageMetadataLabel]), single)
-		if err != nil {
-			log.Warnf("Error parsing image metadata: %v", err)
-			return &config.ImageMetadataConfig{}, nil
-		}
-
-		imageMetadataConfig.Raw = []*config.ImageMetadata{single}
-	} else {
-		imageMetadataConfig.Raw = multiple
-	}
-
-	err = substituteConfig(imageMetadataConfig, substituteContext)
-	if err != nil {
-		return nil, err
-	}
-
-	return imageMetadataConfig, nil
+	return decodeImageMetadata(
+		containerDetails.Config.Labels[ImageMetadataLabel],
+		substituteContext,
+	)
 }
 
 func GetImageMetadata(
@@ -163,12 +177,19 @@ func GetImageMetadata(
 		return &config.ImageMetadataConfig{}, nil
 	}
 
+	return decodeImageMetadata(imageDetails.Config.Labels[ImageMetadataLabel], substituteContext)
+}
+
+func decodeImageMetadata(
+	label string,
+	substituteContext *config.SubstitutionContext,
+) (*config.ImageMetadataConfig, error) {
 	imageMetadataConfig := &config.ImageMetadataConfig{}
 	multiple := []*config.ImageMetadata{}
-	err := json.Unmarshal([]byte(imageDetails.Config.Labels[ImageMetadataLabel]), &multiple)
+	err := json.Unmarshal([]byte(label), &multiple)
 	if err != nil {
 		single := &config.ImageMetadata{}
-		err = json.Unmarshal([]byte(imageDetails.Config.Labels[ImageMetadataLabel]), single)
+		err = json.Unmarshal([]byte(label), single)
 		if err != nil {
 			log.Warnf("Error parsing image metadata: %v", err)
 			return &config.ImageMetadataConfig{}, nil

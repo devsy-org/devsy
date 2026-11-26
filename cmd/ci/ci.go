@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -49,9 +51,10 @@ func NewCICmd(flags *flags.GlobalFlags) *cobra.Command {
 	ciCmd := &cobra.Command{
 		Use:   "ci [flags] [workspace-path|workspace-name] -- <cmd> [args...]",
 		Short: "Build a devcontainer, run a command inside it, then tear it down",
-		Long: `Builds an ephemeral devcontainer, runs the given command inside it, and
-deletes the workspace afterwards. A non-zero exit from that command propagates as the
-exit code of "devsy ci".`,
+		Long: `Build a devcontainer, run a command inside it, then tear it down.
+
+The workspace is deleted afterwards. A non-zero exit from the command is
+returned as the exit code of "devsy ci".`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			source, runCmd, err := splitArgs(cobraCmd, args, cmd.RunCmdString)
 			if err != nil {
@@ -139,16 +142,21 @@ func (cmd *CICmd) registerSecretsFlags(ciCmd *cobra.Command) {
 		cliflags.String(&cmd.FeatureSecretsFile, names.FeatureSecretsFile, "",
 			"Path to a JSON file containing secret values for features, format: "+
 				`{"featureId": {"optionName": "value"}}`),
-		cliflags.StringArray(&cmd.Secrets, names.Secret, nil,
-			"Stored Devsy secret to inject, as NAME[,type=env|mount][,target=X]; "+
-				"type=env (default) sets an env var, type=mount writes /run/secrets/<target>. Repeatable"),
+		cliflags.StringArray(
+			&cmd.Secrets,
+			names.Secret,
+			nil,
+			"Secret to inject: NAME or source-qualified TYPE:SOURCE/NAME[,type=env|mount][,target=X]; "+
+				"type=env (default) sets an env var, type=mount writes /run/secrets/<target>. Repeatable",
+		),
 		cliflags.StringArray(&cmd.EnvVars, names.Env, nil,
 			"Stored Devsy env var to inject into the workspace as NAME[=TARGET]. Repeatable"),
 		cliflags.StringArray(&cmd.BuildSecretNames, names.BuildSecret, nil,
-			"Stored Devsy secret exposed to the build via BuildKit "+
+			"Secret to expose to the build via BuildKit; accepts NAME or TYPE:SOURCE/NAME "+
 				"(RUN --mount=type=secret,id=NAME). Repeatable"),
 		cliflags.String(&cmd.GitTokenSecret, names.GitToken, "",
-			"Stored Devsy secret holding an access token for cloning a private HTTP repository"),
+			"Secret holding an access token for cloning a private HTTP repository; "+
+				"accepts NAME or TYPE:SOURCE/NAME; repository-owned sources cannot bootstrap their own clone"),
 		cliflags.String(&cmd.GitTokenUsername, names.GitTokenUsername, "",
 			"Username for --git-token (default inferred from the repo host)"),
 	)
@@ -202,41 +210,65 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	// workspace.
 	ctx, cancel := up.WithSignals(ctx)
 	defer cancel()
+	reporter, err := newStatusReporter(os.Stderr, cmd.Verbosity > 0 || cmd.Debug, cmd.NoStatus)
+	if err != nil {
+		return err
+	}
 
-	devsyConfig, cfgErr := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, cfgErr := cmd.loadConfig()
 	if cfgErr != nil {
 		return cfgErr
+	}
+
+	resolved, resolveErr := cmd.resolveWorkspace(ctx, devsyConfig, source)
+	if resolveErr != nil {
+		return resolveErr
+	}
+	// release tears down the workspace; join error with the result.
+	defer func() {
+		err = errors.Join(err, resolved.release(reporter))
+	}()
+	workspaceClient := resolved.client
+
+	if err := cmd.startWorkspace(ctx, devsyConfig, workspaceClient, reporter); err != nil {
+		return err
+	}
+
+	log.Debugf("running command in devcontainer: %s", strings.Join(cmd.RunCmd, " "))
+	return status.Run(ctx, reporter, status.Operation{
+		Phase: status.PhaseRunningCommand,
+		Step:  "CI command",
+	}, func(ctx context.Context) error {
+		return cmd.runInContainer(ctx, workspaceClient)
+	})
+}
+
+func (cmd *CICmd) loadConfig() (*config.Config, error) {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return nil, err
 	}
 	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
 		cmd.StrictHostKeyChecking = true
 	}
+	return devsyConfig, nil
+}
 
-	workspaceClient, cleanup, resolveErr := cmd.resolveWorkspace(ctx, devsyConfig, source)
-	if resolveErr != nil {
-		return resolveErr
+type resolvedWorkspace struct {
+	client   client.BaseWorkspaceClient
+	cleanup  func() error
+	teardown bool
+}
+
+func (r *resolvedWorkspace) release(reporter status.Reporter) error {
+	if !r.teardown {
+		return r.cleanup()
 	}
-	// cleanup tears down the workspace; join error with the result.
-	defer func() { err = errors.Join(err, cleanup()) }()
-
-	if _, ok := workspaceClient.(client.WorkspaceClient); !ok {
-		return fmt.Errorf("ci is currently not supported for proxy providers")
-	}
-
-	cmd.WaitFor = string(setup.PhasePostCreate)
-
-	if _, err := up.RunHeadless(ctx, workspaceClient, up.HeadlessOptions{
-		GlobalFlags:        cmd.GlobalFlags,
-		DevsyConfig:        devsyConfig,
-		CLIOptions:         cmd.CLIOptions,
-		ProviderOptions:    cmd.ProviderOptions,
-		SecretsFile:        cmd.SecretsFile,
-		FeatureSecretsFile: cmd.FeatureSecretsFile,
-	}); err != nil {
-		return fmt.Errorf("start devcontainer: %w", err)
-	}
-
-	log.Infof("running command in devcontainer: %s", strings.Join(cmd.RunCmd, " "))
-	return cmd.runInContainer(ctx, workspaceClient)
+	return status.Run(context.Background(), reporter, status.Operation{
+		Phase: status.PhaseDeletingWorkspace,
+	}, func(context.Context) error {
+		return r.cleanup()
+	})
 }
 
 // resolveWorkspace resolves (creating if needed) the workspace to run in.
@@ -244,16 +276,20 @@ func (cmd *CICmd) resolveWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	source string,
-) (client.BaseWorkspaceClient, func() error, error) {
+) (*resolvedWorkspace, error) {
 	var args []string
 	if source != "" {
 		args = []string{source}
 	}
-	exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner)
+	exists := workspace2.Exists(
+		ctx,
+		devsyConfig,
+		workspace2.LookupOptions{Args: args, Owner: cmd.Owner},
+	)
 
 	sshConfigPath, cleanupSSH, err := workspacecmd.NewTempSSHConfig()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	workspaceClient, err := workspace2.Resolve(ctx, devsyConfig, workspace2.ResolveParams{
@@ -262,13 +298,15 @@ func (cmd *CICmd) resolveWorkspace(
 		ProviderUserOptions: cmd.ProviderOptions,
 		DevContainerImage:   cmd.DevContainerImage,
 		DevContainerPath:    cmd.DevContainerPath,
+		DevContainerID:      cmd.DevContainerID,
+		DevContainerSource:  cmd.DevContainerSource,
 		SSHConfigPath:       sshConfigPath,
 		UID:                 cmd.UID,
 		Owner:               cmd.Owner,
 	})
 	if err != nil {
 		cleanupSSH()
-		return nil, nil, err
+		return nil, err
 	}
 
 	teardown := exists == "" && !cmd.Keep
@@ -279,7 +317,7 @@ func (cmd *CICmd) resolveWorkspace(
 		}
 		return nil
 	}
-	return workspaceClient, cleanup, nil
+	return &resolvedWorkspace{client: workspaceClient, cleanup: cleanup, teardown: teardown}, nil
 }
 
 // runInContainer runs the command inside the started container.
@@ -293,7 +331,7 @@ func (cmd *CICmd) runInContainer(ctx context.Context, c client.BaseWorkspaceClie
 }
 
 func (cmd *CICmd) teardown(c client.BaseWorkspaceClient) error {
-	log.Infof("tearing down workspace")
+	log.Debugf("tearing down workspace")
 	ctx, cancel := context.WithTimeout(context.Background(), teardownTimeout)
 	defer cancel()
 	if err := c.Delete(ctx, client.DeleteOptions{Force: true}); err != nil {
@@ -309,6 +347,34 @@ func (cmd *CICmd) validateEnv() error {
 			return fmt.Errorf("invalid %s value %q: must be KEY=VALUE format",
 				names.Flag(names.RemoteEnv), env)
 		}
+	}
+	return nil
+}
+
+// startWorkspace brings up the workspace for the CI command and waits for the
+// post-create phase.
+func (cmd *CICmd) startWorkspace(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	workspaceClient client.BaseWorkspaceClient,
+	reporter status.Reporter,
+) error {
+	if _, ok := workspaceClient.(client.WorkspaceClient); !ok {
+		return fmt.Errorf("ci is currently not supported for proxy providers")
+	}
+
+	cmd.WaitFor = string(setup.PhasePostCreate)
+
+	if _, err := up.RunHeadless(ctx, workspaceClient, up.HeadlessOptions{
+		GlobalFlags:        cmd.GlobalFlags,
+		DevsyConfig:        devsyConfig,
+		CLIOptions:         cmd.CLIOptions,
+		Reporter:           reporter,
+		ProviderOptions:    cmd.ProviderOptions,
+		SecretsFile:        cmd.SecretsFile,
+		FeatureSecretsFile: cmd.FeatureSecretsFile,
+	}); err != nil {
+		return fmt.Errorf("start devcontainer: %w", err)
 	}
 	return nil
 }

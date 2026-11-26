@@ -13,6 +13,14 @@ import (
 
 type CreateCommand func() (*exec.Cmd, error)
 
+type SupervisedStartOptions struct {
+	Name            string
+	OnStarted       func(ProcessRef) error
+	Lease           *LaunchLease
+	AtomicOwnership bool
+	OnPrepared      func(string) error
+}
+
 // StartBackgroundOnce starts a background process, ensuring only one instance
 // with the given commandName runs at a time. If a process is already running
 // (determined by PID file), or the lock cannot be acquired, it returns nil.
@@ -101,6 +109,26 @@ func StartBackground(commandName string, createCommand CreateCommand) error {
 	return startDetached(cmd, "", streamsFile)
 }
 
+// StartSupervisedBackground starts a detached worker with an owned process
+// tree and publishes its reference before the launch is considered complete.
+func StartSupervisedBackground(opts SupervisedStartOptions, createCommand CreateCommand) error {
+	if opts.Name == "" {
+		return errors.New("supervised process name is required")
+	}
+	if opts.OnStarted == nil {
+		return errors.New("supervised process publication callback is required")
+	}
+	streamsFile, err := config.DefaultPathManager().ProcessStreamsFile(opts.Name)
+	if err != nil {
+		return fmt.Errorf("process streams file: %w", err)
+	}
+	cmd, err := createCommand()
+	if err != nil {
+		return err
+	}
+	return startSupervisedDetached(cmd, opts, streamsFile)
+}
+
 func startCommand(cmd *exec.Cmd, pidFile, streamsFile string) error {
 	return startDetached(cmd, pidFile, streamsFile)
 }
@@ -128,6 +156,63 @@ func startDetached(cmd *exec.Cmd, pidFile, streamsFile string) error {
 	_ = cmd.Process.Release()
 
 	return nil
+}
+
+func startSupervisedDetached(cmd *exec.Cmd, opts SupervisedStartOptions, streamsFile string) error {
+	streamsF, err := openStreamsFile(cmd, streamsFile)
+	if err != nil {
+		return err
+	}
+	if opts.Lease != nil {
+		opts.Lease.attach(cmd)
+	}
+	release, err := startOwnedBackground(cmd, opts.Name, opts.AtomicOwnership, opts.OnPrepared)
+	if err != nil {
+		closeFile(streamsF)
+		return fmt.Errorf("start process: %w", err)
+	}
+	defer release()
+	closeFile(streamsF)
+	pid := cmd.Process.Pid
+	cleanup := func() {
+		_ = abortSupervisedLaunch(pid, opts.Name)
+		_ = cmd.Wait()
+	}
+	if err := opts.ownTree(pid); err != nil {
+		cleanup()
+		return fmt.Errorf("assign process tree ownership for pid %d: %w", pid, err)
+	}
+	ref, err := processRefForStartedProcess(pid, opts.Name)
+	if err != nil {
+		cleanup()
+		return fmt.Errorf("capture process reference for pid %d: %w", pid, err)
+	}
+	if err := opts.OnStarted(ref); err != nil {
+		_ = terminateProcessRef(ref)
+		cleanup()
+		return fmt.Errorf("publish process reference for pid %d: %w", pid, err)
+	}
+	if err := opts.resumeTree(pid); err != nil {
+		_ = terminateProcessRef(ref)
+		cleanup()
+		return fmt.Errorf("resume process %d: %w", pid, err)
+	}
+	_ = cmd.Process.Release()
+	return nil
+}
+
+func (o SupervisedStartOptions) ownTree(pid int) error {
+	if o.AtomicOwnership {
+		return nil
+	}
+	return ownProcessTree(pid, o.Name)
+}
+
+func (o SupervisedStartOptions) resumeTree(pid int) error {
+	if o.AtomicOwnership {
+		return nil
+	}
+	return resumeBackgroundTree(pid)
 }
 
 func isProcessRunning(pidFile string) (bool, error) {

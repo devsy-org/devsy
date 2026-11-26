@@ -124,6 +124,49 @@ func TestDescribeCmd_JSONOutput(t *testing.T) {
 	assert.Equal(t, testProvider, provBlock["name"])
 }
 
+func describeJSON(t *testing.T, cfg *provider.Workspace) map[string]any {
+	t.Helper()
+	log.Init(log.Config{Verbosity: 0})
+
+	cmd := &DescribeCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatJSON}}
+	fake := &fakeWorkspaceClient{
+		workspace: cfg.ID,
+		config:    cfg,
+		status:    client.StatusRunning,
+	}
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Run(t.Context(), fake))
+	})
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	return got
+}
+
+func TestDescribeCmd_JSONDisplayNameIsStoredLabel(t *testing.T) {
+	got := describeJSON(t, &provider.Workspace{
+		ID:           testWorkspaceName,
+		DisplayName:  testDisplayName,
+		SSHHostAlias: testSSHAlias,
+		Platform:     &provider.PlatformMetadata{DisplayName: "Team Workspace"},
+	})
+
+	assert.Equal(t, testDisplayName, got["displayName"])
+	assert.Equal(t, "Team Workspace", got["effectiveDisplayName"])
+	assert.Equal(t, testSSHAlias, got["sshHostAlias"])
+	assert.Equal(t, "node-js.devsy", got["preferredSSHHost"])
+	assert.Equal(t, "node-js.devsy", got["canonicalSSHHost"])
+	assert.Equal(t, string(client.StatusRunning), got["state"])
+}
+
+func TestDescribeCmd_JSONDisplayNameEmptyWhenUnset(t *testing.T) {
+	got := describeJSON(t, &provider.Workspace{ID: testWorkspaceName})
+
+	assert.Equal(t, "", got["displayName"])
+	assert.Equal(t, testWorkspaceName, got["effectiveDisplayName"])
+	assert.Equal(t, "", got["sshHostAlias"])
+}
+
 func TestDescribeCmd_PlainPrintsAtDefaultVerbosity(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 

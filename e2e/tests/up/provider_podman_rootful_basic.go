@@ -3,11 +3,9 @@ package up
 import (
 	"context"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -27,44 +25,9 @@ var _ = ginkgo.Describe(
 		ginkgo.Context("with rootful podman", func() {
 			var f *framework.Framework
 
-			//nolint:dupl // shared rootful podman wrapper setup across split files
 			ginkgo.BeforeEach(func(ctx context.Context) {
-				wrapper, err := os.Create( //nolint:gosec // G304: test-controlled path
-					initialDir + "/bin/podman-rootful",
-				)
-				framework.ExpectNoError(err)
-
-				_, err = wrapper.WriteString("#!/bin/sh\nsudo podman \"$@\"\n")
-				if err != nil {
-					_ = wrapper.Close()
-					framework.ExpectNoError(err)
-				}
-
-				err = wrapper.Close()
-				framework.ExpectNoError(err)
-
-				// #nosec G302 -- wrapper script needs execute permission
-				err = os.Chmod(initialDir+"/bin/podman-rootful", 0o755)
-				framework.ExpectNoError(err)
-
-				cmd := exec.CommandContext( //nolint:gosec // G204: test-controlled path
-					ctx, initialDir+"/bin/podman-rootful", "ps",
-				)
-				docker.PrepareForGroupCancellation(cmd)
-				out, err := cmd.CombinedOutput()
-				framework.ExpectNoError(err, string(out))
-
-				ginkgo.DeferCleanup(func() {
-					_ = os.Remove(initialDir + "/bin/podman-rootful")
-				})
-
-				f, err = setupDockerProvider(
-					initialDir+"/bin",
-					initialDir+"/bin/podman-rootful",
-				)
-				framework.ExpectNoError(err)
-			},
-			)
+				f = setupRootfulPodman(ctx, initialDir)
+			})
 
 			ginkgo.Context("basic", func() {
 				ginkgo.It(

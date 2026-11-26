@@ -4,7 +4,12 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
+)
+
+const (
+	v050 = "v0.5.0"
 )
 
 func TestClearInitialized(t *testing.T) {
@@ -93,13 +98,13 @@ func TestProviderVersionNeedsUpdate(t *testing.T) {
 		name, newVer, curVer string
 		expected, expectErr  bool
 	}{
-		{"same version", "v0.5.0", "v0.5.0", false, false},
-		{"newer version", "v0.6.0", "v0.5.0", true, false},
-		{"older version (downgrade)", "v0.4.0", "v0.5.0", true, false},
+		{"same version", v050, v050, false, false},
+		{"newer version", "v0.6.0", v050, true, false},
+		{"older version (downgrade)", "v0.4.0", v050, true, false},
 		{"mixed v prefix", "v0.6.0", "0.5.0", true, false},
 		{"patch difference", "v1.2.4", "v1.2.3", true, false},
-		{"invalid new version", "not-a-version", "v0.5.0", false, true},
-		{"invalid current version", "v0.5.0", "not-a-version", false, true},
+		{"invalid new version", "not-a-version", v050, false, true},
+		{"invalid current version", v050, "not-a-version", false, true},
 	}
 
 	for _, tt := range tests {
@@ -111,6 +116,82 @@ func TestProviderVersionNeedsUpdate(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, result)
 			}
+		})
+	}
+}
+
+func TestProviderUpdateSkipReasonResolvedGitHubSource(t *testing.T) {
+	original := provider.ProviderSource{Github: "org/provider", Raw: "org/provider@v1.0.0"}
+	changed := provider.ProviderSource{Github: "org/provider", Raw: "org/provider@v1.1.0"}
+	originalSource := provider.GetProviderSource(original, "provider")
+	changedSource := provider.GetProviderSource(changed, "provider")
+	originalBase, originalTag := provider.SplitSourceAndTag(originalSource)
+	changedBase, changedTag := provider.SplitSourceAndTag(changedSource)
+	assert.Equal(t, "github.com/org/provider", originalBase)
+	assert.Equal(t, originalBase, changedBase)
+	assert.Equal(t, "v1.0.0", originalTag)
+	assert.Equal(t, "v1.1.0", changedTag)
+	assert.Equal(t, "provider source changed", providerUpdateSkipReason(
+		original, changed, "v1.0.0", "v1.2.0",
+	))
+	assert.Equal(t, "provider already up to date", providerUpdateSkipReason(
+		original, original, "v1.3.0", "v1.2.0",
+	))
+}
+
+func TestProviderUpdateSkipReason(t *testing.T) {
+	const (
+		originalSource = "github.com/org/provider@v1.0.0"
+		updatedPin     = "github.com/org/provider@v1.1.0"
+		otherSource    = "github.com/other/provider@v1.0.0"
+		version100     = "v1.0.0"
+		version110     = "v1.1.0"
+	)
+	tests := []struct {
+		name           string
+		originalSource provider.ProviderSource
+		currentSource  provider.ProviderSource
+		currentVersion string
+		newVersion     string
+		wantReason     string
+	}{
+		{
+			name:           "unchanged source",
+			originalSource: provider.ProviderSource{Raw: originalSource},
+			currentSource:  provider.ProviderSource{Raw: originalSource},
+			currentVersion: version100,
+			newVersion:     version110,
+		},
+		{
+			name:           "pin changed on same repository",
+			originalSource: provider.ProviderSource{Raw: originalSource},
+			currentSource:  provider.ProviderSource{Raw: updatedPin},
+			currentVersion: version110,
+			newVersion:     "v1.2.0",
+			wantReason:     "provider source changed",
+		},
+		{
+			name:           "repository changed",
+			originalSource: provider.ProviderSource{Raw: originalSource},
+			currentSource:  provider.ProviderSource{Raw: otherSource},
+			currentVersion: version100,
+			newVersion:     "v1.2.0",
+			wantReason:     "provider source changed",
+		},
+		{
+			name:           "current version is newer",
+			originalSource: provider.ProviderSource{Raw: updatedPin},
+			currentSource:  provider.ProviderSource{Raw: updatedPin},
+			currentVersion: version110,
+			newVersion:     version100,
+			wantReason:     "provider already up to date",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.wantReason, providerUpdateSkipReason(
+				tt.originalSource, tt.currentSource, tt.currentVersion, tt.newVersion,
+			))
 		})
 	}
 }

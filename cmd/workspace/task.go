@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/table"
@@ -22,7 +24,7 @@ import (
 func NewTaskCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	taskCmd := &cobra.Command{
 		Use:   "task",
-		Short: "Manage background tasks (e.g. from 'up --detach')",
+		Short: "Manage background tasks",
 	}
 	taskCmd.AddCommand(newTaskListCmd(globalFlags))
 	taskCmd.AddCommand(newTaskGetCmd(globalFlags))
@@ -41,7 +43,7 @@ func newTaskListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List background tasks, most recently started first",
+		Short:   "List background tasks",
 		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return cmd.run()
@@ -128,8 +130,8 @@ func newTaskLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Aliases: []string{"attach"},
 		Short:   "Show a task's status, or follow it until it finishes",
 		Args:    cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return cmd.run(args[0])
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			return cmd.run(cobraCmd.Context(), args[0])
 		},
 	}
 	cliflags.Add(logsCmd,
@@ -142,7 +144,7 @@ func newTaskLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return logsCmd
 }
 
-func (cmd *taskLogsCmd) run(id string) error {
+func (cmd *taskLogsCmd) run(ctx context.Context, id string) error {
 	emitJSON, err := resolveEmitJSON(cmd.GlobalFlags)
 	if err != nil {
 		return err
@@ -167,7 +169,7 @@ func (cmd *taskLogsCmd) run(id string) error {
 	if interval <= 0 {
 		return fmt.Errorf("--interval must be positive, got %q", cmd.Interval)
 	}
-	return followTask(context.Background(), store, followTaskOptions{
+	return followTask(ctx, store, followTaskOptions{
 		id:       id,
 		interval: interval,
 		emitJSON: emitJSON,
@@ -180,18 +182,27 @@ type followTaskOptions struct {
 	emitJSON bool
 }
 
-func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) error {
+type taskFollowerStore interface {
+	ReconcileTask(context.Context, string) (*task.State, error)
+	Get(string) (*task.State, error)
+}
+
+func followTask(ctx context.Context, store taskFollowerStore, opts followTaskOptions) error {
 	var last *task.State
+	var lastReconcileError error
 	ticker := time.NewTicker(opts.interval)
 	defer ticker.Stop()
 
 	tailer := newLogTailer(opts.id)
+	if opts.emitJSON {
+		tailer.statusOut = os.Stdout
+	}
 	defer tailer.flush(os.Stderr)
 
 	for {
 		tailer.poll(os.Stderr)
 
-		state, err := store.Get(opts.id)
+		state, err := readTaskForFollower(ctx, store, opts.id, &lastReconcileError)
 		if err != nil {
 			return err
 		}
@@ -199,6 +210,8 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 		last = state
 
 		if state.Status.Terminal() {
+			// Drain completion events before the result ends the consumer's stream.
+			tailer.flush(os.Stderr)
 			return reportTaskState(state, opts.emitJSON)
 		}
 
@@ -210,19 +223,72 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 	}
 }
 
+func readTaskForFollower(
+	ctx context.Context,
+	store taskFollowerStore,
+	id string,
+	lastReconcileError *error,
+) (*task.State, error) {
+	state, err := store.ReconcileTask(ctx, id)
+	if err == nil {
+		*lastReconcileError = nil
+		return state, nil
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	message := err.Error()
+	if *lastReconcileError == nil || message != (*lastReconcileError).Error() {
+		log.Debugf("Reconcile task %s: %s", id, message)
+		*lastReconcileError = err
+	}
+	// Cleanup can be retried; only persisted terminal state ends the follower.
+	return store.Get(id)
+}
+
 func emitTaskTransition(last, current *task.State, emitJSON bool) {
-	if last != nil && last.Phase == current.Phase && last.Step == current.Step {
+	if taskTransitionUnchanged(last, current, emitJSON) || current.Phase == "" {
 		return
 	}
-	if current.Phase == "" {
-		return
-	}
-	event := status.Event{Phase: status.Phase(current.Phase), Step: current.Step, Started: true}
+	event := taskStatusEvent(current)
 	if emitJSON {
 		_ = config2.WriteStatusJSON(os.Stdout, event)
 		return
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", current.ID, current.Phase)
+}
+
+func taskTransitionUnchanged(last, current *task.State, emitJSON bool) bool {
+	if last == nil {
+		return false
+	}
+	same := last.Phase == current.Phase && last.Step == current.Step &&
+		last.Status == current.Status && last.OperationID == current.OperationID
+	return same && (!emitJSON || last.DurationMs == current.DurationMs)
+}
+
+func taskStatusEvent(current *task.State) status.Event {
+	event := status.Event{
+		Phase:             status.Phase(current.Phase),
+		Step:              current.Step,
+		OperationID:       current.OperationID,
+		ParentOperationID: current.ParentOperationID,
+		Duration:          time.Duration(current.DurationMs) * time.Millisecond,
+		State:             status.StateStarted,
+	}
+	switch current.Status {
+	case task.StatusSucceeded:
+		event.State = status.StateSucceeded
+	case task.StatusFailed:
+		event.State = status.StateFailed
+		event.Error = &status.ErrorInfo{
+			Code:    current.ErrorCode,
+			Message: taskErrorMessage(current),
+			Hint:    current.ErrorHint,
+			Context: current.ErrorContext,
+		}
+	}
+	return event
 }
 
 type taskCancelCmd struct {
@@ -325,14 +391,17 @@ func resolveEmitJSON(g *flags.GlobalFlags) (bool, error) {
 }
 
 func reportTaskState(state *task.State, emitJSON bool) error {
+	// Let the command root own final error rendering. Writing an error envelope
+	// here and then returning an error would emit the same failure twice in
+	// machine mode (and print it twice for human consumers).
+	if state.Status == task.StatusFailed {
+		return taskStateError(state)
+	}
 	if emitJSON {
 		return reportTaskStateJSON(state)
 	}
 
 	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", state.ID, state.Status)
-	if state.Status == task.StatusFailed {
-		return fmt.Errorf("%s", taskErrorMessage(state))
-	}
 	return nil
 }
 
@@ -348,30 +417,44 @@ func taskErrorMessage(state *task.State) string {
 func reportTaskStateJSON(state *task.State) error {
 	switch state.Status {
 	case task.StatusFailed:
-		message := taskErrorMessage(state)
-		if err := config2.WriteErrorJSON(os.Stdout, message); err != nil {
-			return err
-		}
-		return fmt.Errorf("%s", message)
+		return taskStateError(state)
 	case task.StatusSucceeded:
 		return config2.WriteResultJSON(os.Stdout, resultEnvelopeFrom(state))
 	default:
-		return config2.WriteStatusJSON(os.Stdout, status.Event{
-			Phase:   status.Phase(state.Phase),
-			Step:    state.Step,
-			Started: true,
-		})
+		if state.Phase == "" {
+			return fmt.Errorf("task %s has no current status phase", state.ID)
+		}
+		return config2.WriteStatusJSON(os.Stdout, taskStatusEvent(state))
+	}
+}
+
+func taskStateError(state *task.State) error {
+	code := clierr.Code(state.ErrorCode)
+	if code == "" {
+		code = clierr.CodeUnknown
+	}
+	return &clierr.CLIError{
+		Code:    code,
+		Message: taskErrorMessage(state),
+		Hint:    state.ErrorHint,
+		Context: state.ErrorContext,
 	}
 }
 
 func resultEnvelopeFrom(state *task.State) config2.ResultEnvelope {
 	if state.Result == nil {
-		return config2.ResultEnvelope{}
+		return config2.ResultEnvelope{RunID: state.RunID}
+	}
+	var workspaceFolder string
+	if state.Result.SubstitutionContext != nil {
+		workspaceFolder = state.Result.SubstitutionContext.ContainerWorkspaceFolder
 	}
 	return config2.ResultEnvelope{
-		ContainerID: config2.GetContainerID(state.Result),
-		RemoteUser:  config2.GetRemoteUser(state.Result),
-		Warnings:    state.Result.HostWarnings,
-		Recovery:    state.Result.RecoveryContainer,
+		ContainerID:           config2.GetContainerID(state.Result),
+		RemoteUser:            config2.GetRemoteUser(state.Result),
+		RemoteWorkspaceFolder: workspaceFolder,
+		Warnings:              state.Result.HostWarnings,
+		Recovery:              state.Result.RecoveryContainer,
+		RunID:                 state.RunID,
 	}
 }

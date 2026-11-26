@@ -104,7 +104,7 @@ func appendGPUWarning(warnings []string, gpu *GPURequirement) []string {
 		return warnings
 	}
 	return append(warnings,
-		"gpu: required — availability will be verified at container creation",
+		"gpu: required - availability will be verified at container creation",
 	)
 }
 

@@ -213,7 +213,7 @@ func (cmd *CreateCmd) commitAndPushImage(
 	// tag right after create, and would otherwise have to re-fetch it
 	// remotely (pkg/image.GetImage), which doesn't honor this package's
 	// dockerInternalHost insecure-registry override the way pkg/snapshot's
-	// own parseReference does — breaking against any plain-HTTP registry
+	// own parseReference does - breaking against any plain-HTTP registry
 	// (e.g. the e2e registry:2 fixture). Leaving the local image in place
 	// avoids that remote round-trip entirely for the common case.
 	return img, nil
@@ -255,13 +255,9 @@ func checkSingleMount(mounts []*devcontainerconfig.Mount) error {
 	return nil
 }
 
-// snapshotDriver bundles the two capabilities snapshot create needs: pushing
-// the committed image (ImageDriver) and committing the container filesystem
-// (SnapshotCapableDriver). Drivers that delegate to an external orchestrator
-// (Kubernetes, custom drivers) or that can't commit a container filesystem
-// (Apple's `container`) are rejected here via the type assertions.
+// snapshotDriver separates runtime filesystem commit from image publication.
 type snapshotDriver struct {
-	driver.ImageDriver
+	driver.ImagePublisher
 	driver.SnapshotCapableDriver
 }
 
@@ -273,29 +269,35 @@ func (cmd *CreateCmd) imageDriver(
 		return nil, fmt.Errorf("read workspace agent info: %w", err)
 	}
 
-	d, err := drivercreate.NewDriver(ctx, workspaceInfo)
+	bundle, err := drivercreate.New(ctx, workspaceInfo)
 	if err != nil {
 		return nil, fmt.Errorf("create driver: %w", err)
 	}
 
-	imgDriver, ok := d.(driver.ImageDriver)
-	if !ok {
+	imgDriver := bundle.Images
+	if imgDriver == nil {
 		return nil, fmt.Errorf(
-			"provider %s cannot create snapshots (no image driver support)",
+			"provider %s cannot create snapshots (no image publication support)",
 			workspaceInfo.Agent.Driver,
 		)
 	}
-	snapshotCapable, ok := d.(driver.SnapshotCapableDriver)
+	snapshotCapable, ok := bundle.Runtime.(driver.SnapshotCapableDriver)
 	if !ok {
 		return nil, fmt.Errorf(
 			"provider %s cannot create snapshots (no container commit support)",
 			workspaceInfo.Agent.Driver,
 		)
 	}
-	return &snapshotDriver{ImageDriver: imgDriver, SnapshotCapableDriver: snapshotCapable}, nil
+	return &snapshotDriver{ImagePublisher: imgDriver, SnapshotCapableDriver: snapshotCapable}, nil
 }
 
-// pushedVolumes describes a successfully-pushed volumes blob.
+func validateSnapshotMountMetadata(result *devcontainerconfig.Result) error {
+	if result == nil || result.SubstitutionContext == nil || result.MergedConfig == nil {
+		return fmt.Errorf("workspace result is missing mount information; run `devsy up` first")
+	}
+	return nil
+}
+
 type pushedVolumes struct {
 	Digest       string
 	Size         int64
@@ -307,7 +309,7 @@ type pushedVolumes struct {
 
 // The volumes RPC (StreamSnapshotVolumes) is served by a tunnelServer reading
 // directly off local disk, so this only works when the CLI process is
-// co-located with those mount source paths — true for the docker driver's
+// co-located with those mount source paths - true for the docker driver's
 // local bind mounts, the only driver CommitContainer currently supports.
 func (cmd *CreateCmd) pushVolumes(
 	ctx context.Context, workspaceConfig *provider.Workspace, repository string,
@@ -316,18 +318,25 @@ func (cmd *CreateCmd) pushVolumes(
 	if err != nil {
 		return nil, fmt.Errorf("load workspace result: %w", err)
 	}
-	if result == nil || result.SubstitutionContext == nil || result.MergedConfig == nil {
-		return nil, fmt.Errorf(
-			"workspace result is missing mount information; run `devsy up` first",
-		)
+	if err := validateSnapshotMountMetadata(result); err != nil {
+		return nil, err
 	}
 	mounts := devcontainerconfig.GetMounts(result)
 	if err := checkSingleMount(mounts); err != nil {
 		return nil, err
 	}
+	buildContext, err := devcontainerconfig.SnapshotBuildContext(result)
+	if err != nil {
+		return nil, err
+	}
 	mountPrefix := strings.TrimPrefix(mounts[0].Target, "/")
 
-	tunnelClient, cleanup, err := newLocalTunnelClient(ctx, mounts)
+	tunnelClient, cleanup, err := newLocalTunnelClient(
+		ctx,
+		mounts,
+		devcontainerconfig.GetWorkspaceMount(result),
+		buildContext,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create local snapshot tunnel: %w", err)
 	}
@@ -349,7 +358,7 @@ func (cmd *CreateCmd) pushVolumes(
 
 // credentialKeyPattern matches containerEnv key names that conventionally
 // carry a secret value, so they're dropped by redactedContainerEnv even if
-// nothing in this codebase injects them today — devcontainer.json's
+// nothing in this codebase injects them today - devcontainer.json's
 // containerEnv is user-authored and this manifest is pushed to a shared
 // registry, so a future entry named e.g. API_TOKEN shouldn't round-trip
 // through restore just because dropping it wasn't specifically taught.
@@ -393,14 +402,21 @@ func redactedContainerEnv(env map[string]string) map[string]string {
 // without an actual SSH hop. The returned cleanup func must be called once
 // the client is no longer needed.
 func newLocalTunnelClient(
-	ctx context.Context, mounts []*devcontainerconfig.Mount,
+	ctx context.Context,
+	mounts []*devcontainerconfig.Mount,
+	workspaceMount *devcontainerconfig.Mount,
+	buildContext string,
 ) (tunnel.TunnelClient, func(), error) {
 	serverCtx, cancel := context.WithCancel(ctx)
 
 	clientToServerR, clientToServerW := io.Pipe()
 	serverToClientR, serverToClientW := io.Pipe()
 
-	tunnelServ := tunnelserver.New(tunnelserver.WithMounts(mounts))
+	tunnelServ := tunnelserver.New(
+		tunnelserver.WithMounts(mounts),
+		tunnelserver.WithWorkspaceMount(workspaceMount),
+		tunnelserver.WithSnapshotBuildContext(buildContext),
+	)
 	serverDone := make(chan error, 1)
 	go func() {
 		serverDone <- tunnelServ.Run(serverCtx, clientToServerR, serverToClientW)
@@ -431,7 +447,7 @@ func newLocalTunnelClient(
 // It also re-pushes the same manifest bytes as a plain blob into repository:
 // registries store manifests and blobs in separate content stores, and the
 // snapshot manifest built in Run references this digest as one of its
-// layers[] — a manifest-push validates every layer digest exists as a blob,
+// layers[] - a manifest-push validates every layer digest exists as a blob,
 // which fails with MANIFEST_BLOB_UNKNOWN without this re-push.
 func pushedImageDigestAndSize(
 	ctx context.Context,

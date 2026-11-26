@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"image"
 	"image/color"
 	"image/png"
 	"net/url"
@@ -197,5 +198,57 @@ func TestDocsIconPNGHasTransparentCorners(t *testing.T) {
 	}
 	if color.NRGBAModel.Convert(decoded.At(512, 512)).(color.NRGBA).A != 255 {
 		t.Error("docs icon center must remain opaque")
+	}
+}
+
+var testArt = color.NRGBA{R: 110, G: 80, B: 250, A: 255}
+
+// bevelledIcon is artwork on white whose corners are cut by diagonals.
+func bevelledIcon(size, corner int) []byte {
+	source := image.NewNRGBA(image.Rect(0, 0, size, size))
+	for y := range size {
+		for x := range size {
+			p := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			far := size - 1
+			if min(x+y, far-x+y, x+far-y, 2*far-x-y) >= corner {
+				p = testArt
+			}
+			source.SetNRGBA(x, y, p)
+		}
+	}
+	var frame bytes.Buffer
+	if err := png.Encode(&frame, source); err != nil {
+		panic(err)
+	}
+	return frame.Bytes()
+}
+
+func firstOpaqueWhite(img image.Image) (image.Point, bool) {
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			p := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			if p.A == 255 && p.R >= backgroundMin && p.G >= backgroundMin && p.B >= backgroundMin {
+				return image.Pt(x, y), true
+			}
+		}
+	}
+	return image.Point{}, false
+}
+
+func TestDocsIconPNGLeavesNoWhiteFringe(t *testing.T) {
+	const size = 256
+	cut, err := docsIconPNG(bevelledIcon(size, 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(cut))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if at, found := firstOpaqueWhite(decoded); found {
+		t.Fatalf("opaque white pixel left at %v", at)
+	}
+	if got := color.NRGBAModel.Convert(decoded.At(size/2, size/2)); got != testArt {
+		t.Errorf("artwork interior changed to %v", got)
 	}
 }

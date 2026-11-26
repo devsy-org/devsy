@@ -5,12 +5,9 @@ sidebar_label: Install Devsy
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
-Devsy comes in two forms that share the same workflow:
+The desktop app and the CLI do the same things. Use the desktop app for a UI and the CLI for scripts.
 
-- **Devsy Desktop** — a guided app for creating and managing workspaces. Start here if you want a UI.
-- **Devsy CLI** — the same workflow from a terminal, for automation and scripting.
-
-Install either one below, then head to the [Quick Start](./quickstart.mdx).
+Install one, then follow the [Quick Start](./quickstart.mdx).
 
 ## Install Devsy Desktop
 
@@ -26,23 +23,42 @@ Download the build for your platform:
 
 For earlier versions, see the [GitHub releases page](https://github.com/devsy-org/devsy/releases).
 
-<Callout title="Linux dependencies">
-The DEB and RPM packages declare their runtime dependencies; the AppImage and Flatpak bundle theirs. Most modern desktop distros run the AppImage as-is (tested on Debian 12+, Ubuntu 22.04+, Fedora 36+, openSUSE Leap 15.3+, Tumbleweed, and Arch).
-
-If the AppImage fails to launch, install FUSE and the GTK/Electron runtime libraries:
-
-- Debian/Ubuntu: `sudo apt-get install libfuse2 libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0`
-- Fedora: `sudo dnf install fuse-libs gtk3 libnotify nss libXScrnSaver libXtst xdg-utils at-spi2-core`
-- openSUSE: `sudo zypper in libfuse2 gtk3 libnotify4 mozilla-nss libXss1 libXtst6 xdg-utils`
+<Callout title="Linux">
+The DEB and RPM packages declare their dependencies. The AppImage and Flatpak bundle theirs. If the AppImage does not start, install FUSE 2 (`libfuse2` on Debian and Ubuntu) and try again.
 </Callout>
 
+For an AppImage, move it to a permanent location and make it executable. On its first direct launch, Devsy offers **Add to applications**, which creates a user-local launcher. You can decline and add it later under **Settings > Applications menu**.
+
+If you move the AppImage, start it once from the new location. Devsy updates the launcher it owns, unless you edited it. **Settings > Applications menu > Remove** deletes only an unedited launcher and its icon. Devsy never overwrites a system, Flatpak, user-managed, or third-party AppImage launcher, and it leaves another package's default `devsy://` handler alone.
+
+Flatpak, DEB, and RPM packages install their own launchers. If a running window shows a generic icon, see [Linux icon troubleshooting](/docs/troubleshooting/linux-troubleshooting#generic-application-icon-on-gnome).
+
 <Callout title="Windows dependency">
-Devsy Desktop needs [WebView 2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH). It ships with recent versions of Windows — install it only if the app fails to open.
+If the app does not open, install [WebView 2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH). Recent versions of Windows include it.
 </Callout>
 
 ## Install Devsy CLI
 
-On macOS or Linux, install with [Homebrew](https://brew.sh):
+On macOS or Linux, run the install script:
+
+```bash
+curl -L https://devsy.sh/install.sh | sh
+```
+
+The script:
+
+- Downloads the latest CLI for your OS and architecture from [GitHub releases](https://github.com/devsy-org/devsy/releases).
+- Verifies the SHA-256 checksum when a checksum entry and `sha256sum` or `shasum` are available.
+- Installs `devsy` into `/usr/local/bin`. If that directory is not writable and `sudo` is missing, it installs into `~/.local/bin`.
+
+Run it again to update. On Windows, use the PowerShell command in the Windows tab below.
+
+Two environment variables change the script:
+
+- `DEVSY_VERSION` installs a specific release instead of the latest: `curl -L https://devsy.sh/install.sh | DEVSY_VERSION=vX.Y.Z sh`
+- `DEVSY_INSTALL_DIR` installs to another directory: `curl -L https://devsy.sh/install.sh | DEVSY_INSTALL_DIR="$HOME/bin" sh`
+
+On macOS or Linux, you can also use [Homebrew](https://brew.sh):
 
 ```bash
 brew install devsy-org/homebrew-tap/devsy
@@ -50,7 +66,7 @@ brew install devsy-org/homebrew-tap/devsy
 
 Upgrade later with `brew upgrade devsy`.
 
-Otherwise, run the command for your platform below. You can also install the CLI later from Devsy Desktop.
+To download a binary directly, use the command for your platform below.
 
 <Tabs items={['MacOS Silicon/ARM', 'MacOS Intel/AMD', 'Windows', 'Linux AMD', 'Linux ARM']}>
 <Tab value="MacOS Silicon/ARM">
@@ -93,12 +109,8 @@ curl -L -o devsy "https://github.com/devsy-org/devsy/releases/latest/download/de
 </Tab>
 </Tabs>
 
-Confirm the CLI is on your `PATH`:
+Check that `devsy` is on your `PATH`:
 
 ```bash
 devsy --version
 ```
-
-## Next step
-
-Create your first workspace in the [Quick Start](./quickstart.mdx).

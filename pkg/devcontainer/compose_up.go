@@ -1,6 +1,7 @@
 package devcontainer
 
 import (
+	"maps"
 	"reflect"
 	"strings"
 
@@ -23,13 +24,11 @@ func escapeComposeLabelValue(value string) string {
 }
 
 func (r *runner) extendedDockerComposeUp(params *composeUpParams) (string, error) {
-	secretsMount, err := r.secretsMount()
+	mounts, err := r.withSecretsMount(params.mergedConfig.Mounts, params.secretsMountRequired)
 	if err != nil {
 		return "", err
 	}
-	if secretsMount != nil {
-		params.mergedConfig.Mounts = append(params.mergedConfig.Mounts, secretsMount)
-	}
+	params.mergedConfig.Mounts = mounts
 
 	dockerComposeUpProject := r.generateDockerComposeUpProject(params)
 	dockerComposeData, err := yaml.Marshal(dockerComposeUpProject)
@@ -64,18 +63,28 @@ func (r *runner) generateDockerComposeUpProject(params *composeUpParams) *compos
 		params.imageDetails,
 	)
 
+	// Copy so the workspace identity does not leak into the shared merged config.
+	containerEnv := make(map[string]string, len(mergedConfig.ContainerEnv)+2)
+	maps.Copy(containerEnv, mergedConfig.ContainerEnv)
+	r.addWorkspaceEnvVars(containerEnv)
+
 	overrideService := &composetypes.ServiceConfig{
-		Name:        composeService.Name,
-		Entrypoint:  buildOverrideEntrypoint(mergedConfig, userEntrypoint),
-		Environment: mappingFromMap(mergedConfig.ContainerEnv),
-		Init:        mergedConfig.Init,
-		CapAdd:      mergedConfig.CapAdd,
-		SecurityOpt: mergedConfig.SecurityOpt,
-		Labels:      r.buildServiceLabels(params.additionalLabels),
+		Name: composeService.Name,
+		ContainerSpec: composetypes.ContainerSpec{
+			Entrypoint:  buildOverrideEntrypoint(mergedConfig, userEntrypoint),
+			Environment: r.composeContainerEnvironment(containerEnv),
+			Init:        mergedConfig.Init,
+			CapAdd:      mergedConfig.CapAdd,
+			SecurityOpt: mergedConfig.SecurityOpt,
+			Labels:      r.buildServiceLabels(params.additionalLabels),
+		},
 	}
 
 	if params.originalImageName != params.overrideImageName {
 		overrideService.Image = params.overrideImageName
+	}
+	if params.pinImage {
+		overrideService.PullPolicy = composetypes.PullPolicyNever
 	}
 
 	if !reflect.DeepEqual(userCommand, composeService.Command) {
@@ -108,6 +117,19 @@ func (r *runner) generateDockerComposeUpProject(params *composeUpParams) *compos
 	}
 
 	return project
+}
+
+// ContainerEnv has already undergone devcontainer substitution. Discovered
+// values are data and must survive Compose's later interpolation unchanged.
+func (r *runner) composeContainerEnvironment(env map[string]string) composetypes.MappingWithEquals {
+	if r.wslgSnapshot == nil {
+		return mappingFromMap(env)
+	}
+	escaped := make(map[string]string, len(env))
+	for key, value := range env {
+		escaped[key] = composeLabelEscaper.Replace(value)
+	}
+	return mappingFromMap(escaped)
 }
 
 // resolveServiceEntrypoint determines the effective entrypoint and command for

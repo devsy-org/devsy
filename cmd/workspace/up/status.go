@@ -1,65 +1,177 @@
 package up
 
 import (
+	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
 // newStatusReporter drives `up`'s progress output.
-func newStatusReporter(emitJSON bool, out io.Writer) status.Reporter {
-	var r status.Reporter = plainStatusReporter{}
-	if emitJSON {
-		r = &jsonStatusReporter{out: out}
+func newStatusReporter(
+	resultFormat string,
+	out io.Writer,
+	verbose bool,
+	noStatus bool,
+) (status.Reporter, error) {
+	reporter, err := status.NewCLIReporter(status.CLIOptions{
+		Format:   resultFormat,
+		Out:      out,
+		Prefix:   "up",
+		Verbose:  verbose,
+		NoStatus: noStatus,
+		Pipeline: status.PipelineWorkspaceUp,
+		Labels:   phaseLabels,
+		Envelope: func(e status.Event) error {
+			return config2.WriteStatusJSON(out, e)
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
-	return status.ForPipeline(r, status.PipelineWorkspaceUp)
-}
-
-// jsonStatusReporter serializes write events.
-type jsonStatusReporter struct {
-	mu  sync.Mutex
-	out io.Writer
-}
-
-func (r *jsonStatusReporter) Report(e status.Event) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	_ = config2.WriteStatusJSON(r.out, e)
-}
-
-type plainStatusReporter struct{}
-
-func (plainStatusReporter) Report(e status.Event) {
-	switch {
-	case e.Phase == status.PhaseFailed:
-		log.Errorf("up: phase %q failed: %s", e.Step, e.Err)
-	case e.Started && e.Step != "":
-		log.Infof("up: %s: %s", phaseLabel(e.Phase), e.Step)
-	case e.Started:
-		log.Infof("up: %s", phaseLabel(e.Phase))
-	case e.Phase == status.PhaseReady:
-		log.Infof("up: %s", phaseLabel(e.Phase))
-	}
+	return newInteractiveStatusGate(reporter, out, noStatus), nil
 }
 
 var phaseLabels = map[status.Phase]string{
-	status.PhaseCloningRepository:    "cloning repository",
-	status.PhaseResolvingConfig:      "resolving devcontainer config",
-	status.PhaseInitializeCommand:    "running initializeCommand",
-	status.PhaseBuildingImage:        "building image",
-	status.PhaseStartingContainer:    "starting container",
-	status.PhaseInjectingAgent:       "injecting agent",
-	status.PhaseRunningLifecycleHook: "running lifecycle hooks",
-	status.PhaseWaitingFor:           "waiting for readiness",
-	status.PhaseReady:                "ready",
+	status.PhaseCloningRepository:     "cloning repository",
+	status.PhaseResolvingConfig:       "resolving devcontainer config",
+	status.PhaseInitializeCommand:     "running initializeCommand",
+	status.PhasePreparingDevContainer: "preparing devcontainer",
+	status.PhaseBuildingImage:         "building image",
+	status.PhaseStartingContainer:     "starting container",
+	status.PhaseInjectingAgent:        "injecting agent",
+	status.PhaseRunningLifecycleHook:  "running lifecycle hooks",
+	status.PhaseWaitingFor:            "waiting for readiness",
+	status.PhaseConfiguringWorkspace:  "configuring workspace",
+	status.PhaseConfiguringSSH:        "configuring SSH",
+	status.PhaseStartingSSHTunnel:     "starting SSH tunnel",
+	status.PhaseLaunchingIDE:          "launching IDE",
+	status.PhaseReady:                 "ready",
 }
 
-func phaseLabel(p status.Phase) string {
-	if label, ok := phaseLabels[p]; ok {
-		return label
+type interactiveStatusGate struct {
+	mu       sync.Mutex
+	renderMu sync.Mutex
+	active   bool
+	enabled  bool
+	events   []status.Event
+	omitted  int
+	reporter status.Reporter
+	out      io.Writer
+	quiet    bool
+	running  bool
+	idle     chan struct{}
+	journal  *journalStatusReporter
+}
+
+const interactiveRenderWait = 500 * time.Millisecond
+
+func newInteractiveStatusGate(
+	reporter status.Reporter,
+	out io.Writer,
+	quiet bool,
+) *interactiveStatusGate {
+	return &interactiveStatusGate{reporter: reporter, out: out, quiet: quiet}
+}
+
+func (g *interactiveStatusGate) Report(event status.Event) {
+	g.mu.Lock()
+	if !g.enabled {
+		g.mu.Unlock()
+		g.renderMu.Lock()
+		g.mu.Lock()
+		if !g.enabled {
+			g.mu.Unlock()
+			g.reporter.Report(event)
+			g.renderMu.Unlock()
+			return
+		}
+		g.renderMu.Unlock()
 	}
-	return string(p)
+	if len(g.events) < 256 && g.omitted == 0 {
+		g.events = append(g.events, event)
+	} else {
+		g.omitted++
+	}
+	g.startLocked()
+	g.mu.Unlock()
+}
+
+func (g *interactiveStatusGate) SetActive(active bool) {
+	g.mu.Lock()
+	g.active = active
+	if active {
+		g.enabled = true
+	} else {
+		g.startLocked()
+		if !g.running {
+			g.enabled = false
+		}
+	}
+	idle := g.idle
+	running := g.running
+	g.mu.Unlock()
+	if active {
+		g.waitForRender()
+	} else if running {
+		select {
+		case <-idle:
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+func (g *interactiveStatusGate) startLocked() {
+	if !g.active && !g.running && (len(g.events) > 0 || g.omitted > 0) {
+		g.running = true
+		g.idle = make(chan struct{})
+		go g.run()
+	}
+}
+
+func (g *interactiveStatusGate) waitForRender() {
+	done := make(chan struct{})
+	go func() {
+		g.renderMu.Lock()
+		defer g.renderMu.Unlock()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(interactiveRenderWait):
+	}
+}
+
+func (g *interactiveStatusGate) run() {
+	for {
+		g.renderMu.Lock()
+		g.mu.Lock()
+		if g.active || (len(g.events) == 0 && g.omitted == 0) {
+			g.running = false
+			if !g.active {
+				g.enabled = false
+			}
+			close(g.idle)
+			g.mu.Unlock()
+			g.renderMu.Unlock()
+			return
+		}
+		if len(g.events) > 0 {
+			event := g.events[0]
+			g.events = g.events[1:]
+			g.mu.Unlock()
+			g.reporter.Report(event)
+		} else {
+			count := g.omitted
+			g.omitted = 0
+			g.mu.Unlock()
+			if !g.quiet {
+				_, _ = fmt.Fprintf(g.out, "%d progress updates omitted\n", count)
+			}
+		}
+		g.renderMu.Unlock()
+	}
 }

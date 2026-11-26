@@ -17,6 +17,16 @@ function getPngDimensions(buf: Buffer): { width: number; height: number } {
   return { width, height }
 }
 
+// PNG colour type 6 is RGBA. Opaque frames show a white square behind the
+// rounded artwork in the Dock, the taskbar and launchers.
+const PNG_COLOR_TYPE_OFFSET = 25
+const PNG_RGBA = 6
+
+function expectRgba(buf: Buffer) {
+  expect(buf.subarray(0, 8)).toEqual(PNG_MAGIC)
+  expect(buf.readUInt8(PNG_COLOR_TYPE_OFFSET)).toBe(PNG_RGBA)
+}
+
 describe("Devsy Application Icon Assets", () => {
   describe("Canonical Vector Source", () => {
     it("provides valid icon SVG canvas", () => {
@@ -52,6 +62,7 @@ describe("Devsy Application Icon Assets", () => {
         const len = buf.readUInt32BE(offset + 4)
         expect(len).toBeGreaterThanOrEqual(8)
         expect(offset + len).toBeLessThanOrEqual(buf.length)
+        expectRgba(buf.subarray(offset + 8, offset + len))
         types.push(type)
         offset += len
       }
@@ -88,6 +99,7 @@ describe("Devsy Application Icon Assets", () => {
         const imgOffset = buf.readUInt32LE(offset + 12)
         const imgBuf = buf.subarray(imgOffset, imgOffset + imgSize)
         expect(imgBuf.subarray(0, 8)).toEqual(PNG_MAGIC)
+        expectRgba(imgBuf)
         offset += 16
       }
 
@@ -103,6 +115,7 @@ describe("Devsy Application Icon Assets", () => {
       const { width, height } = getPngDimensions(buf)
       expect(width).toBe(1024)
       expect(height).toBe(1024)
+      expectRgba(buf)
     })
 
     it("provides valid 32x32 Linux icon", () => {
@@ -112,6 +125,7 @@ describe("Devsy Application Icon Assets", () => {
       const { width, height } = getPngDimensions(buf)
       expect(width).toBe(32)
       expect(height).toBe(32)
+      expectRgba(buf)
     })
 
     it("provides valid 128x128 Linux icon", () => {
@@ -121,6 +135,7 @@ describe("Devsy Application Icon Assets", () => {
       const { width, height } = getPngDimensions(buf)
       expect(width).toBe(128)
       expect(height).toBe(128)
+      expectRgba(buf)
     })
   })
 })

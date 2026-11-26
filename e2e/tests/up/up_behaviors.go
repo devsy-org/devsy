@@ -6,13 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -29,7 +30,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		framework.ExpectNoError(err)
 
 		dtc.dockerHelper = &docker.DockerHelper{DockerCommand: testDockerCommand}
-		dtc.f, err = setupDockerProvider(
+		dtc.f, err = framework.SetupDockerProvider(
 			filepath.Join(dtc.initialDir, "bin"), testDockerCommand,
 		)
 		framework.ExpectNoError(err)
@@ -118,23 +119,19 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 	)
 
 	ginkgo.It("should accept --update-remote-user-uid=on", func(ctx context.Context) {
-		if runtime.GOOS != osLinux {
-			ginkgo.Skip("updateRemoteUserUID only applies on Linux")
-		}
+		framework.SkipUnlessOS("linux", "updateRemoteUserUID only applies on Linux")
 		_, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
 			names.Flag(names.UpdateRemoteUserUID), "on")
 		framework.ExpectNoError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should accept --update-remote-user-uid=off", func(ctx context.Context) {
-		if runtime.GOOS != osLinux {
-			ginkgo.Skip("updateRemoteUserUID only applies on Linux")
-		}
+		framework.SkipUnlessOS("linux", "updateRemoteUserUID only applies on Linux")
 		tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
 			names.Flag(names.UpdateRemoteUserUID), "off")
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "id -u")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "id -u")
 		framework.ExpectNoError(err)
 		gomega.Expect(out).NotTo(gomega.BeEmpty())
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -159,6 +156,30 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		framework.ExpectNoError(err)
 
 		gomega.Expect(envelope.Outcome).To(gomega.Equal("success"))
+		gomega.Expect(envelope.RemoteWorkspaceFolder).NotTo(gomega.BeEmpty())
+		statusCount := 0
+		for _, line := range lines[:len(lines)-1] {
+			var status struct {
+				Kind          string `json:"kind"`
+				SchemaVersion int    `json:"schemaVersion"`
+				Phase         string `json:"phase"`
+				State         string `json:"state"`
+				Started       *bool  `json:"started,omitempty"`
+			}
+			if json.Unmarshal([]byte(line), &status) != nil || status.Kind != "status" {
+				continue
+			}
+			statusCount++
+			gomega.Expect(status.SchemaVersion).To(gomega.Equal(1))
+			gomega.Expect(status.Phase).NotTo(gomega.BeEmpty())
+			gomega.Expect(status.State).To(gomega.BeElementOf(
+				"started", "succeeded", "failed", "skipped",
+			))
+			gomega.Expect(status.Started).To(gomega.BeNil(),
+				"legacy started field must not be emitted")
+		}
+		gomega.Expect(statusCount).To(gomega.BeNumerically(">", 0),
+			"expected status envelopes before the final result")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It(
@@ -205,8 +226,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 				"expected exactly one success envelope in stdout, got %d", len(matched))
 			gomega.Expect(matched[0].ContainerID).NotTo(gomega.BeEmpty())
 			gomega.Expect(matched[0].RemoteUser).NotTo(gomega.BeEmpty())
-			// RemoteWorkspaceFolder may legitimately be empty when the
-			// devcontainer.json doesn't set a workspaceFolder.
+			gomega.Expect(matched[0].RemoteWorkspaceFolder).NotTo(gomega.BeEmpty())
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 	ginkgo.It("suppresses JSON envelope with --result-format plain", func(ctx context.Context) {
@@ -242,16 +262,29 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			stdout, _, err := dtc.f.DevsyUpStreams(ctx, tempDir, "--result-format", "json")
 			gomega.Expect(err).To(gomega.HaveOccurred())
 
-			lines := strings.Split(strings.TrimSpace(stdout), "\n")
-			gomega.Expect(lines).NotTo(gomega.BeEmpty())
+			envelope, ok := parseFailedStatus(stdout)
+			gomega.Expect(ok).
+				To(gomega.BeTrue(), "stdout should contain a failed status envelope: %s", stdout)
+			gomega.Expect(envelope.Error.Message).
+				To(gomega.ContainSubstring("failed to start dev container"))
+			gomega.Expect(envelope.Error.Message).To(gomega.ContainSubstring("/nonexistent/path"))
+			gomega.Expect(envelope.Error.Message).
+				NotTo(gomega.ContainSubstring("bind mount source path does not exist"))
 
-			lastLine := lines[len(lines)-1]
-			var envelope config.ErrorEnvelope
-			err = json.Unmarshal([]byte(lastLine), &envelope)
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
 			framework.ExpectNoError(err)
-
-			gomega.Expect(envelope.Outcome).To(gomega.Equal("error"))
-			gomega.Expect(envelope.Message).NotTo(gomega.BeEmpty())
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			if len(ids) > 0 {
+				var details []container.InspectResponse
+				framework.ExpectNoError(dtc.dockerHelper.Inspect(ctx, ids, "container", &details))
+				gomega.Expect(details).To(gomega.HaveLen(len(ids)))
+				for _, detail := range details {
+					gomega.Expect(detail.State).NotTo(gomega.BeNil())
+					gomega.Expect(detail.State.Running).To(gomega.BeFalse(),
+						"failed up must not leave container %s running", detail.ID)
+				}
+			}
 		},
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
@@ -268,15 +301,10 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		gomega.Expect(err).To(gomega.HaveOccurred(),
 			"devsy up should fail when host requirements not met")
 
-		lines := strings.Split(strings.TrimSpace(stdout), "\n")
-		gomega.Expect(lines).NotTo(gomega.BeEmpty())
-		lastLine := lines[len(lines)-1]
-
-		var envelope config.ErrorEnvelope
-		err = json.Unmarshal([]byte(lastLine), &envelope)
-		framework.ExpectNoError(err)
-		gomega.Expect(envelope.Outcome).To(gomega.Equal("error"))
-		gomega.Expect(envelope.Message).To(gomega.ContainSubstring("minimum requirements"))
+		envelope, ok := parseFailedStatus(stdout)
+		gomega.Expect(ok).
+			To(gomega.BeTrue(), "stdout should contain a failed status envelope: %s", stdout)
+		gomega.Expect(envelope.Error.Message).To(gomega.ContainSubstring("minimum requirements"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("skip-host-requirements bypasses enforcement", func(ctx context.Context) {
@@ -335,7 +363,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "ls ~/.file*")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "ls ~/.file*")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(
 			out,
@@ -354,7 +382,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "ls /tmp/worked")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "ls /tmp/worked")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(out, "/tmp/worked\n")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -368,7 +396,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "ls ~/.file*")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "ls ~/.file*")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(
 			out,
@@ -385,7 +413,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "cat ~/.branch_test")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "cat ~/.branch_test")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(out, "test\n")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -401,10 +429,10 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		_, err = dtc.execSSH(ctx, tempDir, "test -f /tmp/worked")
+		_, err = dtc.f.DevsySSH(ctx, tempDir, "test -f /tmp/worked")
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/lifecycle-order.log")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/lifecycle-order.log")
 		framework.ExpectNoError(err)
 
 		lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -415,3 +443,17 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		}), "lifecycle ordering should be: postCreate -> dotfiles -> postStart")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
+
+func parseFailedStatus(stdout string) (config.StatusEnvelope, bool) {
+	var envelope config.StatusEnvelope
+	for line := range strings.SplitSeq(stdout, "\n") {
+		var candidate config.StatusEnvelope
+		if json.Unmarshal([]byte(line), &candidate) == nil &&
+			candidate.Kind == config.KindStatus &&
+			candidate.State == status.StateFailed &&
+			candidate.Error != nil {
+			envelope = candidate
+		}
+	}
+	return envelope, envelope.Error != nil
+}

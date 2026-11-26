@@ -1,12 +1,121 @@
 package agent
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+const testStateRoot = "/state"
+
+func TestBuildDaemonArgs(t *testing.T) {
+	args := buildDaemonArgs("/usr/bin/devsy", InstallOptions{
+		StateLocation:  StateLocation{Root: testStateRoot, Layout: StateLayoutCanonical},
+		Interval:       "30s",
+		ShutdownAction: config.ShutdownActionStopContainer,
+	})
+
+	assert.Equal(t, []string{
+		"/usr/bin/devsy", "internal", "agent", "daemon",
+		"--state-root", testStateRoot, "--state-layout", "canonical",
+		"--diagnostics-reader-uid", "0", "--diagnostics-reader-gid", "0",
+		"--interval", "30s", "--shutdown-action", config.ShutdownActionStopContainer,
+	}, args)
+}
+
+func TestFallbackRuntimePaths(t *testing.T) {
+	cacheDir := func() (string, error) { return "/home/devsy/.cache", nil }
+
+	rootPaths, err := fallbackRuntimePaths(0, cacheDir)
+	require.NoError(t, err)
+	assert.Equal(t, "/run/devsy/agent-daemon.lock", rootPaths.LockPath)
+	assert.Equal(t, "/run/devsy/agent-daemon.json", rootPaths.LocatorPath)
+
+	userPaths, err := fallbackRuntimePaths(1000, cacheDir)
+	require.NoError(t, err)
+	assert.Equal(t, "/home/devsy/.cache/devsy/agent-daemon.lock", userPaths.LockPath)
+	assert.Equal(t, "/home/devsy/.cache/devsy/agent-daemon.json", userPaths.LocatorPath)
+
+	_, err = fallbackRuntimePaths(1000, func() (string, error) {
+		return "", errors.New("unavailable")
+	})
+	require.ErrorContains(t, err, "get user cache directory for daemon runtime")
+}
+
+func TestFallbackDaemonEnvPropagatesBothRuntimePaths(t *testing.T) {
+	t.Setenv(machinediagnostics.RuntimeLockPathEnv, "/inherited/lock")
+	t.Setenv(machinediagnostics.RuntimeLocatorPathEnv, "/inherited/locator")
+	env := fallbackDaemonEnv(machinediagnostics.RuntimePaths{
+		LockPath:    "/cache/devsy/agent-daemon.lock",
+		LocatorPath: "/cache/devsy/agent-daemon.json",
+	})
+	assert.Contains(t, env, "DEVSY_DAEMON_RUNTIME_LOCK_PATH=/cache/devsy/agent-daemon.lock")
+	assert.Contains(t, env, "DEVSY_DAEMON_LOCATOR_PATH=/cache/devsy/agent-daemon.json")
+
+	systemEnv := fallbackDaemonEnv(machinediagnostics.SystemRuntimePaths())
+	assert.NotContains(t, systemEnv, machinediagnostics.RuntimeLockPathEnv+"=/inherited/lock")
+	assert.NotContains(t, systemEnv, machinediagnostics.RuntimeLocatorPathEnv+"=/inherited/locator")
+}
+
+func TestDaemonUnitStateLocationMatchesExactArgumentValues(t *testing.T) {
+	unit := systemdUnitContents(
+		"/usr/bin/devsy internal agent daemon --state-root /state/development --state-layout canonical",
+	)
+	location, configured, err := daemonUnitStateLocation(unit)
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(
+		t,
+		StateLocation{Root: "/state/development", Layout: StateLayoutCanonical},
+		location,
+	)
+	assert.NotEqual(t, StateLocation{Root: "/state/dev", Layout: StateLayoutCanonical}, location)
+}
+
+func TestDaemonUnitStateLocationSupportsQuotedRoot(t *testing.T) {
+	unit := systemdUnitContents(
+		`/usr/bin/devsy internal agent daemon --state-root "/state/dev sy" --state-layout agent-home`,
+	)
+	location, configured, err := daemonUnitStateLocation(unit)
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, StateLocation{Root: "/state/dev sy", Layout: StateLayoutAgentHome}, location)
+}
+
+func TestIsMissingUnitOutput(t *testing.T) {
+	tests := map[string]struct {
+		out  string
+		want bool
+	}{
+		"stop on unloaded unit": {
+			out:  "Failed to stop devsy.service: Unit devsy.service not loaded.",
+			want: true,
+		},
+		"disable on absent unit": {
+			out:  "Failed to disable unit: Unit file devsy.service does not exist.",
+			want: true,
+		},
+		"other failure": {
+			out:  "Failed to start devsy.service: Access denied",
+			want: false,
+		},
+		"empty output": {
+			out:  "",
+			want: false,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, isMissingUnitOutput(tc.out))
+		})
+	}
+}
 
 func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 	tests := []struct {
@@ -42,10 +151,13 @@ func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 			merged.ShutdownAction = tt.shutdownAction
 
 			cfg, err := BuildWorkspaceDaemonConfig(
-				devsy.PlatformOptions{},
-				&provider2.Workspace{},
-				&config.SubstitutionContext{},
-				merged,
+				WorkspaceDaemonInput{
+					PlatformOptions:     devsy.PlatformOptions{},
+					Workspace:           &provider2.Workspace{},
+					SubstitutionContext: &config.SubstitutionContext{},
+					MergedConfig:        merged,
+					Lifecycle:           LifecycleOptions{},
+				},
 			)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)

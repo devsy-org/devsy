@@ -15,6 +15,10 @@ import (
 )
 
 const (
+	hello = "hello"
+)
+
+const (
 	cmdWorkspace        = "workspace"
 	execCommand         = "exec"
 	workspaceFolderFlag = "--workspace-folder"
@@ -32,21 +36,25 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should exec a command in a running workspace container",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/exec", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
+				ctx,
+				"tests/exec/testdata/exec",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				cmdWorkspace, execCommand,
 				workspaceFolderFlag, tempDir,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal("hello"))
+			gomega.Expect(stdout).To(gomega.Equal(hello))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should pass remote-env to the container",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
 				ctx, "tests/exec/testdata/remote-env", initialDir,
 			)
 			framework.ExpectNoError(err)
@@ -63,7 +71,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should run commands in the workspace directory",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
 				ctx, "tests/exec/testdata/remote-env", initialDir,
 			)
 			framework.ExpectNoError(err)
@@ -79,7 +87,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should run commands as the remote user",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
 				ctx, "tests/exec/testdata/remote-env", initialDir,
 			)
 			framework.ExpectNoError(err)
@@ -95,7 +103,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should inject remoteEnv from devcontainer config",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
 				ctx, "tests/exec/testdata/remote-env", initialDir,
 			)
 			framework.ExpectNoError(err)
@@ -111,7 +119,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should let CLI remote-env override config remoteEnv",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
 				ctx, "tests/exec/testdata/remote-env", initialDir,
 			)
 			framework.ExpectNoError(err)
@@ -128,7 +136,11 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should probe user environment and include PATH",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/envprobe", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
+				ctx,
+				"tests/exec/testdata/envprobe",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -142,7 +154,11 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should skip env probe when --user-env-probe is none",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/envprobe", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
+				ctx,
+				"tests/exec/testdata/envprobe",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
@@ -156,7 +172,11 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should exec by workspace name",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/exec", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
+				ctx,
+				"tests/exec/testdata/exec",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			wsName := workspace.ToID(tempDir)
@@ -164,15 +184,19 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				cmdWorkspace, execCommand,
 				wsName,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal("hello"))
+			gomega.Expect(stdout).To(gomega.Equal(hello))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should error when both name and --workspace-folder are given",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/exec", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
+				ctx,
+				"tests/exec/testdata/exec",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			wsName := workspace.ToID(tempDir)
@@ -181,7 +205,7 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 				cmdWorkspace, execCommand,
 				wsName,
 				workspaceFolderFlag, tempDir,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectError(err)
 			gomega.Expect(stderr).To(gomega.ContainSubstring(
@@ -191,7 +215,10 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should find container by custom id-label",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspace("tests/exec/testdata/exec", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspace(
+				"tests/exec/testdata/exec",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			err = f.DevsyUp(ctx, tempDir,
@@ -210,17 +237,21 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should emit JSON envelope on stderr with --result-format json",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/exec", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
+				ctx,
+				"tests/exec/testdata/exec",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
 				cmdWorkspace, execCommand,
 				"--result-format", "json",
 				workspaceFolderFlag, tempDir,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal("hello"))
+			gomega.Expect(stdout).To(gomega.Equal(hello))
 
 			lines := strings.Split(strings.TrimSpace(stderr), "\n")
 			gomega.Expect(lines).NotTo(gomega.BeEmpty())
@@ -233,17 +264,21 @@ var _ = ginkgo.Describe("devsy exec test suite", ginkgo.Label("exec"), ginkgo.Or
 
 	ginkgo.It("should suppress JSON envelope on stderr with --result-format plain",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/exec/testdata/exec", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
+				ctx,
+				"tests/exec/testdata/exec",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
 				cmdWorkspace, execCommand,
 				"--result-format", "plain",
 				workspaceFolderFlag, tempDir,
-				"--", echoCommand, "-n", "hello",
+				"--", echoCommand, "-n", hello,
 			})
 			framework.ExpectNoError(err)
-			gomega.Expect(stdout).To(gomega.Equal("hello"))
+			gomega.Expect(stdout).To(gomega.Equal(hello))
 
 			for line := range strings.SplitSeq(stderr, "\n") {
 				var envelope config.ResultEnvelope

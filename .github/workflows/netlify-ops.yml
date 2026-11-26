@@ -152,7 +152,7 @@ jobs:
           echo "CUSTOM DOMAIN CONFIGURED: images.devsy.sh"
           echo "========================================"
           echo ""
-          echo "DNS action required — add this DNS record:"
+          echo "DNS action required - add this DNS record:"
           echo "  Type:  CNAME"
           echo "  Name:  images"
           echo "  Value: ${NETLIFY_SUBDOMAIN}.netlify.app"

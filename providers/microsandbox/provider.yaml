@@ -3,7 +3,7 @@ version: v1.0.0
 icon: https://dl.devsy.sh/assets/devsy.svg
 home: https://github.com/devsy-org/devsy
 description: |-
-  Devsy on Microsandbox
+  Deprecated. Add the external MicroSandbox provider with an unused name: devsy provider add microsandbox --name microsandbox-external.
 optionGroups:
   - options:
       - MICROSANDBOX_MEMORY
@@ -13,6 +13,8 @@ optionGroups:
       - MICROSANDBOX_STORAGE
       - MICROSANDBOX_BLOCK_EGRESS
       - MICROSANDBOX_EPHEMERAL
+      - MICROSANDBOX_WORKSPACE_HOST_PERMISSIONS
+      - MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION
       - INACTIVITY_TIMEOUT
     name: "Advanced Options"
 options:
@@ -32,9 +34,27 @@ options:
     default: "false"
     type: boolean
   MICROSANDBOX_EPHEMERAL:
-    description: "If true, boot from a tmpfs root disk so the microVM's disk state is discarded when it stops. Sized by MICROSANDBOX_STORAGE/hostRequirements.storage, or 8GiB if neither is set."
+    description: "If true, boot from a tmpfs root disk so the microVM's disk state is discarded when it stops. MICROSANDBOX_STORAGE/hostRequirements.storage sets its size; otherwise the runtime default applies."
     default: "false"
     type: boolean
+  MICROSANDBOX_WORKSPACE_HOST_PERMISSIONS:
+    description: "Workspace bind-mount host permission policy."
+    default: "mirror"
+    enum:
+      - value: mirror
+        displayName: "Mirror guest rwx mode changes to the host workspace."
+      - value: private
+        displayName: "Keep guest chmod changes in MicroSandbox metadata only."
+  MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION:
+    description: "Workspace bind-mount stat virtualization policy."
+    default: "strict"
+    enum:
+      - value: strict
+        displayName: "Require stat virtualization support."
+      - value: relaxed
+        displayName: "Use stat virtualization where supported."
+      - value: "off"
+        displayName: "Expose literal host ownership and modes."
   INACTIVITY_TIMEOUT:
     description: "If defined, will automatically stop the microVM after the inactivity period. Examples: 10m, 1h"
 agent:
@@ -49,6 +69,8 @@ agent:
     storage: ${MICROSANDBOX_STORAGE}
     blockEgress: ${MICROSANDBOX_BLOCK_EGRESS}
     ephemeral: ${MICROSANDBOX_EPHEMERAL}
+    workspaceHostPermissions: ${MICROSANDBOX_WORKSPACE_HOST_PERMISSIONS}
+    workspaceStatVirtualization: ${MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION}
 exec:
   command: |-
     "${DEVSY}" internal sh -c "${COMMAND}"

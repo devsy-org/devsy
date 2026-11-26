@@ -1,34 +1,80 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { app, BrowserWindow, session } from "electron"
+import { app, BrowserWindow, ipcMain, Notification, session } from "electron"
+import {
+  settingsRoute,
+  workspaceLogsRoute,
+  workspaceRoute,
+} from "../shared/app-route.js"
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
+import { isAppQuitting, markAppQuitting } from "./app-lifecycle.js"
+import { AppNavigationController } from "./app-navigation.js"
+import { AppSettingsStore } from "./app-settings.js"
+import {
+  applyAutostart,
+  detectAutostartEnvironment,
+  readAutostartEnabled,
+} from "./autostart.js"
 import { CliRunner } from "./cli.js"
 import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
+import {
+  isAutomaticLoginLaunch,
+  shouldSuppressInitialWindow,
+} from "./launch-context.js"
+import { linuxWindowIcon } from "./linux-desktop-identity.js"
+import {
+  LinuxDesktopIntegration,
+  updateDesktopDatabase,
+} from "./linux-desktop-integration.js"
 import { LogStore } from "./log-store.js"
+import { initializeMainLog, mainLog, setMainLogLevel } from "./logging.js"
+import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
+import { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderJobs } from "./provider-jobs.js"
 import { PtyManager } from "./pty.js"
+import { SettingsService } from "./settings-service.js"
 import { DaemonState } from "./state.js"
 import { AppTray } from "./tray.js"
-import { initAutoUpdater, stopAutoUpdater } from "./updater.js"
+import { TrayNotifier } from "./tray-notifications.js"
+import { isTrayHostAvailable } from "./tray-support.js"
+import {
+  initAutoUpdater,
+  onUpdateStatusChanged,
+  stopAutoUpdater,
+} from "./updater.js"
 import { Watcher } from "./watcher.js"
 import { WorkspaceJobs } from "./workspace-jobs.js"
 
 const PROTOCOL = "devsy"
 
 let mainWindow: BrowserWindow | null = null
-let pendingDeepLink: string | null = null
+const pendingDeepLinks: string[] = []
+let rendererReady = false
+let appTray: AppTray | null = null
+let watcher: Watcher | null = null
 const state = new DaemonState()
+const appNavigation = new AppNavigationController({
+  getWindow: () => mainWindow,
+  createWindow: () => createWindow(),
+})
 
 function handleDeepLink(url: string): void {
-  if (mainWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
-    mainWindow.webContents.send("deep-link", url)
+    if (rendererReady) mainWindow.webContents.send("deep-link", url)
+    else pendingDeepLinks.push(url)
   } else {
-    pendingDeepLink = url
+    pendingDeepLinks.push(url)
+    // A login launch can start without a window; open one to deliver the link.
+    if (app.isReady()) createWindow()
   }
+}
+
+function showDevsy(route?: string): void {
+  appNavigation.open(route)
 }
 
 // Enforce single instance; forward deep links from second instances to the first.
@@ -41,7 +87,7 @@ app.on("second-instance", (_event, argv) => {
   const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`))
   if (url) {
     handleDeepLink(url)
-  } else if (mainWindow) {
+  } else if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
@@ -55,6 +101,9 @@ app.on("open-url", (event, url) => {
 })
 
 function createWindow(): void {
+  // A deep link can open the window while startup is still probing the tray.
+  if (mainWindow && !mainWindow.isDestroyed()) return
+  rendererReady = false
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -62,6 +111,12 @@ function createWindow(): void {
     minHeight: 700,
     show: false,
     title: "Devsy",
+    icon: linuxWindowIcon({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    }),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -70,14 +125,19 @@ function createWindow(): void {
   })
 
   mainWindow.on("close", (event) => {
-    if (
-      mainWindow &&
-      !(app as typeof app & { isQuitting?: boolean }).isQuitting
-    ) {
+    if (mainWindow && !isAppQuitting()) {
       event.preventDefault()
       mainWindow.hide()
     }
   })
+  mainWindow.webContents.on(
+    "did-start-navigation",
+    (_event, _url, isInPlace, isMainFrame) => {
+      if (isInPlace || !isMainFrame) return
+      rendererReady = false
+      appNavigation.rendererDidStartLoading()
+    },
+  )
 
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -87,25 +147,35 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show()
-    if (pendingDeepLink) {
-      mainWindow?.webContents.send("deep-link", pendingDeepLink)
-      pendingDeepLink = null
-    }
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const appSettingsStore = new AppSettingsStore(
+    join(app.getPath("userData"), "app-settings.json"),
+  )
+  appSettingsStore.load()
+  try {
+    setMainLogLevel(appSettingsStore.get().desktopLogLevel)
+  } catch {
+    console.error("Desktop logging configuration failed")
+    app.exit(1)
+    return
+  }
+  initializeMainLog(app.getPath("logs"))
+
   initAnalytics()
   trackEvent("app_open")
 
-  // Register devsy:// as the default protocol handler for this app.
-  app.setAsDefaultProtocolClient(PROTOCOL)
+  // Linux packages and the AppImage integration advertise their handler in
+  // desktop entries; registering at launch would replace another package's default.
+  if (process.platform !== "linux") app.setAsDefaultProtocolClient(PROTOCOL)
 
   // Capture deep link from argv on Windows/Linux when launched via protocol URL.
   const startupUrl = process.argv.find((arg) =>
     arg.startsWith(`${PROTOCOL}://`),
   )
-  if (startupUrl) pendingDeepLink = startupUrl
+  if (startupUrl) pendingDeepLinks.push(startupUrl)
 
   // Apply Content Security Policy to all web responses.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -126,17 +196,25 @@ app.whenReady().then(() => {
       ? CliRunner.resolveBinaryPath(process.resourcesPath)
       : CliRunner.resolveBinaryPath(join(__dirname, "../../resources")))
   const cli = new CliRunner(binaryPath)
+  cli.setDiagnosticLogLevel(appSettingsStore.get().cliCaptureLogLevel)
 
-  // Initialize log store. Logs live under ~/.devsy/desktop/logs/ — inside the
+  // Initialize log store. Logs live under ~/.devsy/desktop/logs/ - inside the
   // shared ~/.devsy root (no artifact sprawl) but outside the CLI-managed
   // ~/.devsy/contexts/<ctx>/workspaces/<id>/ subtree that `workspace delete`
   // unlinks. That separation closes the file-deletion race by construction.
   const logStore = new LogStore(join(homedir(), ".devsy", "desktop", "logs"))
+  const machineDiagnosticsStore = new MachineDiagnosticsStore(
+    join(homedir(), ".devsy", "desktop", "diagnostics"),
+  )
+  const machineDiagnosticsManager = new MachineDiagnosticsManager(
+    cli,
+    machineDiagnosticsStore,
+  )
   try {
     const pruned = logStore.prune(30)
-    if (pruned > 0) console.log(`Pruned ${pruned} old log files`)
+    if (pruned > 0) mainLog.info(`Pruned ${pruned} old log files`)
   } catch (e) {
-    console.error("Failed to prune old logs:", e)
+    mainLog.error("Failed to prune old logs:", e)
   }
 
   // Initialize PTY manager
@@ -147,10 +225,13 @@ app.whenReady().then(() => {
 
   // Start local daemon for efficient polling
   const daemonManager = new DaemonManager(binaryPath)
-  daemonManager.start()
+  const daemonDisabled = process.env.DEVSY_DISABLE_DAEMON === "true"
+  if (!daemonDisabled) {
+    daemonManager.start()
+  }
 
   app.on("before-quit", () => {
-    ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
+    markAppQuitting()
     trackEvent("app_close")
     shutdownAnalytics().catch(() => {})
     cli.killAll()
@@ -160,62 +241,209 @@ app.whenReady().then(() => {
     daemonManager.stop()
     ptyManager.destroyAll()
     stopAutoUpdater()
+    watcher?.stop()
+    appTray?.destroy()
   })
 
   const providerJobs = new ProviderJobs()
   const workspaceJobs = new WorkspaceJobs()
+
+  const autostartEnv = detectAutostartEnvironment()
+  const linuxDesktopIntegration = new LinuxDesktopIntegration({
+    platform: process.platform,
+    env: app.isPackaged ? process.env : {},
+    homeDir: homedir(),
+    iconSource: join(app.getAppPath(), "resources", "icons", "128x128.png"),
+    refreshDesktopDatabase: updateDesktopDatabase,
+  })
+  const settingsService = new SettingsService({
+    store: appSettingsStore,
+    applyAutostart: (settings) => applyAutostart(settings, autostartEnv),
+    currentAutostartEnabled: () => readAutostartEnabled(autostartEnv),
+    onChanged: (result) => {
+      setMainLogLevel(result.settings.desktopLogLevel)
+      cli.setDiagnosticLogLevel(result.settings.cliCaptureLogLevel)
+      appTray?.rebuildMenu()
+      const win = mainWindow
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("app-settings-changed", result)
+      }
+    },
+  })
+
+  const notifier = new TrayNotifier({
+    getLevel: () => appSettingsStore.get().trayNotifications,
+    isAppFocused: () => {
+      const win = mainWindow
+      return Boolean(win && !win.isDestroyed() && win.isFocused())
+    },
+    sink: (request) => {
+      if (!Notification.isSupported()) return
+      const notification = new Notification({
+        title: request.title,
+        body: request.body,
+      })
+      notification.on("click", request.onClick)
+      notification.show()
+    },
+    openWorkspace: (id) => showDevsy(workspaceRoute(id)),
+    openWorkspaceLogs: (id) => {
+      const job = workspaceJobs.get(id)
+      showDevsy(
+        job?.state === "failed" && job.runId
+          ? workspaceLogsRoute(id, {
+              context: state.workspaceContext(id),
+              runId: job.runId,
+              invocationId: job.failedInvocationId,
+            })
+          : workspaceRoute(id, "logs"),
+      )
+    },
+    openUpdates: () => showDevsy(settingsRoute()),
+  })
+  workspaceJobs.onChange(() => notifier.onJobsChanged(workspaceJobs.snapshot()))
+  onUpdateStatusChanged((status) => notifier.onUpdateStatus(status))
 
   // Register IPC handlers
   const {
     tunnelProcesses,
     scheduleProviderUpdateCheck,
     runInitialProviderUpdateCheck,
+    workspaceActions,
   } = registerIpcHandlers({
     cli,
     state,
     logStore,
+    machineDiagnosticsStore,
+    machineDiagnosticsManager,
     pty: ptyManager,
     getMainWindow: () => mainWindow,
     providerJobs,
     workspaceJobs,
+    onRendererReady: (sender) => {
+      if (
+        !mainWindow ||
+        mainWindow.isDestroyed() ||
+        mainWindow.webContents !== sender
+      ) {
+        return
+      }
+      rendererReady = true
+      appNavigation.rendererDidBecomeReady()
+      for (const url of pendingDeepLinks.splice(0))
+        sender.send("deep-link", url)
+    },
+    workspaceSnapshot: () => watcher?.workspaceSnapshot(),
+    refreshWorkspaces: () => watcher?.refreshWorkspaces() ?? Promise.resolve(),
+    appNavigation,
+    settingsService,
+    linuxDesktopIntegration,
   })
 
   // Start state watcher
-  const watcher = new Watcher({
+  watcher = new Watcher({
     cli,
-    daemon: daemonManager.daemonClient,
+    daemon: daemonDisabled ? undefined : daemonManager.daemonClient,
     state,
     getMainWindow: () => mainWindow,
     providerJobs,
     workspaceJobs,
   })
-  providerJobs.onChange(() => watcher.broadcastProviders())
-  providerJobs.setRefresh(() => watcher.refreshProviders())
-  workspaceJobs.onChange(() => watcher.broadcastWorkspaces())
-  workspaceJobs.setRefresh(() => watcher.refreshWorkspaces())
+  providerJobs.onChange(() => watcher?.broadcastProviders())
+  providerJobs.setRefresh(() =>
+    watcher ? watcher.refreshProviders() : Promise.resolve(),
+  )
+  workspaceJobs.onChange(() => watcher?.broadcastWorkspaces())
+  workspaceJobs.setRefresh(async (id, job) => {
+    if (!watcher) throw new Error("Workspace watcher unavailable")
+    await watcher.refreshWorkspaces()
+    const exists = state
+      .workspaceList()
+      .some((workspace) => workspace.id === id)
+    if (job.activity === "deleting" && !job.error) {
+      if (exists) throw new Error("Workspace list has not caught up yet")
+    } else if (exists) {
+      await watcher.refreshWorkspaceStatus(id)
+    } else if (!job.error) {
+      throw new Error("Workspace not yet present in the list")
+    }
+    watcher.broadcastWorkspaces()
+  })
 
   void watcher.start().then(runInitialProviderUpdateCheck)
   scheduleProviderUpdateCheck()
 
   // Set up system tray
-  const appTray = new AppTray({
+  appTray = new AppTray({
     state,
-    getMainWindow: () => mainWindow,
+    workspaceJobs,
+    showDevsy,
+    getSettings: () => appSettingsStore.get(),
+    toggleRunAtStartup: () =>
+      void settingsService.update({
+        runAtStartup: !appSettingsStore.get().runAtStartup,
+      }),
+    toggleOpenToTray: () =>
+      void settingsService.update({
+        openToTrayOnStartup: !appSettingsStore.get().openToTrayOnStartup,
+      }),
+    startWorkspace: workspaceActions.start,
+    stopWorkspace: workspaceActions.stop,
+    refreshWorkspace: (id) =>
+      watcher ? watcher.refreshWorkspaceStatus(id) : Promise.resolve(),
+    refreshWorkspaces: () =>
+      watcher ? watcher.refreshWorkspaces() : Promise.resolve(),
   })
   appTray.setup()
 
-  createWindow()
+  const loginItems =
+    process.platform === "darwin" || process.platform === "win32"
+      ? app.getLoginItemSettings()
+      : undefined
+  const automaticLaunch = isAutomaticLoginLaunch({
+    argv: process.argv,
+    platform: process.platform,
+    wasOpenedAtLogin: loginItems?.wasOpenedAtLogin,
+    wasOpenedAsHidden: loginItems?.wasOpenedAsHidden,
+  })
+  const trayHostAvailable = await isTrayHostAvailable()
+  if (
+    !shouldSuppressInitialWindow(
+      appSettingsStore.get(),
+      automaticLaunch,
+      trayHostAvailable,
+    )
+  ) {
+    createWindow()
+  }
+
+  void linuxDesktopIntegration.refreshOwned().then(({ error }) => {
+    if (error) mainLog.warn("Could not update the Devsy launcher:", error)
+  })
 
   if (app.isPackaged) {
     initAutoUpdater(() => mainWindow)
   }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else showDevsy()
   })
 })
+
+if (process.env.NODE_ENV === "test") {
+  ipcMain.handle("test_app_navigation", (_event, args: unknown) => {
+    if (!args || typeof args !== "object") return
+    const request = args as { route?: unknown; hide?: unknown }
+    if (typeof request.hide === "boolean") {
+      if (request.hide) mainWindow?.hide()
+      else mainWindow?.show()
+    }
+    if (request.route !== undefined && typeof request.route !== "string") return
+    if (request.route === undefined) return
+    appNavigation.open(request.route)
+  })
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/credentials"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -29,7 +31,9 @@ import (
 )
 
 const (
-	DisableSSHKeepAlive time.Duration = 0 * time.Second
+	DisableSSHKeepAlive      time.Duration = 0 * time.Second
+	sshKeepAliveProbeTimeout               = 10 * time.Second
+	sshKeepAliveMaxFailures                = 3
 )
 
 // SSHCmd holds the ssh cmd flags.
@@ -78,11 +82,13 @@ func NewSSHCmd(f *flags.GlobalFlags) *cobra.Command {
 		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
@@ -292,7 +298,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 		return err
 	}
 
-	cmd.startServicesDaemon(ctx, devsyConfig, client, toolSSHClient)
+	githubEnv := cmd.startServicesDaemon(ctx, devsyConfig, client, toolSSHClient)
 
 	gpgTunnel := newGPGTunnel(cmd, devsyConfig)
 	defer runGPGTunnelInBackground(ctx, gpgTunnel, toolSSHClient)()
@@ -316,6 +322,7 @@ func (cmd *SSHCmd) jumpContainerTailscale(
 			SessionOptions: machine.SSHSessionOptions{
 				TermMode:        cmd.TermMode,
 				InstallTerminfo: cmd.InstallTerminfo,
+				EnvVars:         githubEnv,
 			},
 			Stderr: os.Stderr,
 		},
@@ -327,26 +334,22 @@ func (cmd *SSHCmd) startServicesDaemon(
 	devsyConfig *config.Config,
 	client client2.DaemonClient,
 	sshClient *ssh.Client,
-) {
+) map[string]string {
 	if !cmd.StartServices {
-		return
+		return tunnel.GitHubSessionEnvironment(credentials.Readiness{GitHubState: "disabled"})
 	}
-	go func() {
-		err := clientimplementation.StartServicesDaemon(
-			ctx,
-			clientimplementation.StartServicesDaemonOptions{
-				DevsyConfig:  devsyConfig,
-				Client:       client,
-				SSHClient:    sshClient,
-				User:         cmd.User,
-				ForwardPorts: false,
-				ExtraPorts:   nil,
-			},
-		)
-		if err != nil {
-			log.Errorf("error starting services: %v", err)
-		}
-	}()
+	status := clientimplementation.StartPreparedServicesDaemon(
+		ctx,
+		clientimplementation.StartServicesDaemonOptions{
+			DevsyConfig:  devsyConfig,
+			Client:       client,
+			SSHClient:    sshClient,
+			User:         cmd.User,
+			ForwardPorts: false,
+			ExtraPorts:   nil,
+		},
+	)
+	return tunnel.GitHubSessionEnvironment(status)
 }
 
 func (cmd *SSHCmd) startProxyTunnel(
@@ -368,7 +371,9 @@ func (cmd *SSHCmd) startProxyTunnel(
 			Workspace: client.Workspace(), TransportImpl: "callback",
 		},
 		Handler: func(ctx context.Context) error {
-			containerClient, err := devssh.ClientFromConn(conn, cmd.User, nil)
+			containerClient, err := devssh.ClientFromManagedConn(
+				ctx, conn, devssh.ManagedClientOptions{User: cmd.User},
+			)
 			if err != nil {
 				return err
 			}
@@ -441,7 +446,7 @@ func (cmd *SSHCmd) startTunnel(
 		return err
 	}
 
-	cmd.startTunnelServices(ctx, devsyConfig, containerClient, workspaceClient)
+	githubEnv := cmd.startTunnelServices(ctx, devsyConfig, containerClient, workspaceClient)
 
 	writer, cleanup := cmd.setupTunnelWriter(ctx, devsyConfig, containerClient)
 	defer cleanup()
@@ -455,6 +460,7 @@ func (cmd *SSHCmd) startTunnel(
 	if err != nil {
 		return err
 	}
+	maps.Copy(envVars, githubEnv)
 
 	// Traffic is coming in from the outside, we need to forward it to the container
 	if cmd.Stdio {
@@ -537,8 +543,9 @@ func (cmd *SSHCmd) runInteractiveTunnelSession(
 		SessionOptions: machine.SSHSessionOptions{
 			TermMode:        cmd.TermMode,
 			InstallTerminfo: cmd.InstallTerminfo,
+			EnvVars:         params.envVars,
 		},
-		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, _ io.Writer) error {
 			if cmd.SSHKeepAliveInterval != DisableSSHKeepAlive {
 				go startSSHKeepAlive(ctx, params.containerClient, cmd.SSHKeepAliveInterval)
 			}
@@ -547,11 +554,12 @@ func (cmd *SSHCmd) runInteractiveTunnelSession(
 				Command: params.command,
 				Stdin:   stdin,
 				Stdout:  stdout,
-				Stderr:  stderr,
+				Stderr:  params.writer,
 				EnvVars: params.envVars,
 			})
 		},
-		Stderr: params.writer,
+		// Guest stderr is user data; only the outer helper emits JSON diagnostics.
+		Stderr: os.Stderr,
 	})
 }
 
@@ -560,14 +568,17 @@ func (cmd *SSHCmd) startTunnelServices(
 	devsyConfig *config.Config,
 	containerClient *ssh.Client,
 	workspaceClient client2.BaseWorkspaceClient,
-) {
+) map[string]string {
 	if !cmd.StartServices {
-		return
+		return tunnel.GitHubSessionEnvironment(credentials.Readiness{GitHubState: "disabled"})
 	}
 
 	opts := startServicesOptions{
 		ConfigureDockerCredentials: devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectDockerCredentials,
+		) == config.BoolTrue,
+		ConfigureGitHubCredentials: devsyConfig.ContextOption(
+			config.ContextOptionGitHubCLIForwarding,
 		) == config.BoolTrue,
 		ConfigureGitCredentials: devsyConfig.ContextOption(
 			config.ContextOptionSSHInjectGitCredentials,
@@ -577,7 +588,11 @@ func (cmd *SSHCmd) startTunnelServices(
 		) == config.BoolTrue,
 		GitSSHSigningKey: cmd.GitSSHSigningKey,
 	}
-	go cmd.startServices(ctx, devsyConfig, containerClient, workspaceClient.WorkspaceConfig(), opts)
+	status := cmd.startServices(ctx, devsyConfig, serviceTarget{
+		client:    containerClient,
+		workspace: workspaceClient.WorkspaceConfig(),
+	}, opts)
+	return tunnel.GitHubSessionEnvironment(status)
 }
 
 func (cmd *SSHCmd) buildSSHServerCommand(
@@ -651,19 +666,26 @@ func resolveMergedWorkspaceFolder(
 type startServicesOptions struct {
 	ConfigureDockerCredentials     bool
 	ConfigureGitCredentials        bool
+	ConfigureGitHubCredentials     bool
 	ConfigureGitSSHSignatureHelper bool
 	GitSSHSigningKey               string
+}
+
+// serviceTarget is the container client and workspace that services run against.
+type serviceTarget struct {
+	client    *ssh.Client
+	workspace *provider.Workspace
 }
 
 func (cmd *SSHCmd) startServices(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	containerClient *ssh.Client,
-	workspace *provider.Workspace,
+	target serviceTarget,
 	opts startServicesOptions,
-) {
+) credentials.Readiness {
+	containerClient, workspace := target.client, target.workspace
 	if cmd.User != "" {
-		err := tunnel.RunServices(
+		return tunnel.StartPreparedServices(
 			ctx,
 			tunnel.RunServicesOptions{
 				DevsyConfig:                    devsyConfig,
@@ -675,34 +697,92 @@ func (cmd *SSHCmd) startServices(
 				Workspace:                      workspace,
 				ConfigureDockerCredentials:     opts.ConfigureDockerCredentials,
 				ConfigureGitCredentials:        opts.ConfigureGitCredentials,
+				ConfigureGitHubCredentials:     opts.ConfigureGitHubCredentials,
 				ConfigureGitSSHSignatureHelper: opts.ConfigureGitSSHSignatureHelper,
 				GitSSHSigningKey:               opts.GitSSHSigningKey,
 			},
 		)
-		if err != nil {
-			log.Debugf("error running credential server: %v", err)
-		}
 	}
+	return credentials.Readiness{GitHubState: "unavailable"}
+}
+
+type sshKeepAliveClient interface {
+	SendRequest(string, bool, []byte) (bool, []byte, error)
+	Close() error
+}
+
+type sshKeepAliveOptions struct {
+	interval     time.Duration
+	probeTimeout time.Duration
+	maxFailures  int
 }
 
 func startSSHKeepAlive(
 	ctx context.Context,
-	client *ssh.Client,
+	client sshKeepAliveClient,
 	interval time.Duration,
 ) {
-	ticker := time.NewTicker(interval)
+	startSSHKeepAliveWithOptions(ctx, client, sshKeepAliveOptions{
+		interval:     interval,
+		probeTimeout: sshKeepAliveProbeTimeout,
+		maxFailures:  sshKeepAliveMaxFailures,
+	})
+}
+
+func startSSHKeepAliveWithOptions(
+	ctx context.Context,
+	client sshKeepAliveClient,
+	opts sshKeepAliveOptions,
+) {
+	ticker := time.NewTicker(opts.interval)
 	defer ticker.Stop()
+	failures := 0
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			ok, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
-			if err := checkKeepAliveResponse(ok, err); err != nil {
+			if err := sendBoundedKeepAlive(ctx, client, opts.probeTimeout); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				log.Errorf("failed to send keepalive: %v", err)
+				failures++
+				if failures >= opts.maxFailures {
+					log.Errorf(
+						"SSH keepalive failed %d consecutive times; closing client",
+						failures,
+					)
+					_ = client.Close()
+					return
+				}
+				continue
 			}
+			failures = 0
 		}
+	}
+}
+
+func sendBoundedKeepAlive(
+	ctx context.Context,
+	client sshKeepAliveClient,
+	timeout time.Duration,
+) error {
+	result := make(chan error, 1)
+	go func() {
+		ok, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+		result <- checkKeepAliveResponse(ok, err)
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return fmt.Errorf("keepalive probe timed out after %s", timeout)
 	}
 }
 

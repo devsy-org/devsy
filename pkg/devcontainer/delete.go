@@ -14,7 +14,7 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 		return fmt.Errorf("find dev container: %w", err)
 	}
 	if details != nil {
-		log.Infof("deleting devcontainer: devcontainerID=%s", details.ID)
+		log.Debugf("deleting devcontainer: devcontainerID=%s", details.ID)
 	}
 	return r.buildTeardownPlan(details, options).execute(ctx)
 }

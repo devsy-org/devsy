@@ -1,0 +1,4 @@
+{
+  "name": "Config Read Custom ID Label",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu"
+}

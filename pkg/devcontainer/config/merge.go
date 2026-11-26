@@ -30,8 +30,21 @@ func MergeExtraRemoteEnv(
 	if err != nil {
 		return err
 	}
-	maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
+	MergeExtraRemoteEnvConfig(mergedConfig, extraConfig)
 	return nil
+}
+
+func MergeExtraRemoteEnvConfig(
+	mergedConfig *MergedDevContainerConfig,
+	extraConfig *DevContainerConfig,
+) {
+	if extraConfig == nil || len(extraConfig.RemoteEnv) == 0 {
+		return
+	}
+	if mergedConfig.RemoteEnv == nil {
+		mergedConfig.RemoteEnv = make(map[string]*string)
+	}
+	maps.Copy(mergedConfig.RemoteEnv, extraConfig.RemoteEnv)
 }
 
 func MergeConfiguration(

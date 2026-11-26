@@ -193,6 +193,130 @@ func TestFinalizePodSpecRespectsTemplateHostUsers(t *testing.T) {
 	}
 }
 
+func TestFinalizePodSpecConfiguresSecurityContextAndRestartPolicy(t *testing.T) {
+	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{}}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.SecurityContext == nil {
+		t.Fatal("expected SecurityContext to be initialized")
+	}
+	if pod.Spec.SecurityContext.FSGroupChangePolicy == nil ||
+		*pod.Spec.SecurityContext.FSGroupChangePolicy != corev1.FSGroupChangeOnRootMismatch {
+		t.Errorf(
+			"FSGroupChangePolicy = %v, want %v",
+			pod.Spec.SecurityContext.FSGroupChangePolicy,
+			corev1.FSGroupChangeOnRootMismatch,
+		)
+	}
+	if pod.Spec.RestartPolicy != corev1.RestartPolicyNever {
+		t.Errorf("RestartPolicy = %v, want %v", pod.Spec.RestartPolicy, corev1.RestartPolicyNever)
+	}
+}
+
+func TestFinalizePodSpecPreservesExistingSecurityContext(t *testing.T) {
+	existingPolicy := corev1.FSGroupChangeAlways
+	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{}}
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			SecurityContext: &corev1.PodSecurityContext{
+				FSGroupChangePolicy: &existingPolicy,
+			},
+		},
+	}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.SecurityContext.FSGroupChangePolicy == nil ||
+		*pod.Spec.SecurityContext.FSGroupChangePolicy != corev1.FSGroupChangeAlways {
+		t.Errorf(
+			"FSGroupChangePolicy = %v, want %v",
+			pod.Spec.SecurityContext.FSGroupChangePolicy,
+			corev1.FSGroupChangeAlways,
+		)
+	}
+}
+
+func TestFinalizePodSpecSetsImagePullSecretsWhenEnabledAndCreated(t *testing.T) {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			KubernetesPullSecretsEnabled: pkgconfig.BoolTrue,
+		},
+	}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", true)
+
+	expectedName := getPullSecretsName("devsy-ws-1")
+	if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != expectedName {
+		t.Errorf(
+			"ImagePullSecrets = %v, want [{Name: %q}]",
+			pod.Spec.ImagePullSecrets,
+			expectedName,
+		)
+	}
+}
+
+func TestFinalizePodSpecOmitsImagePullSecretsWhenNotCreated(t *testing.T) {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			KubernetesPullSecretsEnabled: pkgconfig.BoolTrue,
+		},
+	}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if len(pod.Spec.ImagePullSecrets) != 0 {
+		t.Errorf("ImagePullSecrets = %v, want empty", pod.Spec.ImagePullSecrets)
+	}
+}
+
+func TestShouldDisableHostUsers(t *testing.T) {
+	tests := []struct {
+		name     string
+		options  *provider2.ProviderKubernetesDriverConfig
+		expected bool
+	}{
+		{
+			name:     "default options disabled",
+			options:  &provider2.ProviderKubernetesDriverConfig{},
+			expected: false,
+		},
+		{
+			name: "user namespaces enabled",
+			options: &provider2.ProviderKubernetesDriverConfig{
+				KubernetesUserNamespaces: pkgconfig.BoolTrue,
+			},
+			expected: true,
+		},
+		{
+			name: "strict security enabled",
+			options: &provider2.ProviderKubernetesDriverConfig{
+				StrictSecurity: pkgconfig.BoolTrue,
+			},
+			expected: true,
+		},
+		{
+			name: "agent security context set",
+			options: &provider2.ProviderKubernetesDriverConfig{
+				AgentSecurityContext: "runAsUser: 1000",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			k := &KubernetesDriver{options: tt.options}
+			if got := k.shouldDisableHostUsers(); got != tt.expected {
+				t.Errorf("shouldDisableHostUsers() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 func findContainerByName(pod *corev1.Pod, name string) *corev1.Container {
 	for i := range pod.Spec.Containers {
 		if pod.Spec.Containers[i].Name == name {
@@ -417,4 +541,101 @@ func TestAssemblePodSpecOpenShiftScenario(t *testing.T) {
 		t.Fatal("devsy container not found")
 	}
 	assertRunAsUserAndNonRoot(t, devsyContainer.SecurityContext, 1002010000)
+}
+
+func TestBuildPodContainerInputs(t *testing.T) {
+	inputs := newTestPodContainerInputs()
+
+	t.Run("daemonConfig and capabilities", func(t *testing.T) {
+		assertDaemonConfigAndCaps(t, inputs)
+	})
+
+	t.Run("mounts", func(t *testing.T) {
+		assertContainerMounts(t, inputs)
+	})
+
+	t.Run("envVars", func(t *testing.T) {
+		assertContainerEnvVars(t, inputs)
+	})
+}
+
+func newTestPodContainerInputs() *podContainerInputs {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			AgentInstallPath: "/opt/devsy/bin/devsy",
+		},
+	}
+	options := &driver.RunOptions{
+		CapAdd: []string{"SYS_PTRACE"},
+		Env: map[string]string{
+			"FOO":                              "bar",
+			pkgconfig.EnvWorkspaceDaemonConfig: "daemon-json-data",
+		},
+		Mounts: []*config.Mount{
+			{
+				Type:   driver.MountTypeTmpfs,
+				Target: "/tmp",
+			},
+		},
+	}
+	mount := &config.Mount{
+		Type:   driver.MountTypeVolume,
+		Source: "test-workspace-pvc",
+		Target: "/workspaces/my-repo",
+	}
+
+	return k.buildPodContainerInputs(options, mount)
+}
+
+func assertDaemonConfigAndCaps(t *testing.T, inputs *podContainerInputs) {
+	t.Helper()
+	if inputs.daemonConfig != "daemon-json-data" {
+		t.Errorf("daemonConfig = %q, want %q", inputs.daemonConfig, "daemon-json-data")
+	}
+	if inputs.capabilities == nil || len(inputs.capabilities.Add) != 1 ||
+		inputs.capabilities.Add[0] != "SYS_PTRACE" {
+		t.Errorf("capabilities = %+v, want [SYS_PTRACE]", inputs.capabilities)
+	}
+}
+
+func assertContainerMounts(t *testing.T, inputs *podContainerInputs) {
+	t.Helper()
+	if len(inputs.volumeMounts) != 2 {
+		t.Fatalf("len(volumeMounts) = %d, want 2", len(inputs.volumeMounts))
+	}
+	if inputs.volumeMounts[0].MountPath != "/workspaces/my-repo" {
+		t.Errorf(
+			"volumeMounts[0].MountPath = %q, want %q",
+			inputs.volumeMounts[0].MountPath,
+			"/workspaces/my-repo",
+		)
+	}
+	if inputs.volumeMounts[1].MountPath != "/tmp" {
+		t.Errorf(
+			"volumeMounts[1].MountPath = %q, want %q",
+			inputs.volumeMounts[1].MountPath,
+			"/tmp",
+		)
+	}
+	if len(inputs.tmpfsVolumes) != 1 {
+		t.Fatalf("len(tmpfsVolumes) = %d, want 1", len(inputs.tmpfsVolumes))
+	}
+}
+
+func assertContainerEnvVars(t *testing.T, inputs *podContainerInputs) {
+	t.Helper()
+	envMap := make(map[string]string, len(inputs.envVars))
+	for _, env := range inputs.envVars {
+		envMap[env.Name] = env.Value
+	}
+
+	if envMap[pkgconfig.EnvAgentPath] != "/opt/devsy/bin/devsy" {
+		t.Errorf("missing or incorrect %s in envVars: %+v", pkgconfig.EnvAgentPath, inputs.envVars)
+	}
+	if envMap["FOO"] != "bar" {
+		t.Errorf("missing or incorrect FOO in envVars: %+v", inputs.envVars)
+	}
+	if _, exists := envMap[pkgconfig.EnvWorkspaceDaemonConfig]; exists {
+		t.Errorf("daemon config env var should have been stripped from envVars")
+	}
 }

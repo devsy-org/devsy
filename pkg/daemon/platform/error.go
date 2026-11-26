@@ -16,7 +16,7 @@ type DaemonNotAvailableError struct {
 func (e *DaemonNotAvailableError) Error() string {
 	return fmt.Sprintf(
 		"The Devsy Daemon for provider %s isn't reachable. "+
-			"Is Devsy Desktop or `devsy pro daemon start --host=$YOUR_PRO_HOST` running? %v",
+			"Is Devsy Desktop or `devsy platform daemon start --host=$YOUR_PLATFORM_HOST` running? %v",
 		e.Provider,
 		e.Err,
 	)

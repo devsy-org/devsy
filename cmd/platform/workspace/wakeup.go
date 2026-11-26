@@ -1,0 +1,154 @@
+package workspace
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"time"
+
+	clusterv1 "github.com/devsy-org/agentapi/pkg/apis/devsy/cluster/v1"
+	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
+	"github.com/devsy-org/devsy/cmd/platform/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	cliflags "github.com/devsy-org/devsy/pkg/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/platform"
+	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/kube"
+	"github.com/devsy-org/devsy/pkg/platform/project"
+	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// WakeupCmd holds the cmd flags.
+type WakeupCmd struct {
+	*flags.GlobalFlags
+
+	Project string
+	Host    string
+}
+
+// NewWakeupCmd creates a new command.
+func NewWakeupCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+	cmd := &WakeupCmd{
+		GlobalFlags: globalFlags,
+	}
+	c := &cobra.Command{
+		Use:   "wakeup",
+		Short: "Wake a workspace up",
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			return cmd.Run(cobraCmd.Context(), args)
+		},
+	}
+
+	cliflags.Add(c, cliflags.String(&cmd.Project, names.Project, "", "The project to use"))
+	_ = c.MarkFlagRequired(names.Project)
+	flags.BindEnv(c.Flags(), names.Project)
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The platform instance to use"))
+	_ = c.MarkFlagRequired(names.Host)
+	flags.BindEnv(c.Flags(), names.Host)
+
+	return c
+}
+
+func (cmd *WakeupCmd) Run(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("provide a workspace name")
+	}
+	targetWorkspace := args[0]
+
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
+	if err != nil {
+		return err
+	}
+
+	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, cmd.Host)
+	if err != nil {
+		return err
+	}
+
+	opts := platform.FindInstanceOptions{Name: targetWorkspace, ProjectName: cmd.Project}
+	workspaceInstance, err := platform.FindInstance(ctx, baseClient, opts)
+	if err != nil {
+		return err
+	}
+	if workspaceInstance == nil {
+		return fmt.Errorf("workspace %q not found in project %q", targetWorkspace, cmd.Project)
+	}
+
+	return cmd.wakeup(ctx, baseClient, workspaceInstance)
+}
+
+func (cmd *WakeupCmd) wakeup(
+	ctx context.Context,
+	baseClient client.Client,
+	workspaceInstance *managementv1.DevsyWorkspaceInstance,
+) error {
+	if workspaceInstance.Status.Phase != storagev1.InstanceSleeping {
+		log.Infof("workspace %s is not sleeping", workspaceInstance.Name)
+		return nil
+	}
+
+	managementClient, err := baseClient.Management()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.patchWakeup(ctx, managementClient, workspaceInstance); err != nil {
+		return err
+	}
+
+	// wait for the workspace to wake up
+	log.Info("wait until workspace wakes up")
+	err = waitForWorkspacePhase(ctx, waitForWorkspacePhaseParams{
+		managementClient: managementClient,
+		projectName:      cmd.Project,
+		name:             workspaceInstance.Name,
+		phase:            storagev1.InstanceReady,
+	})
+	if err != nil {
+		return fmt.Errorf("error waiting for workspace to wake up: %w", err)
+	}
+
+	log.Infof("woke up workspace: workspaceName=%s", workspaceInstance.Name)
+	return nil
+}
+
+func (cmd *WakeupCmd) patchWakeup(
+	ctx context.Context,
+	managementClient kube.Interface,
+	workspaceInstance *managementv1.DevsyWorkspaceInstance,
+) error {
+	// create a deep copy of the workspace instance
+	oldWorkspaceInstance := workspaceInstance.DeepCopy()
+	oldWorkspaceInstance.Status = workspaceInstance.Status
+	oldWorkspaceInstance.ObjectMeta = workspaceInstance.ObjectMeta
+	oldWorkspaceInstance.TypeMeta = workspaceInstance.TypeMeta
+
+	// create a patch from the old workspace instance
+	patch := ctrlclient.MergeFrom(oldWorkspaceInstance)
+	if workspaceInstance.Annotations == nil {
+		workspaceInstance.Annotations = map[string]string{}
+	}
+	delete(workspaceInstance.Annotations, clusterv1.SleepModeForceAnnotation)
+	delete(workspaceInstance.Annotations, clusterv1.SleepModeForceDurationAnnotation)
+	workspaceInstance.Annotations[clusterv1.SleepModeLastActivityAnnotation] = strconv.FormatInt(
+		time.Now().Unix(),
+		10,
+	)
+
+	patchData, err := patch.Data(workspaceInstance)
+	if err != nil {
+		return err
+	}
+
+	_, err = managementClient.Devsy().
+		ManagementV1().
+		DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
+		Patch(ctx, workspaceInstance.Name, patch.Type(), patchData, metav1.PatchOptions{})
+
+	return err
+}

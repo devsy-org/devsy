@@ -1,4 +1,6 @@
 <script lang="ts">
+import WorkspaceLaunchProgress from "./WorkspaceLaunchProgress.svelte"
+import { workspaceJobs } from "$lib/stores/workspaces.js"
 import { onMount, onDestroy } from "svelte"
 import { MediaQuery } from "svelte/reactivity"
 import { goto } from "$lib/router.js"
@@ -28,9 +30,15 @@ import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
 import ImagePicker from "$lib/components/workspace/ImagePicker.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
-import { uniqueNamesGenerator, adjectives, animals } from "unique-names-generator"
+import {
+  createWorkspaceLaunchTimeline,
+  reduceWorkspaceLaunchTimeline,
+} from "$lib/utils/workspace-launch-timeline.js"
+import type { LaunchConfirmationState } from "$lib/utils/workspace-launch-presentation.js"
+
 import {
   workspaceUp,
+  workspaceRefresh,
   openDirectoryDialog,
   getHostPlatform,
   getImagePlatforms,
@@ -41,10 +49,17 @@ import type {
   GitRefType,
   DevcontainerMode,
 } from "$lib/utils/workspace-source.js"
-import { onCommandProgress } from "$lib/ipc/events.js"
-import type { CommandProgress } from "$lib/types/index.js"
+import { onCommandProgress, onWorkspaceStatus } from "$lib/ipc/events.js"
+import type {
+  CommandProgress,
+  WorkspaceJob,
+  WorkspaceStatus,
+} from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { activeContext } from "$lib/stores/contexts.js"
+import { workspaceLogsRoute } from "$shared/app-route.js"
+import { runIdentityFromContext } from "$shared/cli-error.js"
 import { isImageCompatible } from "$lib/stores/imageCatalog.js"
 import { loadLocalOptions } from "$lib/stores/settings.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -55,6 +70,23 @@ import {
   stripAnsi,
 } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
+
+import {
+  deriveWorkspaceId,
+  isValidWorkspaceId,
+  uniqueWorkspaceId,
+  workspaceIdRule,
+} from "$lib/utils/workspace-id.js"
+import {
+  findAliasConflict,
+  findLabelConflict,
+} from "$lib/utils/workspaceLabel.js"
+import {
+  normalizeDisplayLabel,
+  SSH_HOST_SUFFIX,
+  validateDisplayLabel,
+  validateSshAlias,
+} from "$shared/workspace-presentation.js"
 
 type Step = "provider" | "source" | "ide" | "review" | "launch"
 type StepState = "pending" | "active" | "complete" | "error"
@@ -80,7 +112,8 @@ const IDE_ICON_DARK_VARIANTS = new Set([
 ])
 
 const ideIcon = (name: string) => {
-  const variant = darkMode.current && IDE_ICON_DARK_VARIANTS.has(name) ? `${name}_dark` : name
+  const variant =
+    darkMode.current && IDE_ICON_DARK_VARIANTS.has(name) ? `${name}_dark` : name
   return `./icons/ides/${variant}.svg`
 }
 
@@ -90,14 +123,26 @@ const IDE_GROUPS = [
     options: [
       { value: "none", label: "None", iconName: "none" },
       { value: "vscode", label: "VS Code", iconName: "vscode" },
-      { value: "openvscode", label: "OpenVSCode Server", iconName: "vscodebrowser" },
-      { value: "vscode-web", label: "VS Code for the Web", iconName: "vscode-web" },
+      {
+        value: "openvscode",
+        label: "OpenVSCode Server",
+        iconName: "vscodebrowser",
+      },
+      {
+        value: "vscode-web",
+        label: "VS Code for the Web",
+        iconName: "vscode-web",
+      },
       { value: "code-server", label: "code-server", iconName: "code-server" },
       { value: "cursor", label: "Cursor", iconName: "cursor" },
       { value: "zed", label: "Zed", iconName: "zed" },
       { value: "codium", label: "VSCodium", iconName: "codium" },
       { value: "windsurf", label: "Windsurf Editor", iconName: "windsurf" },
-      { value: "antigravity", label: "Google Antigravity", iconName: "antigravity" },
+      {
+        value: "antigravity",
+        label: "Google Antigravity",
+        iconName: "antigravity",
+      },
       { value: "bob", label: "IBM Bob", iconName: "bob" },
     ],
   },
@@ -120,9 +165,17 @@ const IDE_GROUPS = [
   {
     label: "Other",
     options: [
-      { value: "jupyternotebook", label: "Jupyter Notebook", iconName: "jupyter" },
+      {
+        value: "jupyternotebook",
+        label: "Jupyter Notebook",
+        iconName: "jupyter",
+      },
       { value: "marimo", label: "marimo", iconName: "marimo" },
-      { value: "vscode-insiders", label: "VS Code Insiders", iconName: "vscode_insiders" },
+      {
+        value: "vscode-insiders",
+        label: "VS Code Insiders",
+        iconName: "vscode_insiders",
+      },
       { value: "positron", label: "Positron", iconName: "positron" },
       { value: "rstudio", label: "RStudio Server", iconName: "rstudio" },
     ],
@@ -132,15 +185,33 @@ const IDE_GROUPS = [
 const ALL_IDES = IDE_GROUPS.flatMap((g) => g.options)
 
 const TEMPLATES = [
-  { name: "Python", source: "https://github.com/microsoft/vscode-remote-try-python" },
-  { name: "Node.js", source: "https://github.com/microsoft/vscode-remote-try-node" },
+  {
+    name: "Python",
+    source: "https://github.com/microsoft/vscode-remote-try-python",
+  },
+  {
+    name: "Node.js",
+    source: "https://github.com/microsoft/vscode-remote-try-node",
+  },
   { name: "Go", source: "https://github.com/microsoft/vscode-remote-try-go" },
-  { name: "Rust", source: "https://github.com/microsoft/vscode-remote-try-rust" },
-  { name: "Java", source: "https://github.com/microsoft/vscode-remote-try-java" },
+  {
+    name: "Rust",
+    source: "https://github.com/microsoft/vscode-remote-try-rust",
+  },
+  {
+    name: "Java",
+    source: "https://github.com/microsoft/vscode-remote-try-java",
+  },
   { name: "PHP", source: "https://github.com/microsoft/vscode-remote-try-php" },
   { name: "C++", source: "https://github.com/microsoft/vscode-remote-try-cpp" },
-  { name: ".NET", source: "https://github.com/microsoft/vscode-remote-try-dotnet" },
-  { name: "Ruby", source: "https://github.com/skevetter/devsy-quickstart-ruby" },
+  {
+    name: ".NET",
+    source: "https://github.com/microsoft/vscode-remote-try-dotnet",
+  },
+  {
+    name: "Ruby",
+    source: "https://github.com/skevetter/devsy-quickstart-ruby",
+  },
 ]
 
 const SOURCE_TYPES: {
@@ -149,9 +220,24 @@ const SOURCE_TYPES: {
   hint: string
   icon: typeof GitBranch
 }[] = [
-  { value: "git", label: "Git Repo", hint: "Clone a repository", icon: GitBranch },
-  { value: "local", label: "Local Directory", hint: "Use a folder on this machine", icon: FolderOpen },
-  { value: "image", label: "Image", hint: "Start from a container image", icon: Container },
+  {
+    value: "git",
+    label: "Git Repo",
+    hint: "Clone a repository",
+    icon: GitBranch,
+  },
+  {
+    value: "local",
+    label: "Local Directory",
+    hint: "Use a folder on this machine",
+    icon: FolderOpen,
+  },
+  {
+    value: "image",
+    label: "Image",
+    hint: "Start from a container image",
+    icon: Container,
+  },
 ]
 
 const LAUNCH_TIMEOUT_MS = 10 * 60 * 1000
@@ -168,7 +254,7 @@ let currentStep = $state<Step>("provider")
 
 // Form state
 let selectedProvider = $state(
-  $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
+  $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? "",
 )
 let sourceType = $state<WorkspaceSourceType>("git")
 let repoUrl = $state("")
@@ -184,6 +270,10 @@ let workspaceFolder = $state("")
 let advancedOpen = $state(false)
 let selectedIde = $state("none")
 let workspaceName = $state("")
+let displayLabel = $state("")
+let displayLabelTouched = $state(false)
+let sshAlias = $state("")
+let sshAliasTouched = $state(false)
 
 let assembled = $derived(
   sourceType === "image"
@@ -226,10 +316,62 @@ let launchError = $state("")
 let launchBuildFailed = $state(false)
 let launchIsRecovery = $state(false)
 let lastAttemptedId = $state("")
+let launchCommandSucceeded = $state(false)
 let launchSuccess = $state(false)
+let launchStatusRefreshError = $state<string | null>(null)
+let launchRefreshRetrying = $state(false)
+let showLogs = $state(false)
 let launchedWorkspaceId = $state<string | null>(null)
+let launchTimeline = $state(createWorkspaceLaunchTimeline())
+let launchElapsedMs = $state(0)
+let launchStartedAtMs = 0
+let launchTimer: ReturnType<typeof setInterval> | undefined
+let launchJob = $derived(
+  lastAttemptedId ? $workspaceJobs[lastAttemptedId] : undefined,
+)
+let jobMatchesAttempt = $derived(
+  !!commandId && launchJob?.commandId === commandId,
+)
+let launchLogError = $derived(
+  jobMatchesAttempt ? launchJob?.logError : undefined,
+)
+let launchConfirmationState: LaunchConfirmationState = $derived(
+  launchSuccess
+    ? "confirmed"
+    : launchError
+      ? "failed"
+      : launchRefreshRetrying
+        ? "confirming"
+        : launchStatusRefreshError || launchLogError
+          ? "stale"
+          : launchCommandSucceeded
+            ? "confirming"
+            : "running",
+)
+$effect(() => {
+  if (launchError) showLogs = true
+})
+$effect(() => {
+  const job = launchJob
+  if (!jobMatchesAttempt || !job || launchSuccess) return
+
+  if (job.state === "running") return
+  if (job.state === "reconciling") {
+    finishSuccessfulCommand(lastAttemptedId)
+    if (job.refreshError) finishUnconfirmedLaunch(job.refreshError)
+    else launchStatusRefreshError = null
+    if (job.logError) stopLaunchTimer()
+    return
+  }
+  if (job.state === "succeeded") {
+    finishConfirmedLaunch()
+    return
+  }
+  if (!launchError) finishJobFailure(job)
+})
 let confirmCancelOpen = $state(false)
 let unlisten: UnlistenFn | null = null
+let unlistenStatus: UnlistenFn | null = null
 let watchdog: ReturnType<typeof setTimeout> | null = null
 let pendingLines: string[] = []
 let flushHandle: number | null = null
@@ -249,7 +391,9 @@ let initializedProviders = $derived(
 
 const selectedIdeEntry = $derived(ALL_IDES.find((i) => i.value === selectedIde))
 const ideLabel = $derived(selectedIdeEntry?.label ?? "Select an IDE...")
-const ideIconSrc = $derived(selectedIdeEntry ? ideIcon(selectedIdeEntry.iconName) : undefined)
+const ideIconSrc = $derived(
+  selectedIdeEntry ? ideIcon(selectedIdeEntry.iconName) : undefined,
+)
 
 let filteredIdes = $derived(
   ideSearch
@@ -260,21 +404,61 @@ let filteredIdes = $derived(
 )
 
 let resolvedId = $derived(
-  workspaceName.trim() || deriveWorkspaceNameFromSource(assembled.source),
+  workspaceName || deriveWorkspaceNameFromSource(assembled.source),
 )
 
-let resolvedIdInvalid = $derived(
-  resolvedId === "" ||
-    resolvedId === "." ||
-    resolvedId.includes(":") ||
-    !/^[A-Za-z0-9._-]+$/.test(resolvedId),
-)
+let resolvedIdInvalid = $derived(!isValidWorkspaceId(resolvedId))
 
 let nameConflict = $derived(
   resolvedId !== "" &&
-    $workspaces.some(
-      (ws) => ws.id.toLowerCase() === resolvedId.toLowerCase(),
-    ),
+    $workspaces.some((ws) => ws.id.toLowerCase() === resolvedId.toLowerCase()),
+)
+
+let displayLabelValue = $derived(
+  displayLabelTouched ? displayLabel : resolvedId,
+)
+let sshAliasValue = $derived(sshAliasTouched ? sshAlias : resolvedId)
+let explicitLabel = $derived(
+  displayLabelTouched ? normalizeDisplayLabel(displayLabel) : "",
+)
+let explicitAlias = $derived(sshAliasTouched ? sshAlias.trim() : "")
+let launchLabel = $derived(
+  explicitLabel !== "" && explicitLabel !== resolvedId ? explicitLabel : "",
+)
+let launchAlias = $derived(
+  explicitAlias !== "" && explicitAlias !== resolvedId ? explicitAlias : "",
+)
+let launchPresentation = $derived({
+  displayName: launchLabel || undefined,
+  sshHostAlias: launchAlias || undefined,
+})
+let labelError = $derived(
+  displayLabelTouched ? validateDisplayLabel(displayLabel) : null,
+)
+let aliasError = $derived(sshAliasTouched ? validateSshAlias(sshAlias) : null)
+let labelConflict = $derived(
+  !labelError && launchLabel
+    ? findLabelConflict(launchLabel, $workspaces, resolvedId)
+    : undefined,
+)
+let aliasConflict = $derived(
+  !aliasError && launchAlias
+    ? findAliasConflict(launchAlias, $workspaces, resolvedId)
+    : undefined,
+)
+let idHostConflict = $derived(
+  resolvedId !== "" && !resolvedIdInvalid
+    ? findAliasConflict(resolvedId, $workspaces, resolvedId)
+    : undefined,
+)
+let presentationInvalid = $derived(
+  !!(
+    labelError ||
+    aliasError ||
+    labelConflict ||
+    aliasConflict ||
+    idHostConflict
+  ),
 )
 
 let imageIncompatible = $derived(
@@ -287,7 +471,9 @@ let imageIncompatible = $derived(
 // Prefer linux/amd64 if the image offers it; otherwise the first listed
 // platform. This is what we run under emulation.
 let emulationTarget = $derived(
-  imagePlatforms.includes("linux/amd64") ? "linux/amd64" : imagePlatforms[0] ?? "",
+  imagePlatforms.includes("linux/amd64")
+    ? "linux/amd64"
+    : (imagePlatforms[0] ?? ""),
 )
 
 let imageCompatible = $derived(
@@ -338,7 +524,8 @@ function clearWatchdog() {
 
 function reset() {
   currentStep = "provider"
-  selectedProvider = $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
+  selectedProvider =
+    $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
   sourceType = "git"
   repoUrl = ""
   localPath = ""
@@ -353,6 +540,10 @@ function reset() {
   advancedOpen = false
   selectedIde = "none"
   workspaceName = ""
+  displayLabel = ""
+  displayLabelTouched = false
+  sshAlias = ""
+  sshAliasTouched = false
   ideComboOpen = false
   ideSearch = ""
   commandId = null
@@ -364,8 +555,20 @@ function reset() {
   }
   launchRunning = false
   launchError = ""
+  launchFailureContext = undefined
+  launchBuildFailed = false
+  launchIsRecovery = false
+  launchCommandSucceeded = false
   launchSuccess = false
+  launchStatusRefreshError = null
+  launchRefreshRetrying = false
+  showLogs = false
   launchedWorkspaceId = null
+  lastAttemptedId = ""
+  launchTimeline = createWorkspaceLaunchTimeline()
+  launchElapsedMs = 0
+  clearInterval(launchTimer)
+  launchTimer = undefined
   confirmCancelOpen = false
   checkedRef = ""
   imagePlatforms = []
@@ -376,6 +579,8 @@ function reset() {
   clearWatchdog()
   unlisten?.()
   unlisten = null
+  unlistenStatus?.()
+  unlistenStatus = null
 }
 
 $effect(() => {
@@ -430,7 +635,9 @@ onMount(() => {
 
 onDestroy(() => {
   unlisten?.()
+  unlistenStatus?.()
   clearWatchdog()
+  clearInterval(launchTimer)
   if (flushHandle !== null) {
     cancelAnimationFrame(flushHandle)
     flushHandle = null
@@ -450,53 +657,171 @@ function flushLines() {
   }
 }
 
-function handleProgress(progress: CommandProgress, wsId: string | undefined) {
-  const incoming = progress.lines ?? (progress.message ? [progress.message] : [])
-  if (incoming.length > 0) {
-    pendingLines.push(...incoming)
-    if (flushHandle === null) {
-      flushHandle = requestAnimationFrame(flushLines)
-    }
+function queueProgressLines(progress: CommandProgress) {
+  const incoming =
+    progress.lines ?? (progress.message ? [progress.message] : [])
+  if (incoming.length === 0) return
+  pendingLines.push(...incoming)
+  if (flushHandle === null) {
+    flushHandle = requestAnimationFrame(flushLines)
   }
-  if (progress.done) {
-    if (flushHandle !== null) {
-      cancelAnimationFrame(flushHandle)
-    }
-    flushLines()
-    launchRunning = false
-    clearWatchdog()
-    if (isCommandSuccess(progress.message, progress.success)) {
-      launchSuccess = true
-      launchedWorkspaceId = wsId ?? null
-      toasts.success(`Workspace ${wsId ?? "created"} is ready`)
-      if (wsId) oncomplete?.(wsId)
-    } else {
-      launchError = "Workspace creation failed. Check output for details."
-      toasts.error(launchError)
-      if (isRecoverableBuildFailure(progress.cliError)) {
-        const pref = loadLocalOptions().onBuildFailure
-        if (pref === "auto-recovery" && !launchIsRecovery) {
-          void handleLaunch(true)
-        } else if (pref !== "nothing") {
-          launchBuildFailed = true
-        }
+}
+
+function flushProgressOutput() {
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+  }
+  flushLines()
+}
+
+function stopLaunchTimer() {
+  launchElapsedMs = performance.now() - launchStartedAtMs
+  clearInterval(launchTimer)
+  launchTimer = undefined
+}
+
+function finishProgress(progress: CommandProgress, wsId: string | undefined) {
+  flushProgressOutput()
+  launchRunning = false
+  clearWatchdog()
+  if (isCommandSuccess(progress.success)) {
+    finishSuccessfulCommand(wsId)
+    return
+  }
+  stopLaunchTimer()
+  finishFailedLaunch(progress)
+}
+
+function finishSuccessfulCommand(wsId: string | undefined) {
+  if (!launchCommandSucceeded) flushProgressOutput()
+  launchRunning = false
+  launchCommandSucceeded = true
+  launchedWorkspaceId = wsId || lastAttemptedId || null
+  clearWatchdog()
+}
+
+function finishUnconfirmedLaunch(refreshError: string) {
+  finishSuccessfulCommand(launchedWorkspaceId ?? lastAttemptedId)
+  launchStatusRefreshError = refreshError
+  stopLaunchTimer()
+}
+
+function finishConfirmedLaunch() {
+  if (launchSuccess) return
+  finishSuccessfulCommand(launchedWorkspaceId ?? lastAttemptedId)
+  launchStatusRefreshError = null
+  stopLaunchTimer()
+  launchSuccess = true
+  if (launchedWorkspaceId) oncomplete?.(launchedWorkspaceId)
+}
+
+let launchFailureContext = $state<Record<string, string> | undefined>()
+let launchRunIdentity = $derived.by(() => {
+  const fromJob = jobMatchesAttempt
+    ? {
+        runId: launchJob?.runId,
+        failedInvocationId: launchJob?.failedInvocationId,
       }
-    }
+    : {}
+  return fromJob.runId ? fromJob : runIdentityFromContext(launchFailureContext)
+})
+
+function viewLaunchOutput() {
+  const id = launchedWorkspaceId ?? lastAttemptedId ?? resolvedId
+  const run = launchRunIdentity
+  if (!id || !run.runId) return
+  const context =
+    $workspaces.find((ws) => ws.id === id)?.context ||
+    $activeContext ||
+    "default"
+  open = false
+  goto(
+    workspaceLogsRoute(id, {
+      context,
+      runId: run.runId,
+      invocationId: run.failedInvocationId,
+    }),
+  )
+}
+
+function finishJobFailure(job: WorkspaceJob) {
+  launchStatusRefreshError = null
+  finishFailedLaunch({
+    commandId: job.commandId,
+    done: true,
+    success: false,
+    cliError: job.status?.error
+      ? {
+          code: job.status.error.code ?? "workspace_operation_failed",
+          message: job.status.error.message,
+          hint: job.status.error.hint,
+          context: job.status.error.context,
+        }
+      : job.error
+        ? { code: "workspace_operation_failed", message: job.error }
+        : undefined,
+  })
+}
+
+function finishFailedLaunch(progress: CommandProgress) {
+  flushProgressOutput()
+  launchRunning = false
+  launchCommandSucceeded = false
+  launchSuccess = false
+  clearWatchdog()
+  stopLaunchTimer()
+  const cliError = progress.cliError
+  launchFailureContext = cliError?.context
+  launchError = cliError?.message
+    ? `${cliError.message}${cliError.hint ? ` Try: ${cliError.hint}` : ""}`
+    : "Workspace creation failed. Check output for details."
+  if (!isRecoverableBuildFailure(progress.cliError)) return
+  const pref = loadLocalOptions().onBuildFailure
+  if (pref === "auto-recovery" && !launchIsRecovery) {
+    void handleLaunch(true)
+  } else if (pref !== "nothing") {
+    launchBuildFailed = true
+  }
+}
+
+function handleProgress(progress: CommandProgress, wsId: string | undefined) {
+  queueProgressLines(progress)
+  if (progress.done && launchRunning) {
+    finishProgress(progress, wsId)
   }
 }
 
 async function handleLaunch(recovery = false) {
   // Retrying/recovering the id we already attempted is allowed; only a
   // genuinely new conflicting id is blocked.
-  if (resolvedIdInvalid || (nameConflict && resolvedId !== lastAttemptedId)) {
+  if (
+    resolvedIdInvalid ||
+    presentationInvalid ||
+    (nameConflict && resolvedId !== lastAttemptedId)
+  ) {
     return
   }
   lastAttemptedId = resolvedId
   launchIsRecovery = recovery
+  launchCommandSucceeded = false
+  launchSuccess = false
+  launchStatusRefreshError = null
+  launchRefreshRetrying = false
   launchRunning = true
+  launchTimeline = createWorkspaceLaunchTimeline()
+  launchStartedAtMs = performance.now()
+  launchElapsedMs = 0
+  clearInterval(launchTimer)
+  launchTimer = setInterval(() => {
+    if (launchRunning || launchCommandSucceeded) {
+      launchElapsedMs = performance.now() - launchStartedAtMs
+    }
+  }, 1000)
   launchError = ""
+  launchFailureContext = undefined
   launchBuildFailed = false
   launchSuccess = false
+  showLogs = false
   outputLines = []
   pendingLines = []
   if (flushHandle !== null) {
@@ -524,9 +849,26 @@ async function handleLaunch(recovery = false) {
       }
     })
 
+    const pendingStatuses: WorkspaceStatus[] = []
+    unlistenStatus?.()
+    unlistenStatus = await onWorkspaceStatus((status) => {
+      if (status.workspaceId !== workspaceId) return
+      if (resolvedCommandId === status.commandId) {
+        launchTimeline = reduceWorkspaceLaunchTimeline(
+          launchTimeline,
+          status,
+          performance.now(),
+        )
+      } else if (pendingStatuses.length < 100) {
+        pendingStatuses.push(status)
+      }
+    })
+
+    if (!isValidWorkspaceId(workspaceId)) throw new Error(workspaceIdRule)
     const cmdId = await workspaceUp({
       source: assembled.source,
       workspaceId,
+      ...launchPresentation,
       provider: selectedProvider || undefined,
       ide: selectedIde,
       ideLaunch: "auto",
@@ -537,12 +879,21 @@ async function handleLaunch(recovery = false) {
         imageIncompatible && emulationEnabled && emulationTarget
           ? emulationTarget
           : undefined,
-      debug: loadLocalOptions().debugFlag,
       recovery,
     })
 
     commandId = cmdId
     resolvedCommandId = cmdId
+
+    for (const status of pendingStatuses) {
+      if (status.commandId === cmdId) {
+        launchTimeline = reduceWorkspaceLaunchTimeline(
+          launchTimeline,
+          status,
+          performance.now(),
+        )
+      }
+    }
 
     for (const event of pendingEvents) {
       if (event.commandId === cmdId) {
@@ -553,6 +904,8 @@ async function handleLaunch(recovery = false) {
     watchdog = setTimeout(() => {
       if (launchRunning) {
         launchRunning = false
+        launchCommandSucceeded = false
+        stopLaunchTimer()
         launchError =
           "Workspace creation timed out after 10 minutes. The process may still be running in the background."
         toasts.error(launchError)
@@ -564,11 +917,28 @@ async function handleLaunch(recovery = false) {
     }, LAUNCH_TIMEOUT_MS)
   } catch (err) {
     launchRunning = false
+    stopLaunchTimer()
     launchError = `Failed to create workspace: ${extractErrorMessage(err)}`
     toasts.error(launchError)
     unlisten?.()
     unlisten = null
     commandId = null
+  }
+}
+
+async function retryLaunchStatus() {
+  const id = launchedWorkspaceId ?? lastAttemptedId
+  if (!id || launchRefreshRetrying) return
+
+  launchRefreshRetrying = true
+  try {
+    await workspaceRefresh(id)
+  } catch (error) {
+    toasts.error(
+      `Could not refresh workspace status: ${extractErrorMessage(error)}`,
+    )
+  } finally {
+    launchRefreshRetrying = false
   }
 }
 
@@ -584,32 +954,15 @@ function goToStep(step: Step) {
   currentStep = step
 }
 
-function randomName(): string {
-  return uniqueNamesGenerator({
-    dictionaries: [adjectives, animals],
-    separator: "-",
-    length: 2,
-    style: "lowerCase",
-  })
-}
-
 function deriveWorkspaceNameFromSource(source: string): string {
-  const leaf = source.trim().split(/[\\/]/).pop() ?? ""
-  return leaf
-    .replace(/\.git$/i, "")
-    .replace(/@.*$/, "")
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+  return deriveWorkspaceId(source)
 }
 
 function uniquifyName(base: string): string {
-  const existing = new Set($workspaces.map((ws) => ws.id.toLowerCase()))
-  if (base && !existing.has(base.toLowerCase())) return base
-  for (let i = 0; i < 50; i++) {
-    const candidate = randomName()
-    if (!existing.has(candidate.toLowerCase())) return candidate
-  }
-  return `${randomName()}-${Date.now().toString(36)}`
+  return uniqueWorkspaceId(
+    base,
+    $workspaces.map((ws) => ws.id),
+  )
 }
 
 function continueFromProvider() {
@@ -622,8 +975,6 @@ function continueFromSource() {
   if (!workspaceName.trim()) {
     const derived = deriveWorkspaceNameFromSource(assembled.source)
     if (derived) workspaceName = uniquifyName(derived)
-  } else {
-    workspaceName = uniquifyName(workspaceName.trim())
   }
   currentStep = "ide"
 }
@@ -650,12 +1001,7 @@ function continueFromReview() {
 function selectTemplate(t: { name: string; source: string }) {
   repoUrl = t.source
   if (!workspaceName) {
-    workspaceName = uniquifyName(
-      t.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, ""),
-    )
+    workspaceName = uniquifyName(deriveWorkspaceId(t.name))
   }
 }
 </script>
@@ -675,9 +1021,9 @@ function selectTemplate(t: { name: string; source: string }) {
         {#if isGit}
           <div class="grid grid-cols-2 gap-3">
             <div class="space-y-1.5">
-              <Label class="text-sm">Ref Type</Label>
+              <Label for="workspace-ref-type" class="text-sm">Ref Type</Label>
               <Select.Root type="single" bind:value={refType}>
-                <Select.Trigger class="h-8 w-full rounded-lg">
+                <Select.Trigger id="workspace-ref-type" class="h-8 w-full rounded-lg">
                   {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull / Merge Request"}
                 </Select.Trigger>
                 <Select.Content>
@@ -688,11 +1034,12 @@ function selectTemplate(t: { name: string; source: string }) {
               </Select.Root>
             </div>
             <div class="space-y-1.5">
-              <Label class="text-sm">
+              <Label for="workspace-ref-value" class="text-sm">
                 {refType === "branch" ? "Branch name" : refType === "commit" ? "Commit SHA" : "PR / MR number"}
               </Label>
               <Input
-                placeholder={refType === "branch" ? "main" : refType === "commit" ? "abc123…" : "42"}
+                id="workspace-ref-value"
+                placeholder={refType === "branch" ? "main" : refType === "commit" ? "abc123..." : "42"}
                 value={refValue}
                 oninput={(e) => (refValue = e.currentTarget.value)}
               />
@@ -702,8 +1049,9 @@ function selectTemplate(t: { name: string; source: string }) {
 
         {#if isGit}
           <div class="space-y-1.5">
-            <Label class="text-sm">Project subfolder</Label>
+            <Label for="workspace-subfolder" class="text-sm">Project subfolder</Label>
             <Input
+              id="workspace-subfolder"
               placeholder="packages/api"
               value={subPath}
               oninput={(e) => (subPath = e.currentTarget.value)}
@@ -715,8 +1063,9 @@ function selectTemplate(t: { name: string; source: string }) {
         {/if}
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Open folder in container</Label>
+          <Label for="workspace-folder" class="text-sm">Open folder in container</Label>
           <Input
+            id="workspace-folder"
             placeholder="/workspaces/app"
             value={workspaceFolder}
             oninput={(e) => (workspaceFolder = e.currentTarget.value)}
@@ -727,9 +1076,9 @@ function selectTemplate(t: { name: string; source: string }) {
         </div>
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Dev container source</Label>
+          <Label for="workspace-devcontainer-mode" class="text-sm">Dev container source</Label>
           <Select.Root type="single" bind:value={devcontainerMode}>
-            <Select.Trigger class="h-8 w-full rounded-lg">
+            <Select.Trigger id="workspace-devcontainer-mode" class="h-8 w-full rounded-lg">
               {devcontainerMode === "auto"
                 ? "Auto-detect (default)"
                 : devcontainerMode === "path"
@@ -749,7 +1098,15 @@ function selectTemplate(t: { name: string; source: string }) {
             </Select.Content>
           </Select.Root>
           {#if devcontainerMode === "path" || devcontainerMode === "image" || devcontainerMode === "id"}
+            <Label for="workspace-devcontainer-value" class="text-sm">
+              {devcontainerMode === "path"
+                ? "Config file path"
+                : devcontainerMode === "image"
+                  ? "Container image"
+                  : "Profile name"}
+            </Label>
             <Input
+              id="workspace-devcontainer-value"
               placeholder={devcontainerMode === "path"
                 ? ".devcontainer/devcontainer.json"
                 : devcontainerMode === "image"
@@ -773,8 +1130,9 @@ function selectTemplate(t: { name: string; source: string }) {
         </div>
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Prebuild repository</Label>
+          <Label for="workspace-prebuild-repository" class="text-sm">Prebuild repository</Label>
           <Input
+            id="workspace-prebuild-repository"
             placeholder="ghcr.io/org/prebuilds (optional)"
             value={prebuildRepository}
             oninput={(e) => (prebuildRepository = e.currentTarget.value)}
@@ -786,23 +1144,25 @@ function selectTemplate(t: { name: string; source: string }) {
 {/snippet}
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
-  <Dialog.Content class="sm:max-w-4xl max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
-    <Dialog.Header class="sr-only">
-      <Dialog.Title>Create Workspace</Dialog.Title>
-      <Dialog.Description>
-        Step-by-step wizard to create and launch a new workspace.
+  <Dialog.Content class="{currentStep === 'launch' ? 'sm:max-w-2xl' : 'sm:max-w-4xl'} max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
+    <Dialog.Header class="border-b px-6 pt-5 pb-3 text-left">
+      <Dialog.Title class="text-xl font-semibold tracking-tight">Create Workspace</Dialog.Title>
+      <Dialog.Description class="mt-1 text-sm text-muted-foreground">
+        Choose where it runs, what to open, then review before launch.
       </Dialog.Description>
     </Dialog.Header>
 
-    <!-- Progress bar -->
-    <div class="px-6 pt-5">
-      <Progress value={progressValue} max={100} class="h-1" />
-    </div>
+    {#if currentStep !== "launch"}
+      <div class="px-6 pt-3">
+        <Progress value={progressValue} max={100} aria-label={`Step ${STEPS.findIndex((step) => step.id === currentStep) + 1} of ${STEPS.length}: ${STEPS.find((step) => step.id === currentStep)?.label}`} class="h-1" />
+      </div>
+    {/if}
 
     <!-- Step indicator -->
-    <div class="flex items-center justify-between px-6 pt-4 pb-2">
+    {#if currentStep !== "launch"}
+    <ol aria-label="Workspace creation steps" class="flex items-center justify-between px-6 pt-4 pb-2">
       {#each STEPS as step, i (step.id)}
-        <div class="flex items-center gap-1.5">
+        <li aria-current={step.id === currentStep ? "step" : undefined} class="flex min-w-0 flex-1 items-center gap-1.5">
           <div
             class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium
               {stepStates[step.id] === 'complete' ? 'bg-primary text-primary-foreground' : ''}
@@ -818,18 +1178,19 @@ function selectTemplate(t: { name: string; source: string }) {
               {i + 1}
             {/if}
           </div>
-          <span class="text-xs font-medium {stepStates[step.id] === 'active' ? 'text-foreground' : 'text-muted-foreground'}">
+          <span class="sr-only text-xs font-medium sm:not-sr-only {stepStates[step.id] === 'active' ? 'text-foreground' : 'text-muted-foreground'}">
             {step.label}
           </span>
-        </div>
-        {#if i < STEPS.length - 1}
-          <div class="mx-1 h-px flex-1 bg-border"></div>
-        {/if}
+          {#if i < STEPS.length - 1}
+            <div aria-hidden="true" class="mx-1 h-px flex-1 bg-border"></div>
+          {/if}
+        </li>
       {/each}
-    </div>
+    </ol>
+    {/if}
 
     <!-- Step content -->
-    <div class="flex-1 overflow-y-auto px-6 pb-6 pt-2">
+    <div class="flex-1 overflow-y-auto px-6 pb-6 {currentStep === 'launch' ? 'pt-6' : 'pt-2'}">
       {#if currentStep === "provider"}
         <div class="space-y-4">
           <div>
@@ -851,10 +1212,11 @@ function selectTemplate(t: { name: string; source: string }) {
               Add Provider
             </Button>
           {:else}
-            <div class="space-y-2">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {#each initializedProviders as p (p.name)}
                 <button
                   type="button"
+                  aria-pressed={selectedProvider === p.name}
                   class="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50
                     {selectedProvider === p.name ? 'border-primary ring-1 ring-primary' : ''}"
                   onclick={() => { selectedProvider = p.name }}
@@ -876,14 +1238,6 @@ function selectTemplate(t: { name: string; source: string }) {
             </div>
           {/if}
 
-          <div class="flex justify-end gap-2 pt-2">
-            <Button
-              disabled={!selectedProvider || initializedProviders.length === 0}
-              onclick={continueFromProvider}
-            >
-              Continue
-            </Button>
-          </div>
         </div>
 
       {:else if currentStep === "source"}
@@ -918,29 +1272,33 @@ function selectTemplate(t: { name: string; source: string }) {
           <!-- GIT -->
           {#if sourceType === "git"}
             <div class="space-y-4 pt-2" data-testid="source-panel">
-              <div class="space-y-2">
-                <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
-                <div class="grid grid-cols-3 gap-2">
-                  {#each TEMPLATES as template (template.name)}
-                    <button
-                      type="button"
-                      class="flex flex-col items-center gap-1.5 rounded-lg border bg-card p-3 text-center text-sm transition-colors hover:bg-accent/50 active:scale-[0.98] {repoUrl === template.source ? 'border-primary ring-1 ring-primary' : ''}"
-                      onclick={() => selectTemplate(template)}
-                    >
-                      <LanguageIcon name={template.name} class="h-10 w-10" />
-                      <span class="truncate text-xs">{template.name}</span>
-                    </button>
-                  {/each}
-                </div>
-              </div>
-
               <div class="space-y-1.5">
-                <Label class="text-sm">Repository URL *</Label>
+                <Label for="workspace-repository-url" class="text-sm">Repository URL *</Label>
                 <Input
+                  id="workspace-repository-url"
+                  aria-describedby="workspace-repository-help"
                   placeholder="github.com/org/repo"
                   value={repoUrl}
                   oninput={(e) => (repoUrl = e.currentTarget.value)}
                 />
+                <p id="workspace-repository-help" class="text-xs text-muted-foreground">Enter a repository URL, or choose a template below.</p>
+              </div>
+
+              <div class="space-y-2">
+                <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
+                <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {#each TEMPLATES as template (template.name)}
+                    <button
+                      type="button"
+                      aria-pressed={repoUrl === template.source}
+                      class="flex min-w-0 items-center gap-2 rounded-lg border bg-card p-2 text-left text-sm transition-colors hover:bg-accent/50 {repoUrl === template.source ? 'border-primary ring-1 ring-primary' : ''}"
+                      onclick={() => selectTemplate(template)}
+                    >
+                      <LanguageIcon name={template.name} class="h-6 w-6 shrink-0" />
+                      <span class="truncate text-xs">{template.name}</span>
+                    </button>
+                  {/each}
+                </div>
               </div>
 
               {@render advancedSection(true)}
@@ -950,17 +1308,19 @@ function selectTemplate(t: { name: string; source: string }) {
           {:else if sourceType === "local"}
             <div class="space-y-4 pt-2" data-testid="source-panel">
               <div class="space-y-1.5">
-                <Label class="text-sm">Local Directory *</Label>
+                <Label for="workspace-local-directory" class="text-sm">Local Directory *</Label>
                 <div class="flex gap-2">
                   <Input
+                    id="workspace-local-directory"
+                    aria-describedby="workspace-local-directory-help"
                     placeholder="/path/to/project"
                     value={localPath}
                     oninput={(e) => (localPath = e.currentTarget.value)}
                   />
-                  <Button variant="outline" onclick={handleBrowse}>Browse…</Button>
+                  <Button variant="outline" onclick={handleBrowse}>Browse...</Button>
                 </div>
                 <p class="text-xs text-muted-foreground">
-                  Local sources require a provider running on this machine.
+                  <span id="workspace-local-directory-help">Local sources require a provider running on this machine.</span>
                 </p>
               </div>
 
@@ -974,10 +1334,6 @@ function selectTemplate(t: { name: string; source: string }) {
             </div>
           {/if}
 
-          <div class="flex justify-between gap-2 pt-2">
-            <Button variant="outline" onclick={() => goToStep("provider")}>Back</Button>
-            <Button disabled={!primarySourceValue} onclick={continueFromSource}>Continue</Button>
-          </div>
         </div>
 
       {:else if currentStep === "ide"}
@@ -988,11 +1344,11 @@ function selectTemplate(t: { name: string; source: string }) {
           </div>
 
           <div class="space-y-1.5">
-            <Label class="text-sm">IDE</Label>
+            <Label for="workspace-ide-picker" class="text-sm">IDE (optional)</Label>
             <Popover.Root bind:open={ideComboOpen}>
-              <Popover.Trigger class="w-full">
+              <Popover.Trigger id="workspace-ide-picker" class="w-full">
                 {#snippet child({ props })}
-                  <Button variant="outline" class="h-9 w-full justify-between" {...props}>
+                  <Button {...props} variant="outline" class="h-9 w-full justify-between">
                     <span class="flex items-center gap-2 flex-1 truncate text-left">
                       {#if ideIconSrc}
                         <img src={ideIconSrc} alt="" class="h-4 w-4 shrink-0" />
@@ -1025,12 +1381,9 @@ function selectTemplate(t: { name: string; source: string }) {
                 </Command.Root>
               </Popover.Content>
             </Popover.Root>
+            <p class="text-xs text-muted-foreground">Choose an IDE to open after setup, or select “None” to open the workspace later.</p>
           </div>
 
-          <div class="flex justify-between gap-2 pt-2">
-            <Button variant="outline" onclick={() => goToStep("source")}>Back</Button>
-            <Button onclick={continueFromIde}>Continue</Button>
-          </div>
         </div>
 
       {:else if currentStep === "review"}
@@ -1041,19 +1394,65 @@ function selectTemplate(t: { name: string; source: string }) {
           </div>
 
           <div class="space-y-1.5">
-            <Label class="text-sm">Workspace Name</Label>
+            <Label for="workspace-display-label" class="text-sm">Display label</Label>
             <Input
+              id="workspace-display-label"
+              aria-invalid={!!(labelError || labelConflict)}
+              aria-describedby={labelError || labelConflict ? "workspace-display-label-help workspace-display-label-error" : "workspace-display-label-help"}
+              autocomplete="off"
+              value={displayLabelValue}
+              oninput={(e) => { displayLabel = e.currentTarget.value; displayLabelTouched = true }}
+            />
+            <p id="workspace-display-label-help" class="text-xs text-muted-foreground">How this workspace is shown in Devsy. Does not change the ID or SSH host.</p>
+            {#if labelError || labelConflict}
+              <p id="workspace-display-label-error" class="text-xs font-medium text-destructive" role="alert">
+                {labelError ?? `Display label is already used by workspace "${labelConflict?.id}".`}
+              </p>
+            {/if}
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="workspace-ssh-alias" class="text-sm">SSH alias</Label>
+            <div class="flex items-center gap-2">
+              <Input
+                id="workspace-ssh-alias"
+                class="font-mono"
+                aria-invalid={!!(aliasError || aliasConflict)}
+                aria-describedby={aliasError || aliasConflict ? "workspace-ssh-alias-help workspace-ssh-alias-error" : "workspace-ssh-alias-help"}
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck={false}
+                value={sshAliasValue}
+                oninput={(e) => { sshAlias = e.currentTarget.value; sshAliasTouched = true }}
+              />
+              <span class="font-mono text-sm text-muted-foreground">{SSH_HOST_SUFFIX}</span>
+            </div>
+            <p id="workspace-ssh-alias-help" class="text-xs text-muted-foreground">Preferred SSH host. The workspace stays reachable as {resolvedId}{SSH_HOST_SUFFIX}.</p>
+            {#if aliasError || aliasConflict}
+              <p id="workspace-ssh-alias-error" class="text-xs font-medium text-destructive" role="alert">
+                {aliasError ?? `SSH host ${launchAlias}${SSH_HOST_SUFFIX} is already used by workspace "${aliasConflict?.id}".`}
+              </p>
+            {/if}
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="workspace-name" class="text-sm">Workspace ID</Label>
+            <Input
+              id="workspace-name"
+              aria-invalid={resolvedIdInvalid || nameConflict || !!idHostConflict}
+              aria-describedby={resolvedIdInvalid ? "workspace-name-invalid" : nameConflict ? "workspace-name-conflict" : idHostConflict ? "workspace-name-host-conflict" : "workspace-name-help"}
               placeholder="Optional - derived from source if empty"
               value={workspaceName}
               oninput={(e) => (workspaceName = e.currentTarget.value)}
             />
+            <p id="workspace-name-help" class="text-xs text-muted-foreground">Permanent internal identifier and canonical SSH host name. Leave blank to derive it from the source.</p>
           </div>
 
           {#if resolvedIdInvalid}
             <Alert.Root>
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
-                Please provide an explicit workspace name. The derived id is empty or invalid.
+                <span id="workspace-name-invalid">{workspaceIdRule} Try "{deriveWorkspaceId(resolvedId)}".</span>
               </Alert.Description>
             </Alert.Root>
           {/if}
@@ -1062,75 +1461,103 @@ function selectTemplate(t: { name: string; source: string }) {
             <Alert.Root>
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
-                A workspace named "{resolvedId}" already exists. Choose a different name.
+                <span id="workspace-name-conflict">A workspace named "{resolvedId}" already exists. Choose a different name.</span>
               </Alert.Description>
             </Alert.Root>
           {/if}
 
-          <div class="rounded-lg border bg-card p-4 text-sm space-y-2">
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Provider</span>
-              <span class="font-medium truncate">{selectedProvider}</span>
+          {#if idHostConflict}
+            <Alert.Root>
+              <TriangleAlert class="h-4 w-4 text-amber-600" />
+              <Alert.Description class="text-amber-700 dark:text-amber-400">
+                <span id="workspace-name-host-conflict">SSH host {resolvedId}{SSH_HOST_SUFFIX} is already used by workspace "{idHostConflict.id}". Choose a different workspace ID.</span>
+              </Alert.Description>
+            </Alert.Root>
+          {/if}
+
+          <dl class="space-y-3 rounded-lg border bg-card p-4 text-sm">
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">Provider</dt>
+              <dd class="flex min-w-0 items-start gap-2 text-left font-medium">
+                <span class="[overflow-wrap:anywhere]">{selectedProvider}</span>
+                <Button type="button" aria-label="Edit provider" variant="ghost" size="sm" class="h-7 shrink-0 px-2" onclick={() => goToStep("provider")}>Edit</Button>
+              </dd>
             </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Source type</span>
-              <span class="font-medium truncate capitalize">{sourceType}</span>
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">Source type</dt>
+              <dd class="text-left font-medium capitalize">{sourceType}</dd>
             </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Source</span>
-              <span class="font-medium truncate font-mono">{assembled.source}</span>
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">Source</dt>
+              <dd class="flex min-w-0 items-start gap-2 text-left font-medium">
+                <span class="min-w-0 font-mono [overflow-wrap:anywhere]">{assembled.source}</span>
+                <Button type="button" aria-label="Edit source" variant="ghost" size="sm" class="h-7 shrink-0 px-2" onclick={() => goToStep("source")}>Edit</Button>
+              </dd>
             </div>
             {#if sourceType === "git" && refValue.trim()}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">
                   {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull / Merge request"}
-                </span>
-                <span class="font-medium truncate">{refValue}</span>
+                </dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{refValue}</dd>
               </div>
             {/if}
             {#if sourceType === "git" && subPath.trim()}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Project subfolder</span>
-                <span class="font-medium truncate">{subPath}</span>
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Project subfolder</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{subPath}</dd>
               </div>
             {/if}
             {#if assembled.devcontainer}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Dev container source</span>
-                <span class="font-medium truncate">{assembled.devcontainer}</span>
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Dev container source</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{assembled.devcontainer}</dd>
               </div>
             {/if}
             {#if assembled.prebuildRepository}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Prebuild repo</span>
-                <span class="font-medium truncate">{assembled.prebuildRepository}</span>
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Prebuild repo</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{assembled.prebuildRepository}</dd>
               </div>
             {/if}
             {#if workspaceFolder}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Open folder in container</span>
-                <span class="font-medium truncate">{workspaceFolder}</span>
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Open folder in container</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{workspaceFolder}</dd>
               </div>
             {/if}
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">IDE</span>
-              <span class="flex items-center gap-2 font-medium truncate">
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">IDE</dt>
+              <dd class="flex min-w-0 items-center gap-2 text-left font-medium">
                 {#if ideIconSrc}
                   <img src={ideIconSrc} alt="" class="h-4 w-4 shrink-0" />
                 {/if}
-                <span class="truncate">{ideLabel}</span>
-              </span>
+                <span>{ideLabel}</span>
+                <Button type="button" aria-label="Edit IDE" variant="ghost" size="sm" class="h-7 shrink-0 px-2" onclick={() => goToStep("ide")}>Edit</Button>
+              </dd>
             </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Workspace ID</span>
-              <span class="font-medium truncate font-mono">{resolvedId}</span>
+            {#if launchLabel}
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Display label</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{launchLabel}</dd>
+              </div>
+            {/if}
+            {#if launchAlias}
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">SSH host</dt>
+                <dd class="text-left font-medium font-mono [overflow-wrap:anywhere]">{launchAlias}{SSH_HOST_SUFFIX}</dd>
+              </div>
+            {/if}
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">Workspace ID</dt>
+              <dd class="text-left font-medium font-mono [overflow-wrap:anywhere]">{resolvedId}</dd>
             </div>
-          </div>
+          </dl>
 
           {#if sourceType === "image" && compatLoading}
             <p class="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 class="h-4 w-4 animate-spin" />
-              Checking image compatibility…
+              Checking image compatibility...
             </p>
           {/if}
 
@@ -1148,7 +1575,7 @@ function selectTemplate(t: { name: string; source: string }) {
 
           {#if compatUnknown}
             <p class="text-sm text-muted-foreground">
-              Couldn't verify compatibility for your machine ({hostPlatform ||
+              Could not verify compatibility for your machine ({hostPlatform ||
                 "unknown"}); the image will be pulled as-is.
             </p>
           {/if}
@@ -1183,111 +1610,120 @@ function selectTemplate(t: { name: string; source: string }) {
             </label>
           {/if}
 
-          <div class="flex justify-between gap-2 pt-2">
-            <Button variant="outline" onclick={() => goToStep("ide")}>Back</Button>
-            <Button
-              disabled={resolvedIdInvalid || nameConflict}
-              onclick={continueFromReview}
-            >
-              Launch
-            </Button>
-          </div>
         </div>
 
       {:else if currentStep === "launch"}
         <div class="space-y-4">
-          <div>
-            <h2 class="text-lg font-semibold">
-              {#if launchRunning}
-                Creating Workspace
-              {:else if launchSuccess}
-                Workspace Ready
-              {:else if launchError}
-                Workspace Creation Failed
-              {:else}
-                Launching...
-              {/if}
-            </h2>
-            <p class="text-sm text-muted-foreground">
-              {#if launchRunning}
-                Running workspace up...
-              {:else if launchSuccess}
-                {launchedWorkspaceId ?? resolvedId} is ready to use.
-              {:else if launchError}
-                Something went wrong while creating the workspace.
-              {/if}
-            </p>
-          </div>
-
-          {#if launchError}
-            <Alert.Root variant="destructive">
-              <AlertCircle class="h-4 w-4" />
-              <Alert.Description>{launchError}</Alert.Description>
-            </Alert.Root>
-          {/if}
+          <WorkspaceLaunchProgress
+            workspaceId={launchedWorkspaceId ?? lastAttemptedId ?? resolvedId}
+            label={launchLabel || undefined}
+            provider={selectedProvider || undefined}
+            ideLabel={selectedIde === "none" ? "No IDE" : (selectedIdeEntry?.label ?? selectedIde)}
+            timeline={launchTimeline}
+            running={launchRunning || launchConfirmationState === "confirming"}
+            error={launchError || undefined}
+            confirmationState={launchConfirmationState}
+            logError={launchLogError}
+            refreshError={launchStatusRefreshError ?? undefined}
+            refreshRetrying={launchRefreshRetrying}
+            onRetryStatus={retryLaunchStatus}
+            elapsedMs={launchElapsedMs}
+            logsAvailable={outputLines.length > 0}
+            logsOpen={showLogs}
+            onToggleLogs={() => (showLogs = !showLogs)}
+            onViewOutput={launchRunIdentity.runId ? viewLaunchOutput : undefined}
+          />
 
           {#if outputLines.length > 0}
             <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Output</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onclick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(outputLines.map(stripAnsi).join("\n"))
-                      toasts.success("Copied to clipboard")
-                    } catch {
-                      toasts.error("Failed to copy")
-                    }
-                  }}
-                >
-                  Copy
-                </Button>
-              </div>
-              <LogTable lines={outputLines} maxHeightClass="max-h-80" follow />
-            </div>
-          {:else if launchRunning}
-            <div class="flex items-center justify-center py-8">
-              <Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
+              {#if showLogs}
+                <div class="space-y-2">
+                  <div class="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onclick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(outputLines.map(stripAnsi).join("\n"))
+                          toasts.success("Copied to clipboard")
+                        } catch {
+                          toasts.error("Failed to copy")
+                        }
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  <LogTable lines={outputLines} maxHeightClass="max-h-80" follow />
+                </div>
+              {/if}
             </div>
           {/if}
 
-          <div class="flex justify-end gap-2 pt-2">
-            {#if launchSuccess}
-              <Button variant="outline" onclick={() => (open = false)}>Close</Button>
-              <Button
-                onclick={() => {
-                  const id = launchedWorkspaceId ?? resolvedId
-                  open = false
-                  if (id) goto(`/workspaces/${id}`)
-                }}
-              >
-                Open Workspace
-              </Button>
-            {:else if launchError}
-              <Button variant="outline" onclick={() => (open = false)}>Close</Button>
-              {#if launchBuildFailed && !launchIsRecovery}
-                <Button variant="secondary" onclick={() => handleLaunch(true)}>
-                  <LifeBuoy class="h-4 w-4" />
-                  Reopen in Recovery Container
+          {#if launchError || launchSuccess || launchStatusRefreshError || launchLogError}
+            <div class="flex flex-wrap justify-end gap-2 border-t pt-4">
+              {#if !launchError && (launchSuccess || launchStatusRefreshError || launchLogError)}
+                <Button variant="outline" onclick={() => (open = false)}>Close</Button>
+                <Button
+                  onclick={() => {
+                    const id = launchedWorkspaceId ?? resolvedId
+                    open = false
+                    if (id) goto(`/workspaces/${id}`)
+                  }}
+                >
+                  Open Workspace
                 </Button>
+                {#if launchLogError}<Button onclick={() => handleLaunch()}>Retry</Button>{/if}
+              {:else if launchError}
+                <Button variant="outline" onclick={() => (open = false)}>Close</Button>
+                {#if launchBuildFailed && !launchIsRecovery}
+                  <Button variant="secondary" onclick={() => handleLaunch(true)}>
+                    <LifeBuoy class="h-4 w-4" />
+                    Reopen in Recovery Container
+                  </Button>
+                {/if}
+                <Button onclick={() => handleLaunch()}>Retry</Button>
               {/if}
-              <Button onclick={() => handleLaunch()}>Retry</Button>
-            {/if}
-          </div>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
+    {#if currentStep !== "launch"}
+      <footer
+        aria-label="Workspace creation actions"
+        class="flex shrink-0 justify-between gap-2 border-t bg-popover px-6 py-4"
+      >
+        {#if currentStep === "provider"}
+          <span aria-hidden="true"></span>
+          <Button
+            disabled={!selectedProvider || initializedProviders.length === 0}
+            onclick={continueFromProvider}
+          >
+            Continue
+          </Button>
+        {:else if currentStep === "source"}
+          <Button variant="outline" onclick={() => goToStep("provider")}>Back</Button>
+          <Button disabled={!primarySourceValue} onclick={continueFromSource}>Continue</Button>
+        {:else if currentStep === "ide"}
+          <Button variant="outline" onclick={() => goToStep("source")}>Back</Button>
+          <Button onclick={continueFromIde}>Continue</Button>
+        {:else if currentStep === "review"}
+          <Button variant="outline" onclick={() => goToStep("ide")}>Back</Button>
+          <Button disabled={resolvedIdInvalid || nameConflict || presentationInvalid} onclick={continueFromReview}>
+            Launch
+          </Button>
+        {/if}
+      </footer>
+    {/if}
   </Dialog.Content>
 </Dialog.Root>
 
 <ConfirmDialog
   bind:open={confirmCancelOpen}
-  title="Cancel workspace creation?"
-  description="A workspace is currently being created. Closing this dialog will not stop the process, but you will lose visibility of the progress."
-  confirmLabel="Close Anyway"
-  variant="destructive"
+  title="Close workspace creation?"
+  description="Workspace creation will continue in the background. You can monitor it from Task Monitor."
+  confirmLabel="Close"
   onconfirm={() => {
     open = false
     confirmCancelOpen = false

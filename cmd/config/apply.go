@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,8 +20,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
 	pkgworkspace "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -72,10 +75,19 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		return err
 	}
 	emitJSON := mode == output.ModeJSON
+	reporter, err := newStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
+	)
+	if err != nil {
+		return err
+	}
 
 	helper := &docker.DockerHelper{DockerCommand: cmd.resolveDockerPath()}
 
-	containerDetails, result, err := cmd.prepareContainer(ctx, helper, emitJSON)
+	containerDetails, result, err := cmd.resolveContainer(ctx, reporter, helper)
 	if err != nil {
 		return err
 	}
@@ -84,9 +96,13 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 	envArgs := workspace.BuildLifecycleEnvArgs(result)
 	envArgs = append(envArgs, buildContainerEnvArgs(result.MergedConfig.ContainerEnv)...)
 
-	if err := cmd.installFeatures(ctx, helper, result); err != nil {
-		emitErr(emitJSON, err)
-		return fmt.Errorf("feature installation: %w", err)
+	if err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseRunningLifecycleHook, Step: "install features"},
+		cmd.installFeaturesStep(helper, result, emitJSON),
+	); err != nil {
+		return err
 	}
 
 	params := &workspace.LifecycleExecParams{
@@ -96,16 +112,16 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		EnvArgs:     envArgs,
 		Workdir:     workdir,
 		User:        devcconfig.GetRemoteUser(result),
+		Recorder:    workspacelogs.RecorderFrom(ctx),
 	}
 
-	if err := cmd.runApplyLifecycleHooks(params, result); err != nil {
-		emitErr(emitJSON, err)
+	if err := cmd.runLifecycle(ctx, reporter, params, result); err != nil {
 		return err
 	}
 
-	log.Infof("apply completed for container %s", containerDetails.ID)
+	log.Debugf("apply completed for container %s", containerDetails.ID)
 	if emitJSON {
-		_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
+		return devcconfig.WriteResultJSON(os.Stdout, devcconfig.ResultEnvelope{
 			ContainerID:           containerDetails.ID,
 			RemoteUser:            devcconfig.GetRemoteUser(result),
 			RemoteWorkspaceFolder: workdir,
@@ -114,29 +130,103 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 	return nil
 }
 
+func (cmd *ApplyCmd) runLifecycle(
+	ctx context.Context,
+	reporter status.Reporter,
+	params *workspace.LifecycleExecParams,
+	result *devcconfig.Result,
+) error {
+	if err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseRunningLifecycleHook},
+		func(context.Context) error {
+			return cmd.runApplyLifecycleHooks(params, result)
+		},
+	); err != nil {
+		return err
+	}
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseReady},
+		func(context.Context) error {
+			return nil
+		},
+	)
+}
+
+func (cmd *ApplyCmd) resolveContainer(
+	ctx context.Context,
+	reporter status.Reporter,
+	helper *docker.DockerHelper,
+) (*devcconfig.ContainerDetails, *devcconfig.Result, error) {
+	var containerDetails *devcconfig.ContainerDetails
+	var result *devcconfig.Result
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingConfig},
+		func(ctx context.Context) error {
+			var resolveErr error
+			containerDetails, result, resolveErr = cmd.prepareContainer(ctx, helper)
+			return resolveErr
+		},
+	)
+	return containerDetails, result, err
+}
+
+func (cmd *ApplyCmd) installFeaturesStep(
+	helper *docker.DockerHelper,
+	result *devcconfig.Result,
+	emitJSON bool,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		if err := cmd.installFeatures(ctx, helper, result, emitJSON); err != nil {
+			return fmt.Errorf("feature installation: %w", err)
+		}
+		return nil
+	}
+}
+
 func (cmd *ApplyCmd) prepareContainer(
 	ctx context.Context,
 	helper *docker.DockerHelper,
-	emitJSON bool,
 ) (*devcconfig.ContainerDetails, *devcconfig.Result, error) {
 	containerDetails, err := cmd.inspectRunningContainer(ctx, helper)
 	if err != nil {
-		emitErr(emitJSON, err)
 		return nil, nil, err
 	}
 
 	result, err := cmd.loadConfig(ctx, containerDetails)
 	if err != nil {
-		emitErr(emitJSON, err)
 		return nil, nil, err
 	}
 	return containerDetails, result, nil
 }
 
-func emitErr(emitJSON bool, err error) {
-	if emitJSON {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-	}
+func newStatusReporter(
+	resultFormat string,
+	out io.Writer,
+	verbose bool,
+	noStatus bool,
+) (status.Reporter, error) {
+	return status.NewCLIReporter(status.CLIOptions{
+		Format:   resultFormat,
+		Out:      out,
+		Prefix:   "config",
+		Verbose:  verbose,
+		NoStatus: noStatus,
+		Pipeline: status.PipelineWorkspaceUp,
+		Labels: map[status.Phase]string{
+			status.PhaseResolvingConfig:      "resolving devcontainer config",
+			status.PhaseRunningLifecycleHook: "applying lifecycle configuration",
+			status.PhaseReady:                "ready",
+		},
+		Envelope: func(e status.Event) error {
+			return devcconfig.WriteStatusJSON(out, e)
+		},
+	})
 }
 
 func (cmd *ApplyCmd) resolveDockerPath() string {
@@ -220,12 +310,13 @@ func (cmd *ApplyCmd) installFeatures(
 	ctx context.Context,
 	helper *docker.DockerHelper,
 	result *devcconfig.Result,
+	emitJSON bool,
 ) error {
 	if len(result.MergedConfig.Features) == 0 {
 		return nil
 	}
 
-	featureSets, err := cmd.resolveFeatureSets(result)
+	featureSets, err := cmd.resolveFeatureSets(ctx, result)
 	if err != nil {
 		return err
 	}
@@ -250,7 +341,12 @@ func (cmd *ApplyCmd) installFeatures(
 		return err
 	}
 
-	if err := cmd.copyAndExecFeatures(ctx, helper, featureSets, featureStageDir); err != nil {
+	if err := cmd.copyAndExecFeatures(
+		ctx,
+		helper,
+		featureStage{featureSets: featureSets, dir: featureStageDir},
+		emitJSON,
+	); err != nil {
 		return err
 	}
 
@@ -258,6 +354,7 @@ func (cmd *ApplyCmd) installFeatures(
 }
 
 func (cmd *ApplyCmd) resolveFeatureSets(
+	ctx context.Context,
 	result *devcconfig.Result,
 ) ([]*devcconfig.FeatureSet, error) {
 	devContainerConfig := &devcconfig.DevContainerConfig{}
@@ -265,26 +362,46 @@ func (cmd *ApplyCmd) resolveFeatureSets(
 	devContainerConfig.OverrideFeatureInstallOrder = result.MergedConfig.OverrideFeatureInstallOrder
 	devContainerConfig.Origin = result.MergedConfig.Origin
 
-	featureSets, err := feature.ResolveFeatureOrder(devContainerConfig)
+	featureSets, err := feature.ResolveFeatureOrderWithContext(ctx, devContainerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("resolve features: %w", err)
 	}
 	return featureSets, nil
 }
 
+// featureStage is the feature set to copy into the container and the local
+// folder it is staged in.
+type featureStage struct {
+	featureSets []*devcconfig.FeatureSet
+	dir         string
+}
+
 func (cmd *ApplyCmd) copyAndExecFeatures(
 	ctx context.Context,
 	helper *docker.DockerHelper,
-	featureSets []*devcconfig.FeatureSet,
-	featureStageDir string,
+	stage featureStage,
+	emitJSON bool,
 ) error {
+	featureSets, featureStageDir := stage.featureSets, stage.dir
 	containerFeaturesPath := "/tmp/build-features"
+	streams := docker.Streams{LiveStdout: os.Stdout, LiveStderr: os.Stderr}
+	if emitJSON {
+		// Raw Docker output must never share stdout with status and result
+		// envelopes. The configured logger preserves the selected machine
+		// encoding on stderr instead.
+		outputWriter := log.Writer(log.LevelInfo)
+		defer func() { _ = outputWriter.Close() }()
+		streams.LiveStdout = nil
+		streams.Stdout = outputWriter
+		streams.LiveStderr = nil
+		streams.Stderr = outputWriter
+	}
 
 	cpArgs := []string{"cp", featureStageDir + "/.", cmd.Container + ":" + containerFeaturesPath}
 	if err := helper.Run(
 		ctx,
 		cpArgs,
-		docker.Streams{Stdout: os.Stdout, Stderr: os.Stderr},
+		streams,
 	); err != nil {
 		return fmt.Errorf("copy features to container: %w", err)
 	}
@@ -300,11 +417,8 @@ func (cmd *ApplyCmd) copyAndExecFeatures(
 			Container: cmd.Container,
 			Command:   []string{installCmd},
 		})
-		if err := helper.Run(ctx, execArgs, docker.Streams{
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-		}); err != nil {
+		streams.Stdin = os.Stdin
+		if err := helper.Run(ctx, execArgs, streams); err != nil {
 			return fmt.Errorf("install feature %s: %w", fs.ConfigID, err)
 		}
 	}
@@ -371,8 +485,10 @@ func (cmd *ApplyCmd) runApplyLifecycleHooks(
 	}
 
 	for _, hook := range hooks {
-		for _, h := range hook.cmds {
-			if err := workspace.ExecLifecycleHook(params, hook.name, h); err != nil {
+		for i, h := range hook.cmds {
+			indexed := *params
+			indexed.HookIndex = i
+			if err := workspace.ExecLifecycleHook(&indexed, hook.name, h); err != nil {
 				return fmt.Errorf("lifecycle hooks: %s: %w", hook.name, err)
 			}
 		}

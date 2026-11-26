@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/devsy-org/devsy/pkg/clierr"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
@@ -25,31 +25,120 @@ func init() {
 
 // Config holds logger configuration parsed from CLI flags.
 type Config struct {
-	Verbosity int    // 0=error, 1=info+warn, 2=debug, 3=trace
-	Quiet     bool   // fatal only
-	Debug     bool   // backwards compat, equivalent to Verbosity=2
-	Format    string // "text", "json", "logfmt"
+	Verbosity    int    // 0=error, 1=info+warn, 2=debug, 3=trace
+	Quiet        bool   // error only
+	Debug        bool   // backwards compat, equivalent to Verbosity=2
+	Level        string // explicit --log-level override
+	DefaultLevel string // persisted default when no explicit verbosity flag is set
+	VerbositySet bool
+	Format       string // "text", "json", "logfmt"
+	Redactor     *secrets.Redactor
 }
 
 // Init configures the global logger. Called once in root command PersistentPreRunE.
 func Init(cfg Config) {
+	cfg.Redactor = secrets.Combine(cfg.Redactor, secrets.NewEnvironmentRedactor(os.Environ()))
 	level := resolveLevel(cfg)
 	encoder := resolveEncoder(cfg.Format)
-	stderrCore := zapcore.NewCore(encoder, zapcore.Lock(os.Stderr), level)
+	stderrWriter := zapcore.Lock(&redactingWriter{next: os.Stderr, redactor: cfg.Redactor})
+	stderrCore := zapcore.NewCore(encoder, consoleWriter{next: stderrWriter}, level)
 	// A separate core writes to the fanout sink with the same level/encoder
 	// so AddSink consumers see the same output stderr does.
-	sinkCore := zapcore.NewCore(resolveEncoder(cfg.Format), extraSinks, level)
+	sinkCore := zapcore.NewCore(
+		resolveEncoder(cfg.Format),
+		&redactingWriter{next: extraSinks, redactor: cfg.Redactor},
+		level,
+	)
 	core := zapcore.NewTee(stderrCore, sinkCore)
 
 	logger := zap.New(core, zap.AddStacktrace(zapcore.FatalLevel))
 	sugar.Store(logger.Sugar())
 }
 
+var consoleOutput = struct {
+	sync.RWMutex
+	suppressed int
+}{}
+
+type consoleWriter struct{ next zapcore.WriteSyncer }
+
+func (w consoleWriter) Write(p []byte) (int, error) {
+	consoleOutput.RLock()
+	defer consoleOutput.RUnlock()
+	if consoleOutput.suppressed > 0 {
+		return len(p), nil
+	}
+	return w.next.Write(p)
+}
+
+func (w consoleWriter) Sync() error {
+	consoleOutput.RLock()
+	defer consoleOutput.RUnlock()
+	if consoleOutput.suppressed > 0 {
+		return nil
+	}
+	return w.next.Sync()
+}
+
+func SuppressConsoleOutput() func() {
+	consoleOutput.Lock()
+	consoleOutput.suppressed++
+	consoleOutput.Unlock()
+	var once sync.Once
+	return func() { once.Do(func() { consoleOutput.Lock(); consoleOutput.suppressed--; consoleOutput.Unlock() }) }
+}
+
+type redactingWriter struct {
+	mu       sync.Mutex
+	next     io.Writer
+	redactor *secrets.Redactor
+	stream   *secrets.StreamingRedactor
+}
+
+func (w *redactingWriter) Write(p []byte) (int, error) {
+	if w == nil || w.next == nil {
+		return len(p), nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stream == nil {
+		w.stream = secrets.NewStreamingRedactor(w.redactor)
+	}
+	redacted := []byte(w.stream.RedactChunk(string(p)))
+	if len(redacted) == 0 {
+		return len(p), nil
+	}
+	_, err := w.next.Write(redacted)
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (w *redactingWriter) Sync() error {
+	if w == nil || w.next == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stream != nil {
+		if pending := w.stream.Flush(); pending != "" {
+			if _, err := w.next.Write([]byte(pending)); err != nil {
+				return err
+			}
+		}
+	}
+	if syncer, ok := w.next.(interface{ Sync() error }); ok {
+		return syncer.Sync()
+	}
+	return nil
+}
+
 // AddSink attaches w as an additional destination for log output for the
 // duration of the returned remove func. Each line of log output is written to
 // w in addition to stderr. Multiple concurrent sinks are supported.
 //
-// w must be safe for concurrent Write calls — AddSink does not serialize
+// w must be safe for concurrent Write calls - AddSink does not serialize
 // writes to a single sink. io.Pipe writers and io.MultiWriter wrapping
 // pre-serialized destinations are both fine; bare bytes.Buffer is not.
 func AddSink(w io.Writer) (remove func()) {
@@ -91,13 +180,39 @@ func (f *writerFanout) add(w io.Writer) (remove func()) {
 }
 
 func resolveLevel(cfg Config) zapcore.Level {
-	if cfg.Quiet {
-		return zapcore.FatalLevel
-	}
-	if cfg.Debug {
-		return zapcore.DebugLevel
+	if level, ok := resolveExplicitLevel(cfg); ok {
+		return level
 	}
 	return VerbosityToLevel(cfg.Verbosity)
+}
+
+// Precedence: --quiet > --debug > explicitly supplied -v > --log-level > persisted default.
+// This ordering is compatibility-sensitive: earlier flags must keep winning over
+// later configuration, so do not reorder it.
+func resolveExplicitLevel(cfg Config) (zapcore.Level, bool) {
+	if cfg.Quiet {
+		return zapcore.ErrorLevel, true
+	}
+	if cfg.Debug {
+		return zapcore.DebugLevel, true
+	}
+	if cfg.VerbositySet || cfg.Verbosity > 0 {
+		return VerbosityToLevel(cfg.Verbosity), true
+	}
+	return resolveConfiguredLevel(cfg.Level, cfg.DefaultLevel)
+}
+
+func resolveConfiguredLevel(explicit, fallback string) (zapcore.Level, bool) {
+	if explicit != "" {
+		return LevelFromString(explicit)
+	}
+	if fallback != "" {
+		if level, ok := LevelFromString(fallback); ok {
+			return level, true
+		}
+	}
+	level, _ := LevelFromString(DefaultLevel)
+	return level, true
 }
 
 func resolveEncoder(format string) zapcore.Encoder {
@@ -107,12 +222,19 @@ func resolveEncoder(format string) zapcore.Encoder {
 	case "logfmt":
 		return newLogfmtEncoder()
 	default:
-		// "text" — use console encoder, with color if stderr is a terminal
-		if term.IsTerminal(int(os.Stderr.Fd())) { //nolint:gosec // fd fits in int
+		// "text" - use console encoder, with color if stderr is a terminal
+		if colorEnabled() {
 			return zapcore.NewConsoleEncoder(colorEncoderConfig())
 		}
 		return zapcore.NewConsoleEncoder(plainEncoderConfig())
 	}
+}
+
+func colorEnabled() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	return term.IsTerminal(int(os.Stderr.Fd())) //nolint:gosec // fd fits in int
 }
 
 func jsonEncoderConfig() zapcore.EncoderConfig {
@@ -159,19 +281,6 @@ func Info(args ...any)  { sugar.Load().Info(args...) }
 func Warn(args ...any)  { sugar.Load().Warn(args...) }
 func Error(args ...any) { sugar.Load().Error(args...) }
 func Fatal(args ...any) { sugar.Load().Fatal(args...) }
-
-func JSONError(cliErr *clierr.CLIError) {
-	if cliErr == nil {
-		return
-	}
-	msg := cliErr.Message
-	if wrapped := cliErr.Unwrap(); wrapped != nil {
-		if s := wrapped.Error(); s != "" {
-			msg = s
-		}
-	}
-	sugar.Load().Desugar().Error(msg, zap.Object("cliError", cliErr))
-}
 
 func Debugw(msg string, keysAndValues ...any) { sugar.Load().Debugw(msg, keysAndValues...) }
 func Infow(msg string, keysAndValues ...any)  { sugar.Load().Infow(msg, keysAndValues...) }

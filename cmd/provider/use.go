@@ -1,27 +1,46 @@
 package provider
 
 import (
-	"fmt"
-
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
 
-// UseProvider sets the named provider as the default for the active config context.
-func UseProvider(devsyConfig *config.Config, name string) error {
-	p, err := workspace.FindProvider(devsyConfig, name)
+// UseProvider sets the named provider as the default for the addressed config
+// context, loading and saving config.yaml under the config lock.
+func UseProvider(contextOverride, providerOverride, name string) error {
+	initial, err := config.LoadConfig(contextOverride, providerOverride)
 	if err != nil {
 		return err
 	}
-	devsyConfig.Current().DefaultProvider = p.Config.Name
-	if err := config.SaveConfig(devsyConfig); err != nil {
-		return fmt.Errorf("save config: %w", err)
+	unlock, err := provider.LockProvider(initial.DefaultContext, name)
+	if err != nil {
+		return err
 	}
-	log.Infof("default provider: %s", p.Config.Name)
+	defer unlock()
+
+	var resolved string
+	err = config.UpdateConfig(
+		initial.DefaultContext,
+		providerOverride,
+		func(devsyConfig *config.Config) error {
+			p, err := workspace.FindProvider(devsyConfig, name)
+			if err != nil {
+				return err
+			}
+			devsyConfig.Current().DefaultProvider = p.Config.Name
+			resolved = p.Config.Name
+			return nil
+		},
+	)
+	if err != nil {
+		return err
+	}
+	log.Infof("default provider: %s", resolved)
 	return nil
 }
 
@@ -38,20 +57,7 @@ func NewUseCmd(f *flags.GlobalFlags) *cobra.Command {
 		Short: "Set the default provider for the active context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-			if err != nil {
-				return err
-			}
-			p, err := workspace.FindProvider(devsyConfig, args[0])
-			if err != nil {
-				return err
-			}
-			devsyConfig.Current().DefaultProvider = p.Config.Name
-			if err := config.SaveConfig(devsyConfig); err != nil {
-				return fmt.Errorf("save config: %w", err)
-			}
-			log.Infof("default provider: %s", p.Config.Name)
-			return nil
+			return UseProvider(cmd.Context, cmd.Provider, args[0])
 		},
 		ValidArgsFunction: func(
 			rootCmd *cobra.Command,
@@ -60,11 +66,13 @@ func NewUseCmd(f *flags.GlobalFlags) *cobra.Command {
 		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetProviderSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}

@@ -3,7 +3,6 @@
 package up
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -20,8 +19,22 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+)
+
+const (
+	userValue = "--user"
+	root      = "root"
+)
+
+const (
+	composeSecretCommand       = "secret"
+	composeSecretSetCommand    = "set"
+	composeSecretDeleteCommand = "delete"
+	composeSecretValueFlag     = "--value"
+	composeFileSecretsDir      = "/run/secrets"
 )
 
 var _ = ginkgo.Describe(
@@ -36,13 +49,301 @@ var _ = ginkgo.Describe(
 			tc.initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			tc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			tc.dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = setupDockerProvider(tc.initialDir + "/bin")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
+
+		ginkgo.It(
+			"migrates an existing Compose workspace when a terminal secret is attached later",
+			func(ctx context.Context) {
+				framework.UseFileSecretsBackend()
+				contextName := fmt.Sprintf("compose-late-secret-%d", time.Now().UnixNano())
+				framework.ExpectNoError(tc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = tc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = tc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(tc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(tc.f.DevsyProviderAdd(
+					ctx, dockerValue, "-o", "DOCKER_PATH=docker",
+				))
+				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, dockerValue))
+
+				tempDir, workspace, err := tc.setupAndStartWorkspace(
+					ctx, "tests/up-docker-compose/testdata/docker-compose",
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(tc.f.DevsyWorkspaceDelete, tempDir)
+				before, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+
+				framework.RegisterSecret("sentinel-compose-late-secret")
+				secretName := "COMPOSE_SESSION_SECRET"
+				_, err = tc.f.ExecCommandOutput(ctx, []string{
+					composeSecretCommand,
+					composeSecretSetCommand,
+					secretName,
+					composeSecretValueFlag,
+					"sentinel-compose-late-secret",
+				})
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_, _ = tc.f.ExecCommandOutput(
+						context.Background(),
+						[]string{composeSecretCommand, composeSecretDeleteCommand, secretName},
+					)
+				})
+				_, err = tc.f.ExecCommandOutput(
+					ctx, []string{composeSecretCommand, "attach", secretName},
+				)
+				framework.ExpectNoError(err)
+				secretList, _, err := tc.f.ExecCommandCapture(
+					ctx, []string{composeSecretCommand, "list", "--result-format", "json"},
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(secretList).
+					To(gomega.ContainSubstring(`"name": "COMPOSE_SESSION_SECRET"`))
+				gomega.Expect(secretList).To(gomega.ContainSubstring(`"attached": true`))
+
+				framework.ExpectNoError(tc.f.DevsyUp(ctx, tempDir))
+				after, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(after.ID).NotTo(gomega.Equal(before.ID))
+				var sessionMount *container.MountPoint
+				for i := range after.Mounts {
+					if after.Mounts[i].Destination == "/run/devsy/secrets-env" {
+						sessionMount = &after.Mounts[i]
+						break
+					}
+				}
+				gomega.Expect(sessionMount).NotTo(gomega.BeNil())
+				gomega.Expect(sessionMount.Type).To(gomega.Equal(mount.TypeTmpfs))
+
+				checkFile := `if [ -f /run/devsy/secrets-env/COMPOSE_SESSION_SECRET ]; then ` +
+					`if [ "$(cat /run/devsy/secrets-env/COMPOSE_SESSION_SECRET)" = sentinel-compose-late-secret ]; ` +
+					`then printf file-attached; else printf file-other; fi; else printf file-absent; fi`
+				out, err := tc.f.DevsySSH(ctx, tempDir, checkFile)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("file-attached"))
+				out, err = tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					`case "$COMPOSE_SESSION_SECRET" in `+
+						`sentinel-compose-late-secret) printf attached;; base-value) printf base;; `+
+						`'') printf absent;; *) printf other;; esac`,
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("attached"))
+				mode, err := tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"stat -c %a /run/devsy/secrets-env/COMPOSE_SESSION_SECRET",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(mode)).To(gomega.Equal("600"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
+			"refreshes saved Compose files for a new file secret after the app container is removed",
+			func(ctx context.Context) {
+				framework.UseFileSecretsBackend()
+				tempDir, workspace, err := tc.setupAndStartWorkspace(
+					ctx,
+					"tests/up-docker-compose/testdata/docker-compose-shutdown-action-container",
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(tc.f.DevsyWorkspaceDelete, tempDir)
+
+				before, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(before.Mounts).NotTo(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == composeFileSecretsDir
+					},
+				)))
+				projectName, err := composeProjectForWorkspace(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID,
+				)
+				framework.ExpectNoError(err)
+				appIDs, _ := tc.findAppAndSidecar(ctx, workspace.UID)
+				framework.ExpectNoError(tc.dockerHelper.Stop(ctx, appIDs[0]))
+				framework.ExpectNoError(tc.dockerHelper.Remove(ctx, appIDs[0]))
+				projectFiles, err := tc.composeHelper.FindProjectFiles(ctx, projectName)
+				framework.ExpectNoError(err)
+				gomega.Expect(projectFiles).NotTo(gomega.BeEmpty())
+
+				framework.RegisterSecret("sentinel-compose-missing-app")
+				secretName := "COMPOSE_MISSING_APP_FILE_SECRET"
+				_, err = tc.f.ExecCommandOutput(ctx, []string{
+					composeSecretCommand,
+					composeSecretSetCommand,
+					secretName,
+					composeSecretValueFlag,
+					"sentinel-compose-missing-app",
+				})
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_, _ = tc.f.ExecCommandOutput(
+						context.Background(),
+						[]string{composeSecretCommand, composeSecretDeleteCommand, secretName},
+					)
+				})
+				framework.ExpectNoError(tc.f.DevsyUp(
+					ctx, tempDir, "--secret", secretName+",type=mount,target=missing_app_secret",
+				))
+
+				after, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(after.ID).NotTo(gomega.Equal(before.ID))
+				gomega.Expect(after.Mounts).To(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == composeFileSecretsDir && mount.Type == "tmpfs"
+					},
+				)))
+				out, err := tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"if [ -s /run/secrets/missing_app_secret ]; then printf present; else printf absent; fi",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
+			"injects attached terminal secrets through a tmpfs mount",
+			func(ctx context.Context) {
+				framework.UseFileSecretsBackend()
+				contextName := fmt.Sprintf("compose-secret-%d", time.Now().UnixNano())
+				framework.ExpectNoError(tc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = tc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = tc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(tc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(tc.f.DevsyProviderAdd(
+					ctx, dockerValue, "-o", "DOCKER_PATH=docker",
+				))
+				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, dockerValue))
+
+				framework.RegisterSecret("sentinel-compose-secret")
+				framework.RegisterSecret("sentinel-compose-file-secret")
+				secretName := "COMPOSE_SESSION_SECRET"
+				_, err := tc.f.ExecCommandOutput(ctx, []string{
+					composeSecretCommand,
+					composeSecretSetCommand,
+					secretName,
+					composeSecretValueFlag,
+					"sentinel-compose-secret",
+				})
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_, _ = tc.f.ExecCommandOutput(
+						context.Background(),
+						[]string{composeSecretCommand, composeSecretDeleteCommand, secretName},
+					)
+				})
+				_, err = tc.f.ExecCommandOutput(
+					ctx, []string{composeSecretCommand, "attach", secretName},
+				)
+				framework.ExpectNoError(err)
+
+				tempDir, workspace, err := tc.setupAndStartWorkspace(
+					ctx, "tests/up-docker-compose/testdata/docker-compose",
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(tc.f.DevsyWorkspaceDelete, tempDir)
+
+				checkStored := `if [ -f /run/devsy/secrets-env/COMPOSE_SESSION_SECRET ] && ` +
+					`[ "$(cat /run/devsy/secrets-env/COMPOSE_SESSION_SECRET)" = sentinel-compose-secret ]; ` +
+					`then printf present; else printf absent; fi`
+				out, err := tc.f.DevsySSH(ctx, tempDir, checkStored)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+
+				checkPresent := `if [ "$COMPOSE_SESSION_SECRET" = sentinel-compose-secret ]; ` +
+					`then printf present; else printf absent; fi`
+				out, err = tc.f.DevsySSH(ctx, tempDir, checkPresent)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+
+				containerDetails, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				var sessionMount *container.MountPoint
+				for i := range containerDetails.Mounts {
+					if containerDetails.Mounts[i].Destination == "/run/devsy/secrets-env" {
+						sessionMount = &containerDetails.Mounts[i]
+						break
+					}
+				}
+				gomega.Expect(sessionMount).NotTo(gomega.BeNil())
+				gomega.Expect(sessionMount.Type).To(gomega.Equal(mount.TypeTmpfs))
+				mode, err := tc.f.DevsySSH(ctx, tempDir, "stat -c %a /run/devsy/secrets-env")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(mode)).To(gomega.Equal("700"))
+
+				_, err = tc.f.ExecCommandOutput(
+					ctx, []string{composeSecretCommand, "detach", secretName},
+				)
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(tc.f.DevsyUpRecreate(ctx, tempDir))
+				checkDetached := `case "$COMPOSE_SESSION_SECRET" in ` +
+					`sentinel-compose-secret) printf attached;; base-value) printf base;; ` +
+					`'') printf absent;; *) printf other;; esac`
+				out, err = tc.f.DevsySSH(ctx, tempDir, checkDetached)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("base"))
+
+				mountSentinelName := "COMPOSE_MOUNT_SENTINEL_VALUE"
+				_, err = tc.f.ExecCommandOutput(ctx, []string{
+					composeSecretCommand,
+					composeSecretSetCommand,
+					mountSentinelName,
+					composeSecretValueFlag,
+					"sentinel-compose-file-secret",
+				})
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_, _ = tc.f.ExecCommandOutput(
+						context.Background(),
+						[]string{
+							composeSecretCommand,
+							composeSecretDeleteCommand,
+							mountSentinelName,
+						},
+					)
+				})
+				framework.ExpectNoError(tc.f.DevsyUp(
+					ctx,
+					tempDir,
+					"--secret",
+					mountSentinelName+",type=mount,target=compose_file_secret",
+				))
+				containerDetails, err = tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(containerDetails.Mounts).To(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == composeFileSecretsDir && mount.Type == "tmpfs"
+					},
+				)))
+				out, err = tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					`if [ "$(cat /run/secrets/compose_file_secret)" = sentinel-compose-file-secret ]; `+
+						`then printf present; else printf absent; fi`,
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 
 		ginkgo.It("mounts", func(ctx context.Context) {
 			tempDir, workspace, err := tc.setupAndStartWorkspace(
@@ -52,11 +353,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -70,8 +367,8 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"touch /home/vscode/mnt1/foo.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectNoError(err)
@@ -84,17 +381,17 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"echo -n BAR > /home/vscode/mnt1/foo.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectNoError(err)
 
-			foo, err := tc.execSSH(ctx, tempDir, "cat $HOME/mnt1/foo.txt")
+			foo, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/mnt1/foo.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(foo)).To(gomega.Equal("BAR"))
 
-			bar, err := tc.execSSH(ctx, tempDir, "cat $HOME/mnt2/bar.txt")
+			bar, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/mnt2/bar.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(bar)).To(gomega.Equal("FOO"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -107,21 +404,17 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			seed, err := tc.execSSH(ctx, tempDir, "cat /home/vscode/mnt-ro/seed.txt")
+			seed, err := tc.f.DevsySSH(ctx, tempDir, "cat /home/vscode/mnt-ro/seed.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(seed)).To(gomega.Equal("SEED"))
 
-			opts, err := tc.execSSH(
+			opts, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"findmnt -n -T /home/vscode/mnt-ro -o OPTIONS",
@@ -141,8 +434,8 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"touch /home/vscode/mnt-ro/should-not-write.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectError(
@@ -150,7 +443,7 @@ var _ = ginkgo.Describe(
 				"writing to a readonly bind mount must fail",
 			)
 
-			fsType, err := tc.execSSH(
+			fsType, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"findmnt -n -T /home/vscode/scratch -o FSTYPE",
@@ -161,7 +454,7 @@ var _ = ginkgo.Describe(
 				"tmpfs mount should report fstype tmpfs",
 			)
 
-			tmpfsSize, err := tc.execSSH(
+			tmpfsSize, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"findmnt -n -T /home/vscode/scratch -o SIZE",
@@ -181,11 +474,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -195,6 +484,7 @@ var _ = ginkgo.Describe(
 
 			sshContext, sshCancel := context.WithCancel(context.Background())
 			go func() {
+				//nolint:gosec // e2e harness command by design
 				cmd := exec.CommandContext(
 					sshContext,
 					filepath.Join(tc.f.DevsyBinDir, tc.f.DevsyBinName),
@@ -247,11 +537,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -319,21 +605,297 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			vclusterVersionOutput, err := tc.execSSH(ctx, tempDir, "vcluster --version")
+			vclusterVersionOutput, err := tc.f.DevsySSH(ctx, tempDir, "vcluster --version")
 			framework.ExpectNoError(err)
 			gomega.Expect(vclusterVersionOutput).
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.It(
+			"overlay feature lifecycle survives SSH restarts without the overlay",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up-docker-compose/testdata/docker-compose-overlay-features",
+					tc.initialDir,
+					tc.f,
+				)
+				framework.ExpectNoError(err)
+				workspace, err := devsyUpAndFindWorkspace(
+					ctx, tc.f, tempDir,
+					"--devcontainer-overlay",
+					filepath.Join(tempDir, "overlay", "extra.json"),
+				)
+				framework.ExpectNoError(err)
+
+				for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
+					_, err = tc.f.DevsySSH(ctx, tempDir, "test -f /tmp/"+marker)
+					framework.ExpectNoError(err)
+				}
+
+				installedOption, err := tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"cat /tmp/overlay-feature-option",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(installedOption)).To(gomega.Equal("first"))
+				before, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				ginkgo.GinkgoWriter.Printf(
+					"creation container=%s image=%s\n",
+					before.ID,
+					before.Image,
+				)
+				overlayPath := filepath.Join(tempDir, "overlay", "extra.json")
+				// #nosec G304 -- overlayPath is inside the test-owned temporary workspace.
+				originalOverlay, err := os.ReadFile(overlayPath)
+				framework.ExpectNoError(err)
+				changedOverlay := `{
+  "features": {"./features/overlay-feature": {"marker": "second"}},
+  "initializeCommand": "touch feature-drift-initialize"
+}`
+				framework.ExpectNoError(os.WriteFile(overlayPath, []byte(changedOverlay), 0o600))
+				stdout, stderr, err := tc.f.ExecCommandCapture(ctx, []string{
+					"workspace",
+					"up",
+					tempDir,
+					"--ide",
+					"none",
+					"--devcontainer-overlay",
+					overlayPath,
+				})
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stdout + stderr).To(gomega.ContainSubstring("--recreate"))
+				_, err = os.Stat(filepath.Join(tempDir, "feature-drift-initialize"))
+				gomega.Expect(os.IsNotExist(err)).To(gomega.BeTrue())
+				framework.ExpectNoError(os.WriteFile(overlayPath, originalOverlay, 0o600))
+				framework.ExpectNoError(
+					tc.f.DevsyUp(ctx, tempDir, "--devcontainer-overlay", overlayPath),
+				)
+				framework.ExpectNoError(os.Remove(overlayPath))
+				for start := 1; start <= 2; start++ {
+					if start == 2 {
+						framework.ExpectNoError(tc.f.DevsyWorkspaceStop(ctx, tempDir))
+						composePath := filepath.Join(tempDir, "docker-compose.yaml")
+						// #nosec G304 -- composePath is inside the test-owned temporary workspace.
+						contents, err := os.ReadFile(composePath)
+						framework.ExpectNoError(err)
+						contents = []byte("name: renamed-after-creation\n" +
+							strings.ReplaceAll(string(contents), "sleep infinity", "sleep 600"),
+						)
+						framework.ExpectNoError(os.WriteFile(composePath, contents, 0o600))
+					}
+					for _, name := range []string{"base", "overlay", "runtime-overlay"} {
+						count, err := tc.f.DevsySSH(ctx, tempDir, "wc -l < /tmp/"+name+"-starts")
+						framework.ExpectNoError(err)
+						gomega.Expect(strings.TrimSpace(count)).To(gomega.Equal(fmt.Sprint(start)))
+					}
+					after, err := tc.getAppContainer(ctx, workspace)
+					framework.ExpectNoError(err)
+					gomega.Expect(after.ID).To(gomega.Equal(before.ID))
+					gomega.Expect(after.Image).To(gomega.Equal(before.Image))
+					gomega.Expect(after.Config.Labels[pkgconfig.DevcontainerMetadataLabel]).
+						To(gomega.Equal(before.Config.Labels[pkgconfig.DevcontainerMetadataLabel]))
+				}
+				tc.verifyMissingComposeOverride(ctx, tempDir, before)
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
+			"structural overlay service changes require recreate and preserve cleanup",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up-docker-compose/testdata/docker-compose-structural-overlay",
+					tc.initialDir,
+					tc.f,
+				)
+				framework.ExpectNoError(err)
+				overlayPath := filepath.Join(tempDir, "overlay", "extra.json")
+				workspace, err := devsyUpAndFindWorkspace(
+					ctx, tc.f, tempDir,
+					"--devcontainer-overlay", overlayPath,
+				)
+				framework.ExpectNoError(err)
+				//nolint:gosec // G304: path is inside the test-owned temporary workspace.
+				hostInitMarker, err := os.ReadFile(filepath.Join(tempDir, "overlay-init-marker"))
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(string(hostInitMarker))).
+					To(gomega.Equal("overlay-init-ran"))
+				expectedWorkspaceMountSource, err := filepath.EvalSymlinks(tempDir)
+				framework.ExpectNoError(err)
+				appIDs, err := tc.findComposeContainer(ctx, workspace.UID, "app")
+				framework.ExpectNoError(err)
+				app, err := tc.inspectContainer(ctx, appIDs)
+				framework.ExpectNoError(err)
+				workspaceMountSource := ""
+				for _, containerMount := range app.Mounts {
+					if containerMount.Destination == "/workspaces" {
+						workspaceMountSource, err = filepath.EvalSymlinks(containerMount.Source)
+						framework.ExpectNoError(err)
+						break
+					}
+				}
+				gomega.Expect(workspaceMountSource).To(gomega.Equal(expectedWorkspaceMountSource))
+
+				initMarker, err := tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"cat /workspaces/overlay-init-marker",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(initMarker)).To(gomega.Equal("overlay-init-ran"))
+				sidecarMarker, err := tc.f.DevsySSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(sidecarMarker)).To(gomega.Equal("sidecar-started"))
+
+				sidecarIDs, err := tc.findComposeContainer(ctx, workspace.UID, "sidecar")
+				framework.ExpectNoError(err)
+				gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
+				sidecar, err := tc.inspectContainer(ctx, sidecarIDs)
+				framework.ExpectNoError(err)
+				gomega.Expect(sidecar.State.Running).To(gomega.BeTrue())
+
+				//nolint:gosec // G304: fixture path is inside the test-owned temporary workspace.
+				contents, err := os.ReadFile(overlayPath)
+				framework.ExpectNoError(err)
+				alternateConfig := strings.Replace(
+					string(contents), `"service": "app"`, `"service": "alternate"`, 1,
+				)
+				gomega.Expect(alternateConfig).NotTo(gomega.Equal(string(contents)))
+				framework.ExpectNoError(os.WriteFile(overlayPath, []byte(alternateConfig), 0o600))
+				stdout, stderr, err := tc.f.DevsyUpStreams(
+					ctx, tempDir, "--devcontainer-overlay", overlayPath,
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stdout + "\n" + stderr).To(gomega.ContainSubstring("--recreate"))
+
+				// A rejected config change must leave the selected app and sidecar running.
+				initMarker, err = tc.f.DevsySSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(initMarker)).To(gomega.Equal("overlay-init-ran"))
+				appIDs, err = tc.findComposeContainer(ctx, workspace.UID, "app")
+				framework.ExpectNoError(err)
+				gomega.Expect(appIDs).To(gomega.HaveLen(1))
+				alternateIDs, err := tc.findComposeContainer(ctx, workspace.UID, "alternate")
+				framework.ExpectNoError(err)
+				gomega.Expect(alternateIDs).To(gomega.BeEmpty())
+
+				err = tc.f.DevsyUp(
+					ctx,
+					tempDir,
+					"--recreate",
+					"--devcontainer-overlay",
+					overlayPath,
+				)
+				framework.ExpectNoError(err)
+				appIDs, err = tc.findComposeContainer(ctx, workspace.UID, "app")
+				framework.ExpectNoError(err)
+				gomega.Expect(appIDs).To(gomega.BeEmpty())
+				alternateIDs, err = tc.findComposeContainer(ctx, workspace.UID, "alternate")
+				framework.ExpectNoError(err)
+				gomega.Expect(alternateIDs).To(gomega.HaveLen(1))
+				alternate, err := tc.inspectContainer(ctx, alternateIDs)
+				framework.ExpectNoError(err)
+				gomega.Expect(alternate.State.Running).To(gomega.BeTrue())
+				alternateMarker, err := tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"cat /workspaces/alternate-marker",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(alternateMarker)).
+					To(gomega.Equal("alternate-started"))
+				sidecarIDs, err = tc.findComposeContainer(ctx, workspace.UID, "sidecar")
+				framework.ExpectNoError(err)
+				gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
+				sidecarMarker, err = tc.f.DevsySSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(sidecarMarker)).To(gomega.Equal("sidecar-started"))
+
+				composePath := filepath.Join(tempDir, "overlay", "docker-compose.yaml")
+				replacementPath := filepath.Join(
+					tempDir, "overlay", "docker-compose-replacement.yaml",
+				)
+				//nolint:gosec // G304: fixture path is inside the test-owned temporary workspace.
+				composeContents, err := os.ReadFile(composePath)
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(os.WriteFile(replacementPath, composeContents, 0o600))
+				replacementConfig := strings.Replace(
+					alternateConfig,
+					`"dockerComposeFile": "docker-compose.yaml"`,
+					`"dockerComposeFile": ["docker-compose-replacement.yaml"]`,
+					1,
+				)
+				gomega.Expect(replacementConfig).NotTo(gomega.Equal(alternateConfig))
+				framework.ExpectNoError(os.WriteFile(overlayPath, []byte(replacementConfig), 0o600))
+				stdout, stderr, err = tc.f.DevsyUpStreams(
+					ctx, tempDir, "--devcontainer-overlay", overlayPath,
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stdout + "\n" + stderr).To(gomega.ContainSubstring("--recreate"))
+
+				err = tc.f.DevsyUp(
+					ctx,
+					tempDir,
+					"--recreate",
+					"--devcontainer-overlay",
+					overlayPath,
+				)
+				framework.ExpectNoError(err)
+				alternateIDs, err = tc.findComposeContainer(ctx, workspace.UID, "alternate")
+				framework.ExpectNoError(err)
+				gomega.Expect(alternateIDs).To(gomega.HaveLen(1))
+				alternate, err = tc.inspectContainer(ctx, alternateIDs)
+				framework.ExpectNoError(err)
+				invocation := alternate.Config.Labels["devsy.compose.invocation"]
+				gomega.Expect(invocation).
+					To(gomega.ContainSubstring("docker-compose-replacement.yaml"))
+				gomega.Expect(invocation).NotTo(gomega.ContainSubstring(composePath))
+
+				framework.ExpectNoError(os.Remove(overlayPath))
+				missingStdout, missingStderr, err := tc.f.DevsyUpStreams(
+					ctx,
+					tempDir,
+					"--recreate",
+					"--devcontainer-overlay",
+					overlayPath,
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(missingStdout + "\n" + missingStderr).
+					To(gomega.ContainSubstring("overlay"))
+
+				framework.ExpectNoError(os.WriteFile(overlayPath, []byte("{"), 0o600))
+				corruptStdout, corruptStderr, err := tc.f.DevsyUpStreams(
+					ctx,
+					tempDir,
+					"--recreate",
+					"--devcontainer-overlay",
+					overlayPath,
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(corruptStdout + "\n" + corruptStderr).
+					To(gomega.ContainSubstring("overlay"))
+
+				// Leave the malformed overlay in place so deferred workspace cleanup
+				// exercises the invocation recorded at successful creation.
+				alternateMarker, err = tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"cat /workspaces/alternate-marker",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(alternateMarker)).
+					To(gomega.Equal("alternate-started"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 
 		// Regression guard: a build-backed service with an explicit build.target
 		// and features must honor the real Dockerfile. Previously the Dockerfile
@@ -348,11 +910,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -360,17 +918,23 @@ var _ = ginkgo.Describe(
 
 			// The "dev" stage overwrites the marker, so seeing "dev-stage"
 			// proves the real multi-stage Dockerfile (and its target) was built.
-			stageMarker, err := tc.execSSH(ctx, tempDir, "cat /stage-marker.txt")
+			stageMarker, err := tc.f.DevsySSH(ctx, tempDir, "cat /stage-marker.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(stageMarker)).
 				To(gomega.Equal("dev-stage"), "the requested build target stage should be used")
 
 			// The feature must still be installed on top of the targeted stage.
-			vclusterVersionOutput, err := tc.execSSH(ctx, tempDir, "vcluster --version")
+			vclusterVersionOutput, err := tc.f.DevsySSH(ctx, tempDir, "vcluster --version")
 			framework.ExpectNoError(err)
 			gomega.Expect(vclusterVersionOutput).
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.It(
+			"uses the requested platform when multiple image variants are cached",
+			func(ctx context.Context) { tc.verifyCachedImagePlatforms(ctx) },
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 
 		ginkgo.It(
 			"does not retag shared image when applying features to image backed services",
@@ -381,15 +945,11 @@ var _ = ginkgo.Describe(
 					sharedImage = "devsy-e2e-compose-shared-base:latest"
 				)
 				const (
-					projectAPath = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-a"
-					projectBPath = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-b"
+					projectAPath   = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-a"
+					projectBPath   = "tests/up-docker-compose/testdata/docker-compose-features-shared-image-b"
+					projectAMarker = "/usr/local/share/devsy-e2e-project-a"
+					projectBMarker = "/usr/local/share/devsy-e2e-project-b"
 				)
-				commandPresenceCheck := func(command string) string {
-					return fmt.Sprintf(
-						"if command -v %s >/dev/null 2>&1; then echo present; else echo missing; fi",
-						command,
-					)
-				}
 
 				ginkgo.By("resetting the shared base image tag")
 				err := tc.resetTaggedImage(ctx, sourceImage, sharedImage)
@@ -413,16 +973,15 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				ghVersionOutput, err := tc.execSSH(ctx, tempDirA, "gh --version")
+				markerA, err := tc.f.DevsySSH(ctx, tempDirA, "cat "+projectAMarker)
 				framework.ExpectNoError(err)
-				gomega.Expect(ghVersionOutput).To(gomega.ContainSubstring("gh version"))
+				gomega.Expect(strings.TrimSpace(markerA)).To(gomega.Equal("project-a"))
 
 				imageIDAfterA, err := tc.inspectImageID(ctx, sharedImage)
 				framework.ExpectNoError(err)
 				gomega.Expect(imageIDAfterA).
 					To(gomega.Equal(initialImageID), "shared image tag should stay unchanged after project A")
 
-				var hostGhOut bytes.Buffer
 				err = tc.dockerHelper.Run(
 					ctx,
 					[]string{
@@ -430,14 +989,13 @@ var _ = ginkgo.Describe(
 						"--rm",
 						sharedImage,
 						"sh",
-						"-lc",
-						commandPresenceCheck("gh"),
+						"-c",
+						"test ! -e " + projectAMarker,
 					},
-					docker.Streams{Stdout: &hostGhOut, Stderr: io.Discard},
+					docker.Streams{Stdout: io.Discard, Stderr: io.Discard},
 				)
-				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(hostGhOut.String())).
-					To(gomega.Equal("missing"), "shared image should not gain gh")
+				gomega.Expect(err).
+					NotTo(gomega.HaveOccurred(), "shared image should not gain project A's marker")
 
 				ginkgo.By("starting project B")
 				tempDirB, _, err := tc.setupAndStartWorkspace(
@@ -447,33 +1005,22 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				nodeVersionOutput, err := tc.execSSH(ctx, tempDirB, "node --version")
+				markerB, err := tc.f.DevsySSH(ctx, tempDirB, "cat "+projectBMarker)
 				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(nodeVersionOutput)).
-					To(gomega.MatchRegexp(`^v\d+\.`))
+				gomega.Expect(strings.TrimSpace(markerB)).To(gomega.Equal("project-b"))
 
-				ghLookupOutput, err := tc.execSSH(
-					ctx,
-					tempDirB,
-					fmt.Sprintf("sh -lc %q", commandPresenceCheck("gh")),
-				)
-				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(ghLookupOutput)).
-					To(gomega.Equal("missing"), "project B should not inherit project A's github-cli feature")
+				_, err = tc.f.DevsySSH(ctx, tempDirB, "test ! -e "+projectAMarker)
+				gomega.Expect(err).
+					NotTo(gomega.HaveOccurred(), "project B should not inherit project A's marker")
 
 				imageIDAfterB, err := tc.inspectImageID(ctx, sharedImage)
 				framework.ExpectNoError(err)
 				gomega.Expect(imageIDAfterB).
 					To(gomega.Equal(initialImageID), "shared image tag should stay unchanged after project B")
 
-				nodeLookupOutput, err := tc.execSSH(
-					ctx,
-					tempDirA,
-					fmt.Sprintf("sh -lc %q", commandPresenceCheck("node")),
-				)
-				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(nodeLookupOutput)).
-					To(gomega.Equal("missing"), "project A should not inherit project B's node feature")
+				_, err = tc.f.DevsySSH(ctx, tempDirA, "test ! -e "+projectBMarker)
+				gomega.Expect(err).
+					NotTo(gomega.HaveOccurred(), "project A should not inherit project B's marker")
 			},
 			ginkgo.SpecTimeout(framework.TimeoutVeryLong()),
 		)
@@ -503,15 +1050,16 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
+			//nolint:gosec // test output file inside the temp directory
 			initializeCommand, err := os.ReadFile(filepath.Join(tempDir, "initialize-command.out"))
 			framework.ExpectNoError(err)
 			gomega.Expect(initializeCommand).To(gomega.ContainSubstring("initializeCommand"))
 
-			onCreateCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/on-create-command.out")
+			onCreateCommand, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/on-create-command.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(onCreateCommand).To(gomega.ContainSubstring("onCreateCommand"))
 
-			updateContentCommand, err := tc.execSSH(
+			updateContentCommand, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/update-content-command.out",
@@ -519,15 +1067,23 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(updateContentCommand).To(gomega.Equal("updateContentCommand"))
 
-			postCreateCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/post-create-command.out")
+			postCreateCommand, err := tc.f.DevsySSH(
+				ctx,
+				tempDir,
+				"cat $HOME/post-create-command.out",
+			)
 			framework.ExpectNoError(err)
 			gomega.Expect(postCreateCommand).To(gomega.Equal("postCreateCommand"))
 
-			postStartCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/post-start-command.out")
+			postStartCommand, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/post-start-command.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(postStartCommand).To(gomega.Equal("postStartCommand"))
 
-			postAttachCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/post-attach-command.out")
+			postAttachCommand, err := tc.f.DevsySSH(
+				ctx,
+				tempDir,
+				"cat $HOME/post-attach-command.out",
+			)
 			framework.ExpectNoError(err)
 			gomega.Expect(postAttachCommand).To(gomega.Equal("postAttachCommand"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -557,11 +1113,11 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			parallelA, err := tc.execSSH(ctx, tempDir, "cat $HOME/parallel-a.out")
+			parallelA, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/parallel-a.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(parallelA).To(gomega.Equal("parallelA"))
 
-			parallelB, err := tc.execSSH(ctx, tempDir, "cat $HOME/parallel-b.out")
+			parallelB, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/parallel-b.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(parallelB).To(gomega.Equal("parallelB"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -591,7 +1147,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			quotedTest, err := tc.execSSH(ctx, tempDir, "cat $HOME/quoted-test.out")
+			quotedTest, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/quoted-test.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(quotedTest).To(gomega.Equal("quoted value"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -604,24 +1160,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(ctx, tc.dockerHelper, tc.composeHelper, ws.UID, "app")
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
-
-			var containerDetails []container.InspectResponse
-			err = tc.dockerHelper.Inspect(ctx, ids, "container", &containerDetails)
-			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
-
-		ginkgo.It("v1 fallback", func(ctx context.Context) {
-			_, ws, err := tc.setupAndStartWorkspace(
-				ctx,
-				"tests/up-docker-compose/testdata/docker-compose-v1-fallback",
-				"--debug",
-			)
-			framework.ExpectNoError(err)
-
-			ids, err := findComposeContainer(ctx, tc.dockerHelper, tc.composeHelper, ws.UID, "app")
+			ids, err := tc.findComposeContainer(ctx, ws.UID, "app")
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
@@ -637,21 +1176,13 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			appIDs, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			appIDs, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(appIDs).To(gomega.HaveLen(1), "app container to be created")
 
-			dbIDs, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			dbIDs, err := tc.findComposeContainer(ctx, workspace.UID,
 				"db",
 			)
 			framework.ExpectNoError(err)
@@ -665,21 +1196,13 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			appIDs, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			appIDs, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(appIDs).To(gomega.HaveLen(1), "app container to be created")
 
-			dbIDs, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			dbIDs, err := tc.findComposeContainer(ctx, workspace.UID,
 				"db",
 			)
 			framework.ExpectNoError(err)
@@ -715,17 +1238,13 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			buildArgs, err := tc.execSSH(ctx, tempDir, "cat /build-args.txt")
+			buildArgs, err := tc.f.DevsySSH(ctx, tempDir, "cat /build-args.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(buildArgs)).
 				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))
@@ -739,17 +1258,13 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			ids, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			buildArgs, err := tc.execSSH(ctx, tempDir, "cat /build-args.txt")
+			buildArgs, err := tc.f.DevsySSH(ctx, tempDir, "cat /build-args.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(buildArgs)).
 				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))

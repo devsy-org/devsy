@@ -2,10 +2,14 @@ package sshtunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/tunnel"
@@ -13,6 +17,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 )
+
+func TestExecuteSSHServerHelperPreservesStartupSilenceError(t *testing.T) {
+	opts := ExecuteCommandOptions{
+		SSHCommand: "ssh-server --stdio",
+		AgentInject: func(context.Context, string, io.Reader, io.Writer, io.WriteCloser) error {
+			return &agent.ExecStartupSilenceError{}
+		},
+	}
+
+	err := executeSSHServerHelper(context.Background(), opts, nil, io.Discard)
+	var silenceErr *agent.ExecStartupSilenceError
+	require.True(t, errors.As(err, &silenceErr))
+}
 
 func TestLogLine_JSONPassthrough(t *testing.T) {
 	tests := []struct {
@@ -205,9 +222,32 @@ func TestExecuteCommand_PipeBridgeIntegration(t *testing.T) {
 			},
 		})
 
-		// Context cancellation is an expected error — RunPair classifies it
+		// Context cancellation is an expected error - RunPair classifies it
 		// and may return nil or a wrapped error. Either way, no hang.
 		_ = err
+	})
+
+	t.Run("returns only after the helper command finishes", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var finished atomic.Bool
+
+		_, _ = ExecuteCommand(ctx, ExecuteCommandOptions{
+			AgentInject: func(ctx context.Context, _ string, _ io.Reader, _ io.Writer, _ io.WriteCloser) error {
+				cancel()
+				<-ctx.Done()
+				time.Sleep(300 * time.Millisecond)
+				finished.Store(true)
+				return ctx.Err()
+			},
+			SSHCommand: "slow-ssh",
+			Command:    "slow-cmd",
+			TunnelServerFunc: func(_ context.Context, _ io.WriteCloser, _ io.Reader) (*config2.Result, error) {
+				return nil, nil
+			},
+		})
+
+		assert.True(t, finished.Load())
 	})
 }
 

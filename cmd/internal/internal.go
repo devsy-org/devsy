@@ -15,6 +15,10 @@ func NewInternalCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Hidden: true,
 	}
 	cmd.AddCommand(NewAgentCmd(globalFlags))
+	cmd.AddCommand(NewRuntimeSupervisorCmd())
+	cmd.AddCommand(NewProviderShellCmd())
+	cmd.AddCommand(NewGHCmd())
+	cmd.AddCommand(NewGHBackendCmd())
 	cmd.AddCommand(NewDaemonLocalCmd(globalFlags))
 	cmd.AddCommand(NewLogsDaemonCmd(globalFlags))
 	cmd.AddCommand(NewRunUserCommandsCmd(globalFlags))
@@ -47,6 +51,7 @@ func NewInternalCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd.AddCommand(withPreRun(NewGetImagePlatformsCmd(globalFlags)))
 	cmd.AddCommand(withPreRun(NewBrowserTunnelCmd(globalFlags)))
 	cmd.AddCommand(withPreRun(NewWidenSharedFileCmd(globalFlags)))
+	cmd.AddCommand(withPreRun(NewInstallGHWrapperCmd()))
 
 	return cmd
 }

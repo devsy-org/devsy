@@ -27,16 +27,23 @@ const (
 )
 
 type localStore struct {
-	backend   backend
-	indexPath string
-	now       func() time.Time
-
-	// keySource is empty for the keyring backend; checked against the index so a
-	// key-source change is a clear error rather than a decryption failure.
-	keySource keySource
+	preference Backend
+	backends   backendRegistry
+	indexPath  string
+	now        func() time.Time
+	keySource  keySource
+	saveIndex  func(*index) error
 }
 
-func NewStoreForConfig(devsyConfig *config.Config) (Store, error) {
+type StoreOptions struct {
+	UnlockResolver UnlockMaterialResolver
+	AllowPrompt    bool
+}
+
+// NewStoreForConfig creates the legacy mixed store.
+//
+// Deprecated: use NewSecretStoreForConfig or envstore.NewStoreForConfig.
+func NewStoreForConfig(devsyConfig *config.Config, options ...StoreOptions) (Store, error) {
 	configPath, err := config.GetConfigPath()
 	if err != nil {
 		return nil, err
@@ -44,18 +51,11 @@ func NewStoreForConfig(devsyConfig *config.Config) (Store, error) {
 	dir := filepath.Dir(configPath)
 	indexPath := filepath.Join(dir, IndexFileName)
 
-	switch resolveBackend(devsyConfig) {
-	case BackendKeyring:
-		return newLocalStore(keyringBackend{}, indexPath), nil
-	case BackendFile:
-		return newFileStore(dir, indexPath)
-	default:
-		if keyringAvailable() {
-			return newLocalStore(keyringBackend{}, indexPath), nil
-		}
-
-		return newFileStore(dir, indexPath)
+	registry := newSystemBackendRegistry(dir, storeResolver(options)).(*systemBackendRegistry)
+	if len(options) > 0 {
+		registry.allowPrompt = options[0].AllowPrompt
 	}
+	return newLocalStoreWithRegistry(resolveBackend(devsyConfig), indexPath, registry), nil
 }
 
 func resolveBackend(devsyConfig *config.Config) Backend {
@@ -81,21 +81,22 @@ func normalizeBackend(value string) Backend {
 	}
 }
 
-func newFileStore(dir, indexPath string) (Store, error) {
-	key, err := resolveFileKey(dir, os.Getenv(EnvPassphrase))
-	if err != nil {
-		return nil, err
-	}
-
-	fb := newFileBackend(filepath.Join(dir, EncryptedFileName), key)
-	s := newLocalStore(fb, indexPath)
-	s.keySource = key.source
-
-	return s, nil
+func newLocalStore(b backend, indexPath string) *localStore {
+	return newLocalStoreWithRegistry(BackendKeyring, indexPath, fixedBackendRegistry{b: b})
 }
 
-func newLocalStore(b backend, indexPath string) *localStore {
-	return &localStore{backend: b, indexPath: indexPath, now: time.Now}
+func newLocalStoreWithRegistry(
+	preference Backend,
+	indexPath string,
+	backends backendRegistry,
+) *localStore {
+	return &localStore{
+		preference: preference,
+		backends:   backends,
+		indexPath:  indexPath,
+		now:        time.Now,
+		saveIndex:  func(idx *index) error { return idx.save() },
+	}
 }
 
 func (s *localStore) Set(context, name, value string, kind Kind) error {
@@ -113,6 +114,7 @@ func (s *localStore) Set(context, name, value string, kind Kind) error {
 	if err != nil {
 		return err
 	}
+	s.repairLegacyOwnership(idx)
 
 	meta, exists := idx.get(context, name)
 	if !exists {
@@ -127,6 +129,8 @@ func (s *localStore) Set(context, name, value string, kind Kind) error {
 	}
 	if meta.Sensitive() {
 		meta.Value = ""
+	} else {
+		meta.Backend = ""
 	}
 
 	idx.put(meta)
@@ -138,7 +142,13 @@ func (s *localStore) Get(context, name string) (string, error) {
 		return "", err
 	}
 
-	idx, err := loadIndex(s.indexPath)
+	unlock, err := s.lock()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+
+	idx, err := s.loadValueIndex()
 	if err != nil {
 		return "", err
 	}
@@ -148,19 +158,14 @@ func (s *localStore) Get(context, name string) (string, error) {
 		return "", ErrSecretNotFound
 	}
 
-	var value string
-	if meta.Sensitive() {
-		if err := s.checkKeySource(idx); err != nil {
-			return "", err
-		}
-		if value, err = s.backend.get(backendKey(context, name)); err != nil {
-			return "", err
-		}
-	} else {
-		value = meta.Value
+	value, err := s.getValue(idx, meta)
+	if err != nil {
+		return "", err
 	}
 
-	s.touchLastUsed(context, name)
+	meta.LastUsed = s.now().UTC()
+	idx.put(meta)
+	_ = s.saveIndex(idx)
 
 	return value, nil
 }
@@ -180,18 +185,117 @@ func (s *localStore) Delete(context, name string) error {
 	if err != nil {
 		return err
 	}
+	s.repairLegacyOwnership(idx)
+	return deleteIndexEntry(s, idx, context, name)
+}
 
-	if meta, ok := idx.get(context, name); ok && meta.Sensitive() {
-		if err := s.checkKeySource(idx); err != nil {
-			return err
+func deleteIndexEntry(s *localStore, idx *index, context, name string) error {
+	meta, exists := idx.get(context, name)
+	if !exists {
+		return nil
+	}
+	if !meta.Sensitive() {
+		idx.remove(context, name)
+		return s.saveIndex(idx)
+	}
+	return deleteSecretEntry(s, idx, meta)
+}
+
+func deleteSecretEntry(s *localStore, idx *index, meta SecretMeta) error {
+	context := meta.Context
+	name := meta.Name
+	snapshots, err := snapshotSecretValues(s, idx, meta)
+	if err != nil {
+		return err
+	}
+	if err := removeSnapshots(snapshots); err != nil {
+		return compensateDelete(context, name, err, snapshots)
+	}
+
+	idx.remove(context, name)
+	if err := s.saveIndex(idx); err != nil {
+		return compensateDelete(context, name, err, snapshots)
+	}
+
+	return nil
+}
+
+func compensateDelete(context, name string, cause error, snapshots []backendValueSnapshot) error {
+	if rollbackErr := restoreSnapshots(snapshots); rollbackErr != nil {
+		return &MutationError{
+			Operation: "delete",
+			Context:   context,
+			Name:      name,
+			Cause:     cause,
+			Rollback:  rollbackErr,
 		}
-		if err := s.backend.remove(backendKey(context, name)); err != nil {
+	}
+	return cause
+}
+
+type backendValueSnapshot struct {
+	backend backend
+	key     string
+	value   string
+}
+
+func snapshotSecretValues(
+	s *localStore,
+	idx *index,
+	meta SecretMeta,
+) ([]backendValueSnapshot, error) {
+	key := backendKey(meta.Context, meta.Name)
+	kinds, err := deletionBackendKinds(s, idx, meta, key)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]backendValueSnapshot, 0, len(kinds))
+	for _, kind := range kinds {
+		b, err := s.backends.Open(kind, idx, BackendOpenExisting)
+		if err != nil {
+			return nil, err
+		}
+		value, err := b.get(key)
+		if errors.Is(err, ErrSecretNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, backendValueSnapshot{backend: b, key: key, value: value})
+	}
+	return snapshots, nil
+}
+
+func deletionBackendKinds(
+	s *localStore,
+	idx *index,
+	meta SecretMeta,
+	key string,
+) ([]Backend, error) {
+	if meta.Backend != "" {
+		return []Backend{meta.Backend}, nil
+	}
+	return s.probeDeletionBackends(idx, key)
+}
+
+func removeSnapshots(snapshots []backendValueSnapshot) error {
+	for _, snapshot := range snapshots {
+		if err := snapshot.backend.remove(snapshot.key); err != nil {
 			return err
 		}
 	}
-	idx.remove(context, name)
+	return nil
+}
 
-	return idx.save()
+func restoreSnapshots(snapshots []backendValueSnapshot) error {
+	var rollbackErr error
+	for _, snapshot := range snapshots {
+		if err := snapshot.backend.set(snapshot.key, snapshot.value); err != nil {
+			rollbackErr = errors.Join(rollbackErr, err)
+		}
+	}
+	return rollbackErr
 }
 
 func (s *localStore) Meta(context, name string) (SecretMeta, error) {
@@ -204,124 +308,241 @@ func (s *localStore) Meta(context, name string) (SecretMeta, error) {
 		return SecretMeta{}, ErrSecretNotFound
 	}
 	meta.Value = ""
-
 	return meta, nil
 }
 
-// List returns the context's entries, flagging any sensitive entry whose backend
-// value is missing (orphaned).
+// List retains the compatibility inspection behavior, but backend failures are
+// represented on entries and never hide the readable catalog.
 func (s *localStore) List(context string) ([]SecretMeta, error) {
-	idx, err := loadIndex(s.indexPath)
+	inspected, err := s.Inspect(context)
 	if err != nil {
 		return nil, err
 	}
-
-	entries := idx.list(context)
-	if !anySensitive(entries) {
-		return entries, nil
+	entries := make([]SecretMeta, 0, len(inspected))
+	for _, entry := range inspected {
+		meta := entry.Meta
+		meta.Orphaned = entry.Availability == SecretMissing ||
+			entry.Availability == SecretStateUnknown
+		entries = append(entries, meta)
 	}
-	if err := s.checkKeySource(idx); err != nil {
-		return nil, err
-	}
-
-	for i := range entries {
-		if !entries[i].Sensitive() {
-			continue
-		}
-		orphaned, err := s.isOrphaned(context, entries[i].Name)
-		if err != nil {
-			return nil, err
-		}
-		entries[i].Orphaned = orphaned
-	}
-
 	return entries, nil
 }
 
 // lock serializes store read-modify-write. NOT reentrant: a lock-holding method
 // must never call another locking method (see acquireFlock).
 func (s *localStore) lock() (func(), error) {
-	return acquireFlock(filepath.Dir(s.indexPath), IndexFileName+".lock")
-}
-
-func (s *localStore) touchLastUsed(context, name string) {
-	unlock, err := s.lock()
+	dir := filepath.Dir(s.indexPath)
+	unlock, err := acquireFlock(dir, IndexFileName+".lock")
 	if err != nil {
-		return
+		return nil, err
 	}
-	defer unlock()
-
-	idx, err := loadIndex(s.indexPath)
-	if err != nil {
-		return
+	if err := RecoverRekey(dir); err != nil {
+		unlock()
+		return nil, err
 	}
-	meta, ok := idx.get(context, name)
-	if !ok {
-		return
-	}
-	meta.LastUsed = s.now().UTC()
-	idx.put(meta)
-	_ = idx.save()
-}
-
-func anySensitive(entries []SecretMeta) bool {
-	for i := range entries {
-		if entries[i].Sensitive() {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *localStore) isOrphaned(context, name string) (bool, error) {
-	_, err := s.backend.get(backendKey(context, name))
-	switch {
-	case err == nil:
-		return false, nil
-	case errors.Is(err, ErrSecretNotFound):
-		return true, nil
-	default:
-		return false, fmt.Errorf("reconcile secret %q: %w", name, err)
-	}
+	return unlock, nil
 }
 
 func (s *localStore) persistValue(
 	idx *index, meta *SecretMeta, value string, wasSensitive bool,
 ) error {
-	key := backendKey(meta.Context, meta.Name)
-	if meta.Sensitive() || wasSensitive {
-		if err := s.checkKeySource(idx); err != nil {
-			return err
-		}
-	}
 	if meta.Sensitive() {
-		if err := s.backend.set(key, value); err != nil {
-			return err
-		}
-		if s.keySource != "" {
-			idx.data.KeySource = string(s.keySource)
-		}
-		return nil
+		return s.persistSensitive(idx, meta, value, !wasSensitive)
 	}
 	if wasSensitive {
-		return s.backend.remove(key)
+		return s.removeSensitive(idx, meta)
 	}
 	return nil
 }
 
-// checkKeySource rejects a key-source change with a clear error instead of a
-// downstream decryption failure.
+func (s *localStore) persistSensitive(
+	idx *index, meta *SecretMeta, value string, create bool,
+) error {
+	if err := s.checkKeySource(idx); err != nil {
+		return err
+	}
+	if meta.Backend == "" {
+		resolved, err := s.backends.ResolveForNewSecret(s.preference, idx)
+		if err != nil {
+			return err
+		}
+		meta.Backend = resolved
+		create = true
+	}
+	intent := BackendOpenExisting
+	if create {
+		intent = BackendInitializeNew
+	}
+	b, err := s.backends.Open(meta.Backend, idx, intent)
+	if err != nil {
+		return err
+	}
+	if err := b.set(backendKey(meta.Context, meta.Name), value); err != nil {
+		return err
+	}
+	if s.keySource != "" {
+		idx.data.KeySource = string(s.keySource)
+	}
+	return nil
+}
+
+func (s *localStore) removeSensitive(idx *index, meta *SecretMeta) error {
+	if err := s.checkKeySource(idx); err != nil {
+		return err
+	}
+	if meta.Backend == "" {
+		return s.removeFromProbeableBackends(idx, backendKey(meta.Context, meta.Name))
+	}
+	b, err := s.backends.Open(meta.Backend, idx, BackendOpenExisting)
+	if err != nil {
+		return err
+	}
+	return b.remove(backendKey(meta.Context, meta.Name))
+}
+
 func (s *localStore) checkKeySource(idx *index) error {
-	if s.keySource == "" || idx.data.KeySource == "" {
+	if s.keySource == "" || idx.data.KeySource == "" || idx.data.KeySource == string(s.keySource) {
 		return nil
 	}
-	if idx.data.KeySource != string(s.keySource) {
-		return fmt.Errorf(
-			"secrets were encrypted with the %q key source but the current source is %q; "+
-				"restore the original DEVSY_SECRETS_PASSPHRASE (or unset it) or re-create the secrets",
-			idx.data.KeySource, s.keySource,
-		)
-	}
+	return fmt.Errorf(
+		"secrets were encrypted with the %q key source but the current source is %q; "+
+			"restore the original DEVSY_SECRETS_PASSPHRASE (or unset it) or re-create the secrets",
+		idx.data.KeySource,
+		s.keySource,
+	)
+}
 
+func (s *localStore) repairLegacyOwnership(idx *index) bool {
+	repaired := false
+	for context, entries := range idx.data.Contexts {
+		for name, meta := range entries {
+			if !meta.Sensitive() || meta.Backend != "" {
+				continue
+			}
+			owner, proven := s.provenOwner(idx, backendKey(context, name))
+			if !proven {
+				continue
+			}
+			meta.Backend = owner
+			entries[name] = meta
+			if owner == BackendFile && idx.data.KeySource == "" {
+				idx.data.KeySource = string(keySourcePassphrase)
+			}
+			repaired = true
+		}
+	}
+	return repaired
+}
+
+func (s *localStore) provenOwner(idx *index, key string) (Backend, bool) {
+	var found []Backend
+	for _, kind := range []Backend{BackendKeyring, BackendFile} {
+		present, conclusive := s.backends.Probe(kind, idx, key)
+		if !conclusive {
+			return "", false
+		}
+		if present {
+			found = append(found, kind)
+		}
+	}
+	if len(found) != 1 {
+		return "", false
+	}
+	return found[0], true
+}
+
+func (s *localStore) probeDeletionBackends(idx *index, key string) ([]Backend, error) {
+	var kinds []Backend
+	for _, kind := range []Backend{BackendKeyring, BackendFile} {
+		present, conclusive := s.backends.Probe(kind, idx, key)
+		if !conclusive {
+			return nil, fmt.Errorf(
+				"cannot safely delete unowned secret because secrets backend %q could not be probed; "+
+					"restore access to that backend or set the secret again",
+				kind,
+			)
+		}
+		if present {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds, nil
+}
+
+func (s *localStore) removeFromProbeableBackends(idx *index, key string) error {
+	present, err := s.probeDeletionBackends(idx, key)
+	if err != nil {
+		return err
+	}
+	for _, kind := range present {
+		b, err := s.backends.Open(kind, idx, BackendOpenExisting)
+		if err != nil {
+			return err
+		}
+		if err := b.remove(key); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func unownedSecretError(context, name string) error {
+	return fmt.Errorf(
+		"secret %s/%s has no proven owning backend and its value could not be "+
+			"located; set it again with `devsy secret set %s`; if you intend to "+
+			"delete it, first ensure all secret backends are available, then run "+
+			"`devsy secret delete %s`",
+		context,
+		name,
+		name,
+		name,
+	)
+}
+
+func storeResolver(options []StoreOptions) UnlockMaterialResolver {
+	if len(options) > 0 && options[0].UnlockResolver != nil {
+		return options[0].UnlockResolver
+	}
+	return DefaultUnlockResolver{}
+}
+
+func NewSecretStoreForConfig(
+	devsyConfig *config.Config,
+	options ...StoreOptions,
+) (SecretStore, error) {
+	store, err := NewStoreForConfig(devsyConfig, options...)
+	if err != nil {
+		return nil, err
+	}
+	return &secretOnlyStore{store.(*localStore)}, nil
+}
+
+func (s *localStore) getValue(idx *index, meta SecretMeta) (string, error) {
+	if !meta.Sensitive() {
+		return meta.Value, nil
+	}
+	if err := s.checkKeySource(idx); err != nil {
+		return "", err
+	}
+	if meta.Backend == "" {
+		return "", unownedSecretError(meta.Context, meta.Name)
+	}
+	b, err := s.backends.Open(meta.Backend, idx, BackendOpenExisting)
+	if err != nil {
+		return "", err
+	}
+	return b.get(backendKey(meta.Context, meta.Name))
+}
+
+func (s *localStore) loadValueIndex() (*index, error) {
+	idx, err := loadIndex(s.indexPath)
+	if err != nil {
+		return nil, err
+	}
+	if s.repairLegacyOwnership(idx) {
+		if err := s.saveIndex(idx); err != nil {
+			return nil, err
+		}
+	}
+	return idx, nil
 }

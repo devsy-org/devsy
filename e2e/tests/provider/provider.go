@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
@@ -12,14 +11,6 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
-
-func addDockerProvider(ctx context.Context, f *framework.Framework, name string) error {
-	dockerHost := os.Getenv("DOCKER_HOST")
-	if dockerHost != "" && strings.Contains(dockerHost, "podman") {
-		return f.DevsyProviderAdd(ctx, "docker", "--name", name, "--option=DOCKER_PATH=podman")
-	}
-	return f.DevsyProviderAdd(ctx, "docker", "--name", name)
-}
 
 var _ = ginkgo.Describe(
 	"devsy provider test suite",
@@ -37,15 +28,14 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should add simple provider and delete it",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir(
+				tempDir := framework.CopyTestdata(
 					"tests/provider/testdata/simple-k8s-provider",
+					initialDir,
 				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				err = f.DevsyProviderDelete(ctx, "provider1", "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, "provider1", "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				err = f.DevsyProviderAdd(ctx, tempDir+"/provider1.yaml")
@@ -66,15 +56,14 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should add simple provider and update it",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir(
+				tempDir := framework.CopyTestdata(
 					"tests/provider/testdata/simple-k8s-provider",
+					initialDir,
 				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				err = f.DevsyProviderDelete(ctx, "provider2", "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, "provider2", "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				err = f.DevsyProviderAdd(ctx, tempDir+"/provider2.yaml")
@@ -123,15 +112,14 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should list all providers",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir(
+				tempDir := framework.CopyTestdata(
 					"tests/provider/testdata/simple-k8s-provider",
+					initialDir,
 				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				err = f.DevsyProviderDelete(ctx, "provider1", "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, "provider1", "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				err = f.DevsyProviderAdd(ctx, tempDir+"/provider1.yaml")
@@ -156,15 +144,14 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should parse options",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir(
+				tempDir := framework.CopyTestdata(
 					"tests/provider/testdata/simple-k8s-provider",
+					initialDir,
 				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				err = f.DevsyProviderDelete(ctx, "provider3", "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, "provider3", "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				podManifest := `
@@ -200,11 +187,10 @@ spec:
 		ginkgo.It("should rename a provider to a new, valid name",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir(
+				tempDir := framework.CopyTestdata(
 					"tests/provider/testdata/simple-k8s-provider",
+					initialDir,
 				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -212,7 +198,7 @@ spec:
 				renamedProviderName := "provider-renamed"
 
 				// Ensure that provider is deleted.
-				err = f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 				err = f.DevsyProviderDelete(ctx, renamedProviderName, "--ignore-not-found")
 				framework.ExpectNoError(err)
@@ -241,18 +227,17 @@ spec:
 			"should fail to rename a provider to a name that already exists",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir(
+				tempDir := framework.CopyTestdata(
 					"tests/provider/testdata/simple-k8s-provider",
+					initialDir,
 				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				providerToRename := "provider-to-rename2"
 				existingProvider := "existing-provider2"
 
-				err = f.DevsyProviderDelete(ctx, providerToRename, "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, providerToRename, "--ignore-not-found")
 				framework.ExpectNoError(err)
 				err = f.DevsyProviderDelete(ctx, existingProvider, "--ignore-not-found")
 				framework.ExpectNoError(err)
@@ -332,11 +317,9 @@ spec:
 				err = f.DevsyProviderDelete(ctx, renamedProviderName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
 
-				err = addDockerProvider(ctx, f, providerName)
+				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
 				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectNoError(err)
@@ -389,17 +372,16 @@ spec:
 		ginkgo.It("should fail to rename a provider to an invalid name",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir(
+				tempDir := framework.CopyTestdata(
 					"tests/provider/testdata/simple-k8s-provider",
+					initialDir,
 				)
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
 				providerName := "provider-to-rename-invalid6"
 
-				err = f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
+				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
 				err = f.DevsyProviderAdd(ctx, tempDir+"/provider1.yaml", "--name", providerName)
@@ -428,7 +410,7 @@ spec:
 				err = f.DevsyProviderDelete(ctx, renamedName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				err = addDockerProvider(ctx, f, providerName)
+				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
 				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectNoError(err)

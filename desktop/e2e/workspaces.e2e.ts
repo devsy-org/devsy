@@ -5,6 +5,13 @@ import { launchApp, resetMockState } from "./electron-app.js"
 let app: ElectronApplication
 let page: Page
 
+interface CapturedWorkspaceStatus {
+  phase?: string
+  state?: string
+  commandId?: string
+  workspaceId?: string
+}
+
 test.beforeAll(async () => {
   resetMockState()
   ;({ app, page } = await launchApp())
@@ -61,8 +68,28 @@ test.describe("Workspace lifecycle badges", () => {
       [channel, args] as const,
     )
 
+  const workspaceSnapshot = async () =>
+    (await api("workspace_snapshot", {})) as {
+      workspaces: Array<{ id: string }>
+      jobs: Record<string, { state: string }>
+    }
+
+  const waitForDeleteToSettle = async () => {
+    await expect
+      .poll(
+        async () => {
+          const snapshot = await workspaceSnapshot()
+          return snapshot.jobs.deleteprobe?.state ?? "missing"
+        },
+        { timeout: 10000 },
+      )
+      .toMatch(/^(succeeded|failed|missing)$/)
+  }
+
   test("shows a Deleting badge while removal is in flight, then removes the row", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
+    let deleteAccepted = false
+    let testError: unknown
 
     try {
       await api("workspace_up", {
@@ -73,19 +100,43 @@ test.describe("Workspace lifecycle badges", () => {
         timeout: 5000,
       })
 
-      // Not awaited: the assertions below run while the delete is in flight.
-      void api("workspace_delete", { workspaceId: "deleteprobe" }).catch(
-        () => undefined,
-      )
+      // IPC acceptance is immediate; keep these assertions ahead of CLI completion.
+      await api("workspace_delete", { workspaceId: "deleteprobe" })
+      deleteAccepted = true
 
       await expect(main).toContainText("Deleting", { timeout: 3000 })
       await expect(main.locator("text=deleteprobe")).not.toBeVisible({
-        timeout: 5000,
+        timeout: 10000,
       })
-    } finally {
-      // Mock CLI state is shared across specs, so don't leave this behind.
-      await api("workspace_delete", { workspaceId: "deleteprobe" })
+      await waitForDeleteToSettle()
+    } catch (error) {
+      testError = error
     }
+    // Let an accepted delete finish before retrying cleanup.
+    try {
+      if (deleteAccepted) await waitForDeleteToSettle()
+      const snapshot = await workspaceSnapshot()
+      if (snapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
+        await api("workspace_delete", { workspaceId: "deleteprobe" })
+        await waitForDeleteToSettle()
+        // Avoid leaking this fixture into later tests.
+        const finalSnapshot = await workspaceSnapshot()
+        if (finalSnapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
+          throw new Error(
+            "deleteprobe workspace still present after delete retry",
+          )
+        }
+      }
+    } catch (cleanupError) {
+      if (testError) {
+        throw new AggregateError(
+          [testError, cleanupError],
+          "Test and cleanup failed",
+        )
+      }
+      throw cleanupError
+    }
+    if (testError) throw testError
   })
 })
 
@@ -110,6 +161,57 @@ test.describe("Workspace detail flow", () => {
         ).electronAPI.invoke(c as string, a as Record<string, unknown>),
       [channel, args] as const,
     )
+
+  test("groups project and editor settings while keeping technical details available", async () => {
+    await page
+      .locator("tbody tr")
+      .filter({ hasText: "test-workspace" })
+      .first()
+      .click()
+    const main = page.locator('[data-slot="sidebar-inset"] main')
+    await expect(
+      main.getByRole("heading", { name: "Project", exact: true }),
+    ).toBeVisible()
+    await expect(
+      main.getByRole("heading", { name: "Editor and folder" }),
+    ).toBeVisible()
+    await expect(
+      main.getByRole("region", { name: "Project", exact: true }),
+    ).toContainText("https://github.com/example/repo")
+    await expect(
+      main.getByRole("button", { name: "Workspace IDE", exact: true }),
+    ).toBeVisible()
+    await expect(
+      main.getByText(
+        "Uses the folder resolved from your project configuration.",
+        { exact: false },
+      ),
+    ).toBeVisible()
+
+    const technical = main
+      .locator("details")
+      .filter({ hasText: "Technical details" })
+    await expect(technical).not.toHaveAttribute("open", "")
+    await technical.locator("summary").focus()
+    await page.keyboard.press("Enter")
+    await expect(technical).toHaveAttribute("open", "")
+    await expect(technical).toContainText("ws-001")
+
+    await main
+      .getByRole("button", { name: "Edit workspace folder", exact: true })
+      .click()
+    await main
+      .getByRole("textbox", { name: "Workspace folder override" })
+      .fill("/workspaces/temporary-override")
+    await main.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(main.getByText("Automatic", { exact: true })).toBeVisible()
+    await expect(
+      main.getByText("/workspaces/temporary-override", { exact: true }),
+    ).not.toBeVisible()
+    await expect(
+      main.getByRole("button", { name: "Copy SSH command" }),
+    ).toBeEnabled()
+  })
 
   test("supports a start/stop playthrough from the workspaces list", async () => {
     const workspaceName = "flow-playthrough"
@@ -140,7 +242,7 @@ test.describe("Workspace detail flow", () => {
     await expect(main).toContainText("Stopped", { timeout: 10000 })
 
     await page.getByRole("button", { name: /^start$/i }).click()
-    await expect(main).toContainText("Starting", { timeout: 3000 })
+    await expect(main).toContainText(/starting|streaming/i, { timeout: 3000 })
     await expect(main).toContainText("Running", { timeout: 10000 })
   })
 
@@ -169,7 +271,10 @@ test.describe("Workspace detail flow", () => {
     await page.getByRole("button", { name: /more actions/i }).click()
     await page.getByRole("menuitem", { name: /rebuild/i }).click()
 
-    const rebuildDialog = page.locator('[role="dialog"]').filter({ hasText: /rebuild workspace/i }).first()
+    const rebuildDialog = page
+      .locator('[role="dialog"]')
+      .filter({ hasText: /rebuild workspace/i })
+      .first()
     await expect(rebuildDialog).toBeVisible({ timeout: 5000 })
     await expect(rebuildDialog).toContainText("Rebuild workspace")
     await rebuildDialog.getByRole("button", { name: /^cancel$/i }).click()
@@ -177,151 +282,321 @@ test.describe("Workspace detail flow", () => {
     await page.getByRole("button", { name: /more actions/i }).click()
     await page.getByRole("menuitem", { name: /delete/i }).click()
 
-    const deleteDialog = page.locator('[role="dialog"]').filter({ hasText: /delete workspace/i }).first()
+    const deleteDialog = page
+      .locator('[role="dialog"]')
+      .filter({ hasText: /delete workspace/i })
+      .first()
     await expect(deleteDialog).toBeVisible({ timeout: 5000 })
     await expect(deleteDialog).toContainText("Delete workspace")
     await deleteDialog.getByRole("button", { name: /^cancel$/i }).click()
   })
 })
 
-test.describe.serial("Create Workspace Wizard", () => {
-  async function openCreateWorkspaceWizard(page: Page) {
-    await page.click('[data-sidebar="sidebar"] a[href="#/workspaces"]')
-    await page.locator('[data-slot="sidebar-inset"] main').first().waitFor({
-      timeout: 30_000,
-    })
+test.describe
+  .serial("Create Workspace Wizard", () => {
+    async function openCreateWorkspaceWizard(page: Page) {
+      await page.click('[data-sidebar="sidebar"] a[href="#/workspaces"]')
+      await page.locator('[data-slot="sidebar-inset"] main').first().waitFor({
+        timeout: 30_000,
+      })
 
-    // Support both old/new CTA labels.
-    const createWorkspaceButton = page
-      .getByRole("button", { name: /create workspace|new workspace/i })
-      .first()
+      // Support both old/new CTA labels.
+      const createWorkspaceButton = page
+        .getByRole("button", { name: /create workspace|new workspace/i })
+        .first()
 
-    await expect(createWorkspaceButton).toBeVisible({ timeout: 30_000 })
-    await expect(createWorkspaceButton).toBeEnabled({ timeout: 30_000 })
-    await createWorkspaceButton.click()
+      await expect(createWorkspaceButton).toBeVisible({ timeout: 30_000 })
+      await expect(createWorkspaceButton).toBeEnabled({ timeout: 30_000 })
+      await createWorkspaceButton.click()
 
-    const dialog = page.locator('[role="dialog"]').first()
-    await expect(dialog).toBeVisible({ timeout: 10_000 })
-    return dialog
-  }
-
-  test("should open the wizard and show step 1 (provider)", async () => {
-    const dialog = await openCreateWorkspaceWizard(page)
-
-    // Step indicator labels — all 5 steps present
-    for (const label of ["Provider", "Source", "IDE", "Review", "Launch"]) {
-      await expect(dialog).toContainText(label)
+      const dialog = page.locator('[role="dialog"]').first()
+      await expect(dialog).toBeVisible({ timeout: 10_000 })
+      return dialog
     }
 
-    // Provider step heading visible
-    await expect(
-      dialog.getByRole("heading", { name: /choose a provider/i }),
-    ).toBeVisible()
+    test("should open the wizard and show step 1 (provider)", async () => {
+      const dialog = await openCreateWorkspaceWizard(page)
 
-    // Mock CLI exposes "docker" as the only initialized provider; ensure it is listed
-    await expect(dialog.locator("button", { hasText: "docker" })).toBeVisible({
-      timeout: 10000,
+      for (const label of ["Provider", "Source", "IDE", "Review", "Launch"]) {
+        await expect(dialog).toContainText(label)
+      }
+
+      // Provider step heading visible
+      await expect(
+        dialog.getByRole("heading", { name: /choose a provider/i }),
+      ).toBeVisible()
+
+      // Mock CLI exposes "docker" as the only initialized provider; ensure it is listed
+      await expect(dialog.locator("button", { hasText: "docker" })).toBeVisible(
+        {
+          timeout: 10000,
+        },
+      )
+
+      // The default provider is pre-selected, so Continue is enabled
+      const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
+      await expect(continueBtn).toBeEnabled()
     })
 
-    // The default provider is pre-selected, so Continue is enabled
-    const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
-    await expect(continueBtn).toBeEnabled()
-  })
+    test("should advance to source step with templates", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      // Default provider (docker) is already pre-selected; just continue
+      const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
+      await expect(continueBtn).toBeEnabled()
+      await continueBtn.click()
 
-  test("should advance to source step with templates", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    // Default provider (docker) is already pre-selected; just continue
-    const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
-    await expect(continueBtn).toBeEnabled()
-    await continueBtn.click()
+      await expect(
+        dialog.getByRole("heading", { name: /choose a source/i }),
+      ).toBeVisible()
 
-    await expect(
-      dialog.getByRole("heading", { name: /choose a source/i }),
-    ).toBeVisible()
+      // Quick Start Templates section + 5 core templates. Scope to the active
+      // source panel (Git) so the template buttons don't collide with the Image
+      // source's catalog entries (e.g. "Python 3.12"), which share language names.
+      await expect(dialog).toContainText("Quick Start Templates")
+      const gitPanel = dialog.getByTestId("source-panel")
+      for (const lang of ["Python", "Node.js", "Go", "Rust", "Java"]) {
+        await expect(
+          gitPanel.locator("button", { hasText: lang }),
+        ).toBeVisible()
+      }
 
-    // Quick Start Templates section + 5 core templates. Scope to the active
-    // source panel (Git) so the template buttons don't collide with the Image
-    // source's catalog entries (e.g. "Python 3.12"), which share language names.
-    await expect(dialog).toContainText("Quick Start Templates")
-    const gitPanel = dialog.getByTestId("source-panel")
-    for (const lang of ["Python", "Node.js", "Go", "Rust", "Java"]) {
-      await expect(gitPanel.locator("button", { hasText: lang })).toBeVisible()
-    }
-
-    // Language icons render
-    const icons = gitPanel.locator("button img")
-    expect(await icons.count()).toBeGreaterThan(0)
-    const firstIcon = icons.first()
-    await expect(firstIcon).toBeVisible()
-    const naturalWidth = await firstIcon.evaluate(
-      (el: HTMLImageElement) => el.naturalWidth,
-    )
-    expect(naturalWidth).toBeGreaterThan(0)
-  })
-
-  test("should select a template and populate the source field", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    await dialog.getByTestId("source-panel").locator("button", { hasText: "Python" }).click()
-
-    const sourceInput = dialog.locator('input[placeholder*="github"]')
-    await expect(sourceInput).toHaveValue(
-      "https://github.com/microsoft/vscode-remote-try-python",
-    )
-  })
-
-  test("should walk through IDE step", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    // Continue from source -> IDE
-    const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
-    await expect(continueBtn).toBeEnabled()
-    await continueBtn.click()
-
-    await expect(
-      dialog.getByRole("heading", { name: /choose an ide/i }),
-    ).toBeVisible()
-
-    // IDE combobox trigger (the popover button) defaults to "Select an IDE..." or "None"
-    // Since the default state has selectedIde = "none", the label should be "None".
-    await expect(dialog).toContainText("None")
-
-    // Continue is always enabled here (IDE is optional); advance to Review
-    await dialog.getByRole("button", { name: /^continue$/i }).click()
-  })
-
-  test("should show review summary", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    await expect(
-      dialog.getByRole("heading", { name: /^review$/i }),
-    ).toBeVisible()
-
-    // Summary card shows chosen provider, source, ide label, workspace id
-    await expect(dialog).toContainText("docker")
-    await expect(dialog).toContainText(
-      "https://github.com/microsoft/vscode-remote-try-python",
-    )
-    await expect(dialog).toContainText("None")
-
-    // Workspace name was populated by selectTemplate("Python") -> "python"
-    const nameInput = dialog.locator(
-      'input[placeholder*="derived from source"]',
-    )
-    await expect(nameInput).toHaveValue("python")
-  })
-
-  test("should launch workspace and stream output", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    // The review step's primary button is labeled "Launch"
-    await dialog.getByRole("button", { name: /^launch$/i }).click()
-
-    // Mock CLI streams: "Resolving source", "Pulling image",
-    // "Starting workspace", "Workspace ready."
-    await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
-      timeout: 10000,
+      // Language icons render
+      const icons = gitPanel.locator("button img")
+      expect(await icons.count()).toBeGreaterThan(0)
+      const firstIcon = icons.first()
+      await expect(firstIcon).toBeVisible()
+      await expect
+        .poll(
+          () => firstIcon.evaluate((el: HTMLImageElement) => el.naturalWidth),
+          { timeout: 10000 },
+        )
+        .toBeGreaterThan(0)
     })
 
-    // On success the "Open Workspace" button appears
-    await expect(
-      dialog.getByRole("button", { name: /open workspace/i }),
-    ).toBeVisible({ timeout: 15000 })
+    test("should select a template and populate the source field", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      await dialog
+        .getByTestId("source-panel")
+        .locator("button", { hasText: "Python" })
+        .click()
+
+      const sourceInput = dialog.locator('input[placeholder*="github"]')
+      await expect(sourceInput).toHaveValue(
+        "https://github.com/microsoft/vscode-remote-try-python",
+      )
+    })
+
+    test("should walk through IDE step", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      // Continue from source -> IDE
+      const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
+      await expect(continueBtn).toBeEnabled()
+      await continueBtn.click()
+
+      await expect(
+        dialog.getByRole("heading", { name: /choose an ide/i }),
+      ).toBeVisible()
+
+      // IDE combobox trigger (the popover button) defaults to "Select an IDE..." or "None"
+      // Since the default state has selectedIde = "none", the label should be "None".
+      await expect(dialog).toContainText("None")
+
+      // Continue is always enabled here (IDE is optional); advance to Review
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
+    })
+
+    test("should show review summary", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      await expect(
+        dialog.getByRole("heading", { name: /^review$/i }),
+      ).toBeVisible()
+
+      // Summary card shows chosen provider, source, ide label, workspace id
+      await expect(dialog).toContainText("docker")
+      await expect(dialog).toContainText(
+        "https://github.com/microsoft/vscode-remote-try-python",
+      )
+      await expect(dialog).toContainText("None")
+
+      // Workspace name was populated by selectTemplate("Python") -> "python"
+      const nameInput = dialog.locator(
+        'input[placeholder*="derived from source"]',
+      )
+      await expect(nameInput).toHaveValue("python")
+
+      const window = await app.browserWindow(page)
+      const bounds = await window.evaluate((browserWindow) =>
+        browserWindow.getBounds(),
+      )
+      const originalSource =
+        "https://github.com/microsoft/vscode-remote-try-python"
+      const longSource = `https://example.test/team/${"long-repository-name-".repeat(12)}project`
+      try {
+        await window.evaluate((browserWindow) =>
+          browserWindow.setBounds({ width: 1000, height: 700 }),
+        )
+        await dialog
+          .getByRole("button", { name: "Edit source", exact: true })
+          .click()
+        const advanced = dialog.getByRole("button", {
+          name: "Show advanced options",
+          exact: true,
+        })
+        await advanced.focus()
+        const advancedBottom = await advanced.evaluate(
+          (element) => element.getBoundingClientRect().bottom,
+        )
+        const footerTop = await dialog
+          .getByRole("button", { name: /^Continue$/ })
+          .evaluate(
+            (element) =>
+              element.parentElement?.getBoundingClientRect().top ?? -1,
+          )
+        expect(advancedBottom).toBeLessThanOrEqual(footerTop + 1)
+        expect(
+          await advanced.evaluate((element) => {
+            const rect = element.getBoundingClientRect()
+            const hit = document.elementFromPoint(
+              rect.x + rect.width / 2,
+              rect.y + rect.height / 2,
+            )
+            return (
+              rect.top >= 0 &&
+              rect.bottom <= innerHeight &&
+              (hit === element || element.contains(hit))
+            )
+          }),
+        ).toBe(true)
+        await dialog
+          .getByRole("textbox", { name: "Repository URL *", exact: true })
+          .fill(longSource)
+        await dialog.getByRole("button", { name: /^Continue$/ }).click()
+        await dialog.getByRole("button", { name: /^Continue$/ }).click()
+        const fullSource = dialog.getByText(longSource, { exact: true })
+        await expect(fullSource).toBeVisible()
+        const sourceFits = await fullSource.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          const parentDialog = element.closest('[role="dialog"]')
+          if (!parentDialog) return false
+          const dialogRect = parentDialog.getBoundingClientRect()
+          return (
+            element.scrollWidth <= element.clientWidth + 1 &&
+            rect.right <= dialogRect.right
+          )
+        })
+        expect(sourceFits).toBe(true)
+        const launch = dialog.getByRole("button", { name: /^Launch$/ })
+        await launch.focus()
+        expect(
+          await launch.evaluate((element) => {
+            const rect = element.getBoundingClientRect()
+            const hit = document.elementFromPoint(
+              rect.x + rect.width / 2,
+              rect.y + rect.height / 2,
+            )
+            return (
+              rect.top >= 0 &&
+              rect.bottom <= innerHeight &&
+              (hit === element || element.contains(hit))
+            )
+          }),
+        ).toBe(true)
+      } finally {
+        const editSource = dialog.getByRole("button", {
+          name: "Edit source",
+          exact: true,
+        })
+        if (await editSource.isVisible()) await editSource.click()
+        await dialog
+          .getByRole("textbox", { name: "Repository URL *", exact: true })
+          .fill(originalSource)
+        await dialog.getByRole("button", { name: /^Continue$/ }).click()
+        await dialog.getByRole("button", { name: /^Continue$/ }).click()
+        await window.evaluate(
+          (browserWindow, previousBounds) =>
+            browserWindow.setBounds(previousBounds),
+          bounds,
+        )
+      }
+    })
+
+    test("should launch workspace and stream output", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      await page.evaluate(() => {
+        const target = window as typeof window & {
+          workspaceStatusEvents: CapturedWorkspaceStatus[]
+        }
+        target.workspaceStatusEvents = []
+        window.electronAPI?.on("workspace-status", (payload) =>
+          target.workspaceStatusEvents.push(payload as CapturedWorkspaceStatus),
+        )
+      })
+      // The review step's primary button is labeled "Launch"
+      await dialog.getByRole("button", { name: /^launch$/i }).click()
+
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() =>
+              (
+                window as typeof window & {
+                  workspaceStatusEvents: CapturedWorkspaceStatus[]
+                }
+              ).workspaceStatusEvents.some(
+                (status) => status.phase === "preparing_devcontainer",
+              ),
+            ),
+          { timeout: 10000 },
+        )
+        .toBe(true)
+      const statuses = await page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              workspaceStatusEvents: CapturedWorkspaceStatus[]
+            }
+          ).workspaceStatusEvents,
+      )
+      expect(statuses.map((status) => status.phase)).toContain(
+        "preparing_devcontainer",
+      )
+      await expect(dialog).toContainText("Preparing dev container")
+      await expect(dialog.getByText("Review", { exact: true })).toHaveCount(0)
+
+      // On success the "Open Workspace" button appears
+      await expect(
+        dialog.getByRole("heading", { name: "Workspace ready" }),
+      ).toBeVisible({ timeout: 15000 })
+      await expect(
+        dialog.getByRole("button", { name: /open workspace/i }),
+      ).toBeVisible({ timeout: 15000 })
+      await dialog
+        .getByRole("button", { name: /^close$/i })
+        .first()
+        .click()
+    })
+
+    test("shows the structured failure message and hint", async () => {
+      const dialog = await openCreateWorkspaceWizard(page)
+
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
+      await expect(
+        dialog.getByRole("heading", { name: /choose a source/i }),
+      ).toBeVisible()
+
+      const sourceInput = dialog.locator('input[placeholder*="github"]')
+      await sourceInput.fill("https://example.com/fail.git")
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
+      await expect(
+        dialog.getByRole("heading", { name: /^review$/i }),
+      ).toBeVisible()
+      await dialog.getByRole("button", { name: /^launch$/i }).click()
+
+      await expect(dialog).toContainText("Workspace creation failed", {
+        timeout: 15000,
+      })
+      await expect(dialog).toContainText("The mock image build failed.")
+      await expect(dialog).toContainText("Check the build output and retry.")
+    })
   })
-})

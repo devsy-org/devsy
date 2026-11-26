@@ -3,11 +3,13 @@ package secrets
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/internal/managedvalue"
+	"github.com/devsy-org/devsy/cmd/internal/secretstore"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	devsysecrets "github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +35,17 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
-	contextName, store, err := resolveContext(cmd.GlobalFlags)
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
+	if err != nil {
+		return err
+	}
+	contextName := devsyConfig.DefaultContext
+	store, err := devsysecrets.NewSecretStoreForConfig(devsyConfig, secretstore.Options())
 	if err != nil {
 		return err
 	}
@@ -46,10 +58,13 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 		return fmt.Errorf("%q is an environment variable; use \"devsy env delete\"", name)
 	}
 
-	if err := store.Delete(contextName, name); err != nil {
-		return err
-	}
-	if err := unbindFromContext(cmd.GlobalFlags, contextName, name); err != nil {
+	if err := deleteSecretValue(deleteSecretRequest{
+		config:  devsyConfig,
+		store:   store,
+		context: contextName,
+		name:    name,
+		save:    config.SaveConfig,
+	}); err != nil {
 		return err
 	}
 
@@ -57,22 +72,17 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 	return nil
 }
 
-// unbindFromContext removes a deleted secret from its context's attached list so
-// a stale binding is not left pointing at a now-missing secret.
-func unbindFromContext(globalFlags *flags.GlobalFlags, contextName, name string) error {
-	devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
-	if err != nil {
-		return err
-	}
-	ctxConfig := devsyConfig.Contexts[contextName]
-	if ctxConfig == nil {
-		return nil
-	}
-	idx := slices.Index(ctxConfig.Secrets, name)
-	if idx < 0 {
-		return nil
-	}
-	ctxConfig.Secrets = slices.Delete(ctxConfig.Secrets, idx, idx+1)
+type deleteSecretRequest struct {
+	config  *config.Config
+	store   interface{ Delete(string, string) error }
+	context string
+	name    string
+	save    func(*config.Config) error
+}
 
-	return config.SaveConfig(devsyConfig)
+func deleteSecretValue(request deleteSecretRequest) error {
+	return managedvalue.Delete(managedvalue.DeleteRequest{
+		Config: request.config, Store: request.store, Context: request.context,
+		Name: request.name, Binding: managedvalue.SecretBinding, Save: request.save,
+	})
 }

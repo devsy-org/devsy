@@ -38,6 +38,12 @@ func NewRetryTransport(base http.RoundTripper, cfg RetryConfig) http.RoundTrippe
 	return &RetryTransport{base: base, cfg: cfg}
 }
 
+func (t *RetryTransport) CloseIdleConnections() {
+	if c, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
+}
+
 func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !retriableRequest(req) {
 		return t.base.RoundTrip(req)

@@ -6,8 +6,10 @@ import (
 	"os"
 
 	cmdflags "github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -16,7 +18,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -144,7 +149,11 @@ func (cmd *BuildCmd) execute(ctx context.Context, args []string) error {
 		return err
 	}
 
-	exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner)
+	exists := workspace2.Exists(
+		ctx,
+		devsyConfig,
+		workspace2.LookupOptions{Args: args, Owner: cmd.Owner},
+	)
 	sshConfigPath, cleanup, err := NewTempSSHConfig()
 	if err != nil {
 		return err
@@ -252,6 +261,15 @@ func (cmd *BuildCmd) build(
 		return err
 	}
 	emitJSON := mode == output.ModeJSON
+	reporter, err := newWorkspaceStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
+	)
+	if err != nil {
+		return err
+	}
 
 	if err = workspaceClient.Lock(ctx); err != nil {
 		return err
@@ -262,36 +280,85 @@ func (cmd *BuildCmd) build(
 		return err
 	}
 
-	log.Infof("building devcontainer")
 	defer func() {
 		log.Debugf("done building devcontainer")
-		log.Infof("cleaning up temporary workspace")
+		log.Debugf("cleaning up temporary workspace")
 	}()
 
-	result, err := clientimplementation.BuildAgentClient(
-		ctx,
-		clientimplementation.BuildAgentClientOptions{
-			WorkspaceClient: workspaceClient,
-			CLIOptions:      cmd.CLIOptions,
-			AgentCommand:    "build",
-		},
-	)
+	run := cmd.startSetupRun(workspaceClient)
+	ctx = run.Context(ctx)
+	hop := tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{Session: run, Receive: true})
+	defer hop.Close()
+
+	result, err := cmd.buildDevcontainer(ctx, reporter, workspaceClient, hop)
+	run.Finish(err, true)
 	if err != nil {
-		if emitJSON {
-			_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
-		}
-		return err
+		return clierr.WithContext(err, run.FailureContext())
 	}
 
 	if !emitJSON {
 		return nil
 	}
 
-	writeBuildResultJSON(result)
+	writeBuildResultJSON(result, run)
 	return nil
 }
 
-func writeBuildResultJSON(result *devcconfig.Result) {
+func (cmd *BuildCmd) buildDevcontainer(
+	ctx context.Context,
+	reporter status.Reporter,
+	workspaceClient client.WorkspaceClient,
+	hop *tunnelserver.SetupLogHop,
+) (*devcconfig.Result, error) {
+	var result *devcconfig.Result
+	err := status.Run(ctx, reporter, status.Operation{
+		Phase: status.PhaseBuildingImage,
+		Step:  "building devcontainer",
+	}, func(ctx context.Context) error {
+		var buildErr error
+		result, buildErr = clientimplementation.BuildAgentClient(
+			ctx,
+			clientimplementation.BuildAgentClientOptions{
+				WorkspaceClient: workspaceClient,
+				CLIOptions:      cmd.CLIOptions,
+				AgentCommand:    "build",
+				TunnelOptions:   hop.Options(),
+			},
+		)
+		return buildErr
+	})
+	return result, err
+}
+
+// startSetupRun starts the run that retains this build's output and installs
+// its identity in the CLI options sent to the provider host. A storage problem
+// leaves history unrecorded and never fails the build.
+func (cmd *BuildCmd) startSetupRun(workspaceClient client.WorkspaceClient) *workspacelogs.Session {
+	cmd.SetupRunID = ""
+	cmd.SetupParentProducerID = ""
+
+	run := workspacelogs.StartSession(workspacelogs.SessionOptions{
+		Location: workspacelogs.LocationHost,
+		Redactor: secrets.NewEnvironmentRedactor(os.Environ()),
+		Run: workspacelogs.RunSpec{
+			Context:            workspaceClient.Context(),
+			WorkspaceIDAtStart: workspaceClient.Workspace(),
+			Command:            "build",
+		},
+	})
+	if run == nil {
+		return nil
+	}
+	if ws := workspaceClient.WorkspaceConfig(); ws != nil {
+		run.BindWorkspace(ws.UID, workspaceClient.Workspace())
+	}
+	cmd.SetupRunID = run.RunID
+	cmd.SetupParentProducerID = run.ProducerID()
+
+	return run
+}
+
+func writeBuildResultJSON(result *devcconfig.Result, run *workspacelogs.Session) {
 	workdir := ""
 	if result != nil && result.SubstitutionContext != nil {
 		workdir = result.SubstitutionContext.ContainerWorkspaceFolder
@@ -300,5 +367,14 @@ func writeBuildResultJSON(result *devcconfig.Result) {
 		ContainerID:           devcconfig.GetContainerID(result),
 		RemoteUser:            devcconfig.GetRemoteUser(result),
 		RemoteWorkspaceFolder: workdir,
+		RunID:                 runIDOf(run),
 	})
+}
+
+func runIDOf(run *workspacelogs.Session) string {
+	if run == nil {
+		return ""
+	}
+
+	return run.RunID
 }

@@ -9,6 +9,27 @@ import (
 
 var ErrSecretNotFound = errors.New("secret not found")
 
+var ErrStateIndeterminate = errors.New("managed value state is indeterminate")
+
+type MutationError struct {
+	Operation string
+	Context   string
+	Name      string
+	Cause     error
+	Rollback  error
+}
+
+func (e *MutationError) Error() string {
+	return fmt.Sprintf(
+		"%s managed value %s/%s failed and could not be fully compensated",
+		e.Operation, e.Context, e.Name,
+	)
+}
+
+func (e *MutationError) Unwrap() []error {
+	return []error{ErrStateIndeterminate, e.Cause, e.Rollback}
+}
+
 // namePattern enforces a POSIX env identifier; a leading digit is rejected
 // because such a name cannot be exported as an environment variable.
 var namePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -43,17 +64,24 @@ type SecretMeta struct {
 	Value    string    `json:"value,omitempty"`
 	Created  time.Time `json:"created"`
 	LastUsed time.Time `json:"lastUsed,omitzero"`
+	Backend  Backend   `json:"backend,omitempty"`
 
 	Orphaned bool `json:"-"`
 }
 
-func (m SecretMeta) Sensitive() bool { return m.Kind == KindSecret }
+// An unspecified kind is secret metadata; only explicit legacy env entries are plaintext.
+func (m SecretMeta) Sensitive() bool { return m.Kind != KindEnv }
 
+// Store is the legacy mixed managed-value API retained for compatibility.
+//
+// Deprecated: use SecretStore for secrets and envstore.EnvStore for environment values.
 type Store interface {
 	Set(context, name, value string, kind Kind) error
 	Get(context, name string) (string, error)
 	Meta(context, name string) (SecretMeta, error)
 	List(context string) ([]SecretMeta, error)
+	// Delete returns nil after removal. An ordinary error guarantees the
+	// original store state was restored; ErrStateIndeterminate means it was not.
 	Delete(context, name string) error
 }
 

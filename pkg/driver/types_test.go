@@ -29,3 +29,16 @@ func TestDriverSupportsMountType_RespectsCapability(t *testing.T) {
 		t.Fatal("non-tmpfs driver should report unsupported")
 	}
 }
+
+func TestDriverPoliciesWithoutCapabilities(t *testing.T) {
+	d := plainDriverStub{}
+	if !DriverRequiresMountStreaming(d) {
+		t.Fatal("unknown drivers require streamed mounts")
+	}
+	if !DriverRequiresWorkspaceChown(d) {
+		t.Fatal("unknown drivers require workspace chown")
+	}
+	if DriverRecreateMode(d) != RecreateStop {
+		t.Fatal("unknown drivers are stopped for recreate")
+	}
+}

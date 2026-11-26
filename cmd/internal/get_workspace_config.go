@@ -101,8 +101,12 @@ func (cmd *GetWorkspaceConfigCommand) Run(
 			ctx,
 			rawSource,
 			tmpDir,
-			cmd.maxDepth,
-			devsyConfig.ContextOptionBool(config.ContextOptionSSHStrictHostKeyChecking),
+			devcontainer.FindOptions{
+				MaxDepth: cmd.maxDepth,
+				StrictHostKeyChecking: devsyConfig.ContextOptionBool(
+					config.ContextOptionSSHStrictHostKeyChecking,
+				),
+			},
 		)
 		if err != nil {
 			errChan <- err
@@ -121,7 +125,7 @@ func (cmd *GetWorkspaceConfigCommand) Run(
 		if err != nil {
 			return err
 		}
-		fmt.Println(string(out))
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
 	}
 	defer close(done)
 

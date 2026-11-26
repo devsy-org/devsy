@@ -15,7 +15,7 @@ import (
 // exists at the wrong mode and this process does not own it) falls back to
 // re-execing `<self> internal widen-shared-file` under a non-interactive
 // sudo, so the escalated mode change still goes through WidenIfNeeded's
-// O_NOFOLLOW open rather than a plain `sudo chmod <path>` — chmod(1) has no
+// O_NOFOLLOW open rather than a plain `sudo chmod <path>` - chmod(1) has no
 // way to refuse following a symlink at its target path. The fallback's
 // failure is logged, not returned: this is a best-effort repair, and the
 // caller's own lock acquisition will surface the real permission error if

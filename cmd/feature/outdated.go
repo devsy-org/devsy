@@ -40,7 +40,7 @@ func NewOutdatedCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &OutdatedCmd{GlobalFlags: f}
 	outdatedCmd := &cobra.Command{
 		Use:   "outdated",
-		Short: "Checks for newer versions of installed devcontainer features",
+		Short: "Check for newer versions of installed devcontainer features",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
 			return cmd.Run(cobraCmd.Context())
@@ -62,8 +62,8 @@ func NewOutdatedCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the command logic.
-func (cmd *OutdatedCmd) Run(_ context.Context) error {
-	parsedConfig, err := cmd.loadConfig()
+func (cmd *OutdatedCmd) Run(ctx context.Context) error {
+	parsedConfig, err := cmd.loadConfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,10 @@ func (cmd *OutdatedCmd) Run(_ context.Context) error {
 	return nil
 }
 
-func (cmd *OutdatedCmd) loadConfig() (*devconfig.DevContainerConfig, error) {
+func (cmd *OutdatedCmd) loadConfig(ctx context.Context) (*devconfig.DevContainerConfig, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	workspaceFolder := cmd.WorkspaceFolder
 	if workspaceFolder == "" {
 		cwd, err := os.Getwd()
@@ -100,10 +103,10 @@ func (cmd *OutdatedCmd) loadConfig() (*devconfig.DevContainerConfig, error) {
 
 	var parsedConfig *devconfig.DevContainerConfig
 	if cmd.Config != "" {
-		parsedConfig, err = devconfig.ParseDevContainerJSONFile(context.Background(), cmd.Config)
+		parsedConfig, err = devconfig.ParseDevContainerJSONFile(ctx, cmd.Config)
 	} else {
 		parsedConfig, err = devconfig.ParseDevContainerJSON(
-			context.Background(),
+			ctx,
 			workspaceFolder,
 			"",
 		)
@@ -208,11 +211,13 @@ func checkFeatureVersion(featureID string) (outdatedEntry, bool) {
 // findLatestVersion finds the highest semver tag from the list that is newer
 // than the current tag. Returns empty string if current is already the latest.
 func findLatestVersion(current string, tags []string) string {
-	currentVer, currentErr := parseSemver(current)
+	currentVer, err := parseSemver(current)
+	if err != nil {
+		return ""
+	}
 
-	var best semver.Version
+	best := currentVer
 	var bestTag string
-	hasBest := false
 
 	for _, t := range tags {
 		if t == tagLatest {
@@ -224,15 +229,9 @@ func findLatestVersion(current string, tags []string) string {
 			continue
 		}
 
-		// If current tag is not valid semver, we cannot compare
-		if currentErr != nil {
-			continue
-		}
-
-		if ver.GT(currentVer) && (!hasBest || ver.GT(best)) {
+		if ver.GT(best) {
 			best = ver
 			bestTag = t
-			hasBest = true
 		}
 	}
 

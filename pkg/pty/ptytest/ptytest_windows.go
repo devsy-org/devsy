@@ -73,17 +73,10 @@ func (p *testPTY) Close() error {
 	p.closed = true
 
 	var firstErr error
-	if err := p.outputWriter.Close(); err != nil && firstErr == nil {
-		firstErr = err
-	}
-	if err := p.outputReader.Close(); err != nil && firstErr == nil {
-		firstErr = err
-	}
-	if err := p.inputWriter.Close(); err != nil && firstErr == nil {
-		firstErr = err
-	}
-	if err := p.inputReader.Close(); err != nil && firstErr == nil {
-		firstErr = err
+	for _, pipe := range []*os.File{p.outputWriter, p.outputReader, p.inputWriter, p.inputReader} {
+		if err := pipe.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 	return firstErr
 }

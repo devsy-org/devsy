@@ -110,7 +110,7 @@ func TestEnsureActivityFileCreatesAndIsIdempotent(t *testing.T) {
 }
 
 func TestEnsureActivityFileSurfacesNonExistErrors(t *testing.T) {
-	// Path through a non-directory is ENOTDIR, which is neither nil nor ErrNotExist —
+	// Path through a non-directory is ENOTDIR, which is neither nil nor ErrNotExist -
 	// must surface as-is instead of falling into the create branch.
 	tmp := t.TempDir()
 	regular := filepath.Join(tmp, "regular")
@@ -171,22 +171,6 @@ func TestIgnoreServerClosed(t *testing.T) {
 	other := errors.New("boom")
 	if err := ignoreServerClosed(other); err != other {
 		t.Errorf("unrelated error should pass through, got %v", err)
-	}
-}
-
-func TestRunActivityHeartbeatExitsOnContextCancel(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "activity")
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		runActivityHeartbeat(ctx, path)
-		close(done)
-	}()
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("heartbeat did not exit within 2s of context cancel")
 	}
 }
 

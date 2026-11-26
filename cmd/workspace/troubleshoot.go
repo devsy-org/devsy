@@ -35,14 +35,20 @@ func NewTroubleshootCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Run: func(cobraCmd *cobra.Command, args []string) {
 			cmd.Run(cobraCmd.Context(), args)
 		},
-		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(
+			rootCmd *cobra.Command,
+			args []string,
+			toComplete string,
+		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 		Hidden: true,
@@ -52,14 +58,14 @@ func NewTroubleshootCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 type troubleshootInfo struct {
-	CLIVersion            string
-	Config                *config.Config
-	Providers             map[string]provider.ProviderWithDefault
-	DevsyProInstances     []DevsyProInstance
-	Workspace             *pkgprovider.Workspace
-	WorkspaceStatus       client.Status
-	WorkspaceTroubleshoot *managementv1.DevsyWorkspaceInstanceTroubleshoot
-	DaemonStatus          *daemon.Status
+	CLIVersion             string
+	Config                 *config.Config
+	Providers              map[string]provider.ProviderWithDefault
+	DevsyPlatformInstances []DevsyPlatformInstance
+	Workspace              *pkgprovider.Workspace
+	WorkspaceStatus        client.Status
+	WorkspaceTroubleshoot  *managementv1.DevsyWorkspaceInstanceTroubleshoot
+	DaemonStatus           *daemon.Status
 
 	Errors []PrintableError `json:",omitempty"`
 }
@@ -84,7 +90,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 	// Print on every exit path, including panics.
 	defer printTroubleshootInfo(info)
 
-	// Collect as much as possible — partial info beats no info, so do not
+	// Collect as much as possible - partial info beats no info, so do not
 	// return early on errors except where downstream steps require the result.
 	var err error
 	info.Config, err = config.LoadConfig(cmd.Context, cmd.Provider)
@@ -99,7 +105,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 		info.addErr("collect providers", err)
 	}
 
-	info.DevsyProInstances, err = collectPlatformInfo(info.Config)
+	info.DevsyPlatformInstances, err = collectPlatformInfo(info.Config)
 	if err != nil {
 		info.addErr("collect platform info", err)
 	}
@@ -128,12 +134,12 @@ func (cmd *TroubleshootCmd) collectWorkspaceInfo(
 		info.addErr("workspace status", err)
 	}
 
-	if info.Workspace.Pro != nil {
-		info.WorkspaceTroubleshoot, err = collectWorkspaceProTroubleshoot(
-			ctx, info.Config, info.Workspace, info.DevsyProInstances,
+	if info.Workspace.Platform != nil {
+		info.WorkspaceTroubleshoot, err = collectWorkspacePlatformTroubleshoot(
+			ctx, info.Config, info.Workspace, info.DevsyPlatformInstances,
 		)
 		if err != nil {
-			info.addErr("collect pro workspace info", err)
+			info.addErr("collect platform workspace info", err)
 		}
 	}
 
@@ -143,29 +149,34 @@ func (cmd *TroubleshootCmd) collectWorkspaceInfo(
 	}
 }
 
-// collectWorkspaceProTroubleshoot locates the pro instance that owns the given
+// collectWorkspacePlatformTroubleshoot locates the platform instance that owns the given
 // workspace and retrieves its troubleshooting info. It returns (nil, nil) when
-// no matching pro instance is configured.
-func collectWorkspaceProTroubleshoot(
+// no matching platform instance is configured.
+func collectWorkspacePlatformTroubleshoot(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	ws *pkgprovider.Workspace,
-	proInstances []DevsyProInstance,
+	platformInstances []DevsyPlatformInstance,
 ) (*managementv1.DevsyWorkspaceInstanceTroubleshoot, error) {
-	// Multiple pro instances may be configured; locate the one that owns this workspace.
-	var proInstance DevsyProInstance
-	for _, instance := range proInstances {
+	// Multiple platform instances may be configured; locate the one that owns this workspace.
+	var platformInstance DevsyPlatformInstance
+	for _, instance := range platformInstances {
 		if instance.ProviderName == ws.Provider.Name {
-			proInstance = instance
+			platformInstance = instance
 			break
 		}
 	}
 
-	if proInstance.ProviderName == "" {
+	if platformInstance.ProviderName == "" {
 		return nil, nil
 	}
 
-	return collectProWorkspaceInfo(ctx, devsyConfig, proInstance.Host, ws.UID, ws.Pro.Project)
+	return collectPlatformWorkspaceInfo(
+		ctx,
+		devsyConfig,
+		platformInstance.Host,
+		platform.FindInstanceOptions{UID: ws.UID, ProjectName: ws.Platform.Project},
+	)
 }
 
 // collectDaemonStatus returns the local daemon status when the client is a
@@ -185,22 +196,20 @@ func collectDaemonStatus(
 	return &status, nil
 }
 
-// collectProWorkspaceInfo collects troubleshooting information for a Devsy Pro instance.
+// collectPlatformWorkspaceInfo collects troubleshooting information for a Devsy Platform instance.
 // It initializes a client from the host, finds the workspace instance in the project, and retrieves
 // troubleshooting information using the management client.
-func collectProWorkspaceInfo(
+func collectPlatformWorkspaceInfo(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	host string,
-	workspaceUID string,
-	project string,
+	opts platform.FindInstanceOptions,
 ) (*managementv1.DevsyWorkspaceInstanceTroubleshoot, error) {
 	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, host)
 	if err != nil {
 		return nil, fmt.Errorf("init client from host: %w", err)
 	}
 
-	opts := platform.FindInstanceOptions{UID: workspaceUID, ProjectName: project}
 	workspace, err := platform.FindInstance(ctx, baseClient, opts)
 	if err != nil {
 		return nil, err
@@ -213,8 +222,7 @@ func collectProWorkspaceInfo(
 		return nil, fmt.Errorf("management: %w", err)
 	}
 
-	troubleshoot, err := managementClient.
-		Loft().
+	troubleshoot, err := managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(workspace.Namespace).
 		Troubleshoot(ctx, workspace.Name, metav1.GetOptions{})
@@ -260,40 +268,40 @@ func collectProviders(
 	return retMap, nil
 }
 
-type DevsyProInstance struct {
+type DevsyPlatformInstance struct {
 	Host         string
 	ProviderName string
 	Version      string
 }
 
 // collectPlatformInfo collects information about all platform instances in a given devsyConfig.
-// It iterates over the pro instances, retrieves their versions, and appends them to the ProInstance slice.
-// Any errors encountered during this process are combined and returned along with the ProInstance slice.
-// This means that even when an error value is returned, the pro instance slice will contain valid values.
+// It iterates over the platform instances, retrieves their versions, and appends them to the PlatformInstance slice.
+// Any errors encountered during this process are combined and returned along with the PlatformInstance slice.
+// This means that even when an error value is returned, the platform instance slice will contain valid values.
 func collectPlatformInfo(
 	devsyConfig *config.Config,
-) ([]DevsyProInstance, error) {
-	proInstanceList, err := workspace.ListProInstances(devsyConfig)
+) ([]DevsyPlatformInstance, error) {
+	platformInstanceList, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
-		return nil, fmt.Errorf("list pro instances: %w", err)
+		return nil, fmt.Errorf("list platform instances: %w", err)
 	}
 
-	var proInstances []DevsyProInstance
+	var platformInstances []DevsyPlatformInstance
 	var combinedErrs error
 
-	for _, proInstance := range proInstanceList {
-		version, err := platform.GetProInstanceDevsyVersion(
-			&pkgprovider.ProInstance{Host: proInstance.Host},
+	for _, platformInstance := range platformInstanceList {
+		version, err := platform.GetPlatformInstanceDevsyVersion(
+			&pkgprovider.PlatformInstance{Host: platformInstance.Host},
 		)
 		combinedErrs = errors.Join(combinedErrs, err)
-		proInstances = append(proInstances, DevsyProInstance{
-			Host:         proInstance.Host,
-			ProviderName: proInstance.Provider,
+		platformInstances = append(platformInstances, DevsyPlatformInstance{
+			Host:         platformInstance.Host,
+			ProviderName: platformInstance.Provider,
 			Version:      version,
 		})
 	}
 
-	return proInstances, combinedErrs
+	return platformInstances, combinedErrs
 }
 
 // PrintableError serialises a wrapped error's message via json.Marshal.

@@ -4,20 +4,40 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/blang/semver/v4"
 	composecli "github.com/compose-spec/compose-go/v2/cli"
+	"github.com/compose-spec/compose-go/v2/dotenv"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/livetee"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
+	"github.com/devsy-org/devsy/pkg/wslg"
+)
+
+const (
+	goosWindows     = "windows"
+	projectNameFlag = "--project-name"
+)
+
+var (
+	legacyProjectNamePattern = regexp.MustCompile("[^a-z0-9]")
+	projectNamePattern       = regexp.MustCompile("[^-_a-z0-9]")
+	composeVersionPattern    = regexp.MustCompile(`(\d+\.\d+\.\d+)`)
 )
 
 func LoadDockerComposeProject(
@@ -25,10 +45,32 @@ func LoadDockerComposeProject(
 	paths []string,
 	envFiles []string,
 ) (*composetypes.Project, error) {
+	return LoadDockerComposeProjectWithEnv(ctx, paths, envFiles, nil)
+}
+
+func LoadDockerComposeProjectWithEnv(
+	ctx context.Context,
+	paths, envFiles []string,
+	candidates map[string]string,
+) (*composetypes.Project, error) {
+	if candidates != nil {
+		if err := wslg.CheckCollisions(
+			"process environment",
+			os.Environ(),
+			runtime.GOOS == goosWindows,
+		); err != nil {
+			return nil, err
+		}
+	}
+	if err := wslg.ValidateEnvironment(candidates); err != nil {
+		return nil, err
+	}
 	projectOptions, err := composecli.NewProjectOptions(
 		paths,
 		composecli.WithOsEnv,
+		composecli.WithEnv(wslg.Pairs(candidates)),
 		composecli.WithEnvFiles(envFiles...),
+		checkWSLgEnvFiles(candidates),
 		composecli.WithDotEnv,
 		composecli.WithDefaultProfiles(),
 	)
@@ -45,17 +87,13 @@ func LoadDockerComposeProject(
 }
 
 type ComposeHelper struct {
-	Command string
-	Version string
-	Args    []string
-	Docker  *docker.DockerHelper
+	Command               string
+	Version               string
+	Args                  []string
+	Docker                *docker.DockerHelper
+	invocationEnvironment map[string]string
 }
 
-// NewComposeHelper creates a new ComposeHelper instance after detecting whether Docker
-// Compose V2, Podman Compose, or Docker Compose V1 is installed. The detection order
-// depends on the container runtime: Podman runtimes try podman compose first, while
-// Docker/nerdctl runtimes try docker compose V2 first. It returns an error if none
-// are found.
 func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error) {
 	dockerCmd := dockerHelper.DockerCommand
 	if dockerCmd == "" {
@@ -69,13 +107,11 @@ func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error)
 		detectors = []tryFunc{
 			func() (*ComposeHelper, error) { return tryComposeSubcommand(dockerCmd) },
 			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
-			tryDockerComposeV1,
 		}
 	} else {
 		detectors = []tryFunc{
 			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
 			func() (*ComposeHelper, error) { return tryComposeSubcommand("podman") },
-			tryDockerComposeV1,
 		}
 	}
 
@@ -89,12 +125,52 @@ func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error)
 	return nil, fmt.Errorf("docker compose or podman compose not installed")
 }
 
+// WithInvocationEnvironment leaves the shared provider helper unchanged.
+func (h *ComposeHelper) WithInvocationEnvironment(env map[string]string) *ComposeHelper {
+	clone := *h
+	clone.Args = append([]string(nil), h.Args...)
+	clone.invocationEnvironment = maps.Clone(env)
+	return &clone
+}
+
+func checkWSLgEnvFiles(candidates map[string]string) composecli.ProjectOptionsFn {
+	return func(options *composecli.ProjectOptions) error {
+		if candidates == nil {
+			return nil
+		}
+		// Parse each source with Compose's own dotenv parser so even shadowed and
+		// empty assignments count. Service env_file is a different namespace.
+		for _, file := range options.EnvFiles {
+			env, err := dotenv.GetEnvFromFile(options.Environment, []string{file})
+			if err != nil {
+				return fmt.Errorf("cannot validate WSLg interpolation file %s", file)
+			}
+			if err := wslg.CheckCollisions(
+				file,
+				wslg.Pairs(env),
+				runtime.GOOS == goosWindows,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
 // tryDockerComposeV2 checks if Docker Compose V2 is available and returns a ComposeHelper if so.
 // The Compose V2 plugin can be installed on linux using
-// sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
+//
+//	sudo curl -SL \
+//	  https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) \
+//	  -o /usr/libexec/docker/cli-plugins/docker-compose
+//
 // sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 // Docker Compose V2 requires the buildx plugin for building images and can be installed using
-// sudo curl -SL https://github.com/docker/buildx/releases/latest/download/buildx-v0.30.1.linux-amd64 -o /usr/libexec/docker/cli-plugins/docker-buildx
+//
+//	sudo curl -SL \
+//	  https://github.com/docker/buildx/releases/latest/download/buildx-v0.30.1.linux-amd64 \
+//	  -o /usr/libexec/docker/cli-plugins/docker-buildx
+//
 // sudo chmod +x /usr/libexec/docker/cli-plugins/docker-buildx.
 func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 	if exec.Command(dockerCmd, "compose").Run() != nil {
@@ -126,7 +202,7 @@ func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 	}
 	if bxErr != nil {
 		// Gracefully handle missing buildx as users might only use compose for running existing images
-		log.Errorf("docker buildx not available: %v (%s %s)",
+		log.Warnf("docker buildx not available: %v (%s %s)",
 			bxErr, strings.TrimSpace(string(bxOut)), strings.TrimSpace(string(bxErrOut)))
 	}
 
@@ -173,31 +249,6 @@ func tryComposeSubcommand(dockerCmd string) (*ComposeHelper, error) {
 	}, nil
 }
 
-func tryDockerComposeV1() (*ComposeHelper, error) {
-	if _, err := exec.LookPath("docker-compose"); err != nil {
-		return nil, fmt.Errorf("docker-compose not found in PATH")
-	}
-
-	cmd := exec.Command("docker-compose", "version", "--short")
-	out, stderr, err := runCmdCapture(cmd)
-	if len(stderr) > 0 {
-		log.Warnf("%s: %s", strings.TrimSpace(string(stderr)), strings.TrimSpace(string(out)))
-	}
-	if err != nil {
-		return nil, fmt.Errorf(
-			"failed to get docker-compose version %s: %w",
-			strings.TrimSpace(string(stderr)),
-			err,
-		)
-	}
-
-	return &ComposeHelper{
-		Command: "docker-compose",
-		Version: strings.TrimSpace(string(out)),
-		Args:    []string{},
-	}, nil
-}
-
 func (h *ComposeHelper) FindDevContainer(
 	ctx context.Context,
 	projectName, serviceName string,
@@ -229,46 +280,62 @@ func (h *ComposeHelper) FindDevContainer(
 func (h *ComposeHelper) Run(
 	ctx context.Context,
 	args []string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
+	streams docker.Streams,
+) error {
+	return h.RunWithOutput(ctx, args, streams, Output{})
+}
+
+type Output struct {
+	Capture io.Writer
+	Close   func() error
+}
+
+type captureWriter struct {
+	mu   sync.Mutex
+	next io.Writer
+}
+
+func (w *captureWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.next.Write(p)
+}
+
+func (h *ComposeHelper) RunWithOutput(
+	ctx context.Context,
+	args []string,
+	streams docker.Streams,
+	output Output,
 ) error {
 	cmd := h.buildCmd(ctx, args...)
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
-
-	var stderrBuf strings.Builder
-	if stderr != nil {
-		cmd.Stderr = io.MultiWriter(stderr, &stderrBuf)
-	} else {
-		cmd.Stderr = &stderrBuf
+	cmd.Stdin = streams.Stdin
+	tee := livetee.NewWithClose(io.Discard, nil, output.Close)
+	redactor := secrets.NewEnvironmentRedactor(cmd.Environ())
+	stdout, stderr := tee.Writer(streams.Stdout), tee.Writer(streams.Stderr)
+	if output.Capture != nil {
+		capture := &captureWriter{next: output.Capture}
+		stdout = io.MultiWriter(capture, stdout)
+		stderr = io.MultiWriter(capture, stderr)
 	}
-
+	outStream := &subprocess.StreamingRedactingWriter{Next: stdout, Redactor: redactor}
+	errStream := &subprocess.StreamingRedactingWriter{Next: stderr, Redactor: redactor}
+	cmd.Stdout = outStream
+	var stderrBuf strings.Builder
+	cmd.Stderr = io.MultiWriter(&stderrBuf, errStream)
 	err := cmd.Run()
 	if err != nil && stderrBuf.Len() > 0 {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(stderrBuf.String()), err)
+		err = fmt.Errorf("%s: %w", strings.TrimSpace(redactor.Redact(stderrBuf.String())), err)
 	}
-	return err
+	return errors.Join(err, outStream.Flush(), errStream.Flush(), tee.Finish())
 }
 
 func (h *ComposeHelper) Stop(ctx context.Context, projectName string, args []string) error {
-	buildArgs := []string{"--project-name", projectName}
+	buildArgs := []string{projectNameFlag, projectName}
 	buildArgs = append(buildArgs, args...)
 	buildArgs = append(buildArgs, "stop")
 
-	out, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 {
-		log.Warnf(
-			"%s: %s",
-			strings.TrimSpace(string(stderr)),
-			strings.TrimSpace(string(out)),
-		)
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(stderr)), err)
-	}
-
-	return nil
+	_, err := runComposeCmd(h.buildCmd(ctx, buildArgs...))
+	return err
 }
 
 func (h *ComposeHelper) Remove(
@@ -277,26 +344,15 @@ func (h *ComposeHelper) Remove(
 	args []string,
 	removeVolumes bool,
 ) error {
-	buildArgs := []string{"--project-name", projectName}
+	buildArgs := []string{projectNameFlag, projectName}
 	buildArgs = append(buildArgs, args...)
 	buildArgs = append(buildArgs, "down")
 	if removeVolumes {
 		buildArgs = append(buildArgs, "--volumes")
 	}
 
-	out, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 {
-		log.Warnf(
-			"%s: %s",
-			strings.TrimSpace(string(stderr)),
-			strings.TrimSpace(string(out)),
-		)
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(stderr)), err)
-	}
-
-	return nil
+	_, err := runComposeCmd(h.buildCmd(ctx, buildArgs...))
+	return err
 }
 
 func (h *ComposeHelper) GetDefaultImage(projectName, serviceName string) (string, error) {
@@ -321,19 +377,12 @@ func (h *ComposeHelper) FindProjectFiles(
 	ctx context.Context,
 	projectName string,
 ) ([]string, error) {
-	buildArgs := []string{"--project-name", projectName}
+	buildArgs := []string{projectNameFlag, projectName}
 	buildArgs = append(buildArgs, "ls", "-a", "--filter", "name="+projectName, "--format", "json")
 
-	rawOut, stderr, err := runCmdCapture(h.buildCmd(ctx, buildArgs...))
-	if len(stderr) > 0 {
-		log.Warnf(
-			"%s: %s",
-			strings.TrimSpace(string(stderr)),
-			strings.TrimSpace(string(rawOut)),
-		)
-	}
+	rawOut, err := runComposeCmd(h.buildCmd(ctx, buildArgs...))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", strings.TrimSpace(string(stderr)), err)
+		return nil, err
 	}
 
 	type composeOutput struct {
@@ -374,10 +423,21 @@ func (h *ComposeHelper) SanitizeProjectName(name string) string {
 func (h *ComposeHelper) toProjectName(projectName string) string {
 	useNewProjectNameFormat, _ := h.useNewProjectName()
 	if !useNewProjectNameFormat {
-		return regexp.MustCompile("[^a-z0-9]").ReplaceAllString(strings.ToLower(projectName), "")
+		return legacyProjectNamePattern.ReplaceAllString(strings.ToLower(projectName), "")
 	}
 
-	return regexp.MustCompile("[^-_a-z0-9]").ReplaceAllString(strings.ToLower(projectName), "")
+	return projectNamePattern.ReplaceAllString(strings.ToLower(projectName), "")
+}
+
+func runComposeCmd(cmd *exec.Cmd) ([]byte, error) {
+	out, stderr, err := runCmdCapture(cmd)
+	if len(stderr) > 0 {
+		log.Warnf("%s: %s", strings.TrimSpace(string(stderr)), strings.TrimSpace(string(out)))
+	}
+	if err != nil {
+		return out, fmt.Errorf("%s: %w", strings.TrimSpace(string(stderr)), err)
+	}
+	return out, nil
 }
 
 func (h *ComposeHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
@@ -388,6 +448,12 @@ func (h *ComposeHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd 
 	cmd := exec.CommandContext(ctx, h.Command, allArgs...)
 	if h.Docker != nil && h.Docker.Environment != nil {
 		cmd.Env = append(os.Environ(), h.Docker.Environment...)
+	}
+	if h.invocationEnvironment != nil {
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = wslg.Overlay(cmd.Env, h.invocationEnvironment, runtime.GOOS == goosWindows)
 	}
 	return cmd
 }
@@ -405,8 +471,7 @@ func runCmdCapture(cmd *exec.Cmd) ([]byte, []byte, error) {
 // and desktop versions (2.40.3-desktop.1) by extracting only major.minor.patch.
 func parseVersion(version string) (semver.Version, error) {
 	version = strings.TrimPrefix(version, "v")
-	re := regexp.MustCompile(`(\d+\.\d+\.\d+)`)
-	matches := re.FindStringSubmatch(strings.TrimSpace(version))
+	matches := composeVersionPattern.FindStringSubmatch(strings.TrimSpace(version))
 	if len(matches) < 2 {
 		return semver.Version{}, fmt.Errorf("invalid version format: %s", version)
 	}

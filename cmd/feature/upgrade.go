@@ -28,10 +28,11 @@ func NewUpgradeCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &UpgradeCmd{GlobalFlags: f}
 	upgradeCmd := &cobra.Command{
 		Use:   "upgrade [feature...]",
-		Short: "Upgrades devcontainer feature versions to the latest available",
-		Long: `Upgrades devcontainer feature versions in devcontainer.json to the latest
-available versions. If specific features are provided as arguments, only those
-features are upgraded. Otherwise, all outdated features are upgraded.`,
+		Short: "Upgrade devcontainer feature versions to the latest available",
+		Long: `Upgrade devcontainer feature versions to the latest available.
+
+Versions are updated in devcontainer.json. Pass feature names to upgrade only
+those features, or none to upgrade all outdated features.`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -53,8 +54,8 @@ features are upgraded. Otherwise, all outdated features are upgraded.`,
 }
 
 // Run runs the command logic.
-func (cmd *UpgradeCmd) Run(_ context.Context, targets []string) error {
-	parsedConfig, err := cmd.loadConfig()
+func (cmd *UpgradeCmd) Run(ctx context.Context, targets []string) error {
+	parsedConfig, err := cmd.loadConfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -78,13 +79,13 @@ func (cmd *UpgradeCmd) Run(_ context.Context, targets []string) error {
 	return cmd.applyUpgrades(parsedConfig.Origin, outdated)
 }
 
-func (cmd *UpgradeCmd) loadConfig() (*devconfig.DevContainerConfig, error) {
+func (cmd *UpgradeCmd) loadConfig(ctx context.Context) (*devconfig.DevContainerConfig, error) {
 	loader := &OutdatedCmd{
 		GlobalFlags:     cmd.GlobalFlags,
 		WorkspaceFolder: cmd.WorkspaceFolder,
 		Config:          cmd.Config,
 	}
-	return loader.loadConfig()
+	return loader.loadConfig(ctx)
 }
 
 func (cmd *UpgradeCmd) findUpgradeable(features map[string]any, targets []string) []outdatedEntry {

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/ssh"
@@ -154,13 +155,15 @@ type server struct {
 	sshServer   ssh.Server
 }
 
-func NewServer(
-	addr string,
-	hostKey []byte,
-	keys []ssh.PublicKey,
-	workdir string,
-	reuseSock string,
-) (Server, error) {
+// ServerOptions configures NewServer.
+type ServerOptions struct {
+	HostKey   []byte
+	Keys      []ssh.PublicKey
+	Workdir   string
+	ReuseSock string
+}
+
+func NewServer(addr string, opts ServerOptions) (Server, error) {
 	sh, err := shell.GetShell("")
 	if err != nil {
 		return nil, err
@@ -173,18 +176,18 @@ func NewServer(
 
 	server := &server{
 		shell:       sh,
-		workdir:     workdir,
-		reuseSock:   reuseSock,
+		workdir:     opts.Workdir,
+		reuseSock:   opts.ReuseSock,
 		currentUser: currentUser.Username,
-		sshServer:   buildSSHServer(addr, currentUser.Username),
+		sshServer:   buildSSHServer(addr),
 	}
 
-	if len(keys) > 0 {
-		server.sshServer.PublicKeyHandler = makePublicKeyHandler(keys)
+	if len(opts.Keys) > 0 {
+		server.sshServer.PublicKeyHandler = makePublicKeyHandler(opts.Keys)
 	}
 
-	if len(hostKey) > 0 {
-		err = server.sshServer.SetOption(ssh.HostKeyPEM(hostKey))
+	if len(opts.HostKey) > 0 {
+		err = server.sshServer.SetOption(ssh.HostKeyPEM(opts.HostKey))
 		if err != nil {
 			return nil, err
 		}
@@ -201,7 +204,7 @@ func NewServer(
 
 // buildSSHServer constructs the underlying ssh.Server with its port
 // forwarding, channel, request, and SFTP subsystem handlers wired up.
-func buildSSHServer(addr, currentUsername string) ssh.Server {
+func buildSSHServer(addr string) ssh.Server {
 	forwardHandler := &ssh.ForwardedTCPHandler{}
 	forwardedUnixHandler := &ssh.ForwardedUnixHandler{}
 	keepAliveInterval, keepAliveCountMax := keepAliveConfig()
@@ -232,7 +235,7 @@ func buildSSHServer(addr, currentUsername string) ssh.Server {
 		},
 		SubsystemHandlers: map[string]ssh.SubsystemHandler{
 			"sftp": func(s ssh.Session) {
-				sftpHandler(s, currentUsername)
+				sftpHandler(s)
 			},
 		},
 	}
@@ -266,7 +269,7 @@ func makePublicKeyHandler(keys []ssh.PublicKey) func(ctx ssh.Context, key ssh.Pu
 
 // cleanupAgentOnConnClosing tears down the per-connection agent state when
 // HandleConn observes the inbound channels stream close. Runs synchronously
-// in HandleConn's defer chain before sshConn.Wait() — so it fires reliably
+// in HandleConn's defer chain before sshConn.Wait() - so it fires reliably
 // even when the underlying transport is stuck (e.g. in stdio mode where EOF
 // on stdin can be delayed by the proxy chain).
 func cleanupAgentOnConnClosing(ctx ssh.Context, _ *gossh.ServerConn) {
@@ -338,7 +341,11 @@ func (s *server) Shutdown(ctx context.Context) error {
 func (s *server) handler(sess ssh.Session) {
 	var err error
 	ptyReq, winCh, isPty := sess.Pty()
-	cmd := s.getCommand(sess, isPty)
+	cmd, err := s.getCommand(sess, isPty)
+	if err != nil {
+		exitWithError(sess, err)
+		return
+	}
 
 	if ssh.AgentRequested(sess) {
 		cleanup, exit, aErr := s.configureAgent(sess, cmd)
@@ -367,25 +374,44 @@ func (s *server) handler(sess ssh.Session) {
 	exitWithError(sess, err)
 }
 
-func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
-	var cmd *exec.Cmd
+func (s *server) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, error) {
+	secretEnv, err := readSessionSecretEnvironment(config.SecretsEnvDir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare session secret environment: %w", err)
+	}
+	return s.getCommandWithSecretEnvironment(sess, isPty, secretEnv)
+}
+
+func (s *server) getCommandWithSecretEnvironment(
+	sess ssh.Session,
+	isPty bool,
+	secretEnv []string,
+) (*exec.Cmd, error) {
 	user := sess.User()
 	if user == s.currentUser {
 		user = ""
 	}
 
-	if user != "" {
+	//nolint:gosec // G204: shell configured by the ssh server, not user input
+	cmd := exec.Command(s.shell[0], buildShellArgs(s.shell[1:], sess, isPty)...)
+	cmd.Env = mergeSessionEnvironment(os.Environ(), secretEnv, sess.Environ())
+	handled, err := prepareExecIdentity(cmd, user)
+	if err != nil {
+		return nil, err
+	}
+	if user != "" && !handled {
 		//nolint:gosec // G204: args built from session request in the ssh server
-		cmd = exec.Command("su", buildSuArgs(sess, isPty)...)
-	} else {
-		//nolint:gosec // G204: shell configured by the ssh server, not user input
-		cmd = exec.Command(s.shell[0], buildShellArgs(s.shell[1:], sess, isPty)...)
+		suCmd := exec.Command("su", buildSuArgs(sess, isPty)...)
+		suCmd.Env = cmd.Env
+		cmd = suCmd
 	}
 
-	cmd.Dir = findWorkdir(s.workdir, user)
-	cmd.Env = append(cmd.Env, os.Environ()...)
-	cmd.Env = append(cmd.Env, sess.Environ()...)
-	return cmd
+	if handled {
+		cmd.Dir = findWorkdirWithHome(s.workdir, cmd.Dir)
+	} else {
+		cmd.Dir = findWorkdir(s.workdir, user)
+	}
+	return cmd, nil
 }
 
 // buildSuArgs builds the "su" argv for running sess's command as sess.User().

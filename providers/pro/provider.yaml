@@ -11,5 +11,5 @@ options:
     default: "${PROVIDER_FOLDER}/devsy-config.json"
 exec:
   daemon:
-    start: ${DEVSY} pro daemon start
-    status: ${DEVSY} pro daemon status
+    start: ${DEVSY} platform daemon start
+    status: ${DEVSY} platform daemon status

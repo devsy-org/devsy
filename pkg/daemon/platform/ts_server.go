@@ -16,11 +16,17 @@ import (
 	"tailscale.com/types/logger"
 )
 
-func newTSServer(
-	ctx context.Context,
-	host, accessKey, userName, rootDir string,
-	insecure bool,
-) (*tsnet.Server, *local.Client, error) {
+// tsServerConfig describes the tailnet server to start for the platform.
+type tsServerConfig struct {
+	Host      string
+	AccessKey string
+	UserName  string
+	RootDir   string
+	Insecure  bool
+}
+
+func newTSServer(ctx context.Context, cfg tsServerConfig) (*tsnet.Server, *local.Client, error) {
+	host, accessKey, userName, rootDir, insecure := cfg.Host, cfg.AccessKey, cfg.UserName, cfg.RootDir, cfg.Insecure
 	// Build the platform URL
 	baseUrl := url.URL{
 		Scheme: ts.GetEnvOrDefault("DEVSY_TSNET_SCHEME", "https"),

@@ -34,9 +34,11 @@ func NewGenerateDocsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &GenerateDocsCmd{GlobalFlags: globalFlags}
 	generateDocsCmd := &cobra.Command{
 		Use:   "docs",
-		Short: "Generate markdown documentation from feature metadata",
-		Long: `Scan a feature project's src/ directory and generate markdown
-documentation for each feature based on its devcontainer-feature.json.`,
+		Short: "Generate markdown docs from feature metadata",
+		Long: `Generate markdown docs from feature metadata.
+
+Scan a feature project's src/ directory and write markdown documentation
+for each feature from its devcontainer-feature.json.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -86,7 +88,9 @@ func (cmd *GenerateDocsCmd) Run() error {
 		return err
 	}
 
-	features, err := scanFeatures(filepath.Join(projectFolder, "src"))
+	features, err := discoverLocalFeatures(
+		filepath.Join(projectFolder, "src"), "read src/ directory", nil,
+	)
 	if err != nil {
 		return err
 	}
@@ -113,38 +117,8 @@ func (cmd *GenerateDocsCmd) resolveOutputFolder(
 	return out, nil
 }
 
-func scanFeatures(srcDir string) ([]*featureDoc, error) {
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		return nil, fmt.Errorf("read src/ directory: %w", err)
-	}
-
-	var features []*featureDoc
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		featureDir := filepath.Join(srcDir, entry.Name())
-		featureCfg, parseErr := config.ParseDevContainerFeature(featureDir)
-		if parseErr != nil {
-			continue
-		}
-
-		features = append(features, &featureDoc{
-			dir:    entry.Name(),
-			config: featureCfg,
-		})
-	}
-
-	if len(features) == 0 {
-		return nil, fmt.Errorf("no features found in %s", srcDir)
-	}
-	return features, nil
-}
-
 func (cmd *GenerateDocsCmd) writeDocs(
-	features []*featureDoc, outputFolder string,
+	features []localFeature, outputFolder string,
 ) error {
 	// #nosec G301
 	if err := os.MkdirAll(outputFolder, 0o755); err != nil {
@@ -172,11 +146,6 @@ func (cmd *GenerateDocsCmd) writeDocs(
 	return nil
 }
 
-type featureDoc struct {
-	dir    string
-	config *config.FeatureConfig
-}
-
 type featureDocJSON struct {
 	ID          string                                `json:"id"`
 	Name        string                                `json:"name,omitempty"`
@@ -187,7 +156,7 @@ type featureDocJSON struct {
 	Options     map[string]config.FeatureConfigOption `json:"options,omitempty"`
 }
 
-func (cmd *GenerateDocsCmd) writeJSON(features []*featureDoc) error {
+func (cmd *GenerateDocsCmd) writeJSON(features []localFeature) error {
 	docs := make([]featureDocJSON, 0, len(features))
 	for _, f := range features {
 		docs = append(docs, featureDocJSON{
@@ -208,7 +177,7 @@ func (cmd *GenerateDocsCmd) writeJSON(features []*featureDoc) error {
 	return err
 }
 
-func (cmd *GenerateDocsCmd) generateFeatureDoc(f *featureDoc) string {
+func (cmd *GenerateDocsCmd) generateFeatureDoc(f localFeature) string {
 	var sb strings.Builder
 
 	name := f.config.Name
@@ -230,7 +199,7 @@ func (cmd *GenerateDocsCmd) generateFeatureDoc(f *featureDoc) string {
 }
 
 func (cmd *GenerateDocsCmd) writeMetadataTable(
-	sb *strings.Builder, f *featureDoc,
+	sb *strings.Builder, f localFeature,
 ) {
 	rows := [][]string{{"ID", fmt.Sprintf("`%s`", f.config.ID)}}
 	if f.config.Version != "" {
@@ -304,7 +273,7 @@ func writeDependenciesSection(sb *strings.Builder, cfg *config.FeatureConfig) {
 	}
 }
 
-func (cmd *GenerateDocsCmd) generateIndex(features []*featureDoc) string {
+func (cmd *GenerateDocsCmd) generateIndex(features []localFeature) string {
 	var sb strings.Builder
 
 	sb.WriteString("# Dev Container Features\n\n")

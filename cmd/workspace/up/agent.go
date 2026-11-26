@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	client2 "github.com/devsy-org/devsy/pkg/client"
@@ -49,17 +50,48 @@ func (cmd *UpCmd) devsyUp(
 	return result, nil
 }
 
+func (cmd *UpCmd) validateInteractiveRoute(client client2.BaseWorkspaceClient) error {
+	if !cmd.InteractivePostStart {
+		return nil
+	}
+	if cmd.Platform.Enabled {
+		return fmt.Errorf(
+			"--interactive-post-start is unsupported with platform-managed workspaces",
+		)
+	}
+	switch client.(type) {
+	case client2.WorkspaceClient:
+		return nil
+	case client2.ProxyClient:
+		return fmt.Errorf("--interactive-post-start is unsupported with proxy workspaces")
+	case client2.DaemonClient:
+		return fmt.Errorf("--interactive-post-start is unsupported with daemon workspaces")
+	}
+	return nil
+}
+
 func (cmd *UpCmd) dispatchClient(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) (*config2.Result, error) {
+	if cmd.InteractivePostStart && cmd.Platform.Enabled {
+		return nil, fmt.Errorf(
+			"--interactive-post-start is unsupported with platform-managed workspaces",
+		)
+	}
 	switch client := client.(type) {
 	case client2.WorkspaceClient:
 		return cmd.devsyUpMachine(ctx, devsyConfig, client)
 	case client2.ProxyClient:
+		if cmd.InteractivePostStart {
+			return nil, fmt.Errorf("--interactive-post-start is unsupported with proxy workspaces")
+		}
 		return cmd.devsyUpProxy(ctx, client)
 	case client2.DaemonClient:
+		if cmd.InteractivePostStart {
+			return nil, fmt.Errorf("--interactive-post-start is unsupported with daemon workspaces")
+		}
 		return cmd.devsyUpDaemon(ctx, client)
 	default:
 		return nil, fmt.Errorf("unsupported client type: %T", client)
@@ -91,16 +123,17 @@ func (cmd *UpCmd) devsyUpProxy(
 		errChan <- cmd.runProxyUpCommand(ctx, client, stdinReader, stdoutWriter)
 	}()
 
-	result, err := tunnelserver.RunUpServer(
-		cancelCtx,
-		stdoutReader,
-		stdinWriter,
-		true,
-		true,
-		client.WorkspaceConfig(),
-		tunnelserver.WithGitToken(cmd.GitToken),
-		tunnelserver.WithStatusReporter(cmd.reporter()),
-	)
+	result, err := tunnelserver.RunUpServer(cancelCtx, tunnelserver.UpSpec{
+		Reader:                 stdoutReader,
+		Writer:                 stdinWriter,
+		AllowGitCredentials:    true,
+		AllowDockerCredentials: true,
+		Workspace:              client.WorkspaceConfig(),
+		Options: append([]tunnelserver.Option{
+			tunnelserver.WithGitToken(cmd.GitToken),
+			tunnelserver.WithStatusReporter(cmd.reporter()),
+		}, cmd.setupHop.Options()...),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel machine: %w", err)
 	}
@@ -145,7 +178,10 @@ func (cmd *UpCmd) devsyUpDaemon(
 func (cmd *UpCmd) buildWorkspaceOptions(workspace *provider2.Workspace) provider2.CLIOptions {
 	baseOptions := cmd.CLIOptions
 	baseOptions.ID = workspace.ID
-	baseOptions.DevContainerPath = workspace.DevContainerPath
+	if workspace.DevContainerConfig == nil {
+		baseOptions.DevContainerPath = workspace.DevContainerPath
+		baseOptions.DevContainerID = workspace.DevContainerID
+	}
 	baseOptions.DevContainerImage = workspace.DevContainerImage
 	baseOptions.DevContainerSource = workspace.DevContainerSource
 	baseOptions.IDE = workspace.IDE.Name
@@ -171,18 +207,20 @@ func (cmd *UpCmd) devsyUpMachine(
 		return nil, fmt.Errorf("wait for machine: %w", err)
 	}
 
-	log.Info("creating devcontainer")
+	log.Debug("creating devcontainer")
 	defer log.Debug("done creating devcontainer")
 
 	if cmd.Platform.Enabled {
+		cliOptions := withoutSecretValues(cmd.CLIOptions)
 		return clientimplementation.BuildAgentClient(
 			ctx,
 			clientimplementation.BuildAgentClientOptions{
 				WorkspaceClient: client,
-				CLIOptions:      cmd.CLIOptions,
+				CLIOptions:      cliOptions,
 				AgentCommand:    "up",
 				TunnelOptions: []tunnelserver.Option{
 					tunnelserver.WithPlatformOptions(&cmd.Platform),
+					tunnelserver.WithSecrets(cmd.SecretsEnv, cmd.SecretsMount),
 					tunnelserver.WithStatusReporter(cmd.reporter()),
 				},
 			},
@@ -197,25 +235,47 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 	devsyConfig *config.Config,
 	client client2.WorkspaceClient,
 ) (*config2.Result, error) {
-	workspaceInfo, wInfo, err := client.AgentInfo(cmd.CLIOptions)
+	var owner *interactivePostStart
+	var lifecycleOption tunnelserver.Option
+	if request := cmd.LifecycleTerminal; request != nil {
+		gate := terminalStatusGate(cmd.reporter())
+		owner = newInteractivePostStart(interactivePostStartOptions{
+			stdin: os.Stdin, stdout: os.Stdout, rows: cmd.TerminalRows,
+			columns: cmd.TerminalColumns, term: os.Getenv("TERM"),
+			status: gate, output: cmd.stdout(),
+		})
+		defer owner.Close()
+		lifecycleOption = tunnelserver.WithLifecycleTerminalOwner(owner, *request)
+	}
+	workspaceInfo, wInfo, err := client.AgentInfo(withoutSecretValues(cmd.CLIOptions))
 	if err != nil {
 		return nil, fmt.Errorf("get agent info: %w", err)
 	}
 
-	sshTunnelCmd := fmt.Sprintf("'%s' internal ssh-server --stdio", client.AgentPath())
+	sshTunnelCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
 	if log.DebugEnabled() {
 		sshTunnelCmd += " --debug" //nolint:goconst
 	}
 
-	agentCommand := fmt.Sprintf(
-		"%q internal agent workspace up --workspace-info %q",
+	agentCommand := workspaceAgentCommand(
 		client.AgentPath(),
 		workspaceInfo,
+		log.DebugEnabled(),
+		cmd.LifecycleTerminal != nil,
 	)
-	if log.DebugEnabled() {
-		agentCommand += " --debug"
-	}
 
+	options := append([]tunnelserver.Option{
+		tunnelserver.WithSecrets(cmd.SecretsEnv, cmd.SecretsMount),
+		tunnelserver.WithGitToken(cmd.GitToken),
+		tunnelserver.WithStatusReporter(cmd.reporter()),
+	}, cmd.setupHop.Options()...)
+	if lifecycleOption != nil {
+		options = append(options, lifecycleOption)
+	}
+	var environment map[string]string
+	if wInfo.Agent.Driver == provider2.ExternalDriver && wInfo.Agent.Local == config.BoolTrue {
+		environment = provider2.ToOptions(wInfo.Workspace, wInfo.Machine, wInfo.Options)
+	}
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
 		Client: client,
 		AddPrivateKeys: devsyConfig.ContextOption(
@@ -224,25 +284,54 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		AgentInject: newAgentInjectFunc(client, wInfo),
 		SSHCommand:  sshTunnelCmd,
 		Command:     agentCommand,
+		EnvVars:     environment,
 		TunnelServerFunc: func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error) {
-			return tunnelserver.RunUpServer(
-				ctx,
-				stdout,
-				stdin,
-				client.AgentInjectGitCredentials(cmd.CLIOptions),
-				client.AgentInjectDockerCredentials(cmd.CLIOptions),
-				client.WorkspaceConfig(),
-				tunnelserver.WithGitToken(cmd.GitToken),
-				tunnelserver.WithStatusReporter(cmd.reporter()),
-			)
+			return tunnelserver.RunUpServer(ctx, tunnelserver.UpSpec{
+				Reader:                 stdout,
+				Writer:                 stdin,
+				AllowGitCredentials:    client.AgentInjectGitCredentials(cmd.CLIOptions),
+				AllowDockerCredentials: client.AgentInjectDockerCredentials(cmd.CLIOptions),
+				Workspace:              client.WorkspaceConfig(),
+				Options:                options,
+			})
 		},
 	})
+}
+
+func workspaceAgentCommand(agentPath, workspaceInfo string, debug, lifecycleTerminal bool) string {
+	command := fmt.Sprintf(
+		"%s internal agent workspace up --workspace-info %s",
+		shellescape.Quote(agentPath),
+		shellescape.Quote(workspaceInfo),
+	)
+	if debug {
+		command += " --debug"
+	}
+	if lifecycleTerminal {
+		command += " " + shellescape.Quote("--lifecycle-terminal-protocol=1")
+	}
+	return command
+}
+
+func withoutSecretValues(options provider2.CLIOptions) provider2.CLIOptions {
+	options.SecretsEnv = nil
+	options.SecretsMount = nil
+	return options
 }
 
 func newAgentInjectFunc(
 	client client2.WorkspaceClient,
 	wInfo *provider2.AgentWorkspaceInfo,
 ) sshtunnel.AgentInjectFunc {
+	var localEnvironment []string
+	if wInfo.Agent.Driver == provider2.ExternalDriver && wInfo.Agent.Local == config.BoolTrue {
+		localEnvironment = provider2.ToEnvironment(
+			wInfo.Workspace,
+			wInfo.Machine,
+			wInfo.Options,
+			nil,
+		)
+	}
 	return func(
 		cancelCtx context.Context,
 		sshCmd string,
@@ -252,20 +341,22 @@ func newAgentInjectFunc(
 		return agent.InjectAgent(cancelCtx, &agent.InjectOptions{
 			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 				return client.Command(ctx, client2.CommandOptions{
-					Command: command,
-					Stdin:   stdin,
-					Stdout:  stdout,
-					Stderr:  stderr,
+					Command:   command,
+					Stdin:     stdin,
+					Stdout:    stdout,
+					Stderr:    stderr,
+					RawStdout: true,
 				})
 			},
-			IsLocal:         client.AgentLocal(),
-			RemoteAgentPath: client.AgentPath(),
-			DownloadURL:     client.AgentURL(),
-			Command:         sshCmd,
-			Stdin:           sshTunnelStdinReader,
-			Stdout:          sshTunnelStdoutWriter,
-			Stderr:          writer,
-			Timeout:         wInfo.InjectTimeout,
+			LocalEnvironment: localEnvironment,
+			IsLocal:          client.AgentLocal(),
+			RemoteAgentPath:  client.AgentPath(),
+			DownloadURL:      client.AgentURL(),
+			Command:          sshCmd,
+			Stdin:            sshTunnelStdinReader,
+			Stdout:           sshTunnelStdoutWriter,
+			Stderr:           writer,
+			Timeout:          wInfo.InjectTimeout,
 		})
 	}
 }

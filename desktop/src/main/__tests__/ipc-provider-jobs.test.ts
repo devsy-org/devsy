@@ -1,12 +1,20 @@
 // @vitest-environment node
 import { EventEmitter } from "node:events"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ProviderJobs } from "../provider-jobs.js"
+import { DaemonState } from "../state.js"
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
+let trustedEvent: unknown
 
 vi.mock("electron", () => ({
-  app: { getPath: () => "/tmp", getVersion: () => "0.0.0" },
+  app: {
+    getPath: () => "/tmp",
+    getAppPath: () => "/tmp",
+    getVersion: () => "0.0.0",
+  },
   dialog: {},
   ipcMain: {
     handle: (channel: string, fn: (...args: unknown[]) => unknown) => {
@@ -44,6 +52,7 @@ function setup(
 ) {
   const providerJobs = new ProviderJobs()
   const cli = {
+    setUnlockHandler: vi.fn(),
     run: vi.fn(async () => ({})),
     runRaw: vi.fn(async () => ""),
     runStreaming: vi.fn(
@@ -64,9 +73,19 @@ function setup(
     ),
     cancelFor: vi.fn(async () => undefined),
   }
+  const state = new DaemonState()
+  vi.spyOn(state, "workspaceContext").mockReturnValue("ctx")
+  const send = vi.fn()
+  const mainFrame = {
+    url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
+    isDestroyed: () => false,
+  }
+  const webContents = { send, mainFrame, isDestroyed: () => false }
+  const win = { webContents, isDestroyed: () => false }
+  trustedEvent = { sender: webContents, senderFrame: mainFrame }
   const deps = {
     cli,
-    state: { workspaceContext: () => "ctx", providerList: () => [] },
+    state,
     logStore: {
       createLogFile: () => "/tmp/log.txt",
       appendLog: () => true,
@@ -74,28 +93,360 @@ function setup(
       onDrain: async () => undefined,
     },
     pty: { cancelFor: vi.fn(async () => undefined) },
-    getMainWindow: () => null,
+    getMainWindow: () => win,
     providerJobs,
   }
   // biome-ignore lint/suspicious/noExplicitAny: partial test doubles
   registerIpcHandlers(deps as any)
-  return { providerJobs, cli }
+  providerJobs.onChange(() =>
+    send("providers-changed", {
+      providers: state.providerList(),
+      jobs: providerJobs.snapshot(),
+    }),
+  )
+  return { providerJobs, cli, send, state }
 }
 
 function invoke(channel: string, args: Record<string, unknown>) {
   const handler = handlers.get(channel)
   if (!handler) throw new Error(`${channel} not registered`)
-  return handler({}, args)
+  return handler(trustedEvent, args)
 }
 
 function statusLine(phase: string) {
-  return JSON.stringify({ kind: "status", pipeline: "provider", phase })
+  return JSON.stringify({
+    kind: "status",
+    schemaVersion: 1,
+    pipeline: "provider",
+    phase,
+    state: "started",
+  })
 }
 
 describe("provider job lifecycle over IPC", () => {
   beforeEach(() => {
+    vi.stubEnv("ELECTRON_RENDERER_URL", "")
     handlers.clear()
     vi.clearAllMocks()
+  })
+
+  it("loads the install catalog through the existing CLI discovery command", async () => {
+    const { cli } = setup()
+    cli.run.mockResolvedValueOnce(["terraform", "civo"])
+    await expect(invoke("provider_available", {})).resolves.toEqual([
+      "terraform",
+      "civo",
+    ])
+    expect(cli.run).toHaveBeenCalledExactlyOnceWith([
+      "provider",
+      "list",
+      "--available",
+    ])
+    expect(cli.runRaw).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])(
+    "keeps the wizard's single-machine selection when saving options (%s)",
+    async (singleMachine) => {
+      const { cli } = setup()
+      await invoke("provider_set_options", {
+        name: "custom",
+        options: ["REGION=local"],
+        singleMachine,
+      })
+      expect(cli.runRaw).toHaveBeenCalledExactlyOnceWith([
+        "provider",
+        "set",
+        "custom",
+        "--skip-init",
+        `--single-machine=${singleMachine}`,
+        "-o",
+        "REGION=local",
+      ])
+    },
+  )
+
+  it("keeps existing option-save calls unchanged when no installation mode is supplied", async () => {
+    const { cli } = setup()
+    await invoke("provider_set_options", {
+      name: "docker",
+      options: ["REGION=local"],
+    })
+    expect(cli.runRaw).toHaveBeenCalledExactlyOnceWith([
+      "provider",
+      "set",
+      "docker",
+      "--skip-init",
+      "-o",
+      "REGION=local",
+    ])
+  })
+
+  it.each([
+    ["provider_set_single_machine", true, false],
+    ["provider_set_single_machine", false, true],
+    ["provider_set_options", true, false],
+    ["provider_set_options", false, true],
+  ] as const)(
+    "updates only the named provider cache after successful %s mode=%s",
+    async (channel, desired, initial) => {
+      const { cli, state } = setup()
+      const provider = {
+        name: "docker",
+        state: { initialized: true, singleMachine: initial },
+        options: { REGION: "local" },
+      }
+      const sibling = {
+        name: "aws",
+        state: { initialized: false, singleMachine: true },
+      }
+      state.updateProviders([provider, sibling])
+      const startingRevision = state.providerReadRevision()
+      const args =
+        channel === "provider_set_single_machine"
+          ? { name: "docker", enabled: desired }
+          : {
+              name: "docker",
+              options: ["REGION=remote"],
+              singleMachine: desired,
+            }
+
+      await invoke(channel, args)
+
+      expect(cli.runRaw).toHaveBeenCalledOnce()
+      expect(state.providerReadRevision()).toBe(startingRevision + 1)
+      expect(
+        state.providerList().find(({ name }) => name === "docker"),
+      ).toEqual({
+        ...provider,
+        state: { initialized: true, singleMachine: desired },
+      })
+      expect(state.providerList().find(({ name }) => name === "aws")).toEqual(
+        sibling,
+      )
+      expect(provider.state.singleMachine).toBe(initial)
+    },
+  )
+
+  it.each([
+    ["provider_set_single_machine", { name: "docker", enabled: false }],
+    [
+      "provider_set_options",
+      { name: "docker", options: ["REGION=remote"], singleMachine: false },
+    ],
+  ] as const)(
+    "does not update cached mode when %s fails",
+    async (channel, args) => {
+      const { cli, state } = setup()
+      state.updateProviders([
+        { name: "docker", state: { initialized: true, singleMachine: true } },
+      ])
+      const startingRevision = state.providerReadRevision()
+      cli.runRaw.mockRejectedValueOnce(new Error("provider set failed"))
+
+      await expect(invoke(channel, args)).rejects.toThrow("provider set failed")
+
+      expect(state.providerReadRevision()).toBe(startingRevision)
+      expect(state.providerList()[0].state?.singleMachine).toBe(true)
+    },
+  )
+
+  it("leaves cached mode implicit when saving options without an explicit mode", async () => {
+    const { state } = setup()
+    state.updateProviders([
+      { name: "docker", state: { initialized: true, singleMachine: true } },
+    ])
+    const startingRevision = state.providerReadRevision()
+
+    await invoke("provider_set_options", {
+      name: "docker",
+      options: ["REGION=remote"],
+    })
+
+    expect(state.providerReadRevision()).toBe(startingRevision)
+    expect(state.providerList()[0].state?.singleMachine).toBe(true)
+  })
+
+  it("keeps confirmed mode in provider-job broadcasts when the subsequent provider list fails", async () => {
+    const { cli, providerJobs, send, state } = setup()
+    state.updateProviders([
+      {
+        name: "docker",
+        state: { initialized: true, singleMachine: true },
+      },
+      { name: "aws", state: { initialized: false, singleMachine: false } },
+    ])
+    await invoke("provider_set_single_machine", {
+      name: "docker",
+      enabled: false,
+    })
+
+    providerJobs.setRefresh(async () => {
+      await invoke("provider_list", {})
+    })
+    cli.run.mockRejectedValueOnce(new Error("provider list unavailable"))
+    providerJobs.start("aws", "updating")
+    await expect(providerJobs.finish("aws")).rejects.toThrow(
+      "provider list unavailable",
+    )
+    providerJobs.start("docker", "initializing")
+
+    expect(state.providerList()).toEqual([
+      { name: "aws", state: { initialized: false, singleMachine: false } },
+      { name: "docker", state: { initialized: true, singleMachine: false } },
+    ])
+    expect(send).toHaveBeenCalledWith(
+      "providers-changed",
+      expect.objectContaining({
+        providers: expect.arrayContaining([
+          expect.objectContaining({
+            name: "docker",
+            state: expect.objectContaining({ singleMachine: false }),
+          }),
+        ]),
+      }),
+    )
+  })
+
+  it("does not let a direct provider-list response started before a write replace its mode", async () => {
+    const { cli, state } = setup()
+    state.updateProviders([
+      { name: "docker", state: { initialized: true, singleMachine: true } },
+    ])
+    let resolveList!: (value: Record<string, unknown>) => void
+    cli.run.mockImplementationOnce(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          resolveList = resolve
+        }),
+    )
+    const pendingList = invoke("provider_list", {})
+    await vi.waitFor(() => expect(cli.run).toHaveBeenCalledOnce())
+
+    await invoke("provider_set_single_machine", {
+      name: "docker",
+      enabled: false,
+    })
+    resolveList({
+      docker: {
+        config: { name: "docker" },
+        state: { initialized: true, singleMachine: true },
+      },
+    })
+    await pendingList
+
+    expect(state.providerList()[0].state?.singleMachine).toBe(false)
+  })
+
+  it("rejects malformed installation mode before saving options", async () => {
+    const { cli } = setup()
+    await expect(
+      invoke("provider_set_options", {
+        name: "custom",
+        options: ["REGION=local"],
+        singleMachine: "true",
+      }),
+    ).rejects.toThrow("Single-machine selection must be a boolean.")
+    expect(cli.runRaw).not.toHaveBeenCalled()
+  })
+
+  it.each([{}, ["docker", null], [""]])(
+    "rejects malformed provider catalog data %j",
+    async (result) => {
+      const { cli } = setup()
+      cli.run.mockResolvedValueOnce(result)
+      await expect(invoke("provider_available", {})).rejects.toThrow(
+        "Provider catalog returned invalid data.",
+      )
+    },
+  )
+
+  it("keeps a catalog transfer failure visible to the caller", async () => {
+    const { cli } = setup()
+    cli.run.mockRejectedValueOnce(new Error("catalog unavailable"))
+    await expect(invoke("provider_available", {})).rejects.toThrow(
+      "catalog unavailable",
+    )
+  })
+
+  it("forwards managed secret attachment intent to the CLI", async () => {
+    const { cli } = setup()
+    await invoke("secret_attach", { name: "DB_PASSWORD", context: "staging" })
+    await invoke("secret_detach", { name: "DB_PASSWORD", context: "staging" })
+    expect(cli.runRaw).toHaveBeenCalledWith([
+      "--context",
+      "staging",
+      "secret",
+      "attach",
+      "DB_PASSWORD",
+    ])
+    expect(cli.runRaw).toHaveBeenCalledWith([
+      "--context",
+      "staging",
+      "secret",
+      "detach",
+      "DB_PASSWORD",
+    ])
+  })
+
+  it("rejects managed secret attachment without a context", async () => {
+    const { cli } = setup()
+    const result = (await invoke("secret_attach", {
+      name: "DB_PASSWORD",
+      context: "",
+    })) as { ok: boolean; message: string; cliError?: unknown }
+    expect(result).toEqual({
+      ok: false,
+      message: "context is required",
+      cliError: undefined,
+    })
+    expect(cli.runRaw).not.toHaveBeenCalled()
+  })
+
+  it("forwards managed environment attachment intent to the CLI", async () => {
+    const { cli } = setup()
+    await invoke("env_attach", { name: "LOG_LEVEL", context: "staging" })
+    await invoke("env_detach", { name: "LOG_LEVEL", context: "staging" })
+    expect(cli.runRaw).toHaveBeenCalledWith([
+      "--context",
+      "staging",
+      "env",
+      "attach",
+      "LOG_LEVEL",
+    ])
+    expect(cli.runRaw).toHaveBeenCalledWith([
+      "--context",
+      "staging",
+      "env",
+      "detach",
+      "LOG_LEVEL",
+    ])
+  })
+
+  it("deletes managed environment values in the displayed context", async () => {
+    const { cli } = setup()
+    await invoke("env_delete", { name: "LOG_LEVEL", context: "staging" })
+    expect(cli.runRaw).toHaveBeenCalledWith([
+      "--context",
+      "staging",
+      "env",
+      "delete",
+      "LOG_LEVEL",
+    ])
+  })
+
+  it("rejects managed environment deletion without a context", async () => {
+    const { cli } = setup()
+    const result = (await invoke("env_delete", {
+      name: "LOG_LEVEL",
+      context: "",
+    })) as { ok: boolean; message: string; cliError?: unknown }
+    expect(result).toEqual({
+      ok: false,
+      message: "context is required",
+      cliError: undefined,
+    })
+    expect(cli.runRaw).not.toHaveBeenCalled()
   })
 
   it("clears the job when init succeeds", async () => {
@@ -132,6 +483,28 @@ describe("provider job lifecycle over IPC", () => {
     expect(providerJobs.get("docker")?.activity).toBe("installing")
   })
 
+  it.each([
+    "microsandbox",
+    "github.com/devsy-org/devsy-provider-microsandbox",
+    "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8",
+  ])(
+    "adds and initializes external source %s without selecting a default",
+    async (source) => {
+      const { cli, providerJobs } = setup()
+
+      await invoke("provider_add", { name: "microsandbox", source })
+      await invoke("provider_init", { name: "microsandbox" })
+
+      expect(cli.runStreaming.mock.calls.map(([args]) => args)).toEqual([
+        ["provider", "add", source, "--use=false", "--name", "microsandbox"],
+        ["provider", "init", "microsandbox"],
+      ])
+      expect(cli.run).not.toHaveBeenCalled()
+      expect(cli.runRaw).not.toHaveBeenCalled()
+      expect(providerJobs.get("microsandbox")).toBeUndefined()
+    },
+  )
+
   it("releases an abandoned job so the card stops spinning", async () => {
     const { providerJobs } = setup(() => ({ lines: [], code: 0 }))
 
@@ -165,6 +538,105 @@ describe("provider job lifecycle over IPC", () => {
     expect(providerJobs.get("docker")).toBeUndefined()
   })
 
+  it.each(["provider_update", "provider_update_streaming"])(
+    "%s installs the confirmed version before initializing",
+    async (command) => {
+      const seen: string[][] = []
+      const { providerJobs } = setup((cliArgs) => {
+        seen.push(cliArgs)
+        return { lines: [], code: 0 }
+      })
+
+      await invoke(command, { name: "microsandbox", tag: "v0.2.0" })
+
+      await vi.waitFor(() =>
+        expect(providerJobs.get("microsandbox")).toBeUndefined(),
+      )
+      expect(seen).toEqual([
+        [
+          "provider",
+          "set-source",
+          "microsandbox",
+          "--use=false",
+          "--version",
+          "v0.2.0",
+        ],
+        ["provider", "init", "microsandbox"],
+      ])
+    },
+  )
+
+  it.each(["provider_update", "provider_update_streaming"])(
+    "%s rejects a non-string version before opening a job",
+    async (command) => {
+      const { providerJobs, cli } = setup()
+
+      await expect(
+        invoke(command, { name: "docker", tag: { version: "v1" } }),
+      ).rejects.toThrow("Provider version tag must be a string.")
+
+      expect(providerJobs.get("docker")).toBeUndefined()
+      expect(cli.runRaw).not.toHaveBeenCalled()
+      expect(cli.runStreaming).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(["provider_update", "provider_update_streaming"])(
+    "%s treats an empty optional version as source reload",
+    async (command) => {
+      const seen: string[][] = []
+      const { providerJobs } = setup((cliArgs) => {
+        seen.push(cliArgs)
+        return { lines: [], code: 0 }
+      })
+
+      await invoke(command, { name: "docker", tag: "" })
+      await vi.waitFor(() => expect(providerJobs.get("docker")).toBeUndefined())
+
+      expect(seen).toEqual([
+        ["provider", "set-source", "docker", "--use=false"],
+        ["provider", "init", "docker"],
+      ])
+    },
+  )
+
+  it.each([undefined, "", 42])(
+    "provider_set_version rejects invalid required tag %s before opening a job",
+    async (tag) => {
+      const { providerJobs, cli } = setup()
+
+      await expect(
+        invoke("provider_set_version", { name: "docker", tag }),
+      ).rejects.toThrow(
+        tag === undefined || tag === ""
+          ? "A provider version tag is required."
+          : "Provider version tag must be a string.",
+      )
+
+      expect(providerJobs.get("docker")).toBeUndefined()
+      expect(cli.runStreaming).not.toHaveBeenCalled()
+    },
+  )
+
+  it("passes valid Git ref syntax as a separate set-version argument", async () => {
+    const seen: string[][] = []
+    const { providerJobs } = setup((cliArgs) => {
+      seen.push(cliArgs)
+      return { lines: [], code: 0 }
+    })
+
+    await invoke("provider_set_version", {
+      name: "docker",
+      tag: "release/candidate+1",
+    })
+    await vi.waitFor(() => expect(providerJobs.get("docker")).toBeUndefined())
+
+    expect(seen).toEqual([
+      ["provider", "set-source", "docker", "--version", "release/candidate+1"],
+      ["provider", "init", "docker"],
+    ])
+  })
+
   it("records the failure when the update's chained init fails", async () => {
     const { providerJobs } = setup((cliArgs) => ({
       lines: [],
@@ -178,6 +650,63 @@ describe("provider job lifecycle over IPC", () => {
     expect(providerJobs.get("docker")?.error).toBeTruthy()
   })
 
+  it("streams update phases and completes the provider job", async () => {
+    const seen: string[][] = []
+    const { providerJobs, send } = setup((cliArgs) => {
+      seen.push(cliArgs)
+      return {
+        lines: [
+          statusLine(cliArgs[1] === "init" ? "running_init" : "downloading"),
+        ],
+        code: 0,
+      }
+    })
+
+    const commandId = await invoke("provider_update_streaming", {
+      name: "docker",
+    })
+    expect(commandId).toEqual(expect.any(String))
+    expect(providerJobs.get("docker")?.activity).toBe("updating")
+
+    await vi.waitFor(() => expect(providerJobs.get("docker")).toBeUndefined())
+    expect(seen.map((args) => args[1])).toEqual(["set-source", "init"])
+    expect(send).toHaveBeenCalledWith(
+      "command-progress",
+      expect.objectContaining({ commandId, success: true, done: true }),
+    )
+  })
+
+  it("retains update failure details after a streaming update", async () => {
+    const { providerJobs } = setup((cliArgs) => ({
+      lines: [],
+      code: cliArgs[1] === "init" ? 1 : 0,
+    }))
+
+    await invoke("provider_update_streaming", { name: "docker" })
+    await vi.waitFor(() =>
+      expect(providerJobs.get("docker")?.error).toBeTruthy(),
+    )
+  })
+
+  it("terminates a streaming update when provider refresh fails", async () => {
+    const { providerJobs, send } = setup(() => ({ lines: [], code: 0 }))
+    providerJobs.setRefresh(() => Promise.reject(new Error("refresh boom")))
+
+    const commandId = await invoke("provider_update_streaming", {
+      name: "docker",
+    })
+
+    await vi.waitFor(() =>
+      expect(providerJobs.get("docker")?.errorCode).toBe(
+        "provider_refresh_failed",
+      ),
+    )
+    expect(send).toHaveBeenCalledWith(
+      "command-progress",
+      expect.objectContaining({ commandId, success: false, done: true }),
+    )
+  })
+
   it("does not blame a successful init for a refresh failure afterward", async () => {
     const { providerJobs } = setup(() => ({
       lines: [statusLine("running_init"), statusLine("ready")],
@@ -188,5 +717,41 @@ describe("provider job lifecycle over IPC", () => {
     await invoke("provider_init", { name: "docker" })
 
     expect(providerJobs.get("docker")?.error).not.toBe("refresh boom")
+  })
+
+  it("refreshes and clears a retained provider refresh failure", async () => {
+    const { providerJobs } = setup(() => ({ lines: [], code: 0 }))
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    providerJobs.setRefresh(refresh)
+    providerJobs.start("docker", "updating")
+    await providerJobs.finish("docker", {
+      code: "provider_refresh_failed",
+      message: "status unavailable",
+    })
+
+    const result = await invoke("provider_refresh_state", { name: "docker" })
+
+    expect(result).toEqual({ ok: true })
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(providerJobs.get("docker")).toBeUndefined()
+  })
+
+  it("returns failure and retains recovery when provider refresh still fails", async () => {
+    const { providerJobs } = setup(() => ({ lines: [], code: 0 }))
+    providerJobs.setRefresh(() =>
+      Promise.reject(new Error("still unavailable")),
+    )
+    providerJobs.start("docker", "updating")
+    await providerJobs.finish("docker", {
+      code: "provider_refresh_failed",
+      message: "status unavailable",
+    })
+
+    const result = await invoke("provider_refresh_state", { name: "docker" })
+
+    expect(result).toEqual({ ok: false, message: "still unavailable" })
+    expect(providerJobs.get("docker")?.errorCode).toBe(
+      "provider_refresh_failed",
+    )
   })
 })

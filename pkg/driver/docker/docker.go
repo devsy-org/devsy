@@ -100,11 +100,16 @@ type dockerDriver struct {
 // The docker driver supports the full image, compose, docker-helper, and
 // snapshot-commit capabilities.
 var (
+	_ driver.MountDeliveryDriver  = (*dockerDriver)(nil)
+	_ driver.RecreatePolicyDriver = (*dockerDriver)(nil)
+	_ driver.WorkspaceChowner     = (*dockerDriver)(nil)
+
 	_ driver.ImageDriver           = (*dockerDriver)(nil)
 	_ driver.ComposeDriver         = (*dockerDriver)(nil)
 	_ driver.DockerHelperProvider  = (*dockerDriver)(nil)
 	_ driver.SnapshotCapableDriver = (*dockerDriver)(nil)
 	_ driver.Preflighter           = (*dockerDriver)(nil)
+	_ driver.ImageRunValidator     = (*dockerDriver)(nil)
 )
 
 // Preflight checks the runtime binary is installed and its daemon reachable,
@@ -398,20 +403,29 @@ func (d *dockerDriver) FindDevContainer(
 			config.GetIDLabels(workspaceId, d.IDLabels),
 		)
 	}
-	if err != nil {
-		return nil, err
-	} else if containerDetails == nil {
-		return nil, nil
+	if err != nil || containerDetails == nil {
+		return containerDetails, err
 	}
 
-	if containerDetails.Config.User != "" {
-		if containerDetails.Config.Labels == nil {
-			containerDetails.Config.Labels = map[string]string{}
-		}
-		if containerDetails.Config.Labels[config.UserLabel] == "" {
-			containerDetails.Config.Labels[config.UserLabel] = containerDetails.Config.User
-		}
-	}
+	ensureUserLabel(containerDetails)
 
 	return containerDetails, nil
 }
+
+func ensureUserLabel(details *config.ContainerDetails) {
+	if details == nil || details.Config.User == "" {
+		return
+	}
+	if details.Config.Labels == nil {
+		details.Config.Labels = make(map[string]string)
+	}
+	if details.Config.Labels[config.UserLabel] == "" {
+		details.Config.Labels[config.UserLabel] = details.Config.User
+	}
+}
+
+func (d *dockerDriver) RequiresMountStreaming() bool { return false }
+
+func (d *dockerDriver) RecreateMode() driver.RecreateMode { return driver.RecreateDelete }
+
+func (d *dockerDriver) RequiresWorkspaceChown() bool { return false }

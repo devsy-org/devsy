@@ -1,0 +1,154 @@
+package up
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/logging/redact"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+)
+
+// runFixtureCommand runs argv (argv[0] is the program), bounded by timeout. env entries
+// are appended to the current environment.
+func runFixtureCommand(
+	ctx context.Context,
+	timeout time.Duration,
+	env []string,
+	argv ...string,
+) (string, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	// #nosec G204 -- executable and arguments are controlled by this test fixture.
+	cmd := exec.CommandContext(commandCtx, argv[0], argv[1:]...)
+	docker.PrepareForGroupCancellation(cmd)
+	cmd.WaitDelay = 5 * time.Second
+	cmd.Env = append(os.Environ(), env...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// fixtureCommand is runFixtureCommand that fails the current spec on error.
+func fixtureCommand(
+	ctx context.Context,
+	timeout time.Duration,
+	env []string,
+	argv ...string,
+) string {
+	out, err := runFixtureCommand(ctx, timeout, env, argv...)
+	if err != nil {
+		gomega.Expect(err).NotTo(gomega.HaveOccurred(), "fixture command %s: %s",
+			fixtureDiagnostic(env, fmt.Sprint(argv)), fixtureDiagnostic(env, out))
+	}
+	return out
+}
+
+func remoteAgentRemovalError(output string, err error) error {
+	if err != nil && !strings.Contains(output, "No such container") {
+		return fmt.Errorf(
+			"remove remote agent container: %w: %s",
+			err,
+			fixtureDiagnostic(nil, output),
+		)
+	}
+	return nil
+}
+
+func fixtureDiagnostic(env []string, value string) string {
+	redactor := redact.New(redact.Options{Environment: append(os.Environ(), env...)})
+	return framework.ReportText(redactor, value)
+}
+
+// expectFixtureOutput fails the spec when ok is false and prints only the redacted output.
+func expectFixtureOutput(ok bool, output, description string) {
+	gomega.Expect(ok).
+		To(gomega.BeTrue(), "%s\nOutput: %s", description, fixtureDiagnostic(nil, output))
+}
+
+// kubectlFixture runs kubectl with args, bounded by timeout, and fails the current spec on error.
+func kubectlFixture(ctx context.Context, timeout time.Duration, args ...string) string {
+	return fixtureCommand(ctx, timeout, nil, append([]string{"kubectl"}, args...)...)
+}
+
+// createFixtureNamespace creates namespace and registers a DeferCleanup that deletes it without
+// waiting for finalizers. The cleanup is bounded to one minute.
+func createFixtureNamespace(ctx context.Context, timeout time.Duration, namespace string) {
+	kubectlFixture(ctx, timeout, "create", "namespace", namespace)
+	ginkgo.DeferCleanup(func(specCtx ginkgo.SpecContext) {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(specCtx), time.Minute)
+		defer cancel()
+		kubectlFixture(cleanupCtx, time.Minute, "delete", "namespace", namespace, "--wait=false")
+	})
+}
+
+// dumpFixtureDiagnostics writes pod, event, and log state for namespace to GinkgoWriter.
+// Command failures are printed, never fail the spec.
+func dumpFixtureDiagnostics(ctx context.Context, namespace, selector string) {
+	for _, args := range [][]string{
+		{"describe", "pods", "-n", namespace},
+		{"get", "events", "-n", namespace, "--sort-by=.lastTimestamp"},
+		{"logs", "-n", namespace, "-l", selector, "--all-containers", "--tail=200"},
+	} {
+		output, err := runFixtureCommand(
+			ctx,
+			2*time.Minute,
+			nil,
+			append([]string{"kubectl"}, args...)...,
+		)
+		ginkgo.GinkgoWriter.Printf(
+			"Kubernetes failure diagnostics: %s\n%s\nerror: %s\n",
+			args,
+			fixtureDiagnostic(nil, output),
+			fixtureDiagnostic(nil, fmt.Sprint(err)),
+		)
+	}
+}
+
+// fixtureWorkspacePod waits for exactly one ready workspace pod matching selector.
+func fixtureWorkspacePod(ctx context.Context, namespace, selector string) corev1.Pod {
+	var pod corev1.Pod
+	gomega.Eventually(func(g gomega.Gomega) {
+		pollCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		out, err := runFixtureCommand(
+			pollCtx,
+			10*time.Second,
+			nil,
+			"kubectl",
+			"get",
+			"pods",
+			"-n",
+			namespace,
+			"-l",
+			selector,
+			"-o",
+			"json",
+		)
+		if err != nil {
+			g.Expect(err).NotTo(gomega.HaveOccurred(), "workspace pod discovery: %s",
+				fixtureDiagnostic(nil, out))
+		}
+		var pods corev1.PodList
+		g.Expect(json.Unmarshal([]byte(out), &pods)).To(gomega.Succeed())
+		g.Expect(pods.Items).To(gomega.HaveLen(1), "workspace-specific selector %s", selector)
+		pod = pods.Items[0]
+		g.Expect(pod.UID).NotTo(gomega.BeEmpty())
+		ready := false
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+				ready = true
+			}
+		}
+		g.Expect(ready).To(gomega.BeTrue(), "workspace pod %s must be ready", pod.Name)
+	}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(gomega.Succeed())
+	ginkgo.GinkgoWriter.Printf("workspace pod %s UID=%s\n", pod.Name, pod.UID)
+	return pod
+}

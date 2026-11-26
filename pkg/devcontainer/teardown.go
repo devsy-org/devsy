@@ -46,7 +46,7 @@ func (r *runner) buildTeardownPlan(
 	plan := &teardownPlan{}
 
 	if r.isImportedWorkspace() {
-		log.Info("skipping container deletion, since it was not created by Devsy")
+		log.Debug("skipping container deletion, since it was not created by Devsy")
 	} else if details != nil {
 		r.addContainerTeardown(plan, details, options)
 	}

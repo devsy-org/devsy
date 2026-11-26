@@ -7,13 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
@@ -23,13 +27,15 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/gofrs/flock"
+	"mvdan.cc/sh/v3/interp"
 )
 
 func NewWorkspaceClient(
@@ -45,21 +51,20 @@ func NewWorkspaceClient(
 		return nil, errors.New("machine id empty for machine provider")
 	}
 
-	return &workspaceClient{
+	c := &workspaceClient{
 		devsyConfig:       devsyConfig,
 		providerConfig:    providerConfig,
 		providerWorkspace: workspace,
 		providerMachine:   machine,
-	}, nil
+	}
+	c.locks = newClientLocks(c.lockIDs)
+	return c, nil
 }
 
 type workspaceClient struct {
 	m sync.Mutex
 
-	workspaceLockOnce sync.Once
-	workspaceLockErr  error
-	workspaceLock     *flock.Flock
-	machineLock       *flock.Flock
+	locks *clientLocks
 
 	devsyConfig       *config.Config
 	providerConfig    *provider.ProviderConfig
@@ -153,44 +158,11 @@ func (s *workspaceClient) AgentInfo(
 }
 
 func (s *workspaceClient) Lock(ctx context.Context) error {
-	if err := s.initLock(); err != nil {
-		return fmt.Errorf("init lock: %w", err)
-	}
-
-	log.Debug("acquire workspace lock")
-	if err := tryLock(ctx, s.workspaceLock, "workspace"); err != nil {
-		return fmt.Errorf("lock workspace: %w", err)
-	}
-	log.Debug("acquired workspace lock")
-
-	if s.machineLock != nil {
-		log.Debug("acquire machine lock")
-		if err := tryLock(ctx, s.machineLock, "machine"); err != nil {
-			return fmt.Errorf("lock machine: %w", err)
-		}
-		log.Debug("acquired machine lock")
-	}
-
-	return nil
+	return s.locks.Lock(ctx)
 }
 
 func (s *workspaceClient) Unlock() {
-	if err := s.initLock(); err != nil {
-		log.Warnf("init lock: %v", err)
-		return
-	}
-
-	if s.machineLock != nil {
-		if err := s.machineLock.Unlock(); err != nil {
-			log.Warnf("unlock machine: %v", err)
-		}
-	}
-
-	if s.workspaceLock != nil {
-		if err := s.workspaceLock.Unlock(); err != nil {
-			log.Warnf("unlock workspace: %v", err)
-		}
-	}
+	s.locks.Unlock()
 }
 
 func (s *workspaceClient) Create(ctx context.Context) error {
@@ -278,11 +250,13 @@ func (s *workspaceClient) Command(ctx context.Context, opt client.CommandOptions
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command: s.providerConfig.Exec.Command,
-		Environ: environ,
-		Stdin:   opt.Stdin,
-		Stdout:  opt.Stdout,
-		Stderr:  opt.Stderr,
+		Command:      s.providerConfig.Exec.Command,
+		Environ:      environ,
+		Stdin:        opt.Stdin,
+		Stdout:       opt.Stdout,
+		Stderr:       opt.Stderr,
+		RawStdout:    opt.RawStdout,
+		Cancellation: s.providerConfig.Exec.Cancellation,
 	})
 }
 
@@ -298,9 +272,14 @@ func (s *workspaceClient) OpenCommandTransport(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return RunCommand(ctx, RunCommandOptions{
-				Command: s.providerConfig.Exec.Command,
-				Environ: environ,
-				Stdin:   stdin, Stdout: stdout, Stderr: opt.Stderr,
+				Command:          s.providerConfig.Exec.Command,
+				Environ:          environ,
+				Stdin:            stdin,
+				Stdout:           stdout,
+				Stderr:           opt.Stderr,
+				RawStdout:        true,
+				Cancellation:     s.providerConfig.Exec.Cancellation,
+				closeInputOnExit: stdin.(io.Closer),
 			})
 		},
 		transport.CallbackConnOptions{
@@ -369,7 +348,7 @@ func (s *workspaceClient) taskStatusOverride() (client.Status, bool) {
 	switch {
 	case !latest.Status.Terminal():
 		return client.StatusProvisioning, true
-	case latest.Status == task.StatusFailed:
+	case latest.Status == task.StatusFailed && !latest.Canceled():
 		return client.StatusFailed, true
 	default:
 		return "", false
@@ -392,7 +371,7 @@ func (s *workspaceClient) latestUpTask() *task.State {
 	if latest == nil {
 		return nil
 	}
-	return store.Reconcile(latest)
+	return store.ReconcileState(latest)
 }
 
 // newestUpTask picks the most recently started `up` task for workspaceID.
@@ -434,13 +413,12 @@ func (s *workspaceClient) refreshMachineOptions(
 		return nil
 	}
 
-	machine, err := options.ResolveAndSaveOptionsMachine(
-		ctx,
-		s.devsyConfig,
-		s.providerConfig,
-		s.providerMachine,
-		userOptions,
-	)
+	machine, err := options.ResolveAndSaveOptionsMachine(ctx, options.ResolveMachineRequest{
+		DevConfig:       s.devsyConfig,
+		ProviderConfig:  s.providerConfig,
+		OriginalMachine: s.providerMachine,
+		UserOptions:     userOptions,
+	})
 	if err != nil {
 		return err
 	}
@@ -453,13 +431,12 @@ func (s *workspaceClient) refreshWorkspaceOptions(
 	ctx context.Context,
 	userOptions map[string]string,
 ) error {
-	workspace, err := options.ResolveAndSaveOptionsWorkspace(
-		ctx,
-		s.devsyConfig,
-		s.providerConfig,
-		s.providerWorkspace,
-		userOptions,
-	)
+	workspace, err := options.ResolveAndSaveOptionsWorkspace(ctx, options.ResolveWorkspaceRequest{
+		DevConfig:         s.devsyConfig,
+		ProviderConfig:    s.providerConfig,
+		OriginalWorkspace: s.providerWorkspace,
+		UserOptions:       userOptions,
+	})
 	if err != nil {
 		return fmt.Errorf("resolve and save workspace options: %w", err)
 	}
@@ -478,8 +455,19 @@ func (s *workspaceClient) compressedAgentInfo(
 	cliOptions provider.CLIOptions,
 ) (string, *provider.AgentWorkspaceInfo, error) {
 	agentInfo := s.agentInfo(cliOptions)
+	if agentInfo.Agent.Driver == provider.ExternalDriver {
+		if err := provider.ValidateExternalDriverConfig(agentInfo.Agent); err != nil {
+			return "", nil, fmt.Errorf("validate external runtime configuration: %w", err)
+		}
+	}
 
-	out, err := json.Marshal(agentInfo)
+	payload := agentPayload(agentInfo)
+	if agentInfo.Agent.Driver != provider.ExternalDriver ||
+		agentInfo.Agent.Local != config.BoolTrue {
+		agentInfo = payload
+	}
+
+	out, err := json.Marshal(payload)
 	if err != nil {
 		return "", nil, err
 	}
@@ -490,6 +478,15 @@ func (s *workspaceClient) compressedAgentInfo(
 	}
 
 	return compressed, agentInfo, nil
+}
+
+func agentPayload(info *provider.AgentWorkspaceInfo) *provider.AgentWorkspaceInfo {
+	payload := *info
+	if payload.Agent.Driver != provider.CustomDriver &&
+		(payload.CLIOptions.Platform.Enabled || payload.CLIOptions.DisableDaemon) {
+		stripProviderOptions(&payload)
+	}
+	return &payload
 }
 
 func (s *workspaceClient) agentInfo(cliOptions provider.CLIOptions) *provider.AgentWorkspaceInfo {
@@ -511,11 +508,6 @@ func (s *workspaceClient) agentInfo(cliOptions provider.CLIOptions) *provider.Ag
 	if cliOptions.Platform.Enabled {
 		agentInfo.Agent.InjectGitCredentials = config.BoolTrue
 		agentInfo.Agent.InjectDockerCredentials = config.BoolTrue
-	}
-
-	if agentInfo.Agent.Driver != provider.CustomDriver &&
-		(cliOptions.Platform.Enabled || cliOptions.DisableDaemon) {
-		stripProviderOptions(agentInfo)
 	}
 
 	return agentInfo
@@ -592,7 +584,7 @@ func (s *workspaceClient) deleteContainer(ctx context.Context, opt client.Delete
 		<-done
 	}()
 
-	log.Info("deleting workspace container")
+	log.Debug("deleting workspace container")
 	command, err := s.agentWorkspaceCommand("delete")
 	if err != nil {
 		return err
@@ -633,7 +625,7 @@ func (s *workspaceClient) stopContainer(ctx context.Context) error {
 		<-done
 	}()
 
-	log.Info("stopping container")
+	log.Debug("stopping container")
 	command, err := s.agentWorkspaceCommand("stop")
 	if err != nil {
 		return err
@@ -642,7 +634,7 @@ func (s *workspaceClient) stopContainer(ctx context.Context) error {
 	if err := s.runProviderCommand(ctx, command, writer, writer); err != nil {
 		return err
 	}
-	log.Info("stopped container")
+	log.Debug("stopped container")
 
 	return nil
 }
@@ -748,10 +740,10 @@ func (s *workspaceClient) agentWorkspaceCommand(subcommand string) (string, erro
 	}
 
 	return fmt.Sprintf(
-		"%q internal agent workspace %s --workspace-info %q",
-		info.Agent.Path,
+		"%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(info.Agent.Path),
 		subcommand,
-		compressed,
+		shellescape.Quote(compressed),
 	), nil
 }
 
@@ -787,32 +779,16 @@ func (s *workspaceClient) buildEnvironment(command string) ([]string, error) {
 	})
 }
 
-func (s *workspaceClient) initLock() error {
-	s.workspaceLockOnce.Do(func() {
-		s.m.Lock()
-		defer s.m.Unlock()
+func (s *workspaceClient) lockIDs() (string, string, string) {
+	s.m.Lock()
+	defer s.m.Unlock()
 
-		workspaceLocksDir, err := provider.GetLocksDir(s.providerWorkspace.Context)
-		if err != nil {
-			s.workspaceLockErr = fmt.Errorf("get workspaces dir: %w", err)
-			return
-		}
-		if err = os.MkdirAll(workspaceLocksDir, 0o755); err != nil { // #nosec G301
-			s.workspaceLockErr = fmt.Errorf("create workspace locks dir: %w", err)
-			return
-		}
+	machineID := ""
+	if s.providerMachine != nil {
+		machineID = s.providerMachine.ID
+	}
 
-		s.workspaceLock = flock.New(
-			filepath.Join(workspaceLocksDir, s.providerWorkspace.ID+".workspace.lock"),
-		)
-
-		if s.providerMachine != nil {
-			s.machineLock = flock.New(
-				filepath.Join(workspaceLocksDir, s.providerMachine.ID+".machine.lock"),
-			)
-		}
-	})
-	return s.workspaceLockErr
+	return s.providerWorkspace.Context, s.providerWorkspace.ID, machineID
 }
 
 func stripProviderOptions(info *provider.AgentWorkspaceInfo) {
@@ -833,10 +809,12 @@ type WorkspaceCommandConfig struct {
 	Stdin                io.Reader
 	Stdout               io.Writer
 	Stderr               io.Writer
+	RawStdout            bool
 	Command              types.StrArray
 	Workspace            *provider.Workspace
 	Machine              *provider.Machine
 	Config               *provider.ProviderConfig
+	closeInputOnExit     io.Closer
 }
 
 func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) error {
@@ -853,23 +831,38 @@ func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) err
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command: cfg.Command,
-		Environ: environ,
-		Stdin:   cfg.Stdin,
-		Stdout:  cfg.Stdout,
-		Stderr:  cfg.Stderr,
+		Command:          cfg.Command,
+		Environ:          environ,
+		Stdin:            cfg.Stdin,
+		Stdout:           cfg.Stdout,
+		Stderr:           cfg.Stderr,
+		RawStdout:        cfg.RawStdout,
+		Cancellation:     cfg.Config.Exec.Cancellation,
+		closeInputOnExit: cfg.closeInputOnExit,
 	})
 }
 
 type RunCommandOptions struct {
-	Command types.StrArray
-	Environ []string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
+	Command          types.StrArray
+	Environ          []string
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Stderr           io.Writer
+	RawStdout        bool
+	Cancellation     provider.ProviderCancellationMode
+	providerShell    *providerShellInvocation
+	cancelTiming     providerCancelTiming
+	closeInputOnExit io.Closer
 }
 
 func RunCommand(ctx context.Context, opts RunCommandOptions) error {
+	if opts.Cancellation == provider.ProviderCancellationFile {
+		return runProviderWithCancellation(ctx, opts)
+	}
+	return runCommandExecution(ctx, opts)
+}
+
+func runCommandExecution(ctx context.Context, opts RunCommandOptions) (retErr error) {
 	if len(opts.Command) == 0 {
 		return nil
 	}
@@ -878,46 +871,565 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) error {
 		opts.Environ = append(opts.Environ, config.EnvDebug+"="+config.BoolTrue)
 	}
 
-	if len(opts.Command) == 1 {
-		if err := shell.RunEmulatedShell(ctx, &shell.CommandRunner{
-			Command: opts.Command[0],
-			Stdin:   opts.Stdin,
-			Stdout:  opts.Stdout,
-			Stderr:  opts.Stderr,
-			Environ: opts.Environ,
-		}); err != nil {
-			return fmt.Errorf(
-				"run provider command %q (%s): %w",
-				opts.Command[0],
-				providerAction(opts.Environ),
-				err,
-			)
+	redactor := secrets.NewEnvironmentRedactor(opts.Environ)
+	stdout := opts.Stdout
+	var redactingStdout *subprocess.StreamingRedactingWriter
+	if !opts.RawStdout {
+		redactingStdout = &subprocess.StreamingRedactingWriter{
+			Next:     opts.Stdout,
+			Redactor: redactor,
 		}
-		return nil
+		stdout = redactingStdout
 	}
+	stderr := &subprocess.StreamingRedactingWriter{Next: opts.Stderr, Redactor: redactor}
+	defer func() {
+		flushErr := flushCommandOutput(redactingStdout, stderr)
+		if retErr == nil {
+			retErr = flushErr
+		}
+	}()
 
-	cmd := exec.CommandContext(ctx, opts.Command[0], opts.Command[1:]...) // #nosec G204
-	cmd.Stdin = opts.Stdin
-	cmd.Stdout = opts.Stdout
-	cmd.Stderr = opts.Stderr
-	cmd.Env = opts.Environ
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf(
-			"run provider command %q (%s): %w",
-			strings.Join(opts.Command, " "), providerAction(opts.Environ), err,
-		)
+	if len(opts.Command) == 1 {
+		return runProviderShellCommand(ctx, opts, stdout, stderr)
+	}
+	return runProviderArgvCommand(ctx, opts, stdout, stderr)
+}
+
+func runProviderShellCommand(
+	ctx context.Context,
+	opts RunCommandOptions,
+	stdout, stderr io.Writer,
+) error {
+	if opts.providerShell != nil {
+		return runSupervisedProviderShell(ctx, opts, stdout, stderr)
+	}
+	runner := &shell.CommandRunner{
+		Command: opts.Command[0],
+		Stdin:   opts.Stdin,
+		Stdout:  stdout,
+		Stderr:  stderr,
+		Environ: opts.Environ,
+	}
+	if err := shell.RunEmulatedShell(ctx, runner); err != nil {
+		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
 	}
 	return nil
 }
 
-// providerAction extracts the provider action from the environment variables.
-func providerAction(environ []string) string {
-	for _, kv := range environ {
-		if rest, ok := strings.CutPrefix(kv, provider.CommandEnv+"="); ok {
-			return rest
+func runSupervisedProviderShell(
+	ctx context.Context,
+	opts RunCommandOptions,
+	stdout, stderr io.Writer,
+) error {
+	binary, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find provider shell executable: %w", err)
+	}
+	files := opts.providerShell
+	cmd := &exec.Cmd{
+		Path: binary,
+		Args: []string{
+			binary,
+			"internal",
+			"provider-shell",
+			"--script-file",
+			files.script,
+			"--force-file",
+			files.force,
+			"--ack-file",
+			files.ack,
+			"--parent-pid",
+			strconv.Itoa(os.Getpid()),
+		},
+		Env:       opts.Environ,
+		Stdin:     opts.Stdin,
+		Stdout:    stdout,
+		Stderr:    stderr,
+		WaitDelay: 2 * time.Second,
+	}
+	if opts.closeInputOnExit != nil {
+		return waitSupervisedProviderShellWithOwnedInput(
+			ctx,
+			cmd,
+			opts.closeInputOnExit,
+			providerAction(opts.Environ),
+		)
+	}
+	return waitSupervisedProviderShell(ctx, cmd, providerAction(opts.Environ))
+}
+
+type providerShellPipes struct {
+	stdinRead   *os.File
+	stdinWrite  *os.File
+	stdoutRead  *os.File
+	stdoutWrite *os.File
+	stderrRead  *os.File
+	stderrWrite *os.File
+}
+
+func openProviderShellPipes() (pipes *providerShellPipes, retErr error) {
+	pipes = &providerShellPipes{}
+	defer func() {
+		if retErr != nil {
+			retErr = errors.Join(retErr, pipes.close())
+		}
+	}()
+	pipes.stdinRead, pipes.stdinWrite, retErr = os.Pipe()
+	if retErr != nil {
+		return
+	}
+	pipes.stdoutRead, pipes.stdoutWrite, retErr = os.Pipe()
+	if retErr != nil {
+		return
+	}
+	pipes.stderrRead, pipes.stderrWrite, retErr = os.Pipe()
+	if retErr != nil {
+		return
+	}
+	return
+}
+
+func closeProviderShellPipe(pipe *os.File) error {
+	if pipe == nil {
+		return nil
+	}
+	err := pipe.Close()
+	if errors.Is(err, os.ErrClosed) {
+		return nil
+	}
+	return err
+}
+
+func (p *providerShellPipes) close() error {
+	return errors.Join(
+		closeProviderShellPipe(p.stdinRead),
+		closeProviderShellPipe(p.stdinWrite),
+		closeProviderShellPipe(p.stdoutRead),
+		closeProviderShellPipe(p.stdoutWrite),
+		closeProviderShellPipe(p.stderrRead),
+		closeProviderShellPipe(p.stderrWrite),
+	)
+}
+
+func (p *providerShellPipes) closeChildEnds() error {
+	err := errors.Join(
+		closeProviderShellPipe(p.stdinRead),
+		closeProviderShellPipe(p.stdoutWrite),
+		closeProviderShellPipe(p.stderrWrite),
+	)
+	p.stdinRead, p.stdoutWrite, p.stderrWrite = nil, nil, nil
+	return err
+}
+
+func monitorSupervisedProviderShell(
+	ctx context.Context,
+	cmd *exec.Cmd,
+	stdoutRead, stderrRead *os.File,
+) (chan struct{}, <-chan struct{}) {
+	stopped := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-ctx.Done():
+			_ = cmd.Process.Kill()
+			_ = closeProviderShellPipe(stdoutRead)
+			_ = closeProviderShellPipe(stderrRead)
+		case <-stopped:
+		}
+	}()
+	return stopped, done
+}
+
+type providerShellInputResult struct {
+	copyErr  error
+	closeErr error
+}
+
+func pumpProviderShellInput(writer *os.File, source io.Reader) <-chan providerShellInputResult {
+	done := make(chan providerShellInputResult, 1)
+	go func() {
+		if source == nil {
+			source = strings.NewReader("")
+		}
+		_, copyErr := io.Copy(writer, source)
+		done <- providerShellInputResult{copyErr, closeProviderShellPipe(writer)}
+	}()
+	return done
+}
+
+type providerShellOutputPump struct {
+	reader  *os.File
+	done    chan error
+	changed chan struct{}
+	reading atomic.Bool
+}
+
+func (p *providerShellOutputPump) Read(buf []byte) (int, error) {
+	p.reading.Store(true)
+	p.signal()
+	n, err := p.reader.Read(buf)
+	p.reading.Store(false)
+	p.signal()
+	return n, err
+}
+
+func (p *providerShellOutputPump) signal() {
+	select {
+	case p.changed <- struct{}{}:
+	default:
+	}
+}
+
+func pumpProviderShellOutput(reader *os.File, writer io.Writer) *providerShellOutputPump {
+	pump := &providerShellOutputPump{
+		reader: reader, done: make(chan error, 1), changed: make(chan struct{}, 1),
+	}
+	go func() {
+		if writer == nil {
+			writer = io.Discard
+		}
+		_, copyErr := io.Copy(writer, pump)
+		if copyErr != nil {
+			_, _ = io.Copy(io.Discard, pump)
+		}
+		pump.done <- copyErr
+	}()
+	return pump
+}
+
+func providerShellInputCopyError(copyErr, waitErr, closeErr error) error {
+	if waitErr == nil && closeErr == nil &&
+		(errors.Is(copyErr, io.ErrClosedPipe) || errors.Is(copyErr, net.ErrClosed) ||
+			errors.Is(copyErr, os.ErrClosed) || errors.Is(copyErr, syscall.EPIPE)) {
+		return nil
+	}
+	return copyErr
+}
+
+func providerShellCopyError(action, stream string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("copy provider %s %s: %w", action, stream, err)
+}
+
+func providerShellCloseError(action, target string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("close provider %s %s: %w", action, target, err)
+}
+
+func providerShellWaitError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		code := exitErr.ExitCode()
+		if code >= 0 && code <= 255 {
+			err = interp.ExitStatus(uint8(code))
 		}
 	}
-	return ""
+	return fmt.Errorf("run provider %s: %w", action, err)
+}
+
+func waitSupervisedProviderShellWithOwnedInput(
+	ctx context.Context,
+	cmd *exec.Cmd,
+	input io.Closer,
+	action string,
+) (retErr error) {
+	pipes, err := openProviderShellPipes()
+	if err != nil {
+		return fmt.Errorf("create provider %s stdio pipes: %w", action, err)
+	}
+	defer func() { retErr = errors.Join(retErr, pipes.close()) }()
+
+	source, stdout, stderr := cmd.Stdin, cmd.Stdout, cmd.Stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = pipes.stdinRead, pipes.stdoutWrite, pipes.stderrWrite
+	configureProviderShellProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start provider %s shell: %w", action, err)
+	}
+	pipeCloseErr := pipes.closeChildEnds()
+	stopped, monitorDone := monitorSupervisedProviderShell(
+		ctx, cmd, pipes.stdoutRead, pipes.stderrRead,
+	)
+	stdinDone := pumpProviderShellInput(pipes.stdinWrite, source)
+	stdoutPump := pumpProviderShellOutput(pipes.stdoutRead, stdout)
+	stderrPump := pumpProviderShellOutput(pipes.stderrRead, stderr)
+	waitErr := cmd.Wait()
+	stdoutErr, stderrErr, drainErr := drainProviderShellOutput(
+		pipes, stdoutPump, stderrPump, action,
+	)
+	close(stopped)
+	<-monitorDone
+	closeErr := input.Close()
+	stdinCloseErr := closeProviderShellPipe(pipes.stdinWrite)
+	stdinResult := <-stdinDone
+	stdinErr := providerShellInputCopyError(stdinResult.copyErr, waitErr, closeErr)
+	return errors.Join(
+		drainErr,
+		providerShellWaitError(action, waitErr),
+		providerShellCopyError(action, "stdout", stdoutErr),
+		providerShellCopyError(action, "stderr", stderrErr),
+		providerShellCopyError(action, "stdin", stdinErr),
+		providerShellCloseError(
+			action,
+			"stdin pipe",
+			errors.Join(stdinCloseErr, stdinResult.closeErr),
+		),
+		providerShellCloseError(action, "stdio pipes", pipeCloseErr),
+		providerShellCloseError(action, "input", closeErr),
+	)
+}
+
+type providerShellOutputDrain struct {
+	pipes      *providerShellPipes
+	stdoutPump *providerShellOutputPump
+	stderrPump *providerShellOutputPump
+	stdoutDone <-chan error
+	stderrDone <-chan error
+	timer      *time.Timer
+	timeout    <-chan time.Time
+	action     string
+	stdoutErr  error
+	stderrErr  error
+	drainErr   error
+}
+
+func drainProviderShellOutput(
+	pipes *providerShellPipes,
+	stdoutPump, stderrPump *providerShellOutputPump,
+	action string,
+) (stdoutErr, stderrErr, drainErr error) {
+	timer := time.NewTimer(2 * time.Second)
+	timer.Stop()
+	defer timer.Stop()
+	drain := providerShellOutputDrain{
+		pipes: pipes, stdoutPump: stdoutPump, stderrPump: stderrPump,
+		stdoutDone: stdoutPump.done, stderrDone: stderrPump.done,
+		timer: timer, action: action,
+	}
+	for drain.stdoutDone != nil || drain.stderrDone != nil {
+		drain.updateTimeout()
+		select {
+		case drain.stdoutErr = <-drain.stdoutDone:
+			drain.stdoutDone = nil
+		case drain.stderrErr = <-drain.stderrDone:
+			drain.stderrDone = nil
+		case <-stdoutPump.changed:
+			drain.resetTimeout()
+		case <-stderrPump.changed:
+			drain.resetTimeout()
+		case <-drain.timeout:
+			drain.handleTimeout()
+		}
+	}
+	return drain.stdoutErr, drain.stderrErr, drain.drainErr
+}
+
+func (d *providerShellOutputDrain) idle() bool {
+	return providerShellOutputIdle(d.stdoutPump, d.stdoutDone) &&
+		providerShellOutputIdle(d.stderrPump, d.stderrDone)
+}
+
+func (d *providerShellOutputDrain) updateTimeout() {
+	if d.idle() {
+		if d.timeout == nil {
+			d.timer.Reset(2 * time.Second)
+			d.timeout = d.timer.C
+		}
+	} else if d.timeout != nil {
+		d.timer.Stop()
+		d.timeout = nil
+	}
+}
+
+func (d *providerShellOutputDrain) resetTimeout() {
+	if d.timeout != nil {
+		d.timer.Reset(2 * time.Second)
+	}
+}
+
+func (d *providerShellOutputDrain) handleTimeout() {
+	d.timeout = nil
+	if !d.idle() || d.recentOutput() {
+		return
+	}
+	d.stdoutDone, d.stdoutErr = readyProviderShellOutput(d.stdoutDone, d.stdoutErr)
+	d.stderrDone, d.stderrErr = readyProviderShellOutput(d.stderrDone, d.stderrErr)
+	d.drainErr = closeUndrainedProviderShellOutput(
+		d.pipes, d.stdoutDone, d.stderrDone, d.action,
+	)
+}
+
+func (d *providerShellOutputDrain) recentOutput() bool {
+	select {
+	case <-d.stdoutPump.changed:
+		return true
+	default:
+	}
+	select {
+	case <-d.stderrPump.changed:
+		return true
+	default:
+	}
+	return false
+}
+
+func providerShellOutputIdle(pump *providerShellOutputPump, done <-chan error) bool {
+	return done == nil || pump.reading.Load()
+}
+
+func readyProviderShellOutput(done <-chan error, current error) (<-chan error, error) {
+	if done == nil {
+		return nil, current
+	}
+	select {
+	case err := <-done:
+		return nil, err
+	default:
+		return done, current
+	}
+}
+
+func closeUndrainedProviderShellOutput(
+	pipes *providerShellPipes,
+	stdoutDone, stderrDone <-chan error,
+	action string,
+) error {
+	if stdoutDone == nil && stderrDone == nil {
+		return nil
+	}
+	if stdoutDone != nil {
+		_ = closeProviderShellPipe(pipes.stdoutRead)
+	}
+	if stderrDone != nil {
+		_ = closeProviderShellPipe(pipes.stderrRead)
+	}
+	return fmt.Errorf("drain provider %s output after shell exit: %w", action, exec.ErrWaitDelay)
+}
+
+func waitSupervisedProviderShell(ctx context.Context, cmd *exec.Cmd, action string) error {
+	configureProviderShellProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start provider %s shell: %w", action, err)
+	}
+	stopped, monitorDone := monitorSupervisedProviderShell(ctx, cmd, nil, nil)
+	err := cmd.Wait()
+	close(stopped)
+	<-monitorDone
+	if err != nil {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			code := exitErr.ExitCode()
+			if code >= 0 && code <= 255 {
+				err = interp.ExitStatus(uint8(code))
+			}
+		}
+		return fmt.Errorf("run provider %s: %w", action, err)
+	}
+	return nil
+}
+
+func runProviderArgvCommand(
+	ctx context.Context,
+	opts RunCommandOptions,
+	stdout, stderr io.Writer,
+) error {
+	cmd := exec.CommandContext(ctx, opts.Command[0], opts.Command[1:]...) // #nosec G204
+	cmd.Stdin = opts.Stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.Env = opts.Environ
+	if opts.Cancellation == provider.ProviderCancellationFile {
+		cmd.WaitDelay = 2 * time.Second
+		if opts.closeInputOnExit != nil {
+			return runProviderArgvWithOwnedInput(
+				cmd, opts.Stdin, opts.closeInputOnExit, providerAction(opts.Environ),
+			)
+		}
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
+	}
+	return nil
+}
+
+func runProviderArgvWithOwnedInput(
+	cmd *exec.Cmd,
+	source io.Reader,
+	input io.Closer,
+	action string,
+) (retErr error) {
+	stdinRead, stdinWrite, err := os.Pipe()
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("create provider %s stdin pipe: %w", action, err),
+			providerShellCloseError(action, "input", input.Close()),
+		)
+	}
+	defer func() {
+		retErr = errors.Join(
+			retErr, closeProviderShellPipe(stdinRead), closeProviderShellPipe(stdinWrite),
+		)
+	}()
+	cmd.Stdin = stdinRead
+	if err := cmd.Start(); err != nil {
+		return errors.Join(
+			fmt.Errorf("run provider %s: %w", action, err),
+			providerShellCloseError(action, "input", input.Close()),
+		)
+	}
+	childPipeCloseErr := closeProviderShellPipe(stdinRead)
+	stdinDone := pumpProviderShellInput(stdinWrite, source)
+	waitErr := cmd.Wait()
+	inputCloseErr := input.Close()
+	stdinPipeCloseErr := closeProviderShellPipe(stdinWrite)
+	stdinResult := <-stdinDone
+	stdinErr := providerShellInputCopyError(stdinResult.copyErr, waitErr, inputCloseErr)
+	return errors.Join(
+		providerArgvWaitError(action, waitErr),
+		providerShellCopyError(action, "stdin", stdinErr),
+		providerShellCloseError(
+			action, "stdin pipe",
+			errors.Join(childPipeCloseErr, stdinPipeCloseErr, stdinResult.closeErr),
+		),
+		providerShellCloseError(action, "input", inputCloseErr),
+	)
+}
+
+func providerArgvWaitError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("run provider %s: %w", action, err)
+}
+
+func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) error {
+	var stdoutErr error
+	if stdout != nil {
+		if err := stdout.Flush(); err != nil {
+			stdoutErr = fmt.Errorf("flush provider stdout: %w", err)
+		}
+	}
+	var stderrErr error
+	if err := stderr.Flush(); err != nil {
+		stderrErr = fmt.Errorf("flush provider stderr: %w", err)
+	}
+	return errors.Join(stdoutErr, stderrErr)
+}
+
+const providerCommandAction = "command"
+
+func providerAction(environ []string) string {
+	for _, kv := range environ {
+		if strings.HasPrefix(kv, provider.CommandEnv+"=") {
+			return providerCommandAction
+		}
+	}
+	return "lifecycle"
 }
 
 func DeleteMachineFolder(context, machineID string) error {
@@ -934,6 +1446,8 @@ type DeleteWorkspaceFolderParams struct {
 	WorkspaceID          string
 	SSHConfigPath        string
 	SSHConfigIncludePath string
+	// PreserveContent leaves the content directory intact when only managed records are owned.
+	PreserveContent bool
 }
 
 func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
@@ -945,6 +1459,9 @@ func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
 		return err
 	}
 
+	if params.PreserveContent {
+		return nil
+	}
 	return removeWorkspaceContent(params.Context, params.WorkspaceID)
 }
 
@@ -962,7 +1479,14 @@ func removeSSHConfig(params DeleteWorkspaceFolderParams) error {
 		}
 	}
 
-	if err := ssh.RemoveFromConfig(
+	owner, err := removeSSHOwner(params)
+	if err != nil {
+		log.Errorf("resolve ssh owner for workspace %q: %v", params.WorkspaceID, err)
+		return nil
+	}
+
+	if err := ssh.RemoveFromConfigForOwner(
+		owner,
 		params.WorkspaceID,
 		sshConfigPath,
 		sshConfigIncludePath,
@@ -971,6 +1495,15 @@ func removeSSHConfig(params DeleteWorkspaceFolderParams) error {
 	}
 
 	return nil
+}
+
+func removeSSHOwner(params DeleteWorkspaceFolderParams) (ssh.Owner, error) {
+	uid := ""
+	if ws, err := provider.LoadWorkspaceConfig(params.Context, params.WorkspaceID); err == nil {
+		uid = ws.UID
+	}
+
+	return ssh.NewOwner(params.Context, uid)
 }
 
 func removeWorkspaceDir(context, workspaceID string) error {
@@ -1098,14 +1631,24 @@ func BuildAgentClient(ctx context.Context, opts BuildAgentClientOptions) (*confi
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	var localEnvironment []string
+	if wInfo.Agent.Driver == provider.ExternalDriver && wInfo.Agent.Local == config.BoolTrue {
+		localEnvironment = provider.ToEnvironment(
+			wInfo.Workspace,
+			wInfo.Machine,
+			wInfo.Options,
+			nil,
+		)
+	}
 	command := buildAgentCommand(opts.WorkspaceClient, opts.AgentCommand, workspaceInfo)
 	errChan := runAgentInjection(cancelCtx, workspaceInjectionConfig{
-		workspaceClient: opts.WorkspaceClient,
-		command:         command,
-		stdin:           pipes.stdinReader,
-		stdout:          pipes.stdoutWriter,
-		timeout:         wInfo.InjectTimeout,
-		cancel:          cancel,
+		workspaceClient:  opts.WorkspaceClient,
+		command:          command,
+		stdin:            pipes.stdinReader,
+		stdout:           pipes.stdoutWriter,
+		timeout:          wInfo.InjectTimeout,
+		localEnvironment: localEnvironment,
+		cancel:           cancel,
 	})
 
 	result, err := runTunnelServer(cancelCtx, opts, pipes.stdoutReader, pipes.stdinWriter)
@@ -1121,10 +1664,10 @@ func buildAgentCommand(
 	agentCommand, workspaceInfo string,
 ) string {
 	command := fmt.Sprintf(
-		"%q internal agent workspace %s --workspace-info %q",
-		workspaceClient.AgentPath(),
+		"%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(workspaceClient.AgentPath()),
 		agentCommand,
-		workspaceInfo,
+		shellescape.Quote(workspaceInfo),
 	)
 	if log.DebugEnabled() {
 		command += " --debug"
@@ -1168,12 +1711,13 @@ func (p *processIOPipes) close() {
 }
 
 type workspaceInjectionConfig struct {
-	workspaceClient client.WorkspaceClient
-	command         string
-	stdin           *os.File
-	stdout          *os.File
-	timeout         time.Duration
-	cancel          context.CancelFunc
+	localEnvironment []string
+	workspaceClient  client.WorkspaceClient
+	command          string
+	stdin            *os.File
+	stdout           *os.File
+	timeout          time.Duration
+	cancel           context.CancelFunc
 }
 
 func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan error {
@@ -1192,20 +1736,22 @@ func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan e
 		errChan <- agent.InjectAgent(ctx, &agent.InjectOptions{
 			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 				return cfg.workspaceClient.Command(ctx, client.CommandOptions{
-					Command: command,
-					Stdin:   stdin,
-					Stdout:  stdout,
-					Stderr:  stderr,
+					Command:   command,
+					Stdin:     stdin,
+					Stdout:    stdout,
+					Stderr:    stderr,
+					RawStdout: true,
 				})
 			},
-			IsLocal:         cfg.workspaceClient.AgentLocal(),
-			RemoteAgentPath: cfg.workspaceClient.AgentPath(),
-			DownloadURL:     cfg.workspaceClient.AgentURL(),
-			Command:         cfg.command,
-			Stdin:           cfg.stdin,
-			Stdout:          cfg.stdout,
-			Stderr:          streamer,
-			Timeout:         cfg.timeout,
+			LocalEnvironment: cfg.localEnvironment,
+			IsLocal:          cfg.workspaceClient.AgentLocal(),
+			RemoteAgentPath:  cfg.workspaceClient.AgentPath(),
+			DownloadURL:      cfg.workspaceClient.AgentURL(),
+			Command:          cfg.command,
+			Stdin:            cfg.stdin,
+			Stdout:           cfg.stdout,
+			Stderr:           streamer,
+			Timeout:          cfg.timeout,
 		})
 	}()
 	return errChan
@@ -1222,15 +1768,14 @@ func runTunnelServer(
 	}
 	tunnelOptions = append(tunnelOptions, opts.TunnelOptions...)
 
-	result, err := tunnelserver.RunUpServer(
-		ctx,
-		stdoutReader,
-		stdinWriter,
-		opts.WorkspaceClient.AgentInjectGitCredentials(opts.CLIOptions),
-		opts.WorkspaceClient.AgentInjectDockerCredentials(opts.CLIOptions),
-		opts.WorkspaceClient.WorkspaceConfig(),
-		tunnelOptions...,
-	)
+	result, err := tunnelserver.RunUpServer(ctx, tunnelserver.UpSpec{
+		Reader:                 stdoutReader,
+		Writer:                 stdinWriter,
+		AllowGitCredentials:    opts.WorkspaceClient.AgentInjectGitCredentials(opts.CLIOptions),
+		AllowDockerCredentials: opts.WorkspaceClient.AgentInjectDockerCredentials(opts.CLIOptions),
+		Workspace:              opts.WorkspaceClient.WorkspaceConfig(),
+		Options:                tunnelOptions,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("run tunnel server: %w", err)
 	}

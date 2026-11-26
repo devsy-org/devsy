@@ -3,9 +3,9 @@ package ssh
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -20,30 +20,41 @@ var ErrIdleTimeout = errors.New("port forward idle timeout")
 
 var ErrTransportClosed = errors.New("ssh transport closed")
 
-type ForwardingFunction func(
-	net.Conn,
-	*ssh.Client,
-	string,
-	string,
-)
+type forwardTarget struct {
+	network string
+	address string
+}
+
+type ForwardingFunction func(context.Context, net.Conn, *ssh.Client, forwardTarget)
+
+// PortForwardOpts names both ends of a forwarded connection. For a reverse
+// forward the local end is the one dialed and the remote end is the one listened on.
+type PortForwardOpts struct {
+	LocalNetwork     string
+	LocalAddr        string
+	RemoteNetwork    string
+	RemoteAddr       string
+	ExitAfterTimeout time.Duration
+}
 
 func PortForward(
 	ctx context.Context,
 	client *ssh.Client,
-	localNetwork, localAddr, remoteNetwork, remoteAddr string,
-	exitAfterTimeout time.Duration,
+	opts PortForwardOpts,
 ) error {
-	listener, err := net.Listen(localNetwork, localAddr)
+	listener, err := net.Listen(opts.LocalNetwork, opts.LocalAddr)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = listener.Close() }()
 
-	return portForwarding(
-		ctx, client, listener,
-		localAddr, remoteNetwork, remoteAddr,
-		exitAfterTimeout, forward,
-	)
+	return portForwarding(ctx, client, listener, forwardRoute{
+		srcAddr:          opts.LocalAddr,
+		dstNetwork:       opts.RemoteNetwork,
+		dstAddr:          opts.RemoteAddr,
+		exitAfterTimeout: opts.ExitAfterTimeout,
+		forwardFn:        forward,
+	})
 }
 
 // ForwardOpts groups the parameters for PortForwardWithListener so callers
@@ -66,29 +77,30 @@ func PortForwardWithListener(
 ) error {
 	defer func() { _ = opts.Listener.Close() }()
 
-	return portForwarding(
-		ctx, client, opts.Listener,
-		opts.Listener.Addr().String(), "tcp", opts.RemoteAddr,
-		opts.ExitAfterTimeout, forward,
-	)
+	return portForwarding(ctx, client, opts.Listener, forwardRoute{
+		srcAddr:          opts.Listener.Addr().String(),
+		dstNetwork:       "tcp",
+		dstAddr:          opts.RemoteAddr,
+		exitAfterTimeout: opts.ExitAfterTimeout,
+		forwardFn:        forward,
+	})
 }
 
 func ReversePortForward(
 	ctx context.Context,
 	client *ssh.Client,
-	remoteNetwork, remoteAddr, localNetwork, localAddr string,
-	exitAfterTimeout time.Duration,
+	opts PortForwardOpts,
 ) error {
-	listener, err := ReverseListen(client, remoteNetwork, remoteAddr)
+	listener, err := ReverseListen(client, opts.RemoteNetwork, opts.RemoteAddr)
 	if err != nil {
 		return err
 	}
 	return RunReverseForward(ctx, client, ReverseForwardOpts{
 		Listener:         listener,
-		RemoteAddr:       remoteAddr,
-		LocalNetwork:     localNetwork,
-		LocalAddr:        localAddr,
-		ExitAfterTimeout: exitAfterTimeout,
+		RemoteAddr:       opts.RemoteAddr,
+		LocalNetwork:     opts.LocalNetwork,
+		LocalAddr:        opts.LocalAddr,
+		ExitAfterTimeout: opts.ExitAfterTimeout,
 	})
 }
 
@@ -110,21 +122,34 @@ type ReverseForwardOpts struct {
 // ReverseListen, closing it on return.
 func RunReverseForward(ctx context.Context, client *ssh.Client, opts ReverseForwardOpts) error {
 	defer func() { _ = opts.Listener.Close() }()
-	return portForwarding(
-		ctx, client, opts.Listener,
-		opts.RemoteAddr, opts.LocalNetwork, opts.LocalAddr,
-		opts.ExitAfterTimeout, reverseForward,
-	)
+	return portForwarding(ctx, client, opts.Listener, forwardRoute{
+		srcAddr:          opts.RemoteAddr,
+		dstNetwork:       opts.LocalNetwork,
+		dstAddr:          opts.LocalAddr,
+		exitAfterTimeout: opts.ExitAfterTimeout,
+		forwardFn:        reverseForward,
+	})
+}
+
+// forwardRoute describes where a forwarded connection comes from and goes to.
+type forwardRoute struct {
+	srcAddr          string
+	dstNetwork       string
+	dstAddr          string
+	exitAfterTimeout time.Duration
+	forwardFn        ForwardingFunction
 }
 
 func portForwarding(
 	ctx context.Context,
 	client *ssh.Client,
 	listener net.Listener,
-	srcAddr, dstNetwork, dstAddr string,
-	exitAfterTimeout time.Duration,
-	forwardFn ForwardingFunction,
+	route forwardRoute,
 ) error {
+	srcAddr, dstAddr := route.srcAddr, route.dstAddr
+	dstNetwork, forwardFn := route.dstNetwork, route.forwardFn
+	exitAfterTimeout := route.exitAfterTimeout
+
 	// Derive a child context so the idle-timeout handler can signal shutdown
 	// with a typed cause (ErrIdleTimeout) without killing the whole process.
 	fwdCtx, cancel := context.WithCancelCause(ctx)
@@ -151,6 +176,7 @@ func portForwarding(
 		)
 		cancel(ErrIdleTimeout)
 	}, srcAddr)
+	defer counter.Close()
 	for {
 		// waiting for a new connection
 		connection, err := listener.Accept()
@@ -165,13 +191,19 @@ func portForwarding(
 		}
 
 		// tell the counter there is a connection
-		counter.Add()
+		if !counter.Add() {
+			_ = connection.Close()
+			continue
+		}
 
 		// forward connection
 		go func() {
 			defer counter.Dec()
 
-			forwardFn(connection, client, dstNetwork, dstAddr)
+			forwardFn(fwdCtx, connection, client, forwardTarget{
+				network: dstNetwork,
+				address: dstAddr,
+			})
 		}()
 	}
 }
@@ -202,73 +234,86 @@ func watchTransportClosed(
 }
 
 func forward(
+	ctx context.Context,
 	localConn net.Conn,
 	client *ssh.Client,
-	remoteNetwork, remoteAddr string,
+	target forwardTarget,
 ) {
+	defer func() { _ = localConn.Close() }()
 	// Setup sshConn (type net.Conn)
-	sshConn, err := client.Dial(remoteNetwork, remoteAddr)
+	sshConn, err := client.Dial(target.network, target.address)
 	if err != nil {
 		log.Debugf("error dialing remote: %v", err)
 		return
 	}
 	defer func() { _ = sshConn.Close() }()
-
-	// Copy localConn.Reader to sshConn.Writer
-	waitGroup := sync.WaitGroup{}
-	waitGroup.Go(func() {
-		defer func() { _ = sshConn.Close() }()
-
-		_, err = io.Copy(sshConn, localConn)
-		if err != nil {
-			log.Debugf("error copying to remote: %v", err)
-		}
-	})
-
-	// Copy sshConn.Reader to localConn.Writer
-	waitGroup.Go(func() {
-		defer func() { _ = localConn.Close() }()
-
-		_, err = io.Copy(localConn, sshConn)
-		if err != nil {
-			log.Debugf("error copying to local: %v", err)
-		}
-	})
-	waitGroup.Wait()
+	if err := relayDuplex(ctx, localConn, sshConn); err != nil {
+		log.Debugf("error forwarding connection: %v", err)
+	}
 }
 
 func reverseForward(
+	ctx context.Context,
 	remoteConn net.Conn,
 	client *ssh.Client,
-	localNetwork, localAddr string,
+	target forwardTarget,
 ) {
+	defer func() { _ = remoteConn.Close() }()
 	// Setup localConn (type net.Conn)
-	localConn, err := net.Dial(localNetwork, localAddr)
+	localConn, err := net.Dial(target.network, target.address)
 	if err != nil {
 		log.Debugf("error dialing remote: %v", err)
 		return
 	}
 	defer func() { _ = localConn.Close() }()
+	if err := relayDuplex(ctx, remoteConn, localConn); err != nil {
+		log.Debugf("error forwarding reverse connection: %v", err)
+	}
+}
 
-	// Copy localConn.Reader to sshConn.Writer
-	waitGroup := sync.WaitGroup{}
-	waitGroup.Go(func() {
-		defer func() { _ = localConn.Close() }()
+type closeWriter interface{ CloseWrite() error }
 
-		_, err = io.Copy(localConn, remoteConn)
-		if err != nil {
-			log.Debugf("error copying to local: %v", err)
+type relayResult struct {
+	direction string
+	err       error
+}
+
+func relayOneWay(dst net.Conn, src net.Conn, direction string, results chan<- relayResult) {
+	_, err := io.Copy(dst, src)
+	if err == nil {
+		cw, ok := dst.(closeWriter)
+		if !ok {
+			err = errors.New("destination does not support CloseWrite")
+		} else if closeErr := cw.CloseWrite(); closeErr != nil && !errors.Is(closeErr, io.EOF) {
+			err = closeErr
 		}
-	})
+	}
+	results <- relayResult{direction: direction, err: err}
+}
 
-	// Copy sshConn.Reader to localConn.Writer
-	waitGroup.Go(func() {
-		defer func() { _ = remoteConn.Close() }()
-
-		_, err = io.Copy(remoteConn, localConn)
-		if err != nil {
-			log.Debugf("error copying to remote: %v", err)
+func relayDuplex(ctx context.Context, left, right net.Conn) error {
+	results := make(chan relayResult, 2)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = left.Close()
+			_ = right.Close()
+		case <-stop:
 		}
-	})
-	waitGroup.Wait()
+	}()
+	go relayOneWay(right, left, "local-to-remote", results)
+	go relayOneWay(left, right, "remote-to-local", results)
+
+	var firstErr error
+	for range 2 {
+		result := <-results
+		if result.err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("%s relay: %w", result.direction, result.err)
+			_ = left.Close()
+			_ = right.Close()
+		}
+	}
+	return firstErr
 }

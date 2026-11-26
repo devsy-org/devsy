@@ -55,6 +55,7 @@ type BuildInfo struct {
 }
 
 type ExtendedBuildParams struct {
+	ExecutionContext   context.Context
 	Ctx                *config.SubstitutionContext
 	ImageBuildInfo     *config.ImageBuildInfo
 	Target             string
@@ -66,16 +67,14 @@ type ExtendedBuildParams struct {
 }
 
 func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, error) {
+	executionCtx := params.ExecutionContext
+	if executionCtx == nil {
+		executionCtx = context.Background()
+	}
 	ctx := params.Ctx
 	imageBuildInfo := params.ImageBuildInfo
-	target := params.Target
 	devContainerConfig := params.DevContainerConfig
-	forceBuild := params.ForceBuild
-	secretOpts := params.SecretOpts
-	features, err := fetchFeatures(
-		devContainerConfig.Config, forceBuild, secretOpts,
-		lockfileMode{write: true, frozen: params.FrozenLockfile, disabled: params.NoLockfile},
-	)
+	features, err := fetchFeatures(executionCtx, devContainerConfig.Config, params.fetchOptions())
 	if err != nil {
 		return nil, fmt.Errorf("fetch features: %w", err)
 	}
@@ -110,7 +109,7 @@ func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, erro
 	buildInfo, err := getFeatureBuildOptions(
 		contextPath,
 		&effectiveImageBuildInfo,
-		target,
+		params.Target,
 		features,
 	)
 	if err != nil {
@@ -184,7 +183,9 @@ ARG _DEV_CONTAINERS_BASE_IMAGE=placeholder`, syntax)
 
 func copyFeaturesToDestination(features []*config.FeatureSet, targetDir string) error {
 	// make sure the folder doesn't exist initially
-	_ = os.RemoveAll(targetDir)
+	if err := os.RemoveAll(targetDir); err != nil {
+		return fmt.Errorf("clean generated feature directory: %w", err)
+	}
 	for i, feature := range features {
 		featureDir := filepath.Join(targetDir, strconv.Itoa(i))
 		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
@@ -295,7 +296,19 @@ func usersFromMetadata(meta *config.ImageMetadataConfig) (string, string) {
 func ResolveFeatureOrder(
 	devContainerConfig *config.DevContainerConfig,
 ) ([]*config.FeatureSet, error) {
-	return fetchFeatures(devContainerConfig, false, nil, lockfileMode{})
+	return ResolveFeatureOrderWithContext(context.Background(), devContainerConfig)
+}
+
+// ResolveFeatureOrderWithContext resolves features using the caller's
+// cancellation context for concurrent and network-backed resolution.
+func ResolveFeatureOrderWithContext(
+	ctx context.Context,
+	devContainerConfig *config.DevContainerConfig,
+) ([]*config.FeatureSet, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return fetchFeatures(ctx, devContainerConfig, featureFetchOptions{})
 }
 
 func applyUserFallback(user, composeServiceUser, imageUser string) string {
@@ -308,24 +321,46 @@ func applyUserFallback(user, composeServiceUser, imageUser string) string {
 	return imageUser
 }
 
+func (params *ExtendedBuildParams) fetchOptions() featureFetchOptions {
+	return featureFetchOptions{
+		forceBuild: params.ForceBuild,
+		secretOpts: params.SecretOpts,
+		lockMode: lockfileMode{
+			write:    true,
+			frozen:   params.FrozenLockfile,
+			disabled: params.NoLockfile,
+		},
+	}
+}
+
+// featureFetchOptions controls how fetchFeatures builds and locks the feature set.
+type featureFetchOptions struct {
+	forceBuild bool
+	secretOpts *SecretOptions
+	lockMode   lockfileMode
+}
+
 func fetchFeatures(
+	ctx context.Context,
 	devContainerConfig *config.DevContainerConfig,
-	forceBuild bool,
-	secretOpts *SecretOptions,
-	lockMode lockfileMode,
+	opts featureFetchOptions,
 ) ([]*config.FeatureSet, error) {
-	lock, err := prepareLock(devContainerConfig, lockMode)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lock, err := prepareLock(devContainerConfig, opts.lockMode)
 	if err != nil {
 		return nil, err
 	}
 	processor := &featureProcessor{
 		devContainerConfig: devContainerConfig,
-		forceBuild:         forceBuild,
-		secretOpts:         secretOpts,
+		forceBuild:         opts.forceBuild,
+		secretOpts:         opts.secretOpts,
 		lock:               lock,
+		ctx:                ctx,
 	}
 
-	userFeatures, err := getUserFeatures(processor, devContainerConfig)
+	userFeatures, err := getUserFeatures(ctx, processor, devContainerConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +380,7 @@ func fetchFeatures(
 		return nil, fmt.Errorf("failed to get sorted feature sets: %w", err)
 	}
 
-	if err := lock.commit(devContainerConfig, lockMode); err != nil {
+	if err := lock.commit(devContainerConfig, opts.lockMode); err != nil {
 		return nil, err
 	}
 
@@ -374,6 +409,7 @@ func prepareLock(
 // Each resolution can involve a network pull (OCI) or tarball download, so
 // they run concurrently rather than one at a time.
 func getUserFeatures(
+	ctx context.Context,
 	processor *featureProcessor,
 	devContainerConfig *config.DevContainerConfig,
 ) (map[string]*config.FeatureSet, error) {
@@ -382,14 +418,19 @@ func getUserFeatures(
 		featureSet *config.FeatureSet
 	}
 
-	g, _ := errgroup.WithContext(context.Background())
+	g, groupCtx := errgroup.WithContext(ctx)
 	results := make([]resolved, len(devContainerConfig.Features))
 	i := 0
 	for featureID, featureOptions := range devContainerConfig.Features {
 		idx := i
 		i++
 		g.Go(func() error {
-			featureSet, err := processor.processFeature(featureID, featureOptions)
+			select {
+			case <-groupCtx.Done():
+				return groupCtx.Err()
+			default:
+			}
+			featureSet, err := processor.processFeature(groupCtx, featureID, featureOptions)
 			if err != nil {
 				return fmt.Errorf("process feature %s: %w", featureID, err)
 			}
@@ -416,6 +457,7 @@ type featureProcessor struct {
 	forceBuild         bool
 	secretOpts         *SecretOptions
 	lock               *lockfileState
+	ctx                context.Context
 }
 
 // featureKind identifies how a feature is sourced, which determines whether it
@@ -439,10 +481,19 @@ type featureResolution struct {
 
 // resolveFeatureSource resolves a feature identifier to a local folder, pinning
 // OCI and direct-tarball features to the loaded lockfile when present.
-func (p *featureProcessor) resolveFeatureSource(id string) (*featureResolution, error) {
+func (p *featureProcessor) resolveFeatureSource(
+	ctx context.Context,
+	id string,
+) (*featureResolution, error) {
+	if ctx == nil {
+		ctx = p.ctx
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	switch {
 	case strings.HasPrefix(id, "https://") || strings.HasPrefix(id, "http://"):
-		return p.resolveTarballFeature(id)
+		return p.resolveTarballFeature(ctx, id)
 	case strings.HasPrefix(id, "./") || strings.HasPrefix(id, "../"):
 		return p.resolveLocalFeature(id)
 	default:
@@ -450,13 +501,19 @@ func (p *featureProcessor) resolveFeatureSource(id string) (*featureResolution, 
 	}
 }
 
-func (p *featureProcessor) resolveTarballFeature(id string) (*featureResolution, error) {
+func (p *featureProcessor) resolveTarballFeature(
+	ctx context.Context,
+	id string,
+) (*featureResolution, error) {
 	log.Debugf("process feature: type=%s, id=%s", "url", id)
 	_, pinnedIntegrity, _ := p.lock.pin(id)
 	headers := config.GetDevsyCustomizations(p.devContainerConfig).FeatureDownloadHTTPHeaders
-	folder, integrity, err := processDirectTarFeature(
-		id, headers, p.forceBuild, pinnedIntegrity,
-	)
+	folder, integrity, err := processDirectTarFeature(ctx, directTarRequest{
+		id:              id,
+		httpHeaders:     headers,
+		forceDownload:   p.forceBuild,
+		pinnedIntegrity: pinnedIntegrity,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -495,10 +552,11 @@ func (p *featureProcessor) resolveOCIFeature(id string) (*featureResolution, err
 }
 
 func (p *featureProcessor) processFeature(
+	ctx context.Context,
 	featureID string,
 	featureOptions any,
 ) (*config.FeatureSet, error) {
-	res, err := p.resolveFeatureSource(featureID)
+	res, err := p.resolveFeatureSource(ctx, featureID)
 	if err != nil {
 		return nil, fmt.Errorf("process feature ID %s: %w", featureID, err)
 	}
@@ -615,7 +673,7 @@ func (r *featureDependencyResolver) findByConfigID(configID string) (string, *co
 	return "", nil
 }
 
-func (r *featureDependencyResolver) resolveFeatureDependency( //nolint:cyclop
+func (r *featureDependencyResolver) resolveFeatureDependency(
 	featureID string,
 	featureSet *config.FeatureSet,
 ) error {
@@ -631,27 +689,12 @@ func (r *featureDependencyResolver) resolveFeatureDependency( //nolint:cyclop
 	defer func() { r.visiting[featureID] = false }()
 
 	for depID, depOptions := range featureSet.Config.DependsOn {
-		normalizedDepID := normalizeFeatureID(depID)
-		resolvedKey, depFeatureSet := r.findByConfigID(normalizedDepID)
-		if depFeatureSet == nil {
-			if currentID, legacyMatch := r.legacyMap[normalizedDepID]; legacyMatch {
-				log.Debugf("resolved legacy ID %s to current feature %s", depID, currentID)
-				resolvedKey, depFeatureSet = r.findByConfigID(currentID)
-			}
-		}
-		if depFeatureSet == nil {
-			log.Debugf("installing dependency feature %s", depID)
-			var err error
-			depFeatureSet, err = r.processor.processFeature(depID, depOptions)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dependency %s: %w", depID, err)
-			}
-			resolvedKey = featureDeduplicationKey(depFeatureSet.ConfigID, depFeatureSet.Version)
-			r.features[resolvedKey] = depFeatureSet
-			r.rebuildLegacyMap()
+		resolvedKey, depFeatureSet, err := r.findOrInstallDependency(depID, depOptions)
+		if err != nil {
+			return err
 		}
 
-		err := r.resolveFeatureDependency(resolvedKey, depFeatureSet)
+		err = r.resolveFeatureDependency(resolvedKey, depFeatureSet)
 		if err != nil {
 			return err
 		}
@@ -659,6 +702,32 @@ func (r *featureDependencyResolver) resolveFeatureDependency( //nolint:cyclop
 
 	r.resolved[featureID] = featureSet
 	return nil
+}
+
+func (r *featureDependencyResolver) findOrInstallDependency(
+	depID string,
+	depOptions any,
+) (string, *config.FeatureSet, error) {
+	normalizedDepID := normalizeFeatureID(depID)
+	resolvedKey, depFeatureSet := r.findByConfigID(normalizedDepID)
+	if depFeatureSet == nil {
+		if currentID, legacyMatch := r.legacyMap[normalizedDepID]; legacyMatch {
+			log.Debugf("resolved legacy ID %s to current feature %s", depID, currentID)
+			resolvedKey, depFeatureSet = r.findByConfigID(currentID)
+		}
+	}
+	if depFeatureSet == nil {
+		log.Debugf("installing dependency feature %s", depID)
+		var err error
+		depFeatureSet, err = r.processor.processFeature(r.processor.ctx, depID, depOptions)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to resolve dependency %s: %w", depID, err)
+		}
+		resolvedKey = featureDeduplicationKey(depFeatureSet.ConfigID, depFeatureSet.Version)
+		r.features[resolvedKey] = depFeatureSet
+		r.rebuildLegacyMap()
+	}
+	return resolvedKey, depFeatureSet, nil
 }
 
 func (r *featureDependencyResolver) rebuildLegacyMap() {

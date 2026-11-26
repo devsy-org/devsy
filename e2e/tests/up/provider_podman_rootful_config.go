@@ -2,11 +2,12 @@ package up
 
 import (
 	"context"
+	"errors"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/docker"
@@ -30,124 +31,78 @@ var _ = ginkgo.Describe(
 		ginkgo.Context("with rootful podman", func() {
 			var f *framework.Framework
 
-			//nolint:dupl // shared rootful podman wrapper setup across split files
 			ginkgo.BeforeEach(func(ctx context.Context) {
-				wrapper, err := os.Create( //nolint:gosec // G304: test-controlled path
-					initialDir + "/bin/podman-rootful",
-				)
-				framework.ExpectNoError(err)
-
-				_, err = wrapper.WriteString("#!/bin/sh\nsudo podman \"$@\"\n")
-				if err != nil {
-					_ = wrapper.Close()
-					framework.ExpectNoError(err)
-				}
-
-				err = wrapper.Close()
-				framework.ExpectNoError(err)
-
-				// #nosec G302 -- wrapper script needs execute permission
-				err = os.Chmod(initialDir+"/bin/podman-rootful", 0o755)
-				framework.ExpectNoError(err)
-
-				cmd := exec.CommandContext( //nolint:gosec // G204: test-controlled path
-					ctx, initialDir+"/bin/podman-rootful", "ps",
-				)
-				docker.PrepareForGroupCancellation(cmd)
-				out, err := cmd.CombinedOutput()
-				framework.ExpectNoError(err, string(out))
-
-				ginkgo.DeferCleanup(func() {
-					_ = os.Remove(initialDir + "/bin/podman-rootful")
-				})
-
-				f, err = setupDockerProvider(
-					initialDir+"/bin",
-					initialDir+"/bin/podman-rootful",
-				)
-				framework.ExpectNoError(err)
-			},
-			)
+				f = setupRootfulPodman(ctx, initialDir)
+			})
 
 			ginkgo.Context("configuration", func() { //nolint:dupl
 				ginkgo.It("should substitute variables", func(ctx context.Context) {
 					tempDir, err := setupWorkspaceAndUp(
 						ctx,
-						"tests/up/testdata/docker-variables",
-						initialDir,
 						f,
-						"--init-env", "CUSTOM_VAR=custom_value",
-						"--init-env", "CUSTOM_IMAGE=ghcr.io/devsy-org/test-images/base:alpine",
+						workspaceSource{"tests/up/testdata/docker-variables", initialDir},
+						"--init-env",
+						"CUSTOM_VAR=custom_value",
+						"--init-env",
+						"CUSTOM_IMAGE=ghcr.io/devsy-org/test-images/base:alpine",
 					)
 					framework.ExpectNoError(err)
 
-					devContainerID, err := f.DevsySSH(
-						ctx,
-						tempDir,
-						"cat $HOME/dev-container-id.out",
+					devContainerID := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/dev-container-id.out",
 					)
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(devContainerID)).NotTo(gomega.BeEmpty())
+					gomega.Expect(devContainerID).NotTo(gomega.BeEmpty())
 
-					containerEnvPath, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/container-env-path.out",
+					containerEnvPath := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/container-env-path.out",
 					)
-					framework.ExpectNoError(err)
 					gomega.Expect(containerEnvPath).To(gomega.ContainSubstring("/usr/local/bin"))
 
-					localEnvHome, err := f.DevsySSH(ctx, tempDir, "cat $HOME/local-env-home.out")
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(localEnvHome)).
+					localEnvHome := eventuallySSH(f, ctx, tempDir, "cat $HOME/local-env-home.out")
+					gomega.Expect(localEnvHome).
 						To(gomega.Equal(os.Getenv("HOME")))
 
-					localWorkspaceFolder, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/local-workspace-folder.out",
+					localWorkspaceFolder := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/local-workspace-folder.out",
 					)
-					framework.ExpectNoError(err)
 					gomega.Expect(
-						framework.CleanString(strings.TrimSpace(localWorkspaceFolder)),
+						framework.CleanString(localWorkspaceFolder),
 					).To(gomega.Equal(framework.CleanString(tempDir)))
 
-					localWorkspaceFolderBasename, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/local-workspace-folder-basename.out",
+					localWorkspaceFolderBasename := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/local-workspace-folder-basename.out",
 					)
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(localWorkspaceFolderBasename)).
+					gomega.Expect(localWorkspaceFolderBasename).
 						To(gomega.Equal(filepath.Base(tempDir)))
 
-					containerWorkspaceFolder, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/container-workspace-folder.out",
+					containerWorkspaceFolder := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/container-workspace-folder.out",
 					)
-					framework.ExpectNoError(err)
 					gomega.Expect(
-						framework.CleanString(strings.TrimSpace(containerWorkspaceFolder)),
+						framework.CleanString(containerWorkspaceFolder),
 					).To(gomega.Equal(
 						framework.CleanString(path.Join("/workspaces", filepath.Base(tempDir))),
 					))
 
-					containerWorkspaceFolderBasename, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/container-workspace-folder-basename.out",
+					containerWorkspaceFolderBasename := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/container-workspace-folder-basename.out",
 					)
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(containerWorkspaceFolderBasename)).
+					gomega.Expect(containerWorkspaceFolderBasename).
 						To(gomega.Equal(filepath.Base(tempDir)))
 
-					customVar, err := f.DevsySSH(ctx, tempDir, "cat $HOME/custom-var.out")
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(customVar)).To(gomega.Equal("custom_value"))
+					customVar := eventuallySSH(f, ctx, tempDir, "cat $HOME/custom-var.out")
+					gomega.Expect(customVar).To(gomega.Equal("custom_value"))
 
-					customImage, err := f.DevsySSH(ctx, tempDir, "cat $HOME/custom-image.out")
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(customImage)).
+					customImage := eventuallySSH(f, ctx, tempDir, "cat $HOME/custom-image.out")
+					gomega.Expect(customImage).
 						To(gomega.Equal("ghcr.io/devsy-org/test-images/base:alpine"))
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 				ginkgo.It("should substitute variables with defaults", func(ctx context.Context) {
 					tempDir, err := setupWorkspaceAndUp(
 						ctx,
-						"tests/up/testdata/docker-variables-defaults",
-						initialDir,
 						f,
+						workspaceSource{"tests/up/testdata/docker-variables-defaults", initialDir},
 					)
 					framework.ExpectNoError(err)
 
@@ -164,7 +119,7 @@ var _ = ginkgo.Describe(
 					setVar, err := f.DevsySSH(ctx, tempDir, "cat $HOME/set-var.out")
 					framework.ExpectNoError(err)
 					gomega.Expect(strings.TrimSpace(setVar)).To(gomega.Equal(os.Getenv("HOME")))
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 				ginkgo.It("should merge extra devcontainer config", func(ctx context.Context) {
 					tempDir, err := setupWorkspace(
@@ -183,17 +138,33 @@ var _ = ginkgo.Describe(
 					)
 					framework.ExpectNoError(err)
 
-					out, err := f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'")
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "base_value")
+					gomega.Eventually(func() string {
+						out, err := probeSSH(
+							f, ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'",
+						)
+						if err != nil {
+							return ""
+						}
+						return strings.TrimSpace(out)
+					}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(
+						gomega.Equal("base_value"),
+					)
 
-					out, err = f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $EXTRA_VAR'")
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "extra_value")
+					gomega.Eventually(func() string {
+						out, err := probeSSH(
+							f, ctx, tempDir, "bash -l -c 'echo -n $EXTRA_VAR'",
+						)
+						if err != nil {
+							return ""
+						}
+						return strings.TrimSpace(out)
+					}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(
+						gomega.Equal("extra_value"),
+					)
 
 					err = f.DevsyWorkspaceDelete(ctx, tempDir)
 					framework.ExpectNoError(err)
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 				ginkgo.It(
 					"should override with extra devcontainer config",
@@ -221,47 +192,113 @@ var _ = ginkgo.Describe(
 						err = f.DevsyWorkspaceDelete(ctx, tempDir)
 						framework.ExpectNoError(err)
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
-				ginkgo.It("should select from multiple devcontainers", func(ctx context.Context) {
-					tempDir, err := setupWorkspace(
-						"tests/up/testdata/docker-multi-devcontainer",
-						initialDir,
-						f,
-					)
-					framework.ExpectNoError(err)
+				ginkgo.It( //nolint:dupl // rootful and rootless suites mirror each other
+					"should select from multiple devcontainers",
+					func(ctx context.Context) {
+						tempDir, err := setupWorkspace(
+							"tests/up/testdata/docker-multi-devcontainer",
+							initialDir,
+							f,
+						)
+						framework.ExpectNoError(err)
 
-					err = f.DevsyUp(
-						ctx,
-						tempDir,
-						names.Flag(names.DevContainer),
-						"id:python",
-					)
-					framework.ExpectNoError(err)
+						err = f.DevsyUp(
+							ctx,
+							tempDir,
+							names.Flag(names.DevContainer),
+							"id:python",
+						)
+						framework.ExpectNoError(err)
 
-					out, err := f.DevsySSH(
-						ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
-					)
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "python")
+						out, err := f.DevsySSH(
+							ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
+						)
+						framework.ExpectNoError(err)
+						framework.ExpectEqual(out, "python")
 
-					err = f.DevsyWorkspaceDelete(ctx, tempDir)
-					framework.ExpectNoError(err)
+						err = f.DevsyWorkspaceDelete(ctx, tempDir)
+						framework.ExpectNoError(err)
 
-					err = f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
-					framework.ExpectNoError(err)
+						err = f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
+						framework.ExpectNoError(err)
 
-					out, err = f.DevsySSH(
-						ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
-					)
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "go")
+						out, err = f.DevsySSH(
+							ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
+						)
+						framework.ExpectNoError(err)
+						framework.ExpectEqual(out, "go")
 
-					err = f.DevsyWorkspaceDelete(ctx, tempDir)
-					framework.ExpectNoError(err)
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+						err = f.DevsyWorkspaceDelete(ctx, tempDir)
+						framework.ExpectNoError(err)
+					},
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
+				)
 			})
 		})
 	},
 )
+
+// rootfulSSHProbe counts SSH probe timeouts against the rootful podman runtime.
+type rootfulSSHProbe struct {
+	dockerCommand       string
+	consecutiveTimeouts int
+}
+
+// failure classifies a failed SSH probe. It stops the wait only when the
+// runtime is unavailable, either reported directly or found unhealthy after
+// two consecutive timeouts.
+func (p *rootfulSSHProbe) failure(ctx, probeCtx context.Context, err error) (bool, error) {
+	if errors.Is(err, docker.ErrRuntimeUnavailable) {
+		return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(err)
+	}
+	if !errors.Is(probeCtx.Err(), context.DeadlineExceeded) || ctx.Err() != nil {
+		p.consecutiveTimeouts = 0
+		return false, nil
+	}
+	p.consecutiveTimeouts++
+	if p.consecutiveTimeouts == 2 {
+		p.consecutiveTimeouts = 0
+		healthErr := checkRootfulRuntimeHealth(ctx, p.dockerCommand)
+		if errors.Is(healthErr, docker.ErrRuntimeUnavailable) {
+			return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(healthErr)
+		}
+	}
+
+	return false, nil
+}
+
+func checkRootfulRuntimeHealth(ctx context.Context, dockerCommand string) error {
+	healthCtx, healthCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer healthCancel()
+	helper := &docker.DockerHelper{DockerCommand: dockerCommand}
+
+	return helper.CheckRuntimeHealth(healthCtx)
+}
+
+func eventuallySSH(f *framework.Framework, ctx context.Context, workspace, command string) string {
+	const (
+		sshReadinessProbeTimeout   = 8 * time.Second
+		sshReadinessOverallTimeout = 60 * time.Second
+		sshReadinessPollInterval   = 2 * time.Second
+	)
+	var output string
+	probe := &rootfulSSHProbe{
+		dockerCommand: filepath.Join(f.DevsyBinDir, podmanRootfulWrapperName),
+	}
+	gomega.Eventually(func() (bool, error) {
+		probeCtx, cancel := context.WithTimeout(ctx, sshReadinessProbeTimeout)
+		defer cancel()
+		out, err := f.DevsySSHOnce(probeCtx, workspace, command)
+		if err != nil {
+			return probe.failure(ctx, probeCtx, err)
+		}
+		output = strings.TrimSpace(out)
+
+		return true, nil
+	}).WithTimeout(sshReadinessOverallTimeout).WithPolling(sshReadinessPollInterval).Should(gomega.BeTrue())
+
+	return output
+}

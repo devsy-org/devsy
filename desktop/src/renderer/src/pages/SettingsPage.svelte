@@ -1,4 +1,15 @@
 <script lang="ts">
+import SecretSecuritySheet from "$lib/components/variables/SecretSecuritySheet.svelte"
+import {
+  initSecretProtection,
+  secretProtectionStatus,
+  secretProtectionError,
+} from "$lib/stores/secret-protection.js"
+import {
+  getSecretProtectionViewState,
+  secretProtectionStateLabel,
+  secretProtectionModeLabel,
+} from "$lib/variables/secret-protection-state.js"
 import { onMount } from "svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -6,13 +17,18 @@ import { Label } from "$lib/components/ui/label/index.js"
 import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Command from "$lib/components/ui/command/index.js"
 import * as Popover from "$lib/components/ui/popover/index.js"
-import * as Tabs from "$lib/components/ui/tabs/index.js"
 import { Switch } from "$lib/components/ui/switch/index.js"
+import {
+  addToApplications,
+  integrationBusy,
+  integrationError,
+  integrationStatus,
+  refreshIntegrationStatus,
+  removeFromApplications,
+} from "$lib/stores/linux-desktop-integration.js"
 import {
   theme,
   applyTheme,
-  colorScheme,
-  setColorScheme,
   uiScale,
   applyUIScale,
   defaultIde,
@@ -22,19 +38,25 @@ import {
   localOptions as localOptionsStore,
   loadLocalOptions,
   saveLocalOption,
+  runAtStartup,
+  openToTrayOnStartup,
+  trayNotifications,
+  desktopLogLevel,
+  cliCaptureLogLevel,
+  startupStatus,
+  syncDesktopSettingsFromMain,
+  updateDesktopSettings,
 } from "$lib/stores/settings.js"
 import type {
   Theme,
-  ColorScheme,
   UIScale,
   LocalOptions,
   OnBuildFailure,
 } from "$lib/stores/settings.js"
+import type { LogLevel, TrayNotificationLevel } from "$shared/app-settings.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import UpdatesPanel from "$lib/components/update/UpdatesPanel.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
-import { toasts } from "$lib/stores/toasts.js"
-import { extractErrorMessage } from "$lib/utils/error.js"
 import { trackEngagement } from "$lib/analytics.js"
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -47,12 +69,6 @@ function setTheme(value: Theme) {
   theme.set(value)
   applyTheme(value)
 }
-
-const COLOR_SCHEMES: { value: ColorScheme; label: string; swatch: string }[] = [
-  { value: "default", label: "White", swatch: "bg-foreground" },
-  { value: "emerald", label: "Emerald", swatch: "bg-emerald-600" },
-  { value: "purple", label: "Purple", swatch: "bg-purple-600" },
-]
 
 const UI_SCALES: { value: UIScale; label: string }[] = [
   { value: "xs", label: "Extra Small" },
@@ -95,7 +111,7 @@ const IDE_OPTIONS = [
   { value: "rstudio", label: "RStudio Server" },
 ]
 
-let activeTab = $state("general")
+let securityOpen = $state(false)
 let loading = $state(true)
 let saving = $state(false)
 let ideComboOpen = $state(false)
@@ -110,7 +126,6 @@ let filteredIdes = $derived(
 )
 
 let local = $state<LocalOptions>({
-  debugFlag: false,
   sshKeyPath: "",
   httpProxy: "",
   httpsProxy: "",
@@ -134,10 +149,28 @@ const shortcuts = [
   { keys: "Escape", action: "Close dialogs and palette" },
 ]
 
+const NOTIFICATION_OPTIONS: { value: TrayNotificationLevel; label: string }[] =
+  [
+    { value: "off", label: "Off" },
+    { value: "failures", label: "Failures only" },
+    { value: "all", label: "All terminal outcomes" },
+  ]
+
+const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
+  { value: "error", label: "Error" },
+  { value: "warn", label: "Warn" },
+  { value: "info", label: "Info" },
+  { value: "debug", label: "Debug" },
+  { value: "trace", label: "Trace" },
+]
+
 onMount(() => {
+  void initSecretProtection()
   local = loadLocalOptions()
   localOptionsStore.set(local)
   loading = false
+  void syncDesktopSettingsFromMain()
+  void refreshIntegrationStatus()
 })
 
 function saveLocal(key: keyof LocalOptions, value: string | boolean) {
@@ -145,37 +178,23 @@ function saveLocal(key: keyof LocalOptions, value: string | boolean) {
   ;(local as unknown as Record<string, string | boolean>)[key] = value
   trackEngagement("settings_changed", { setting: key })
 }
-
-function toggleLocal(key: keyof LocalOptions) {
-  const current = local[key]
-  saveLocal(key, !current)
-}
 </script>
 
-<div class="mx-auto w-full max-w-2xl space-y-6">
+<div class="space-y-6">
   <h1 class="text-2xl font-bold">Settings</h1>
 
-  <Tabs.Root bind:value={activeTab} class="w-full">
-    <Tabs.List variant="line" class="w-full flex-wrap">
-      <Tabs.Trigger value="general">General</Tabs.Trigger>
-      <Tabs.Trigger value="appearance">Appearance</Tabs.Trigger>
-      <Tabs.Trigger value="updates">Updates</Tabs.Trigger>
-      <Tabs.Trigger value="experimental">Experimental</Tabs.Trigger>
-    </Tabs.List>
-
-    <Tabs.Content value="general" class="w-full">
+  <div class="min-w-0 max-w-3xl space-y-6">
+      <section id="general" aria-labelledby="general-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+        <h2 id="general-heading" class="text-lg font-semibold">General</h2>
       {#if loading}
         <div class="mt-4 space-y-6">
-          <!-- Toggle row skeleton (Debug Mode) -->
-          <div class="flex items-center justify-between">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="space-y-1.5">
               <Skeleton class="h-4 w-32" />
               <Skeleton class="h-3 w-48" />
             </div>
             <Skeleton class="h-5 w-10 rounded-full" />
           </div>
-
-          <!-- Input row skeleton (SSH Key) -->
           <div class="space-y-2">
             <Skeleton class="h-4 w-40" />
             <Skeleton class="h-3 w-56" />
@@ -183,11 +202,7 @@ function toggleLocal(key: keyof LocalOptions) {
           </div>
 
           <Separator />
-
-          <!-- Section header (Proxy Configuration) -->
           <Skeleton class="h-5 w-40" />
-
-          <!-- Input row skeletons (HTTP Proxy, HTTPS Proxy) -->
           <div class="space-y-2">
             <Skeleton class="h-4 w-24" />
             <Skeleton class="h-9 w-full" />
@@ -199,15 +214,39 @@ function toggleLocal(key: keyof LocalOptions) {
         </div>
       {:else}
       <div class="mt-4 space-y-6">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <Label>Debug Mode</Label>
-            <p class="text-xs text-muted-foreground">Run all commands with --debug flag</p>
+            <Label>Desktop Application Logging</Label>
+            <p class="text-xs text-muted-foreground">Controls diagnostic detail emitted by the desktop application</p>
           </div>
-          <Switch checked={local.debugFlag} onCheckedChange={() => toggleLocal("debugFlag")} disabled={loading || saving} />
+          <Select.Root
+            type="single"
+            value={$desktopLogLevel}
+            onValueChange={(v) => { if (v) updateDesktopSettings({ desktopLogLevel: v as LogLevel }) }}
+          >
+            <Select.Trigger class="h-9 w-full sm:w-[280px]"><span>{LOG_LEVEL_OPTIONS.find((o) => o.value === $desktopLogLevel)?.label ?? "Info"}</span></Select.Trigger>
+            <Select.Content>
+              {#each LOG_LEVEL_OPTIONS as o (o.value)}
+                <Select.Item value={o.value} label={o.label} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
         </div>
 
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label>CLI Capture Logging</Label>
+            <p class="text-xs text-muted-foreground">Controls diagnostic detail captured from CLI commands launched by the desktop</p>
+          </div>
+          <Select.Root type="single" value={$cliCaptureLogLevel} onValueChange={(v) => { if (v) updateDesktopSettings({ cliCaptureLogLevel: v as LogLevel }) }}>
+            <Select.Trigger class="h-9 w-full sm:w-[280px]"><span>{LOG_LEVEL_OPTIONS.find((o) => o.value === $cliCaptureLogLevel)?.label ?? "Info"}</span></Select.Trigger>
+            <Select.Content>{#each LOG_LEVEL_OPTIONS as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}</Select.Content>
+          </Select.Root>
+        </div>
+        <p class="text-xs text-muted-foreground">Direct terminal CLI commands use their own context default, which is Warn unless overridden.</p>
+        <p class="text-xs text-muted-foreground">These levels only affect diagnostic files. Build and lifecycle output is retained separately and shown under Logs > Setup and build history, whatever level is set here.</p>
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <Label>On Build Failure</Label>
             <p class="text-xs text-muted-foreground">What to do when a dev container build fails</p>
@@ -222,7 +261,7 @@ function toggleLocal(key: keyof LocalOptions) {
               }
             }}
           >
-            <Select.Trigger class="w-[280px] h-9">
+            <Select.Trigger class="h-9 w-full sm:w-[280px]">
               <span>{ON_BUILD_FAILURE_OPTIONS.find((o) => o.value === local.onBuildFailure)?.label ?? "Prompt with recovery options"}</span>
             </Select.Trigger>
             <Select.Content>
@@ -297,13 +336,114 @@ function toggleLocal(key: keyof LocalOptions) {
 
       </div>
       {/if}
-    </Tabs.Content>
+      </section>
 
-    <Tabs.Content value="appearance" class="w-full">
-      <div class="mt-4 space-y-6">
+      <section id="startup" aria-labelledby="startup-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+        <h2 id="startup-heading" class="text-lg font-semibold">Startup</h2>
+        <div class="mt-4 space-y-6">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Label>Run at Startup</Label>
+              <p class="text-xs text-muted-foreground">Launch Devsy automatically after you sign in</p>
+            </div>
+            <Switch
+              checked={$runAtStartup}
+              onCheckedChange={(v) => updateDesktopSettings({ runAtStartup: v })}
+              disabled={loading}
+            />
+          </div>
+
+          {#if $startupStatus?.status === "denied" || $startupStatus?.status === "error"}
+            <p class="text-xs text-yellow-600 dark:text-yellow-400">{$startupStatus.detail}</p>
+          {/if}
+
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Label>Open to Tray on Startup</Label>
+              <p class="text-xs text-muted-foreground">Start in the system tray without opening a window. Applies only when Devsy starts automatically; clicking Devsy yourself always opens the window.</p>
+            </div>
+            <Switch
+              checked={$openToTrayOnStartup}
+              onCheckedChange={(v) => updateDesktopSettings({ openToTrayOnStartup: v })}
+              disabled={loading || !$runAtStartup}
+            />
+          </div>
+        </div>
+      </section>
+
+      {#if $integrationStatus?.supported}
+        <section id="desktop-launcher" aria-labelledby="desktop-launcher-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+          <h2 id="desktop-launcher-heading" class="text-lg font-semibold">Applications menu</h2>
+          <div class="mt-4 space-y-3">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <Label>Devsy launcher</Label>
+                <p class="text-xs text-muted-foreground" data-testid="launcher-state">
+                  {#if $integrationStatus.problem}
+                    {$integrationStatus.problem}
+                  {:else if $integrationStatus.conflict}
+                    {$integrationStatus.conflict} Devsy leaves it unchanged.
+                  {:else if $integrationStatus.installed && $integrationStatus.needsUpdate}
+                    The launcher points to an older AppImage location.
+                  {:else if $integrationStatus.installed}
+                    Devsy appears in your applications menu and opens devsy:// links.
+                  {:else}
+                    This AppImage has no launcher or icon in your applications menu.
+                  {/if}
+                </p>
+              </div>
+              <div class="flex gap-2">
+                {#if $integrationStatus.installed}
+                  {#if $integrationStatus.needsUpdate}
+                    <Button variant="outline" onclick={addToApplications} disabled={$integrationBusy || !!$integrationStatus.conflict}>Update launcher</Button>
+                  {/if}
+                  <Button variant="outline" onclick={removeFromApplications} disabled={$integrationBusy}>Remove</Button>
+                {:else}
+                  <Button variant="outline" onclick={addToApplications} disabled={$integrationBusy || !!$integrationStatus.conflict || !!$integrationStatus.problem}>Add to applications</Button>
+                {/if}
+              </div>
+            </div>
+            {#if $integrationError}
+              <p role="alert" class="text-xs text-yellow-600 dark:text-yellow-400">{$integrationError}</p>
+            {/if}
+          </div>
+        </section>
+      {/if}
+
+      <section id="notifications" aria-labelledby="notifications-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+        <h2 id="notifications-heading" class="text-lg font-semibold">Notifications</h2>
+        <div class="mt-4 space-y-6">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Label>Workspace Notifications</Label>
+              <p class="text-xs text-muted-foreground">System notifications when workspace start and stop operations finish</p>
+            </div>
+            <Select.Root
+              type="single"
+              value={$trayNotifications}
+              onValueChange={(v) => {
+                if (v) updateDesktopSettings({ trayNotifications: v as TrayNotificationLevel })
+              }}
+            >
+              <Select.Trigger class="h-9 w-full sm:w-[280px]">
+                <span>{NOTIFICATION_OPTIONS.find((o) => o.value === $trayNotifications)?.label ?? "Failures only"}</span>
+              </Select.Trigger>
+              <Select.Content>
+                {#each NOTIFICATION_OPTIONS as o (o.value)}
+                  <Select.Item value={o.value} label={o.label} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+        </div>
+      </section>
+
+      <section id="appearance" aria-labelledby="appearance-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+        <h2 id="appearance-heading" class="text-lg font-semibold">Appearance</h2>
+        <div class="mt-4 space-y-6">
         <div class="space-y-2">
           <h2 class="text-lg font-semibold">Theme</h2>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
             {#each THEMES as t (t.value)}
               <Button
                 variant={$theme === t.value ? "default" : "outline"}
@@ -317,31 +457,11 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <Separator />
 
-        <!-- Color Scheme picker kept but hidden — settled on purple. Re-enable by switching to {#if true}. -->
-        {#if false}
-        <div class="space-y-2">
-          <h2 class="text-lg font-semibold">Color Scheme</h2>
-          <div class="flex gap-2">
-            {#each COLOR_SCHEMES as c (c.value)}
-              <Button
-                variant={$colorScheme === c.value ? "default" : "outline"}
-                onclick={() => setColorScheme(c.value)}
-                class="gap-2"
-              >
-                <span class="h-3 w-3 rounded-full {c.swatch}"></span>
-                {c.label}
-              </Button>
-            {/each}
-          </div>
-        </div>
-
-        <Separator />
-        {/if}
 
         <div class="space-y-2">
           <h2 class="text-lg font-semibold">UI Scale</h2>
           <p class="text-xs text-muted-foreground">Adjust the overall size of text and interface elements</p>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
             {#each UI_SCALES as s (s.value)}
               <Button
                 variant={$uiScale === s.value ? "default" : "outline"}
@@ -354,57 +474,25 @@ function toggleLocal(key: keyof LocalOptions) {
         </div>
 
       </div>
-    </Tabs.Content>
+      </section>
 
-    <!-- Updates -->
-    <Tabs.Content value="updates" class="w-full">
-      <div class="mt-4">
-        <UpdatesPanel />
-      </div>
-    </Tabs.Content>
+      <section id="secret-security" aria-labelledby="secret-security-heading" class="space-y-3 rounded-lg border p-4 sm:p-6">
+        <h2 id="secret-security-heading" class="text-lg font-semibold">Secret security</h2>
+        <p class="text-sm text-muted-foreground">Control file-backed secret encryption and device access.</p>
+        <dl class="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+          <div><dt class="text-muted-foreground">Status</dt><dd>{secretProtectionStateLabel(getSecretProtectionViewState($secretProtectionStatus))}</dd></div>
+          <div><dt class="text-muted-foreground">Protection</dt><dd>{secretProtectionModeLabel($secretProtectionStatus)}</dd></div>
+        </dl>
+        {#if $secretProtectionError}<p class="text-sm text-muted-foreground">Security status could not be loaded. Open security to retry.</p>{/if}
+        <Button variant="outline" onclick={() => (securityOpen = true)}>Manage secret security</Button>
+      </section>
+      <SecretSecuritySheet bind:open={securityOpen} />
 
-    <Tabs.Content value="experimental" class="w-full">
-      <div class="mt-4 space-y-6">
-        <div class="rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
-          <p class="text-sm text-yellow-600 dark:text-yellow-400">
-            Experimental features may be unstable. Use at your own risk.
-          </p>
+      <section id="updates" aria-labelledby="updates-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+        <h2 id="updates-heading" class="text-lg font-semibold">Updates</h2>
+        <div class="mt-4">
+          <UpdatesPanel />
         </div>
-
-        <div class="flex items-center justify-between">
-          <div>
-            <Label>Multiple Devcontainer Detection</Label>
-            <p class="text-xs text-muted-foreground">Check for multiple devcontainers when creating workspaces. May take longer for larger repos.</p>
-          </div>
-          <Switch checked={local.experimentalMultiDevcontainer} onCheckedChange={() => toggleLocal("experimentalMultiDevcontainer")} disabled={loading || saving} />
-        </div>
-
-        <Separator />
-
-        <div class="space-y-2">
-          <Label>Additional CLI Flags</Label>
-          <p class="text-xs text-muted-foreground">Append custom flags to all Devsy CLI commands</p>
-          <Input
-            value={local.additionalCliFlags}
-            placeholder="--flag1 --flag2=value"
-            oninput={(e) => (local.additionalCliFlags = e.currentTarget.value)}
-            onblur={() => saveLocal("additionalCliFlags", local.additionalCliFlags)}
-            disabled={loading || saving}
-          />
-        </div>
-
-        <div class="space-y-2">
-          <Label>Additional Environment Variables</Label>
-          <p class="text-xs text-muted-foreground">Comma-separated environment variables passed to Devsy commands</p>
-          <Input
-            value={local.additionalEnvVars}
-            placeholder="FOO=bar,BAZ=false"
-            oninput={(e) => (local.additionalEnvVars = e.currentTarget.value)}
-            onblur={() => saveLocal("additionalEnvVars", local.additionalEnvVars)}
-            disabled={loading || saving}
-          />
-        </div>
-      </div>
-    </Tabs.Content>
-  </Tabs.Root>
+      </section>
+  </div>
 </div>

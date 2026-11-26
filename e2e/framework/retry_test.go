@@ -2,12 +2,16 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -123,6 +127,13 @@ func TestIsRetryableSSHError_ExitCode1_NoSSHPattern(t *testing.T) {
 
 func TestIsRetryableSSHError_ExitCode1_EmptyStderr(t *testing.T) {
 	assert.False(t, isRetryableSSHError(exitError(t, "1"), ""))
+}
+
+func TestIsRetryableSSHError_ExecStartupSilence(t *testing.T) {
+	assert.True(t, isRetryableSSHError(
+		exitError(t, "1"),
+		"container exec session produced no output for 30s: remote process never started",
+	))
 }
 
 func TestIsRetryableSSHError_ExitStatus10(t *testing.T) {
@@ -253,6 +264,57 @@ func TestExecWithDockerRetry_RetryThenSuccess(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
+func TestExecWithDockerRetry_HandshakeStallRetried(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	stderrMsg := "start workspace: failed to create SSH client: ssh handshake made no progress for 15s"
+	out, _, err := execWithDockerRetry(context.Background(),
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "", stderrMsg, transientExitErr(t)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+}
+
+func TestExecWithDockerRetry_ExecStartupSilenceRetried(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	out, stderr, err := execWithDockerRetry(context.Background(),
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "",
+					"container exec session produced no output for 30s: remote process never started",
+					transientExitErr(t)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+	assert.Empty(t, stderr)
+}
+
+func TestExecWithDockerRetry_NonRetryableExitNotRetried(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	_, _, err := execWithDockerRetry(context.Background(),
+		func(context.Context) (string, string, error) {
+			calls++
+			return "", "provider \"docker123\" does not exist", transientExitErr(t)
+		},
+	)
+	require.Error(t, err)
+	assert.Equal(t, 1, calls)
+}
+
 func TestExecWithDockerRetry_RetryExhausted(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -305,8 +367,8 @@ func TestExecWithDockerRetry_ContextDeadlineExceeded(t *testing.T) {
 		},
 	)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.NotContains(t, err.Error(), "after")
+	assert.Contains(t, err.Error(), "remaining deadline budget was insufficient")
+	assert.Contains(t, err.Error(), "next retry delay")
 }
 
 func TestExecWithSSHRetry_SuccessFirstTry(t *testing.T) {
@@ -362,6 +424,44 @@ func TestExecWithSSHRetry_RetryThenSuccess(t *testing.T) {
 	assert.Equal(t, "ok", out)
 }
 
+func TestExecWithSSHRetry_RetryHandshakeStallThenSuccess(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	out, err := execWithSSHRetry(context.Background(), "ws",
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "", "run in container: ssh client: ssh handshake made no progress for 15s", transientExitErr(
+					t,
+				)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+}
+
+func TestExecWithSSHRetry_RetryStartupSilenceEnvelopeThenSuccess(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	envelope := `{"kind":"error","outcome":"error","code":"UNKNOWN","message":` +
+		`"container exec session produced no output for 30s: remote process never started"}`
+	out, err := execWithSSHRetry(context.Background(), "ws",
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "", envelope, transientExitErr(t)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+}
+
 func TestExecWithSSHRetry_RetryExhausted(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -402,6 +502,389 @@ func TestExecWithSSHRetry_ContextDeadlineExceeded(t *testing.T) {
 		},
 	)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.NotContains(t, err.Error(), "after")
+	assert.Contains(t, err.Error(), "remaining deadline budget was insufficient")
+	assert.Contains(t, err.Error(), "next retry delay")
+}
+
+func TestDevsySSHOnce_DoesNotRetry(t *testing.T) {
+	// Verify that DevsySSHOnce invokes the underlying command exactly once,
+	// without entering the multi-attempt retry loop.
+	// Create a dummy mock script for the binary that increments an invocation counter file.
+	tempDir := t.TempDir()
+	counterFile := filepath.Join(tempDir, "invocations.txt")
+	scriptPath := filepath.Join(tempDir, "mock-devsy")
+
+	scriptContent := fmt.Sprintf(`#!/bin/sh
+echo "invocation" >> "%s"
+echo "Connection refused" >&2
+exit 1
+`, counterFile)
+
+	//nolint:gosec // G304, G306: test mock script requires execution permission
+	err := os.WriteFile(
+		scriptPath,
+		[]byte(scriptContent),
+		0o755,
+	)
+	require.NoError(t, err)
+
+	f := &Framework{
+		DevsyBinDir:  tempDir,
+		DevsyBinName: "mock-devsy",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = f.DevsySSHOnce(ctx, "test-ws", "echo test")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Connection refused")
+
+	// Read invocation counter
+	data, readErr := os.ReadFile(counterFile) //nolint:gosec // G304
+	require.NoError(t, readErr)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	assert.Len(t, lines, 1, "DevsySSHOnce must execute exactly once without retrying")
+}
+
+func TestDevsySSHOnce_ReturnsContextDeadline(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "mock-devsy-sleep")
+
+	scriptContent := `#!/bin/sh
+sleep 5
+exit 0
+`
+	//nolint:gosec // G304, G306: test mock script requires execution permission
+	err := os.WriteFile(
+		scriptPath,
+		[]byte(scriptContent),
+		0o755,
+	)
+	require.NoError(t, err)
+
+	f := &Framework{
+		DevsyBinDir:  tempDir,
+		DevsyBinName: "mock-devsy-sleep",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err = f.DevsySSHOnce(ctx, "test-ws", "echo test")
+	require.Error(t, err)
+	assert.True(
+		t,
+		errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "signal: killed") ||
+			strings.Contains(err.Error(), "context deadline exceeded"),
+	)
+}
+
+func TestDevsySSHOnce_RuntimeUnavailableFromCLI(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "mock-devsy-runtime")
+	//nolint:gosec // G306: test mock script requires execution permission
+	require.NoError(
+		t,
+		os.WriteFile(
+			scriptPath,
+			[]byte("#!/bin/sh\necho AGENT_INJECTION_RUNTIME_UNAVAILABLE >&2\nexit 1\n"),
+			0o755,
+		),
+	)
+	f := &Framework{DevsyBinDir: tempDir, DevsyBinName: "mock-devsy-runtime"}
+	_, err := f.DevsySSHOnce(context.Background(), "test-ws", "echo test")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, docker.ErrRuntimeUnavailable)
+}
+
+func TestRetryFixed(t *testing.T) {
+	tests := []struct {
+		name      string
+		attempts  int
+		failFirst int
+		wantCalls int
+		wantErr   string
+	}{
+		{name: "success on first attempt", attempts: 3, failFirst: 0, wantCalls: 1},
+		{name: "success after failures", attempts: 3, failFirst: 2, wantCalls: 3},
+		{
+			name:      "exhaustion returns last error",
+			attempts:  3,
+			failFirst: 3,
+			wantCalls: 3,
+			wantErr:   "after 3 attempts: attempt 3 failed",
+		},
+		{
+			name:      "single attempt is not retried",
+			attempts:  1,
+			failFirst: 1,
+			wantCalls: 1,
+			wantErr:   "after 1 attempts: attempt 1 failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			err := RetryFixed(context.Background(), tt.attempts, 0,
+				func(context.Context) error {
+					calls++
+					if calls <= tt.failFirst {
+						return fmt.Errorf("attempt %d failed", calls)
+					}
+					return nil
+				},
+			)
+			assert.Equal(t, tt.wantCalls, calls)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			assert.EqualError(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestRetryFixed_ContextCanceledBeforeRetry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	err := RetryFixed(ctx, 3, 0, func(context.Context) error {
+		calls++
+		cancel()
+		return fmt.Errorf("attempt %d failed", calls)
+	})
+	assert.Equal(t, 1, calls)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.EqualError(t, err, "after 1 attempts: context canceled (last error: attempt 1 failed)")
+}
+
+func TestRetryFixed_ContextCanceledDuringDelay(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(10*time.Millisecond, cancel)
+	calls := 0
+	start := time.Now()
+	err := RetryFixed(ctx, 3, time.Hour, func(context.Context) error {
+		calls++
+		return fmt.Errorf("attempt %d failed", calls)
+	})
+	assert.Equal(t, 1, calls)
+	assert.Less(t, time.Since(start), time.Minute)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.EqualError(t, err, "after 1 attempts: context canceled (last error: attempt 1 failed)")
+}
+
+func TestRetryFixed_ContextCanceledOnFinalAttempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errFinal := errors.New("final attempt failed")
+	calls := 0
+	err := RetryFixed(ctx, 2, 0, func(context.Context) error {
+		calls++
+		if calls == 2 {
+			cancel()
+			return errFinal
+		}
+		return fmt.Errorf("attempt %d failed", calls)
+	})
+	assert.Equal(t, 2, calls)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, errFinal)
+	assert.EqualError(
+		t,
+		err,
+		"after 2 attempts: context canceled (last error: final attempt failed)",
+	)
+}
+
+const (
+	providerServerFailure = "received status code 504 when trying to download x"
+	providerClientFailure = "received status code 404 when trying to download x"
+)
+
+var errExitOne = errors.New("exit status 1")
+
+func TestIsRetryableProviderDownloadError(t *testing.T) {
+	retryable := []string{
+		"download: received status code 504 when trying to download https://github.com/o/r/provider.yaml",
+		"download failed with status 502",
+		"download failed with status 503: checksum service temporarily unavailable",
+		"Get \"https://github.com/o/checksum-provider\": net/http: TLS handshake timeout",
+		"Get \"https://github.com\": net/http: TLS handshake timeout",
+		"read tcp: connection reset by peer",
+		"download file: stalled: no progress within timeout",
+	}
+	for _, stderr := range retryable {
+		assert.True(t, isRetryableProviderDownloadError(errExitOne, stderr), stderr)
+	}
+	permanent := []string{
+		"download: received status code 404 when trying to download https://github.com/o/r/provider.yaml",
+		"download failed with status 403",
+		"download failed with status 408",
+		"received status code 404: unexpected EOF",
+		"download failed with status 403 after status 502",
+		"external runtime executable checksum verification failed",
+		"checksum verification failed after connection reset by peer",
+		"unexpected file checksum abc != def after connection reset by peer",
+		"provider microsandbox already exists",
+		"validate: exec.command is required",
+	}
+	for _, stderr := range permanent {
+		assert.False(t, isRetryableProviderDownloadError(errExitOne, stderr), stderr)
+	}
+}
+
+func TestExecWithProviderAddRetryRecoversFromServerErrors(t *testing.T) {
+	original := providerAddBackoff
+	providerAddBackoff.Duration = time.Millisecond
+	providerAddBackoff.Factor = 1
+	providerAddBackoff.Jitter = 0
+	t.Cleanup(func() { providerAddBackoff = original })
+	attempts := 0
+	_, err := execWithProviderAddRetry(
+		context.Background(),
+		func(context.Context) (string, string, error) {
+			attempts++
+			if attempts < 6 {
+				return "", providerServerFailure, errExitOne
+			}
+			return "", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 6, attempts)
+}
+
+func TestExecWithProviderAddRetryPreservesAttemptDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	wantDeadline, ok := ctx.Deadline()
+	require.True(t, ok)
+	_, err := execWithProviderAddRetry(
+		ctx,
+		func(ctx context.Context) (string, string, error) {
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok)
+			assert.Equal(t, wantDeadline, deadline)
+			return "", "", nil
+		},
+	)
+	require.NoError(t, err)
+}
+
+func TestExecWithProviderAddRetryPropagatesActiveDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	attempts := 0
+	_, err := execWithProviderAddRetry(
+		ctx,
+		func(ctx context.Context) (string, string, error) {
+			attempts++
+			timer := time.NewTimer(time.Second)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return "", "", ctx.Err()
+			case <-timer.C:
+				return "", "", errors.New("provider attempt lost caller deadline")
+			}
+		},
+	)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Equal(t, 1, attempts)
+}
+
+func TestExecWithProviderAddRetrySkipsClientErrors(t *testing.T) {
+	original := providerAddBackoff
+	providerAddBackoff = wait.Backoff{Steps: 4, Duration: time.Millisecond, Factor: 1}
+	t.Cleanup(func() { providerAddBackoff = original })
+	attempts := 0
+	stderr, err := execWithProviderAddRetry(
+		context.Background(),
+		func(context.Context) (string, string, error) {
+			attempts++
+			return "", providerClientFailure, errExitOne
+		},
+	)
+	require.Error(t, err)
+	assert.Equal(t, 1, attempts)
+	assert.Contains(t, stderr, "404")
+}
+
+func TestExecWithProviderAddRetryStopsAtBudget(t *testing.T) {
+	original := providerAddBackoff
+	providerAddBackoff.Duration = time.Millisecond
+	providerAddBackoff.Factor = 1
+	providerAddBackoff.Jitter = 0
+	t.Cleanup(func() { providerAddBackoff = original })
+	attempts := 0
+	_, err := execWithProviderAddRetry(
+		context.Background(),
+		func(context.Context) (string, string, error) {
+			attempts++
+			return "", providerServerFailure, errExitOne
+		},
+	)
+	require.ErrorContains(t, err, fmt.Sprintf("after %d attempts", original.Steps))
+	assert.Equal(t, original.Steps, attempts)
+}
+
+func TestSeedProviderDownloadCache(t *testing.T) {
+	source := t.TempDir()
+	home := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "abc"), []byte("binary"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(source, "nested"), 0o750))
+	t.Setenv(providerDownloadCacheEnv, source)
+	t.Setenv("DEVSY_HOME", home)
+
+	require.NoError(t, seedProviderDownloadCache())
+	root, err := os.OpenRoot(home)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = root.Close() })
+	got, err := root.ReadFile(filepath.Join("cache", "providers", "abc"))
+	require.NoError(t, err)
+	assert.Equal(t, "binary", string(got))
+	assert.NoDirExists(t, filepath.Join(home, "cache", "providers", "nested"))
+}
+
+func TestSeedProviderDownloadCacheKeepsExistingFiles(t *testing.T) {
+	source := t.TempDir()
+	home := t.TempDir()
+	cache := filepath.Join(home, "cache", "providers")
+	require.NoError(t, os.MkdirAll(cache, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(source, "abc"), []byte("new"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(cache, "abc"), []byte("old"), 0o600))
+	t.Setenv(providerDownloadCacheEnv, source)
+	t.Setenv("DEVSY_HOME", home)
+
+	require.NoError(t, seedProviderDownloadCache())
+	root, err := os.OpenRoot(cache)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = root.Close() })
+	got, err := root.ReadFile("abc")
+	require.NoError(t, err)
+	assert.Equal(t, "old", string(got))
+}
+
+func TestSeedProviderDownloadCacheIsOptional(t *testing.T) {
+	t.Setenv(providerDownloadCacheEnv, "")
+	t.Setenv("DEVSY_HOME", t.TempDir())
+	require.NoError(t, seedProviderDownloadCache())
+
+	t.Setenv(providerDownloadCacheEnv, filepath.Join(t.TempDir(), "missing"))
+	require.Error(t, seedProviderDownloadCache())
+}
+
+func TestSeedProviderDownloadCacheCreatesHome(t *testing.T) {
+	source := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "abc"), []byte("binary"), 0o600))
+	home := filepath.Join(t.TempDir(), "new-home")
+	t.Setenv(providerDownloadCacheEnv, source)
+	t.Setenv("DEVSY_HOME", home)
+
+	require.NoError(t, seedProviderDownloadCache())
+	assert.FileExists(t, filepath.Join(home, "cache", "providers", "abc"))
+	entries, err := os.ReadDir(filepath.Join(home, "cache", "providers"))
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
 }

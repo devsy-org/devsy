@@ -2,7 +2,6 @@ package jetbrains
 
 import (
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/ide"
 )
 
 const (
@@ -11,21 +10,7 @@ const (
 	RiderDownloadArm64Template = "https://download.jetbrains.com/rider/JetBrains.Rider-%s-aarch64.tar.gz"
 )
 
-var RiderOptions = ide.Options{
-	VersionOption: {
-		Name:        VersionOption,
-		Description: versionOptionDescription,
-		Default:     versionOptionDefault,
-	},
-	DownloadArm64Option: {
-		Name:        DownloadArm64Option,
-		Description: downloadArm64OptionDescription,
-	},
-	DownloadAmd64Option: {
-		Name:        DownloadAmd64Option,
-		Description: downloadAmd64OptionDescription,
-	},
-}
+var RiderOptions = newProductOptions()
 
 func NewRiderServer(
 	userName string,
@@ -35,8 +20,7 @@ func NewRiderServer(
 		RiderOptions,
 		values,
 		RiderProductCode,
-		RiderDownloadAmd64Template,
-		RiderDownloadArm64Template,
+		downloadTemplates{amd64: RiderDownloadAmd64Template, arm64: RiderDownloadArm64Template},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "rider",

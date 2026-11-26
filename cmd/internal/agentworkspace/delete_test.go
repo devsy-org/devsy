@@ -73,12 +73,12 @@ func TestForceRemoveAll_ReadOnlyDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Remove write+execute from content dir — simulates what crun does.
+	// Remove write+execute from content dir - simulates what crun does.
 	chmodReadOnly(t, content)
 
 	// Standard RemoveAll should fail.
 	if err := os.RemoveAll(target); err == nil {
-		t.Skip("os.RemoveAll succeeded unexpectedly — filesystem may not enforce permissions")
+		t.Skip("os.RemoveAll succeeded unexpectedly - filesystem may not enforce permissions")
 	}
 
 	// forceRemoveAll should fix permissions and succeed.

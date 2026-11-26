@@ -11,9 +11,8 @@ import (
 )
 
 const (
-	testRegistry    = "ghcr.io"
-	testVersion     = "1.0.0"
-	testFeatureNode = "node"
+	testRegistry = "ghcr.io"
+	testVersion  = "1.0.0"
 )
 
 func TestPublishCmd_FlagDefaults(t *testing.T) {
@@ -47,56 +46,6 @@ func TestPublishCmd_TargetRequired(t *testing.T) {
 
 	annotations := flag.Annotations
 	require.Contains(t, annotations, "cobra_annotation_bash_completion_one_required_flag")
-}
-
-func TestBuildPublishReference(t *testing.T) {
-	tests := []struct {
-		name      string
-		registry  string
-		namespace string
-		id        string
-		version   string
-		want      string
-	}{
-		{
-			name:      "with namespace",
-			registry:  testRegistry,
-			namespace: "devcontainers/features",
-			id:        "go",
-			version:   testVersion,
-			want:      testRegistry + "/devcontainers/features/go:" + testVersion,
-		},
-		{
-			name:     "without namespace",
-			registry: testRegistry,
-			id:       "go",
-			version:  testVersion,
-			want:     testRegistry + "/go:" + testVersion,
-		},
-		{
-			name:      "custom registry",
-			registry:  "registry.example.com",
-			namespace: "my-org/features",
-			id:        testFeatureNode,
-			version:   "2.0.0",
-			want:      "registry.example.com/my-org/features/" + testFeatureNode + ":2.0.0",
-		},
-		{
-			name:      "latest version",
-			registry:  testRegistry,
-			namespace: "test",
-			id:        "python",
-			version:   "latest",
-			want:      testRegistry + "/test/python:latest",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := buildPublishReference(tt.registry, tt.namespace, tt.id, tt.version)
-			assert.Equal(t, tt.want, got)
-		})
-	}
 }
 
 func TestValidatePublishTarget_NotADirectory(t *testing.T) {
@@ -147,39 +96,4 @@ func TestValidatePublishTarget_NonexistentPath(t *testing.T) {
 	_, err := validatePublishTarget("/nonexistent/path/that/does/not/exist")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "stat target")
-}
-
-func TestBuildFeatureImage(t *testing.T) {
-	tmpDir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(tmpDir, "devcontainer-feature.json"),
-		[]byte(`{"id": "go", "version": "1.0.0"}`),
-		0o600,
-	))
-	// #nosec G306 -- test install script must be executable
-	require.NoError(t, os.WriteFile(
-		filepath.Join(tmpDir, "install.sh"),
-		[]byte("#!/bin/bash\necho hello\n"),
-		0o750,
-	))
-
-	img, err := buildFeatureImage(tmpDir)
-	require.NoError(t, err)
-	require.NotNil(t, img)
-
-	layers, err := img.Layers()
-	require.NoError(t, err)
-	assert.Len(t, layers, 1)
-}
-
-func TestParsePublishRef_Valid(t *testing.T) {
-	ref, err := parsePublishRef(testRegistry, "devcontainers/features", "go", testVersion)
-	require.NoError(t, err)
-	assert.Contains(t, ref.String(), testRegistry+"/devcontainers/features/go:"+testVersion)
-}
-
-func TestParsePublishRef_Invalid(t *testing.T) {
-	_, err := parsePublishRef("", "", "INVALID REF!!!", "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "parse publish reference")
 }

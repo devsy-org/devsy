@@ -41,7 +41,7 @@ func Print(headers []string, rows [][]string) {
 }
 
 // Markdown renders headers and rows as a GitHub-flavored Markdown table.
-// Cell contents are written verbatim — callers must pre-escape pipes if needed.
+// Cell contents are written verbatim - callers must pre-escape pipes if needed.
 func Markdown(headers []string, rows [][]string) string {
 	var sb strings.Builder
 	writeMarkdownRow(&sb, headers)

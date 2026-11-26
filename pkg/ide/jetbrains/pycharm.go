@@ -2,7 +2,6 @@ package jetbrains
 
 import (
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/ide"
 )
 
 const (
@@ -11,21 +10,7 @@ const (
 	PycharmDownloadArm64Template = "https://download.jetbrains.com/python/pycharm-professional-%s-aarch64.tar.gz"
 )
 
-var PyCharmOptions = ide.Options{
-	VersionOption: {
-		Name:        VersionOption,
-		Description: versionOptionDescription,
-		Default:     versionOptionDefault,
-	},
-	DownloadArm64Option: {
-		Name:        DownloadArm64Option,
-		Description: downloadArm64OptionDescription,
-	},
-	DownloadAmd64Option: {
-		Name:        DownloadAmd64Option,
-		Description: downloadAmd64OptionDescription,
-	},
-}
+var PyCharmOptions = newProductOptions()
 
 func NewPyCharmServer(
 	userName string,
@@ -35,8 +20,7 @@ func NewPyCharmServer(
 		PyCharmOptions,
 		values,
 		PycharmProductCode,
-		PycharmDownloadAmd64Template,
-		PycharmDownloadArm64Template,
+		downloadTemplates{amd64: PycharmDownloadAmd64Template, arm64: PycharmDownloadArm64Template},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "pycharm",

@@ -3,20 +3,30 @@ import { describe, expect, it } from "vitest"
 import {
   isCommandSuccess,
   isRecoverableBuildFailure,
+  parseLogLine,
   parseRecoveryContainer,
 } from "./log-parser.js"
 
+describe("parseLogLine", () => {
+  it("does not interpret the removed legacy text format", () => {
+    expect(parseLogLine("12:34:56 info old message source.go:42")).toEqual({
+      time: "",
+      level: "",
+      message: "12:34:56 info old message source.go:42",
+      source: "",
+      origin: "",
+    })
+  })
+})
+
 describe("isCommandSuccess", () => {
   it("trusts an explicit success flag over the message", () => {
-    expect(isCommandSuccess("Exit code: 0", false)).toBe(false)
-    expect(isCommandSuccess("something went wrong", true)).toBe(true)
+    expect(isCommandSuccess(false)).toBe(false)
+    expect(isCommandSuccess(true)).toBe(true)
   })
 
-  it("falls back to message sniffing when no flag is given", () => {
-    expect(isCommandSuccess("Exit code: 0")).toBe(true)
-    expect(isCommandSuccess("Exit code: 1")).toBe(false)
-    expect(isCommandSuccess('{"outcome":"success"}')).toBe(true)
-    expect(isCommandSuccess(null)).toBe(false)
+  it("does not infer state from human-readable output", () => {
+    expect(isCommandSuccess()).toBe(false)
   })
 })
 

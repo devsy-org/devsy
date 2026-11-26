@@ -31,7 +31,7 @@ type Daemon struct {
 	lastActivity time.Time
 
 	cacheMu      sync.RWMutex
-	workspaces   []*providerpkg.Workspace
+	workspaces   []*providerpkg.WorkspaceListEntry
 	workspacesAt time.Time
 	providers    map[string]*workspace.ProviderWithOptions
 	providersAt  time.Time
@@ -116,17 +116,19 @@ func (d *Daemon) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-func (d *Daemon) handleList(w http.ResponseWriter, _ *http.Request) {
+func (d *Daemon) handleList(w http.ResponseWriter, r *http.Request) {
 	d.touch()
 
-	d.cacheMu.RLock()
-	if time.Since(d.workspacesAt) < cacheTTL && d.workspaces != nil {
-		data := d.workspaces
+	if !wantsFresh(r) {
+		d.cacheMu.RLock()
+		if time.Since(d.workspacesAt) < cacheTTL && d.workspaces != nil {
+			data := d.workspaces
+			d.cacheMu.RUnlock()
+			writeJSON(w, data)
+			return
+		}
 		d.cacheMu.RUnlock()
-		writeJSON(w, data)
-		return
 	}
-	d.cacheMu.RUnlock()
 
 	workspaces, err := workspace.ListLocalWorkspaces(d.config.DefaultContext, true)
 	if err != nil {
@@ -134,12 +136,18 @@ func (d *Daemon) handleList(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
+	entries := providerpkg.NewWorkspaceListEntries(workspaces)
+
 	d.cacheMu.Lock()
-	d.workspaces = workspaces
+	d.workspaces = entries
 	d.workspacesAt = time.Now()
 	d.cacheMu.Unlock()
 
-	writeJSON(w, workspaces)
+	writeJSON(w, entries)
+}
+
+func wantsFresh(r *http.Request) bool {
+	return r.URL.Query().Get("fresh") == "true"
 }
 
 // providerWithDefault mirrors cmd/provider/list.ProviderWithDefault so the

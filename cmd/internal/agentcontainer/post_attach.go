@@ -5,6 +5,7 @@ package agentcontainer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/compress"
@@ -44,7 +45,7 @@ func NewPostAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the postAttachCommand lifecycle hooks.
-func (cmd *PostAttachCmd) Run(ctx context.Context) error {
+func (cmd *PostAttachCmd) Run(ctx context.Context) (retErr error) {
 	decompressed, err := compress.Decompress(cmd.SetupInfo)
 	if err != nil {
 		return err
@@ -55,14 +56,26 @@ func (cmd *PostAttachCmd) Run(ctx context.Context) error {
 		return err
 	}
 
+	ctx, stopActivity, err := startWorkerActivity(ctx)
+	if err != nil {
+		return fmt.Errorf("register post-attach activity: %w", err)
+	}
+	defer stopActivity()
+
+	secretsEnv := secretsEnvFromEnvironment()
+	session := startWorkerRun(secretsEnv)
+	ctx = session.Context(ctx)
+	defer func() { session.Finish(retErr, false) }()
+
 	log.Debugf("running postAttachCommand hooks")
 	// Mount values aren't in this process's env; read them back for redaction.
-	if err := setup.RunPostAttachHooks(
-		ctx,
-		setupInfo,
-		secretsEnvFromEnvironment(),
-		setup.MountSecretsForRedaction(),
-	); err != nil {
+	if err := setup.RunPostAttachHooks(ctx, setupInfo, setup.PostAttachOptions{
+		SecretsEnv:   secretsEnv,
+		SecretsMount: setup.MountSecretsForRedaction(),
+	}); err != nil {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		log.Errorf("postAttachCommand failed: %v", err)
 	}
 

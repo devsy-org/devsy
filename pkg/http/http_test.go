@@ -1,7 +1,9 @@
 package http
 
 import (
+	nethttp "net/http"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 )
@@ -27,4 +29,29 @@ func TestInsecureTLSEnabled(t *testing.T) {
 			}
 		})
 	}
+}
+
+type idleClosingTransport struct {
+	closed bool
+}
+
+func (t *idleClosingTransport) RoundTrip(req *nethttp.Request) (*nethttp.Response, error) {
+	return nil, nil
+}
+
+func (t *idleClosingTransport) CloseIdleConnections() {
+	t.closed = true
+}
+
+func TestCloseIdleConnections(t *testing.T) {
+	mock := &idleClosingTransport{}
+	rt := NewStallTransport(mock, time.Second)
+	rt = WithUserAgent(rt, "test")
+	rt = NewRetryTransport(rt, DefaultRetry)
+	client := &nethttp.Client{Transport: rt}
+	client.CloseIdleConnections()
+	if !mock.closed {
+		t.Fatalf("expected CloseIdleConnections forwarded to base transport")
+	}
+	CloseIdleConnections()
 }

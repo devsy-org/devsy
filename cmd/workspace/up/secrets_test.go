@@ -1,31 +1,54 @@
 package up
 
 import (
+	"context"
 	"sort"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	secretspkg "github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	defaultValue = "default"
 )
 
 const (
 	secretAPIKey = "API_KEY"
 	secretToken  = "TOKEN"
 	secretTLSKey = "TLS_KEY"
+	testNPMToken = "NPM_TOKEN"
+	projectToken = "PROJECT_TOKEN"
 )
 
 func testConfig(bound ...string) *config.Config {
 	return &config.Config{
-		DefaultContext: "default",
+		DefaultContext: defaultValue,
 		Contexts: map[string]*config.ContextConfig{
-			"default": {Secrets: bound},
+			defaultValue: {Secrets: bound},
 		},
 	}
 }
 
+func testEnvConfig(bound ...string) *config.Config {
+	return &config.Config{
+		DefaultContext: defaultValue,
+		Contexts:       map[string]*config.ContextConfig{defaultValue: {EnvVars: bound}},
+	}
+}
+
+func localRef(name string) secretspkg.SecretRef {
+	return secretspkg.SecretRef{
+		Type:   secretspkg.LocalSourceName,
+		Source: secretspkg.LocalSourceName,
+		Name:   name,
+	}
+}
+
 func sortedRequests(reqs []secretRequest) []secretRequest {
-	sort.Slice(reqs, func(i, j int) bool { return reqs[i].name < reqs[j].name })
+	sort.Slice(reqs, func(i, j int) bool { return reqs[i].ref.String() < reqs[j].ref.String() })
 	return reqs
 }
 
@@ -33,82 +56,236 @@ func TestCollectSecretRequests_FlagsDefaultToEnv(t *testing.T) {
 	got, err := collectSecretRequests(
 		[]string{secretAPIKey, "DB_PW,target=DATABASE_PASSWORD"},
 		testConfig(),
+		nil,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []secretRequest{
-		{name: secretAPIKey, target: secretAPIKey, mount: false},
-		{name: "DB_PW", target: "DATABASE_PASSWORD", mount: false},
+		{ref: localRef(secretAPIKey), target: secretAPIKey, mount: false},
+		{ref: localRef("DB_PW"), target: "DATABASE_PASSWORD", mount: false},
 	}, sortedRequests(got))
 }
 
-func TestCollectSecretRequests_MountType(t *testing.T) {
-	got, err := collectSecretRequests([]string{secretTLSKey + ",type=mount"}, testConfig())
-	require.NoError(t, err)
-	assert.Equal(t, []secretRequest{
-		{name: secretTLSKey, target: secretTLSKey, mount: true},
-	}, got)
-}
-
-func TestCollectSecretRequests_MountWithTarget(t *testing.T) {
+func TestCollectSecretRequests_SourceQualified(t *testing.T) {
 	got, err := collectSecretRequests(
-		[]string{secretTLSKey + ",type=mount,target=tls.key"},
+		[]string{"sops:project/API_KEY,type=mount,target=token"},
 		testConfig(),
+		nil,
 	)
 	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "sops:project/API_KEY", got[0].ref.String())
+	assert.Equal(t, "token", got[0].target)
+	assert.True(t, got[0].mount)
+}
+
+func TestCollectSecretRequests_ProjectBindings(t *testing.T) {
+	got, err := collectSecretRequests(nil, testConfig(), []string{"sops:project/API_KEY"})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "sops:project/API_KEY", got[0].ref.String())
+	assert.Equal(t, "API_KEY", got[0].target)
+}
+
+func TestCollectSecretRequests_MountType(t *testing.T) {
+	got, err := collectSecretRequests([]string{secretTLSKey + ",type=mount"}, testConfig(), nil)
+	require.NoError(t, err)
 	assert.Equal(t, []secretRequest{
-		{name: secretTLSKey, target: "tls.key", mount: true},
+		{ref: localRef(secretTLSKey), target: secretTLSKey, mount: true},
 	}, got)
 }
 
 func TestCollectSecretRequests_ContextBindings(t *testing.T) {
-	got, err := collectSecretRequests(nil, testConfig(secretToken, "SECRET_TWO"))
+	got, err := collectSecretRequests(nil, testConfig(secretToken, "SECRET_TWO"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, []secretRequest{
-		{name: "SECRET_TWO", target: "SECRET_TWO", mount: false},
-		{name: secretToken, target: secretToken, mount: false},
+		{ref: localRef("SECRET_TWO"), target: "SECRET_TWO", session: true},
+		{ref: localRef(secretToken), target: secretToken, session: true},
 	}, sortedRequests(got))
 }
 
 func TestCollectSecretRequests_FlagOverridesBinding(t *testing.T) {
-	got, err := collectSecretRequests([]string{"TOKEN,target=CI_TOKEN"}, testConfig(secretToken))
+	got, err := collectSecretRequests(
+		[]string{"TOKEN,target=CI_TOKEN"},
+		testConfig(secretToken),
+		nil,
+	)
 	require.NoError(t, err)
 	assert.Equal(t, []secretRequest{
-		{name: secretToken, target: "CI_TOKEN", mount: false},
+		{ref: localRef(secretToken), target: "CI_TOKEN", session: true},
 	}, got)
 }
 
+func TestCollectSecretRequestsOnlyAttachedEnvironmentSecretsReachSessions(t *testing.T) {
+	got, err := collectSecretRequests(
+		[]string{secretToken, projectToken},
+		testConfig(secretToken),
+		[]string{projectToken},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []secretRequest{
+		{ref: localRef(projectToken), target: projectToken},
+		{ref: localRef(secretToken), target: secretToken, session: true},
+	}, sortedRequests(got))
+
+	cmd := &UpCmd{}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("local", "local", fixedSource{
+		values: map[string]string{
+			secretToken:  "sentinel-attached",
+			projectToken: "sentinel-project",
+		},
+	}))
+	require.NoError(t, cmd.applyLifecycleSecrets(context.Background(), got, resolver))
+	assert.Equal(t, []string{secretToken}, cmd.TerminalSecretEnvNames)
+}
+
+func TestCollectSecretRequestsExplicitEnvironmentSecretStaysLifecycleOnly(t *testing.T) {
+	got, err := collectSecretRequests([]string{secretToken}, testConfig(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, []secretRequest{{ref: localRef(secretToken), target: secretToken}}, got)
+}
+
 func TestCollectSecretRequests_Empty(t *testing.T) {
-	got, err := collectSecretRequests(nil, testConfig())
+	got, err := collectSecretRequests(nil, testConfig(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
 
+func TestApplyLifecycleSecretsMarksEnvTargetsForTerminalSessions(t *testing.T) {
+	cmd := &UpCmd{}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("local", "local", fixedSource{
+		values:    map[string]string{secretToken: "sentinel-value", secretTLSKey: "mount-sentinel"},
+		sensitive: true,
+	}))
+	err := cmd.applyLifecycleSecrets(context.Background(), []secretRequest{
+		{ref: localRef(secretToken), target: secretToken, session: true},
+		{ref: localRef(secretTLSKey), target: secretTLSKey, mount: true},
+	}, resolver)
+	require.NoError(t, err)
+	assert.Equal(t, []string{secretToken}, cmd.TerminalSecretEnvNames)
+}
+
 func TestCollectSecretRequests_InvalidType(t *testing.T) {
-	_, err := collectSecretRequests([]string{"A,type=bogus"}, testConfig())
+	_, err := collectSecretRequests([]string{"A,type=bogus"}, testConfig(), nil)
 	require.Error(t, err)
 }
 
 func TestCollectSecretRequests_InvalidOption(t *testing.T) {
-	_, err := collectSecretRequests([]string{"A,bogus"}, testConfig())
+	_, err := collectSecretRequests([]string{"A,bogus"}, testConfig(), nil)
 	require.Error(t, err)
 }
 
 func TestCollectSecretRequests_DuplicateMountTargetRejected(t *testing.T) {
 	_, err := collectSecretRequests(
-		[]string{"A,type=mount,target=tok", "B,type=mount,target=tok"},
+		[]string{"A,type=mount,target=tok", "sops:project/B,type=mount,target=tok"},
 		testConfig(),
+		nil,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "both mount to target")
 }
 
+func TestCollectEnvVarRequests_ContextAttachment(t *testing.T) {
+	got, err := collectEnvVarRequests(nil, testEnvConfig("ZED", "ALPHA"))
+	require.NoError(t, err)
+	assert.Equal(t, []envVarRequest{
+		{ref: localRef("ALPHA"), target: "ALPHA", origin: envVarAttached},
+		{ref: localRef("ZED"), target: "ZED", origin: envVarAttached},
+	}, got)
+}
+
+func TestCollectEnvVarRequests_ExplicitOverridesAttachment(t *testing.T) {
+	got, err := collectEnvVarRequests([]string{"LOG_LEVEL=APP_LOG"}, testEnvConfig("LOG_LEVEL"))
+	require.NoError(t, err)
+	assert.Equal(t, []envVarRequest{{
+		ref: localRef("LOG_LEVEL"), target: "APP_LOG", origin: envVarExplicit,
+	}}, got)
+}
+
+func TestCollectEnvVarRequests_PreservesRepeatedExplicitSource(t *testing.T) {
+	got, err := collectEnvVarRequests(
+		[]string{"LOG_LEVEL=FIRST", "LOG_LEVEL=SECOND"},
+		testEnvConfig(),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []envVarRequest{
+		{ref: localRef("LOG_LEVEL"), target: "FIRST", origin: envVarExplicit},
+		{ref: localRef("LOG_LEVEL"), target: "SECOND", origin: envVarExplicit},
+	}, got)
+}
+
+func TestCollectEnvVarRequests_ExplicitRepeatedSourceSuppressesImplicit(t *testing.T) {
+	got, err := collectEnvVarRequests(
+		[]string{"LOG_LEVEL=FIRST", "LOG_LEVEL=SECOND"},
+		testEnvConfig("LOG_LEVEL"),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []envVarRequest{
+		{ref: localRef("LOG_LEVEL"), target: "FIRST", origin: envVarExplicit},
+		{ref: localRef("LOG_LEVEL"), target: "SECOND", origin: envVarExplicit},
+	}, got)
+}
+
+func TestCollectEnvVarRequests_DuplicateTargetRejected(t *testing.T) {
+	requests, err := collectEnvVarRequests(
+		[]string{"FOO=APP_MODE", "BAR=APP_MODE"},
+		testEnvConfig(),
+	)
+	if err == nil {
+		err = checkDuplicateEnvTargets(requests)
+	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `both target "APP_MODE"`)
+}
+
+func TestCollectEnvVarRequests_InvalidAttachedReference(t *testing.T) {
+	_, err := collectEnvVarRequests(nil, testEnvConfig("sops:project/FOO"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must use the local Devsy store")
+}
+
+func TestCollectEnvVarRequests_RejectsEqualsInTarget(t *testing.T) {
+	_, err := collectEnvVarRequests([]string{"FOO=APP=MODE"}, testEnvConfig())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must not contain =")
+}
+
+func TestApplyEnvVars_ContextAttachedNonSensitive(t *testing.T) {
+	cmd := &UpCmd{}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.RegisterEnvironmentSource(fixedSource{
+		values: map[string]string{"LOG_LEVEL": "debug"}, sensitive: false,
+	}))
+
+	err := cmd.applyEnvVars(context.Background(), testEnvConfig("LOG_LEVEL"), resolver)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LOG_LEVEL=debug"}, cmd.WorkspaceEnv)
+}
+
+func TestHasStoredValues_AttachedEnvVars(t *testing.T) {
+	cmd := &UpCmd{}
+	assert.True(t, cmd.hasStoredValues(nil, testEnvConfig("LOG_LEVEL")))
+}
+
+type fixedSource struct {
+	values    map[string]string
+	sensitive bool
+}
+
+func (s fixedSource) Get(_ context.Context, name string) (secretspkg.ResolvedSecret, error) {
+	return secretspkg.ResolvedSecret{Name: name, Value: s.values[name], Sensitive: s.sensitive}, nil
+}
+
 func TestApplyEnvVars_RejectsSensitiveSecret(t *testing.T) {
 	cmd := &UpCmd{}
 	cmd.EnvVars = []string{secretAPIKey}
-	get := func(string) (string, error) { return "plaintext", nil }
-	isSensitive := func(string) (bool, error) { return true, nil }
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.RegisterEnvironmentSource(fixedSource{
+		values: map[string]string{secretAPIKey: "plaintext"}, sensitive: true,
+	}))
 
-	err := cmd.applyEnvVars(get, isSensitive)
+	err := cmd.applyEnvVars(context.Background(), testConfig(), resolver)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "is a secret and cannot be passed with --env")
 	assert.Empty(t, cmd.WorkspaceEnv, "no value must reach the ps-visible WorkspaceEnv")
@@ -117,10 +294,42 @@ func TestApplyEnvVars_RejectsSensitiveSecret(t *testing.T) {
 func TestApplyEnvVars_AllowsNonSensitive(t *testing.T) {
 	cmd := &UpCmd{}
 	cmd.EnvVars = []string{"LOG_LEVEL=DEBUG_TARGET"}
-	get := func(string) (string, error) { return "debug", nil }
-	isSensitive := func(string) (bool, error) { return false, nil }
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.RegisterEnvironmentSource(fixedSource{
+		values: map[string]string{"LOG_LEVEL": "debug"}, sensitive: false,
+	}))
 
-	err := cmd.applyEnvVars(get, isSensitive)
+	err := cmd.applyEnvVars(context.Background(), testConfig(), resolver)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"DEBUG_TARGET=debug"}, cmd.WorkspaceEnv)
+}
+
+func TestApplyBuildSecretsUsesUnqualifiedKeyAsID(t *testing.T) {
+	cmd := &UpCmd{}
+	cmd.BuildSecretNames = []string{"sops:project/" + testNPMToken}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("project", "sops", fixedSource{
+		values: map[string]string{testNPMToken: "secret"}, sensitive: true,
+	}))
+
+	err := cmd.applyBuildSecrets(context.Background(), resolver)
+	require.NoError(t, err)
+	assert.Equal(t, []string{testNPMToken + "=secret"}, cmd.BuildSecrets)
+}
+
+func TestApplyBuildSecretsRejectsDuplicateIDs(t *testing.T) {
+	cmd := &UpCmd{}
+	cmd.BuildSecretNames = []string{"sops:project/" + testNPMToken, "sops:other/" + testNPMToken}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("project", "sops", fixedSource{
+		values: map[string]string{testNPMToken: "secret-a"}, sensitive: true,
+	}))
+	require.NoError(t, resolver.Register("other", "sops", fixedSource{
+		values: map[string]string{testNPMToken: "secret-b"}, sensitive: true,
+	}))
+
+	err := cmd.applyBuildSecrets(context.Background(), resolver)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "both use BuildKit id \""+testNPMToken+"\"")
+	assert.Empty(t, cmd.BuildSecrets)
 }

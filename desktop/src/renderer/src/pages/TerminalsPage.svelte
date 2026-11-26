@@ -19,6 +19,7 @@ import {
 } from "$lib/stores/terminals.js"
 import { destroyTerminalInstance } from "$lib/stores/terminal-instances.js"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { workspaceLabel } from "$lib/utils/workspaceLabel.js"
 import TerminalComponent from "$lib/components/terminal/Terminal.svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -67,17 +68,15 @@ async function createShell() {
   }
 }
 
-async function createSsh(workspaceId: string) {
+async function createSsh(workspaceId: string, label: string) {
   try {
     const id = await terminalCreateSsh(workspaceId, 80, 24)
-    addTerminal({ id, label: `SSH: ${workspaceId}`, type: "ssh", workspaceId })
+    addTerminal({ id, label: `SSH: ${label}`, type: "ssh", workspaceId })
     trackEngagement("terminal_open", { type: "ssh" })
     activeSessionId = id
-    toasts.success(`Connected to ${workspaceId}`)
+    toasts.success(`Connected to ${label}`)
   } catch (e) {
-    toasts.error(
-      `Failed to connect to ${workspaceId}: ${extractErrorMessage(e)}`,
-    )
+    toasts.error(`Failed to connect to ${label}: ${extractErrorMessage(e)}`)
   }
 }
 
@@ -188,9 +187,11 @@ function handleExit() {
             <DropdownMenu.Label>Running Workspaces</DropdownMenu.Label>
             <DropdownMenu.Separator />
             {#each runningWorkspaces as ws (ws.id)}
-              <DropdownMenu.Item onclick={() => createSsh(ws.id)}>
+              <DropdownMenu.Item
+                onclick={() => createSsh(ws.id, workspaceLabel(ws))}
+              >
                 <Monitor class="mr-2 h-4 w-4" />
-                {ws.id}
+                {workspaceLabel(ws)}
               </DropdownMenu.Item>
             {/each}
           </DropdownMenu.Content>
@@ -237,9 +238,11 @@ function handleExit() {
                 <DropdownMenu.Label>Running Workspaces</DropdownMenu.Label>
                 <DropdownMenu.Separator />
                 {#each runningWorkspaces as ws (ws.id)}
-                  <DropdownMenu.Item onclick={() => createSsh(ws.id)}>
+                  <DropdownMenu.Item
+                    onclick={() => createSsh(ws.id, workspaceLabel(ws))}
+                  >
                     <Monitor class="mr-2 h-4 w-4" />
-                    {ws.id}
+                    {workspaceLabel(ws)}
                   </DropdownMenu.Item>
                 {/each}
               </DropdownMenu.Content>

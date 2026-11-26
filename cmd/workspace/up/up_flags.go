@@ -60,8 +60,13 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 			"Select the devcontainer config source, overriding project discovery: "+
 				`"none" (ignore the project config), "image:<ref>" (use only that image), `+
 				`"id:<name>" (a named .devcontainer/<name> profile), or a path to a devcontainer.json`),
-		flags.String(&cmd.ExtraDevContainerPath, names.DevContainerOverlay, "",
-			"Path to a devcontainer.json whose values merge on top of the resolved config"),
+		flags.String(
+			&cmd.ExtraDevContainerPath,
+			names.DevContainerOverlay,
+			"",
+			"Apply supported build selectors and features before image build; "+
+				"layer supported runtime metadata onto the resolved config",
+		),
 		flags.String(&cmd.FallbackImage, names.FallbackImage, "",
 			"Image to use when no devcontainer config is found"),
 		flags.String(&cmd.GPUAvailability, names.GPUAvailability, "",
@@ -90,6 +95,12 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 
 func (cmd *UpCmd) registerLifecycleFlags(upCmd *cobra.Command) {
 	flags.Add(upCmd,
+		flags.Bool(
+			&cmd.InteractivePostStart,
+			names.InteractivePostStart,
+			false,
+			"Attach the terminal to postStartCommand; requires an attached terminal and runs post-start in the foreground",
+		),
 		flags.Int(&cmd.TerminalColumns, names.TerminalColumns, 0,
 			"Terminal column count for lifecycle scripts"),
 		flags.Int(&cmd.TerminalRows, names.TerminalRows, 0,
@@ -182,6 +193,19 @@ func (cmd *UpCmd) registerWorkspaceIdentityFlags(upCmd *cobra.Command) {
 		upCmd,
 		flags.String(&cmd.ID, names.ID, "", "ID for the workspace"),
 		flags.String(
+			&cmd.DisplayName,
+			names.DisplayName,
+			"",
+			"Local display label for a new workspace; no effect if the workspace already exists",
+		),
+		flags.String(
+			&cmd.SSHHostAlias,
+			names.SSHHostAlias,
+			"",
+			"Preferred SSH host alias (without .devsy) for a new workspace; "+
+				"no effect if the workspace already exists",
+		),
+		flags.String(
 			&cmd.Machine,
 			names.Machine,
 			"",
@@ -194,7 +218,7 @@ func (cmd *UpCmd) registerWorkspaceIdentityFlags(upCmd *cobra.Command) {
 		flags.StringArray(&cmd.ProviderOptions, names.ProviderOption, nil,
 			"Provider option (KEY=VALUE, repeatable)"),
 		flags.Bool(&cmd.Reconfigure, names.Reconfigure, false,
-			"Reconfigure this workspace's options (Devsy Pro only)"),
+			"Reconfigure this workspace's options (Devsy Platform only)"),
 		flags.Bool(&cmd.Prebuild, names.Prebuild, false,
 			"Run only the prebuild lifecycle (onCreateCommand + updateContentCommand), then stop"),
 		flags.Bool(&cmd.Pull, names.Pull, false, "Pull a newer base image when building"),
@@ -224,16 +248,21 @@ func (cmd *UpCmd) registerWorkspaceSecretsFlags(upCmd *cobra.Command) {
 			"File of env vars for the workspace"),
 		flags.String(&cmd.SecretsFile, names.SecretsFile, "",
 			`JSON file ({"KEY":"value"}) of secrets for lifecycle commands`),
-		flags.StringArray(&cmd.Secrets, names.Secret, nil,
-			"Stored Devsy secret to inject, as NAME[,type=env|mount][,target=X]; "+
-				"type=env (default) sets an env var, type=mount writes /run/secrets/<target>. Repeatable"),
+		flags.StringArray(
+			&cmd.Secrets,
+			names.Secret,
+			nil,
+			"Secret to inject: NAME or source-qualified TYPE:SOURCE/NAME[,type=env|mount][,target=X]; "+
+				"type=env (default) sets an env var, type=mount writes /run/secrets/<target>. Repeatable",
+		),
 		flags.StringArray(&cmd.EnvVars, names.Env, nil,
 			"Stored Devsy env var to inject into the workspace as NAME[=TARGET]. Repeatable"),
 		flags.StringArray(&cmd.BuildSecretNames, names.BuildSecret, nil,
-			"Stored Devsy secret exposed to the build via BuildKit "+
+			"Secret to expose to the build via BuildKit; accepts NAME or TYPE:SOURCE/NAME "+
 				"(RUN --mount=type=secret,id=NAME). Repeatable"),
 		flags.String(&cmd.GitTokenSecret, names.GitToken, "",
-			"Stored Devsy secret holding an access token for cloning a private HTTP repository"),
+			"Secret holding an access token for cloning a private HTTP repository; "+
+				"accepts NAME or TYPE:SOURCE/NAME; repository-owned sources cannot bootstrap their own clone"),
 		flags.String(&cmd.GitTokenUsername, names.GitTokenUsername, "",
 			"Username for --git-token (default inferred from the repo host)"),
 		flags.String(&cmd.FeatureSecretsFile, names.FeatureSecretsFile, "",

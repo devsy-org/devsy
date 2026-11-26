@@ -20,6 +20,7 @@ func waitForPodCount(
 ) *framework.PodList {
 	list := &framework.PodList{}
 	gomega.Eventually(func() int {
+		//nolint:gosec // e2e harness command by design
 		cmd := exec.CommandContext(
 			ctx,
 			"kubectl",
@@ -58,12 +59,10 @@ var _ = ginkgo.Describe(
 
 		ginkgo.It("runs devsy in Kubernetes", func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDir("tests/up/testdata/kubernetes")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/up/testdata/kubernetes", initialDir)
 
 			_ = f.DevsyProviderDelete(ctx, "kubernetes")
-			err = f.DevsyProviderAdd(ctx, "kubernetes", "-o", "KUBERNETES_NAMESPACE=devsy")
+			err := f.DevsyProviderAdd(ctx, "kubernetes", "-o", "KUBERNETES_NAMESPACE=devsy")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 				err := f.DevsyProviderDelete(cleanupCtx, "kubernetes")

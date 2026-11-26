@@ -33,6 +33,8 @@ var VariableRegExp = regexp.MustCompile(`\${(.*?)}`)
 type SubstitutedConfig struct {
 	Config *DevContainerConfig
 	Raw    *DevContainerConfig
+	// Overlay retains the unmodified source for the runtime metadata merge.
+	Overlay *DevContainerConfig
 }
 
 type SubstitutionContext struct {
@@ -56,7 +58,7 @@ type SubstitutionContext struct {
 // SubstituteContainerEnv pass for remoteEnv.
 //
 // remoteEnv is included here for parity with containerEnv per the
-// devcontainers spec — the reference implementation
+// devcontainers spec - the reference implementation
 // (devcontainers/cli src/spec-common/variableSubstitution.ts) treats
 // ${containerWorkspaceFolder} the same in both fields, while
 // ${containerEnv:VAR} stays unresolved until the container env is known.
@@ -78,17 +80,13 @@ func Substitute(substitutionCtx *SubstitutionContext, config any, out any) error
 	if substitutionCtx.ContainerWorkspaceFolder != "" {
 		substitutionCtx.ContainerWorkspaceFolder = ResolveString(
 			substitutionCtx.ContainerWorkspaceFolder,
-			func(match, variable string, args []string) string {
-				return replaceWithContext(isWindows, substitutionCtx, match, variable, args)
-			},
+			replaceWithContext(isWindows, substitutionCtx),
 		)
 	}
 
 	// Two-pass substitution: pre-container fields get a restricted replacer
 	// that preserves container-scoped variables as literals.
-	fullReplace := func(match, variable string, args []string) string {
-		return replaceWithContext(isWindows, substitutionCtx, match, variable, args)
-	}
+	fullReplace := replaceWithContext(isWindows, substitutionCtx)
 	preFieldValues := extractPreContainerFields(newVal, fullReplace)
 
 	// Full substitution for remaining fields.
@@ -162,27 +160,25 @@ func replaceWithContainerEnv(
 	}
 }
 
-func replaceWithContext(
-	isWindows bool,
-	substitutionCtx *SubstitutionContext,
-	match, variable string,
-	args []string,
-) string {
-	switch variable {
-	case "devcontainerId":
-		return valueOrMatch(substitutionCtx.DevContainerID, match)
-	case varLocalEnv:
-		return lookupValue(isWindows, substitutionCtx.Env, args, match)
-	case varLocalWorkspaceFolder:
-		return valueOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
-	case "localWorkspaceFolderBasename":
-		return baseOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
-	case "containerWorkspaceFolder":
-		return valueOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
-	case "containerWorkspaceFolderBasename":
-		return baseOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
-	default:
-		return match
+//nolint:unparam // the value depends on the build platform; Windows builds pass true
+func replaceWithContext(isWindows bool, substitutionCtx *SubstitutionContext) ReplaceFunction {
+	return func(match, variable string, args []string) string {
+		switch variable {
+		case "devcontainerId":
+			return valueOrMatch(substitutionCtx.DevContainerID, match)
+		case varLocalEnv:
+			return lookupValue(isWindows, substitutionCtx.Env, args, match)
+		case varLocalWorkspaceFolder:
+			return valueOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
+		case "localWorkspaceFolderBasename":
+			return baseOrMatch(substitutionCtx.LocalWorkspaceFolder, match)
+		case "containerWorkspaceFolder":
+			return valueOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
+		case "containerWorkspaceFolderBasename":
+			return baseOrMatch(substitutionCtx.ContainerWorkspaceFolder, match)
+		default:
+			return match
+		}
 	}
 }
 
@@ -209,7 +205,7 @@ func baseOrMatch(value, match string) string {
 // shells and the container runtime do not perform devcontainer variable
 // expansion on env-var values.
 //
-// Only ${containerEnv:VAR} refs remain literal here — those depend on the
+// Only ${containerEnv:VAR} refs remain literal here - those depend on the
 // running container's environment and are resolved later, either host-side
 // from the image's inspected env (see ResolveContainerEnvFromImage) or
 // inside the container via SubstituteContainerEnv.

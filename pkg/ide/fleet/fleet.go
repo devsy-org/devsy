@@ -17,9 +17,9 @@ import (
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/internal/serverutil"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/scanner"
-	"github.com/devsy-org/devsy/pkg/util"
 )
 
 const (
@@ -28,6 +28,9 @@ const (
 	DownloadAmd64Option = "DOWNLOAD_AMD64"
 	DownloadArm64Option = "DOWNLOAD_ARM64"
 )
+
+const fleetDownloadBase = "https://download.jetbrains.com/product?" +
+	"code=FLL&release.type=preview&release.type=eap&platform="
 
 var fleetVersionRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
@@ -40,12 +43,12 @@ var Options = ide.Options{
 	DownloadArm64Option: {
 		Name:        DownloadArm64Option,
 		Description: "The download url for the arm64 install script",
-		Default:     "https://download.jetbrains.com/product?code=FLL&release.type=preview&release.type=eap&platform=linux_aarch64",
+		Default:     fleetDownloadBase + "linux_aarch64",
 	},
 	DownloadAmd64Option: {
 		Name:        DownloadAmd64Option,
 		Description: "The download url for the amd64 install script",
-		Default:     "https://download.jetbrains.com/product?code=FLL&release.type=preview&release.type=eap&platform=linux_x64",
+		Default:     fleetDownloadBase + "linux_x64",
 	},
 }
 
@@ -227,22 +230,5 @@ func (o *FleetServer) startMonitor() error {
 }
 
 func prepareFleetServerLocation(userName string) (string, error) {
-	var err error
-	homeFolder := ""
-	if userName != "" {
-		homeFolder, err = command.GetHome(userName)
-	} else {
-		homeFolder, err = util.UserHomeDir()
-	}
-	if err != nil {
-		return "", err
-	}
-
-	folder := filepath.Join(homeFolder, ".fleet-server")
-	err = os.MkdirAll(folder, 0o755) // #nosec G301
-	if err != nil {
-		return "", err
-	}
-
-	return folder, nil
+	return serverutil.PrepareLocation(userName, ".fleet-server")
 }

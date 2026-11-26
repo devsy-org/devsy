@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -39,7 +40,7 @@ type Driver interface {
 // RunOptionsDriver is a capability interface for drivers that run a devcontainer
 // directly from RunOptions. These drivers delegate container management to an
 // external orchestrator (e.g. a Kubernetes pod or a custom command) rather than
-// building and running a local OCI image; image drivers use ImageDriver instead.
+// building and running a local OCI image; image runtimes use ImageRunner instead.
 type RunOptionsDriver interface {
 	Driver
 
@@ -54,6 +55,22 @@ type WorkspaceChowner interface {
 	RequiresWorkspaceChown() bool
 }
 
+type ImageDetailsRequest struct {
+	ImageName         string
+	UnsupportedReason string
+}
+
+type ImageDetailsDriver interface {
+	ImageDetails(request ImageDetailsRequest) (*config.ImageDetails, error)
+}
+
+// ManagedLifecycleDriver identifies drivers that can run the container's main
+// process as the Devsy daemon. Actual ownership also depends on the run topology.
+type ManagedLifecycleDriver interface {
+	ManagedLifecycle() bool
+	SetLifecycleShutdownAction(shutdownAction string)
+}
+
 // ReprovisioningDriver is a capability interface for drivers that can reprovision
 // an existing devcontainer in place. Reprovisioning re-runs the container, so it
 // embeds RunOptionsDriver.
@@ -62,6 +79,58 @@ type ReprovisioningDriver interface {
 
 	// CanReprovision returns true if the driver can reprovision the devcontainer
 	CanReprovision() bool
+}
+
+type ArgvExecDriver interface {
+	Driver
+	CommandContainerArgv(
+		ctx context.Context,
+		workspaceID string,
+		argv []string,
+		streams Streams,
+	) error
+}
+
+type MountDeliveryDriver interface {
+	Driver
+	RequiresMountStreaming() bool
+}
+
+// Drivers without an explicit mount policy retain streamed delivery.
+func DriverRequiresMountStreaming(d Driver) bool {
+	if policy, ok := d.(MountDeliveryDriver); ok {
+		return policy.RequiresMountStreaming()
+	}
+	return true
+}
+
+type RecreateMode string
+
+const (
+	RecreateDelete RecreateMode = "delete"
+	RecreateStop   RecreateMode = "stop"
+	// RecreateOnRun lets the driver validate final run options before replacing the container.
+	RecreateOnRun RecreateMode = "on-run"
+)
+
+type RecreatePolicyDriver interface {
+	Driver
+	RecreateMode() RecreateMode
+}
+
+func DriverRecreateMode(d Driver) RecreateMode {
+	if policy, ok := d.(RecreatePolicyDriver); ok {
+		return policy.RecreateMode()
+	}
+	return RecreateStop
+}
+
+// Drivers without an explicit ownership policy retain workspace chown.
+func DriverRequiresWorkspaceChown(d Driver) bool {
+	if policy, ok := d.(WorkspaceChowner); ok {
+		return policy.RequiresWorkspaceChown()
+	}
+	return true
 }
 
 const (
@@ -97,6 +166,35 @@ type CommandParams struct {
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
+	// RawStdout preserves protocol bytes; text commands keep stdout redacted.
+	// Protocol consumers must not log the unredacted stream.
+	RawStdout bool
+	// RequireRunning makes the call exec-only: it must not start, unpause or
+	// restart anything, and returns ErrNotRunning when the workload is down.
+	// Only drivers that implement RequireRunningDriver honor it.
+	RequireRunning bool
+}
+
+// ErrNotRunning is returned by an exec-only call when the workload is not
+// running.
+var ErrNotRunning = errors.New("workspace is not running")
+
+// RequireRunningDriver is implemented by drivers that enforce
+// CommandParams.RequireRunning. Absence means the flag would be ignored, so
+// callers must not use it.
+type RequireRunningDriver interface {
+	Driver
+
+	SupportsRequireRunning() bool
+}
+
+// DriverSupportsRequireRunning reports whether d enforces exec-only calls.
+func DriverSupportsRequireRunning(d Driver) bool {
+	if rr, ok := d.(RequireRunningDriver); ok {
+		return rr.SupportsRequireRunning()
+	}
+
+	return false
 }
 
 // Streams bundles the standard IO streams for an exec.
@@ -116,6 +214,18 @@ type RunOptions struct {
 
 	// User is the user to run the container as
 	User string `json:"user,omitempty"`
+
+	// RemoteUser is the developer identity for remote tooling and workspace ownership.
+	RemoteUser string `json:"remoteUser,omitempty"`
+
+	// Dockerless builds the developer filesystem inside the runner after creation.
+	Dockerless bool `json:"dockerless,omitempty"`
+
+	// ImageEntrypoint is set from inspected image metadata, never reconstructed from argv.
+	ImageEntrypoint bool `json:"imageEntrypoint,omitempty"`
+
+	// AllowRecreate authorizes replacing an existing VM and discarding its root disk.
+	AllowRecreate bool `json:"allowRecreate,omitempty"`
 
 	// Entrypoint is the entrypoint of the container
 	Entrypoint string `json:"entrypoint,omitempty"`
@@ -165,4 +275,28 @@ type RunOptions struct {
 	// ImageBuilt is true if the image was built locally and is not expected to be
 	// pullable from a registry. False for a devcontainer.json "image:" reference.
 	ImageBuilt bool `json:"imageBuilt,omitempty"`
+}
+
+// RecreateRequiredDriver detects incompatible creation-time container contracts.
+type RecreateRequiredDriver interface {
+	RequiresRecreate(details *config.ContainerDetails, remoteUser string) (bool, string)
+}
+
+// ReusePreflightDriver validates an existing workspace against its resolved developer identity.
+// It must not mutate the workspace. An error aborts reuse without scheduling recreation.
+// Calls require SupportsReusePreflight to report true.
+type ReusePreflightDriver interface {
+	SupportsReusePreflight() bool
+	ReusePreflight(ctx context.Context, workspaceID, remoteUser string) error
+}
+
+func DriverRequiresRecreate(
+	d Driver,
+	details *config.ContainerDetails,
+	remoteUser string,
+) (bool, string) {
+	if migration, ok := d.(RecreateRequiredDriver); ok {
+		return migration.RequiresRecreate(details, remoteUser)
+	}
+	return false, ""
 }

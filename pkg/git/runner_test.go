@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -47,4 +48,32 @@ func TestExecRunnerExitCode(t *testing.T) {
 	var cmdErr *CommandError
 	assert.Assert(t, errors.As(err, &cmdErr))
 	assert.Equal(t, 1, cmdErr.ExitCode)
+}
+
+func TestExecRunnerRedactsStreamedStdout(t *testing.T) {
+	const secret = "git-stream-secret-846308" //nolint:gosec // test credential fixture
+	var stdout bytes.Buffer
+	runner := execRunner{}
+
+	_, err := runner.Run(context.Background(), RunOptions{
+		Args:   []string{"-c", "user.name=" + secret, "config", "--get", "user.name"},
+		Env:    []string{"DEVSY_GIT_TOKEN=" + secret},
+		Stdout: &stdout,
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !strings.Contains(stdout.String(), secret))
+	assert.Assert(t, strings.Contains(stdout.String(), "***"))
+}
+
+func TestExecRunnerPreservesUnredactedStdout(t *testing.T) {
+	const secret = "git-credential-output-846309" //nolint:gosec // test credential fixture
+	runner := execRunner{}
+
+	result, err := runner.Run(context.Background(), RunOptions{
+		Args:             []string{"-c", "user.name=" + secret, "config", "--get", "user.name"},
+		Env:              []string{"DEVSY_GIT_TOKEN=" + secret},
+		UnredactedStdout: true,
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, strings.Contains(string(result.Stdout), secret))
 }

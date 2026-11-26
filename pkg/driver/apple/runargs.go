@@ -51,7 +51,7 @@ func (d *appleDriver) addPorts(args []string, parsedConfig *config.DevContainerC
 
 func (d *appleDriver) addWorkspaceMount(args []string, options *driver.RunOptions) []string {
 	if options.WorkspaceMount != nil {
-		args = append(args, "--mount", cleanMount(options.WorkspaceMount.String()))
+		args = appendMount(args, options.WorkspaceMount)
 	}
 	return args
 }
@@ -92,9 +92,32 @@ func addMounts(args []string, options *driver.RunOptions) []string {
 				continue
 			}
 		}
-		args = append(args, "--mount", cleanMount(mount.String()))
+		args = appendMount(args, mount)
 	}
 	return args
+}
+
+// appendMount formats a mount for `container run --mount`. Docker spells the
+// tmpfs permission option "tmpfs-mode"; Apple's CLI rejects it and expects
+// "mode". "tmpfs-size" is deliberately not translated: container 1.5.0 rounds
+// sub-MiB sizes to zero (an uncapped mount), so the Docker spelling is left
+// as is and the CLI refuses it instead of silently dropping the cap.
+func appendMount(args []string, mount *config.Mount) []string {
+	translated := *mount
+	if mount.Type == driver.MountTypeTmpfs {
+		translated.Other = make([]string, len(mount.Other))
+		for i, option := range mount.Other {
+			translated.Other[i] = nativeTmpfsOption(option)
+		}
+	}
+	return append(args, "--mount", cleanMount(translated.String()))
+}
+
+func nativeTmpfsOption(option string) string {
+	if value, ok := strings.CutPrefix(option, "tmpfs-mode="); ok {
+		return "mode=" + value
+	}
+	return option
 }
 
 func (d *appleDriver) addLabels(

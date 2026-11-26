@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/table"
@@ -35,28 +37,29 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 type secretEntry struct {
-	Name     string `json:"name"`
-	Context  string `json:"context"`
-	Created  string `json:"created,omitempty"`
-	LastUsed string `json:"lastUsed,omitempty"`
-	Orphaned bool   `json:"orphaned,omitempty"`
+	Name         string                     `json:"name"`
+	Context      string                     `json:"context"`
+	Backend      string                     `json:"backend,omitempty"`
+	Created      string                     `json:"created,omitempty"`
+	LastUsed     string                     `json:"lastUsed,omitempty"`
+	Availability secrets.SecretAvailability `json:"availability"`
+	ReasonCode   string                     `json:"reasonCode,omitempty"`
+	Attached     bool                       `json:"attached"`
 }
 
 func (cmd *ListCmd) Run(_ context.Context) error {
-	contextName, store, err := resolveContext(cmd.GlobalFlags)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
 	}
-
-	all, err := store.List(contextName)
+	contextName := devsyConfig.DefaultContext
+	store, err := secrets.NewSecretStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
-	metas := make([]secrets.SecretMeta, 0, len(all))
-	for _, m := range all {
-		if m.Sensitive() {
-			metas = append(metas, m)
-		}
+	entries, err := listEntries(devsyConfig, store, contextName)
+	if err != nil {
+		return err
 	}
 
 	mode, err := output.ResolveMode(cmd.ResultFormat)
@@ -66,38 +69,68 @@ func (cmd *ListCmd) Run(_ context.Context) error {
 
 	switch mode {
 	case output.ModePlain:
-		renderPlain(metas)
+		renderPlain(entries)
 	case output.ModeJSON:
-		return renderJSON(metas)
+		return renderJSON(entries)
 	}
 
 	return nil
 }
 
-func renderPlain(metas []secrets.SecretMeta) {
-	tableEntries := [][]string{}
-	for _, m := range metas {
-		tableEntries = append(tableEntries, []string{
-			m.Name,
-			formatTime(m.Created),
-			formatTime(m.LastUsed),
-			orphanLabel(m.Orphaned),
+func listEntries(
+	devsyConfig *config.Config,
+	store interface {
+		Inspect(string) ([]secrets.SecretInspection, error)
+	},
+	contextName string,
+) ([]secretEntry, error) {
+	all, err := store.Inspect(contextName)
+	if err != nil {
+		return nil, err
+	}
+	var attachedNames []string
+	if ctxConfig := devsyConfig.Contexts[contextName]; ctxConfig != nil {
+		attachedNames = ctxConfig.Secrets
+	}
+	entries := make([]secretEntry, 0, len(all))
+	for _, inspection := range all {
+		m := inspection.Meta
+		if !m.Sensitive() {
+			continue
+		}
+		entries = append(entries, secretEntry{
+			Name:         m.Name,
+			Context:      m.Context,
+			Backend:      string(m.Backend),
+			Created:      formatTime(m.Created),
+			LastUsed:     formatTime(m.LastUsed),
+			Availability: inspection.Availability,
+			ReasonCode:   inspection.ReasonCode,
+			Attached:     slices.Contains(attachedNames, m.Name),
 		})
 	}
-	table.Print([]string{"Name", "Created", "Last Used", "Status"}, tableEntries)
+	return entries, nil
 }
 
-func renderJSON(metas []secrets.SecretMeta) error {
-	entries := []secretEntry{}
-	for _, m := range metas {
-		entries = append(entries, secretEntry{
-			Name:     m.Name,
-			Context:  m.Context,
-			Created:  formatTime(m.Created),
-			LastUsed: formatTime(m.LastUsed),
-			Orphaned: m.Orphaned,
+func renderPlain(entries []secretEntry) {
+	tableEntries := [][]string{}
+	for _, e := range entries {
+		tableEntries = append(tableEntries, []string{
+			e.Name,
+			e.Backend,
+			e.Created,
+			e.LastUsed,
+			availabilityLabel(e.Availability),
+			fmt.Sprint(e.Attached),
 		})
 	}
+	table.Print(
+		[]string{"Name", "Backend", "Created", "Last Used", "Status", "Attached"},
+		tableEntries,
+	)
+}
+
+func renderJSON(entries []secretEntry) error {
 	out, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
 		return err
@@ -115,9 +148,17 @@ func formatTime(t time.Time) string {
 	return t.Format(time.RFC3339)
 }
 
-func orphanLabel(orphaned bool) string {
-	if orphaned {
-		return "orphaned"
+func availabilityLabel(state secrets.SecretAvailability) string {
+	switch state {
+	case secrets.SecretAvailable:
+		return "Available"
+	case secrets.SecretLocked:
+		return "Locked"
+	case secrets.SecretMissing:
+		return "Missing"
+	case secrets.SecretBackendUnavailable:
+		return "Backend unavailable"
+	default:
+		return "Unknown"
 	}
-	return "ok"
 }

@@ -4,23 +4,34 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
+type preparedImage struct {
+	reference string
+	image     v1.Image
+	cleanup   func()
+}
+
 type sandboxSpec struct {
-	Image       string
-	Entrypoint  string
-	Cmd         []string
-	Memory      uint32
-	CPUs        uint8
-	Env         map[string]string
-	Labels      map[string]string
-	Ephemeral   bool
-	IdleTimeout time.Duration
-	Mounts      []volumeMount
-	MaxMemory   uint32
-	MaxCPUs     uint8
-	BlockEgress bool
-	RootDiskGB  uint32
+	AllowRecreate bool
+	Image         string
+	User          string
+	Entrypoint    string
+	Cmd           []string
+	Memory        uint32
+	CPUs          uint8
+	Env           map[string]string
+	Labels        map[string]string
+	Ephemeral     bool
+	IdleTimeout   time.Duration
+	Mounts        []volumeMount
+	MaxMemory     uint32
+	MaxCPUs       uint8
+	BlockEgress   bool
+	RootDiskGB    uint32
 }
 
 type volumeMount struct {
@@ -29,6 +40,7 @@ type volumeMount struct {
 	Volume   string
 	Tmpfs    bool
 	ReadOnly bool
+	Policy   mountPolicy
 }
 
 type sandboxInfo struct {
@@ -36,6 +48,7 @@ type sandboxInfo struct {
 	Running   bool
 	CreatedAt time.Time
 	Labels    map[string]string
+	Mounts    []config.ContainerMount
 }
 
 type execRequest struct {
@@ -52,7 +65,10 @@ type execRequest struct {
 // job, not the client's.
 type sandboxClient interface {
 	EnsureInstalled(ctx context.Context) error
-	EnsureImage(ctx context.Context, image string) error
+	Version(ctx context.Context) (string, error)
+	PrepareImage(ctx context.Context, image string, builtLocally bool) (*preparedImage, error)
+	EnsureImage(ctx context.Context, image *preparedImage) error
+	PrepareVolumes(ctx context.Context, mounts []volumeMount) error
 	Create(ctx context.Context, name string, spec sandboxSpec) error
 	Find(ctx context.Context, name string) (*sandboxInfo, error)
 	Start(ctx context.Context, name string) error

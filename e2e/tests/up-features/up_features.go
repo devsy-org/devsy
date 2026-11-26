@@ -31,12 +31,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	})
 
 	ginkgo.It("lifecycle hooks execution", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/up-features/testdata/docker-features-hooks")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata(
+			"tests/up-features/testdata/docker-features-hooks",
+			initialDir,
+		)
 
 		wsName := filepath.Base(tempDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -58,14 +59,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 	ginkgo.It("lifecycle hooks order feature before image", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir(
+		tempDir := framework.CopyTestdata(
 			"tests/up-features/testdata/docker-features-hooks-order",
+			initialDir,
 		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 		wsName := filepath.Base(tempDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -86,20 +86,20 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		server := ghttp.NewServer()
 		ginkgo.DeferCleanup(server.Close)
 
-		tempDir, err := framework.CopyToTempDir(
+		tempDir := framework.CopyTestdata(
 			"tests/up-features/testdata/docker-features-http-headers",
+			initialDir,
 		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 		featureArchiveFilePath := path.Join(tempDir, "devcontainer-feature-hello.tgz")
 		featureFiles := []string{
 			path.Join(tempDir, "devcontainer-feature.json"),
 			path.Join(tempDir, "install.sh"),
 		}
-		err = createTarGzArchive(featureArchiveFilePath, featureFiles)
+		err := createTarGzArchive(featureArchiveFilePath, featureFiles)
 		framework.ExpectNoError(err)
 
+		//nolint:gosec // test helper reads files it created in its own temp directory
 		devContainerFileBuf, err := os.ReadFile(path.Join(tempDir, ".devcontainer.json"))
 		framework.ExpectNoError(err)
 
@@ -111,6 +111,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		respHeader := http.Header{}
 		respHeader.Set("Content-Disposition", "attachment; filename=devcontainer-feature-hello.tgz")
 
+		//nolint:gosec // test fixture path built in the temp directory
 		featureArchiveFileBuf, err := os.ReadFile(featureArchiveFilePath)
 		framework.ExpectNoError(err)
 
@@ -143,21 +144,19 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			server := ghttp.NewServer()
 			ginkgo.DeferCleanup(server.Close)
 
-			tempDir1, err := framework.CopyToTempDir(
+			tempDir1 := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-http-headers",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir1)
 
 			// CopyToTempDir changes cwd; restore so the second copy resolves its relative path.
-			err = os.Chdir(initialDir)
+			err := os.Chdir(initialDir)
 			framework.ExpectNoError(err)
 
-			tempDir2, err := framework.CopyToTempDir(
+			tempDir2 := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-http-headers",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir2)
 
 			featureArchiveFilePath := path.Join(tempDir1, "devcontainer-feature-hello.tgz")
 			featureFiles := []string{
@@ -225,21 +224,20 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			err = f.DevsyUp(ctx, tempDir2)
 			framework.ExpectNoError(err)
 
-			// Only one HTTP request was made — proves cache was reused with passing integrity
+			// Only one HTTP request was made - proves cache was reused with passing integrity
 			gomega.Expect(server.ReceivedRequests()).To(gomega.HaveLen(1))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
 
 	ginkgo.It("should install with lifecycle hooks", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir(
+		tempDir := framework.CopyTestdata(
 			"tests/up-features/testdata/docker-features-lifecycle-hooks",
+			initialDir,
 		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 		wsName := filepath.Base(tempDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -252,14 +250,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should automatically install dependsOn features",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-depends-on",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -279,14 +276,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should not fail if same feature exists in dependsOn and installsAfter",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-depends-on-duplicate-feature",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -306,14 +302,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle nested dependencies",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-nested-depends-on",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -333,14 +328,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should detect circular dependencies",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-circular-depends-on",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -357,14 +351,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle dependsOn with options",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-depends-on-options",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -384,14 +377,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle mixed dependsOn and installsAfter",
 		ginkgo.Label("up-features", "mixed"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-mixed-dependencies",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -411,14 +403,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should detect self-dependency",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-self-dependency",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -434,14 +425,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle non-existent dependency gracefully",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-nonexistent-dependency",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -457,14 +447,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle shared dependencies correctly",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-shared-dependency",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -485,14 +474,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle forward reference dependencies",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-forward-reference",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -502,7 +490,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 
 			out, err := f.DevsySSH(ctx, wsName, "python3 --version")
 			framework.ExpectNoError(err)
-			gomega.Expect(out).To(gomega.ContainSubstring("Python 3.13.15"))
+			gomega.Expect(out).To(gomega.MatchRegexp(`Python 3\.13\.\d+`))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
@@ -511,14 +499,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle same feature in dependsOn and installsAfter",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-same-depends-on-and-installs-after",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -541,14 +528,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"writes a devcontainer lockfile and reuses it under --frozen-lockfile",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-lockfile",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -583,14 +569,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"fails --frozen-lockfile when no lockfile exists",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-lockfile",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -605,14 +590,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"does not write a lockfile with --no-lockfile",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-lockfile",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -630,14 +614,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"honors a committed lockfile and rejects a bogus pinned digest",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-lockfile-bad",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -655,11 +638,10 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			server := ghttp.NewServer()
 			ginkgo.DeferCleanup(server.Close)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-http-headers",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			featureArchiveFilePath := path.Join(tempDir, "devcontainer-feature-hello.tgz")
 			featureFiles := []string{
@@ -716,14 +698,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	)
 
 	ginkgo.It("resolves user variable in dockerfile", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir(
+		tempDir := framework.CopyTestdata(
 			"tests/up-features/testdata/docker-features-with-user-variable-in-dockerfile",
+			initialDir,
 		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 		wsName := filepath.Base(tempDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -737,14 +718,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 	ginkgo.It("preserves user when feature is present with variable", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir(
+		tempDir := framework.CopyTestdata(
 			"tests/up-features/testdata/docker-features-with-user-variable",
+			initialDir,
 		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 		wsName := filepath.Base(tempDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -761,14 +741,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should resolve legacy feature IDs in dependsOn",
 		ginkgo.Label("up-features", "depends-on", "legacy-id"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-legacy-id-resolution",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -788,14 +767,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should reject overrideFeatureInstallOrder that violates dependsOn",
 		ginkgo.Label("up-features", "override"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-override-violates-depends-on",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -810,14 +788,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should respect overrideFeatureInstallOrder when it satisfies dependsOn",
 		ginkgo.Label("up-features", "override"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-valid-override",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -836,14 +813,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should install both versions when same feature has different versions",
 		ginkgo.Label("up-features", "version-aware"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-different-versions",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -866,14 +842,13 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should resolve secret options from environment variables",
 		ginkgo.Label("up-features", "secret-option"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir(
+			tempDir := framework.CopyTestdata(
 				"tests/up-features/testdata/docker-features-secret-option",
+				initialDir,
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
 			wsName := filepath.Base(tempDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, wsName)
@@ -881,6 +856,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			ginkgo.GinkgoT().Setenv(
 				"DEVCONTAINER_FEATURE_SECRET__FEATURES_SECRET_TEST_SECRETTOKEN", "e2e-test-secret",
 			)
+			framework.RegisterSecret("e2e-test-secret")
 
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)

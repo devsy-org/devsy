@@ -3,10 +3,13 @@ package up
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
@@ -17,31 +20,19 @@ import (
 )
 
 const (
-	secretCmd   = "secret"
-	cmdSSH      = "ssh"
-	flagCommand = "--command"
+	attach = "attach"
 )
 
-// useFileSecretsBackend forces the file backend so tests do not depend on an OS
-// keyring (unavailable in CI); env is restored on cleanup.
-func useFileSecretsBackend() {
-	for k, v := range map[string]string{
-		"DEVSY_SECRETS_BACKEND":    "file",
-		"DEVSY_SECRETS_PASSPHRASE": "e2e-passphrase",
-	} {
-		prev, had := os.LookupEnv(k)
-		framework.ExpectNoError(os.Setenv(k, v))
-		ginkgo.DeferCleanup(func() {
-			if had {
-				_ = os.Setenv(k, prev)
-			} else {
-				_ = os.Unsetenv(k)
-			}
-		})
-	}
-}
+const (
+	secretCmd       = "secret"
+	envCmd          = "env"
+	cmdSSH          = "ssh"
+	flagCommand     = "--command"
+	sshProbeTimeout = 20 * time.Second
+)
 
 func (dtc *dockerTestContext) storeSecret(ctx context.Context, name, value string) {
+	framework.RegisterSecret(value)
 	_, err := dtc.f.ExecCommandOutput(ctx, []string{secretCmd, "set", name, "--value", value})
 	framework.ExpectNoError(err)
 	ginkgo.DeferCleanup(func() {
@@ -50,7 +41,8 @@ func (dtc *dockerTestContext) storeSecret(ctx context.Context, name, value strin
 }
 
 func (dtc *dockerTestContext) storeEnv(ctx context.Context, name, value string) {
-	_, err := dtc.f.ExecCommandOutput(ctx, []string{"env", "set", name, "--value", value})
+	framework.RegisterSecret(value)
+	_, err := dtc.f.ExecCommandOutput(ctx, []string{envCmd, "set", name, "--value", value})
 	framework.ExpectNoError(err)
 	ginkgo.DeferCleanup(func() {
 		_, _ = dtc.f.ExecCommandOutput(ctx, []string{"env", "delete", name})
@@ -81,12 +73,66 @@ func (btc *baseTestContext) execSSHCapture(
 	return strings.TrimSpace(output), err
 }
 
-func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
-	return btc.f.DevsySSH(ctx, tempDir, command)
-}
-
 type dockerTestContext struct {
 	baseTestContext
+}
+
+// probeSSH bounds one readiness attempt. The polling window owns the overall
+// wait; a probe must not start the framework's multi-attempt SSH retry loop.
+func probeSSH(
+	f *framework.Framework,
+	ctx context.Context,
+	workspace string,
+	command string,
+) (string, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, sshProbeTimeout)
+	defer cancel()
+	out, err := f.DevsySSHOnce(probeCtx, workspace, command)
+	if err != nil {
+		ginkgo.GinkgoWriter.Printf(
+			"ssh readiness probe failed for %s (%s): %s\n",
+			workspace,
+			command,
+			fixtureDiagnostic(nil, err.Error()),
+		)
+	}
+	return out, err
+}
+
+func readLifecycleFile(workspaceDir, name string) (string, error) {
+	//nolint:gosec // G304: test-controlled path inside workspace
+	data, err := os.ReadFile(filepath.Join(workspaceDir, name))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// lifecycleMarkerCount reads a marker file in workspaceDir and returns the count
+// of non-empty lines. If the file does not exist, it returns 0, nil.
+//
+//nolint:unparam // marker parameter kept generic for lifecycle test helper
+func lifecycleMarkerCount(
+	workspaceDir, marker string,
+) (int, error) {
+	//nolint:gosec // G304: test-controlled path inside workspace
+	data, err := os.ReadFile(
+		filepath.Join(workspaceDir, marker),
+	)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (dtc *dockerTestContext) setupAndUp(
@@ -94,7 +140,11 @@ func (dtc *dockerTestContext) setupAndUp(
 	testDataPath string,
 	upArgs ...string,
 ) (string, error) {
-	return setupWorkspaceAndUp(ctx, testDataPath, dtc.initialDir, dtc.f, upArgs...)
+	return setupWorkspaceAndUp(
+		ctx,
+		dtc.f,
+		workspaceSource{testDataPath, dtc.initialDir},
+		upArgs...)
 }
 
 func (dtc *dockerTestContext) findWorkspaceContainer(
@@ -174,23 +224,110 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 		return "", err
 	}
 	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-	ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+	ginkgo.DeferCleanup(func(ctx context.Context) error {
+		cleanupErr := f.CleanupWorkspace(ctx, tempDir)
+		if cleanupErr != nil {
+			ginkgo.GinkgoWriter.Printf("workspace cleanup failed for %s: %v\n", tempDir, cleanupErr)
+			dirs := podmanCleanupDirs{initialDir: initialDir, tempDir: tempDir}
+			cleanupErr = recoverPodmanCleanup(ctx, f, dirs, cleanupErr)
+		}
+		return cleanupErr
+	})
 	return tempDir, nil
 }
 
-func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, dockerPath)
+type workspaceSource struct {
+	testdataPath string
+	initialDir   string
 }
 
 func setupWorkspaceAndUp(
 	ctx context.Context,
-	testdataPath, initialDir string,
 	f *framework.Framework,
+	source workspaceSource,
 	args ...string,
 ) (string, error) {
-	tempDir, err := setupWorkspace(testdataPath, initialDir, f)
+	tempDir, err := setupWorkspace(source.testdataPath, source.initialDir, f)
 	if err != nil {
 		return "", err
 	}
 	return tempDir, f.DevsyUp(ctx, append([]string{tempDir}, args...)...)
+}
+
+type contextAttachmentCase struct {
+	contextPrefix string
+	testdataDir   string
+	store         func(context.Context, string, string)
+	command       string
+	name          string
+	checkFile     string
+	sessionCheck  string
+	sessionFile   string
+}
+
+// verifyContextAttachment proves a context-attached managed value reaches the
+// workspace at up and is gone after detach and recreate.
+func (dtc *dockerTestContext) verifyContextAttachment(
+	ctx context.Context,
+	tc contextAttachmentCase,
+) {
+	framework.UseFileSecretsBackend()
+	contextName := fmt.Sprintf("%s-%d", tc.contextPrefix, time.Now().UnixNano())
+	framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+	ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+		_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+		_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+	})
+	framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+	framework.ExpectNoError(
+		dtc.f.DevsyProviderAdd(ctx, "docker", "-o", "DOCKER_PATH=docker"),
+	)
+	framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+
+	tempDir, err := setupWorkspace(tc.testdataDir, dtc.initialDir, dtc.f)
+	framework.ExpectNoError(err)
+	tc.store(ctx, tc.name, "expected-value")
+	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, attach, tc.name})
+	framework.ExpectNoError(err)
+
+	// Intentionally no --env/--secret argument: the context binding is the source.
+	framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+	out, err := dtc.f.DevsySSH(
+		ctx,
+		tempDir,
+		`if [ "$(cat `+tc.checkFile+`)" = expected-value ]; then printf present; else printf absent; fi`,
+	)
+	framework.ExpectNoError(err)
+	expectTrimmed(out, "present")
+	if tc.sessionCheck != "" {
+		fileCheck := `if [ -e /run/devsy/secrets-env/` + tc.sessionFile + ` ]; then ` +
+			`stat -c '%U:%a' /run/devsy/secrets-env/` + tc.sessionFile +
+			`; else printf missing; fi`
+		out, err = dtc.f.DevsySSH(ctx, tempDir, fileCheck)
+		framework.ExpectNoError(err)
+		expectTrimmed(out, "vscode:600")
+		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
+		framework.ExpectNoError(err)
+		expectTrimmed(out, "present")
+	}
+
+	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "detach", tc.name})
+	framework.ExpectNoError(err)
+	framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
+	out, err = dtc.f.DevsySSH(
+		ctx,
+		tempDir,
+		`if [ -s `+tc.checkFile+` ]; then printf present; else printf absent; fi`,
+	)
+	framework.ExpectNoError(err)
+	expectTrimmed(out, "absent")
+	if tc.sessionCheck != "" {
+		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
+		framework.ExpectNoError(err)
+		expectTrimmed(out, "absent")
+	}
+}
+
+func expectTrimmed(out, want string) {
+	expectFixtureOutput(strings.TrimSpace(out) == want, out, "expected output "+want)
 }

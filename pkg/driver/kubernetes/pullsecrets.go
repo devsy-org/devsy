@@ -45,7 +45,7 @@ func (k *KubernetesDriver) EnsurePullSecret(
 		return false, err
 	}
 
-	log.Infof("Pull secret %q created", pullSecretName)
+	log.Debugf("Pull secret %q created", pullSecretName)
 	return true, nil
 }
 

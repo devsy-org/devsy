@@ -2,12 +2,14 @@
 "use strict"
 // Mock devsy binary for e2e tests (cross-platform Node.js version)
 // Returns canned JSON responses for each subcommand
-// Handles --result-format json, --skip-pro, and other flags the app sends
+// Handles --result-format json, --skip-platform, --skip-pro, and other flags the app sends
 // Persists state to a JSON file so provider/workspace CRUD works across calls
 
 const fs = require("node:fs")
 const path = require("node:path")
 const os = require("node:os")
+const { randomUUID } = require("node:crypto")
+const { mergeTasks, withFileLock } = require("./mock-task-state.cjs")
 
 const STATE_FILE = path.join(os.tmpdir(), "devsy-mock-state.json")
 
@@ -29,7 +31,10 @@ function defaultState() {
               type: "string",
             },
           },
-          optionGroups: [],
+          optionGroups: [
+            { name: "Connection", options: ["DOCKER_HOST"] },
+            { name: "Storage", options: ["DISK_SIZE"] },
+          ],
         },
         state: { initialized: true },
         default: true,
@@ -75,27 +80,64 @@ function defaultState() {
         context: "default",
       },
     ],
+    secrets: [
+      { name: "E2E_API_TOKEN", context: "default", backend: "file", availability: "available", attached: true, created: "2026-04-20T08:00:00Z" },
+      { name: "E2E_STAGING_TOKEN", context: "staging", backend: "keyring", availability: "available", attached: false },
+    ],
+    envVars: [
+      { name: "E2E_API_URL", context: "default", value: "https://variables.example.test/api", attached: true },
+      { name: "E2E_STAGE_NAME", context: "staging", value: "staging", attached: false },
+    ],
     tasks: {},
+    deletedTasks: {},
   }
 }
 
 function loadState() {
   try {
     const data = fs.readFileSync(STATE_FILE, "utf8")
-    return JSON.parse(data)
+    const state = JSON.parse(data)
+    state.secrets ??= defaultState().secrets
+    state.envVars ??= defaultState().envVars
+    state.tasks = state.tasks || {}
+    state.deletedTasks = state.deletedTasks || {}
+    return state
   } catch {
     return defaultState()
   }
 }
 
-function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8")
+function saveState(state, deletedTaskIds = []) {
+  withFileLock(`${STATE_FILE}.lock`, () => {
+    const latest = loadState()
+    const deletedTasks = {
+      ...(latest.deletedTasks || {}),
+      ...(state.deletedTasks || {}),
+      ...Object.fromEntries(deletedTaskIds.map((id) => [id, true])),
+    }
+    const updated = {
+      ...state,
+      deletedTasks,
+      tasks: mergeTasks(
+        latest.tasks || {},
+        state.tasks || {},
+        deletedTaskIds,
+        deletedTasks,
+      ),
+    }
+    const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`
+    fs.writeFileSync(temporaryFile, JSON.stringify(updated, null, 2), "utf8")
+    fs.renameSync(temporaryFile, STATE_FILE)
+  })
 }
 
 const state = loadState()
-state.tasks = state.tasks || {}
 
 const rawArgs = process.argv.slice(2)
+// Context is a global flag and can precede the root command.
+const contextIndex = rawArgs.indexOf("--context")
+const variableContext = contextIndex >= 0 ? rawArgs[contextIndex + 1] : "default"
+if (contextIndex >= 0) rawArgs.splice(contextIndex, 2)
 
 if (rawArgs[0] === "--version") {
   process.stdout.write("v0.1.0-test\n")
@@ -110,14 +152,31 @@ function out(data) {
   )
 }
 
-function providerStatus(phase, started, step) {
+function providerStatus(phase, state, step) {
   out(
     JSON.stringify({
       kind: "status",
+      schemaVersion: 1,
       pipeline: "provider",
       phase,
       ...(step ? { step } : {}),
-      started,
+      state,
+    }),
+  )
+}
+
+function workspaceStatus(phase, state, step, error, operationId, parentOperationId) {
+  out(
+    JSON.stringify({
+      kind: "status",
+      schemaVersion: 1,
+      pipeline: "workspace_up",
+      ...(operationId ? { operationId } : {}),
+      ...(parentOperationId ? { parentOperationId } : {}),
+      phase,
+      ...(step ? { step } : {}),
+      state,
+      ...(error ? { error } : {}),
     }),
   )
 }
@@ -129,14 +188,30 @@ function parseArgs(args) {
   let providerFlag = ""
   let ideFlag = ""
   let nameFlag = ""
+  let logLevel = "warn"
   let i = 0
   while (i < args.length) {
     const arg = args[i]
+    if (arg === "--log-level") {
+      logLevel = args[i + 1] || "warn"
+      i += 2
+      continue
+    }
+    if (arg.startsWith("--log-level=")) {
+      logLevel = arg.slice("--log-level=".length)
+      i++
+      continue
+    }
     if (arg === "--result-format") {
       i += 2
       continue
     }
-    if (arg === "--skip-pro" || arg === "--force" || arg.startsWith("--use=")) {
+    if (
+      arg === "--skip-platform" ||
+      arg === "--skip-pro" ||
+      arg === "--force" ||
+      arg.startsWith("--use=")
+    ) {
       i++
       continue
     }
@@ -179,7 +254,14 @@ function parseArgs(args) {
     positional.push(arg)
     i++
   }
-  return { positional, idFlag, providerFlag, ideFlag, nameFlag }
+  return { positional, idFlag, providerFlag, ideFlag, nameFlag, logLevel }
+}
+
+function emitDiagnostics(logLevel) {
+  const levels = { error: 0, warn: 1, info: 2, debug: 3, trace: 4 }
+  const selected = levels[logLevel] ?? levels.warn
+  if (selected >= levels.info) process.stderr.write("INFO diagnostic line\n")
+  if (selected >= levels.warn) process.stderr.write("WARN diagnostic line\n")
 }
 
 // Workspace verb handlers. Each accepts the slice of args AFTER its verb,
@@ -253,7 +335,7 @@ function handleUp(args) {
       a === "-d=true",
   )
   if (isDetach) {
-    const taskId = `task-${Date.now()}`
+    const taskId = `task-${randomUUID()}`
     state.tasks[taskId] = {
       id: taskId,
       status: "pending",
@@ -268,12 +350,22 @@ function handleUp(args) {
     return
   }
 
-  out("Resolving source")
-  out("Pulling image")
-  out("Starting workspace")
-  out("Workspace ready")
+  workspaceStatus("building_image", "started", "Building workspace")
+  const complete = () => {
+  workspaceStatus("resolving_config", "started", undefined, undefined, "resolve")
+  workspaceStatus("resolving_config", "succeeded", undefined, undefined, "resolve")
+  workspaceStatus("preparing_devcontainer", "started", undefined, undefined, "prepare")
+  workspaceStatus("building_image", "started", undefined, undefined, "build", "prepare")
+  workspaceStatus("building_image", "succeeded", undefined, undefined, "build", "prepare")
+  workspaceStatus("preparing_devcontainer", "succeeded", undefined, undefined, "prepare")
+  workspaceStatus("starting_container", "started")
+  workspaceStatus("starting_container", "succeeded")
+  workspaceStatus("ready", "succeeded")
   materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
   process.exit(0)
+  }
+  if (wsId === "lifecycleprobe") setTimeout(complete, 2000)
+  else complete()
 }
 
 // Handlers for `workspace task <verb>`, backing the up --detach flow above.
@@ -326,10 +418,45 @@ function handleTaskLogs(args) {
     return
   }
 
-  out("Resolving source")
-  out("Pulling image")
-  out("Starting workspace")
-  out("Workspace ready")
+  if (t.source && /fail/i.test(t.source)) {
+    workspaceStatus("resolving_config", "started", undefined, undefined, "resolve")
+    workspaceStatus("resolving_config", "succeeded", undefined, undefined, "resolve")
+    workspaceStatus("preparing_devcontainer", "started", undefined, undefined, "prepare")
+    workspaceStatus("building_image", "started", undefined, undefined, "build", "prepare")
+    workspaceStatus("building_image", "failed", undefined, {
+      code: "build_failed",
+      message: "The mock image build failed.",
+      hint: "Check the build output and retry.",
+    }, "build", "prepare")
+    t.status = "failed"
+    workspaceStatus("preparing_devcontainer", "failed", undefined, {
+      code: "build_failed",
+      message: "The mock image build failed.",
+      hint: "Check the build output and retry.",
+    }, "prepare")
+    saveState(state)
+    out(
+      JSON.stringify({
+        kind: "error",
+        outcome: "error",
+        code: "build_failed",
+        message: "The mock image build failed.",
+        hint: "Check the build output and retry.",
+      }),
+    )
+    process.exit(1)
+    return
+  }
+
+  workspaceStatus("resolving_config", "started", undefined, undefined, "resolve")
+  workspaceStatus("resolving_config", "succeeded", undefined, undefined, "resolve")
+  workspaceStatus("preparing_devcontainer", "started", undefined, undefined, "prepare")
+  workspaceStatus("building_image", "started", undefined, undefined, "build", "prepare")
+  workspaceStatus("building_image", "succeeded", undefined, undefined, "build", "prepare")
+  workspaceStatus("preparing_devcontainer", "succeeded", undefined, undefined, "prepare")
+  workspaceStatus("starting_container", "started")
+  workspaceStatus("starting_container", "succeeded")
+  workspaceStatus("ready", "succeeded")
   materializeWorkspace(t.wsId, t.source, t.providerFlag, t.ideFlag)
   t.status = "succeeded"
   saveState(state)
@@ -377,7 +504,7 @@ function handleTaskRm(args) {
     return
   }
   delete state.tasks[id]
-  saveState(state)
+  saveState(state, [id])
   out({})
 }
 
@@ -410,33 +537,39 @@ function handleTask(args) {
 function handleStop(args) {
   const { positional } = parseArgs(args)
   const wsId = positional[0]
-  out("Stopping workspace...")
-  out("Workspace stopped.")
-  const ws = state.workspaces.find((w) => w.id === wsId)
-  if (ws) {
-    ws.status = "Stopped"
-    saveState(state)
+  workspaceStatus("stopping_workspace", "started", "Stopping workspace resources")
+  const complete = () => {
+    const latest = loadState()
+    const ws = latest.workspaces.find((w) => w.id === wsId)
+    if (ws) { ws.status = "Stopped"; saveState(latest) }
+    workspaceStatus("stopping_workspace", "succeeded")
+    process.exit(0)
   }
-  process.exit(0)
+  if (wsId === "lifecycleprobe") setTimeout(complete, 2000)
+  else complete()
 }
 
 function handleStart(args) {
   const { positional, idFlag, providerFlag, ideFlag } = parseArgs(args)
   const source = positional[0]
   const wsId = idFlag || source || "workspace"
-  out("Resolving source")
-  out("Pulling image")
-  out("Starting workspace")
-  out("Workspace ready")
-  materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
-  process.exit(0)
+  workspaceStatus("resolving_config", "started")
+  workspaceStatus("resolving_config", "succeeded")
+  workspaceStatus("starting_container", "started")
+  setTimeout(() => {
+    workspaceStatus("starting_container", "succeeded")
+    workspaceStatus("ready", "succeeded")
+    materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
+    process.exit(0)
+  }, 500)
 }
 
 function handleDelete(args) {
   const { positional } = parseArgs(args)
   const wsId = positional[0]
   // *probe suffix delays deletion so lifecycle tests can observe in-flight state.
-  const deleteMs = /probe$/.test(wsId) ? 1500 : 0
+  const deleteMs = wsId === "lifecycleprobe" ? 8000 : /probe$/.test(wsId) ? 1500 : 0
+  workspaceStatus("deleting_workspace", "started", "Removing workspace resources")
   setTimeout(() => {
     out("Deleting workspace...")
     out("Workspace deleted.")
@@ -464,6 +597,93 @@ function handleRename(args) {
   out("")
 }
 
+// Retained setup history for `workspace logs --source setup`. Two fixed runs
+// for ws-001 let Desktop specs exercise list, read, hook filters and the
+// read-only branch without a real store.
+const SETUP_RUNS = {
+  "11111111-1111-4111-8111-111111111111": {
+    runId: "11111111-1111-4111-8111-111111111111",
+    context: "default",
+    workspaceUid: "ws-001",
+    workspaceIdAtStart: "example-repo",
+    command: "up",
+    createdAt: "2026-10-30T10:00:00Z",
+    commandState: "failed",
+    captureState: "complete",
+  },
+  "22222222-2222-4222-8222-222222222222": {
+    runId: "22222222-2222-4222-8222-222222222222",
+    context: "default",
+    workspaceUid: "ws-gone",
+    workspaceIdAtStart: "deleted-project",
+    command: "up",
+    createdAt: "2026-10-29T10:00:00Z",
+    commandState: "failed",
+    captureState: "complete",
+  },
+}
+const SETUP_PRODUCER = "b0000000-0000-4000-8000-000000000001"
+const SETUP_INV = "a1111111-0000-4000-8000-000000000001"
+
+function setupRecords(runId) {
+  let sequence = 0
+  const rec = (patch) => ({
+    schemaVersion: 1,
+    runId,
+    producerId: SETUP_PRODUCER,
+    sequence: ++sequence,
+    time: "2026-10-30T10:00:01Z",
+    ...patch,
+  })
+  return [
+    rec({ kind: "invocation", invocationId: SETUP_INV, hook: "postCreateCommand", phase: "lifecycle", state: "running" }),
+    rec({ kind: "output", invocationId: SETUP_INV, stream: "stdout", text: "npm install\n", bytes: 12 }),
+    rec({ kind: "output", invocationId: SETUP_INV, stream: "stderr", text: "{\"level\":\"error\",\"msg\":\"literal\"}\n", bytes: 33 }),
+    rec({ kind: "invocation", invocationId: SETUP_INV, hook: "postCreateCommand", phase: "lifecycle", state: "failed", exitCode: 1 }),
+  ]
+}
+
+function handleSetupLogs(args) {
+  const flag = (name) => {
+    const i = args.indexOf(name)
+    return i === -1 ? undefined : args[i + 1]
+  }
+  if (args.includes("--list")) {
+    // A leading workspace argument limits the index to that workspace.
+    const scoped = args.length > 0 && !args[0].startsWith("-")
+    const runs = Object.values(SETUP_RUNS).filter(
+      (r) =>
+        r.context === variableContext &&
+        !(scoped && r.workspaceUid === "ws-gone"),
+    )
+    out({ schemaVersion: 1, runs, hasMore: false })
+    return
+  }
+  const run = SETUP_RUNS[flag("--run")]
+  if (!run) {
+    process.stderr.write("mock-devsy: run not found\n")
+    process.exit(1)
+  }
+  out({
+    schemaVersion: 1,
+    run,
+    records: setupRecords(run.runId),
+    nextCursor: "mock-cursor",
+    hasMore: false,
+    complete: true,
+  })
+}
+
+function handleLogs(args) {
+  if (flagValue(args, "--source") === "setup") handleSetupLogs(args)
+  else out("")
+}
+
+function flagValue(args, name) {
+  const i = args.indexOf(name)
+  return i === -1 ? undefined : args[i + 1]
+}
+
 // Unimplemented workspace verbs: exit 0 with empty output.
 function handleNoop() {
   out("")
@@ -480,7 +700,7 @@ const workspaceHandlers = {
   stop: handleStop,
   delete: handleDelete,
   rename: handleRename,
-  logs: handleNoop,
+  logs: handleLogs,
   exec: handleNoop,
   build: handleNoop,
   export: handleNoop,
@@ -514,6 +734,7 @@ const featureHandlers = {
 }
 
 const cmd = rawArgs[0] || ""
+emitDiagnostics(parseArgs(rawArgs).logLevel)
 
 // Canonical form: `devsy feature <verb> ...`
 if (cmd === "feature") {
@@ -552,7 +773,9 @@ switch (cmd) {
   case "provider":
     switch (sub) {
       case "list":
-        out(state.providers)
+        out(rawArgs.includes("--available")
+          ? ["docker", "kubernetes", "microsandbox", "terraform", "civo"]
+          : state.providers)
         break
       case "get":
       case "options":
@@ -576,7 +799,7 @@ switch (cmd) {
         })
         break
       case "add": {
-        const provName = extra
+        const provName = nameFlag || extra
         if (provName) {
           const takesDefault = !rawArgs.includes("--use=false")
           if (takesDefault) {
@@ -590,7 +813,7 @@ switch (cmd) {
               version: "v0.1.0",
               icon: "",
               description: "",
-              source: {},
+              source: { raw: extra },
               options: {},
               optionGroups: [],
             },
@@ -600,16 +823,16 @@ switch (cmd) {
           saveState(state)
         }
         // No ready phase: install finished, init has not run.
-        providerStatus("installing_provider", true)
-        providerStatus("installing_provider", false, provName)
+        providerStatus("installing_provider", "started")
+        providerStatus("installing_provider", "succeeded", provName)
         process.exit(0)
         break
       }
       case "init": {
         const provName = extra || providerFlag
-        providerStatus("resolving_options", true, provName)
-        providerStatus("resolving_options", false, provName)
-        providerStatus("running_init", true, provName)
+        providerStatus("resolving_options", "started", provName)
+        providerStatus("resolving_options", "succeeded", provName)
+        providerStatus("running_init", "started", provName)
         // *probe suffix delays init so lifecycle tests can observe in-flight state.
         const initMs = /probe$/.test(provName) ? 5000 : 150
         setTimeout(() => {
@@ -618,8 +841,8 @@ switch (cmd) {
             latest.providers[provName].state.initialized = true
             saveState(latest)
           }
-          providerStatus("running_init", false, provName)
-          providerStatus("ready", false, provName)
+          providerStatus("running_init", "succeeded", provName)
+          providerStatus("ready", "succeeded", provName)
           process.exit(0)
         }, initMs)
         break
@@ -673,8 +896,8 @@ switch (cmd) {
           state.providers[provName].state.initialized = false
           saveState(state)
         }
-        providerStatus("installing_provider", true, provName)
-        providerStatus("installing_provider", false, provName)
+        providerStatus("installing_provider", "started", provName)
+        providerStatus("installing_provider", "succeeded", provName)
         process.exit(0)
         break
       }
@@ -728,6 +951,7 @@ switch (cmd) {
           DOTFILES_SCRIPT: { value: "" },
           SSH_INJECT_DOCKER_CREDENTIALS: { value: "true" },
           SSH_INJECT_GIT_CREDENTIALS: { value: "true" },
+          SSH_INJECT_GITHUB_CREDENTIALS: { value: "false" },
           GIT_SSH_SIGNATURE_FORWARDING: { value: "true" },
           SSH_AGENT_FORWARDING: { value: "true" },
           SSH_ADD_PRIVATE_KEYS: { value: "true" },
@@ -738,10 +962,28 @@ switch (cmd) {
           EXIT_AFTER_TIMEOUT: { value: "true" },
           SSH_CONFIG_PATH: { value: "" },
           SSH_CONFIG_INCLUDE_PATH: { value: "" },
+          ...(state.contextOptions?.[variableContext] || {}),
         })
         break
+      case "set": {
+        if (state.failContextSave) {
+          process.stderr.write("fixture context save failure\n")
+          process.exit(1)
+        }
+        const name = extra || variableContext
+        state.contextOptions ??= {}
+        state.contextOptions[name] ??= {}
+        for (let i = 0; i < rawArgs.length; i++) {
+          if (rawArgs[i] === "-o") {
+            const [key, ...values] = rawArgs[++i].split("=")
+            state.contextOptions[name][key] = {value: values.join("=")}
+          }
+        }
+        saveState(state)
+        out("")
+        break
+      }
       case "use":
-      case "set":
       case "create":
       case "delete":
         out("")
@@ -751,6 +993,30 @@ switch (cmd) {
         break
     }
     break
+
+  case "secret":
+  case "env": {
+    const rows = cmd === "secret" ? state.secrets : state.envVars
+    if (sub === "protection" && extra === "status") {
+      out({ availability: "available", keySource: "file", remembered: false,
+        rememberedAvailable: true, fileEntries: state.secrets.filter((row) => row.backend === "file") })
+    } else if (sub === "list") out(rows)
+    else if (["set", "delete", "attach", "detach"].includes(sub)) {
+      const index = rows.findIndex((row) => row.name === extra && row.context === variableContext)
+      if (sub === "set") {
+        const row = cmd === "secret"
+          ? { name: extra, context: variableContext, backend: "file", availability: "available", attached: false }
+          : { name: extra, context: variableContext, value: rawArgs[rawArgs.indexOf("--value") + 1] ?? "", attached: false }
+        if (cmd === "secret" && rawArgs.includes("--stdin")) fs.readFileSync(0, "utf8")
+        if (index >= 0) rows[index] = { ...rows[index], ...row, attached: rows[index].attached }
+        else rows.push(row)
+      } else if (sub === "delete" && index >= 0) rows.splice(index, 1)
+      else if (index >= 0) rows[index].attached = sub === "attach"
+      saveState(state)
+      out("")
+    } else out("")
+    break
+  }
 
   case "version":
     out("v0.1.0-test")

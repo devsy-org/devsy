@@ -1,0 +1,7 @@
+{
+  "build": {
+    "context": "..",
+    "dockerfile": "Dockerfile"
+  },
+  "initializeCommand": "printf 'generated-by-overlay-init\\n' > overlay-build-input.txt"
+}

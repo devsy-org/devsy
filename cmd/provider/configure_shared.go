@@ -34,6 +34,8 @@ type ProviderOptionsConfig struct {
 	SkipSubOptions     bool
 	SingleMachine      *bool
 
+	Dry bool
+
 	Reporter status.Reporter
 }
 
@@ -45,16 +47,9 @@ func (cfg ProviderOptionsConfig) reporter() status.Reporter {
 }
 
 func ConfigureProvider(ctx context.Context, cfg ProviderOptionsConfig) error {
-	devsyConfig, err := configureProviderOptions(ctx, cfg)
+	_, err := configureProviderOptions(ctx, cfg)
 	if err != nil {
 		return err
-	}
-
-	// save provider config (configureProviderOptions may have mutated state,
-	// e.g. via initProvider marking the provider Initialized)
-	err = config.SaveConfig(devsyConfig)
-	if err != nil {
-		return fmt.Errorf("save config: %w", err)
 	}
 
 	log.Infof("configured provider %s", cfg.Provider.Name)
@@ -87,65 +82,142 @@ func configureProviderOptions(
 		config.EnvProviderPrefix+cfg.Provider.Name+"_",
 	)
 
-	// parse options
-	options, err := provider2.ParseOptions(cfg.UserOptions)
+	options, err := parseAndMergeOptions(cfg, devsyConfig)
 	if err != nil {
-		return nil, fmt.Errorf("parse options: %w", err)
-	}
-
-	// Seed prompts with the user's previous answers unless the caller
-	// explicitly wants a fresh slate. Stale keys are pruned downstream
-	// by the resolver regardless of this branch.
-	if !cfg.DiscardPriorValues {
-		mergeExistingOptions(options, devsyConfig.ProviderOptions(cfg.Provider.Name))
-	}
-
-	// fill defaults
-	reporter := cfg.reporter()
-	status.Enter(reporter, status.PhaseResolvingOptions, cfg.Provider.Name)
-	devsyConfig, err = options2.ResolveOptions(
-		ctx, devsyConfig, cfg.Provider, options,
-		cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
-	)
-	if err != nil {
-		err = fmt.Errorf("resolve options: %w", err)
-		status.Fail(reporter, status.PhaseResolvingOptions, err)
 		return nil, err
 	}
-	status.Leave(reporter, status.PhaseResolvingOptions, cfg.Provider.Name)
 
-	// run init command
-	if !cfg.SkipInit {
-		stdout := log.Writer(log.LevelInfo)
-		defer func() { _ = stdout.Close() }()
+	reporter := cfg.reporter()
+	var resolvedConfig *config.Config
+	err = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingOptions, Step: cfg.Provider.Name},
+		func(ctx context.Context) error {
+			var resolveErr error
+			resolvedConfig, resolveErr = options2.ResolveOptions(
+				ctx,
+				cfg.resolveRequest(devsyConfig, options),
+			)
+			return resolveErr
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolve options: %w", err)
+	}
 
-		stderr := log.Writer(log.LevelError)
-		defer func() { _ = stderr.Close() }()
+	if cfg.Dry {
+		return resolvedConfig, nil
+	}
+	if err := applyResolvedOptions(cfg.ContextName, cfg.Provider.Name, resolvedConfig); err != nil {
+		return nil, fmt.Errorf("save resolved options: %w", err)
+	}
 
-		status.Enter(reporter, status.PhaseRunningInit, cfg.Provider.Name)
-		err = initProvider(ctx, devsyConfig, cfg.Provider, initIO{stdout: stdout, stderr: stderr})
-		if err != nil {
-			status.Fail(reporter, status.PhaseRunningInit, err)
-			return nil, err
-		}
-		status.Leave(reporter, status.PhaseRunningInit, cfg.Provider.Name)
+	devsyConfig, err = config.LoadConfig(cfg.ContextName, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := runProviderInit(ctx, cfg, devsyConfig, reporter); err != nil {
+		return nil, err
 	}
 
 	return devsyConfig, nil
 }
 
+func runProviderInit(
+	ctx context.Context,
+	cfg ProviderOptionsConfig,
+	devsyConfig *config.Config,
+	reporter status.Reporter,
+) error {
+	if cfg.SkipInit {
+		return nil
+	}
+
+	stdout := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.LevelInfo,
+		DetectLevelPrefixes: true,
+	})
+	defer func() { _ = stdout.Close() }()
+
+	stderr := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.LevelError,
+		DetectLevelPrefixes: true,
+	})
+	defer func() { _ = stderr.Close() }()
+
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseRunningInit, Step: cfg.Provider.Name},
+		func(ctx context.Context) error {
+			return initProvider(
+				ctx,
+				devsyConfig,
+				cfg.Provider,
+				initIO{stdout: stdout, stderr: stderr},
+			)
+		},
+	)
+}
+
+func applyResolvedOptions(contextName, providerName string, resolvedConfig *config.Config) error {
+	return config.UpdateConfig(contextName, "", func(c *config.Config) error {
+		if c.Current().Providers == nil || c.Current().Providers[providerName] == nil {
+			return fmt.Errorf("provider %q no longer exists", providerName)
+		}
+
+		providerCfg := c.Current().Providers[providerName]
+		resolvedProviderCfg := resolvedConfig.Current().Providers[providerName]
+
+		providerCfg.Options = resolvedProviderCfg.Options
+		providerCfg.DynamicOptions = resolvedProviderCfg.DynamicOptions
+		providerCfg.SingleMachine = resolvedProviderCfg.SingleMachine
+		return nil
+	})
+}
+
+// resolveRequest builds the option resolution request for this provider.
+func (cfg ProviderOptionsConfig) resolveRequest(
+	devsyConfig *config.Config,
+	options map[string]string,
+) options2.ResolveOptionsRequest {
+	return options2.ResolveOptionsRequest{
+		DevConfig:      devsyConfig,
+		ProviderConfig: cfg.Provider,
+		UserOptions:    options,
+		SkipRequired:   cfg.SkipRequired,
+		SkipSubOptions: cfg.SkipSubOptions,
+		SingleMachine:  cfg.SingleMachine,
+	}
+}
+
+func parseAndMergeOptions(
+	cfg ProviderOptionsConfig,
+	devsyConfig *config.Config,
+) (map[string]string, error) {
+	options, err := provider2.ParseOptions(cfg.UserOptions)
+	if err != nil {
+		return nil, fmt.Errorf("parse options: %w", err)
+	}
+
+	if !cfg.DiscardPriorValues {
+		mergeExistingOptions(options, devsyConfig.ProviderOptions(cfg.Provider.Name))
+	}
+	return options, nil
+}
+
 // writeDefaultProvider reloads the config for the given context and writes providerName
 // as the active context's DefaultProvider.
 func writeDefaultProvider(contextName, providerName string) error {
-	cfg, err := config.LoadConfig(contextName, "")
-	if err != nil {
-		return fmt.Errorf("reload config: %w", err)
-	}
-	cfg.Current().DefaultProvider = providerName
-	if err := config.SaveConfig(cfg); err != nil {
-		return fmt.Errorf("save default provider: %w", err)
-	}
-	return nil
+	return config.UpdateConfig(contextName, "", func(c *config.Config) error {
+		if c.Current().Providers == nil || c.Current().Providers[providerName] == nil {
+			return fmt.Errorf("provider %q no longer exists", providerName)
+		}
+
+		c.Current().DefaultProvider = providerName
+		return nil
+	})
 }
 
 // resolveProviderName returns the provider name from args[0] if present, else the fallback
@@ -166,8 +238,8 @@ func assertProviderMatchesGlobal(resolved, globalFlag string) error {
 	if resolved == "" || globalFlag == "" || resolved == globalFlag {
 		return nil
 	}
-	log.Infof("providerName=%+v", resolved)
-	log.Infof("globalFlags.provider=%+v", globalFlag)
+	log.Debugf("providerName=%+v", resolved)
+	log.Debugf("globalFlags.provider=%+v", globalFlag)
 	return fmt.Errorf("ambiguous provider configuration detected")
 }
 
@@ -182,7 +254,10 @@ func initProvider(
 	provider *provider2.ProviderConfig,
 	io2 initIO,
 ) error {
-	lock, err := provider2.GetProviderInitLock(devsyConfig.DefaultContext, provider.Name)
+	contextName, providerOptions := devsyConfig.DefaultContext, devsyConfig.ProviderOptions(
+		provider.Name,
+	)
+	lock, err := provider2.GetProviderInitLock(contextName, provider.Name)
 	if err != nil {
 		return fmt.Errorf("get init lock: %w", err)
 	}
@@ -195,11 +270,14 @@ func initProvider(
 	}
 	defer func() { _ = lock.Unlock() }()
 
-	entry := providerConfigEntry(devsyConfig, provider.Name)
-	entry.InitAttempted = true
-	entry.InitError = ""
-	entry.Initialized = false
-	if err := config.SaveConfig(devsyConfig); err != nil {
+	err = config.UpdateConfig(contextName, "", func(c *config.Config) error {
+		entry := providerConfigEntry(c, provider.Name)
+		entry.InitAttempted = true
+		entry.InitError = ""
+		entry.Initialized = false
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("save init state: %w", err)
 	}
 
@@ -207,23 +285,28 @@ func initProvider(
 		ctx,
 		clientimplementation.WorkspaceCommandConfig{
 			Command:              provider.Exec.Init,
-			WorkspaceContextName: devsyConfig.DefaultContext,
-			Options:              devsyConfig.ProviderOptions(provider.Name),
+			WorkspaceContextName: contextName,
+			Options:              providerOptions,
 			Config:               provider,
+			ExtraEnv:             provider2.GetBaseEnvironment(contextName, provider.Name),
 			Stdout:               io2.stdout,
 			Stderr:               io2.stderr,
 		},
 	)
 	if runErr != nil {
-		entry.InitError = truncateInitError(runErr.Error())
-		if saveErr := config.SaveConfig(devsyConfig); saveErr != nil {
-			log.Warnf("save init failure state for provider %s: %v", provider.Name, saveErr)
-		}
+		_ = config.UpdateConfig(contextName, "", func(c *config.Config) error {
+			entry := providerConfigEntry(c, provider.Name)
+			entry.InitError = truncateInitError(runErr.Error())
+			return nil
+		})
 		return fmt.Errorf("init: %w", runErr)
 	}
 
-	entry.Initialized = true
-	return nil
+	return config.UpdateConfig(contextName, "", func(c *config.Config) error {
+		entry := providerConfigEntry(c, provider.Name)
+		entry.Initialized = true
+		return nil
+	})
 }
 
 // providerConfigEntry returns the config.ProviderConfig entry for name,

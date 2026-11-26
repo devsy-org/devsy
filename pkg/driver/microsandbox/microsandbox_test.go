@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -21,7 +24,10 @@ const (
 	testUser    = "vscode"
 	imgX        = "x:1"
 	testImg     = "img:1"
+	testVersion = "0.7.2"
+	oldVersion  = "microsandbox 0.7.1"
 	shPath      = "/bin/sh"
+	callEnsure  = "ensure:x:1"
 	callFind    = "find:" + wsName
 	callRemove  = "remove:" + wsName
 	testBindSrc = "/host/proj"
@@ -32,16 +38,21 @@ const (
 // fakeClient is an in-memory sandboxClient that records calls, so the driver's
 // lifecycle logic can be tested without a live runtime.
 type fakeClient struct {
-	created     map[string]sandboxSpec
-	info        map[string]*sandboxInfo
-	calls       []string
-	execReq     execRequest
-	execName    string
-	failFind    error
-	failStop    error
-	failCreat   error
-	failEnsure  error
-	failInstall error
+	created      map[string]sandboxSpec
+	info         map[string]*sandboxInfo
+	calls        []string
+	execReq      execRequest
+	execName     string
+	failPrepare  error
+	failVolumes  error
+	failFind     error
+	failStop     error
+	failCreat    error
+	failEnsure   error
+	failInstall  error
+	failVersion  error
+	version      string
+	versionCalls int
 }
 
 func newFakeClient() *fakeClient {
@@ -50,9 +61,31 @@ func newFakeClient() *fakeClient {
 
 func (f *fakeClient) EnsureInstalled(context.Context) error { return f.failInstall }
 
-func (f *fakeClient) EnsureImage(_ context.Context, image string) error {
-	f.calls = append(f.calls, "ensure:"+image)
+func (f *fakeClient) Version(context.Context) (string, error) {
+	f.versionCalls++
+	if f.failVersion != nil {
+		return "", f.failVersion
+	}
+	if f.version != "" {
+		return f.version, nil
+	}
+	return testVersion, nil
+}
+
+func (f *fakeClient) PrepareImage(_ context.Context, image string, _ bool) (*preparedImage, error) {
+	if f.failPrepare != nil {
+		return nil, f.failPrepare
+	}
+	return &preparedImage{reference: image, image: empty.Image, cleanup: func() {}}, nil
+}
+
+func (f *fakeClient) EnsureImage(_ context.Context, image *preparedImage) error {
+	f.calls = append(f.calls, "ensure:"+image.reference)
 	return f.failEnsure
+}
+
+func (f *fakeClient) PrepareVolumes(_ context.Context, _ []volumeMount) error {
+	return f.failVolumes
 }
 
 func (f *fakeClient) Create(_ context.Context, name string, spec sandboxSpec) error {
@@ -156,40 +189,143 @@ func TestRunDevContainerBuildsSpec(t *testing.T) {
 
 func TestRunDevContainerReplacesStaleSandbox(t *testing.T) {
 	f := newFakeClient()
+	f.version = recreateTestVersion
 	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
 	d := newDriver(f, nil, specDefaults{})
 
-	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	err := d.RunDevContainer(
+		context.Background(),
+		wsID,
+		&driver.RunOptions{Image: imgX, AllowRecreate: true},
+	)
 	if err != nil {
 		t.Fatalf("RunDevContainer: %v", err)
 	}
 	want := []string{
+		callEnsure,
 		callFind,
-		"stop:devsy-ws1",
-		callRemove,
-		"ensure:x:1",
 		"create:devsy-ws1",
 	}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("call order = %v, want %v", f.calls, want)
 	}
+	require.True(t, f.created[wsName].AllowRecreate)
 }
 
-func TestRunDevContainerContinuesWhenPrePullFails(t *testing.T) {
+func TestRunDevContainerRejectsOldRuntimeBeforeMutation(t *testing.T) {
 	f := newFakeClient()
-	f.failEnsure = errors.New("registry hiccup")
+	f.version = oldVersion
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
 	d := newDriver(f, nil, specDefaults{})
 
-	// Pre-pull failure must not abort the run; create should still be attempted.
-	if err := d.RunDevContainer(
-		context.Background(),
-		wsID,
-		&driver.RunOptions{Image: imgX},
-	); err != nil {
-		t.Fatalf("RunDevContainer should proceed despite pull failure: %v", err)
+	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	if err == nil || !strings.Contains(
+		err.Error(), "v0.7.2 or newer is required for workspace ownership synchronization",
+	) {
+		t.Fatalf("RunDevContainer error = %v, want provisioning version error", err)
 	}
-	if _, ok := f.created[wsName]; !ok {
-		t.Error("expected create to run even though pre-pull failed")
+	require.ErrorContains(t, err, "built-in MicroSandbox driver")
+	assertProvisioningUnchanged(t, f)
+}
+
+func TestRunDevContainerAcceptsProvisioningRuntimeVersions(t *testing.T) {
+	for _, version := range []string{"0.7.2", "0.7.3", "0.8.0", "1.0.0"} {
+		t.Run(version, func(t *testing.T) {
+			f := newFakeClient()
+			f.version = "microsandbox " + version
+			d := newDriver(f, nil, specDefaults{})
+			err := d.RunDevContainer(
+				context.Background(), wsID, &driver.RunOptions{Image: imgX},
+			)
+			if err != nil {
+				t.Fatalf("RunDevContainer: %v", err)
+			}
+			want := []string{callEnsure, callFind, "create:" + wsName}
+			if !slices.Equal(f.calls, want) {
+				t.Fatalf("calls = %v, want %v", f.calls, want)
+			}
+		})
+	}
+}
+
+func TestRunDevContainerVersionFailureDoesNotMutateSandbox(t *testing.T) {
+	f := newFakeClient()
+	f.failVersion = errors.New("version probe failed")
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+	d := newDriver(f, nil, specDefaults{})
+
+	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	if err == nil || !strings.Contains(err.Error(), "version probe failed") {
+		t.Fatalf("RunDevContainer error = %v, want version probe failure", err)
+	}
+	assertProvisioningUnchanged(t, f)
+}
+
+func TestRunDevContainerMalformedVersionDoesNotMutateSandbox(t *testing.T) {
+	f := newFakeClient()
+	f.version = "unexpected output"
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+	d := newDriver(f, nil, specDefaults{})
+
+	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	if err == nil || !strings.Contains(err.Error(), "unable to parse microsandbox version") {
+		t.Fatalf("RunDevContainer error = %v, want version parse failure", err)
+	}
+	assertProvisioningUnchanged(t, f)
+}
+
+func TestOldRuntimeDoesNotBlockExistingSandboxLifecycle(t *testing.T) {
+	f := newFakeClient()
+	f.version = oldVersion
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+	d := newDriver(f, nil, specDefaults{})
+	ctx := context.Background()
+
+	if err := d.Preflight(ctx, driver.PreflightOptions{}); err != nil {
+		t.Fatalf("Preflight: %v", err)
+	}
+	if _, err := d.FindDevContainer(ctx, wsID); err != nil {
+		t.Fatalf("FindDevContainer: %v", err)
+	}
+	if err := d.GetDevContainerLogs(ctx, wsID, io.Discard, io.Discard); err != nil {
+		t.Fatalf("GetDevContainerLogs: %v", err)
+	}
+	if err := d.StopDevContainer(ctx, wsID); err != nil {
+		t.Fatalf("StopDevContainer: %v", err)
+	}
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: false}
+	if err := d.DeleteDevContainer(ctx, wsID); err != nil {
+		t.Fatalf("DeleteDevContainer: %v", err)
+	}
+	if f.versionCalls != 0 {
+		t.Fatalf("version probes = %d, want no lifecycle version probes", f.versionCalls)
+	}
+}
+
+func assertProvisioningUnchanged(t *testing.T, f *fakeClient) {
+	t.Helper()
+	if f.info[wsName] == nil {
+		t.Fatal("existing sandbox was removed before version validation")
+	}
+	for _, call := range f.calls {
+		if strings.HasPrefix(call, "stop:") || strings.HasPrefix(call, "remove:") ||
+			strings.HasPrefix(call, "create:") || strings.HasPrefix(call, "ensure:") {
+			t.Fatalf("version validation mutated sandbox state: %v", f.calls)
+		}
+	}
+}
+
+func TestRunDevContainerImageFailurePreservesExisting(t *testing.T) {
+	f := newFakeClient()
+	f.failEnsure = errors.New("image unavailable")
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+	d := newDriver(f, nil, specDefaults{})
+	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	if err == nil || !strings.Contains(err.Error(), "image unavailable") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !slices.Equal(f.calls, []string{callEnsure}) || !f.info[wsName].Running {
+		t.Fatalf("image failure changed sandbox: %v", f.calls)
 	}
 }
 
@@ -204,7 +340,7 @@ func TestRunImageDevContainerRunsFromParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunImageDevContainer: %v", err)
 	}
-	want := []string{callFind, "ensure:built-local:latest", "create:devsy-ws1"}
+	want := []string{"ensure:built-local:latest", callFind, "create:devsy-ws1"}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("call order = %v, want %v", f.calls, want)
 	}
@@ -482,7 +618,7 @@ func TestBuildSpecMapsAllMountTypes(t *testing.T) {
 			{Type: driver.MountTypeBind, Source: testBindSrc, Target: "/mnt"},
 			nil,
 		},
-	}, nil)
+	}, nil, nil)
 	want := []volumeMount{
 		{Target: "/data", Volume: "vol1"},
 		{Target: "/scratch", Tmpfs: true},
@@ -502,8 +638,17 @@ func TestBuildSpecMapsWorkspaceMount(t *testing.T) {
 			Source: testBindSrc,
 			Target: testBindDst,
 		},
-	}, nil)
-	want := []volumeMount{{Target: testBindDst, Source: testBindSrc}}
+	}, nil, nil)
+	want := []volumeMount{
+		{
+			Target: testBindDst,
+			Source: testBindSrc,
+			Policy: mountPolicy{
+				StatVirtualization: statVirtStrict,
+				HostPermissions:    hostPermissionsMirror,
+			},
+		},
+	}
 	if !slices.Equal(spec.Mounts, want) {
 		t.Errorf("mounts = %+v, want %+v", spec.Mounts, want)
 	}
@@ -511,7 +656,7 @@ func TestBuildSpecMapsWorkspaceMount(t *testing.T) {
 
 func TestBuildSpecCarriesIdleTimeout(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{idleTimeout: 90 * time.Second})
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil, nil)
 	if spec.IdleTimeout != 90*time.Second {
 		t.Errorf("idle timeout = %s, want 90s", spec.IdleTimeout)
 	}
@@ -523,7 +668,7 @@ func TestBuildSpecCarriesCeilingsAndEgress(t *testing.T) {
 		nil,
 		specDefaults{maxMemory: 4096, maxCPUs: 4, blockEgress: true},
 	)
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil, nil)
 	if spec.MaxMemory != 4096 || spec.MaxCPUs != 4 || !spec.BlockEgress {
 		t.Errorf("unexpected spec ceilings/egress: %+v", spec)
 	}
@@ -532,7 +677,7 @@ func TestBuildSpecCarriesCeilingsAndEgress(t *testing.T) {
 func TestBuildSpecUsesHostRequirementsWhenDefaultsUnset(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{})
 	hostReqs := &config.HostRequirements{CPUs: 4, Memory: "8gb", Storage: size32GB}
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, hostReqs)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, hostReqs, nil)
 	if spec.CPUs != 4 {
 		t.Errorf("CPUs = %d, want 4", spec.CPUs)
 	}
@@ -551,7 +696,7 @@ func TestBuildSpecPrefersConfiguredDefaultsOverHostRequirements(t *testing.T) {
 		specDefaults{memory: 2048, cpus: 2, rootDiskGB: 16},
 	)
 	hostReqs := &config.HostRequirements{CPUs: 8, Memory: size32GB, Storage: "64gb"}
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, hostReqs)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, hostReqs, nil)
 	if spec.CPUs != 2 || spec.Memory != 2048 || spec.RootDiskGB != 16 {
 		t.Errorf("configured defaults should win, got %+v", spec)
 	}
@@ -559,7 +704,7 @@ func TestBuildSpecPrefersConfiguredDefaultsOverHostRequirements(t *testing.T) {
 
 func TestBuildSpecIgnoresNilHostRequirements(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{})
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil, nil)
 	if spec.CPUs != 0 || spec.Memory != 0 || spec.RootDiskGB != 0 {
 		t.Errorf("nil hostRequirements with no defaults should leave sizing zero, got %+v", spec)
 	}
@@ -611,6 +756,48 @@ func TestParseUint8(t *testing.T) {
 	for _, c := range cases {
 		if got := parseUint8(c.in); got != c.want {
 			t.Errorf("parseUint8(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestReplacementRequiresConsentAndSuccessfulPreparation(t *testing.T) {
+	sentinel := errors.New("preparation failed")
+	for _, running := range []bool{false, true} {
+		for _, tc := range []struct {
+			name                 string
+			allow                bool
+			imageErr, volumesErr error
+		}{
+			{name: "consent"},
+			{name: "image", allow: true, imageErr: sentinel},
+			{name: "volumes", allow: true, volumesErr: sentinel},
+		} {
+			t.Run(fmt.Sprintf("running=%t/%s", running, tc.name), func(t *testing.T) {
+				f := newFakeClient()
+				f.version = recreateTestVersion
+				original := &sandboxInfo{Name: wsName, Running: running, CreatedAt: time.Now()}
+				f.info[wsName] = original
+				f.failPrepare, f.failVolumes = tc.imageErr, tc.volumesErr
+				opts := &driver.RunOptions{Image: imgX, AllowRecreate: tc.allow}
+				err := newDriver(f, nil, specDefaults{}).RunDevContainer(t.Context(), wsID, opts)
+				require.Error(t, err)
+				if !tc.allow {
+					require.ErrorContains(t, err, "--recreate")
+				} else {
+					require.ErrorIs(t, err, sentinel)
+				}
+				require.Same(t, original, f.info[wsName])
+				require.Equal(t, running, original.Running)
+				require.Empty(t, f.created)
+				for _, call := range f.calls {
+					require.False(
+						t,
+						strings.HasPrefix(call, "stop:") || strings.HasPrefix(call, "remove:") ||
+							strings.HasPrefix(call, "create:"),
+						call,
+					)
+				}
+			})
 		}
 	}
 }

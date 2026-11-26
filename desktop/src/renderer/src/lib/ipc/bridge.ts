@@ -1,8 +1,9 @@
 /**
- * IPC bridge — uses Electron's contextBridge API when running in Electron,
+ * IPC bridge - uses Electron's contextBridge API when running in Electron,
  * falls back to mock implementations for browser-only development.
  */
 
+import type { RendererErrorSummary } from "$shared/renderer-error.js"
 import type { UnlistenFn } from "./types.js"
 
 function isElectron(): boolean {
@@ -10,6 +11,7 @@ function isElectron(): boolean {
 }
 
 interface ElectronAPI {
+  reportRendererError: (summary: RendererErrorSummary) => void
   invoke: (channel: string, args?: Record<string, unknown>) => Promise<unknown>
   on: (channel: string, callback: (payload: unknown) => void) => () => void
 }
@@ -30,7 +32,8 @@ let _invoke: InvokeFn
 let _listen: ListenFn
 
 if (isElectron()) {
-  const api = window.electronAPI!
+  const api = window.electronAPI
+  if (!api) throw new Error("Electron API is unavailable")
 
   _invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
     api.invoke(cmd, args) as Promise<T>

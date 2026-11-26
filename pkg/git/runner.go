@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +10,9 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/livetee"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
 // ErrGitNotFound is returned when the git binary is not available on PATH.
@@ -43,13 +45,17 @@ type Runner interface {
 
 // RunOptions describes one command invocation.
 type RunOptions struct {
-	Binary string
-	Dir    string
-	Env    []string
-	Args   []string
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
+	Binary      string
+	Dir         string
+	Env         []string
+	Args        []string
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	CloseOutput func() error
+	// UnredactedStdout preserves machine-readable output that may contain a
+	// credential, such as the response from `git credential fill`.
+	UnredactedStdout bool
 }
 
 // RunResult holds captured output.
@@ -64,18 +70,13 @@ type execRunner struct{}
 var _ Runner = execRunner{}
 
 func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
+	tee := livetee.NewWithClose(io.Discard, nil, opts.CloseOutput)
 	binary := opts.Binary
 	if binary == "" {
 		binary = binGit
 	}
 	if !command.Exists(binary) {
-		if binary == binGit {
-			return RunResult{}, &CommandError{Args: opts.Args, ExitCode: -1, Err: ErrGitNotFound}
-		}
-		return RunResult{}, &CommandError{
-			Args: opts.Args, ExitCode: -1,
-			Err: fmt.Errorf("%q binary not found in PATH", binary),
-		}
+		return RunResult{}, errors.Join(missingBinaryError(binary, opts.Args), tee.Finish())
 	}
 
 	cmd := exec.CommandContext(
@@ -86,33 +87,85 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	cmd.Dir = opts.Dir
 	cmd.Stdin = opts.Stdin
 
-	var outBuf, errBuf bytes.Buffer
-	if opts.Stdout != nil {
-		cmd.Stdout = opts.Stdout
-	} else {
-		cmd.Stdout = &outBuf
+	redactor := secrets.NewEnvironmentRedactor(cmd.Env)
+	stdoutRedactor := redactor
+	if opts.UnredactedStdout {
+		stdoutRedactor = nil
 	}
-	if opts.Stderr != nil {
-		cmd.Stderr = io.MultiWriter(opts.Stderr, &errBuf)
-	} else {
-		cmd.Stderr = &errBuf
-	}
+	outBuf := subprocess.NewBuffer(stdoutRedactor)
+	streamOut := attachStream(&cmd.Stdout, outBuf, tee.Writer(opts.Stdout), stdoutRedactor)
+	errBuf := subprocess.NewBuffer(redactor)
+	streamErr := attachStream(&cmd.Stderr, errBuf, tee.Writer(opts.Stderr), redactor)
 
 	err := cmd.Run()
-	result := RunResult{Stdout: outBuf.Bytes(), Stderr: errBuf.Bytes()}
-	if err != nil {
-		cmdErr := &CommandError{
-			Args:     opts.Args,
-			ExitCode: -1,
-			Stderr:   strings.TrimSpace(errBuf.String()),
-			Err:      err,
+	result := RunResult{Stdout: []byte(outBuf.String()), Stderr: []byte(errBuf.String())}
+	flushErr := errors.Join(flushStream(streamOut), flushStream(streamErr), tee.Finish())
+
+	return result, finishRun(opts.Args, errBuf.String(), err, flushErr)
+}
+
+// finishRun returns the command failure, with any flush failure joined to it.
+// A flush failure alone is still an error because output may be missing.
+func finishRun(args []string, stderr string, runErr, flushErr error) error {
+	if runErr == nil {
+		if flushErr != nil {
+			return fmt.Errorf("flush git output: %w", flushErr)
 		}
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			cmdErr.ExitCode = exitErr.ExitCode()
-		}
-		return result, cmdErr
+
+		return nil
 	}
-	return result, nil
+	if flushErr != nil {
+		runErr = errors.Join(runErr, flushErr)
+	}
+
+	return runFailure(args, stderr, runErr)
+}
+
+func missingBinaryError(binary string, args []string) error {
+	if binary == binGit {
+		return &CommandError{Args: args, ExitCode: -1, Err: ErrGitNotFound}
+	}
+	return &CommandError{
+		Args: args, ExitCode: -1,
+		Err: fmt.Errorf("%q binary not found in PATH", binary),
+	}
+}
+
+// attachStream points *dst at the buffer and, when a live writer is given,
+// also at a redacting stream to it. It returns the stream to flush, or nil.
+func attachStream(
+	dst *io.Writer,
+	buf *subprocess.Buffer,
+	live io.Writer,
+	redactor *secrets.Redactor,
+) *subprocess.StreamingRedactingWriter {
+	if live == nil {
+		*dst = buf
+		return nil
+	}
+	stream := &subprocess.StreamingRedactingWriter{Next: live, Redactor: redactor}
+	*dst = io.MultiWriter(buf, stream)
+	return stream
+}
+
+func runFailure(args []string, stderr string, err error) *CommandError {
+	cmdErr := &CommandError{
+		Args:     args,
+		ExitCode: -1,
+		Stderr:   strings.TrimSpace(stderr),
+		Err:      err,
+	}
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		cmdErr.ExitCode = exitErr.ExitCode()
+	}
+	return cmdErr
+}
+
+func flushStream(stream *subprocess.StreamingRedactingWriter) error {
+	if stream == nil {
+		return nil
+	}
+	return stream.Flush()
 }
 
 // defaultRunner is used by Repo when no runner is injected.

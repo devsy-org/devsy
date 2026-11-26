@@ -27,7 +27,11 @@ func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo) driver.Driver {
 	}
 }
 
-var _ driver.Driver = (*customDriver)(nil)
+var (
+	_ driver.MountDeliveryDriver  = (*customDriver)(nil)
+	_ driver.RecreatePolicyDriver = (*customDriver)(nil)
+	_ driver.WorkspaceChowner     = (*customDriver)(nil)
+)
 
 type customDriver struct {
 	workspaceInfo *provider.AgentWorkspaceInfo
@@ -73,6 +77,7 @@ func (c *customDriver) CommandDevContainer(
 		stdin:       params.Stdin,
 		stdout:      params.Stdout,
 		stderr:      params.Stderr,
+		rawStdout:   params.RawStdout,
 		extraEnv: []string{
 			"DEVCONTAINER_USER=" + params.User,
 			"DEVCONTAINER_COMMAND=" + params.Command,
@@ -244,36 +249,8 @@ type runCommandOptions struct {
 	stdin       io.Reader
 	stdout      io.Writer
 	stderr      io.Writer
+	rawStdout   bool
 	extraEnv    []string
-}
-
-func (c *customDriver) runCommand(
-	ctx context.Context,
-	runOpts runCommandOptions,
-) error {
-	if len(runOpts.command) == 0 {
-		return nil
-	}
-
-	log.Debugf("run %s driver command: %s", runOpts.name, strings.Join(runOpts.command, " "))
-	environ, err := ToEnvironWithBinaries(ctx, c.workspaceInfo)
-	if err != nil {
-		return err
-	}
-	environ = append(environ, pkgconfig.EnvDevcontainerID+"="+runOpts.workspaceId)
-	environ = append(environ, runOpts.extraEnv...)
-
-	if log.Underlying().Core().Enabled(zapcore.DebugLevel) {
-		environ = append(environ, pkgconfig.EnvDebug+"="+pkgconfig.BoolTrue)
-	}
-
-	return clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
-		Command: runOpts.command,
-		Environ: environ,
-		Stdin:   runOpts.stdin,
-		Stdout:  runOpts.stdout,
-		Stderr:  runOpts.stderr,
-	})
 }
 
 func ToEnvironWithBinaries(
@@ -309,4 +286,40 @@ func ToEnvironWithBinaries(
 	}
 
 	return environ, nil
+}
+
+func (d *customDriver) RequiresMountStreaming() bool { return true }
+
+func (d *customDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
+
+func (d *customDriver) RequiresWorkspaceChown() bool { return true }
+
+func (c *customDriver) runCommand(
+	ctx context.Context,
+	runOpts runCommandOptions,
+) error {
+	if len(runOpts.command) == 0 {
+		return nil
+	}
+
+	log.Debugf("run %s driver command: %s", runOpts.name, strings.Join(runOpts.command, " "))
+	environ, err := ToEnvironWithBinaries(ctx, c.workspaceInfo)
+	if err != nil {
+		return err
+	}
+	environ = append(environ, pkgconfig.EnvDevcontainerID+"="+runOpts.workspaceId)
+	environ = append(environ, runOpts.extraEnv...)
+
+	if log.Underlying().Core().Enabled(zapcore.DebugLevel) {
+		environ = append(environ, pkgconfig.EnvDebug+"="+pkgconfig.BoolTrue)
+	}
+
+	return clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
+		Command:   runOpts.command,
+		Environ:   environ,
+		Stdin:     runOpts.stdin,
+		Stdout:    runOpts.stdout,
+		Stderr:    runOpts.stderr,
+		RawStdout: runOpts.rawStdout,
+	})
 }

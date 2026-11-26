@@ -1,30 +1,30 @@
 # Contributing to Devsy
 
-Thank you for your interest in contributing to Devsy! This guide will help you get started with development.
+This guide covers setup, builds, tests, and pull requests.
 
 ## Contributor License Agreement
 
-Before your first contribution can be merged, you must sign the [Contributor
-License Agreement](./.github/CLA.md). When you open a pull request, a bot will
-check your signing status and, if needed, comment with instructions. You sign by
-posting a comment on the pull request with the exact text the bot provides.
+Sign the [Contributor License Agreement](./.github/CLA.md) before your first
+contribution can merge. A bot checks your signing status when you open a pull
+request. If you have not signed, the bot comments with instructions. Sign by
+posting the exact text the bot gives as a comment on the pull request.
 
-## Development Setup
+## Development setup
 
 ### Prerequisites
 
-**CLI Development:**
+CLI development:
 
 - [Go 1.26+](https://go.dev/doc/install)
-- [Task](https://taskfile.dev/) (optional, but recommended for running tasks)
+- [mise](https://mise.jdx.dev/) (installs the pinned toolchain and runs tasks with `mise run <task>`)
 
-**Desktop Application Development:**
+Desktop application development:
 
 - [Node.js 24+](https://nodejs.org/en/) (with npm)
 - [Go 1.26+](https://go.dev/doc/install)
-- [Python 3.12+](https://www.python.org/) (for native module builds)
+- [Python 3](https://www.python.org/) (node-gyp uses it to build the `node-pty` native module; CI uses 3.14)
 
-### Initial Setup
+### Initial setup
 
 1. Clone the repository:
    ```bash
@@ -32,52 +32,52 @@ posting a comment on the pull request with the exact text the bot provides.
    cd devsy
    ```
 
-2. If you want to change Devsy agent code:
-   - Exchange the URL in [DefaultAgentDownloadURL](./pkg/config/repo.go) with a custom public repository release
-   - Build devsy via: `task cli:build:dev`
-   - Upload `dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64` and ARM64 variant to your public repository release assets
+2. To change the agent code:
+   - Replace the URL in [DefaultAgentDownloadURL](./pkg/config/repo.go) with a public repository release that you control
+   - Build Devsy: `mise run cli:build:dev`
+   - Upload `dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64` and the ARM64 variant to the release assets
 
-## Building from Source
+## Build from source
 
 ### CLI
 
-**Using Task (recommended):**
+Using mise (recommended):
 
 ```bash
 # Build CLI for development
-task cli:build:dev
+mise run cli:build:dev
 
 # Build CLI for production
-task cli:build
+mise run cli:build
 
 # Build with Pro features
-task cli:build:dev:pro
+mise run cli:build:dev:pro
 ```
 
-**Using Go directly:**
+Using Go directly:
 
 ```bash
 CGO_ENABLED=0 go build -ldflags "-s -w" -o devsy
 ```
 
-The binary will be output as `devsy` in the current directory.
+The build writes the `devsy` binary to the current directory.
 
 ### Desktop Application
 
-**Using Task (recommended):**
+Using mise (recommended):
 
 ```bash
 # Setup Electron environment (first time only)
-task desktop:setup
+mise run desktop:setup
 
 # Run in development mode
-task desktop:dev
+mise run desktop:dev
 
 # Build the application
-task desktop:build
+mise run desktop:build
 ```
 
-**Manual build:**
+Manual build:
 
 ```bash
 cd desktop
@@ -85,27 +85,36 @@ npm ci
 npm run build
 ```
 
-The packaged application will be in `desktop/release/`
+The packaged application is in `desktop/release/`.
 
-## Development Workflow
+## Development workflow
 
-### CLI Development
+### CLI development
 
 ```bash
 # Tidy dependencies
-task cli:tidy
+mise run cli:tidy
 
 # Run linters
-task cli:lint
+mise run cli:lint
 
 # Run unit tests
-task cli:test
+mise run cli:test
 
 # Build for development
-task cli:build:dev
+mise run cli:build:dev
 ```
 
-### Desktop Development
+### Desktop development
+
+In renderer code, use `$lib/...` for renderer library modules and `$shared/...`
+for shared modules. This covers type imports, re-exports, and dynamic imports. Use
+`./...` for sibling files. Use relative paths for renderer entry points that have
+no alias. Avoid `../...` imports when an alias reaches the module.
+
+Main-process, preload, and shared code use relative imports. Their bundlers do not
+configure the renderer aliases. Keep the `.js` extension on TypeScript module
+specifiers and the `.svelte` extension on component imports.
 
 ```bash
 # Install dependencies
@@ -113,56 +122,68 @@ cd desktop
 npm ci
 
 # Check code quality (type check + svelte-check)
-task desktop:check
+mise run desktop:check
 
 # Run unit tests
-task desktop:test
+mise run desktop:test
 
 # Run e2e tests
-task desktop:test:e2e
+mise run desktop:test:e2e
 ```
 
-### E2E Testing
+### E2E testing
 
 ```bash
 # Build for e2e tests
-task cli:test:e2e:build
+mise run cli:test:e2e:build
 
 # Run all e2e tests
-task cli:test:e2e
+mise run cli:test:e2e
 
 # Run specific test suite
-task cli:test:e2e:suite -- "suite-name"
+mise run cli:test:e2e:suite "suite-name"
 
 # Run focused tests
-task cli:test:e2e:focus -- "test-pattern"
+mise run cli:test:e2e:focus "test-pattern"
 
 # Setup kind cluster for testing
-task cli:test:e2e:kind:setup
+mise run cli:test:e2e:kind:setup
 
 # Teardown kind cluster
-task cli:test:e2e:kind:teardown
+mise run cli:test:e2e:kind:teardown
 ```
 
-### gRPC Development
+### gRPC development
 
-If you need to modify the gRPC tunnel code:
+To change the gRPC tunnel code, run:
 
 ```bash
-task cli:build:grpc
+mise run cli:build:grpc
 ```
 
-This requires:
-- `protobuf-compiler` (install via `sudo apt install protobuf-compiler`)
-- Go protobuf plugins (installed automatically by the task)
+mise installs the pinned `protoc`. The task installs the Go protobuf plugins.
 
-## Testing Your Changes
+## Test your changes
 
-### Quick Start
+### Go resource lifecycle checks
+
+Run affected packages with `go test -race -short -count=1`, then run
+`mise run cli:lint:ci`. Resource cleanup changes need coverage of failure paths
+as well as successful calls.
+
+The browser tunnel regression in `pkg/ide/opener` injects a failing `/dev/null`
+open on Linux and macOS. It checks that a failed helper launch releases its
+reserved port. Platform reachability tests in `cmd/platform` use local HTTP servers
+to check connection cleanup between probes.
+
+Cross-compilation checks platform buildability, not runtime behavior. Windows
+PTY tests run through the `windows-pty` step in `hack/ci/suites.yaml`.
+
+### Quick start
 
 1. Build Devsy:
    ```bash
-   task cli:build:dev
+   mise run cli:build:dev
    ```
 
 2. Add a provider:
@@ -180,123 +201,105 @@ This requires:
    ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 workspace up github.com/microsoft/vscode-remote-try-node
    ```
 
-### Using Act for Local CI Testing
+### Local CI with act
 
 ```bash
 # Build UI using act
-task desktop:act:build:ui
+mise run desktop:act:build:ui
 
 # Build desktop app using act
-task desktop:act:build:app
+mise run desktop:act:build:app
 
 # Build flatpak using act
-task desktop:act:build:flatpak
+mise run desktop:act:build:flatpak
 
 # Run e2e tests with focus
-task cli:test:e2e:act:focus -- "test-pattern"
+mise run cli:test:e2e:act:focus "test-pattern"
 ```
 
-## Developing Providers
+## Developing providers
 
-Read [the docs](https://devsy.sh/docs/developing-providers/quickstart) for an introduction to developing your own providers.
+See [the docs](https://devsy.sh/docs/developing-providers/quickstart) to learn how to build a provider.
 
-### Publishing Your Provider
+### Publishing your provider
 
-Once your provider is ready:
+When your provider is ready:
 
-1. Update `community.yaml` with your provider information
-2. Update `sites/docs-devsy-sh/content/docs/managing-providers/manage-providers.mdx` with documentation
+1. Add your provider to `community.yaml`.
+2. Document it in `sites/docs-devsy-sh/content/docs/managing-providers/manage-providers.mdx`.
 
-This will feature your provider in both the documentation and the UI.
+The Desktop provider wizard does not read `community.yaml`. Its additional provider list comes from `devsy-org` repositories whose names start with `devsy-provider-`.
 
-## Desktop Deep Links
+## Desktop deep links
 
-Devsy Desktop can handle deep links to perform various actions.
+Devsy Desktop handles deep links that run actions.
 
-**URL Scheme:**
+URL scheme:
 
 ```
 devsy://command?param1=value1&param2=value2
 ```
 
-### Open Workspace
+### Open a workspace
 
-Open a workspace based on a source (similar to `devsy workspace up`, but shareable):
+Opens a workspace from a source, like `devsy workspace up` with a link:
 
 ```
 devsy://open?source=<url-encoded-source>&workspace=<name>&provider=<provider>&ide=<ide>
 ```
 
-**Parameters:**
+Parameters:
 
 - `source` (required): URL-encoded workspace source
 - `workspace` (optional): Workspace name
 - `provider` (optional): Provider to use
 - `ide` (optional): IDE to open
 
-**Example:**
+Example:
 
 ```
 devsy://open?source=https%3A%2F%2Fgithub.com%2Fuser%2Frepo&workspace=my-workspace&provider=docker&ide=vscode
 ```
 
-### Import Workspace
+### Import a workspace
 
-Import a remote Devsy.Pro workspace into your local client:
+Imports a Devsy Pro workspace into the local client:
 
 ```
 devsy://import?workspace_id=<id>&workspace_uid=<uid>&devsy_pro_host=<host>&options=<options>
 ```
 
-**Parameters:**
+Parameters:
+
 - `workspace_id` (required): Workspace ID
 - `workspace_uid` (required): Workspace UID
 - `devsy_pro_host` (required): Devsy Pro host URL
 - `options` (optional): Additional options
 
-## Useful Task Commands
+## Repository structure
 
-```bash
-# View all available tasks
-task --list
+- `/cmd`: CLI command implementations
+- `/pkg`: Core packages and libraries
+- `/desktop`: Desktop application (Electron and Svelte)
+- `/e2e`: End-to-end tests
+- `/providers`: Built-in provider definitions
+- `/sites`: Documentation and download websites
+- `/hack`: Build and development scripts
 
-# CLI tasks
-task cli:build              # Build CLI for production
-task cli:build:dev          # Build CLI for development
-task cli:lint               # Run linters
-task cli:test               # Run unit tests
-task cli:tidy               # Tidy go.mod and go.sum
+## Pull requests
 
-# Desktop tasks
-task desktop:build          # Build desktop application
-task desktop:check          # Check code quality
-task desktop:dev            # Run in development mode
-task desktop:setup          # Setup Electron environment
-task desktop:test           # Run unit tests
-task desktop:test:e2e       # Run e2e tests
+The pull request template asks for three things:
 
-# E2E testing
-task cli:test:e2e           # Run all e2e tests
-task cli:test:e2e:suite     # Run specific test suite
-task cli:test:e2e:focus     # Run focused tests
-```
+- AI disclosure: AI-assisted code is welcome. Name the tool, the model, and what it did. You must understand every line you submit.
+- Integration tests: CLI changes need Ginkgo e2e tests in `e2e/tests/`. Desktop changes need Playwright e2e tests in `desktop/e2e/`. Unit tests alone do not cover them. If no integration test applies, say why in the PR.
+- Conventional Commits title: the title becomes the squash commit subject.
 
-## Repository Structure
-
-- `/cmd` - CLI command implementations
-- `/pkg` - Core packages and libraries
-- `/desktop` - Desktop application (Electron + Svelte)
-- `/e2e` - End-to-end tests
-- `/providers` - Built-in provider definitions
-- `/sites` - Documentation and download websites
-- `/hack` - Build and development scripts
-
-## Getting Help
+## Getting help
 
 - [Documentation](https://devsy.sh/docs)
 - [GitHub Issues](https://github.com/devsy-org/devsy/issues)
 - [GitHub Discussions](https://github.com/devsy-org/devsy/discussions)
 
-## Code of Conduct
+## Code of conduct
 
-Please be [respectful and constructive](https://mikemcquaid.com/open-source-maintainers-owe-you-nothing/) in all interactions with the community.
+Be [respectful and constructive](https://mikemcquaid.com/open-source-maintainers-owe-you-nothing/) with the community.

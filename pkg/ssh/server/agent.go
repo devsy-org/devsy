@@ -39,7 +39,8 @@ func setupAgentListener(reuseSock string) (net.Listener, string, error) {
 	}
 
 	// Check if we should create a "shared" socket to be reused by clients
-	// used for browser tunnels such as openvscode, since the IDE itself doesn't create an SSH connection it uses a "backhaul" connection and uses the existing socket
+	// used for browser tunnels such as openvscode, since the IDE itself doesn't create an SSH connection it uses a
+	// "backhaul" connection and uses the existing socket
 	dir := ""
 	if reuseSock != "" {
 		dir = filepath.Join(runtimeDir, fmt.Sprintf("auth-agent-%s", reuseSock))
@@ -90,7 +91,7 @@ func setupConnectionAgentListener(connID string) (net.Listener, string, error) {
 	// Hold an exclusive flock on a per-directory lockfile for the lifetime
 	// of this process. The kernel releases the lock on any exit (including
 	// SIGKILL by docker exec when the proxy chain tears down). This is the
-	// only cleanup signal that survives external process termination — the
+	// only cleanup signal that survives external process termination - the
 	// connection-level ConnectionClosingCallback never fires in that case
 	// because the in-container helper is killed by signal, not via SSH
 	// disconnect. The startup janitor (SweepStaleAgentSockets) uses this

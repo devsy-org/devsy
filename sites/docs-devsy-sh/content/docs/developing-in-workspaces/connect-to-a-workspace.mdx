@@ -3,125 +3,105 @@ title: Connect to a Workspace
 sidebar_label: Connect to a Workspace
 ---
 
-## Connect to a Workspace
+After a workspace is created, it accepts SSH connections at `WORKSPACE_NAME.devsy`. If you chose an IDE, Devsy opens it after the workspace starts.
 
-Once a workspace is created, it is reachable through the SSH host `WORKSPACE_NAME.devsy`. If you chose an IDE, Devsy opens it after the workspace starts.
+Set the IDE with `--ide` when you start a workspace, or set a default for all workspaces:
 
-<Callout>
-Change the default IDE globally with `devsy ide use vscode`, or per workspace with `devsy workspace up my-workspace --ide vscode`.
-</Callout>
-
-### VS Code Browser
-
-Devsy can open VS Code in a browser tab. It installs [openvscode-server](https://github.com/gitpod-io/openvscode-server) inside the workspace and tunnels a connection to it from localhost. Open the workspace in VS Code browser with:
+```sh
+devsy workspace up my-workspace --ide vscode
+devsy ide use vscode
 ```
+
+Run `devsy ide list` to see every supported IDE.
+
+### VS Code in the browser
+
+Devsy installs [openvscode-server](https://github.com/gitpod-io/openvscode-server) in the workspace and tunnels to it from localhost.
+
+```sh
 devsy workspace up my-workspace --ide openvscode
-```
-
-To pick a different openvscode version:
-```
-devsy workspace up my-workspace --ide openvscode --ide-option VERSION=v1.76.2
 ```
 
 ### VS Code
 
-Install the [remote ssh extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) and the [code CLI](https://code.visualstudio.com/docs/editor/command-line). Then start the workspace in VS Code with:
-```
+Install the [Remote - SSH extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) and the [code CLI](https://code.visualstudio.com/docs/editor/command-line), then:
+
+```sh
 devsy workspace up my-workspace --ide vscode
 ```
 
-<Callout title="SSH Fallback">
-If this doesn't work, use the regular SSH connection `WORKSPACE_NAME.devsy` to connect VS Code.
-</Callout>
+If that fails, connect VS Code to `WORKSPACE_NAME.devsy` over SSH.
 
-### JetBrains Suite (Goland, PyCharm, Intellij etc.)
+For a slow SSH connection, set the Remote - SSH connection timeout in seconds:
 
-Install [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/) and have a valid JetBrains subscription for your local IDE. Supported JetBrains IDEs:
-* **CLion (clion)**
-* **Goland (goland)**
-* **PyCharm (pycharm)**
-* **Intellij (intellij)**
-* **PhpStorm (phpstorm)**
-* **WebStorm (webstorm)**
-* **Rider (rider)**
-* **RubyMine (rubymine)**
-
-Start your workspace with:
+```sh
+devsy workspace up my-workspace --ide vscode --ide-option SSH_CONNECT_TIMEOUT=60
 ```
+
+To set the option for all VS Code workspaces, run `devsy ide set vscode -o SSH_CONNECT_TIMEOUT=60`. The value must be a positive whole number of seconds, up to 999999999. Devsy writes `remote.SSH.connectTimeout` to the host user settings for the selected editor. The setting applies to all Remote - SSH hosts in that editor, including hosts Devsy does not manage. Without the option, Devsy leaves the existing timeout unchanged. For other VS Code-based editors, use their IDE name in place of `vscode`.
+
+On Linux, Devsy uses `XDG_CONFIG_HOME` for editor settings when it is set. Otherwise, it uses `~/.config`.
+
+### JetBrains IDEs
+
+Install [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/). You need a license for the IDE you use. Start the workspace with the IDE name:
+
+```sh
 devsy workspace up my-workspace --ide goland
 ```
 
-Devsy installs the GoLand server binary into the workspace and opens JetBrains Gateway. After installation, the Gateway SSH dialog appears pre-filled — click **Check Connection and Continue** to start the IDE inside the workspace.
+Devsy installs the IDE server in the workspace and opens Gateway. Click **Check Connection and Continue** in the prefilled SSH dialog. If that fails, connect Gateway to `WORKSPACE_NAME.devsy` over SSH.
 
-To pick a different IDE version:
-```
-devsy workspace up my-workspace --ide goland --ide-option VERSION=2022.3.3
-```
-
-<Callout title="SSH Fallback">
-If this doesn't work, use the SSH host `WORKSPACE_NAME.devsy` to connect your JetBrains IDE.
-</Callout>
-
-<Callout title="Fleet Support">
-Fleet only works by manually adding an SSH connection to `WORKSPACE_NAME.devsy`.
-</Callout>
+Fleet works only through a manually added SSH connection to `WORKSPACE_NAME.devsy`.
 
 ### SSH
 
-When a workspace is created, Devsy adds an entry for `WORKSPACE_NAME.devsy` to `~/.ssh/config`. Connect with:
-```
+When SSH configuration is enabled, Devsy adds a `WORKSPACE_NAME.devsy` entry to `~/.ssh/config` on the machine that runs Devsy when it creates a workspace.
+
+```sh
 ssh WORKSPACE_NAME.devsy
 ```
 
-Any IDE that supports remote development over SSH can also use this host.
+Any IDE with remote SSH support can use this host. Without an `ssh` client, use the CLI:
 
-### Devsy CLI
-
-If you don't have `ssh` installed or can't connect through an IDE, use the Devsy CLI:
-```
+```sh
 devsy workspace ssh my-workspace
-```
-
-Run a command non-interactively:
-```
 devsy workspace ssh my-workspace --command "echo Hello World"
 ```
 
-## IDE Commands
+SFTP uses the SSH username for file operations inside the workspace. Files you upload belong to that user, and access follows that user's permissions:
 
-Configure how Devsy opens workspaces with these commands.
-
-### Configure IDE Options
-
-Each IDE supports options like version and download path. List them with:
+```sh
+sftp USER@WORKSPACE_NAME.devsy
 ```
+
+To get the host and remote user for a manually configured IDE connection, run this in the container terminal:
+
+```sh
+devsy container info
+devsy container info --result-format json
+```
+
+Run `devsy container info` inside the workspace container, not on your local machine. The printed `ssh` command works only from a client with the matching Devsy SSH configuration and a reachable transport. The `.devsy` suffix is an SSH alias that Devsy writes to the SSH config, not a network name.
+
+When Devsy runs on a remote VM, a separate laptop or IDE client needs its own working SSH transport or host configuration. `devsy container info` does not configure it.
+
+Docker Compose workspaces created before Devsy set `DEVSY_WORKSPACE_ID` in the service lack that variable, and `devsy container info` fails in them. Recreate the workspace to fix this.
+
+## IDE options
+
+Each IDE has options, such as the version. Read and set them with:
+
+```sh
 devsy ide get openvscode
-```
-
-Change an option with:
-```
 devsy ide set openvscode -o VERSION=v1.76.2
 ```
 
-### Change Default IDE
-
-Set the default IDE Devsy uses to open workspaces:
-```
-devsy ide use vscode
-```
-
-### List supported IDEs
-
-List every IDE Devsy supports:
-```
-devsy ide list
-```
+You can also set an option for a single workspace with `--ide-option VERSION=...` on `devsy workspace up`.
 
 ## Desktop shortcuts
 
-Devsy Desktop ships a command palette and section shortcuts for fast navigation:
-
-- `Cmd/Ctrl + K` — open the command palette (search workspaces, providers, machines, and pages).
-- `Cmd/Ctrl + N` — start the New Workspace wizard.
-- `Cmd/Ctrl + 1` through `Cmd/Ctrl + 8` — jump to Dashboard, Workspaces, Providers, Machines, Contexts, Terminals, SSH Keys, and Settings.
-- `Esc` — close the active sheet, dialog, or palette (where supported).
+- `Cmd/Ctrl + K` opens the command palette.
+- `Cmd/Ctrl + N` starts the New Workspace wizard.
+- `Cmd/Ctrl + 1` to `8` jumps between the main sections.
+- `Esc` closes the open sheet, dialog, or palette.

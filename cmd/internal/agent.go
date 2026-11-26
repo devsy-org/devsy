@@ -25,6 +25,7 @@ func NewAgentCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	agentCmd.AddCommand(agentworkspace.NewWorkspaceCmd(globalFlags))
 	agentCmd.AddCommand(agentcontainer.NewContainerCmd(globalFlags))
 	agentCmd.AddCommand(NewDaemonCmd(globalFlags))
+	agentCmd.AddCommand(NewDaemonDiagnosticsCmd(globalFlags))
 	agentCmd.AddCommand(NewContainerTunnelCmd(globalFlags))
 	agentCmd.AddCommand(NewGitCredentialsCmd(globalFlags))
 	agentCmd.AddCommand(NewGitSSHSignatureCmd(globalFlags))

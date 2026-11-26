@@ -9,16 +9,21 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/image"
+	"github.com/devsy-org/devsy/pkg/livetee"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/scanner"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -36,6 +41,7 @@ var (
 	containerRunningPollInterval = 500 * time.Millisecond
 	containerRunningTimeout      = 30 * time.Second
 	containerExitGrace           = 2 * time.Second
+	inspectDiagnosticGrace       = 250 * time.Millisecond
 
 	// podmanMachineStartTimeout is the maximum time to wait for a Podman machine to start.
 	podmanMachineStartTimeout = 90 * time.Second
@@ -46,9 +52,10 @@ var (
 
 // Sentinels for container lifecycle failures; match with errors.Is.
 var (
-	ErrContainerTerminal = errors.New("container in terminal state")
-	ErrContainerExited   = errors.New("container exited after start")
-	ErrImageNotFound     = errors.New("image not found")
+	ErrContainerTerminal  = errors.New("container in terminal state")
+	ErrContainerExited    = errors.New("container exited after start")
+	ErrImageNotFound      = errors.New("image not found")
+	ErrRuntimeUnavailable = errors.New("container runtime unavailable")
 )
 
 var imageNotFoundMarkers = []string{
@@ -61,7 +68,11 @@ var imageNotFoundMarkers = []string{
 }
 
 func isImageNotFoundError(err error) bool {
-	msg := strings.ToLower(err.Error())
+	return command.MatchErrorOutput(err, imageNotFoundMessage)
+}
+
+func imageNotFoundMessage(message string) bool {
+	msg := strings.ToLower(message)
 	for _, marker := range imageNotFoundMarkers {
 		if strings.Contains(msg, marker) {
 			return true
@@ -234,7 +245,28 @@ func (r *DockerHelper) Ping(ctx context.Context) error {
 	cctx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
 
-	return runCmdCombined(cctx, r.buildCmd(cctx, "info"))
+	err := runCmdCombined(cctx, r.buildCmd(cctx, "info"))
+	if err != nil && cctx.Err() != nil {
+		return errors.Join(err, cctx.Err())
+	}
+	return err
+}
+
+// CheckRuntimeHealth reports only control-plane availability failures. A
+// responsive runtime error must not end an injection retry as a daemon outage.
+func (r *DockerHelper) CheckRuntimeHealth(ctx context.Context) error {
+	err := r.Ping(ctx)
+	if err == nil {
+		return nil
+	}
+	lower := strings.ToLower(err.Error())
+	if errors.Is(err, context.DeadlineExceeded) ||
+		strings.Contains(lower, "cannot connect") ||
+		strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "no such file or directory") {
+		return fmt.Errorf("%w: %v", ErrRuntimeUnavailable, err)
+	}
+	return nil
 }
 
 // StartPodmanMachine starts the default Podman machine, which must already exist.
@@ -419,9 +451,12 @@ func (r *DockerHelper) Remove(ctx context.Context, id string) error {
 }
 
 type Streams struct {
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	LiveStdout   io.Writer
+	LiveStderr   io.Writer
+	RedactionEnv []string
 }
 
 func (r *DockerHelper) Run(ctx context.Context, args []string, streams Streams) error {
@@ -436,10 +471,7 @@ func (r *DockerHelper) RunWithDir(
 ) error {
 	cmd := r.buildCmd(ctx, args...)
 	cmd.Dir = dir
-	cmd.Stdin = streams.Stdin
-	cmd.Stdout = streams.Stdout
-	cmd.Stderr = streams.Stderr
-	return runCmd(ctx, cmd)
+	return runStreams(ctx, cmd, streams)
 }
 
 // RunWithEnv runs a command with extra environment variables for this
@@ -457,10 +489,133 @@ func (r *DockerHelper) RunWithEnv(
 		}
 		cmd.Env = append(cmd.Env, extraEnv...)
 	}
+	return runStreams(ctx, cmd, streams)
+}
+
+type synchronizedCapture struct {
+	mu     *sync.Mutex
+	writer io.Writer
+}
+
+func (w synchronizedCapture) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.writer.Write(p)
+}
+
+func attachDockerStream(
+	capture, live io.Writer,
+	tee *livetee.Tee,
+	redactor *secrets.Redactor,
+) (io.Writer, *subprocess.StreamingRedactingWriter) {
+	if live == nil {
+		return capture, nil
+	}
+	if file, ok := live.(*os.File); ok {
+		if capture == nil {
+			return file, nil
+		}
+		return io.MultiWriter(capture, file), nil
+	}
+	redacted := &subprocess.StreamingRedactingWriter{Next: tee.Writer(live), Redactor: redactor}
+	if capture == nil {
+		return redacted, redacted
+	}
+	return io.MultiWriter(capture, redacted), redacted
+}
+
+func sameDockerWriter(a, b io.Writer) bool {
+	return a != nil && b != nil && reflect.ValueOf(a).Comparable() &&
+		reflect.ValueOf(b).Comparable() &&
+		a == b
+}
+
+func captureSharedLive(capture, otherCapture, live io.Writer) (io.Writer, io.Writer, bool) {
+	if sameDockerWriter(live, capture) {
+		return capture, nil, true
+	}
+	if !sameDockerWriter(live, otherCapture) {
+		return capture, live, false
+	}
+	if capture == nil {
+		return live, nil, true
+	}
+	return io.MultiWriter(capture, live), nil, true
+}
+
+func synchronizedStreams(streams Streams) Streams {
+	var stdoutShared, stderrShared bool
+	originalStdout := streams.Stdout
+	streams.Stdout, streams.LiveStdout, stdoutShared = captureSharedLive(
+		streams.Stdout,
+		streams.Stderr,
+		streams.LiveStdout,
+	)
+	streams.Stderr, streams.LiveStderr, stderrShared = captureSharedLive(
+		streams.Stderr,
+		originalStdout,
+		streams.LiveStderr,
+	)
+	if (stdoutShared || stderrShared || streams.LiveStdout != nil || streams.LiveStderr != nil) &&
+		streams.Stdout != nil &&
+		streams.Stderr != nil {
+		mu := new(sync.Mutex)
+		streams.Stdout = synchronizedCapture{mu: mu, writer: streams.Stdout}
+		streams.Stderr = synchronizedCapture{mu: mu, writer: streams.Stderr}
+	}
+	return streams
+}
+
+func flushDockerStream(stream *subprocess.StreamingRedactingWriter) error {
+	if stream == nil {
+		return nil
+	}
+	return stream.Flush()
+}
+
+type LiveOutputError struct{ Err error }
+
+func (e *LiveOutputError) Error() string { return e.Err.Error() }
+
+func (e *LiveOutputError) Unwrap() error { return e.Err }
+
+func (e *LiveOutputError) SkipFinalStatus() bool { return true }
+
+type canceledFileOutputError struct{ err error }
+
+func (e *canceledFileOutputError) Error() string { return e.err.Error() }
+
+func (e *canceledFileOutputError) Unwrap() error { return e.err }
+
+func (e *canceledFileOutputError) SkipFinalStatus() bool { return true }
+
+func hasLiveFile(streams Streams) bool {
+	_, stdout := streams.LiveStdout.(*os.File)
+	_, stderr := streams.LiveStderr.(*os.File)
+	return stdout || stderr
+}
+
+func runStreams(ctx context.Context, cmd *exec.Cmd, streams Streams) error {
+	streams = synchronizedStreams(streams)
 	cmd.Stdin = streams.Stdin
-	cmd.Stdout = streams.Stdout
-	cmd.Stderr = streams.Stderr
-	return runCmd(ctx, cmd)
+	tee := livetee.New(io.Discard, nil)
+	redactor := secrets.NewEnvironmentRedactor(append(cmd.Environ(), streams.RedactionEnv...))
+	var stdout, stderr *subprocess.StreamingRedactingWriter
+	cmd.Stdout, stdout = attachDockerStream(streams.Stdout, streams.LiveStdout, tee, redactor)
+	cmd.Stderr, stderr = attachDockerStream(streams.Stderr, streams.LiveStderr, tee, redactor)
+	err := runCmd(ctx, cmd)
+	if err != nil && ctx.Err() != nil && hasLiveFile(streams) {
+		err = &canceledFileOutputError{err: err}
+	}
+	outputErr := errors.Join(flushDockerStream(stdout), flushDockerStream(stderr), tee.Finish())
+	if outputErr != nil {
+		liveErr := &LiveOutputError{Err: outputErr}
+		if err == nil {
+			return liveErr
+		}
+		return errors.Join(err, liveErr)
+	}
+	return err
 }
 
 func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) error {
@@ -505,7 +660,21 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 	pollErr := wait.PollUntilContextTimeout(
 		ctx, containerRunningPollInterval, containerRunningTimeout, true,
 		func(ctx context.Context) (bool, error) {
-			details, err := r.InspectContainers(ctx, []string{containerID})
+			inspectCtx, cancel := inspectionDiagnosticContext(ctx)
+			details, err := r.InspectContainers(inspectCtx, []string{containerID})
+			cancel()
+			if err != nil &&
+				(errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded)) {
+				// The first inspect may have been killed exactly as the polling
+				// deadline fired. Retry once without that deadline so Docker's
+				// daemon error can still be captured for the final diagnostic.
+				diagnosticCtx, diagnosticCancel := context.WithTimeout(
+					context.WithoutCancel(ctx),
+					inspectDiagnosticGrace,
+				)
+				details, err = r.InspectContainers(diagnosticCtx, []string{containerID})
+				diagnosticCancel()
+			}
 			if err != nil {
 				lastErr = err
 				log.Debugf("inspecting container %s: %v", containerID, err)
@@ -526,6 +695,22 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 	return pollErr
 }
 
+// inspectionDiagnosticContext gives a final docker inspect a small bounded
+// grace period when the polling deadline is already firing. Docker may need
+// a moment to start the CLI process and write its daemon error; without this
+// grace window the context kill replaces useful diagnostics with "signal:
+// killed". Caller cancellation remains immediate.
+func inspectionDiagnosticContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return ctx, func() {}
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) > 100*time.Millisecond {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), inspectDiagnosticGrace)
+}
+
 func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string, error) {
 	args := []string{
 		"inspect",
@@ -535,9 +720,13 @@ func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string,
 		"{{if .RepoTags}}{{index .RepoTags 0}}{{end}}",
 	}
 	args = append(args, imageID)
-	out, err := r.buildCmd(ctx, args...).Output()
+	cmd := r.buildCmd(ctx, args...)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return "", fmt.Errorf("inspect image: %w", command.WrapCommandError(out, err))
+		return "", fmt.Errorf(
+			"inspect image: %w",
+			err,
+		)
 	}
 
 	repoTag := strings.TrimSpace(string(out))
@@ -627,9 +816,14 @@ func (r *DockerHelper) Inspect(
 ) error {
 	args := []string{"inspect", "--type", inspectType}
 	args = append(args, ids...)
-	out, err := r.buildCmd(ctx, args...).Output()
+	cmd := r.buildCmd(ctx, args...)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return fmt.Errorf("inspect %s: %w", inspectType, command.WrapCommandError(out, err))
+		return fmt.Errorf(
+			"inspect %s: %w",
+			inspectType,
+			err,
+		)
 	}
 
 	err = json.Unmarshal(out, obj)
@@ -668,9 +862,10 @@ func (r *DockerHelper) FindContainer(ctx context.Context, labels []string) ([]st
 // This is useful in case the `--filter` doesn't work.
 func (r *DockerHelper) FindContainerJSON(ctx context.Context, labels []string) ([]string, error) {
 	args := []string{"ps", "-q", "-a"}
-	out, err := r.buildCmd(ctx, args...).Output()
+	cmd := r.buildCmd(ctx, args...)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return nil, command.WrapCommandError(out, err)
+		return nil, err
 	}
 
 	result := []string{}

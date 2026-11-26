@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,10 +14,11 @@ import (
 )
 
 // dockerPullBackoff defines retry timing for transient Docker registry errors.
-// 4 total attempts (1 initial + 3 retries) with waits of ~30s, ~60s, ~120s.
+// The waits are deliberately short so retries consume only a minority of a
+// short spec's deadline.
 var dockerPullBackoff = wait.Backoff{
 	Steps:    4,
-	Duration: 30 * time.Second,
+	Duration: 5 * time.Second,
 	Factor:   2.0,
 	Jitter:   0.1,
 }
@@ -29,6 +31,31 @@ var sshBackoff = wait.Backoff{
 	Duration: 5 * time.Second,
 	Factor:   2.0,
 	Jitter:   0.1,
+}
+
+// providerAddBackoff defines retry timing for provider manifest downloads.
+var providerAddBackoff = wait.Backoff{
+	Steps:    8,
+	Duration: 5 * time.Second,
+	Factor:   2.0,
+	Jitter:   0.1,
+	Cap:      time.Minute,
+}
+
+var providerServerErrorPattern = regexp.MustCompile(
+	`(?i)(received status code|download failed with status|status) 5\d\d`,
+)
+
+var providerClientErrorPattern = regexp.MustCompile(
+	`(?i)(received status code|download failed with status|status) 4\d\d`,
+)
+
+var retryableProviderNetworkPatterns = []string{
+	"TLS handshake timeout",
+	"i/o timeout",
+	"connection reset by peer",
+	"unexpected EOF",
+	"stalled: no progress within timeout",
 }
 
 // retryableDockerPatterns are stderr substrings indicating a transient Docker
@@ -52,6 +79,8 @@ var retryableSSHPatterns = []string{
 	"connection timed out",
 	"broken pipe",
 	"workspace not found",
+	"container exec session produced no output",
+	"ssh handshake made no progress",
 }
 
 // isRetryableSSHError returns true when the error indicates a transient SSH
@@ -90,82 +119,195 @@ func isRetryableDockerError(stderr string) bool {
 	return false
 }
 
-// execWithDockerRetry runs fn and retries if stderr indicates a transient
-// Docker registry error. Returns the last stdout, stderr, and error.
-func execWithDockerRetry(
-	ctx context.Context,
-	fn func(ctx context.Context) (stdout, stderr string, err error),
-) (string, string, error) {
-	var lastStdout, lastStderr string
-	var lastErr error
-	attempt := 0
+// isRetryableProviderDownloadError returns true when a provider download
+// failed on a server error or a network error. Client errors such as 404 and
+// provider validation failures are never retried.
+func isRetryableProviderDownloadError(_ error, stderr string) bool {
+	lower := strings.ToLower(stderr)
+	if providerClientErrorPattern.MatchString(stderr) ||
+		strings.Contains(lower, "checksum verification failed") ||
+		strings.Contains(lower, "unexpected file checksum") {
+		return false
+	}
+	if providerServerErrorPattern.MatchString(stderr) {
+		return true
+	}
+	for _, pattern := range retryableProviderNetworkPatterns {
+		if strings.Contains(lower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
+}
 
-	err := wait.ExponentialBackoffWithContext(ctx, dockerPullBackoff,
-		func(ctx context.Context) (bool, error) {
-			attempt++
-			lastStdout, lastStderr, lastErr = fn(ctx)
-			if lastErr == nil {
-				return true, nil // success
-			}
-			if isRetryableDockerError(lastStderr) {
-				ginkgo.GinkgoWriter.Printf(
-					"[retry] attempt %d failed with transient Docker error, retrying: %s\n",
-					attempt, lastErr,
-				)
-				return false, nil // retry
-			}
-			return false, lastErr // non-retryable, stop immediately
+type execFunc func(ctx context.Context) (stdout, stderr string, err error)
+
+// retryPolicy describes one retry loop. label prefixes the retry log line and
+// kind names the error class in the budget-exhausted message.
+type retryPolicy struct {
+	backoff   wait.Backoff
+	retryable func(err error, stderr string) bool
+	label     string
+	kind      string
+}
+
+// retryResult is the outcome of runWithRetry. gaveUp is set when the loop
+// stopped on a failed attempt, so callers add the attempt count to err.
+type retryResult struct {
+	stdout, stderr string
+	attempts       int
+	err            error
+	gaveUp         bool
+}
+
+func runWithRetry(ctx context.Context, policy retryPolicy, fn execFunc) retryResult {
+	var res retryResult
+	for res.attempts = 1; res.attempts <= policy.backoff.Steps; res.attempts++ {
+		if err := ctx.Err(); err != nil {
+			res.err = err
+			return res
+		}
+		res.stdout, res.stderr, res.err = fn(ctx)
+		if res.err == nil {
+			return res
+		}
+		if !policy.retryable(res.err, res.stderr) || res.attempts == policy.backoff.Steps {
+			break
+		}
+		delay := nextBackoffDelay(policy.backoff, res.attempts)
+		if !retryFitsBudget(ctx, delay) {
+			res.err = fmt.Errorf(
+				"after %d attempts: %s; retry not attempted because "+
+					"remaining deadline budget was insufficient (next retry delay: %s): %w",
+				res.attempts, policy.kind, delay, res.err,
+			)
+			return res
+		}
+		ginkgo.GinkgoWriter.Printf(
+			"%s attempt %d failed with transient error, retrying after %s: %s\n",
+			policy.label, res.attempts, delay, res.err,
+		)
+		if err := waitForRetry(ctx, delay); err != nil {
+			res.err = err
+			return res
+		}
+	}
+	res.gaveUp = true
+	return res
+}
+
+// execWithDockerRetry runs fn and retries if the failure looks transient:
+// either a Docker registry error or a retryable SSH setup error in stderr
+// (up commands build the tunnel before the workspace starts). Returns the
+// last stdout, stderr, and error.
+func execWithDockerRetry(ctx context.Context, fn execFunc) (string, string, error) {
+	res := runWithRetry(ctx, retryPolicy{
+		backoff: dockerPullBackoff,
+		retryable: func(err error, stderr string) bool {
+			return isRetryableDockerError(stderr) || isRetryableSSHError(err, stderr)
 		},
-	)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return lastStdout, lastStderr, err
+		label: "[retry]",
+		kind:  "retryable transient error",
+	}, fn)
+	if res.gaveUp {
+		return res.stdout, res.stderr, fmt.Errorf("after %d attempts: %w", res.attempts, res.err)
 	}
-	if err != nil && lastErr != nil {
-		return lastStdout, lastStderr, fmt.Errorf("after %d attempts: %w", attempt, lastErr)
+	return res.stdout, res.stderr, res.err
+}
+
+// execWithProviderAddRetry runs fn and retries when the provider manifest
+// download failed with a server or network error.
+func execWithProviderAddRetry(ctx context.Context, fn execFunc) (string, error) {
+	retryCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	res := runWithRetry(retryCtx, retryPolicy{
+		backoff:   providerAddBackoff,
+		retryable: isRetryableProviderDownloadError,
+		label:     "[retry] provider add:",
+		kind:      "retryable provider download error",
+	}, func(context.Context) (string, string, error) {
+		return fn(ctx)
+	})
+	if res.gaveUp {
+		return res.stderr, fmt.Errorf("after %d attempts: %w", res.attempts, res.err)
 	}
-	return lastStdout, lastStderr, err
+	return res.stderr, res.err
 }
 
 // execWithSSHRetry runs fn and retries if the error indicates a transient SSH
 // connection failure. The fn callback must return stdout, stderr, and error so
 // that stderr can be inspected for SSH-specific patterns.
-func execWithSSHRetry(
-	ctx context.Context,
-	workspace string,
-	fn func(ctx context.Context) (stdout, stderr string, err error),
-) (string, error) {
-	var lastOut string
-	var lastStderr string
-	var lastErr error
-	attempt := 0
+func execWithSSHRetry(ctx context.Context, workspace string, fn execFunc) (string, error) {
+	res := runWithRetry(ctx, retryPolicy{
+		backoff:   sshBackoff,
+		retryable: isRetryableSSHError,
+		label:     "[retry] ssh " + workspace + ":",
+		kind:      "retryable SSH error",
+	}, fn)
+	if !res.gaveUp || res.err == nil {
+		return res.stdout, res.err
+	}
+	if res.stderr != "" {
+		return res.stdout, fmt.Errorf(
+			"after %d attempts: %w (stderr: %s)", res.attempts, res.err, res.stderr,
+		)
+	}
+	return res.stdout, fmt.Errorf("after %d attempts: %w", res.attempts, res.err)
+}
 
-	err := wait.ExponentialBackoffWithContext(ctx, sshBackoff,
-		func(ctx context.Context) (bool, error) {
-			attempt++
-			lastOut, lastStderr, lastErr = fn(ctx)
-			if lastErr == nil {
-				return true, nil // success
-			}
-			if isRetryableSSHError(lastErr, lastStderr) {
-				ginkgo.GinkgoWriter.Printf(
-					"[retry] ssh %s: attempt %d failed with transient error, retrying: %s\n",
-					workspace, attempt, lastErr,
-				)
-				return false, nil // retry
-			}
-			return false, lastErr // non-retryable, stop immediately
-		},
-	)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return lastOut, err
+func retryFitsBudget(ctx context.Context, delay time.Duration) bool {
+	deadline, ok := ctx.Deadline()
+	return !ok || time.Until(deadline) > delay
+}
+
+func nextBackoffDelay(backoff wait.Backoff, retryNumber int) time.Duration {
+	delay := backoff.DelayFunc()
+	var next time.Duration
+	for range retryNumber {
+		next = delay()
 	}
-	if err != nil && lastErr != nil {
-		if lastStderr != "" {
-			return lastOut, fmt.Errorf(
-				"after %d attempts: %w (stderr: %s)", attempt, lastErr, lastStderr,
-			)
+	return next
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// RetryFixed calls fn up to attempts times, sleeping delay between failed
+// attempts, and returns nil on the first success. When attempts are
+// exhausted it returns the last error wrapped with the attempt count.
+// Cancelling ctx stops retrying: the returned error wraps both ctx.Err() and
+// the last fn error. attempts below 1 is treated as 1.
+func RetryFixed(
+	ctx context.Context,
+	attempts int,
+	delay time.Duration,
+	fn func(ctx context.Context) error,
+) error {
+	for attempt := 1; ; attempt++ {
+		err := fn(ctx)
+		if err == nil {
+			return nil
 		}
-		return lastOut, fmt.Errorf("after %d attempts: %w", attempt, lastErr)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("after %d attempts: %w (last error: %w)", attempt, ctxErr, err)
+		}
+		if attempt >= attempts {
+			return fmt.Errorf("after %d attempts: %w", attempt, err)
+		}
+		ginkgo.GinkgoWriter.Printf(
+			"[retry] attempt %d/%d failed, retrying after %s: %v\n", attempt, attempts, delay, err,
+		)
+		if waitErr := waitForRetry(ctx, delay); waitErr != nil {
+			return fmt.Errorf("after %d attempts: %w (last error: %w)", attempt, waitErr, err)
+		}
 	}
-	return lastOut, err
 }

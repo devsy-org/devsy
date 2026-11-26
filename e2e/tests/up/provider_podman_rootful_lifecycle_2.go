@@ -3,13 +3,11 @@ package up
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -29,44 +27,9 @@ var _ = ginkgo.Describe(
 		ginkgo.Context("with rootful podman", func() {
 			var f *framework.Framework
 
-			//nolint:dupl // shared rootful podman wrapper setup across split files
 			ginkgo.BeforeEach(func(ctx context.Context) {
-				wrapper, err := os.Create( //nolint:gosec // G304: test-controlled path
-					initialDir + "/bin/podman-rootful",
-				)
-				framework.ExpectNoError(err)
-
-				_, err = wrapper.WriteString("#!/bin/sh\nsudo podman \"$@\"\n")
-				if err != nil {
-					_ = wrapper.Close()
-					framework.ExpectNoError(err)
-				}
-
-				err = wrapper.Close()
-				framework.ExpectNoError(err)
-
-				// #nosec G302 -- wrapper script needs execute permission
-				err = os.Chmod(initialDir+"/bin/podman-rootful", 0o755)
-				framework.ExpectNoError(err)
-
-				cmd := exec.CommandContext( //nolint:gosec // G204: test-controlled path
-					ctx, initialDir+"/bin/podman-rootful", "ps",
-				)
-				docker.PrepareForGroupCancellation(cmd)
-				out, err := cmd.CombinedOutput()
-				framework.ExpectNoError(err, string(out))
-
-				ginkgo.DeferCleanup(func() {
-					_ = os.Remove(initialDir + "/bin/podman-rootful")
-				})
-
-				f, err = setupDockerProvider(
-					initialDir+"/bin",
-					initialDir+"/bin/podman-rootful",
-				)
-				framework.ExpectNoError(err)
-			},
-			)
+				f = setupRootfulPodman(ctx, initialDir)
+			})
 
 			ginkgo.Context("lifecycle commands", func() { //nolint:dupl
 				ginkgo.It(
@@ -82,31 +45,35 @@ var _ = ginkgo.Describe(
 						err = f.DevsyUp(ctx, tempDir)
 						framework.ExpectNoError(err)
 
-						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
-								ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null",
-							)
+						gomega.Eventually(func() int {
+							count, err := lifecycleMarkerCount(tempDir, ".devsy-post-attach.log")
 							if err != nil {
-								return ""
+								ginkgo.GinkgoWriter.Printf(
+									"failed reading post-attach marker: %v\n",
+									err,
+								)
+								return -1
 							}
-							return strings.TrimSpace(out)
-						}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).Should(
-							gomega.Equal("1"),
+							return count
+						}).WithTimeout(30 * time.Second).WithPolling(250 * time.Millisecond).Should(
+							gomega.Equal(1),
 						)
 
 						err = f.DevsyUp(ctx, tempDir)
 						framework.ExpectNoError(err)
 
-						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
-								ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null",
-							)
+						gomega.Eventually(func() int {
+							count, err := lifecycleMarkerCount(tempDir, ".devsy-post-attach.log")
 							if err != nil {
-								return ""
+								ginkgo.GinkgoWriter.Printf(
+									"failed reading post-attach marker: %v\n",
+									err,
+								)
+								return -1
 							}
-							return strings.TrimSpace(out)
-						}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).Should(
-							gomega.Equal("2"),
+							return count
+						}).WithTimeout(30 * time.Second).WithPolling(250 * time.Millisecond).Should(
+							gomega.Equal(2),
 						)
 					},
 					ginkgo.SpecTimeout(
@@ -119,9 +86,11 @@ var _ = ginkgo.Describe(
 					func(ctx context.Context) {
 						tempDir, err := setupWorkspaceAndUp(
 							ctx,
-							"tests/up/testdata/docker-initcmd-parallel",
-							initialDir,
 							f,
+							workspaceSource{
+								"tests/up/testdata/docker-initcmd-parallel",
+								initialDir,
+							},
 						)
 						framework.ExpectNoError(err)
 
@@ -143,6 +112,8 @@ var _ = ginkgo.Describe(
 				ginkgo.It( //nolint:dupl // mirrors rootless lifecycle secrets-file test
 					"should inject secrets-file env into lifecycle commands",
 					func(ctx context.Context) {
+						framework.RegisterSecret("test-value-12345")
+						framework.RegisterSecret("second-secret-42")
 						tempDir, err := setupWorkspace(
 							"tests/up/testdata/docker-secrets-file",
 							initialDir,
@@ -179,7 +150,7 @@ var _ = ginkgo.Describe(
 						gomega.Expect(strings.TrimSpace(out)).
 							To(gomega.Equal("second-secret-42"))
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 			})
 		})

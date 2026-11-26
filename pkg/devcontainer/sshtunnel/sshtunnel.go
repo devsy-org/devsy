@@ -31,6 +31,7 @@ type ExecuteCommandOptions struct {
 	AgentInject      AgentInjectFunc
 	SSHCommand       string
 	Command          string
+	EnvVars          map[string]string
 	TunnelServerFunc TunnelServerFunc
 }
 
@@ -62,7 +63,10 @@ func ExecuteCommand(ctx context.Context, opts ExecuteCommandOptions) (*config2.R
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = conn.Close() }()
+	defer func() {
+		_ = conn.Close()
+		_ = conn.Wait()
+	}()
 	if opts.AddPrivateKeys {
 		addPrivateKeys(ctx)
 	}
@@ -77,8 +81,7 @@ func isExpectedError(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return exitErr != nil && !exitErr.Exited()
 	}
 	return false
@@ -122,11 +125,11 @@ type sshTunnelParams struct {
 
 func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, error) {
 	start := time.Now()
-	log.Infof("tunnel: setup start")
-	defer func() { log.Infof("tunnel: setup complete elapsed=%s", time.Since(start)) }()
+	log.Debug("tunnel: setup start")
+	defer func() { log.Debugf("tunnel: setup complete elapsed=%s", time.Since(start)) }()
 
 	log.Debug("creating SSH client")
-	sshClient, err := devssh.ClientFromConn(p.conn, "", nil)
+	sshClient, err := devssh.ClientFromManagedConn(ctx, p.conn, devssh.ManagedClientOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSH client: %w", err)
 	}
@@ -153,8 +156,9 @@ func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, erro
 	err = p.grpcBridge.RunPair(ctx,
 		func(ctx context.Context, stdin, stdout *os.File) error {
 			return runCommandInSSHTunnel(ctx, sshCommandParams{
-				sshClient: sshClient,
-				command:   p.opts.Command,
+				session: sess,
+				command: p.opts.Command,
+				envVars: p.opts.EnvVars,
 			}, stdin, stdout)
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
@@ -208,7 +212,7 @@ func establishSSHSession(
 //   - clientloop.c: client_request_agent() returns NULL on failure,
 //     sending SSH2_MSG_CHANNEL_OPEN_FAILURE without terminating the session.
 //   - ssh_config(5) ExitOnForwardFailure only covers "dynamic, tunnel,
-//     local, and remote port forwardings" — agent forwarding is excluded.
+//     local, and remote port forwardings" - agent forwarding is excluded.
 //
 // Stale SSH_AUTH_SOCK is common in practice (tmux, screen, reconnected
 // terminals), so a fatal error here would break devsy up for many users.
@@ -231,38 +235,36 @@ func setupSSHAgentForwarding(sshClient *ssh.Client, sess *ssh.Session) {
 }
 
 type sshCommandParams struct {
-	sshClient *ssh.Client
-	command   string
+	session *ssh.Session
+	command string
+	envVars map[string]string
 }
 
 func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdout *os.File) error {
+	for name, value := range p.envVars {
+		if err := p.session.Setenv(name, value); err != nil {
+			return fmt.Errorf("set provider environment %q: %w", name, err)
+		}
+	}
 	streamer := newSSHTunnelJSONLogStreamer()
 	defer func() { _ = streamer.Close() }()
 
 	log.Debugf("running agent command in SSH tunnel: %q", p.command)
-	err := devssh.Run(ctx, devssh.RunOptions{
-		Client:  p.sshClient,
+	err := devssh.RunSession(ctx, p.session, devssh.RunSessionOptions{
 		Command: p.command,
 		Stdin:   stdin,
 		Stdout:  stdout,
 		Stderr:  streamer,
 	})
 	if err != nil {
-		_ = streamer.Close()
-		if out := streamer.ErrorOutput(); out != "" {
-			return fmt.Errorf("run agent command failed: %w\n%s", err, out)
-		}
 		return fmt.Errorf("run agent command failed: %w", err)
 	}
 	return nil
 }
 
-const maxLogLines = 1
-
 func newSSHTunnelJSONLogStreamer() *log.JSONLogStreamer {
 	return log.NewJSONLogStreamer(log.StreamerOptions{
 		FallbackLevel:           log.LevelDebug,
-		CaptureLines:            maxLogLines,
 		DetectLevelPrefixes:     true,
 		TreatUnknownJSONAsDebug: true,
 	})

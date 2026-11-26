@@ -31,6 +31,7 @@ func listen(addr string) (net.Listener, error) {
 
 	sockDir := filepath.Dir(addr)
 	if _, err := os.Stat(sockDir); errors.Is(err, os.ErrNotExist) {
+		//nolint:gosec // socket directory must be readable by the daemon user
 		_ = os.MkdirAll(sockDir, 0o755) // best effort
 	}
 	pipe, err := net.Listen("unix", addr)

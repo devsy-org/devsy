@@ -121,6 +121,9 @@ func parseDevContainerJSONFileWithVisited(
 		return nil, fmt.Errorf("extends: unmarshal %q: %w", absPath, err)
 	}
 	devContainer.Origin = absPath
+	if err := devContainer.captureSource(normalized); err != nil {
+		return nil, err
+	}
 
 	// Recursively resolve extends
 	if !devContainer.Extends.IsEmpty() {
@@ -146,6 +149,7 @@ func mergeExtendsConfigs(parent, child *DevContainerConfig) *DevContainerConfig 
 	mergeNestedStructs(result, child)
 
 	// Special
+	result.Sources = append(result.Sources, child.Sources...)
 	result.Origin = child.Origin
 	result.Extends = nil
 

@@ -6,12 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/logging/redact"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -35,22 +35,24 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.BeforeAll(func(ctx ginkgo.SpecContext) {
-			if runtime.GOOS == osWindows {
-				ginkgo.Skip("UNIX sockets required; skipping on windows")
-			}
+			framework.SkipOnWindows("UNIX sockets required; skipping on windows")
 			var err error
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			tempDir, err = framework.CopyToTempDir("tests/ssh/testdata/agent-forward")
-			framework.ExpectNoError(err)
+			authSock, pubKey, agentClean = framework.StartMockSSHAgent(ginkgo.GinkgoT())
+			ginkgo.DeferCleanup(agentClean)
+
+			tempDir = framework.CopyTestdata("tests/ssh/testdata/agent-forward", initialDir)
 
 			f = framework.NewDefaultFramework(initialDir + "/bin")
 			_ = f.DevsyProviderAdd(ctx, "docker")
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
 
-			authSock, pubKey, agentClean = framework.StartMockSSHAgent(ginkgo.GinkgoT())
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+			})
 
 			devsyUpCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
@@ -59,16 +61,6 @@ var _ = ginkgo.Describe(
 
 			// devsy up registers an OpenSSH host alias "<workspace>.devsy".
 			host = filepath.Base(tempDir) + ".devsy"
-		})
-
-		ginkgo.AfterAll(func(ctx ginkgo.SpecContext) {
-			if f != nil && tempDir != "" {
-				_ = f.DevsyWorkspaceDelete(ctx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			}
-			if agentClean != nil {
-				agentClean()
-			}
 		})
 
 		ginkgo.It(
@@ -84,6 +76,7 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(closeCM)
 
 				env := map[string]string{envSSHAuthSock: authSock}
+				redactor := redact.New(redact.Options{Environment: os.Environ()})
 
 				// Session A: capture $SSH_AUTH_SOCK inside the container and
 				// verify the forwarded key is reachable.
@@ -91,7 +84,10 @@ var _ = ginkgo.Describe(
 					controlPath, host, env,
 					"sh", "-c", "printf %s \"$SSH_AUTH_SOCK\"",
 				)
-				ginkgo.GinkgoWriter.Printf("session A stderr: %s\n", errA)
+				ginkgo.GinkgoWriter.Printf(
+					"session A stderr: %s\n",
+					framework.ReportText(redactor, errA),
+				)
 				framework.ExpectNoError(err)
 				s1 := strings.TrimSpace(outA)
 				gomega.Expect(s1).NotTo(gomega.BeEmpty(), "session A must see SSH_AUTH_SOCK")
@@ -121,11 +117,19 @@ var _ = ginkgo.Describe(
 					controlPath, host, env,
 					"sh", "-c", "SSH_AUTH_SOCK="+s1+" ssh-add -L",
 				)
-				ginkgo.GinkgoWriter.Printf("session B explicit-S1 stderr: %s\n", errB)
+				ginkgo.GinkgoWriter.Printf(
+					"session B explicit-S1 stderr: %s\n",
+					framework.ReportText(redactor, errB),
+				)
 				framework.ExpectNoError(err, "session B: socket from session A must still work")
-				gomega.Expect(outAddB).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAddB,
+					strings.Fields(pubKey)[1],
+					"session B lists the forwarded key",
+					true,
+				)
 
-				// Session B's reported SSH_AUTH_SOCK should equal S1 too — the
+				// Session B's reported SSH_AUTH_SOCK should equal S1 too - the
 				// regression is that this used to differ session-to-session.
 				outBSock, _, err := framework.SSHMultiplexedExec(
 					controlPath, host, env,
@@ -137,14 +141,19 @@ var _ = ginkgo.Describe(
 					"SSH_AUTH_SOCK must be identical across sessions on one connection",
 				)
 
-				// Session C: open-remote-ssh style use-after-session pattern —
+				// Session C: open-remote-ssh style use-after-session pattern -
 				// reuse S1 in yet another session.
 				outAddC, _, err := framework.SSHMultiplexedExec(
 					controlPath, host, env,
 					"sh", "-c", "SSH_AUTH_SOCK="+s1+" ssh-add -L",
 				)
 				framework.ExpectNoError(err, "session C: S1 must still work")
-				gomega.Expect(outAddC).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAddC,
+					strings.Fields(pubKey)[1],
+					"session C lists the forwarded key",
+					true,
+				)
 			},
 		)
 
@@ -186,7 +195,7 @@ var _ = ginkgo.Describe(
 					"two independent connections must each get their own agent socket",
 				)
 
-				// Close connection 1 — connection 2 must still work.
+				// Close connection 1 - connection 2 must still work.
 				close1()
 				closed1 = true
 
@@ -197,7 +206,12 @@ var _ = ginkgo.Describe(
 					err,
 					"connection 2 must remain functional after connection 1 closes",
 				)
-				gomega.Expect(outAdd).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
+				expectSSHSubstring(
+					outAdd,
+					strings.Fields(pubKey)[1],
+					"session lists the forwarded key",
+					true,
+				)
 			},
 		)
 

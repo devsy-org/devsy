@@ -9,20 +9,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
-	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devsyconfig"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/ghcredentials"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/gpg"
@@ -32,67 +31,107 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/stdio"
-	"github.com/moby/patternmatcher/ignorefile"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
-func RunServicesServer(
-	ctx context.Context,
-	reader io.Reader,
-	writer io.WriteCloser,
-	allowGitCredentials, allowDockerCredentials bool,
-	forwarder netstat.Forwarder,
-	workspace *provider2.Workspace,
-	options ...Option,
-) error {
+// ServicesSpec configures RunServicesServer.
+type ServicesSpec struct {
+	Reader                 io.Reader
+	Writer                 io.WriteCloser
+	AllowGitCredentials    bool
+	AllowDockerCredentials bool
+	Forwarder              netstat.Forwarder
+	Workspace              *provider2.Workspace
+	Options                []Option
+}
+
+// UpSpec configures RunUpServer.
+type UpSpec struct {
+	Reader                 io.Reader
+	Writer                 io.WriteCloser
+	AllowGitCredentials    bool
+	AllowDockerCredentials bool
+	Workspace              *provider2.Workspace
+	Options                []Option
+}
+
+// SetupSpec configures RunSetupServer.
+type SetupSpec struct {
+	Reader                 io.Reader
+	Writer                 io.WriteCloser
+	AllowGitCredentials    bool
+	AllowDockerCredentials bool
+	SetupInfo              *config.Result
+	Options                []Option
+}
+
+func RunServicesServer(ctx context.Context, spec ServicesSpec) error {
+	options := slices.Clone(spec.Options)
 	options = append(options,
-		WithForwarder(forwarder),
-		WithAllowGitCredentials(allowGitCredentials),
-		WithAllowDockerCredentials(allowDockerCredentials),
-		WithWorkspace(workspace),
+		WithForwarder(spec.Forwarder),
+		WithAllowGitCredentials(spec.AllowGitCredentials),
+		WithAllowDockerCredentials(spec.AllowDockerCredentials),
+		WithWorkspace(spec.Workspace),
 	)
 	tunnelServ := New(options...)
 
-	return tunnelServ.Run(ctx, reader, writer)
+	return tunnelServ.Run(ctx, spec.Reader, spec.Writer)
 }
 
-func RunUpServer(
-	ctx context.Context,
-	reader io.Reader,
-	writer io.WriteCloser,
-	allowGitCredentials, allowDockerCredentials bool,
-	workspace *provider2.Workspace,
-	options ...Option,
-) (*config.Result, error) {
+func RunUpServer(ctx context.Context, spec UpSpec) (*config.Result, error) {
+	options := slices.Clone(spec.Options)
 	options = append(options,
-		WithWorkspace(workspace),
-		WithAllowGitCredentials(allowGitCredentials),
-		WithAllowDockerCredentials(allowDockerCredentials),
+		WithWorkspace(spec.Workspace),
+		WithAllowGitCredentials(spec.AllowGitCredentials),
+		WithAllowDockerCredentials(spec.AllowDockerCredentials),
 	)
 	tunnelServ := New(options...)
 
-	return tunnelServ.RunWithResult(ctx, reader, writer)
+	return tunnelServ.RunWithResult(ctx, spec.Reader, spec.Writer)
 }
 
-func RunSetupServer(
-	ctx context.Context,
-	reader io.Reader,
-	writer io.WriteCloser,
-	allowGitCredentials, allowDockerCredentials bool,
-	mounts []*config.Mount,
-	options ...Option,
-) (*config.Result, error) {
+func RunSetupServer(ctx context.Context, spec SetupSpec) (*config.Result, error) {
+	options := slices.Clone(spec.Options)
 	options = append(options,
-		WithMounts(mounts),
-		WithAllowGitCredentials(allowGitCredentials),
-		WithAllowDockerCredentials(allowDockerCredentials),
+		WithAllowGitCredentials(spec.AllowGitCredentials),
+		WithAllowDockerCredentials(spec.AllowDockerCredentials),
+	)
+	tunnelServ, err := newSetupServer(spec.SetupInfo, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	return tunnelServ.RunWithResult(ctx, spec.Reader, spec.Writer)
+}
+
+func newSetupServer(setupInfo *config.Result, options ...Option) (*tunnelServer, error) {
+	if setupInfo == nil || setupInfo.SubstitutionContext == nil || setupInfo.MergedConfig == nil {
+		return nil, fmt.Errorf("invalid setup result: missing mount configuration")
+	}
+	options = append(options,
+		WithMounts(config.GetMounts(setupInfo)),
+		WithWorkspaceMount(config.GetWorkspaceMount(setupInfo)),
 		WithAllowKubeConfig(true),
 	)
 	tunnelServ := New(options...)
 	tunnelServ.allowPlatformOptions = true
+	tunnelServ.generatedBuildArtifacts = setupInfo.GeneratedBuildArtifacts
+	tunnelServ.generatedBuildContext = setupInfo.GeneratedBuildContext
+	if setupInfo.DevContainerConfigWithPath != nil &&
+		setupInfo.DevContainerConfigWithPath.Config != nil {
+		tunnelServ.snapshotBuildContext, tunnelServ.snapshotBuildContextErr = config.SnapshotBuildContext(
+			setupInfo,
+		)
+	}
+	if err := tunnelServ.validateMountRoles(); err != nil {
+		return nil, err
+	}
 
-	return tunnelServ.RunWithResult(ctx, reader, writer)
+	return tunnelServ, nil
 }
 
 func New(options ...Option) *tunnelServer {
@@ -107,11 +146,21 @@ func New(options ...Option) *tunnelServer {
 type tunnelServer struct {
 	tunnel.UnimplementedTunnelServer
 
+	// setup log mirroring; nil leaves AppendSetupLogs unimplemented
+	setupLogSink *workspacelogs.Sink
+
 	// stream mounts
-	mounts []*config.Mount
+	mounts                  []*config.Mount
+	workspaceMount          *config.Mount
+	generatedBuildArtifacts []config.GeneratedBuildArtifact
+	generatedBuildContext   string
+	snapshotBuildContext    string
+	snapshotBuildContextErr error
 
 	forwarder              netstat.Forwarder
 	allowGitCredentials    bool
+	allowGitHubCredentials bool
+	githubAccounts         func(context.Context) ghcredentials.HostResult
 	allowDockerCredentials bool
 	allowKubeConfig        bool
 	allowPlatformOptions   bool
@@ -119,11 +168,20 @@ type tunnelServer struct {
 	result                 *config.Result
 	workspace              *provider2.Workspace
 
-	platformOptions *devsy.PlatformOptions
-	secrets         []*tunnel.Secret
-	gitToken        *provider2.GitToken
+	platformOptions  *devsy.PlatformOptions
+	secrets          []*tunnel.Secret
+	gitToken         *provider2.GitToken
+	gitSSHSigningKey string
+
+	lifecycleTerminalOwner    LifecycleTerminalOwner
+	lifecycleTerminalUpstream tunnel.TunnelClient
+	lifecycleTerminalRequest  provider2.LifecycleTerminalRequest
 
 	statusReporter status.Reporter
+}
+
+func (t *tunnelServer) LifecycleTerminal(stream tunnel.Tunnel_LifecycleTerminalServer) error {
+	return t.serveLifecycleTerminal(stream)
 }
 
 func (t *tunnelServer) RunWithResult(
@@ -222,7 +280,7 @@ func (t *tunnelServer) DockerCredentials(
 			return nil, err
 		}
 
-		out, err := json.Marshal(credentials)
+		out, err := json.Marshal(credentials) //nolint:gosec // credentials are the response payload
 		if err != nil {
 			return nil, err
 		}
@@ -271,6 +329,24 @@ func (t *tunnelServer) GitUser(ctx context.Context, empty *tunnel.Empty) (*tunne
 	}, nil
 }
 
+func (t *tunnelServer) GitHubCredentials(
+	ctx context.Context,
+	_ *tunnel.Empty,
+) (*tunnel.Message, error) {
+	if !t.allowGitHubCredentials {
+		return nil, grpcstatus.Error(codes.PermissionDenied, "GitHub CLI credentials forbidden")
+	}
+	resolve := t.githubAccounts
+	if resolve == nil {
+		resolve = ghcredentials.HostAccounts
+	}
+	b, err := json.Marshal(resolve(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("encode GitHub CLI accounts")
+	}
+	return &tunnel.Message{Message: string(b)}, nil
+}
+
 func (t *tunnelServer) GitCredentials(
 	ctx context.Context,
 	message *tunnel.Message,
@@ -299,7 +375,7 @@ func (t *tunnelServer) GitCredentials(
 		return nil, err
 	}
 
-	out, err := json.Marshal(credentials)
+	out, err := json.Marshal(credentials) //nolint:gosec // credentials are the response payload
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +419,7 @@ func (t *tunnelServer) GitSSHSignature(
 		return nil, fmt.Errorf("git ssh sign request: %w", err)
 	}
 
-	signatureResponse, err := signatureRequest.Sign()
+	signatureResponse, err := signatureRequest.SignWithHostKey(ctx, t.gitSSHSigningKey)
 	if err != nil {
 		return nil, fmt.Errorf("get git ssh signature: %w", err)
 	}
@@ -447,15 +523,48 @@ func (t *tunnelServer) Status(
 	ctx context.Context,
 	update *tunnel.StatusUpdate,
 ) (*tunnel.Empty, error) {
+	if err := validateStatusUpdate(update); err != nil {
+		return nil, err
+	}
+	t.statusReporter.Report(statusEvent(update))
+	return &tunnel.Empty{}, nil
+}
+
+func validateStatusUpdate(update *tunnel.StatusUpdate) error {
+	if update == nil || update.Phase == "" || !status.ValidState(status.State(update.State)) ||
+		update.DurationMs < 0 {
+		return fmt.Errorf(
+			"invalid status update: phase, duration, and recognized state are required",
+		)
+	}
+	if update.State == string(status.StateFailed) &&
+		(update.Error == nil || update.Error.Message == "") {
+		return fmt.Errorf("invalid failed status update: structured error is required")
+	}
+	return nil
+}
+
+func statusEvent(update *tunnel.StatusUpdate) status.Event {
 	// No Pipeline: the tunnel only carries container-side up events, and the
 	// host's reporter stamps the pipeline on arrival.
-	t.statusReporter.Report(status.Event{
-		Phase:   status.Phase(update.Phase),
-		Step:    update.Step,
-		Started: update.Started,
-		Err:     update.Error,
-	})
-	return &tunnel.Empty{}, nil
+	e := status.Event{
+		Phase:             status.Phase(update.Phase),
+		Step:              update.Step,
+		State:             status.State(update.State),
+		Duration:          time.Duration(update.DurationMs) * time.Millisecond,
+		OperationID:       update.OperationId,
+		ParentOperationID: update.ParentOperationId,
+	}
+	if update.Error != nil {
+		e.State = status.StateFailed
+		e.Error = &status.ErrorInfo{
+			Code:    update.Error.Code,
+			Message: update.Error.Message,
+			Hint:    update.Error.Hint,
+			Context: update.Error.Context,
+		}
+	}
+	return e
 }
 
 func (t *tunnelServer) StreamWorkspace(
@@ -472,18 +581,23 @@ func (t *tunnelServer) StreamWorkspace(
 		return fmt.Errorf("workspace is nil")
 	}
 
-	// Get .devsyignore files to exclude
-	excludes := []string{}
-	f, err := os.Open(filepath.Join(t.workspace.Source.LocalFolder, pkgconfig.IgnoreFileName))
-	if err == nil {
-		excludes, err = ignorefile.ReadAll(f)
-		if err != nil {
-			log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
-		}
+	opts, closePolicy, err := t.sourceTarOptions(
+		stream.Context(),
+		t.workspace.Source.LocalFolder,
+		true,
+		false,
+	)
+	if err != nil {
+		return err
 	}
 
+	defer closeTransferPolicy(closePolicy)
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
-	err = extract.WriteTarExclude(buf, t.workspace.Source.LocalFolder, false, excludes)
+	err = extract.WriteTarWithOptions(
+		buf,
+		t.workspace.Source.LocalFolder,
+		opts,
+	)
 	if err != nil {
 		return err
 	}
@@ -505,7 +619,7 @@ func (t *tunnelServer) StreamMount(
 
 	var mount *config.Mount
 	for _, m := range t.mounts {
-		if m.String() == message.Mount {
+		if m != nil && m.String() == message.Mount {
 			mount = m
 			break
 		}
@@ -514,10 +628,14 @@ func (t *tunnelServer) StreamMount(
 		return fmt.Errorf("mount %s is not allowed to download", message.Mount)
 	}
 
-	excludes := t.workspaceIgnoreExcludes()
+	opts, closePolicy, err := t.mountTarOptions(stream.Context(), mount, false)
+	if err != nil {
+		return err
+	}
 
+	defer closeTransferPolicy(closePolicy)
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
-	err := extract.WriteTarExclude(buf, mount.Source, false, excludes)
+	err = extract.WriteTarWithOptions(buf, mount.Source, opts)
 	if err != nil {
 		return err
 	}
@@ -536,13 +654,24 @@ func (t *tunnelServer) StreamSnapshotVolumes(
 		)
 	}
 
+	// Invalid policies must fail before the combined stream sends any data.
+	policies := make([]extract.TarOptions, len(t.mounts))
+	for i, m := range t.mounts {
+		if m == nil {
+			return fmt.Errorf("snapshot mount is nil")
+		}
+		opts, closePolicy, err := t.mountTarOptions(stream.Context(), m, true)
+		if err != nil {
+			return err
+		}
+		defer closeTransferPolicy(closePolicy)
+		policies[i] = opts
+	}
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	tw := tar.NewWriter(buf)
-
-	excludes := append(t.workspaceIgnoreExcludes(), config.BuildArtifactExcludes()...)
-	for _, m := range t.mounts {
+	for i, m := range t.mounts {
 		prefix := strings.TrimPrefix(m.Target, "/")
-		if err := appendDirToTar(tw, m.Source, prefix, excludes); err != nil {
+		if err := appendDirToTar(tw, m.Source, prefix, policies[i]); err != nil {
 			return fmt.Errorf("tar mount %s: %w", m.Target, err)
 		}
 	}
@@ -553,17 +682,13 @@ func (t *tunnelServer) StreamSnapshotVolumes(
 	return buf.Flush()
 }
 
-// appendDirToTar writes localDir's contents under prefix inside an
-// already-open tar.Writer, reusing extract.WriteTarExclude's on-disk walk by
-// tarring into a pipe and re-prefixing entries; kept simple since snapshot
-// volume archives combine multiple mount roots into one stream.
-func appendDirToTar(tw *tar.Writer, localDir, prefix string, excludes []string) error {
+func appendDirToTar(tw *tar.Writer, localDir, prefix string, opts extract.TarOptions) error {
 	pr, pw := io.Pipe()
 	defer func() { _ = pr.Close() }()
 
 	errCh := make(chan error, 1)
 	go func() {
-		err := extract.WriteTarExclude(pw, localDir, false, excludes)
+		err := extract.WriteTarWithOptions(pw, localDir, opts)
 		errCh <- err
 		_ = pw.CloseWithError(err)
 	}()
@@ -650,23 +775,6 @@ func (t *tunnelServer) resolveHostGitCredentials(
 
 func (t *tunnelServer) platformStreamBlocked() bool {
 	return t.platformOptions != nil && t.platformOptions.Enabled && !t.allowPlatformOptions
-}
-
-func (t *tunnelServer) workspaceIgnoreExcludes() []string {
-	excludes := []string{}
-	if t.workspace == nil {
-		return excludes
-	}
-
-	f, err := os.Open(filepath.Join(t.workspace.Source.LocalFolder, pkgconfig.IgnoreFileName))
-	if err == nil {
-		defer func() { _ = f.Close() }()
-		excludes, err = ignorefile.ReadAll(f)
-		if err != nil {
-			log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
-		}
-	}
-	return excludes
 }
 
 func (t *tunnelServer) getResult() *config.Result {

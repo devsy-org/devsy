@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"filippo.io/age"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/yaml"
 )
 
 const testContext = "default"
@@ -70,12 +73,45 @@ func TestResolveBackend_IgnoresGarbageEnv(t *testing.T) {
 }
 
 type mapBackend struct {
-	values map[string]string
+	values       map[string]string
+	removeCalls  int
+	removeErrors map[int]error
+	setError     error
 }
 
 func newMapBackend() *mapBackend { return &mapBackend{values: map[string]string{}} }
 
+type mapBackendRegistry struct {
+	backends map[Backend]*mapBackend
+}
+
+func (r mapBackendRegistry) Open(kind Backend, _ *index, _ BackendOpenIntent) (backend, error) {
+	b, ok := r.backends[kind]
+	if !ok {
+		return nil, fmt.Errorf("missing test backend %q", kind)
+	}
+	return b, nil
+}
+
+func (r mapBackendRegistry) ResolveForNewSecret(preference Backend, _ *index) (Backend, error) {
+	if _, ok := r.backends[preference]; !ok {
+		return "", fmt.Errorf("missing test backend %q", preference)
+	}
+	return preference, nil
+}
+
+func (r mapBackendRegistry) Probe(kind Backend, _ *index, key string) (bool, bool) {
+	b, ok := r.backends[kind]
+	if !ok {
+		return false, false
+	}
+	return probePresence(b, key)
+}
+
 func (m *mapBackend) set(key, value string) error {
+	if m.setError != nil {
+		return m.setError
+	}
 	m.values[key] = value
 	return nil
 }
@@ -89,8 +125,84 @@ func (m *mapBackend) get(key string) (string, error) {
 }
 
 func (m *mapBackend) remove(key string) error {
+	m.removeCalls++
+	if err := m.removeErrors[m.removeCalls]; err != nil {
+		return err
+	}
 	delete(m.values, key)
 	return nil
+}
+
+func TestLocalStoreDelete_EnvIndexSaveFailurePreservesEntry(t *testing.T) {
+	s := newTestStore(t, newMapBackend())
+	require.NoError(t, s.Set(testContext, "INLINE", "plain", KindEnv))
+	s.saveIndex = func(*index) error { return errors.New("index save failed") }
+
+	err := s.Delete(testContext, "INLINE")
+	require.ErrorContains(t, err, "index save failed")
+	value, err := s.Get(testContext, "INLINE")
+	require.NoError(t, err)
+	require.Equal(t, "plain", value)
+}
+
+func TestLocalStoreDelete_SecretIndexSaveFailureRestoresBackendValue(t *testing.T) {
+	backend := newMapBackend()
+	s := newTestStore(t, backend)
+	require.NoError(t, s.Set(testContext, "TOKEN", "private payload", KindSecret))
+	indexBytes, err := os.ReadFile(s.indexPath)
+	require.NoError(t, err)
+	s.saveIndex = func(*index) error { return errors.New("index save failed") }
+
+	err = s.Delete(testContext, "TOKEN")
+	require.ErrorContains(t, err, "index save failed")
+	require.Equal(t, "private payload", backend.values[backendKey(testContext, "TOKEN")])
+	currentIndex, err := os.ReadFile(s.indexPath)
+	require.NoError(t, err)
+	require.Equal(t, indexBytes, currentIndex)
+}
+
+func TestLocalStoreDelete_BackendFailureAfterPartialRemovalRestoresEarlierValues(t *testing.T) {
+	keyring := newMapBackend()
+	file := newMapBackend()
+	key := backendKey(testContext, "LEGACY")
+	keyring.values[key] = "first payload"
+	file.values[key] = "second payload"
+	file.removeErrors = map[int]error{1: errors.New("backend removal failed")}
+	indexPath := writeLegacyIndex(t,
+		"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+	)
+	backends := map[Backend]*mapBackend{
+		BackendKeyring: keyring,
+		BackendFile:    file,
+	}
+	registry := mapBackendRegistry{backends: backends}
+	s := newLocalStoreWithRegistry(BackendKeyring, indexPath, registry)
+
+	err := s.Delete(testContext, "LEGACY")
+	require.ErrorContains(t, err, "backend removal failed")
+	require.NotErrorIs(t, err, ErrStateIndeterminate)
+	require.Equal(t, "first payload", keyring.values[key])
+	require.Equal(t, "second payload", file.values[key])
+	_, metaErr := s.Meta(testContext, "LEGACY")
+	require.NoError(t, metaErr)
+}
+
+func TestLocalStoreDelete_CompensationFailureReturnsIndeterminateError(t *testing.T) {
+	backend := newMapBackend()
+	backend.values[backendKey(testContext, "TOKEN")] = "private payload"
+	s := newTestStore(t, backend)
+	require.NoError(t, s.Set(testContext, "TOKEN", "private payload", KindSecret))
+	backend.removeErrors = map[int]error{1: errors.New("backend removal failed")}
+	backend.setError = errors.New("backend restoration failed")
+
+	err := s.Delete(testContext, "TOKEN")
+	require.ErrorIs(t, err, ErrStateIndeterminate)
+	var mutationErr *MutationError
+	require.ErrorAs(t, err, &mutationErr)
+	require.ErrorContains(t, err, "default/TOKEN")
+	require.NotContains(t, err.Error(), "private payload")
+	require.ErrorContains(t, mutationErr.Cause, "backend removal failed")
+	require.ErrorContains(t, mutationErr.Rollback, "backend restoration failed")
 }
 
 func newTestStore(t *testing.T, b backend) *localStore {
@@ -179,7 +291,7 @@ func TestStore_ListSorted(t *testing.T) {
 	}
 }
 
-func TestStore_ReconcileFlagsOrphans(t *testing.T) {
+func TestStore_ListFlagsMissingValues(t *testing.T) {
 	mb := newMapBackend()
 	s := newTestStore(t, mb)
 
@@ -229,6 +341,39 @@ func TestStore_SetUpdatePreservesCreated(t *testing.T) {
 	}
 }
 
+func TestStore_UsesRecordedBackendAfterPreferenceChanges(t *testing.T) {
+	keyring := newMapBackend()
+	file := newMapBackend()
+	indexPath := filepath.Join(t.TempDir(), IndexFileName)
+	s := newLocalStoreWithRegistry(BackendKeyring, indexPath, mapBackendRegistry{
+		backends: map[Backend]*mapBackend{
+			BackendKeyring: keyring,
+			BackendFile:    file,
+		},
+	})
+
+	require.NoError(t, s.Set(testContext, "TOKEN", "v1", KindSecret))
+	meta, err := s.Meta(testContext, "TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, BackendKeyring, meta.Backend)
+
+	s.preference = BackendFile
+	got, err := s.Get(testContext, "TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, "v1", got)
+	require.NoError(t, s.Set(testContext, "TOKEN", "v2", KindSecret))
+	list, err := s.List(testContext)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, BackendKeyring, list[0].Backend)
+	got, err = s.Get(testContext, "TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, "v2", got)
+	require.NoError(t, s.Delete(testContext, "TOKEN"))
+	require.NotContains(t, keyring.values, backendKey(testContext, "TOKEN"))
+	require.NotContains(t, file.values, backendKey(testContext, "TOKEN"))
+}
+
 func TestValidateName(t *testing.T) {
 	valid := []string{"API_KEY", "db_password", "TOKEN2", "a"}
 	for _, n := range valid {
@@ -254,10 +399,7 @@ func TestStore_InvalidNameRejected(t *testing.T) {
 
 func newPassphraseBackend(t *testing.T, path, passphrase string) *fileBackend {
 	t.Helper()
-	key, err := resolveFileKey(t.TempDir(), passphrase)
-	if err != nil {
-		t.Fatal(err)
-	}
+	key := testPassphraseFileKey(t, passphrase)
 	return newFileBackend(path, key)
 }
 
@@ -349,50 +491,169 @@ func TestFileBackend_AutoKeyRoundTrip(t *testing.T) {
 	}
 }
 
-// An index entry with an unset Kind (e.g. written by an older layout) must be
-// read as a secret, never silently downgraded to a plaintext env var.
-func TestLoadIndex_UnsetKindNormalizesToSecret(t *testing.T) {
-	path := filepath.Join(t.TempDir(), IndexFileName)
-	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n"
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
-	}
+func legacyIndexYAML(entries string) string {
+	return "contexts:\n  default:\n" + entries
+}
 
-	idx, err := loadIndex(path)
-	if err != nil {
+func writeLegacyIndex(t *testing.T, entries string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), IndexFileName)
+	if err := os.WriteFile(path, []byte(legacyIndexYAML(entries)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	meta, ok := idx.get("default", "LEGACY")
-	if !ok {
-		t.Fatal("expected entry to load")
+	return path
+}
+
+func newLegacyStore(t *testing.T, entries string) (*localStore, map[Backend]*mapBackend) {
+	t.Helper()
+	backends := map[Backend]*mapBackend{
+		BackendKeyring: newMapBackend(),
+		BackendFile:    newMapBackend(),
 	}
-	if !meta.Sensitive() {
-		t.Fatalf("unset Kind must normalize to secret, got %q", meta.Kind)
+	s := newLocalStoreWithRegistry(
+		BackendKeyring,
+		writeLegacyIndex(t, entries),
+		mapBackendRegistry{backends: backends},
+	)
+	return s, backends
+}
+
+func TestLoadIndex_ToleratesUnownedLegacySecret(t *testing.T) {
+	path := writeLegacyIndex(
+		t,
+		"    UNOWNED:\n      name: UNOWNED\n      context: default\n      kind: secret\n",
+	)
+
+	if _, err := loadIndex(path); err != nil {
+		t.Fatalf("loadIndex on legacy entry = %v, want nil", err)
 	}
 }
 
-// A blank-kind entry carrying an inline value (e.g. hand-edited) must be
-// normalized to a secret with the inline plaintext cleared, upholding the
-// invariant that sensitive values never persist inline.
-func TestLoadIndex_UnsetKindClearsInlineValue(t *testing.T) {
-	path := filepath.Join(t.TempDir(), IndexFileName)
-	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n" +
-		"      context: default\n      value: leaked\n"
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
+func TestLoadIndex_RejectsInvalidBackend(t *testing.T) {
+	path := writeLegacyIndex(
+		t,
+		"    BAD:\n      name: BAD\n      context: default\n      kind: secret\n      backend: vault\n",
+	)
+
+	if _, err := loadIndex(path); err == nil ||
+		!strings.Contains(err.Error(), "invalid secrets backend") {
+		t.Fatalf("expected invalid backend error, got %v", err)
+	}
+}
+
+func TestStore_RepairsProvenLegacyOwnership(t *testing.T) {
+	s, backends := newLegacyStore(
+		t,
+		"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+	)
+	backends[BackendKeyring].values[backendKey(testContext, "LEGACY")] = "recovered"
+
+	got, err := s.Get(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, "recovered", got)
+
+	meta, err := s.Meta(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, BackendKeyring, meta.Backend)
+
+	stored, err := os.ReadFile(s.indexPath)
+	require.NoError(t, err)
+	require.Contains(t, string(stored), "backend: keyring")
+
+	list, err := s.List(testContext)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.False(t, list[0].Orphaned)
+
+	require.NoError(t, s.Set(testContext, "LEGACY", "updated", KindSecret))
+	got, err = s.Get(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, "updated", got)
+
+	require.NoError(t, s.Delete(testContext, "LEGACY"))
+	require.NotContains(t, backends[BackendKeyring].values, backendKey(testContext, "LEGACY"))
+}
+
+func TestStore_UnownedValueNotFoundIsRecoverable(t *testing.T) {
+	s, backends := newLegacyStore(
+		t,
+		"    GONE:\n      name: GONE\n      context: default\n      kind: secret\n",
+	)
+
+	if _, err := s.Get(testContext, "GONE"); err == nil ||
+		!strings.Contains(err.Error(), "no proven owning backend") {
+		t.Fatalf("expected actionable unowned error, got %v", err)
 	}
 
-	idx, err := loadIndex(path)
-	if err != nil {
-		t.Fatal(err)
+	list, err := s.List(testContext)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.True(t, list[0].Orphaned)
+
+	require.NoError(t, s.Set(testContext, "GONE", "fresh", KindSecret))
+	got, err := s.Get(testContext, "GONE")
+	require.NoError(t, err)
+	require.Equal(t, "fresh", got)
+	require.Equal(t, "fresh", backends[BackendKeyring].values[backendKey(testContext, "GONE")])
+
+	require.NoError(t, s.Delete(testContext, "GONE"))
+	_, err = s.Get(testContext, "GONE")
+	require.ErrorIs(t, err, ErrSecretNotFound)
+}
+
+func TestStore_NeverAssignsAmbiguousOwnership(t *testing.T) {
+	s, backends := newLegacyStore(
+		t,
+		"    BOTH:\n      name: BOTH\n      context: default\n      kind: secret\n",
+	)
+	backends[BackendKeyring].values[backendKey(testContext, "BOTH")] = "from-keyring"
+	backends[BackendFile].values[backendKey(testContext, "BOTH")] = "from-file"
+
+	if _, err := s.Get(testContext, "BOTH"); err == nil ||
+		!strings.Contains(err.Error(), "no proven owning backend") {
+		t.Fatalf("ambiguous ownership must not be guessed, got %v", err)
 	}
-	meta, _ := idx.get("default", "LEGACY")
-	if !meta.Sensitive() {
-		t.Fatalf("unset Kind must normalize to secret, got %q", meta.Kind)
-	}
-	if meta.Value != "" {
-		t.Fatalf("inline value must be cleared on normalize, got %q", meta.Value)
-	}
+	meta, err := s.Meta(testContext, "BOTH")
+	require.NoError(t, err)
+	require.Equal(t, Backend(""), meta.Backend)
+
+	require.NoError(t, s.Set(testContext, "BOTH", "explicit", KindSecret))
+	got, err := s.Get(testContext, "BOTH")
+	require.NoError(t, err)
+	require.Equal(t, "explicit", got)
+
+	require.NoError(t, s.Delete(testContext, "BOTH"))
+}
+
+func TestStore_UnownedLegacySecretDoesNotBlockEnvWrites(t *testing.T) {
+	s, _ := newLegacyStore(
+		t,
+		"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+	)
+
+	require.NoError(t, s.Set(testContext, "MY_VAR", "plain", KindEnv))
+	got, err := s.Get(testContext, "MY_VAR")
+	require.NoError(t, err)
+	require.Equal(t, "plain", got)
+
+	list, err := s.List(testContext)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+}
+
+func TestStore_DeleteUnownedRemovesFromEveryBackend(t *testing.T) {
+	s, backends := newLegacyStore(
+		t,
+		"    BOTH:\n      name: BOTH\n      context: default\n      kind: secret\n",
+	)
+	backends[BackendKeyring].values[backendKey(testContext, "BOTH")] = "from-keyring"
+	backends[BackendFile].values[backendKey(testContext, "BOTH")] = "from-file"
+
+	require.NoError(t, s.Delete(testContext, "BOTH"))
+	require.NotContains(t, backends[BackendKeyring].values, backendKey(testContext, "BOTH"))
+	require.NotContains(t, backends[BackendFile].values, backendKey(testContext, "BOTH"))
+	_, err := s.Get(testContext, "BOTH")
+	require.ErrorIs(t, err, ErrSecretNotFound)
 }
 
 // A key file that already exists must never be overwritten, so a second
@@ -537,4 +798,211 @@ func TestStore_MetaHidesValueAndReportsKind(t *testing.T) {
 	if meta.Value != "" {
 		t.Error("Meta must not return the value")
 	}
+}
+
+func TestStore_RepairsOwnershipWhenOtherBackendUnprobeable(t *testing.T) {
+	backends := map[Backend]*mapBackend{BackendFile: newMapBackend()}
+	backends[BackendFile].values[backendKey(testContext, "LEGACY")] = "recovered"
+	s := newLocalStoreWithRegistry(
+		BackendFile,
+		writeLegacyIndex(
+			t,
+			"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+		),
+		mapBackendRegistry{backends: backends},
+	)
+
+	_, err := s.Get(testContext, "LEGACY")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no proven owning backend")
+	meta, err := s.Meta(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, Backend(""), meta.Backend)
+}
+
+func TestStore_DeleteUnownedFailsWhenBackendUnprobeable(t *testing.T) {
+	backends := map[Backend]*mapBackend{BackendFile: newMapBackend()}
+	backends[BackendFile].values[backendKey(testContext, "LEGACY")] = "sensitive"
+	s := newLocalStoreWithRegistry(
+		BackendFile,
+		writeLegacyIndex(
+			t,
+			"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+		),
+		mapBackendRegistry{backends: backends},
+	)
+
+	err := s.Delete(testContext, "LEGACY")
+	require.Error(t, err)
+	require.ErrorContains(t, err, `backend "keyring" could not be probed`)
+	require.ErrorContains(t, err, "restore access")
+	require.Equal(t, "sensitive", backends[BackendFile].values[backendKey(testContext, "LEGACY")])
+	_, err = s.Meta(testContext, "LEGACY")
+	require.NoError(t, err)
+}
+
+func TestStore_UnownedRemovalFailsWhenSecondBackendUnprobeable(t *testing.T) {
+	key := backendKey(testContext, "LEGACY")
+	for _, remove := range []struct {
+		name string
+		run  func(*localStore) error
+	}{
+		{"delete", func(s *localStore) error { return s.Delete(testContext, "LEGACY") }},
+		{"remove sensitive", func(s *localStore) error { return s.removeFromProbeableBackends(nil, key) }},
+	} {
+		t.Run(remove.name, func(t *testing.T) {
+			keyring := newMapBackend()
+			keyring.values[key] = "sensitive"
+			s := newLocalStoreWithRegistry(
+				BackendKeyring,
+				writeLegacyIndex(
+					t,
+					"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+				),
+				mapBackendRegistry{backends: map[Backend]*mapBackend{BackendKeyring: keyring}},
+			)
+
+			err := remove.run(s)
+			require.ErrorContains(t, err, `backend "file" could not be probed`)
+			require.Equal(t, 0, keyring.removeCalls)
+			require.Equal(t, "sensitive", keyring.values[key])
+		})
+	}
+}
+
+// legacyIndexData models the catalog schema used by older installed CLIs.
+type legacyIndexData struct {
+	SchemaVersion int                              `json:"schemaVersion,omitempty"`
+	Contexts      map[string]map[string]SecretMeta `json:"contexts"`
+	KeySource     string                           `json:"keySource,omitempty"`
+}
+
+func TestIndexSaveKeepsLegacyKeySourceReadable(t *testing.T) {
+	for _, source := range []string{
+		string(keySourceAutoFile),
+		string(keySourcePassphrase),
+	} {
+		t.Run(source, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), IndexFileName)
+			idx, err := loadIndex(path)
+			require.NoError(t, err)
+			idx.data.KeySource = source
+			require.NoError(t, idx.save())
+
+			raw, err := os.ReadFile(path) // #nosec G304 -- test fixture in a temp directory.
+			require.NoError(t, err)
+			var legacy legacyIndexData
+			require.NoError(t, yaml.Unmarshal(raw, &legacy))
+			require.Equal(t, source, legacy.KeySource)
+		})
+	}
+}
+
+func TestIndexReadNormalizesCatalogResavedByLegacyWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), IndexFileName)
+	idx, err := loadIndex(path)
+	require.NoError(t, err)
+	idx.data.KeySource = string(keySourcePassphrase)
+	idx.put(SecretMeta{
+		Context: testContext,
+		Name:    "TOKEN",
+		Kind:    KindSecret,
+		Backend: BackendFile,
+	})
+	require.NoError(t, idx.save())
+
+	raw, err := os.ReadFile(path) // #nosec G304 -- test fixture in a temp directory.
+	require.NoError(t, err)
+	var legacy legacyIndexData
+	require.NoError(t, yaml.Unmarshal(raw, &legacy))
+	// An old writer ignores the nested fileStore field, then serializes its
+	// known schema and the retained top-level keySource.
+	legacy.SchemaVersion = 0
+	raw, err = yaml.Marshal(legacy)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, raw, 0o600)) // #nosec G304 -- temp test path.
+
+	loaded, err := loadIndex(path)
+	require.NoError(t, err)
+	require.Equal(t, string(keySourcePassphrase), loaded.data.KeySource)
+	require.Empty(t, loaded.data.FileStore.KeySource)
+	require.NoError(t, loaded.save())
+	loaded, err = loadIndex(path)
+	require.NoError(t, err)
+	require.Equal(t, string(keySourcePassphrase), loaded.data.KeySource)
+	require.Equal(t, string(keySourcePassphrase), loaded.data.FileStore.KeySource)
+	meta, exists := loaded.get(testContext, "TOKEN")
+	require.True(t, exists)
+	require.Equal(t, BackendFile, meta.Backend)
+}
+
+func TestIndexConflictingLegacyAndNestedKeySourcesAreCorrupt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), IndexFileName)
+	raw := []byte(
+		"schemaVersion: 2\nkeySource: file\nfileStore:\n  keySource: passphrase\ncontexts: {}\n",
+	)
+	require.NoError(t, os.WriteFile(path, raw, 0o600)) // #nosec G304 -- temp test path.
+
+	_, err := loadIndex(path)
+	require.ErrorIs(t, err, ErrStoreCorrupt)
+}
+
+func TestProtectionResetClearsBothKeySourceFields(t *testing.T) {
+	p, _ := newLegacyResetFixture(t, KindSecret, false)
+	p.readRemembered = func() (string, error) { return "", nil }
+	_, err := p.ResetFileStore()
+	require.NoError(t, err)
+
+	raw, err := os.ReadFile(filepath.Join(p.dir, IndexFileName)) // #nosec G304 -- temp test path.
+	require.NoError(t, err)
+	var catalog indexData
+
+	require.NoError(t, yaml.Unmarshal(raw, &catalog))
+	require.Empty(t, catalog.KeySource)
+	require.Empty(t, catalog.FileStore.KeySource)
+}
+
+func TestProbeFileReadsLegacyPassphraseBackend(t *testing.T) {
+	t.Setenv(EnvPassphrase, "correct horse battery staple")
+	dir := t.TempDir()
+
+	fk := testPassphraseFileKey(t, "correct horse battery staple")
+	require.NoError(t, newFileBackend(filepath.Join(dir, EncryptedFileName), fk).
+		set(backendKey(testContext, "LEGACY"), "recovered"))
+	indexPath := filepath.Join(dir, IndexFileName)
+	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n"
+	require.NoError(t, os.WriteFile(indexPath, []byte(raw), 0o600))
+	idx, err := loadIndex(indexPath)
+	require.NoError(t, err)
+
+	registry, ok := newSystemBackendRegistry(dir).(*systemBackendRegistry)
+	require.True(t, ok)
+	present, conclusive := registry.probeFile(idx, backendKey(testContext, "LEGACY"))
+	require.True(t, present)
+	require.True(t, conclusive)
+}
+
+func TestStore_UnownedWithoutBackendStateIsRecoverable(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, IndexFileName)
+	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n"
+	require.NoError(t, os.WriteFile(indexPath, []byte(raw), 0o600))
+
+	s := newLocalStoreWithRegistry(
+		BackendKeyring,
+		indexPath,
+		mapBackendRegistry{backends: map[Backend]*mapBackend{
+			BackendKeyring: newMapBackend(),
+			BackendFile:    newMapBackend(),
+		}},
+	)
+	if _, err := s.Get(testContext, "LEGACY"); err == nil ||
+		!strings.Contains(err.Error(), "no proven owning backend") {
+		t.Fatalf("expected actionable unowned error, got %v", err)
+	}
+
+	require.NoError(t, s.Set(testContext, "LEGACY", "fresh", KindSecret))
+	got, err := s.Get(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, "fresh", got)
 }

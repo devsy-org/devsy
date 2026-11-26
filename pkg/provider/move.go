@@ -72,28 +72,25 @@ func revertProviderConfigName(devsyConfig *config.Config, oldName, newName strin
 // from oldName to newName, rewrites any option values that embed the old
 // provider directory path, and persists the change.
 func migrateProviderState(devsyConfig *config.Config, oldName, newName string) error {
-	ctx := devsyConfig.Current()
-	if ctx.Providers[oldName] == nil {
-		return nil
-	}
-
-	ctx.Providers[newName] = ctx.Providers[oldName]
-	delete(ctx.Providers, oldName)
-
-	// Rewrite option values that reference the old provider directory.
 	oldDir, _ := GetProviderDir(devsyConfig.DefaultContext, oldName)
 	newDir, _ := GetProviderDir(devsyConfig.DefaultContext, newName)
-	if oldDir != "" && newDir != "" {
-		rewriteOptionPaths(ctx.Providers[newName].Options, oldDir, newDir)
-	}
 
-	if err := config.SaveConfig(devsyConfig); err != nil {
-		// Undo the map move and path rewrite on failure.
-		if oldDir != "" && newDir != "" {
-			rewriteOptionPaths(ctx.Providers[newName].Options, newDir, oldDir)
+	err := config.UpdateConfig(devsyConfig.DefaultContext, "", func(c *config.Config) error {
+		ctx := c.Current()
+		if ctx.Providers[oldName] == nil {
+			return nil
 		}
-		ctx.Providers[oldName] = ctx.Providers[newName]
-		delete(ctx.Providers, newName)
+
+		ctx.Providers[newName] = ctx.Providers[oldName]
+		delete(ctx.Providers, oldName)
+
+		// Rewrite option values that reference the old provider directory.
+		if oldDir != "" && newDir != "" {
+			rewriteOptionPaths(ctx.Providers[newName].Options, oldDir, newDir)
+		}
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 	return nil

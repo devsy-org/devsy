@@ -19,7 +19,11 @@ func WatchWindowSize(ctx context.Context) <-chan os.Signal {
 				return
 			case <-ticker.C:
 			}
-			windowSize <- nil
+			select {
+			case windowSize <- nil:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 	return windowSize

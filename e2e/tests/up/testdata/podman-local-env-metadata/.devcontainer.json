@@ -1,0 +1,12 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "mounts": [
+    {
+      "type": "bind",
+      "source": "${localEnv:HOME}/.devsy-e2e-local-env-metadata",
+      "target": "/tmp/devsy-local-env-metadata"
+    }
+  ]
+}

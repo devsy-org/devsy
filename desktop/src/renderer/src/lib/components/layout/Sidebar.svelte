@@ -5,7 +5,6 @@ import {
   Layers,
   LayoutDashboard,
   KeyRound,
-  Lock,
   Plug,
   Search,
   Server,
@@ -26,15 +25,14 @@ import type { Component } from "svelte"
 
 let { terminalCount = 0 }: { terminalCount?: number } = $props()
 
-// Matches NAV_KEYS in App.svelte — maps shortcut number to route
+// Matches NAV_KEYS in App.svelte - maps shortcut number to route
 const SHORTCUT_BY_HREF: Record<string, string> = {
   "/": "1",
   "/workspaces": "2",
   "/providers": "3",
   "/machines": "4",
   "/contexts": "5",
-  "/secrets": "6",
-  "/env": "7",
+  "/variables": "6",
   "/terminals": "8",
   "/ssh-keys": "9",
   "/settings": "0",
@@ -89,18 +87,11 @@ let mainNav: NavItem[] = $derived([
     shortcut: SHORTCUT_BY_HREF["/contexts"],
   },
   {
-    href: "/secrets",
-    label: "Secrets",
-    icon: Lock,
-    badge: $secrets.length,
-    shortcut: SHORTCUT_BY_HREF["/secrets"],
-  },
-  {
-    href: "/env",
-    label: "Env Vars",
+    href: "/variables",
+    label: "Variables",
     icon: Braces,
-    badge: $envVars.length,
-    shortcut: SHORTCUT_BY_HREF["/env"],
+    badge: $secrets.length + $envVars.length,
+    shortcut: SHORTCUT_BY_HREF["/variables"],
   },
   {
     href: "/terminals",

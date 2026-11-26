@@ -6,6 +6,8 @@ export interface WorkspaceSource {
   gitCommit?: string
   localFolder?: string
   image?: string
+  container?: string
+  snapshot?: string
 }
 
 export interface WorkspaceIDEConfig {
@@ -23,6 +25,12 @@ export interface WorkspaceProviderConfig {
   options?: Record<string, OptionValue>
 }
 
+export interface WorkspacePlatformMetadata {
+  instanceName?: string
+  project?: string
+  displayName?: string
+}
+
 export interface Workspace {
   id: string
   uid?: string
@@ -35,9 +43,22 @@ export interface Workspace {
   lastUsed?: string
   context?: string
   status?: string
+  displayName?: string
+  effectiveDisplayName?: string
+  sshHostAlias?: string
+  preferredSSHHost?: string
+  canonicalSSHHost?: string
+  pro?: WorkspacePlatformMetadata
 }
 
 export type OptionValue = string | number | boolean
+
+export interface ProviderOptionEnum {
+  value?: string
+  displayName?: string
+}
+
+export type ProviderOptionEnumValue = string | ProviderOptionEnum
 
 export interface ProviderSource {
   github?: string
@@ -58,7 +79,7 @@ export interface ProviderOption {
   description?: string
   default?: OptionValue
   value?: OptionValue
-  enum?: string[]
+  enum?: ProviderOptionEnumValue[]
   required?: boolean
   hidden?: boolean
   password?: boolean
@@ -67,16 +88,27 @@ export interface ProviderOption {
   group?: string
 }
 
-export type ProviderStatus = "not_initialized" | "initializing" | "initialized" | "failed"
+export type ProviderStatus =
+  | "not_initialized"
+  | "initializing"
+  | "initialized"
+  | "failed"
 
 export interface Provider {
   name: string
   version?: string
   source?: ProviderSource
+  /** Manifest-authored light icon reference; never rendered directly. */
+  icon?: string
+  /** Manifest-authored dark icon reference; never rendered directly. */
+  iconDark?: string
+  /** Selects the immutable cached icon revision; changes on asset/source update. */
+  iconRevision?: string
   description?: string
   options?: Record<string, ProviderOption>
   optionGroups?: ProviderOptionGroup[]
   isDefault?: boolean
+  deprecated?: boolean
   status?: ProviderStatus
   state?: {
     initialized?: boolean
@@ -87,23 +119,23 @@ export interface Provider {
 /**
  * In-flight provider work, tracked by the main process. Distinct from
  * `Provider.state.initialized`, which records whether the provider on disk
- * has run its init — false both for "never initialized" and "installing now".
+ * has run its init - false both for "never initialized" and "installing now".
  */
 export interface ProviderJob {
   activity: "installing" | "initializing" | "updating"
   phase?: string
+  state?: "started" | "succeeded" | "failed" | "skipped"
+  operationId?: string
+  parentOperationId?: string
+  durationMs?: number
   error?: string
+  errorCode?: string
+  errorHint?: string
+  errorContext?: Record<string, string>
+  logs?: string[]
 }
 
-/**
- * In-flight workspace delete, tracked by the main process for the same
- * reason as ProviderJob: workspace_delete returns as soon as the CLI
- * command is launched, so nothing else records that a delete is running.
- */
-export interface WorkspaceJob {
-  activity: "deleting"
-  error?: string
-}
+export type { WorkspaceJob } from "$shared/workspace-operation.js"
 
 export interface ProviderVersion {
   tag: string
@@ -126,7 +158,7 @@ export type {
   CatalogOrigin,
   ImageCatalog,
   LoadCatalogResult,
-} from "../../../../shared/image-catalog-types.js"
+} from "$shared/image-catalog-types.js"
 
 export interface MachineProviderConfig {
   name?: string
@@ -145,17 +177,66 @@ export interface Context {
   options?: Record<string, OptionValue>
 }
 
+export type SecretAvailability =
+  | "available"
+  | "locked"
+  | "missing"
+  | "backend_unavailable"
+  | "unknown"
+
+export interface SecretProtectionFileEntry {
+  name: string
+  context: string
+  backend?: "file"
+}
+
+export interface SecretProtectionStatus {
+  availability: SecretAvailability
+  reasonCode?: string
+  /** Exact Go file-key source values; keyring/file are automatic modes. */
+  keySource: "" | "passphrase" | "keyring" | "file"
+  remembered: boolean
+  rememberedAvailable: boolean
+  fileEntries: SecretProtectionFileEntry[]
+  sessionUnlocked: boolean
+}
+
+export type SecretProtectionAction =
+  | "set-passphrase"
+  | "change-passphrase"
+  | "remove-passphrase"
+  | "remember"
+  | "forget"
+
+export interface SecretProtectionActionInput {
+  action: SecretProtectionAction
+  newPassphrase?: string
+  currentPassphrase?: string
+}
+
+export interface SecretProtectionActionResult {
+  ok: boolean
+  message?: string
+  cliError?: import("$shared/cli-error.js").CLIError
+}
+
 export interface Secret {
   name: string
   context: string
   created?: string
   lastUsed?: string
   orphaned?: boolean
+  /** Whether Devsy can currently read this secret's value. */
+  availability?: SecretAvailability
+  backend?: "keyring" | "file"
+  attached?: boolean
 }
 
 export interface EnvVar {
   name: string
   value: string
+  context: string
+  attached: boolean
 }
 
 export interface CommandProgress {
@@ -167,7 +248,7 @@ export interface CommandProgress {
   done: boolean
   /**
    * Whether the command succeeded. Set on the final (done: true) event by the
-   * main process, which knows the exit code — consumers should read this
+   * main process, which knows the exit code - consumers should read this
    * rather than pattern-matching the log text.
    */
   success?: boolean
@@ -175,7 +256,7 @@ export interface CommandProgress {
    * Structured CLI error. Present only on the final (done: true) event when the
    * CLI emitted a `cliError` field on its zap JSON output.
    */
-  cliError?: import("../../../../shared/cli-error.js").CLIError
+  cliError?: import("$shared/cli-error.js").CLIError
 }
 
 /** A workspace phase transition, pushed as it happens. */
@@ -183,9 +264,18 @@ export interface WorkspaceStatus {
   commandId: string
   workspaceId: string
   phase: string
+  pipeline?: string
   step?: string
-  started: boolean
-  error?: string
+  state: "started" | "succeeded" | "failed" | "skipped"
+  operationId?: string
+  parentOperationId?: string
+  durationMs?: number
+  error?: {
+    code?: string
+    message: string
+    hint?: string
+    context?: Record<string, string>
+  }
 }
 
 export interface AuditEntry {

@@ -8,12 +8,42 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver/apple"
 	"github.com/devsy-org/devsy/pkg/driver/custom"
 	"github.com/devsy-org/devsy/pkg/driver/docker"
+	"github.com/devsy-org/devsy/pkg/driver/external"
 	"github.com/devsy-org/devsy/pkg/driver/kubernetes"
 	"github.com/devsy-org/devsy/pkg/driver/microsandbox"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
+type Bundle struct {
+	Runtime driver.Driver
+	Images  driver.ImageBackend
+}
+
+func New(ctx context.Context, workspaceInfo *provider2.AgentWorkspaceInfo) (*Bundle, error) {
+	runtimeDriver, err := newRuntime(ctx, workspaceInfo)
+	if err != nil {
+		return nil, err
+	}
+	images, err := newImageBackend(runtimeDriver, workspaceInfo)
+	if err != nil {
+		return nil, err
+	}
+	return &Bundle{Runtime: runtimeDriver, Images: images}, nil
+}
+
+// NewDriver retains the runtime-only constructor for existing callers.
 func NewDriver(
+	ctx context.Context,
+	workspaceInfo *provider2.AgentWorkspaceInfo,
+) (driver.Driver, error) {
+	bundle, err := New(ctx, workspaceInfo)
+	if err != nil {
+		return nil, err
+	}
+	return bundle.Runtime, nil
+}
+
+func newRuntime(
 	ctx context.Context,
 	workspaceInfo *provider2.AgentWorkspaceInfo,
 ) (driver.Driver, error) {
@@ -29,10 +59,47 @@ func NewDriver(
 		return apple.NewAppleDriver(ctx, workspaceInfo)
 	case provider2.MicrosandboxDriver:
 		return microsandbox.NewMicrosandboxDriver(ctx, workspaceInfo)
+	case provider2.ExternalDriver:
+		return external.New(ctx, workspaceInfo)
 	}
 
 	return nil, fmt.Errorf(
-		"unrecognized driver %q, possible values are %s, %s, %s, %s or %s",
+		"unrecognized driver %q, possible values are %s, %s, %s, %s, %s or %s",
 		driver, provider2.DockerDriver, provider2.CustomDriver, provider2.KubernetesDriver,
-		provider2.AppleDriver, provider2.MicrosandboxDriver)
+		provider2.AppleDriver, provider2.MicrosandboxDriver, provider2.ExternalDriver)
+}
+
+func newImageBackend(
+	runtimeDriver driver.Driver,
+	workspaceInfo *provider2.AgentWorkspaceInfo,
+) (driver.ImageBackend, error) {
+	switch workspaceInfo.Agent.Driver {
+	case provider2.ExternalDriver:
+		switch workspaceInfo.Agent.External.ImageBackend {
+		case "", provider2.DockerDriver:
+			images, err := docker.NewDockerDriver(workspaceInfo)
+			if err != nil {
+				return nil, fmt.Errorf("external runtime image backend: %w", err)
+			}
+			return images, nil
+		case "none":
+			// Image-only workspaces can opt out of host-side builds and publication.
+			return nil, nil
+		default:
+			return nil, fmt.Errorf(
+				"unsupported external runtime image backend %q",
+				workspaceInfo.Agent.External.ImageBackend,
+			)
+		}
+	case provider2.MicrosandboxDriver:
+		// Preserve registry inspection and defer Docker setup until a build or publish.
+		return &microsandboxImages{
+			ImageInspector: runtimeDriver.(driver.ImageInspector),
+			workspaceInfo:  workspaceInfo,
+		}, nil
+	}
+	if images, ok := runtimeDriver.(driver.ImageBackend); ok {
+		return images, nil
+	}
+	return nil, nil
 }

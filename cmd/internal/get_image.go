@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/image"
@@ -44,7 +45,7 @@ func (cmd *GetImageCommand) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	fmt.Println(string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 
 	return nil
 }

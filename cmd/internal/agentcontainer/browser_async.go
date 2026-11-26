@@ -57,9 +57,14 @@ var browserIDEs = []browserIDE{
 		short:       "Starts openvscode",
 		defaultPort: openvscode.DefaultVSCodePort,
 		newServer: func(s browserServerSpec) browserServer {
-			return openvscode.NewOpenVSCodeServer(
-				s.extensions, s.settings, s.userName, s.host, s.port, s.values,
-			)
+			return openvscode.NewOpenVSCodeServer(openvscode.ServerConfig{
+				Extensions: s.extensions,
+				Settings:   s.settings,
+				UserName:   s.userName,
+				Host:       s.host,
+				Port:       s.port,
+				Values:     s.values,
+			})
 		},
 	},
 	{

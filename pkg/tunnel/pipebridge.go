@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"time"
@@ -59,6 +60,13 @@ type (
 	HandlerFunc func(ctx context.Context, stdout *os.File, stdin *os.File) error
 )
 
+type pairCompletion struct {
+	tunnel bool
+	err    error
+}
+
+func (*pairCompletion) Error() string { return "pipe bridge completed" }
+
 // RunPair runs the tunnel and handler sides of the bridge concurrently and
 // returns once both have finished (or the slower side is abandoned after
 // joinTimeout).
@@ -67,13 +75,13 @@ func (pb *PipeBridge) RunPair(
 	tunnelFn TunnelFunc,
 	handlerFn HandlerFunc,
 ) error {
-	pairCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	pairCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 
 	var stopOnce sync.Once
 	stop := func() {
 		stopOnce.Do(func() {
-			cancel()
+			cancel(nil)
 			_ = pb.StdoutWriter.Close()
 			_ = pb.StdinWriter.Close()
 		})
@@ -94,20 +102,44 @@ func (pb *PipeBridge) RunPair(
 		}
 	}()
 
-	tunnelSide := func() error { return tunnelFn(pairCtx, pb.StdinReader, pb.StdoutWriter) }
+	tunnelSide := func() error {
+		err := tunnelFn(pairCtx, pb.StdinReader, pb.StdoutWriter)
+		cancel(&pairCompletion{tunnel: true, err: err})
+		return err
+	}
 	handlerSide := func() error {
-		return handlerFn(pairCtx, pb.StdoutReader, pb.StdinWriter)
+		err := handlerFn(pairCtx, pb.StdoutReader, pb.StdinWriter)
+		cancel(&pairCompletion{err: err})
+		return err
 	}
 
 	// Run the two sides concurrently and wait for both to finish (or the slower
 	// side to be abandoned after joinTimeout).
 	tunnelErr, handlerErr := iojoin.Join(tunnelSide, handlerSide, joinTimeout, stop)
-	log.Debugf(
-		"pipe bridge completed: tunnel_err=%v handler_err=%v parent_err=%v pair_err=%v",
-		tunnelErr,
-		handlerErr,
-		ctx.Err(),
-		pairCtx.Err(),
-	)
-	return ClassifyTunnelErrors(tunnelErr, handlerErr)
+	classifiedErr := ClassifyTunnelErrors(tunnelErr, handlerErr)
+	var first *pairCompletion
+	if ctx.Err() != nil {
+		classifiedErr = ctx.Err()
+	} else if errors.As(context.Cause(pairCtx), &first) && first.tunnel && !IsEOF(handlerErr) {
+		if first.err == nil && errors.Is(handlerErr, context.Canceled) {
+			classifiedErr = errors.New("tunnel closed before handler completed")
+		} else if first.err != nil && !errors.Is(first.err, context.Canceled) &&
+			!errors.Is(first.err, context.DeadlineExceeded) && handlerErr != nil {
+			classifiedErr = first.err
+		}
+	}
+
+	internalTunnelCancel := errors.Is(tunnelErr, context.Canceled) && ctx.Err() == nil
+	if classifiedErr == nil && ctx.Err() == nil && (tunnelErr == nil || internalTunnelCancel) {
+		log.Debug("pipe bridge completed successfully")
+	} else {
+		log.Debugf(
+			"pipe bridge completed: tunnel_err=%v handler_err=%v parent_err=%v pair_err=%v",
+			tunnelErr,
+			handlerErr,
+			ctx.Err(),
+			pairCtx.Err(),
+		)
+	}
+	return classifiedErr
 }

@@ -43,6 +43,41 @@ func TestConnectionCounter_IdleTimeoutFires(t *testing.T) {
 	assert.Equal(t, 0, c.connections, "count must remain zero when the timeout fires")
 }
 
+func TestConnectionCounter_InitialZeroConnectionsStartsTimeout(t *testing.T) {
+	c, calls := newRecordingCounter(t, 10*time.Millisecond)
+	defer c.Close()
+
+	require.Eventually(t, func() bool { return calls.Load() == 1 },
+		time.Second, time.Millisecond, "an initially idle counter should time out")
+}
+
+func TestConnectionCounter_TimeoutDispatchRejectsNewConnection(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	c := newConnectionCounter(context.Background(), 10*time.Millisecond, func() {
+		close(started)
+		<-release
+	}, "test")
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for timeout dispatch")
+	}
+	assert.False(t, c.Add(), "connections must be rejected after timeout dispatch starts")
+	assert.Zero(t, c.connections)
+	close(release)
+	c.Close()
+}
+
+func TestConnectionCounter_CloseStopsPendingTimeout(t *testing.T) {
+	c, calls := newRecordingCounter(t, 10*time.Millisecond)
+	c.Close()
+
+	require.Never(t, func() bool { return calls.Load() > 0 },
+		50*time.Millisecond, time.Millisecond)
+}
+
 func TestConnectionCounter_NewConnectionBeforeTimeoutCancelsIt(t *testing.T) {
 	c, calls := newRecordingCounter(t, 50*time.Millisecond)
 
@@ -70,13 +105,14 @@ func TestConnectionCounter_SpuriousDecClampsAtZero(t *testing.T) {
 	c.Dec()
 	c.Dec() // spurious Dec with no matching Add
 
+	// A subsequent Add must be tracked against a zero baseline, not a negative one.
+	assert.True(t, c.Add())
+	assert.Equal(t, 1, c.connections, "Add after a spurious Dec must account correctly")
+	c.Dec()
+
 	require.Eventually(t, func() bool { return calls.Load() == 1 },
 		time.Second, time.Millisecond, "onTimeout should fire exactly once")
 	assert.Equal(t, 0, c.connections, "count must never go negative after a spurious Dec")
-
-	// A subsequent Add must be tracked against a zero baseline, not a negative one.
-	c.Add()
-	assert.Equal(t, 1, c.connections, "Add after a spurious Dec must account correctly")
 }
 
 func TestConnectionCounter_CancelledContextDoesNotFireTimeout(t *testing.T) {

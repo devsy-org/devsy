@@ -88,37 +88,20 @@ func (d *RemoteDockerDelivery) copyBinaryFromSource(
 	}
 
 	dest := fmt.Sprintf("%s:%s", d.ContainerID, destPath)
-	out, err := d.cmd(ctx, "cp", tmpPath, dest).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
-	}
-	return nil
+	return runDockerCLI(ctx, d.cmd(ctx, "cp", tmpPath, dest))
 }
 
 func (d *RemoteDockerDelivery) chmodBinary(ctx context.Context, destPath string) error {
-	out, err := d.cmd(ctx, "exec", d.ContainerID, "chmod", "755", destPath).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
-	}
-	return nil
+	return runDockerCLI(ctx, d.cmd(ctx, "exec", d.ContainerID, "chmod", "755", destPath))
 }
 
 func (d *RemoteDockerDelivery) ensureDir(ctx context.Context, filePath string) error {
 	dir := path.Dir(filePath)
-	out, err := d.cmd(ctx, "exec", d.ContainerID, "mkdir", "-p", dir).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
-	}
-	return nil
+	return runDockerCLI(ctx, d.cmd(ctx, "exec", d.ContainerID, "mkdir", "-p", dir))
 }
 
 func (d *RemoteDockerDelivery) cmd(ctx context.Context, args ...string) *exec.Cmd {
-	// #nosec G204 -- args are constructed internally, not from user input
-	cmd := exec.CommandContext(ctx, d.dockerCommand(), args...)
-	if d.Environment != nil {
-		cmd.Env = append(os.Environ(), d.Environment...)
-	}
-	return cmd
+	return dockerCLI(ctx, d.dockerCommand(), d.Environment, args...)
 }
 
 func (d *RemoteDockerDelivery) dockerCommand() string {

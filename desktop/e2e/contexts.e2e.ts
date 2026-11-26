@@ -1,11 +1,15 @@
+import { readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type { ElectronApplication, Page } from "@playwright/test"
 import { expect, test } from "@playwright/test"
-import { launchApp } from "./electron-app.js"
+import { launchApp, resetMockState } from "./electron-app.js"
 
 let app: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
+  resetMockState()
   ;({ app, page } = await launchApp())
   await page.click('[data-sidebar="sidebar"] a[href="#/contexts"]')
   await page
@@ -65,5 +69,52 @@ test.describe("Contexts Page", () => {
     const switches = sheet.locator('button[role="switch"]')
     const switchCount = await switches.count()
     expect(switchCount).toBeGreaterThanOrEqual(5) // At least: telemetry, docker creds, git creds, ssh agent, etc.
+  })
+  test("saves and reloads independent GitHub forwarding and retains edits on failed save", async () => {
+    const sheet = page.getByRole("dialog")
+    const github = sheet.getByRole("switch", { name: "GitHub CLI Credentials" })
+    await expect(github).toBeVisible()
+    await expect(github).toHaveAttribute("aria-checked", "false")
+    await github.click()
+    await sheet.getByRole("button", { name: "Save", exact: true }).click()
+    await expect(sheet.getByText("Unsaved changes")).toBeHidden()
+    await page.keyboard.press("Escape")
+    await page
+      .locator('[data-slot="sidebar-inset"] main')
+      .getByRole("button", { name: "default" })
+      .first()
+      .click()
+    await expect(github).toHaveAttribute("aria-checked", "true")
+    const statePath = join(tmpdir(), "devsy-mock-state.json")
+    const state = JSON.parse(readFileSync(statePath, "utf8"))
+    expect(state.contextOptions.default).toEqual({
+      SSH_INJECT_GITHUB_CREDENTIALS: { value: "true" },
+    })
+    state.failContextSave = true
+    writeFileSync(statePath, JSON.stringify(state))
+    try {
+      await github.click()
+      await sheet.getByRole("button", { name: "Save", exact: true }).click()
+      await expect(page.getByText(/Failed to save:/)).toBeVisible()
+      await expect(sheet.getByText("Unsaved changes")).toBeVisible()
+      expect(
+        JSON.parse(readFileSync(statePath, "utf8")).contextOptions.default
+          .SSH_INJECT_GITHUB_CREDENTIALS.value,
+      ).toBe("true")
+      await sheet.getByRole("button", { name: "Reset", exact: true }).click()
+      await expect(github).toHaveAttribute("aria-checked", "true")
+      await github.scrollIntoViewIfNeeded()
+      await github
+        .locator("..")
+        .screenshot({ path: "test-results/github-cli-context-row.png" })
+      await page.screenshot({
+        path: "test-results/github-cli-context.png",
+        fullPage: true,
+      })
+    } finally {
+      const latest = JSON.parse(readFileSync(statePath, "utf8"))
+      latest.failContextSave = false
+      writeFileSync(statePath, JSON.stringify(latest))
+    }
   })
 })

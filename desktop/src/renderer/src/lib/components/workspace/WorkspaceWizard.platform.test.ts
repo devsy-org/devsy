@@ -15,6 +15,7 @@ vi.mock("$lib/ipc/commands.js", () => ({
 }))
 vi.mock("$lib/ipc/events.js", () => ({
   onCommandProgress: vi.fn().mockResolvedValue(() => {}),
+  onWorkspaceStatus: vi.fn().mockResolvedValue(() => {}),
 }))
 
 vi.mock("$lib/stores/imageCatalog.js", async () => {
@@ -36,7 +37,10 @@ vi.mock("$lib/stores/providers.js", async () => {
 })
 vi.mock("$lib/stores/workspaces.js", async () => {
   const { writable } = await import("svelte/store")
-  return { workspaces: writable<{ id: string }[]>([]) }
+  return {
+    workspaces: writable<{ id: string }[]>([]),
+    workspaceJobs: writable({}),
+  }
 })
 vi.mock("$lib/stores/toasts.js", () => ({
   toasts: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -205,7 +209,9 @@ describe("WorkspaceWizard platform compatibility", () => {
     await gotoReviewWithImage(getByText, "ubuntu:22.04")
 
     await waitFor(() =>
-      expect(getByText(/Compatible with your machine \(linux\/arm64\)/i)).toBeTruthy(),
+      expect(
+        getByText(/Compatible with your machine \(linux\/arm64\)/i),
+      ).toBeTruthy(),
     )
     expect(getByText(/linux\/amd64, linux\/arm64/i)).toBeTruthy()
     unmount()
@@ -220,7 +226,7 @@ describe("WorkspaceWizard platform compatibility", () => {
     await gotoReviewWithImage(getByText, "ubuntu:22.04")
 
     await waitFor(() =>
-      expect(getByText(/Couldn't verify compatibility/i)).toBeTruthy(),
+      expect(getByText(/Could not verify compatibility/i)).toBeTruthy(),
     )
     expect(queryByText(/no build for your machine/i)).toBeNull()
     expect(document.querySelector('input[type="checkbox"]')).toBeNull()
@@ -244,7 +250,7 @@ describe("WorkspaceWizard platform compatibility", () => {
     await gotoReviewWithImage(getByText, "ubuntu:22.04")
 
     await waitFor(() =>
-      expect(getByText(/Couldn't verify compatibility/i)).toBeTruthy(),
+      expect(getByText(/Could not verify compatibility/i)).toBeTruthy(),
     )
     expect(queryByText(/no build for your machine/i)).toBeNull()
     unmount()

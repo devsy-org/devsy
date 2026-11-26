@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"gotest.tools/assert"
 	"gotest.tools/assert/cmp"
 )
@@ -53,6 +54,13 @@ func (f *fakeRunner) lastArgs() []string {
 		return nil
 	}
 	return f.calls[len(f.calls)-1].Args
+}
+
+func expectedCloneArgs(base ...string) []string {
+	if !command.Exists(binGitLFS) {
+		return append(append([]string{}, base...), lfsDisableFilterArgs...)
+	}
+	return append([]string{}, base...)
 }
 
 func TestRepoFetch(t *testing.T) {
@@ -159,7 +167,7 @@ func TestRepoCheckoutPRAmbiguousSourceBranchLeftUntracked(t *testing.T) {
 
 	err := repo.CheckoutPR(context.Background(), testGitLabURL, "merge-requests/7/head")
 	assert.NilError(t, err)
-	assert.Equal(t, 3, len(fake.calls)) // fetch, switch, for-each-ref — no set-upstream
+	assert.Equal(t, 3, len(fake.calls)) // fetch, switch, for-each-ref - no set-upstream
 	assert.Equal(t, "for-each-ref", fake.calls[2].Args[0])
 }
 
@@ -195,10 +203,10 @@ func TestRepoCloneArgsThroughRunner(t *testing.T) {
 		WithBranch(testBranch),
 	)
 	assert.NilError(t, err)
-	assert.DeepEqual(t, []string{
+	assert.DeepEqual(t, expectedCloneArgs(
 		subClone, "--depth=1", flagBranch, testBranch,
 		testRepoURL, testTarget, flagProgress,
-	}, fake.lastArgs())
+	), fake.lastArgs())
 }
 
 func TestRepoEnvThreadedToRunner(t *testing.T) {
@@ -231,10 +239,10 @@ func TestRepoCloneFromInfoBranch(t *testing.T) {
 
 	assert.NilError(t, repo.CloneFromInfo(context.Background(), info, ""))
 	// Branch becomes a clone flag; no separate checkout call.
-	assert.DeepEqual(t, []string{
+	assert.DeepEqual(t, expectedCloneArgs(
 		subClone, flagBranch, testBranch,
 		testRepoURL, testTarget, flagProgress,
-	}, fake.calls[0].Args)
+	), fake.calls[0].Args)
 }
 
 func TestRepoCloneFromInfoCommit(t *testing.T) {
@@ -265,8 +273,8 @@ func TestRepoCloneFromInfoHelper(t *testing.T) {
 	info := &GitInfo{Repository: "https://host/org/repo.git"}
 
 	assert.NilError(t, repo.CloneFromInfo(context.Background(), info, "store"))
-	assert.DeepEqual(t, []string{
+	assert.DeepEqual(t, expectedCloneArgs(
 		subClone, flagConfig, "credential.helper=store",
 		"https://host/org/repo.git", testTarget, flagProgress,
-	}, fake.calls[0].Args)
+	), fake.calls[0].Args)
 }

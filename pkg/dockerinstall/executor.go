@@ -27,18 +27,26 @@ func (e *Executor) Run(ctx context.Context, shC, cmdStr string) error {
 		return nil
 	}
 
+	cmd := shellCommand(ctx, shC, cmdStr)
+	if cmd == nil {
+		return nil
+	}
+	return e.runCommand(cmd)
+}
+
+func shellCommand(ctx context.Context, shC, cmdStr string) *exec.Cmd {
 	switch {
 	case strings.HasPrefix(shC, "sudo"):
 		//nolint:gosec // G204: cmdStr built internally from constants and opts, not external input
-		return e.runCommand(exec.CommandContext(ctx, "sudo", "-E", "sh", "-c", cmdStr))
+		return exec.CommandContext(ctx, "sudo", "-E", "sh", "-c", cmdStr)
 	case strings.HasPrefix(shC, "su"):
 		//nolint:gosec // G204: cmdStr built internally from constants and opts, not external input
-		return e.runCommand(exec.CommandContext(ctx, "su", "-c", cmdStr))
+		return exec.CommandContext(ctx, "su", "-c", cmdStr)
 	case shC == ShellEcho:
 		return nil
 	default:
 		//nolint:gosec // G204: cmdStr built internally from constants and opts, not external input
-		return e.runCommand(exec.CommandContext(ctx, "sh", "-c", cmdStr))
+		return exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	}
 }
 
@@ -124,19 +132,9 @@ func (e *Executor) runWithStderrCapture(
 		return nil
 	}
 
-	var cmd *exec.Cmd
-	switch {
-	case strings.HasPrefix(shC, "sudo"):
-		//nolint:gosec // G204: cmdStr built internally from constants and opts, not external input
-		cmd = exec.CommandContext(ctx, "sudo", "-E", "sh", "-c", cmdStr)
-	case strings.HasPrefix(shC, "su"):
-		//nolint:gosec // G204: cmdStr built internally from constants and opts, not external input
-		cmd = exec.CommandContext(ctx, "su", "-c", cmdStr)
-	case shC == ShellEcho:
+	cmd := shellCommand(ctx, shC, cmdStr)
+	if cmd == nil {
 		return nil
-	default:
-		//nolint:gosec // G204: cmdStr built internally from constants and opts, not external input
-		cmd = exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	}
 
 	cmd.Stdout = e.opts.stdout

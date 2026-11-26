@@ -10,8 +10,13 @@ import (
 	"github.com/devsy-org/ssh"
 )
 
-func cmdSysProcAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{Setpgid: true}
+func mergeCommandSysProcAttr(existing *syscall.SysProcAttr) *syscall.SysProcAttr {
+	attrs := syscall.SysProcAttr{}
+	if existing != nil {
+		attrs = *existing
+	}
+	attrs.Setpgid = true
+	return &attrs
 }
 
 func forwardSignal(sig ssh.Signal, proc *os.Process) {

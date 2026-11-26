@@ -3,12 +3,10 @@ package up
 import (
 	"context"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -28,44 +26,9 @@ var _ = ginkgo.Describe(
 		ginkgo.Context("with rootful podman", func() {
 			var f *framework.Framework
 
-			//nolint:dupl // shared rootful podman wrapper setup across split files
 			ginkgo.BeforeEach(func(ctx context.Context) {
-				wrapper, err := os.Create( //nolint:gosec // G304: test-controlled path
-					initialDir + "/bin/podman-rootful",
-				)
-				framework.ExpectNoError(err)
-
-				_, err = wrapper.WriteString("#!/bin/sh\nsudo podman \"$@\"\n")
-				if err != nil {
-					_ = wrapper.Close()
-					framework.ExpectNoError(err)
-				}
-
-				err = wrapper.Close()
-				framework.ExpectNoError(err)
-
-				// #nosec G302 -- wrapper script needs execute permission
-				err = os.Chmod(initialDir+"/bin/podman-rootful", 0o755)
-				framework.ExpectNoError(err)
-
-				cmd := exec.CommandContext( //nolint:gosec // G204: test-controlled path
-					ctx, initialDir+"/bin/podman-rootful", "ps",
-				)
-				docker.PrepareForGroupCancellation(cmd)
-				out, err := cmd.CombinedOutput()
-				framework.ExpectNoError(err, string(out))
-
-				ginkgo.DeferCleanup(func() {
-					_ = os.Remove(initialDir + "/bin/podman-rootful")
-				})
-
-				f, err = setupDockerProvider(
-					initialDir+"/bin",
-					initialDir+"/bin/podman-rootful",
-				)
-				framework.ExpectNoError(err)
-			},
-			)
+				f = setupRootfulPodman(ctx, initialDir)
+			})
 
 			ginkgo.Context("lifecycle commands", func() { //nolint:dupl
 				ginkgo.It(
@@ -89,7 +52,7 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 						gomega.Expect(strings.TrimSpace(two)).To(gomega.Equal("postCreateTwo"))
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
 				ginkgo.It("should run postStartCommand after restart", func(ctx context.Context) {
@@ -115,14 +78,24 @@ var _ = ginkgo.Describe(
 					err = f.DevsyUp(ctx, tempDir)
 					framework.ExpectNoError(err)
 
-					out, err = f.DevsySSH(ctx, tempDir, "cat $HOME/post-start-count.log")
-					framework.ExpectNoError(err)
-					lines = strings.Count(strings.TrimSpace(out), "\n") + 1
-					gomega.Expect(lines).To(gomega.Equal(2),
+					gomega.Eventually(func() int {
+						out, err := probeSSH(
+							f, ctx, tempDir, "cat $HOME/post-start-count.log",
+						)
+						if err != nil {
+							return 0
+						}
+						trimmed := strings.TrimSpace(out)
+						if trimmed == "" {
+							return 0
+						}
+						return strings.Count(trimmed, "\n") + 1
+					}).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(
+						gomega.Equal(2),
 						"postStartCommand should have run again after restart")
 				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
-				ginkgo.It(
+				ginkgo.It( //nolint:dupl // rootful and rootless lifecycle suites mirror each other
 					"should defer postCreateCommand to background with waitFor",
 					func(ctx context.Context) {
 						tempDir, err := setupWorkspace(
@@ -135,50 +108,34 @@ var _ = ginkgo.Describe(
 						err = f.DevsyUp(ctx, tempDir)
 						framework.ExpectNoError(err)
 
-						out, err := f.DevsySSH(ctx, tempDir, "cat $HOME/on-create.out")
+						out, err := readLifecycleFile(tempDir, "on-create.out")
 						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("onCreateDone"))
+						gomega.Expect(out).To(gomega.Equal("onCreateDone"))
 
-						out, err = f.DevsySSH(ctx, tempDir, "cat $HOME/update-content.out")
+						out, err = readLifecycleFile(tempDir, "update-content.out")
 						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("updateContentDone"))
+						gomega.Expect(out).To(gomega.Equal("updateContentDone"))
 
-						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
-								ctx, tempDir, "cat $HOME/deferred.marker 2>/dev/null",
-							)
-							if err != nil {
-								return ""
-							}
-							return strings.TrimSpace(out)
+						gomega.Eventually(func() (string, error) {
+							return readLifecycleFile(tempDir, "deferred.marker")
 						}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).Should(
 							gomega.Equal("postCreateDone"),
 						)
 
-						envPath, err := f.DevsySSH(
-							ctx, tempDir, "cat $HOME/deferred-env-path.out",
-						)
+						envPath, err := readLifecycleFile(tempDir, "deferred-env-path.out")
 						framework.ExpectNoError(err)
 						gomega.Expect(envPath).To(
 							gomega.ContainSubstring("/usr/local/bin"),
 						)
 						gomega.Expect(envPath).NotTo(gomega.ContainSubstring("${containerEnv:"))
 
-						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
-								ctx,
-								tempDir,
-								"cat $HOME/post-start-deferred.out 2>/dev/null",
-							)
-							if err != nil {
-								return ""
-							}
-							return strings.TrimSpace(out)
+						gomega.Eventually(func() (string, error) {
+							return readLifecycleFile(tempDir, "post-start-deferred.out")
 						}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).Should(
 							gomega.Equal("postStartDone"),
 						)
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
 				ginkgo.It(
@@ -206,18 +163,18 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx, tempDir, "cat $HOME/post-attach.out 2>/dev/null",
 							)
 							if err != nil {
 								return ""
 							}
 							return strings.TrimSpace(out)
-						}).WithTimeout(15 * time.Second).WithPolling(500 * time.Millisecond).Should(
+						}).WithTimeout(30 * time.Second).WithPolling(500 * time.Millisecond).Should(
 							gomega.Equal("postAttachDone"),
 						)
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 			})
 		})

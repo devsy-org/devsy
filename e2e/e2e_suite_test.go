@@ -1,19 +1,22 @@
 package e2e
 
+// Blank imports register the e2e test suites.
 import (
+	"context"
 	"os"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/cmd"
 	"github.com/devsy-org/devsy/e2e/framework"
-	// Register tests.
 	_ "github.com/devsy-org/devsy/e2e/tests/build"
 	_ "github.com/devsy-org/devsy/e2e/tests/ci"
 	_ "github.com/devsy-org/devsy/e2e/tests/configapply"
 	_ "github.com/devsy-org/devsy/e2e/tests/configread"
 	_ "github.com/devsy-org/devsy/e2e/tests/context"
 	_ "github.com/devsy-org/devsy/e2e/tests/delivery"
+	_ "github.com/devsy-org/devsy/e2e/tests/dockerbuildkit"
 	_ "github.com/devsy-org/devsy/e2e/tests/dockercontext"
 	_ "github.com/devsy-org/devsy/e2e/tests/dockerinstall"
 	_ "github.com/devsy-org/devsy/e2e/tests/down"
@@ -41,7 +44,20 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/upgrade"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
+
+func TestMain(m *testing.M) {
+	// The external runtime self-execs this test binary as the real supervisor.
+	if len(os.Args) > 2 && os.Args[1] == "internal" && os.Args[2] == "runtime-supervisor" {
+		cmd.Execute()
+		return
+	}
+	if handled, code := dispatchFixtureCredentialHelper(); handled {
+		os.Exit(code)
+	}
+	os.Exit(m.Run())
+}
 
 // TestRunE2ETests checks configuration parameters (specified through flags) and then runs
 // E2E tests using the Ginkgo runner.
@@ -53,17 +69,14 @@ func TestRunE2ETests(t *testing.T) {
 		go framework.ServeAgent()
 
 		// wait for http server to be up and running (max 30s)
-		deadline := time.After(30 * time.Second)
-		for {
-			select {
-			case <-deadline:
-				t.Fatal("timeout waiting for DEVSY_AGENT_URL to be set after 30s")
-			default:
-			}
-			time.Sleep(time.Second)
-			if os.Getenv("DEVSY_AGENT_URL") != "" {
-				break
-			}
+		err := wait.PollUntilContextTimeout(
+			context.Background(), time.Second, 30*time.Second, true,
+			func(context.Context) (bool, error) {
+				return os.Getenv("DEVSY_AGENT_URL") != "", nil
+			},
+		)
+		if err != nil {
+			t.Fatal("timeout waiting for DEVSY_AGENT_URL to be set after 30s")
 		}
 	}
 	gomega.RegisterFailHandler(ginkgo.Fail)

@@ -68,7 +68,7 @@ func (w *progressWriter) reportProgress(line string) bool {
 		return true // exact duplicate frame (e.g. object count didn't change)
 	}
 	if pct%10 == 0 || pct == 100 {
-		log.Infof("%s", line)
+		log.Debugf("%s", line)
 	}
 	return true
 }

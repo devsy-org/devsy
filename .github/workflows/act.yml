@@ -16,20 +16,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
 
-      - name: setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      - name: install task
-        run: go install github.com/go-task/task/v3/cmd/task@latest
+      - name: setup mise tools
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
       - name: install goreleaser
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -39,11 +34,11 @@ jobs:
         run: docker version && docker ps -a
 
       - name: build test binary
-        run: task cli:test:e2e:build
+        run: mise run cli:test:e2e:build
 
       - name: generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
@@ -61,7 +56,7 @@ jobs:
             KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
             PATH="${PATH}" \
             GOROOT="${GOROOT}" \
-            ${{ github.event.inputs.test_focus == '' && 'task cli:test:e2e' || format('task cli:test:e2e:focus -- "{0}"', github.event.inputs.test_focus) }}
+            ${{ github.event.inputs.test_focus == '' && 'mise run cli:test:e2e' || format('mise run cli:test:e2e:focus -- "{0}"', github.event.inputs.test_focus) }}
 
   build-ui:
     name: Build User Interface
@@ -70,9 +65,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
 
       - name: install dependencies
         working-directory: ./desktop
@@ -93,9 +88,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -108,7 +103,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: install setuptools
         run: pip install setuptools
@@ -133,7 +128,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: upload desktop linux artifact for flatpak
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-flatpak
           path: desktop/release/*.deb
@@ -149,7 +144,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: download desktop linux artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-flatpak
           path: desktop/flatpak/
@@ -165,7 +160,7 @@ jobs:
             exit 1
           fi
 
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
           bundle: Devsy.flatpak
           manifest-path: desktop/flatpak/sh.devsy.app.yml

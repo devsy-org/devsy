@@ -144,7 +144,7 @@ func TestRestoreVolumes_ResetRemovesContentNotInSnapshot(t *testing.T) {
 // a regression where strip depth was derived from the restore-side mount
 // target's own path-segment count instead of the recorded create-time
 // prefix. Here the create-time prefix is 1 segment ("workspace") but the
-// restore-side target is 2 segments deep ("workspaces/proj") — deriving
+// restore-side target is 2 segments deep ("workspaces/proj") - deriving
 // depth from the restore side would strip 2 levels and destroy the
 // filename; deriving it from the recorded prefix strips exactly 1 and
 // restores correctly.

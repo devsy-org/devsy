@@ -22,6 +22,23 @@ describe("DaemonState", () => {
     expect(state.updateWorkspaces(ws)).toBe(false)
   })
 
+  it("updates workspace status and notifies listeners only for changes", () => {
+    const state = new DaemonState()
+    const listener = vi.fn()
+    const unsubscribe = state.onWorkspacesChange(listener)
+    state.updateWorkspaces([makeWorkspace("ws1", "2024-01-01")])
+    listener.mockClear()
+
+    expect(state.updateWorkspaceStatus("ws1", "running")).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(state.updateWorkspaceStatus("ws1", "running")).toBe(false)
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(state.updateWorkspaceStatus("missing", "running")).toBe(false)
+    unsubscribe()
+    expect(state.updateWorkspaceStatus("ws1", "stopped")).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
   it("detects workspace removal", () => {
     const state = new DaemonState()
     expect(
@@ -39,7 +56,9 @@ describe("DaemonState", () => {
   it("preserves a cached workspace status when later updates omit it", () => {
     const state = new DaemonState()
     expect(
-      state.updateWorkspaces([{ id: "ws1", lastUsed: "2024-01-01", status: "Running" }]),
+      state.updateWorkspaces([
+        { id: "ws1", lastUsed: "2024-01-01", status: "Running" },
+      ]),
     ).toBe(true)
     expect(
       state.updateWorkspaces([{ id: "ws1", lastUsed: "2024-01-02" }]),
@@ -58,6 +77,80 @@ describe("DaemonState", () => {
         makeProvider("kubernetes"),
       ]),
     ).toBe(true)
+  })
+
+  it("publishes a provider whose only change is its icon revision", () => {
+    const state = new DaemonState()
+    state.updateProviders([{ name: "harvester", iconRevision: "rev-a" }])
+
+    expect(
+      state.updateProviders([{ name: "harvester", iconRevision: "rev-b" }]),
+    ).toBe(true)
+    expect(state.providerList()[0]).toMatchObject({ iconRevision: "rev-b" })
+  })
+
+  it("confirms provider mode changes without mutating other cached data", () => {
+    const state = new DaemonState()
+    const provider = {
+      name: "docker",
+      state: { initialized: true, singleMachine: true },
+      options: { REGION: "local" },
+    }
+    const sibling = {
+      name: "aws",
+      state: { initialized: false, singleMachine: false },
+    }
+    state.updateProviders([provider, sibling])
+
+    const beforeWrite = state.providerReadRevision()
+    expect(state.confirmProviderSingleMachine("docker", false)).toBe(true)
+    expect(state.providerReadRevision()).toBe(beforeWrite + 1)
+    expect(state.providerList()).toEqual([
+      sibling,
+      {
+        ...provider,
+        state: { initialized: true, singleMachine: false },
+      },
+    ])
+    expect(provider.state.singleMachine).toBe(true)
+    expect(state.confirmProviderSingleMachine("docker", false)).toBe(false)
+    expect(state.confirmProviderSingleMachine("missing", true)).toBe(false)
+    expect(state.providerReadRevision()).toBe(beforeWrite + 3)
+    expect(state.providerList()).toHaveLength(2)
+  })
+
+  it("ignores provider reads started before the last confirmed mode write", () => {
+    const state = new DaemonState()
+    const original = {
+      name: "docker",
+      state: { initialized: true, singleMachine: true },
+    }
+    state.updateProviders([original])
+    const readRevision = state.providerReadRevision()
+
+    state.confirmProviderSingleMachine("docker", false)
+
+    expect(
+      state.updateProviders(
+        [{ name: "docker", state: { initialized: true, singleMachine: true } }],
+        readRevision,
+      ),
+    ).toBe(false)
+    expect(state.providerList()[0].state?.singleMachine).toBe(false)
+    const freshReadRevision = state.providerReadRevision()
+    expect(
+      state.updateProviders(
+        [
+          {
+            name: "docker",
+            state: { initialized: false, singleMachine: true },
+          },
+        ],
+        freshReadRevision,
+      ),
+    ).toBe(true)
+    expect(state.providerList()[0].state?.singleMachine).toBe(true)
+    expect(state.providerList()[0].state?.initialized).toBe(false)
   })
 
   it("sorts workspaces by lastUsed descending", () => {

@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	cmdprovider "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -57,8 +58,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerAddInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Source == "" {
-			return errorResult(fmt.Errorf("source is required")), opOK{}, nil
+		if err := requireField("source", in.Source); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderAdd(ctx, g, in) })
 	}))
@@ -69,8 +70,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderDelete(ctx, g, in.Name) })
 	}))
@@ -83,8 +84,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderUse(ctx, g, in.Name) })
 	}))
@@ -146,13 +147,20 @@ func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) e
 	if err != nil {
 		return err
 	}
-	return cmdprovider.DeleteProvider(ctx, devsyConfig, name, false, false)
-}
 
-func runProviderUse(_ context.Context, g *flags.GlobalFlags, name string) error {
-	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
+	unlock, err := provider.LockProvider(devsyConfig.DefaultContext, name)
 	if err != nil {
 		return err
 	}
-	return cmdprovider.UseProvider(devsyConfig, name)
+	defer unlock()
+
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, g.Provider)
+	if err != nil {
+		return err
+	}
+	return cmdprovider.DeleteProvider(ctx, devsyConfig, name, cmdprovider.DeleteOptions{})
+}
+
+func runProviderUse(_ context.Context, g *flags.GlobalFlags, name string) error {
+	return cmdprovider.UseProvider(g.Context, g.Provider, name)
 }

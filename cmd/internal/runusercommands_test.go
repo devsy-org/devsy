@@ -318,6 +318,13 @@ func TestRunUserCommandsCmd_Validate(t *testing.T) {
 }
 
 func TestResolveWaitForBoundary(t *testing.T) {
+	hooks := []lifecycleHook{
+		{name: hookOnCreate},
+		{name: hookUpdateContent},
+		{name: hookPostCreate},
+		{name: hookPostStart},
+		{name: hookPostAttach},
+	}
 	tests := []struct {
 		name    string
 		waitFor string
@@ -340,14 +347,26 @@ func TestResolveWaitForBoundary(t *testing.T) {
 					},
 				},
 			}
-			got := resolveWaitForBoundary(result)
+			got := resolveWaitForBoundary(hooks, result)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
 func TestResolveWaitForBoundary_NilResult(t *testing.T) {
-	assert.Equal(t, 1, resolveWaitForBoundary(nil))
+	hooks := []lifecycleHook{{name: hookOnCreate}, {name: hookUpdateContent}}
+	assert.Equal(t, 1, resolveWaitForBoundary(hooks, nil))
+	assert.Equal(t, 1, resolveWaitForBoundary(hooks, &devcconfig.Result{}))
+}
+
+func TestResolveWaitForBoundary_UsesHookOrder(t *testing.T) {
+	hooks := []lifecycleHook{{name: hookUpdateContent}, {name: hookOnCreate}}
+	result := &devcconfig.Result{MergedConfig: &devcconfig.MergedDevContainerConfig{
+		DevContainerConfigBase: devcconfig.DevContainerConfigBase{WaitFor: hookOnCreate},
+	}}
+	assert.Equal(t, 1, resolveWaitForBoundary(hooks, result))
+	result.MergedConfig.WaitFor = "unknownHook"
+	assert.Equal(t, 0, resolveWaitForBoundary(hooks, result))
 }
 
 func TestBuildLifecycleEnvArgs_Nil(t *testing.T) {

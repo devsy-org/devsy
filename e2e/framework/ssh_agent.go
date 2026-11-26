@@ -2,6 +2,7 @@ package framework
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/devsy-org/devsy/logging/redact"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 type testLogger interface {
@@ -84,7 +87,7 @@ func generateAgentKey(keyPath string) error {
 	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-q").
 		CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ssh-keygen: %w: %s", err, out)
+		return fmt.Errorf("ssh-keygen: %w: %s", err, externalCommandDiagnostic(string(out)))
 	}
 	return nil
 }
@@ -108,14 +111,17 @@ func startSSHAgentProcess(sockPath string) (*exec.Cmd, *bytes.Buffer, error) {
 // waitForAgentSocket polls until the agent's socket file appears so subsequent
 // ssh-add invocations have something to connect to.
 func waitForAgentSocket(sockPath string) error {
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, statErr := os.Stat(sockPath); statErr == nil {
-			return nil
-		}
-		time.Sleep(25 * time.Millisecond)
+	err := wait.PollUntilContextTimeout(
+		context.Background(), 25*time.Millisecond, 2*time.Second, true,
+		func(context.Context) (bool, error) {
+			_, statErr := os.Stat(sockPath)
+			return statErr == nil, nil
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("ssh-agent did not bind socket %s within 2s: %w", sockPath, err)
 	}
-	return fmt.Errorf("ssh-agent did not bind socket %s within 2s", sockPath)
+	return nil
 }
 
 func addKeyToAgent(sockPath, keyPath string) error {
@@ -123,7 +129,7 @@ func addKeyToAgent(sockPath, keyPath string) error {
 	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+sockPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ssh-add: %w: %s", err, out)
+		return fmt.Errorf("ssh-add: %w: %s", err, externalCommandDiagnostic(string(out)))
 	}
 	return nil
 }
@@ -171,7 +177,14 @@ func OpenSSHControlMaster(
 	cmd.Stdout = io.Discard
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", nil, fmt.Errorf("ssh ControlMaster start: %w: %s", err, stderr.String())
+		redactor := redact.New(
+			redact.Options{Environment: cmd.Env, Values: registeredSecretValues()},
+		)
+		return "", nil, fmt.Errorf(
+			"ssh ControlMaster start: %w: %s",
+			err,
+			ReportText(redactor, stderr.String()),
+		)
 	}
 
 	closer = func() {

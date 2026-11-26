@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/config"
@@ -17,6 +19,9 @@ import (
 	"github.com/devsy-org/devsy/providers"
 )
 
+// DeprecatedMicrosandboxSource explicitly selects the legacy built-in provider.
+const DeprecatedMicrosandboxSource = "builtin:microsandbox"
+
 // ResolveProvider resolves a provider source string into raw provider YAML
 // bytes and a ProviderSource describing the origin (internal, URL, file, or
 // GitHub release).
@@ -24,6 +29,10 @@ func ResolveProvider(
 	ctx context.Context,
 	providerSource string,
 ) ([]byte, *ProviderSource, error) {
+	if providerSource == DeprecatedMicrosandboxSource {
+		// Keep stored legacy records compatible with embedded exec refresh and reload.
+		providerSource = MicrosandboxDriver
+	}
 	retSource := &ProviderSource{Raw: strings.TrimSpace(providerSource)}
 
 	if out, ok := resolveInternalProvider(providerSource, retSource); ok {
@@ -105,7 +114,11 @@ func downloadProviderGithub(
 		)
 	}
 
-	requestURL := buildGithubURL(path, release)
+	resolvedRef := release
+	if resolvedRef == "" {
+		resolvedRef = resolveLatestGithubRelease(ctx, path)
+	}
+	requestURL := buildGithubURL(path, resolvedRef)
 
 	body, err := download.File(
 		ctx,
@@ -122,10 +135,29 @@ func downloadProviderGithub(
 		return nil, nil, err
 	}
 
-	return out, &ProviderSource{
+	source := &ProviderSource{
 		Raw:    originalPath,
 		Github: path,
-	}, nil
+	}
+	if resolvedRef != "" {
+		source.ResolvedRef = resolvedRef
+		source.ResolvedManifestURL = requestURL
+	}
+
+	return out, source, nil
+}
+
+// resolveLatestGithubRelease pins an unversioned source to the release GitHub
+// currently designates as latest so manifest and icons come from one tag. A
+// metadata failure returns "" and leaves provenance unresolved: the manifest
+// still installs through the latest-download redirect.
+func resolveLatestGithubRelease(ctx context.Context, path string) string {
+	tag, err := FetchLatestGitHubReleaseTag(ctx, path, gitcredentials.Resolver{})
+	if err != nil {
+		log.Debugf("resolve latest release of %s: %v", path, err)
+		return ""
+	}
+	return tag
 }
 
 func resolveInternalProvider(
@@ -150,12 +182,13 @@ func resolveURLProvider(
 		return nil, false, nil
 	}
 
-	log.Infof("downloading provider from %s", providerSource)
+	log.Debugf("downloading provider from %s", providerSource)
 	out, err := downloadProvider(ctx, providerSource)
 	if err != nil {
 		return nil, true, fmt.Errorf("download provider: %w", err)
 	}
 	retSource.URL = providerSource
+	retSource.ResolvedManifestURL = logicalManifestURL(providerSource)
 	return out, true, nil
 }
 
@@ -163,29 +196,109 @@ func resolveFileProvider(
 	providerSource string,
 	retSource *ProviderSource,
 ) ([]byte, bool, error) {
-	if !strings.HasSuffix(providerSource, ".yaml") && !strings.HasSuffix(providerSource, ".yml") {
+	explicit := isExplicitManifestPath(providerSource)
+	if skipManifestSource(providerSource, explicit) {
+		return nil, false, nil
+	}
+	filePath, err := expandManifestPath(providerSource)
+	if err != nil {
+		return nil, true, err
+	}
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return resolveFileStatError(filePath, explicit, err)
+	}
+	if !info.Mode().IsRegular() {
+		if explicit {
+			return nil, true, fmt.Errorf("provider manifest is not a regular file: %s", filePath)
+		}
 		return nil, false, nil
 	}
 
-	if _, err := os.Stat(providerSource); err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
-		return nil, true, fmt.Errorf("stat provider file %q: %w", providerSource, err)
-	}
-
 	// #nosec G304 - providerSource is user-provided path for loading provider config
-	out, err := os.ReadFile(providerSource)
+	out, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, true, fmt.Errorf("read provider file %q: %w", providerSource, err)
 	}
 
-	absPath, err := filepath.Abs(providerSource)
+	absPath, err := absoluteManifestPath(filePath)
 	if err != nil {
 		return nil, true, fmt.Errorf("resolve absolute path for %q: %w", providerSource, err)
 	}
 	retSource.File = absPath
 	return out, true, nil
+}
+
+func absoluteManifestPath(filePath string) (string, error) {
+	for part := range strings.SplitSeq(filepath.ToSlash(filePath), "/") {
+		if part == ".." {
+			resolved, err := filepath.EvalSymlinks(filePath)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Abs(resolved)
+		}
+	}
+	return filepath.Abs(filePath)
+}
+
+func skipManifestSource(source string, explicit bool) bool {
+	return !explicit && !hasYAMLSuffix(source)
+}
+
+func isExplicitManifestPath(source string) bool {
+	return filepath.IsAbs(source) || strings.HasPrefix(source, "/") ||
+		strings.HasPrefix(source, "./") ||
+		strings.HasPrefix(source, "../") ||
+		strings.HasPrefix(source, "~") ||
+		strings.Contains(source, `\`) ||
+		isWindowsDrivePath(source)
+}
+
+func isWindowsDrivePath(source string) bool {
+	if len(source) < 2 || source[1] != ':' {
+		return false
+	}
+	letter := source[0] | 0x20
+	return letter >= 'a' && letter <= 'z' &&
+		(runtime.GOOS == windowsOS || (len(source) > 2 && source[2] == '/'))
+}
+
+func expandManifestPath(source string) (string, error) {
+	if source != "~" && !strings.HasPrefix(source, "~/") && !strings.HasPrefix(source, `~\`) {
+		return source, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	return strings.TrimRight(
+		home,
+		`/\`,
+	) + string(
+		filepath.Separator,
+	) + strings.TrimLeft(
+		source[1:],
+		`/\`,
+	), nil
+}
+
+func hasYAMLSuffix(source string) bool {
+	return strings.HasSuffix(source, ".yaml") || strings.HasSuffix(source, ".yml")
+}
+
+func resolveFileStatError(source string, manifestPath bool, err error) ([]byte, bool, error) {
+	if !os.IsNotExist(err) {
+		return nil, true, fmt.Errorf("stat provider file %q: %w", source, err)
+	}
+	if !manifestPath {
+		return nil, false, nil
+	}
+	absPath, absErr := filepath.Abs(source)
+	if absErr != nil {
+		return nil, true, fmt.Errorf("resolve absolute path for %q: %w", source, absErr)
+	}
+	return nil, true, fmt.Errorf("provider manifest file not found: %s", absPath)
 }
 
 func downloadProvider(ctx context.Context, url string) ([]byte, error) {
@@ -206,11 +319,34 @@ func downloadProvider(ctx context.Context, url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// githubWebBaseURL hosts release downloads; tests point it at a local server.
+var githubWebBaseURL = "https://github.com"
+
 func buildGithubURL(path, release string) string {
 	if release == "" {
-		return fmt.Sprintf("https://github.com/%s/releases/latest/download/provider.yaml", path)
+		return fmt.Sprintf("%s/%s/releases/latest/download/provider.yaml", githubWebBaseURL, path)
 	}
-	return fmt.Sprintf("https://github.com/%s/releases/download/%s/provider.yaml", path, release)
+	return fmt.Sprintf(
+		"%s/%s/releases/download/%s/provider.yaml",
+		githubWebBaseURL,
+		path,
+		url.PathEscape(release),
+	)
+}
+
+// logicalManifestURL drops credentials, query and fragment so the stored base
+// for sibling assets never carries secrets from the manifest request.
+func logicalManifestURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return parsed.String()
 }
 
 // GetProviderSource returns a canonical source string for the provider, used
@@ -227,13 +363,26 @@ func GetProviderSource(src ProviderSource, configName string) string {
 	case src.File != "":
 		return src.File
 	case src.Github != "":
-		// Canonicalize to github.com/<org>/<repo> so version helpers
-		// (classifyVersionSource, parseGitHubSourcePath) recognize it.
-		if strings.HasPrefix(src.Github, "github.com/") {
-			return src.Github
-		}
-		return "github.com/" + src.Github
+		return githubSourceString(src)
 	default:
 		return ""
 	}
+}
+
+// githubSourceString canonicalizes a GitHub source to github.com/<org>/<repo>
+// so version helpers (classifyVersionSource, parseGitHubSourcePath) recognize
+// it, and applies the tag from Raw when there is one.
+func githubSourceString(src ProviderSource) string {
+	githubSource, githubTag := SplitSourceAndTag(src.Github)
+	if !strings.HasPrefix(githubSource, "github.com/") {
+		githubSource = "github.com/" + githubSource
+	}
+	_, rawTag := SplitSourceAndTag(src.Raw)
+	if rawTag != "" {
+		githubTag = rawTag
+	}
+	if githubTag != "" {
+		return githubSource + "@" + githubTag
+	}
+	return githubSource
 }

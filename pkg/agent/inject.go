@@ -39,6 +39,7 @@ var (
 
 // InjectOptions defines the parameters for injecting the Devsy agent into a remote environment.
 type InjectOptions struct {
+	LocalEnvironment []string
 	// Exec is the function used to execute commands on the remote machine. Required.
 	// nolint:staticcheck
 	Exec inject.ExecFunc
@@ -67,6 +68,9 @@ type InjectOptions struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
+	// RuntimeHealthCheck is optional. Container-backed callers use it to
+	// distinguish a stalled runtime from a transient remote startup failure.
+	RuntimeHealthCheck func(context.Context) error
 }
 
 func (o *InjectOptions) ApplyDefaults() {
@@ -78,6 +82,11 @@ func (o *InjectOptions) ApplyDefaults() {
 func (o *InjectOptions) Validate() error {
 	if o.Exec == nil {
 		return fmt.Errorf("exec function is required")
+	}
+	for _, value := range []string{o.RemoteAgentPath, o.RemoteVersion, o.DownloadURL, o.Command} {
+		if strings.ContainsRune(value, 0) {
+			return fmt.Errorf("agent injection parameter contains NUL")
+		}
 	}
 	return nil
 }
@@ -177,23 +186,80 @@ func InjectAgent(ctx context.Context, opts *InjectOptions) error {
 	}
 
 	log.Debug("starting agent injection")
+	guard := injectionRuntimeGuard{check: opts.RuntimeHealthCheck}
 	return retry.OnError(backoff, func(err error) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		if errors.Is(err, docker.ErrContainerTerminal) {
-			log.Errorf("container entered a terminal state, not retrying: %v", err)
+		if errors.Is(err, docker.ErrContainerTerminal) ||
+			errors.Is(err, docker.ErrRuntimeUnavailable) {
+			log.Errorf("agent injection cannot continue: %v", err)
 			return false
 		}
 		log.Debugf("retrying injection: %v", err)
 		return true
 	}, func() error {
-		return injectAgent(ctx, &injectConfig{
+		err := injectAgent(ctx, &injectConfig{
 			opts: opts,
 			bm:   bm,
 			vc:   vc,
 		})
+		return guard.handle(ctx, err)
 	})
+}
+
+type injectionRuntimeGuard struct {
+	check               func(context.Context) error
+	consecutiveTimeouts int
+}
+
+func (g *injectionRuntimeGuard) handle(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if !isInjectionTimeout(err) {
+		g.consecutiveTimeouts = 0
+		return err
+	}
+	g.consecutiveTimeouts++
+	log.Debugf("[agent-injection] timeout consecutive=%d", g.consecutiveTimeouts)
+	if g.consecutiveTimeouts < 2 || g.check == nil {
+		return err
+	}
+	return g.checkAfterRepeatedTimeout(ctx, err)
+}
+
+func (g *injectionRuntimeGuard) checkAfterRepeatedTimeout(ctx context.Context, err error) error {
+	log.Debug("[agent-injection] escalating to runtime health check")
+	healthCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if healthErr := g.check(healthCtx); healthErr != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !errors.Is(healthErr, docker.ErrRuntimeUnavailable) &&
+			!errors.Is(healthCtx.Err(), context.DeadlineExceeded) {
+			log.Warnf("[agent-injection] runtime health inconclusive: %v", healthErr)
+			return err
+		}
+		log.Errorf(
+			"[agent-injection] runtime unavailable; aborting injection retries: %v",
+			healthErr,
+		)
+		return fmt.Errorf(
+			"AGENT_INJECTION_RUNTIME_UNAVAILABLE: %w",
+			errors.Join(docker.ErrRuntimeUnavailable, healthErr, err),
+		)
+	}
+	return err
+}
+
+func isInjectionTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var timeout interface{ Timeout() bool }
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
 
 func injectLocally(ctx context.Context, opts *InjectOptions) error {
@@ -206,7 +272,7 @@ func injectLocally(ctx context.Context, opts *InjectOptions) error {
 		Stdin:   opts.Stdin,
 		Stdout:  opts.Stdout,
 		Stderr:  opts.Stderr,
-		Environ: nil,
+		Environ: opts.LocalEnvironment,
 	})
 }
 
@@ -217,12 +283,16 @@ type injectConfig struct {
 }
 
 func injectAgent(ctx context.Context, cfg *injectConfig) error {
+	params, err := buildScriptParams(cfg)
+	if err != nil {
+		return err
+	}
 	buf := &bytes.Buffer{}
 	//nolint:staticcheck
 	wasExecuted, err := inject.Inject(ctx, inject.InjectOptions{
 		Exec:         cfg.opts.Exec,
 		LocalFile:    createBinaryLoader(ctx, cfg),
-		ScriptParams: buildScriptParams(cfg),
+		ScriptParams: params,
 		Stdin:        cfg.opts.Stdin,
 		Stdout:       cfg.opts.Stdout,
 		Stderr:       setupStderr(cfg.opts, buf),
@@ -252,16 +322,20 @@ func createBinaryLoader(ctx context.Context, cfg *injectConfig) func(bool) (io.R
 	}
 }
 
-func buildScriptParams(cfg *injectConfig) *inject.Params {
+func buildScriptParams(cfg *injectConfig) (*inject.Params, error) {
 	opts := cfg.opts
+	existsCheck, err := cfg.vc.buildExistsCheck(opts.RemoteAgentPath)
+	if err != nil {
+		return nil, err
+	}
 	return &inject.Params{
 		Command:             opts.Command,
 		AgentRemotePath:     opts.RemoteAgentPath,
 		DownloadURLs:        inject.NewDownloadURLs(opts.DownloadURL),
-		ExistsCheck:         cfg.vc.buildExistsCheck(opts.RemoteAgentPath),
+		ExistsCheck:         existsCheck,
 		PreferAgentDownload: *opts.PreferDownloadFromRemoteUrl,
 		ShouldChmodPath:     true,
-	}
+	}, nil
 }
 
 func handleInjectError(err error, wasExecuted bool, buf *bytes.Buffer) error {
@@ -334,12 +408,20 @@ func newVersionChecker(opts *InjectOptions) *versionChecker {
 	}
 }
 
-func (vc *versionChecker) buildExistsCheck(agentPath string) string {
-	if vc.skipCheck {
-		return fmt.Sprintf(`! [ -x "%s" ]`, agentPath)
+func (vc *versionChecker) buildExistsCheck(agentPath string) (string, error) {
+	quotedPath, err := inject.QuotePOSIXLiteral(agentPath)
+	if err != nil {
+		return "", err
 	}
-	return fmt.Sprintf(`! { [ -x "%s" ] && [ "$("%s" --version 2>/dev/null)" = "%s" ]; }`,
-		agentPath, agentPath, vc.remoteVersion)
+	if vc.skipCheck {
+		return fmt.Sprintf(`! [ -x %s ]`, quotedPath), nil
+	}
+	quotedVersion, err := inject.QuotePOSIXLiteral(vc.remoteVersion)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`! { [ -x %s ] && [ "$(%s --version 2>/dev/null)" = %s ]; }`,
+		quotedPath, quotedPath, quotedVersion), nil
 }
 
 // session encapsulates the state and resources for an injection session.
@@ -349,14 +431,22 @@ func (vc *versionChecker) detectRemoteAgentVersion(
 	agentPath string,
 ) (string, error) {
 	buf := &bytes.Buffer{}
-	versionCmd := fmt.Sprintf("%s --version", agentPath)
+	quotedPath, err := inject.QuotePOSIXLiteral(agentPath)
+	if err != nil {
+		return "", err
+	}
+	versionCmd := fmt.Sprintf("%s --version", quotedPath)
 
 	checkCtx, cancel := context.WithTimeout(ctx, versionCheckTimeout)
 	defer cancel()
-	err := exec(checkCtx, versionCmd, nil, buf, io.Discard)
+	log.Debug("checking remote agent version")
+	err = exec(checkCtx, versionCmd, nil, buf, io.Discard)
 	if err != nil {
 		if errors.Is(checkCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			return "", fmt.Errorf("get remote agent version timed out: %w", err)
+			return "", fmt.Errorf(
+				"get remote agent version timed out: %w",
+				errors.Join(err, context.DeadlineExceeded),
+			)
 		}
 		return "", fmt.Errorf("failed to get remote agent version: %w", err)
 	}

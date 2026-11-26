@@ -1,15 +1,50 @@
 package clierr
 
 import (
+	"context"
 	"encoding/json"
 	stderrs "errors"
 	"fmt"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"go.uber.org/zap/zapcore"
 )
 
+func TestClassifyCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		code Code
+	}{
+		{name: "canceled", err: context.Canceled, code: CodeCanceled},
+		{name: "deadline", err: context.DeadlineExceeded, code: CodeDeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Classify(tc.err)
+			if got.Code != tc.code || got.Message == "" || got.Hint == "" {
+				t.Fatalf(
+					"Classify(%v) = %+v, want code %q and actionable text",
+					tc.err,
+					got,
+					tc.code,
+				)
+			}
+		})
+	}
+}
+
 const testRateLimited = "rate limited"
+
+func TestClassifyDockerDaemonSurvivesOutputMasking(t *testing.T) {
+	const marker = "cannot connect to the docker daemon"
+	t.Setenv("DEVSY_TEST_DOCKER_TOKEN", marker)
+	err := command.WrapCommandError([]byte(marker), stderrs.New("inspect failed"))
+	got := Classify(fmt.Errorf("command failed: %w", err))
+	if got.Code != CodeDockerDaemonUnreachable || got.Message != dockerDaemonUnavailableMessage {
+		t.Fatalf("Classify masked Docker output = %+v", got)
+	}
+}
 
 func TestClassify_NilReturnsNil(t *testing.T) {
 	if got := Classify(nil); got != nil {
@@ -115,6 +150,23 @@ func TestCLIError_MarshalJSONSnapshot(t *testing.T) {
 	}
 }
 
+func TestCLIError_MarshalJSONIncludesHintAndContext(t *testing.T) {
+	e := &CLIError{
+		Code:    CodeUnknown,
+		Message: dockerDaemonUnavailableMessage,
+		Hint:    "Start Docker and retry.",
+		Context: map[string]string{"context": "desktop-linux"},
+	}
+	b, err := json.Marshal(e)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	want := `{"code":"UNKNOWN","message":"Docker daemon is unavailable.","hint":"Start Docker and retry.","context":{"context":"desktop-linux"}}` //nolint:lll // exact serialized envelope fixture
+	if string(b) != want {
+		t.Fatalf("JSON mismatch.\n got: %s\nwant: %s", b, want)
+	}
+}
+
 func TestCLIError_LogObjectShape(t *testing.T) {
 	enc := zapcore.NewMapObjectEncoder()
 	e := &CLIError{Code: CodeRateLimited, Message: testRateLimited}
@@ -129,5 +181,19 @@ func TestCLIError_LogObjectShape(t *testing.T) {
 	}
 	if enc.Fields["message"] != testRateLimited {
 		t.Fatalf("message = %v", enc.Fields["message"])
+	}
+}
+
+func TestClassifyDockerDaemonUnreachable(t *testing.T) {
+	got := Classify(
+		stderrs.New(
+			"inspect container: Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+		),
+	)
+	if got.Code != CodeDockerDaemonUnreachable {
+		t.Fatalf("Code = %q, want %q", got.Code, CodeDockerDaemonUnreachable)
+	}
+	if got.Message != "Docker daemon is unavailable." || got.Hint == "" {
+		t.Fatalf("unexpected actionable error: %+v", got)
 	}
 }

@@ -98,7 +98,7 @@ func (cmd *SetupGPGCmd) Run(ctx context.Context) error {
 	return nil
 }
 
-// gpgSetupLockMode is 0666 — flock's default 0600 would lock out whichever
+// gpgSetupLockMode is 0666 - flock's default 0600 would lock out whichever
 // of root/remoteUser did not create the file.
 const gpgSetupLockMode = 0o666
 

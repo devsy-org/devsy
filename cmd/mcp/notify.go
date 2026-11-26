@@ -16,7 +16,7 @@ import (
 // long-running tools instead of seeing a single opaque pause.
 //
 // Lines from goroutines unrelated to fn are also forwarded for the duration
-// — acceptable because the only long-running concurrent work the MCP server
+// - acceptable because the only long-running concurrent work the MCP server
 // kicks off is the call itself.
 func streamLogsToSession(
 	ctx context.Context,

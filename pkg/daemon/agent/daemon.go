@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,7 +15,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/google/shlex"
 )
 
 type SshConfig struct {
@@ -30,74 +30,56 @@ type DaemonConfig struct {
 	Ssh            SshConfig             `json:"ssh"`
 	Timeout        string                `json:"timeout"`
 	ShutdownAction string                `json:"shutdownAction,omitempty"`
+	Lifecycle      LifecycleConfig       `json:"lifecycle,omitzero"`
 }
 
-func BuildWorkspaceDaemonConfig(
-	platformOptions devsy.PlatformOptions,
-	workspaceConfig *provider2.Workspace,
-	substitutionContext *config.SubstitutionContext,
-	mergedConfig *config.MergedDevContainerConfig,
-) (*DaemonConfig, error) {
-	var workdir string
-	if workspaceConfig.Source.GitSubPath != "" {
-		substitutionContext.ContainerWorkspaceFolder = filepath.Join(
-			substitutionContext.ContainerWorkspaceFolder,
-			workspaceConfig.Source.GitSubPath,
-		)
-		workdir = substitutionContext.ContainerWorkspaceFolder
-	}
-	if workdir == "" && mergedConfig != nil {
-		workdir = mergedConfig.WorkspaceFolder
-	}
-	if workdir == "" && substitutionContext != nil {
-		workdir = substitutionContext.ContainerWorkspaceFolder
-	}
+// WorkspaceDaemonInput carries the inputs of the workspace daemon configuration.
+type WorkspaceDaemonInput struct {
+	PlatformOptions     devsy.PlatformOptions
+	Workspace           *provider2.Workspace
+	SubstitutionContext *config.SubstitutionContext
+	MergedConfig        *config.MergedDevContainerConfig
+	Lifecycle           LifecycleOptions
+}
 
-	// Get remote user; default to "root" if empty.
-	user := mergedConfig.RemoteUser
-	if user == "" {
-		user = "root"
-	}
-
-	// build info isn't required in the workspace and can be omitted
-	platformOptions.Build = nil
-
-	shutdownAction := mergedConfig.ShutdownAction
+func BuildWorkspaceDaemonConfig(in WorkspaceDaemonInput) (*DaemonConfig, error) {
+	platformOptions, workspaceConfig := in.PlatformOptions, in.Workspace
+	substitutionContext, mergedConfig, lifecycle := in.SubstitutionContext, in.MergedConfig, in.Lifecycle
+	workdir := containerWorkdir(workspaceConfig, substitutionContext, mergedConfig)
 
 	daemonConfig := &DaemonConfig{
-		Platform: platformOptions,
-		Ssh: SshConfig{
-			Workdir: workdir,
-			User:    user,
-		},
-		ShutdownAction: shutdownAction,
+		Platform:       platformOptions,
+		Timeout:        FormatTimeout(lifecycle.Timeout),
+		ShutdownAction: mergedConfig.ShutdownAction,
 	}
+	if lifecycle.Managed {
+		daemonConfig.Lifecycle = LifecycleConfig{
+			Owner:          LifecycleOwnerManagedDaemon,
+			SetupArmsTimer: true,
+		}
+	}
+
+	// A timeout-only config must not request the embedded SSH or network server.
+	if platformOptions.AccessKey != "" {
+		user := mergedConfig.RemoteUser
+		if user == "" {
+			user = "root"
+		}
+		daemonConfig.Ssh = SshConfig{Workdir: workdir, User: user}
+	}
+	// build info isn't required in the workspace and can be omitted
+	daemonConfig.Platform.Build = nil
 
 	return daemonConfig, nil
 }
 
-func GetEncodedWorkspaceDaemonConfig(
-	platformOptions devsy.PlatformOptions,
-	workspaceConfig *provider2.Workspace,
-	substitutionContext *config.SubstitutionContext,
-	mergedConfig *config.MergedDevContainerConfig,
-) (string, error) {
-	daemonConfig, err := BuildWorkspaceDaemonConfig(
-		platformOptions,
-		workspaceConfig,
-		substitutionContext,
-		mergedConfig,
-	)
+func GetEncodedWorkspaceDaemonConfig(in WorkspaceDaemonInput) (string, error) {
+	daemonConfig, err := BuildWorkspaceDaemonConfig(in)
 	if err != nil {
 		return "", err
 	}
 
-	data, err := json.Marshal(daemonConfig)
-	if err != nil {
-		return "", err
-	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return encoded, nil
+	return EncodeDaemonConfig(daemonConfig)
 }
 
 const systemdDir = "/etc/systemd/system"
@@ -141,10 +123,23 @@ func isServiceInstalled() bool {
 	return err == nil
 }
 
+//nolint:gosec // systemctl args are internal constants, never user input
+func runSystemctl(args ...string) (string, error) {
+	out, err := exec.Command("systemctl", args...).CombinedOutput()
+	return string(out), err
+}
+
+func runServiceAction(action string) (string, error) {
+	return runSystemctl(action, pkgconfig.BinaryName)
+}
+
+func systemctlErr(action, out string, err error) error {
+	return fmt.Errorf("systemctl %s: %s: %w", action, out, err)
+}
+
 func isServiceRunning() bool {
-	//nolint:gosec // BinaryName is a compile-time constant, not tainted input
-	out, err := exec.Command("systemctl", "is-active", pkgconfig.BinaryName).CombinedOutput()
-	return err == nil && strings.TrimSpace(string(out)) == "active"
+	out, err := runServiceAction("is-active")
+	return err == nil && strings.TrimSpace(out) == "active"
 }
 
 // quoteSystemdArg wraps an argument in double quotes if it contains characters
@@ -160,9 +155,21 @@ func quoteSystemdArg(arg string) string {
 	return arg
 }
 
-func InstallDaemon(agentDir, interval, shutdownAction string) error {
+type InstallOptions struct {
+	StateLocation     StateLocation
+	Interval          string
+	ShutdownAction    string
+	DiagnosticsReader machinediagnostics.ReaderIdentity
+}
+
+func InstallDaemon(
+	opts InstallOptions,
+) error {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return fmt.Errorf("unsupported daemon os")
+	}
+	if err := opts.StateLocation.Validate(); err != nil {
+		return fmt.Errorf("validate daemon state location: %w", err)
 	}
 
 	executable, err := os.Executable()
@@ -170,18 +177,28 @@ func InstallDaemon(agentDir, interval, shutdownAction string) error {
 		return fmt.Errorf("get executable path: %w", err)
 	}
 
-	args := buildDaemonArgs(executable, agentDir, interval, shutdownAction)
+	args := buildDaemonArgs(executable, opts)
 
 	if !isSystemdAvailable() {
 		log.Warnf("systemd not available, falling back to background process")
-		return startFallbackDaemon(executable, args)
+		runtimePaths, err := fallbackRuntimePaths(os.Geteuid(), os.UserCacheDir)
+		if err != nil {
+			return err
+		}
+		return startFallbackDaemon(executable, args, runtimePaths)
 	}
+	return installSystemdDaemon(opts, executable, args)
+}
 
+func installSystemdDaemon(opts InstallOptions, executable string, args []string) error {
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		quoted[i] = quoteSystemdArg(a)
 	}
 	unitContent := systemdUnitContents(strings.Join(quoted, " "))
+	if err := rejectConflictingStateRoot(opts.StateLocation); err != nil {
+		return err
+	}
 
 	needsReload, err := installOrUpdateUnit(unitContent)
 	if err != nil {
@@ -191,18 +208,105 @@ func InstallDaemon(agentDir, interval, shutdownAction string) error {
 	return ensureServiceRunning(needsReload, executable, args)
 }
 
-func buildDaemonArgs(executable, agentDir, interval, shutdownAction string) []string {
-	args := []string{executable, "internal", "agent", "daemon"}
-	if agentDir != "" {
-		args = append(args, names.Flag(names.AgentDir), agentDir)
+// rejectConflictingStateRoot prevents a second machine lifecycle from silently
+// replacing the singleton service's configured state root. Legacy units have
+// no explicit root and remain upgradeable.
+func rejectConflictingStateRoot(location StateLocation) error {
+	if !isServiceInstalled() {
+		return nil
 	}
-	if interval != "" {
-		args = append(args, names.Flag(names.Interval), interval)
+	existing, err := os.ReadFile(serviceFilePath())
+	if err != nil {
+		return fmt.Errorf("read existing daemon service: %w", err)
 	}
-	if shutdownAction != "" {
-		args = append(args, names.Flag(names.ShutdownAction), shutdownAction)
+	existingLocation, configured, err := daemonUnitStateLocation(string(existing))
+	if err != nil {
+		return fmt.Errorf("read existing daemon service state location: %w", err)
+	}
+	if !configured {
+		return nil
+	}
+	if existingLocation == location {
+		return nil
+	}
+	return fmt.Errorf(
+		"devsy machine daemon is already configured for a different state root; " +
+			"multiple machine state roots on one daemon are not supported",
+	)
+}
+
+// daemonUnitStateLocation reads the generated daemon state flags from the
+// ExecStart command. It compares parsed arguments, not source substrings, so
+// roots such as /state/dev and /state/development remain distinct.
+func daemonUnitStateLocation(unit string) (StateLocation, bool, error) {
+	for line := range strings.SplitSeq(unit, "\n") {
+		commandLine, found := strings.CutPrefix(line, "ExecStart=")
+		if !found {
+			continue
+		}
+		args, err := shlex.Split(commandLine)
+		if err != nil {
+			return StateLocation{}, false, fmt.Errorf("parse ExecStart: %w", err)
+		}
+		root, rootFound := commandFlagValue(args, names.Flag(names.StateRoot))
+		if !rootFound {
+			return StateLocation{}, false, nil
+		}
+		layout, layoutFound := commandFlagValue(args, names.Flag(names.StateLayout))
+		if !layoutFound {
+			return StateLocation{}, true, fmt.Errorf("%s is missing", names.Flag(names.StateLayout))
+		}
+		return StateLocation{Root: root, Layout: StateLayout(layout)}, true, nil
+	}
+	return StateLocation{}, false, nil
+}
+
+func commandFlagValue(args []string, flag string) (string, bool) {
+	for index := 0; index+1 < len(args); index++ {
+		if args[index] == flag {
+			return strings.ReplaceAll(args[index+1], "%%", "%"), true
+		}
+	}
+	return "", false
+}
+
+func buildDaemonArgs(executable string, opts InstallOptions) []string {
+	args := []string{
+		executable,
+		"internal",
+		"agent",
+		"daemon",
+		names.Flag(names.StateRoot),
+		opts.StateLocation.Root,
+		names.Flag(names.StateLayout),
+		string(opts.StateLocation.Layout),
+		names.Flag(names.DiagnosticsReaderUID),
+		strconv.Itoa(opts.DiagnosticsReader.UID),
+		names.Flag(names.DiagnosticsReaderGID),
+		strconv.Itoa(opts.DiagnosticsReader.GID),
+	}
+	if opts.Interval != "" {
+		args = append(args, names.Flag(names.Interval), opts.Interval)
+	}
+	if opts.ShutdownAction != "" {
+		args = append(args, names.Flag(names.ShutdownAction), opts.ShutdownAction)
 	}
 	return args
+}
+
+// DiagnosticsReaderIdentity captures the invoking user before systemd starts
+// the daemon as root. SUDO_UID/GID identify the original user on sudo paths.
+func DiagnosticsReaderIdentity() machinediagnostics.ReaderIdentity {
+	uid, gid := os.Getuid(), os.Getgid()
+	if uid == 0 {
+		if parsedUID, err := strconv.Atoi(os.Getenv("SUDO_UID")); err == nil && parsedUID >= 0 {
+			uid = parsedUID
+		}
+		if parsedGID, err := strconv.Atoi(os.Getenv("SUDO_GID")); err == nil && parsedGID >= 0 {
+			gid = parsedGID
+		}
+	}
+	return machinediagnostics.ReaderIdentity{UID: uid, GID: gid}
 }
 
 // installOrUpdateUnit writes the systemd unit file and runs daemon-reload when
@@ -230,10 +334,8 @@ func installOrUpdateUnit(unitContent string) (bool, error) {
 		return false, fmt.Errorf("write service file: %w", err)
 	}
 
-	if out, err := exec.Command(
-		"systemctl", "daemon-reload",
-	).CombinedOutput(); err != nil {
-		return false, fmt.Errorf("systemctl daemon-reload: %s: %w", string(out), err)
+	if out, err := runSystemctl("daemon-reload"); err != nil {
+		return false, systemctlErr("daemon-reload", out, err)
 	}
 
 	return true, nil
@@ -243,29 +345,21 @@ func installOrUpdateUnit(unitContent string) (bool, error) {
 // needed. If systemctl fails, it falls back to a background process.
 func ensureServiceRunning(needsReload bool, executable string, args []string) error {
 	// Always enable so the service starts on boot, even if it was previously disabled.
-	//nolint:gosec // BinaryName is a compile-time constant, not tainted input
-	if out, err := exec.Command("systemctl", "enable", pkgconfig.BinaryName).
-		CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl enable: %s: %w", string(out), err)
+	if out, err := runServiceAction("enable"); err != nil {
+		return systemctlErr("enable", out, err)
 	}
 
 	// Restart if the unit file changed, otherwise just ensure it's running.
 	if needsReload && isServiceRunning() {
-		//nolint:gosec // BinaryName is a compile-time constant
-		if out, err := exec.Command(
-			"systemctl", "restart", pkgconfig.BinaryName,
-		).CombinedOutput(); err != nil {
+		if out, err := runServiceAction("restart"); err != nil {
 			log.Warnf("Error restarting service: %s: %v", string(out), err)
-			return startFallbackDaemon(executable, args)
+			return startFallbackDaemon(executable, args, machinediagnostics.SystemRuntimePaths())
 		}
 		log.Infof("restarted Devsy daemon with updated config")
 	} else if !isServiceRunning() {
-		//nolint:gosec // BinaryName is a compile-time constant, not tainted input
-		if out, err := exec.Command(
-			"systemctl", "start", pkgconfig.BinaryName,
-		).CombinedOutput(); err != nil {
+		if out, err := runServiceAction("start"); err != nil {
 			log.Warnf("Error starting service: %s: %v", string(out), err)
-			return startFallbackDaemon(executable, args)
+			return startFallbackDaemon(executable, args, machinediagnostics.SystemRuntimePaths())
 		}
 		log.Infof("installed Devsy daemon into server")
 	}
@@ -273,11 +367,16 @@ func ensureServiceRunning(needsReload bool, executable string, args []string) er
 	return nil
 }
 
-func startFallbackDaemon(executable string, args []string) error {
+func startFallbackDaemon(
+	executable string,
+	args []string,
+	runtimePaths machinediagnostics.RuntimePaths,
+) error {
 	daemonArgs := args[1:] // strip executable path
 	err := command.StartBackgroundOnce(pkgconfig.DaemonProcessName, func() (*exec.Cmd, error) {
 		//nolint:gosec // executable is from os.Executable()
 		cmd := exec.Command(executable, daemonArgs...)
+		cmd.Env = fallbackDaemonEnv(runtimePaths)
 		return cmd, nil
 	})
 	if err != nil {
@@ -285,6 +384,36 @@ func startFallbackDaemon(executable string, args []string) error {
 	}
 	log.Infof("started Devsy daemon into server")
 	return nil
+}
+
+func fallbackDaemonEnv(runtimePaths machinediagnostics.RuntimePaths) []string {
+	baseEnv := os.Environ()
+	filteredEnv := baseEnv[:0]
+	for _, entry := range baseEnv {
+		if strings.HasPrefix(entry, machinediagnostics.RuntimeLockPathEnv+"=") ||
+			strings.HasPrefix(entry, machinediagnostics.RuntimeLocatorPathEnv+"=") {
+			continue
+		}
+		filteredEnv = append(filteredEnv, entry)
+	}
+	if runtimePaths.LockPath == machinediagnostics.DefaultRuntimeLockPath &&
+		runtimePaths.LocatorPath == machinediagnostics.DefaultLocatorPath {
+		return filteredEnv
+	}
+	return append(filteredEnv,
+		machinediagnostics.RuntimeLockPathEnv+"="+runtimePaths.LockPath,
+		machinediagnostics.RuntimeLocatorPathEnv+"="+runtimePaths.LocatorPath,
+	)
+}
+
+func fallbackRuntimePaths(
+	uid int,
+	userCacheDir func() (string, error),
+) (machinediagnostics.RuntimePaths, error) {
+	if uid == 0 {
+		return machinediagnostics.SystemRuntimePaths(), nil
+	}
+	return machinediagnostics.UserRuntimePaths(userCacheDir)
 }
 
 func RemoveDaemon() error {
@@ -316,16 +445,18 @@ func RemoveDaemon() error {
 // systemctlIgnoringNotLoaded runs a systemctl action against the daemon service,
 // treating a "not loaded" result (the unit does not exist) as a no-op.
 func systemctlIgnoringNotLoaded(action string) error {
-	//nolint:gosec // BinaryName is a compile-time constant
-	out, err := exec.Command("systemctl", action, pkgconfig.BinaryName).CombinedOutput()
-	// A missing unit reports "not loaded" (stop) or "does not exist" (disable);
-	// both mean there is nothing to act on, so treat them as a no-op.
-	outStr := string(out)
-	if err != nil && !strings.Contains(outStr, "not loaded") &&
-		!strings.Contains(outStr, "does not exist") {
-		return fmt.Errorf("systemctl %s: %s: %w", action, outStr, err)
+	out, err := runServiceAction(action)
+	if err != nil && !isMissingUnitOutput(out) {
+		return systemctlErr(action, out, err)
 	}
 	return nil
+}
+
+// isMissingUnitOutput reports whether systemctl output says the daemon unit does
+// not exist. A missing unit reports "not loaded" (stop) or "does not exist"
+// (disable); both mean there is nothing to act on.
+func isMissingUnitOutput(out string) bool {
+	return strings.Contains(out, "not loaded") || strings.Contains(out, "does not exist")
 }
 
 func removeServiceUnit() error {
@@ -333,8 +464,8 @@ func removeServiceUnit() error {
 		return fmt.Errorf("remove service file: %w", err)
 	}
 
-	if out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl daemon-reload: %s: %w", string(out), err)
+	if out, err := runSystemctl("daemon-reload"); err != nil {
+		return systemctlErr("daemon-reload", out, err)
 	}
 
 	return nil
@@ -359,7 +490,7 @@ func stopFallbackDaemon() error {
 
 	pid := strings.TrimSpace(string(pidData))
 	if _, err := strconv.Atoi(pid); err != nil {
-		// Corrupt PID file — clean up and move on
+		// Corrupt PID file - clean up and move on
 		_ = os.Remove(pidFile)
 		return nil
 	}
@@ -370,7 +501,7 @@ func stopFallbackDaemon() error {
 func killDaemonIfOurs(pidFile, pid string) error {
 	running, err := command.IsRunning(pid)
 	if err != nil || !running {
-		// Process gone or check failed — stale PID file
+		// Process gone or check failed - stale PID file
 		_ = os.Remove(pidFile)
 		return nil
 	}
@@ -395,11 +526,35 @@ func killDaemonIfOurs(pidFile, pid string) error {
 func isDaemonProcess(pid string) bool {
 	exePath, err := os.Readlink("/proc/" + pid + "/exe")
 	if err != nil {
-		// Can't verify — assume it's not ours to be safe
+		// Can't verify - assume it's not ours to be safe
 		return false
 	}
 	baseName := filepath.Base(exePath)
 	// Handle " (deleted)" suffix when binary was replaced during upgrade
 	baseName = strings.TrimSuffix(baseName, " (deleted)")
 	return baseName == pkgconfig.BinaryName
+}
+
+// containerWorkdir resolves the working directory inside the container, with
+// the git sub path applied to the substitution context when there is one.
+func containerWorkdir(
+	workspaceConfig *provider2.Workspace,
+	substitutionContext *config.SubstitutionContext,
+	mergedConfig *config.MergedDevContainerConfig,
+) string {
+	var workdir string
+	if workspaceConfig.Source.GitSubPath != "" {
+		substitutionContext.ContainerWorkspaceFolder = filepath.Join(
+			substitutionContext.ContainerWorkspaceFolder,
+			workspaceConfig.Source.GitSubPath,
+		)
+		workdir = substitutionContext.ContainerWorkspaceFolder
+	}
+	if workdir == "" && mergedConfig != nil {
+		workdir = mergedConfig.WorkspaceFolder
+	}
+	if workdir == "" && substitutionContext != nil {
+		workdir = substitutionContext.ContainerWorkspaceFolder
+	}
+	return workdir
 }

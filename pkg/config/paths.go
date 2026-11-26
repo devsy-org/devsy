@@ -45,6 +45,9 @@ const (
 	// ContainerActivityFile is touched by SSH/fleet servers to record container liveness.
 	ContainerActivityFile = "/tmp/" + BinaryName + ".activity"
 
+	// ContainerLifecycleDir holds the managed container daemon's owner and control records.
+	ContainerLifecycleDir = "/tmp/" + BinaryName + "-container-lifecycle"
+
 	// WorkspaceBusyFile is the per-workspace lock file written under the workspace folder.
 	WorkspaceBusyFile = "workspace.lock"
 )

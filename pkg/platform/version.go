@@ -18,8 +18,8 @@ type VersionObject struct {
 	DevsyVersion string `json:"devsyVersion,omitempty"`
 }
 
-func GetProInstanceDevsyVersion(proInstance *provider.ProInstance) (string, error) {
-	url := "https://" + proInstance.Host
+func GetPlatformInstanceDevsyVersion(platformInstance *provider.PlatformInstance) (string, error) {
+	url := "https://" + platformInstance.Host
 	return GetDevsyVersion(url)
 }
 
@@ -27,7 +27,10 @@ func GetPlatformVersion(url string) (*VersionObject, error) {
 	resp, err := http.GetHTTPClient().Get(url + "/version")
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", url, err)
-	} else if resp.StatusCode != 200 {
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
 		out, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("get %s: %s (Status: %d)", url, string(out), resp.StatusCode)
 	}

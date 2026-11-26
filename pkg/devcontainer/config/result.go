@@ -28,6 +28,10 @@ func (r *Result) Err() error {
 }
 
 type Result struct {
+	// GeneratedBuildArtifacts is local transfer authority, never accepted from a remote result.
+	GeneratedBuildContext   string                   `json:"-"`
+	GeneratedBuildArtifacts []GeneratedBuildArtifact `json:"-"`
+
 	DevContainerConfigWithPath *DevContainerConfigWithPath `json:"DevContainerConfigWithPath"`
 	MergedConfig               *MergedDevContainerConfig   `json:"MergedConfig"`
 	SubstitutionContext        *SubstitutionContext        `json:"SubstitutionContext"`
@@ -42,18 +46,29 @@ type DevContainerConfigWithPath struct {
 	// Config is the devcontainer.json config
 	Config *DevContainerConfig `json:"config,omitempty"`
 
-	// Path is the relative path to the devcontainer.json from the workspace folder
+	// Path is relative to the content root, before any Git subpath.
 	Path string `json:"path,omitempty"`
+}
+
+func GetWorkspaceMount(result *Result) *Mount {
+	if result == nil || result.SubstitutionContext == nil ||
+		result.SubstitutionContext.WorkspaceMount == "" {
+		return nil
+	}
+	workspaceMount := ParseMount(result.SubstitutionContext.WorkspaceMount)
+	return &workspaceMount
 }
 
 func GetMounts(result *Result) []*Mount {
 	var mounts []*Mount
-	if result.SubstitutionContext.WorkspaceMount != "" {
-		workspaceMount := ParseMount(result.SubstitutionContext.WorkspaceMount)
-		mounts = append(mounts, &workspaceMount)
+	if workspaceMount := GetWorkspaceMount(result); workspaceMount != nil {
+		mounts = append(mounts, workspaceMount)
+	}
+	if result == nil || result.MergedConfig == nil {
+		return mounts
 	}
 	for _, m := range result.MergedConfig.Mounts {
-		if m.Type == "bind" {
+		if m != nil && m.Type == "bind" {
 			mounts = append(mounts, m)
 		}
 	}
@@ -121,13 +136,20 @@ func userFromContainerLabel(result *Result) string {
 }
 
 func GetDevsyCustomizations(parsedConfig *DevContainerConfig) *DevsyCustomizations {
-	if parsedConfig.Customizations == nil ||
-		parsedConfig.Customizations[pkgconfig.BinaryName] == nil {
+	if parsedConfig == nil || parsedConfig.Customizations == nil {
+		return &DevsyCustomizations{}
+	}
+
+	customization := parsedConfig.Customizations["devsy"]
+	if customization == nil {
+		customization = parsedConfig.Customizations[pkgconfig.BinaryName]
+	}
+	if customization == nil {
 		return &DevsyCustomizations{}
 	}
 
 	devsy := &DevsyCustomizations{}
-	err := convert(parsedConfig.Customizations[pkgconfig.BinaryName], devsy)
+	err := convert(customization, devsy)
 	if err != nil {
 		return &DevsyCustomizations{}
 	}

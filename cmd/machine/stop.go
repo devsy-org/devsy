@@ -22,7 +22,7 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	stopCmd := &cobra.Command{
 		Use:   "stop [name]",
-		Short: "Stops an existing machine",
+		Short: "Stop a machine",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

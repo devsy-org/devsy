@@ -4,8 +4,8 @@
   "remoteEnv": {
     "CONTAINER_ENV_PATH": "${containerEnv:PATH}"
   },
-  "onCreateCommand": "echo onCreateDone > $HOME/on-create.out",
-  "updateContentCommand": "echo updateContentDone > $HOME/update-content.out",
-  "postCreateCommand": "echo -n ${CONTAINER_ENV_PATH} > $HOME/deferred-env-path.out && echo postCreateDone > $HOME/deferred.marker",
-  "postStartCommand": "echo postStartDone > $HOME/post-start-deferred.out"
+  "onCreateCommand": "echo onCreateDone > on-create.out",
+  "updateContentCommand": "echo updateContentDone > update-content.out",
+  "postCreateCommand": "echo -n ${CONTAINER_ENV_PATH} > deferred-env-path.out && echo postCreateDone > deferred.marker",
+  "postStartCommand": "echo postStartDone > post-start-deferred.out"
 }

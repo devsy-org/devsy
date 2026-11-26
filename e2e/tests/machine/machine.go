@@ -22,9 +22,7 @@ var _ = ginkgo.Describe("devsy testing machine", ginkgo.Label("machine"), ginkgo
 		"should add simple machine and then delete it",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
-			tempDir, err := framework.CopyToTempDir("tests/machine/testdata")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/machine/testdata", initialDir)
 
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -32,7 +30,7 @@ var _ = ginkgo.Describe("devsy testing machine", ginkgo.Label("machine"), ginkgo
 			_ = f.DevsyProviderDelete(ctx, "mock-provider")
 
 			ginkgo.By("Add mock provider")
-			err = f.DevsyProviderAdd(ctx, tempDir+"/mock-provider.yaml")
+			err := f.DevsyProviderAdd(ctx, tempDir+"/mock-provider.yaml")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 				err = f.DevsyProviderDelete(cleanupCtx, "mock-provider")
@@ -60,9 +58,7 @@ var _ = ginkgo.Describe("devsy testing machine", ginkgo.Label("machine"), ginkgo
 		"should delete a non-existing machine and get an error",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
-			tempDir, err := framework.CopyToTempDir("tests/machine/testdata")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/machine/testdata", initialDir)
 
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
@@ -70,7 +66,7 @@ var _ = ginkgo.Describe("devsy testing machine", ginkgo.Label("machine"), ginkgo
 			_ = f.DevsyProviderDelete(ctx, "mock-provider")
 
 			ginkgo.By("Add mock provider")
-			err = f.DevsyProviderAdd(ctx, tempDir+"/mock-provider.yaml")
+			err := f.DevsyProviderAdd(ctx, tempDir+"/mock-provider.yaml")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 				err = f.DevsyProviderDelete(cleanupCtx, "mock-provider")

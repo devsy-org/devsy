@@ -26,8 +26,8 @@ export class DaemonClient {
     }
   }
 
-  async listWorkspaces<T>(): Promise<T> {
-    return this.get<T>("/list")
+  async listWorkspaces<T>(options: { fresh?: boolean } = {}): Promise<T> {
+    return this.get<T>(options.fresh ? "/list?fresh=true" : "/list")
   }
 
   async listProviders<T>(): Promise<T> {

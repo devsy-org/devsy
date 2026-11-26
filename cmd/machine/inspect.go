@@ -22,7 +22,7 @@ func NewInspectCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	inspectCmd := &cobra.Command{
 		Use:   "inspect",
-		Short: "Inspects an existing machine",
+		Short: "Inspect a machine",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

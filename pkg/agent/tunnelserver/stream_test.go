@@ -41,12 +41,12 @@ func TestNewStreamReader_CleanEOFYieldsFullContentAndNoError(t *testing.T) {
 
 // TestNewStreamReader_NonEOFErrorPropagatesInsteadOfMaskingAsEOF guards
 // against a regression to the previous behavior, where any stream.Recv()
-// error (not just io.EOF) was converted to a clean io.EOF for the reader —
+// error (not just io.EOF) was converted to a clean io.EOF for the reader -
 // silently treating a truncated, failed transfer as a complete one. This is
 // shared by every Tunnel_StreamWorkspaceClient consumer: StreamWorkspace
 // (cmd/internal/agentworkspace/up.go), StreamMount
 // (cmd/internal/agentcontainer/setup.go), and the snapshot volumes push
-// (pkg/snapshot/create.go) — not just the snapshot feature.
+// (pkg/snapshot/create.go) - not just the snapshot feature.
 func TestNewStreamReader_NonEOFErrorPropagatesInsteadOfMaskingAsEOF(t *testing.T) {
 	streamErr := errors.New("stream broken")
 	client := &fakeStreamWorkspaceClient{

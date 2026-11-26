@@ -3,6 +3,7 @@ package gpg
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,23 +34,45 @@ func IsGpgTunnelRunning(
 	user string,
 	client *ssh.Client,
 ) bool {
-	writer := log.PassthroughWriter()
-	defer func() { _ = writer.Close() }()
+	var out strings.Builder
+	var stderr strings.Builder
+	err := runGpgTunnelProbe(user, func(command string, stdout, stderr io.Writer) error {
+		return devssh.Run(ctx, devssh.RunOptions{
+			Client:  client,
+			Command: command,
+			Stdout:  stdout,
+			Stderr:  stderr,
+		})
+	}, &out, &stderr)
+	if diagnostic := unexpectedGpgProbeDiagnostics(stderr.String()); diagnostic != "" {
+		log.Debugf("gpg-agent probe stderr: %s", diagnostic)
+	}
+	return err == nil && strings.HasSuffix(strings.TrimSpace(out.String()), "OK")
+}
 
+func runGpgTunnelProbe(
+	user string,
+	run func(string, io.Writer, io.Writer) error,
+	stdout io.Writer,
+	stderr io.Writer,
+) error {
 	command := `echo "GETINFO version" | timeout 5 gpg-connect-agent --no-autostart`
 	if user != "" && user != "root" {
 		command = shellescape.QuoteCommand([]string{"su", "-c", command, user})
 	}
 
-	var out strings.Builder
-	err := devssh.Run(ctx, devssh.RunOptions{
-		Client:  client,
-		Command: command,
-		Stdout:  &out,
-		Stderr:  writer,
-	})
+	return run(command, stdout, stderr)
+}
 
-	return err == nil && strings.HasSuffix(strings.TrimSpace(out.String()), "OK")
+func unexpectedGpgProbeDiagnostics(stderr string) string {
+	var diagnostics []string
+	for line := range strings.SplitSeq(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && line != "gpg-connect-agent: no gpg-agent running in this session" {
+			diagnostics = append(diagnostics, line)
+		}
+	}
+	return strings.Join(diagnostics, "\n")
 }
 
 func GetHostPubKey() ([]byte, error) {
@@ -169,6 +192,7 @@ func (g *GPGConf) SetupRemoteSocketLink(ctx context.Context) error {
 		if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
 			return err
 		}
+		//nolint:gosec // path is inside the GPG forwarding directory
 		_ = os.Remove(link)
 		if err := os.Symlink(g.SocketPath, link); err != nil {
 			return err
@@ -182,8 +206,17 @@ func (g *GPGConf) SetupRemoteSocketLink(ctx context.Context) error {
 // binds as root; a non-root user needs write access to connect. The socket
 // is bound asynchronously by the ssh server, so this waits for it to appear.
 func (g *GPGConf) claimForwardedSocket(ctx context.Context) error {
+	if err := g.waitForForwardedSocket(ctx); err != nil {
+		return err
+	}
+
 	owner := strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid())
 
+	//nolint:gosec // g.SocketPath is the fixed forwarded socket path
+	return exec.Command("sudo", "chown", owner, g.SocketPath).Run()
+}
+
+func (g *GPGConf) waitForForwardedSocket(ctx context.Context) error {
 	backoff := wait.Backoff{
 		Duration: 200 * time.Millisecond,
 		Factor:   1.5,
@@ -216,8 +249,7 @@ func (g *GPGConf) claimForwardedSocket(ctx context.Context) error {
 		return err
 	}
 
-	//nolint:gosec // g.SocketPath is the fixed forwarded socket path
-	return exec.Command("sudo", "chown", owner, g.SocketPath).Run()
+	return nil
 }
 
 func gpgConfigPath() string {

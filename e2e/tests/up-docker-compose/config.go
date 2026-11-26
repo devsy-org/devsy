@@ -17,7 +17,9 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -35,40 +37,37 @@ var _ = ginkgo.Describe(
 			tc.initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			tc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			tc.dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = setupDockerProvider(tc.initialDir + "/bin")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
 
-		ginkgo.It("root folder", func(ctx context.Context) {
-			tempDir, workspace, err := tc.setupAndStartWorkspace(
-				ctx,
+		ginkgo.DescribeTable(
+			"starts workspace from testdata",
+			func(ctx context.Context, testDataPath string) {
+				tempDir, workspace, err := tc.setupAndStartWorkspace(ctx, testDataPath)
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
+			},
+			ginkgo.Entry(
+				"root folder",
 				"tests/up-docker-compose/testdata/docker-compose",
-			)
-			framework.ExpectNoError(err)
-			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
-
-		ginkgo.It("sub-folder", func(ctx context.Context) {
-			tempDir, workspace, err := tc.setupAndStartWorkspace(
-				ctx,
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			),
+			ginkgo.Entry(
+				"sub-folder",
 				"tests/up-docker-compose/testdata/docker-compose-subfolder",
-			)
-			framework.ExpectNoError(err)
-			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
-
-		ginkgo.It("overrides", func(ctx context.Context) {
-			tempDir, workspace, err := tc.setupAndStartWorkspace(
-				ctx,
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			),
+			ginkgo.Entry(
+				"overrides",
 				"tests/up-docker-compose/testdata/docker-compose-overrides",
-			)
-			framework.ExpectNoError(err)
-			framework.ExpectNoError(tc.verifyWorkspaceMount(ctx, workspace, tempDir))
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			),
+		)
 
 		ginkgo.It("env-file", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -87,15 +86,7 @@ var _ = ginkgo.Describe(
 			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 			gomega.Expect(devsyUpOutput).
 				NotTo(gomega.ContainSubstring("Defaulting to a blank string."))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -114,15 +105,7 @@ var _ = ginkgo.Describe(
 			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			initialIds, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(initialIds).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
 			framework.ExpectNoError(err)
@@ -130,16 +113,116 @@ var _ = ginkgo.Describe(
 			err = tc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			restartIds, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			restartIds, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(restartIds).To(gomega.HaveLen(1), "1 compose container after restart")
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.It("multi-profile lifecycle retains selected profile", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up-docker-compose/testdata/docker-compose-multi-profile",
+				tc.initialDir,
+				tc.f,
+			)
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyUp(ctx, names.Flag(names.DevContainer), "id:max", tempDir)
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			// Distinct markers verify the persisted selector survived restart.
+			err = tc.f.ExecCommandContaining(ctx, "[max]", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"echo \"[$SELECTED_PROFILE]\"", workspace.ID,
+			})
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyWorkspaceDelete(ctx, tempDir)
+			framework.ExpectNoError(err)
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.It(
+			"legacy devcontainer selection drift warns and supports explicit adoption",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up-docker-compose/testdata/devcontainer-selection-drift",
+					tc.initialDir,
+					tc.f,
+				)
+				framework.ExpectNoError(err)
+
+				err = tc.f.DevsyUp(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+				framework.ExpectNoError(err)
+				err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				rootConfig := filepath.Join(tempDir, ".devcontainer", "devcontainer.json")
+				err = os.WriteFile(rootConfig, []byte(`{
+  "name": "root",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "containerEnv": {"SELECTION_MARKER": "root"}
+}`), 0o600)
+				framework.ExpectNoError(err)
+
+				stdout, _, err := tc.f.ExecCommandCapture(ctx, []string{
+					cmdWorkspace, "up", flagDebug, flagIDE, ideNone, tempDir,
+				})
+				framework.ExpectNoError(err)
+				gomega.Expect(stdout).To(
+					gomega.ContainSubstring(
+						`"warnings":["This existing workspace is continuing to use \".devcontainer/legacy/devcontainer.json\"`,
+					),
+				)
+				gomega.Expect(stdout).To(
+					gomega.ContainSubstring(
+						`Current project discovery would select \".devcontainer/devcontainer.json\"`,
+					),
+				)
+
+				assertSelectionMarker := func(want string) {
+					err := tc.f.ExecCommandContaining(ctx, "["+want+"]", []string{
+						cmdWorkspace, cmdSSH, flagCommand,
+						"echo \"[$SELECTION_MARKER]\"", workspace.ID,
+					})
+					framework.ExpectNoError(err)
+				}
+				assertSelectionMarker("legacy")
+
+				err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+				err = tc.f.DevsyUpRecreate(
+					ctx,
+					names.Flag(names.DevContainer),
+					".devcontainer/devcontainer.json",
+					tempDir,
+				)
+				framework.ExpectNoError(err)
+				assertSelectionMarker("root")
+
+				err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+				err = tc.f.DevsyUp(ctx, tempDir)
+				framework.ExpectNoError(err)
+				assertSelectionMarker("root")
+
+				err = tc.f.DevsyWorkspaceDelete(ctx, tempDir)
+				framework.ExpectNoError(err)
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 
 		ginkgo.It("environment variables", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
@@ -148,24 +231,42 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
+			err = tc.f.ExecCommandContaining(
 				ctx,
-				true,
-				true,
 				"BAR",
 				[]string{cmdWorkspace, cmdSSH, flagCommand, "echo $FOO", workspace.ID},
 			)
 			framework.ExpectNoError(err)
+
+			identity, err := tc.f.DevsySSH(
+				ctx,
+				workspace.ID,
+				"echo $"+pkgconfig.EnvWorkspaceID+" $"+pkgconfig.EnvWorkspaceUID,
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.Fields(identity)).To(
+				gomega.Equal([]string{workspace.ID, workspace.UID}),
+			)
+
+			infoOutput, err := tc.f.DevsySSH(
+				ctx,
+				workspace.ID,
+				"devsy container info --result-format json",
+			)
+			framework.ExpectNoError(err)
+			var info struct {
+				SSHCommand string `json:"sshCommand"`
+				SSHHost    string `json:"sshHost"`
+				RemoteUser string `json:"remoteUser"`
+			}
+			framework.ExpectNoError(json.Unmarshal([]byte(infoOutput), &info))
+			gomega.Expect(info.SSHHost).To(gomega.Equal(workspace.ID + pkgconfig.SSHHostSuffix))
+			gomega.Expect(info.RemoteUser).NotTo(gomega.BeEmpty())
+			gomega.Expect(info.SSHCommand).To(
+				gomega.Equal("ssh " + info.RemoteUser + "@" + info.SSHHost),
+			)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("user", func(ctx context.Context) {
@@ -175,20 +276,10 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
+			err = tc.f.ExecCommandContaining(
 				ctx,
-				true,
-				true,
 				"root",
 				[]string{cmdWorkspace, cmdSSH, flagCommand, "ps u -p 1", workspace.ID},
 			)
@@ -232,11 +323,7 @@ var _ = ginkgo.Describe(
 				ws, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir)
 				framework.ExpectNoError(err, "failed to setup workspace")
 
-				ids, err := findComposeContainer(
-					ctx,
-					tc.dockerHelper,
-					tc.composeHelper,
-					ws.UID,
+				ids, err := tc.findComposeContainer(ctx, ws.UID,
 					"webserver",
 				)
 				framework.ExpectNoError(err)
@@ -258,15 +345,15 @@ var _ = ginkgo.Describe(
 
 				containerUID := getContainerUID(ctx, tc.f, tempDir, username)
 				containerGID := getContainerGID(ctx, tc.f, tempDir, username)
-				verifyUIDMapping(
-					containerUID,
-					containerGID,
-					testUID,
-					testGID,
-					defaultUID,
-					defaultGID,
-					username,
-				)
+				verifyUIDMapping(uidMapping{
+					ContainerUID: containerUID,
+					ContainerGID: containerGID,
+					HostUID:      testUID,
+					HostGID:      testGID,
+					DefaultUID:   defaultUID,
+					DefaultGID:   defaultGID,
+					Username:     username,
+				})
 
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
@@ -297,11 +384,7 @@ var _ = ginkgo.Describe(
 				ws, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir)
 				framework.ExpectNoError(err, "failed to setup workspace")
 
-				ids, err := findComposeContainer(
-					ctx,
-					tc.dockerHelper,
-					tc.composeHelper,
-					ws.UID,
+				ids, err := tc.findComposeContainer(ctx, ws.UID,
 					"devcontainer",
 				)
 				framework.ExpectNoError(err)
@@ -316,15 +399,15 @@ var _ = ginkgo.Describe(
 
 				containerUID := getContainerUID(ctx, tc.f, tempDir, username)
 				containerGID := getContainerGID(ctx, tc.f, tempDir, username)
-				verifyUIDMapping(
-					containerUID,
-					containerGID,
-					testUID,
-					testGID,
-					defaultUID,
-					defaultGID,
-					username,
-				)
+				verifyUIDMapping(uidMapping{
+					ContainerUID: containerUID,
+					ContainerGID: containerGID,
+					HostUID:      testUID,
+					HostGID:      testGID,
+					DefaultUID:   defaultUID,
+					DefaultGID:   defaultGID,
+					Username:     username,
+				})
 
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
@@ -384,44 +467,24 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"/home/vscode/remote-env.out",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"ls $HOME/remote-env.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "/home/vscode/remote-env.out", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"ls $HOME/remote-env.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"BAR",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"cat $HOME/remote-env.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "BAR", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"cat $HOME/remote-env.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -432,45 +495,22 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(
-				gomega.HaveLen(1),
-				"1 compose container to be created",
-			)
+			tc.expectSingleAppContainer(ctx, workspace)
 
 			// Verify SET_VAR is set
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"SET=hello",
-				[]string{
-					cmdWorkspace, cmdSSH, flagCommand,
-					"head -1 $HOME/remote-env-null.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "SET=hello", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"head -1 $HOME/remote-env-null.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 
 			// Verify UNSET_VAR was unset (not just empty)
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"UNSET=true",
-				[]string{
-					cmdWorkspace, cmdSSH, flagCommand,
-					"tail -1 $HOME/remote-env-null.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "UNSET=true", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"tail -1 $HOME/remote-env-null.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -481,29 +521,15 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"root",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"cat $HOME/remote-user.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "root", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"cat $HOME/remote-user.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -514,29 +540,21 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			ids, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
-				"app",
-			)
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+			tc.expectSingleAppContainer(ctx, workspace)
 
-			devContainerID, err := tc.execSSH(ctx, tempDir, "cat $HOME/dev-container-id.out")
+			devContainerID, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/dev-container-id.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(devContainerID).NotTo(gomega.BeEmpty())
 
-			containerEnvPath, err := tc.execSSH(ctx, tempDir, "cat $HOME/container-env-path.out")
+			containerEnvPath, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/container-env-path.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(containerEnvPath).To(gomega.ContainSubstring("/usr/local/bin"))
 
-			localEnvHome, err := tc.execSSH(ctx, tempDir, "cat $HOME/local-env-home.out")
+			localEnvHome, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/local-env-home.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(localEnvHome).To(gomega.Equal(os.Getenv("HOME")))
 
-			localWorkspaceFolder, err := tc.execSSH(
+			localWorkspaceFolder, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/local-workspace-folder.out",
@@ -545,7 +563,7 @@ var _ = ginkgo.Describe(
 			gomega.Expect(framework.CleanString(localWorkspaceFolder)).
 				To(gomega.Equal(framework.CleanString(tempDir)))
 
-			localWorkspaceFolderBasename, err := tc.execSSH(
+			localWorkspaceFolderBasename, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/local-workspace-folder-basename.out",
@@ -553,7 +571,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(localWorkspaceFolderBasename).To(gomega.Equal(filepath.Base(tempDir)))
 
-			containerWorkspaceFolder, err := tc.execSSH(
+			containerWorkspaceFolder, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/container-workspace-folder.out",
@@ -561,7 +579,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(containerWorkspaceFolder).To(gomega.Equal("/workspaces"))
 
-			containerWorkspaceFolderBasename, err := tc.execSSH(
+			containerWorkspaceFolderBasename, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/container-workspace-folder-basename.out",
@@ -741,8 +759,9 @@ var _ = ginkgo.Describe(
 				btc.initialDir, err = os.Getwd()
 				framework.ExpectNoError(err)
 
-				btc.f, err = setupDockerProvider(
+				btc.f, err = framework.SetupDockerProvider(
 					filepath.Join(btc.initialDir, "bin"),
+					dockerValue,
 				)
 				framework.ExpectNoError(err)
 			})
@@ -761,13 +780,18 @@ var _ = ginkgo.Describe(
 
 				lines := strings.Split(strings.TrimSpace(stdout), "\n")
 				gomega.Expect(lines).NotTo(gomega.BeEmpty())
-				lastLine := lines[len(lines)-1]
-
-				var envelope config.ErrorEnvelope
-				err = json.Unmarshal([]byte(lastLine), &envelope)
-				framework.ExpectNoError(err)
-				gomega.Expect(envelope.Outcome).To(gomega.Equal("error"))
-				gomega.Expect(envelope.Message).
+				var envelope config.StatusEnvelope
+				for _, line := range lines {
+					var candidate config.StatusEnvelope
+					if json.Unmarshal([]byte(line), &candidate) == nil &&
+						candidate.Kind == config.KindStatus &&
+						candidate.State == status.StateFailed &&
+						candidate.Error != nil {
+						envelope = candidate
+					}
+				}
+				gomega.Expect(envelope.Error).NotTo(gomega.BeNil())
+				gomega.Expect(envelope.Error.Message).
 					To(gomega.ContainSubstring("minimum requirements"))
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 

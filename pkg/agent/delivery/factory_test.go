@@ -14,6 +14,21 @@ import (
 
 const testKubernetesInstallPath = "/home/vscode/.local/bin/devsy"
 
+func TestCommandFuncPreservesProtocolStdout(t *testing.T) {
+	var got *driver.CommandParams
+	execFn := CommandFunc(func(_ context.Context, params *driver.CommandParams) error {
+		got = params
+		return nil
+	}, "workspace-id")
+
+	err := execFn(context.Background(), "test-command", nil, io.Discard, io.Discard)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "workspace-id", got.WorkspaceID)
+	assert.Equal(t, "test-command", got.Command)
+	assert.True(t, got.RawStdout)
+}
+
 func TestNewAgentDelivery_LocalDocker(t *testing.T) {
 	opts := FactoryOptions{
 		WorkspaceConfig: &provider.AgentWorkspaceInfo{
@@ -226,5 +241,40 @@ func TestNewAgentDelivery_MicrosandboxUsesShellDelivery(t *testing.T) {
 	d := NewAgentDelivery(opts)
 	if _, ok := d.(*LegacyShellDelivery); !ok {
 		t.Fatalf("microsandbox driver must use shell delivery, got %T", d)
+	}
+}
+
+func TestNewAgentDelivery_UnnamedRuntimeWithArgvExec(t *testing.T) {
+	opts := FactoryOptions{
+		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+			Agent: provider.ProviderAgentConfig{Driver: "external-test"},
+		},
+		ArgvExec:                   func(_ context.Context, _ []string, _ driver.Streams) error { return nil },
+		IsRemoteDocker:             true,
+		KubernetesAgentInstallPath: testKubernetesInstallPath,
+	}
+	d := NewAgentDelivery(opts)
+	native, ok := d.(*KubernetesDelivery)
+	require.True(t, ok)
+	assert.NotNil(t, native.Exec)
+	assert.Empty(t, native.InstallPath)
+}
+
+func TestDeliveryBinarySourcePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		strategy AgentDelivery
+		want     bool
+	}{
+		{name: "shell detects architecture in container", strategy: &LegacyShellDelivery{}, want: false},
+		{name: "local docker", strategy: &LocalDockerDelivery{}, want: true},
+		{name: "remote docker", strategy: &RemoteDockerDelivery{}, want: true},
+		{name: "exec stream", strategy: &KubernetesDelivery{}, want: true},
+		{name: "unknown strategy retains binary source", strategy: &mockDelivery{}, want: true},
+	} {
+		t.Run(
+			tc.name,
+			func(t *testing.T) { assert.Equal(t, tc.want, UsesBinarySource(tc.strategy)) },
+		)
 	}
 }

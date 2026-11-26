@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/devsy-org/devsy/pkg/platform/form"
 	"github.com/devsy-org/devsy/pkg/terminal"
 )
 
@@ -23,7 +24,7 @@ func (c *client) updateInstance(ctx context.Context) error {
 	if oldInstance == nil {
 		return fmt.Errorf("unable to find old workspace instance")
 	}
-	newInstance, err := updateInstanceInteractive(ctx, baseClient, oldInstance)
+	newInstance, err := form.UpdateInstance(ctx, baseClient, oldInstance)
 	if err != nil {
 		return err
 	}

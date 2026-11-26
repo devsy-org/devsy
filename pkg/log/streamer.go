@@ -4,18 +4,26 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"os"
 	"strings"
 	"sync"
 
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap/zapcore"
 )
 
 // StreamerOptions configures a JSON-aware subprocess log streamer.
 type StreamerOptions struct {
+	// Redactor is applied before subprocess lines are logged or retained.
+	// When omitted, sensitive values from the current environment are masked.
+	Redactor *secrets.Redactor
 	// FallbackLevel is used for non-structured subprocess output.
 	FallbackLevel int
 	// CaptureLines retains this many raw lines for ErrorOutput.
 	CaptureLines int
+	// CaptureBytes bounds the total raw bytes retained for ErrorOutput,
+	// including newline separators. A zero value means no byte limit.
+	CaptureBytes int
 	// DetectLevelPrefixes preserves a level from timestamp-prefixed plain text.
 	DetectLevelPrefixes bool
 	// TreatUnknownJSONAsDebug preserves the historical tunnel behavior for
@@ -34,11 +42,14 @@ type JSONLogStreamer struct {
 	detectLevelPrefixes     bool
 	treatUnknownJSONAsDebug bool
 	captureLines            int
+	captureBytes            int
+	redactor                *secrets.Redactor
 
-	mu        sync.Mutex
-	lastLines []string
-	closeOnce sync.Once
-	closeErr  error
+	mu            sync.Mutex
+	lastLines     []string
+	capturedBytes int
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 // NewJSONLogStreamer returns a writer that decodes Devsy JSON log lines while
@@ -52,7 +63,13 @@ func NewJSONLogStreamer(options StreamerOptions) *JSONLogStreamer {
 		detectLevelPrefixes:     options.DetectLevelPrefixes,
 		treatUnknownJSONAsDebug: options.TreatUnknownJSONAsDebug,
 		captureLines:            options.CaptureLines,
+		captureBytes:            options.CaptureBytes,
+		redactor:                options.Redactor,
 	}
+	streamer.redactor = secrets.Combine(
+		streamer.redactor,
+		secrets.NewEnvironmentRedactor(os.Environ()),
+	)
 	if options.CaptureLines > 0 {
 		streamer.lastLines = make([]string, 0, options.CaptureLines)
 	}
@@ -113,7 +130,7 @@ func (s *JSONLogStreamer) process(reader io.Reader) {
 	scanner.Buffer(buf, 1024*1024)
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := s.redactor.Redact(scanner.Text())
 		s.LogLine(line)
 		s.capture(line)
 	}
@@ -126,15 +143,51 @@ func (s *JSONLogStreamer) process(reader io.Reader) {
 }
 
 func (s *JSONLogStreamer) capture(line string) {
-	if s.captureLines <= 0 {
+	if s.captureLines <= 0 && s.captureBytes <= 0 {
 		return
+	}
+	if s.captureBytes > 0 && len(line) > s.captureBytes {
+		line = line[len(line)-s.captureBytes:]
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.lastLines) >= s.captureLines {
-		s.lastLines = s.lastLines[1:]
+	for s.overCaptureLimit(len(line)) {
+		s.dropOldestLine()
+	}
+	if s.byteOverflow(len(line)) {
+		line = line[len(line)-(s.captureBytes-s.capturedBytes-1):]
+	}
+	if len(s.lastLines) > 0 {
+		s.capturedBytes++
 	}
 	s.lastLines = append(s.lastLines, line)
+	s.capturedBytes += len(line)
+}
+
+// overCaptureLimit reports whether the oldest line must go before a new line of
+// size n can be captured.
+func (s *JSONLogStreamer) overCaptureLimit(n int) bool {
+	if s.captureLines > 0 && len(s.lastLines) >= s.captureLines {
+		return true
+	}
+	return s.captureBytes > 0 && len(s.lastLines) > 0 && s.capturedBytes+1+n > s.captureBytes
+}
+
+// byteOverflow reports whether a new line of size n must be cut to fit the
+// byte budget, after older lines were dropped.
+func (s *JSONLogStreamer) byteOverflow(n int) bool {
+	return s.captureBytes > 0 && len(s.lastLines) > 0 && s.capturedBytes+1+n > s.captureBytes
+}
+
+func (s *JSONLogStreamer) dropOldestLine() {
+	if len(s.lastLines) == 0 {
+		return
+	}
+	s.capturedBytes -= len(s.lastLines[0])
+	if len(s.lastLines) > 1 {
+		s.capturedBytes--
+	}
+	s.lastLines = s.lastLines[1:]
 }
 
 type jsonLine struct {
@@ -173,7 +226,7 @@ const infoLevelName = "info"
 
 func normalizeZapLevel(raw string) (zapcore.Level, bool) {
 	switch strings.ToLower(raw) {
-	case "trace", "debug":
+	case LevelTraceName, LevelDebugName:
 		return zapcore.DebugLevel, true
 	case infoLevelName:
 		return zapcore.InfoLevel, true
@@ -192,18 +245,11 @@ func extractLevelPrefix(line string) (bool, zapcore.Level) {
 		return false, 0
 	}
 
-	switch strings.ToLower(parts[1]) {
-	case "trace", "debug":
-		return true, zapcore.DebugLevel
-	case infoLevelName:
-		return true, zapcore.InfoLevel
-	case "warning", "warn":
-		return true, zapcore.WarnLevel
-	case "error", "panic", "fatal":
-		return true, zapcore.ErrorLevel
-	default:
+	level, recognized := normalizeZapLevel(parts[1])
+	if !recognized {
 		return false, 0
 	}
+	return true, level
 }
 
 func logAtZapLevel(level zapcore.Level, message string) {

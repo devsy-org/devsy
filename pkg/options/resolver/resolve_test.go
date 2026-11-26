@@ -10,6 +10,12 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	value1       = "value1"
+	value2       = "value2"
+	option1Value = "option1"
+)
+
 type ResolveTestSuite struct {
 	suite.Suite
 	resolver *Resolver
@@ -28,12 +34,12 @@ func TestResolveTestSuite(t *testing.T) {
 }
 
 func (suite *ResolveTestSuite) TestResolveOptions_HandlesRemovedNodeWithDanglingEdge() {
-	option1 := &types.Option{Default: "value1"}
-	option2 := &types.Option{Default: "value2"}
+	option1 := &types.Option{Default: value1}
+	option2 := &types.Option{Default: value2}
 
-	suite.Require().NoError(suite.resolver.graph.AddNode("option1", option1))
+	suite.Require().NoError(suite.resolver.graph.AddNode(option1Value, option1))
 	suite.Require().NoError(suite.resolver.graph.AddNode("option2", option2))
-	suite.Require().NoError(suite.resolver.graph.AddEdge("option1", "option2"))
+	suite.Require().NoError(suite.resolver.graph.AddEdge(option1Value, "option2"))
 	suite.Require().NoError(suite.resolver.graph.RemoveNode("option2"))
 
 	result, err := suite.resolver.resolveOptions(
@@ -42,16 +48,16 @@ func (suite *ResolveTestSuite) TestResolveOptions_HandlesRemovedNodeWithDangling
 	)
 	suite.NoError(err)
 	suite.Len(result, 1)
-	suite.Equal("value1", result["option1"].Value)
+	suite.Equal(value1, result[option1Value].Value)
 }
 
 func (suite *ResolveTestSuite) TestResolveOptions_WithDependencies() {
-	option1 := &types.Option{Default: "value1"}
-	option2 := &types.Option{Default: "value2"}
+	option1 := &types.Option{Default: value1}
+	option2 := &types.Option{Default: value2}
 
-	suite.Require().NoError(suite.resolver.graph.AddNode("option1", option1))
+	suite.Require().NoError(suite.resolver.graph.AddNode(option1Value, option1))
 	suite.Require().NoError(suite.resolver.graph.AddNode("option2", option2))
-	suite.Require().NoError(suite.resolver.graph.AddEdge("option1", "option2"))
+	suite.Require().NoError(suite.resolver.graph.AddEdge(option1Value, "option2"))
 
 	result, err := suite.resolver.resolveOptions(
 		context.Background(),
@@ -59,15 +65,15 @@ func (suite *ResolveTestSuite) TestResolveOptions_WithDependencies() {
 	)
 	suite.NoError(err)
 	suite.Len(result, 2)
-	suite.Equal("value1", result["option1"].Value)
-	suite.Equal("value2", result["option2"].Value)
+	suite.Equal(value1, result[option1Value].Value)
+	suite.Equal(value2, result["option2"].Value)
 }
 
 func (suite *ResolveTestSuite) TestResolveOptions_MultipleNodes() {
 	nodes := map[string]*types.Option{
-		"option1": {Default: "value1"},
-		"option2": {Default: "value2"},
-		"option3": {Default: "value3"},
+		option1Value: {Default: value1},
+		"option2":    {Default: value2},
+		"option3":    {Default: "value3"},
 	}
 
 	suite.Require().NoError(suite.resolver.graph.AddNodes(nodes))
@@ -78,7 +84,7 @@ func (suite *ResolveTestSuite) TestResolveOptions_MultipleNodes() {
 	)
 	suite.NoError(err)
 	suite.Len(result, 3)
-	suite.Equal("value1", result["option1"].Value)
-	suite.Equal("value2", result["option2"].Value)
+	suite.Equal(value1, result[option1Value].Value)
+	suite.Equal(value2, result["option2"].Value)
 	suite.Equal("value3", result["option3"].Value)
 }

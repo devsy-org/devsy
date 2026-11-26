@@ -1,0 +1,75 @@
+import { render, screen } from "@testing-library/svelte"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
+vi.mock("$lib/components/update/UpdatesPanel.svelte", () => ({
+  default: vi.fn(),
+}))
+
+import SettingsPage from "./SettingsPage.svelte"
+
+describe("SettingsPage layout", () => {
+  afterEach(() => {
+    document.body.innerHTML = ""
+  })
+
+  it("renders the startup toggles with the dependent open-to-tray switch disabled", async () => {
+    render(SettingsPage)
+
+    const section = document.querySelector("#startup")
+    if (!section) throw new Error("Startup section was not rendered")
+    const switches = section.querySelectorAll('[role="switch"]')
+    expect(switches).toHaveLength(2)
+    const [runAtStartup, openToTray] = switches
+    expect(runAtStartup.hasAttribute("disabled")).toBe(false)
+    await vi.waitFor(() => {
+      expect(openToTray.hasAttribute("disabled")).toBe(true)
+    })
+  })
+
+  it("renders the notification level select", () => {
+    render(SettingsPage)
+
+    expect(screen.getByText("Workspace Notifications")).toBeTruthy()
+    expect(screen.getByText("Failures only")).toBeTruthy()
+  })
+
+  it("renders supported settings sections as one page without section navigation links", () => {
+    render(SettingsPage)
+
+    expect(
+      screen.queryByRole("navigation", { name: "Settings sections" }),
+    ).toBeNull()
+    expect(document.querySelectorAll('a[href^="#"]')).toHaveLength(0)
+
+    expect(
+      screen.getByRole("button", { name: "Manage secret security" }),
+    ).toBeTruthy()
+    expect(document.querySelectorAll('input[type="password"]')).toHaveLength(0)
+
+    for (const name of [
+      "General",
+      "Startup",
+      "Notifications",
+      "Appearance",
+      "Updates",
+      "Secret security",
+    ]) {
+      expect(screen.getByRole("heading", { name, level: 2 })).toBeTruthy()
+    }
+  })
+
+  it("omits legacy Advanced controls that have no runtime consumers", () => {
+    render(SettingsPage)
+
+    expect(screen.queryByRole("heading", { name: "Advanced" })).toBeNull()
+    expect(document.querySelector("#advanced")).toBeNull()
+    for (const label of [
+      /experimental features may be unstable/i,
+      /multiple devcontainer detection/i,
+      /additional cli flags/i,
+      /additional environment variables/i,
+    ]) {
+      expect(screen.queryByText(label)).toBeNull()
+    }
+  })
+})

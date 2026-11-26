@@ -24,16 +24,21 @@ export async function launchApp(): Promise<{
     env: {
       ...process.env,
       NODE_ENV: "test",
+      DEVSY_DISABLE_DAEMON: "true",
       DEVSY_CLI_PATH: mockBinary,
     },
   })
+  if (process.env.DEBUG_E2E) {
+    app.process().stdout?.on("data", (data) => process.stdout.write(data))
+    app.process().stderr?.on("data", (data) => process.stderr.write(data))
+  }
 
   const page = await app.firstWindow()
   await page.waitForLoadState("domcontentloaded")
   await page.locator('[data-sidebar="sidebar"]').waitFor({ timeout: 10000 })
 
   // Wait for the watcher to poll the mock CLI and populate data
-  // The watcher polls every 3 seconds — wait for at least one cycle
+  // The watcher polls every 3 seconds - wait for at least one cycle
   await page.waitForTimeout(4000)
 
   return { app, page }

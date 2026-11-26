@@ -8,6 +8,7 @@ import type {
   WorkspaceJob,
   WorkspaceStatus,
 } from "$lib/types/index.js"
+import type { AppNavigationRequest } from "$shared/app-route.js"
 import { listen } from "./bridge.js"
 import type { UnlistenFn } from "./types.js"
 
@@ -17,6 +18,7 @@ export type UpdateStateValue =
   | "available"
   | "downloading"
   | "downloaded"
+  | "up-to-date"
   | "not-available"
   | "error"
 
@@ -27,6 +29,8 @@ export type UpdateErrorCode =
   | "feed-error"
   | "verification"
   | "channel-missing"
+  | "not-eligible"
+  | "install-failed"
 
 export interface UpdateProgress {
   percent: number
@@ -35,17 +39,53 @@ export interface UpdateProgress {
   total: number
 }
 
-export interface UpdateStatus {
-  state: UpdateStateValue
-  version?: string
-  releaseNotes?: string
-  releaseName?: string
-  progress?: UpdateProgress
-  error?: string
-  code?: UpdateErrorCode
-}
+export type UpdateStatus =
+  | {
+      state: "idle"
+      currentVersion: string
+    }
+  | {
+      state: "checking"
+      currentVersion: string
+    }
+  | {
+      state: "up-to-date" | "not-available"
+      currentVersion: string
+      lastCheckedAt?: number
+      feedVersion?: string
+      code?: UpdateErrorCode
+    }
+  | {
+      state: "available"
+      currentVersion: string
+      availableVersion: string
+      releaseNotes?: string
+      releaseName?: string
+      code?: UpdateErrorCode
+    }
+  | {
+      state: "downloading"
+      currentVersion: string
+      availableVersion: string
+      progress: UpdateProgress
+    }
+  | {
+      state: "downloaded"
+      currentVersion: string
+      availableVersion: string
+      releaseNotes?: string
+      releaseName?: string
+    }
+  | {
+      state: "error"
+      currentVersion: string
+      availableVersion?: string
+      code: UpdateErrorCode
+      error: string
+    }
 
 export const EVENT_NAMES = {
+  APP_NAVIGATION_REQUEST: "app-navigation-request",
   WORKSPACES_CHANGED: "workspaces-changed",
   PROVIDERS_CHANGED: "providers-changed",
   MACHINES_CHANGED: "machines-changed",
@@ -53,9 +93,11 @@ export const EVENT_NAMES = {
   COMMAND_PROGRESS: "command-progress",
   WORKSPACE_STATUS: "workspace-status",
   UPDATE_STATUS: "update-status",
+  APP_SETTINGS_CHANGED: "app-settings-changed",
 } as const
 
 interface WorkspacesPayload {
+  revision: number
   workspaces: Workspace[]
   jobs?: Record<string, WorkspaceJob>
 }
@@ -75,10 +117,15 @@ export function onWorkspacesChanged(
   callback: (
     workspaces: Workspace[],
     jobs: Record<string, WorkspaceJob>,
+    revision: number,
   ) => void,
 ): Promise<UnlistenFn> {
   return listen<WorkspacesPayload>(EVENT_NAMES.WORKSPACES_CHANGED, (event) => {
-    callback(event.payload.workspaces, event.payload.jobs ?? {})
+    callback(
+      event.payload.workspaces,
+      event.payload.jobs ?? {},
+      event.payload.revision,
+    )
   })
 }
 
@@ -114,6 +161,15 @@ export function onCommandProgress(
   })
 }
 
+export function onAppNavigationRequest(
+  callback: (request: AppNavigationRequest) => void,
+): Promise<UnlistenFn> {
+  return listen<AppNavigationRequest>(
+    EVENT_NAMES.APP_NAVIGATION_REQUEST,
+    (event) => callback(event.payload),
+  )
+}
+
 export function onWorkspaceStatus(
   callback: (status: WorkspaceStatus) => void,
 ): Promise<UnlistenFn> {
@@ -128,4 +184,15 @@ export function onUpdateStatus(
   return listen<UpdateStatus>(EVENT_NAMES.UPDATE_STATUS, (event) => {
     callback(event.payload)
   })
+}
+
+export function onAppSettingsChanged(
+  callback: (state: import("$shared/app-settings.js").AppSettingsState) => void,
+): Promise<UnlistenFn> {
+  return listen<import("$shared/app-settings.js").AppSettingsState>(
+    EVENT_NAMES.APP_SETTINGS_CHANGED,
+    (event) => {
+      callback(event.payload)
+    },
+  )
 }

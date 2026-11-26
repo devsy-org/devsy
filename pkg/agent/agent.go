@@ -19,6 +19,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
 const DefaultInactivityTimeout = time.Minute * 20
@@ -70,6 +72,7 @@ func readAgentWorkspaceInfo(
 
 func ParseAgentWorkspaceInfo(workspaceConfigFile string) (*provider2.AgentWorkspaceInfo, error) {
 	// read workspace config
+	//nolint:gosec // path is inside the agent layout
 	out, err := os.ReadFile(workspaceConfigFile)
 	if err != nil {
 		return nil, err
@@ -130,6 +133,17 @@ func ReadAgentWorkspaceInfo(
 		workspaceInfo.Agent.Driver,
 	)
 	return false, workspaceInfo, nil
+}
+
+// ReadExistingAgentWorkspaceInfo reads already persisted workspace info and
+// nothing else. Unlike ReadAgentWorkspaceInfo it never re-runs as root, probes
+// Docker or invokes sudo, so a read-only history view cannot prompt for
+// elevation or provision state. A missing or unreadable file is an error the
+// caller reports as unavailable.
+func ReadExistingAgentWorkspaceInfo(
+	agentFolder, context, id string,
+) (*provider2.AgentWorkspaceInfo, error) {
+	return readAgentWorkspaceInfo(agentFolder, context, id)
 }
 
 func logWorkspaceInfoReadError(err error, agentFolder, context, id string) {
@@ -239,12 +253,15 @@ func handleStaleWorkspace(
 	deleteWorkspace func(*provider2.AgentWorkspaceInfo) error,
 ) (string, error) {
 	oldWorkspaceInfo, _ := ParseAgentWorkspaceInfo(workspaceConfig)
-	if oldWorkspaceInfo == nil ||
-		oldWorkspaceInfo.Workspace.UID == workspaceInfo.Workspace.UID {
+	if oldWorkspaceInfo == nil {
+		return workspaceDir, nil
+	}
+	if oldWorkspaceInfo.Workspace.UID == workspaceInfo.Workspace.UID {
+		workspaceInfo.WorkspaceWasExisting = true
 		return workspaceDir, nil
 	}
 
-	log.Infof(
+	log.Debugf(
 		"delete old workspace: workspaceId=%s, oldUid=%s, newUid=%s",
 		oldWorkspaceInfo.Workspace.ID,
 		oldWorkspaceInfo.Workspace.UID,
@@ -312,6 +329,7 @@ func CreateWorkspaceBusyFile(folder string) {
 
 func HasWorkspaceBusyFile(folder string) bool {
 	filePath := filepath.Join(folder, config.WorkspaceBusyFile)
+	//nolint:gosec // paths come from the internal agent layout
 	_, err := os.Stat(filePath)
 	return err == nil
 }
@@ -386,7 +404,10 @@ func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 	args := []string{"--preserve-env", binary}
 	args = append(args, os.Args[1:]...)
 	log.Debugf("re-run as root: command=%s", strings.Join(args, " "))
-	cmd := exec.Command("sudo", args...)
+	//nolint:gosec // sudo args are built internally from fixed flags
+	cmd := exec.Command(
+		"sudo",
+		args...) //nolint:gosec // sudo args are built internally from fixed flags
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -418,20 +439,26 @@ func isDockerRootRequired(workspaceInfo *provider2.AgentWorkspaceInfo) bool {
 	return rootRequired
 }
 
-type Exec func(
-	ctx context.Context, user string, command string,
-	stdin io.Reader, stdout io.Writer, stderr io.Writer,
-) error
+type ExecRequest struct {
+	User    string
+	Command string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
+}
+
+type Exec func(ctx context.Context, req ExecRequest) error
 
 type TunnelOptions struct {
-	Exec            Exec
-	User            string
-	Stdin           io.Reader
-	Stdout          io.Writer
-	Stderr          io.Writer
-	Timeout         time.Duration
-	RemoteAgentPath string
-	DownloadURL     string
+	Exec               Exec
+	RuntimeHealthCheck func(context.Context) error
+	User               string
+	Stdin              io.Reader
+	Stdout             io.Writer
+	Stderr             io.Writer
+	Timeout            time.Duration
+	RemoteAgentPath    string
+	DownloadURL        string
 }
 
 func Tunnel(ctx context.Context, opts TunnelOptions) error {
@@ -442,13 +469,20 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 
 	if err := InjectAgent(ctx, &InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			return opts.Exec(ctx, "root", command, stdin, stdout, stderr)
+			return opts.Exec(ctx, ExecRequest{
+				User:    "root",
+				Command: command,
+				Stdin:   stdin,
+				Stdout:  stdout,
+				Stderr:  stderr,
+			})
 		},
 		IsLocal:                     false,
 		RemoteAgentPath:             remoteAgentPath,
 		DownloadURL:                 opts.DownloadURL,
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     opts.Timeout,
+		RuntimeHealthCheck:          opts.RuntimeHealthCheck,
 	}); err != nil {
 		return err
 	}
@@ -459,7 +493,14 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		user = "root"
 	}
 
-	return opts.Exec(ctx, user, command, opts.Stdin, opts.Stdout, opts.Stderr)
+	log.Debugf("starting ssh server exec: user=%s", user)
+	return ExecWithStartupWatchdog(ctx, opts.Exec, ExecRequest{
+		User:    user,
+		Command: command,
+		Stdin:   opts.Stdin,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
+	}, ExecStartupWatchdogOptions{})
 }
 
 // sshServerCommand builds the remote command that runs the ssh-server
@@ -470,17 +511,6 @@ func sshServerCommand(agentPath string, debug bool) string {
 		args = append(args, "--debug")
 	}
 	return shellescape.QuoteCommand(args)
-}
-
-func applyDockerEnv(cmd *exec.Cmd, envs map[string]string) {
-	if len(envs) == 0 {
-		return
-	}
-	newEnvs := os.Environ()
-	for k, v := range envs {
-		newEnvs = append(newEnvs, k+"="+v)
-	}
-	cmd.Env = newEnvs
 }
 
 func dockerReachable(dockerOverride string, envs map[string]string) (bool, error) {
@@ -498,19 +528,32 @@ func dockerReachable(dockerOverride string, envs map[string]string) (bool, error
 		return true, nil
 	}
 
-	cmd := exec.Command(docker, "ps")
-	applyDockerEnv(cmd, envs)
-
-	_, err := cmd.CombinedOutput()
+	args := []string{"ps"}
+	env := make([]string, 0, len(envs))
+	for key, value := range envs {
+		env = append(env, key+"="+value)
+	}
+	redactionEnv := append(os.Environ(), env...)
+	result, err := subprocess.Run(context.Background(), docker, args, subprocess.Options{
+		Env:      env,
+		Redactor: secrets.NewEnvironmentRedactor(redactionEnv),
+	})
 	if err != nil {
-		if strings.Contains(err.Error(), "permission denied") {
-			if dockerOverride == "" {
-				return true, nil
-			}
-		}
-
-		return false, fmt.Errorf("%s ps: %w", docker, err)
+		return dockerPSError(docker, dockerOverride, result.DiagnosticOutput(), err)
 	}
 
 	return false, nil
+}
+
+// dockerPSError classifies a failed `docker ps`: a permission error on the
+// default docker needs root to fix; anything else is returned to the caller.
+func dockerPSError(docker, dockerOverride, details string, err error) (bool, error) {
+	if strings.Contains(strings.ToLower(details+" "+err.Error()), "permission denied") &&
+		dockerOverride == "" {
+		return true, nil
+	}
+	if details != "" {
+		return false, fmt.Errorf("%s ps: %s: %w", docker, details, err)
+	}
+	return false, fmt.Errorf("%s ps: %w", docker, err)
 }

@@ -19,9 +19,12 @@ jobs:
           - runner: macos-latest
           - runner: windows-latest
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ matrix.runner == 'windows-latest' && 40 || 20 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
+
+      - uses: ./.github/actions/relocate-tmp
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -37,7 +40,7 @@ jobs:
           fi
           echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
 
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -46,7 +49,7 @@ jobs:
           DEVSY_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
           DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
@@ -85,9 +88,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: ./.github/actions/relocate-tmp
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
@@ -106,7 +111,7 @@ jobs:
           echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
 
       - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: devsy-*
           path: ${{ runner.temp }}/devsy-bin/
@@ -149,7 +154,7 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: install setuptools
         run: pip install setuptools
@@ -221,8 +226,60 @@ jobs:
             --file "$app/Contents/Resources/bin/devsy" \
             --goos "$MATRIX_GO_OS" --goarch "$MATRIX_GO_ARCH"
 
+      - name: install desktop-file-utils
+        if: matrix.name == 'linux-x64'
+        run: sudo apt-get install -y desktop-file-utils rpm cpio
+
+      - name: verify Linux desktop identity and icons in packages
+        if: matrix.name == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_id=sh.devsy.app
+          work="$RUNNER_TEMP/linux-package-check"
+          rm -rf "$work"
+          mkdir -p "$work"
+
+          appimage=$(find desktop/release -maxdepth 1 -name '*.AppImage' -print -quit)
+          deb=$(find desktop/release -maxdepth 1 -name '*.deb' -print -quit)
+          rpm=$(find desktop/release -maxdepth 1 -name '*.rpm' -print -quit)
+          for pkg in "$appimage" "$deb" "$rpm"; do
+            [ -n "$pkg" ] || { echo "::error::missing Linux package in desktop/release"; exit 1; }
+          done
+
+          rpm_size=$(rpm -qp --qf '%{SIZE}' "$rpm")
+          [ "$rpm_size" -gt 0 ] 2>/dev/null || { echo "::error::rpm header has no SIZE tag: $rpm_size"; exit 1; }
+
+          mkdir "$work/appimage" && (cd "$work/appimage" && chmod +x "$GITHUB_WORKSPACE/$appimage" && "$GITHUB_WORKSPACE/$appimage" --appimage-extract >/dev/null)
+          mkdir "$work/deb" && dpkg-deb -x "$deb" "$work/deb"
+          mkdir "$work/rpm" && (cd "$work/rpm" && rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idm --quiet)
+
+          appimage_root="$work/appimage/squashfs-root"
+          go run ./hack/release_artifacts verify-linux-desktop \
+            --app-id "$app_id" \
+            --desktop-file "$appimage_root/$app_id.desktop" \
+            --icon-root "$appimage_root/usr/share/icons/hicolor" \
+            --require-file "$appimage_root/resources/app-icon.png" \
+            --require-file "$appimage_root/devsy-desktop.png"
+          for root in "$work/deb" "$work/rpm"; do
+            go run ./hack/release_artifacts verify-linux-desktop \
+              --app-id "$app_id" \
+              --desktop-file "$root/usr/share/applications/$app_id.desktop" \
+              --icon-root "$root/usr/share/icons/hicolor" \
+              --require-file "$root/opt/Devsy/resources/app-icon.png"
+          done
+
+          desktop-file-validate \
+            "$appimage_root/$app_id.desktop" \
+            "$work/deb/usr/share/applications/$app_id.desktop" \
+            "$work/rpm/usr/share/applications/$app_id.desktop"
+
+          # The version step rewrites package.json in CI, so check what shipped.
+          packaged_name=$(cd desktop && node -e 'process.stdout.write(require("@electron/asar").extractFile(process.argv[1], "package.json"))' "$appimage_root/resources/app.asar" | jq -r .desktopName)
+          [ "$packaged_name" = "$app_id.desktop" ] || { echo "::error::bundled desktopName is '$packaged_name', expected $app_id.desktop"; exit 1; }
+
       - name: upload desktop artifacts to release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
@@ -236,7 +293,7 @@ jobs:
 
       - name: upload macOS dmg for homebrew cask
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-dmg-${{ matrix.name }}
           path: desktop/release/*.dmg
@@ -252,7 +309,7 @@ jobs:
           go run hack/rewrite_manifest_urls/main.go desktop/release/ "$REPO" "$TAG"
 
       - name: upload update metadata artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: update-metadata-${{ matrix.name }}
           path: |
@@ -261,7 +318,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: upload cli assets
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         if: matrix.name == 'linux-x64'
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
@@ -271,7 +328,7 @@ jobs:
 
       - name: upload desktop linux artifact for flatpak
         if: matrix.name == 'linux-x64'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devsy-flatpak
           path: desktop/release/*.deb
@@ -293,7 +350,7 @@ jobs:
           go-version-file: go.mod
 
       - name: download update metadata artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: update-metadata-*
           path: metadata/
@@ -350,7 +407,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: download desktop linux artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-flatpak
           path: desktop/flatpak/
@@ -367,15 +424,40 @@ jobs:
           fi
 
       - name: build flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6
+        uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
           bundle: Devsy.flatpak
           manifest-path: desktop/flatpak/sh.devsy.app.yml
           cache-key: flatpak-builder-${{ github.sha }}
           upload-artifact: true
 
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: verify Flatpak desktop identity and exported icons
+        run: |
+          set -euo pipefail
+          # The pinned image is Freedesktop SDK based, without a distro package manager.
+          command -v flatpak ostree desktop-file-validate
+          app_id=sh.devsy.app
+          work="$RUNNER_TEMP/flatpak-bundle-check"
+          rm -rf "$work"
+          mkdir -p "$work"
+          ostree init --repo="$work/repo" --mode=archive-z2
+          flatpak build-import-bundle "$work/repo" Devsy.flatpak
+          ref=$(ostree refs --repo="$work/repo" | grep "^app/$app_id/" | head -n 1)
+          ostree checkout --repo="$work/repo" --user-mode "$ref" "$work/files"
+          export_root="$work/files/export/share"
+          go run ./hack/release_artifacts verify-linux-desktop \
+            --app-id "$app_id" \
+            --desktop-file "$export_root/applications/$app_id.desktop" \
+            --icon-root "$export_root/icons/hicolor"
+          test -s "$export_root/icons/hicolor/128x128/apps/$app_id.png"
+          desktop-file-validate "$export_root/applications/$app_id.desktop"
+
       - name: upload flatpak bundle
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
@@ -398,19 +480,19 @@ jobs:
           go-version-file: go.mod
 
       - name: download darwin CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-darwin
           path: ${{ runner.temp }}/devsy-bin/
 
       - name: download linux CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: devsy-linux
           path: ${{ runner.temp }}/devsy-bin/
 
       - name: download macOS dmg artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: desktop-dmg-*
           path: ${{ runner.temp }}/devsy-dmg/
@@ -421,7 +503,7 @@ jobs:
 
       - name: generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
@@ -477,7 +559,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           prerelease: true

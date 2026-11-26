@@ -1,14 +1,31 @@
 name: Pull Request
 
+# This workflow only wires GitHub Actions together. What tests exist, where they
+# run and how they run is defined in hack/ci/suites.yaml and implemented by the
+# Go CLI in hack/ci:
+#   - `plan` turns the manifest into the job matrices below.
+#   - unit tests run through `hack/ci unit`.
+#   - Ginkgo suites run through `hack/ci setup` and `hack/ci e2e`.
+#   - `ci-success` evaluates the needed jobs with `hack/ci success`.
+# Add or change a test in the manifest, not in this file.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
   pull_request:
 
+# Reruns get their own group so a retried attempt never cancels a newer push.
+# The pr- and run- prefixes keep a numeric branch name from matching a run ID.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.run_attempt == 1 && format('pr-{0}', github.head_ref) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# The pipe makes the go command fall back to a direct fetch on any proxy error.
+# With a comma it only falls back on 404 or 410, so a proxy.golang.org stream
+# error (INTERNAL_ERROR) fails the job.
+env:
+  GOPROXY: https://proxy.golang.org|direct
 
 jobs:
   changes:
@@ -17,74 +34,105 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      go: ${{ steps.filter.outputs.go }}
+      go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.go == 'true' }}
+      agent_skill: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.agent_skill == 'true' }}
+      licenses: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.licenses == 'true' }}
+      gh_credentials: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.gh_credentials == 'true' }}
+      provider_update: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.provider_update == 'true' }}
+      shared_logging: ${{ github.event_name != 'pull_request' || steps.filter.outputs.shared_logging == 'true' }}
+      mode: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
+      changed_files: ${{ steps.filter.outputs.all_files || '[]' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
+        if: github.event_name == 'pull_request'
         with:
+          list-files: json
           filters: |
-            go:
-              - '**/*.go'
+            full:
+              - '.github/workflows/pr-ci.yml'
+              - '.github/actions/**'
+              - 'hack/ci/**'
               - 'go.mod'
               - 'go.sum'
               - '.goreleaser.yml'
+              - 'e2e/framework/**'
+              - 'e2e/cmd/**'
+              - 'e2e/*.go'
+            go:
+              - '**/*.go'
+              - 'cmd/**'
+              - 'pkg/**'
+              - 'providers/**'
               - 'e2e/**'
+              - 'hack/microsandbox/**'
+              - 'hack/provider_update_ci/**'
+              - 'hack/licenses/**'
+              - 'hack/podman_ci/**'
+              - '.golangci.yaml'
+            shared_logging:
+              - 'logging/**'
+              - 'go.mod'
               - '.github/workflows/pr-ci.yml'
+              - '.golangci.yaml'
+            agent_skill:
+              - '.agents/skills/devsy/**'
+              - 'hack/validate_agent_skill/**'
+            licenses:
+              - '**/*.go'
               - 'hack/licenses/**'
               - 'THIRD_PARTY_LICENSES.md'
+            gh_credentials:
+              - 'pkg/ghcredentials/**'
+              - 'pkg/credentials/**'
+              - 'pkg/tunnel/**'
+              - 'pkg/agent/tunnel/**'
+              - 'pkg/agent/tunnelserver/**'
+              - 'pkg/config/**'
+              - 'pkg/log/**'
+              - 'pkg/http/**'
+              - 'pkg/port/**'
+              - 'pkg/netstat/**'
+              - 'pkg/random/**'
+              - 'pkg/gitsshsigning/**'
+              - 'pkg/transport/**'
+              - 'pkg/client/**'
+              - 'pkg/ssh/**'
+              - 'pkg/flags/**'
+              - 'pkg/exitcode/**'
+              - 'e2e/cmd/ghfixture/**'
+            provider_update:
+              - 'pkg/workspace/**'
+              - 'pkg/provider/**'
+              - 'pkg/config/**'
+              - 'pkg/extract/**'
+              - 'pkg/copy/**'
+              - 'pkg/download/**'
+              - 'pkg/http/**'
+              - 'pkg/gitcredentials/**'
+              - 'pkg/hash/**'
+              - 'pkg/log/**'
+              - 'pkg/id/**'
+              - 'pkg/types/**'
+              - 'providers/**'
+              - 'hack/provider_update_ci/**'
+            all:
+              - '**'
 
-  precommit:
-    name: Pre-commit
+  plan:
+    name: Plan
+    needs: [changes]
+    if: always()
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
-        with:
-          version: v2.12.2
-          only-new-issues: true
-
-  can-read-secret:
-    name: Can Read Secret
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
-      secret-set: ${{ steps.check-secret.outputs.secret-set }}
-    steps:
-      - name: Check secret
-        id: check-secret
-        run: |
-          if [ -z "${{ secrets.DEVSY_GITHUB_APP_ID }}" ]; then
-            echo "secret-set=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "secret-set=true" >> "$GITHUB_OUTPUT"
-          fi
-
-  build-cli:
-    name: Build CLI Binary on ${{ matrix.runner }}
-    needs: [changes, precommit, lint]
-    if: needs.changes.outputs.go == 'true'
-    strategy:
-      matrix:
-        include:
-          - runner: ubuntu-latest
-          - runner: macos-latest
-          - runner: windows-latest
-    runs-on: ${{ matrix.runner }}
+      unit: ${{ steps.matrix.outputs.unit }}
+      build: ${{ steps.matrix.outputs.build }}
+      unprivileged: ${{ steps.matrix.outputs.unprivileged }}
+      integration: ${{ steps.matrix.outputs.integration }}
+      microsandbox: ${{ steps.matrix.outputs.microsandbox }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -92,54 +140,581 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: get operating system lowercase
-        id: os
+      # Suites that need the GitHub App secret are left out of the matrices when
+      # the secret is unavailable (for example on pull requests from forks).
+      - name: build job matrices from hack/ci/suites.yaml
+        id: matrix
+        env:
+          SECRET_AVAILABLE: ${{ secrets.DEVSY_GITHUB_APP_ID != '' }}
+          MATRIX_MODE: ${{ needs.changes.outputs.mode }}
+          CHANGED_FILES_JSON: ${{ needs.changes.outputs.changed_files }}
+        run: |
+          printf '%s' "$CHANGED_FILES_JSON" | jq -r '.[]' > "$RUNNER_TEMP/changed-files.txt"
+          go run ./hack/ci matrix --mode="$MATRIX_MODE" --changed-files="$RUNNER_TEMP/changed-files.txt" --secret-available="$SECRET_AVAILABLE" >> "$GITHUB_OUTPUT"
+
+  precommit:
+    name: Pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+
+      - run: SKIP=golangci-lint prek run --all-files
+
+  # Left out of ci-success needs until it has run for a week without false positives.
+  mask-scan:
+    name: Mask Scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: devsy-org/ci/mask-scan@1225bd8960ff7eac8e7d6eafbb55073551c853c7
+
+  agent-skill:
+    name: Agent Skill
+    needs: [changes]
+    if: needs.changes.outputs.agent_skill == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 26
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.15"
+      - name: setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - name: Validate skill and installer compatibility
+        run: go run ./hack/validate_agent_skill
+
+  shared-logging:
+    name: Shared Logging
+    needs: [changes]
+    if: needs.changes.outputs.shared_logging == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: logging
+    env:
+      GOWORK: "off"
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: 1.23.x
+          cache-dependency-path: logging/go.mod
+      - name: Test Go floor
+        run: go test -race ./... && go vet ./... && test -z "$(gofmt -l .)"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: logging/go.mod
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
+        with:
+          version: v2.14.0
+          working-directory: logging
+          args: --config ../.golangci.yaml
+      - name: Check Go formatting
+        run: golangci-lint fmt --diff --config ../.golangci.yaml
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26
+      - name: Test shared Desktop masking
+        run: node --test desktop/*.test.ts
+
+  lint:
+    name: Lint
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          persist-credentials: ${{ github.event_name != 'pull_request' }}
+
+      - uses: ./.github/actions/relocate-tmp
+
+      - name: setup Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: locate Go caches
+        id: gocache
+        run: |
+          {
+            echo "build=$(go env GOCACHE)"
+            echo "mod=$(go env GOMODCACHE)"
+            echo "week=$(date -u +%G-W%V)"
+          } >> "$GITHUB_OUTPUT"
+
+      # The shared setup-go key is saved first by small jobs, so it holds almost
+      # nothing. The Linux unit cache has every module lint loads.
+      - name: restore unit test Go caches
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.gocache.outputs.week }}
+          restore-keys: |
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+
+      - name: Generate complete pull request lint patch
+        id: lint-patch
+        if: github.event_name == 'pull_request'
+        run: go run ./hack/ci lint-patch >> "$GITHUB_OUTPUT"
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.14.0
+          only-new-issues: ${{ github.event_name != 'pull_request' }}
+          args: ${{ steps.lint-patch.outputs.args }}
+
+  # Native host tests: they execute the real `gh` CLI, so they run per host OS
+  # outside the unit tier's package list. macOS runs them in its unit job.
+  github-credential-host-tests:
+    name: GitHub Credential Host Tests (${{ matrix.runner }})
+    needs: [changes]
+    if: needs.changes.outputs.gh_credentials == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    # Cold Windows runs compile with -race and download modules before the
+    # post-job cache save, which alone can exceed 4 minutes.
+    timeout-minutes: ${{ matrix.runner == 'windows-latest' && 30 || 15 }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
+      - uses: ./.github/actions/relocate-tmp
+      - name: setup Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: locate Go caches
+        id: gocache
         shell: bash
         run: |
-          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
-          if [ "$OS" == "macos" ]; then
-            OS="darwin"
-          fi
-          echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
+          {
+            echo "build=$(go env GOCACHE)"
+            echo "mod=$(go env GOMODCACHE)"
+            echo "week=$(date -u +%G-W%V)"
+          } >> "$GITHUB_OUTPUT"
+      - name: restore unit test Go caches
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.gocache.outputs.week }}
+          restore-keys: |
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+      - name: record native host and available CLI versions
+        run: |
+          go env GOOS GOARCH
+          gh --version
+      - name: execute native credential discovery and process-bound regressions
+        env:
+          DEVSY_TEST_REAL_GH: "1"
+          DEVSY_TEST_NATIVE_KEYRING: "0"
+        run: >-
+          go test -race -count=1 -v -timeout 5m ./pkg/ghcredentials
+          -run '^(TestNative.*|TestHostLookupEnvironmentAndGuestEnvironmentAreIndependent|TestRegisteredGuestDeclinesAmbiguousKeyringResult)$'
+      - name: test strict fixture report validation
+        run: go test -race -count=1 -v ./e2e/framework/ghfixture
+      - name: test native credential service boundaries
+        run: >-
+          go test -race -count=1 -v -timeout 2m ./pkg/tunnel ./pkg/credentials
+          -run '^(TestCredentials.*Host.*|TestOptionalGitHubService.*|TestServicesStartup.*)$'
 
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+  # Unit tier: every Go test that needs no running workspace. The steps per
+  # runner are defined under `unit` in hack/ci/suites.yaml.
+  unit-tests:
+    name: Unit Tests (${{ matrix.runner }})
+    needs: [changes, plan]
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.unit) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      NATIVE_CREDENTIAL_TESTS: ${{ matrix.os == 'darwin' && needs.changes.outputs.gh_credentials == 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
+
+      - uses: ./.github/actions/relocate-tmp
+
+      - name: setup Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: locate Go caches
+        id: gocache
+        shell: bash
+        run: |
+          {
+            echo "build=$(go env GOCACHE)"
+            echo "mod=$(go env GOMODCACHE)"
+            echo "week=$(date -u +%G-W%V)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: restore Go caches
+        id: gocache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.gocache.outputs.week }}
+          restore-keys: |
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+            go-unit-partial-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+
+      - name: run unit tests
+        shell: bash
+        timeout-minutes: ${{ matrix.test_timeout_minutes }}
+        run: go run ./hack/ci unit
+
+      # macOS runners are scarce, so the native credential host tests share
+      # this job instead of queueing for a second macOS runner.
+      - name: record native host and available CLI versions
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        run: |
+          go env GOOS GOARCH
+          gh --version
+
+      - name: execute native credential discovery and process-bound regressions
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        timeout-minutes: 8
+        env:
+          DEVSY_TEST_REAL_GH: "1"
+          DEVSY_TEST_NATIVE_KEYRING: "1"
+        run: >-
+          go test -race -count=1 -v -timeout 5m ./pkg/ghcredentials
+          -run '^(TestNative.*|TestHostLookupEnvironmentAndGuestEnvironmentAreIndependent|TestRegisteredGuestDeclinesAmbiguousKeyringResult)$'
+
+      - name: test strict fixture report validation
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        timeout-minutes: 3
+        run: go test -race -count=1 -v ./e2e/framework/ghfixture
+
+      - name: test native credential service boundaries
+        if: ${{ !cancelled() && steps.gocache.outcome == 'success' && env.NATIVE_CREDENTIAL_TESTS == 'true' }}
+        timeout-minutes: 5
+        run: >-
+          go test -race -count=1 -v -timeout 2m ./pkg/tunnel ./pkg/credentials
+          -run '^(TestCredentials.*Host.*|TestOptionalGitHubService.*|TestServicesStartup.*)$'
+
+      - name: save Go caches
+        if: success() && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: ${{ steps.gocache-restore.outputs.cache-primary-key }}
+
+      - name: save partial Go caches
+        if: (failure() || cancelled()) && github.ref == 'refs/heads/main' && steps.gocache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-unit-partial-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.run_id }}
+
+  provider-update-windows:
+    name: Provider Update Tests (windows-latest)
+    needs: [changes]
+    if: needs.changes.outputs.provider_update == 'true'
+    runs-on: windows-latest
+    # Allow cold Go compilation and the post-job cache save to complete.
+    timeout-minutes: 30
+    env:
+      GOTRACEBACK: wer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: setup Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: locate Go caches
+        id: gocache
+        shell: bash
+        run: |
+          {
+            echo "build=$(go env GOCACHE)"
+            echo "mod=$(go env GOMODCACHE)"
+            echo "week=$(date -u +%G-W%V)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: restore unit test Go caches
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.gocache.outputs.week }}
+          restore-keys: |
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
+            go-unit-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+
+      - uses: ./.github/actions/host-features
+
+      - name: record Go version
+        shell: pwsh
+        run: go version
+
+      - name: enable Windows Error Reporting dumps for test binaries
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'provider-update-dumps'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
+          New-ItemProperty -Force -Path $wer -Name Disabled -PropertyType DWord -Value 0 | Out-Null
+          New-ItemProperty -Force -Path $wer -Name DontShowUI -PropertyType DWord -Value 1 | Out-Null
+          $key = "$wer\LocalDumps"
+          New-Item -Force -Path $key | Out-Null
+          New-ItemProperty -Force -Path $key -Name DumpFolder -PropertyType ExpandString -Value $dir | Out-Null
+          New-ItemProperty -Force -Path $key -Name DumpType -PropertyType DWord -Value 2 | Out-Null
+          New-ItemProperty -Force -Path $key -Name DumpCount -PropertyType DWord -Value 5 | Out-Null
+
+      - name: run provider update tests and require Windows coverage
+        shell: pwsh
+        # Keeps the exact test executables that ran so dumps can be symbolized.
+        env:
+          GOFLAGS: -o=${{ runner.temp }}/provider-update-dumps/
+        run: go run ./hack/provider_update_ci --artifacts-dir "$env:RUNNER_TEMP"
+
+      # A crash followed by a passing retry still leaves its dump, so the
+      # upload depends on dumps existing, not on the job result.
+      - name: check for crash dumps
+        id: dumps
+        if: always()
+        shell: pwsh
+        run: |
+          $dumps = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP 'provider-update-dumps') -Filter *.dmp -ErrorAction SilentlyContinue)
+          "Crash dumps: $($dumps.Count)"
+          $dumps | ForEach-Object { "$($_.Name) $($_.Length)" }
+          "found=$($dumps.Count -gt 0)".ToLower() >> $env:GITHUB_OUTPUT
+
+      - name: upload provider update test JSON on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: provider-update-windows-test-json
+          path: |
+            ${{ runner.temp }}/provider-update-windows.jsonl
+            ${{ runner.temp }}/provider-update-windows.exitcode
+          if-no-files-found: ignore
+
+      - name: upload crash dumps, test binaries and test JSON
+        if: always() && steps.dumps.outputs.found == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: provider-update-windows-crash-dumps-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/provider-update-dumps
+            ${{ runner.temp }}/provider-update-windows.jsonl
+          retention-days: 7
+          if-no-files-found: ignore
+
+  build-cli:
+    name: Build CLI Binary for ${{ matrix.os }}
+    needs: [changes, plan]
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.build != '{"include":[]}'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.build) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.job_timeout_minutes || 20 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
+
+      - uses: ./.github/actions/relocate-tmp
+
+      # A restored cache costs more than it saves here: Windows restore takes
+      # about 3 min and goreleaser builds are no faster with it.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: build CI helpers
+        if: matrix.os != 'darwin'
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+        run: |
+          SUFFIX=""
+          if [ "$GOOS" = "windows" ]; then
+            SUFFIX=".exe"
+          fi
+          go build -trimpath -o "$RUNNER_TEMP/devsy-ci-podman$SUFFIX" ./hack/podman_ci
+          go build -trimpath -o "$RUNNER_TEMP/devsy-ci-tool$SUFFIX" ./hack/ci
+          go build -trimpath -o "$RUNNER_TEMP/devsy-ci-e2e$SUFFIX" ./e2e/cmd/devsy-ci
+
+      - name: upload Podman CI helper
+        if: matrix.os != 'darwin'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: devsy-ci-podman-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-podman*
+
+      - name: upload E2E runtime helper
+        if: matrix.os == 'windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: devsy-ci-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-e2e*
+
+      - name: upload CI tool
+        if: matrix.os != 'darwin'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: devsy-ci-tool-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-tool*
+
+      - name: disk usage before Linux snapshot
+        if: matrix.os == 'linux'
+        run: |
+          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
+
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: build --id devsy-${{ steps.os.outputs.runner_os }} --snapshot
+          args: >-
+            build --id devsy-${{ matrix.os }} --snapshot
+            ${{ matrix.os == 'linux' && '--parallelism=1' || '' }}
         env:
           DEVSY_CLI_VERSION: v0.0.0
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - name: disk usage after Linux snapshot
+        if: always() && matrix.os == 'linux'
+        run: |
+          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: devsy-${{ steps.os.outputs.runner_os }}
-          path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
+          name: devsy-${{ matrix.os }}
+          path: dist/devsy-${{ matrix.os }}_*/devsy-${{ matrix.os }}-*
+
+      - name: build MicroSandbox CI helper
+        if: matrix.os == 'linux' && matrix.build_microsandbox
+        env:
+          CGO_ENABLED: 0
+        run: go build -trimpath -o "${RUNNER_TEMP}/devsy-ci-microsandbox" ./hack/microsandbox
+
+      - name: build pinned runtime performance tools
+        if: matrix.os == 'linux' && matrix.build_microsandbox
+        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" build-performance-tools --output-dir "${RUNNER_TEMP}/runtime-performance-tools"'
+
+      - name: upload runtime performance tools
+        if: matrix.os == 'linux' && matrix.build_microsandbox
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: runtime-performance-tools-linux
+          path: ${{ runner.temp }}/runtime-performance-tools/
+
+      - name: upload MicroSandbox CI helper
+        if: matrix.os == 'linux' && matrix.build_microsandbox
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: devsy-ci-microsandbox-linux
+          path: ${{ runner.temp }}/devsy-ci-microsandbox
+
+      - name: build Linux GitHub credential fixtures
+        if: matrix.os == 'linux'
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH="$arch" go build -trimpath -o "${RUNNER_TEMP}/ghfixture-linux-${arch}" ./e2e/cmd/ghfixture
+          done
+
+      - name: upload Linux GitHub credential fixtures
+        if: matrix.os == 'linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ghfixture-linux
+          path: ${{ runner.temp }}/ghfixture-linux-*
 
       - name: build e2e test binary
-        if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
+        if: matrix.os != 'darwin'
         shell: bash
         working-directory: ./e2e
         env:
           CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
         run: |
           OUT="e2e.test"
-          if [ "${{ runner.os }}" == "Windows" ]; then
+          if [ "$GOOS" = "windows" ]; then
             OUT="e2e.test.exe"
           fi
           go test -c -o "$OUT" ./
 
       - name: upload e2e test binary
-        if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: matrix.os != 'darwin'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: e2e-test-${{ steps.os.outputs.runner_os }}
+          name: e2e-test-${{ matrix.os }}
           path: ./e2e/e2e.test*
-
 
   licenses:
     name: Third-party licenses
-    needs: [changes, precommit, lint]
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes]
+    if: needs.changes.outputs.licenses == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -151,513 +726,333 @@ jobs:
       - name: Check license policy and attribution
         run: go run ./hack/licenses --check
 
+  # E2E tier, group "unprivileged": runs as the runner user.
   integration-tests-unprivileged:
-    name: Test ${{ matrix.label }} on ${{ matrix.runner }}
-    needs: [changes, build-cli]
-    if: needs.changes.outputs.go == 'true'
+    name: ${{ matrix.title }}
+    needs: [changes, plan, build-cli]
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.unprivileged != '{"include":[]}'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - label: context
-            runner: ubuntu-latest
-
-          - label: extends
-            runner: ubuntu-latest
-
-          - label: outdated
-            runner: ubuntu-latest
-
-          - label: machine
-            runner: ubuntu-latest
-
-          - label: self-update
-            runner: ubuntu-latest
-
-          - label: upgrade
-            runner: ubuntu-latest
-
+      matrix: ${{ fromJSON(needs.plan.outputs.unprivileged) }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ matrix.job_timeout_minutes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: get operating system lowercase
-        id: os
+      - name: download CI tool
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: devsy-ci-tool-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-tool/
+
+      - name: set up CI tool
         shell: bash
         run: |
-          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
-          echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
+          tool="${RUNNER_TEMP//\\//}/devsy-ci-tool/devsy-ci-tool"
+          chmod +x "$tool"
+          echo "CI_TOOL=$tool" >> "$GITHUB_ENV"
 
       - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: devsy-${{ steps.os.outputs.runner_os }}
+          pattern: devsy-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
       - name: download e2e test binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: e2e-test-${{ steps.os.outputs.runner_os }}
+          name: e2e-test-${{ matrix.os }}
           path: ./e2e/
 
       - name: setup executable
         shell: bash
-        working-directory: ./e2e
-        run: |
-          TEMP_DIR="${{ runner.temp }}"
-          ls -R "$TEMP_DIR/devsy-bin/"
-          mkdir -p ./bin/
-          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} ./bin \;
-          find ./bin -name "devsy-*" -exec chmod +x {} \;
-          chmod +x ./e2e.test
-          ls -R ./bin/
+        run: '"$CI_TOOL" e2e prepare --bin-src "$RUNNER_TEMP/devsy-bin" --e2e-dir ./e2e'
 
       - name: run test
         shell: bash
-        working-directory: ./e2e
         env:
           GH_USERNAME: ${{ github.repository_owner }}
           GH_ACCESS_TOKEN: ${{ github.token }}
           GH_CREDENTIAL_USERNAME: x-access-token
         run: |
-          ./e2e.test -test.v -ginkgo.v -test.timeout 1500s -ginkgo.fail-on-empty --ginkgo.label-filter="${{ matrix.label }}"
+          export DEVSY_E2E_SENTINEL_FILE="${RUNNER_TEMP}/e2e-sentinels.jsonl"
+          (umask 077; : > "$DEVSY_E2E_SENTINEL_FILE")
+          set +e
+          "$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e 2>&1 | tee "${RUNNER_TEMP}/e2e-output.log"
+          status=("${PIPESTATUS[@]}")
+          "$CI_TOOL" e2e sentinel-check "$DEVSY_E2E_SENTINEL_FILE" "${RUNNER_TEMP}/e2e-output.log"
+          check=$?
+          (( status[0] == 0 && status[1] == 0 && check == 0 ))
 
-  integration-tests:
-    name: Test ${{ matrix.label }}${{ matrix.install-podman && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
-    needs: [changes, can-read-secret, build-cli]
-    if: needs.changes.outputs.go == 'true'
+  prepare-microsandbox-provider:
+    name: Prepare MicroSandbox provider assets
+    needs: [changes, plan, build-cli]
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.microsandbox != '{"include":[]}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: read pinned provider version
+        id: pin
+        shell: bash
+        run: |
+          versions="$(sed -nE 's#.*devsy-provider-microsandbox@(v[0-9]+\.[0-9]+\.[0-9]+)".*#\1#p' e2e/tests/up/microsandbox_session.go)"
+          if [ "$(printf '%s\n' "$versions" | grep -c .)" != 1 ]; then
+            echo "::error::expected exactly one pinned microsandbox provider version, got: $versions"
+            exit 1
+          fi
+          echo "version=$versions" >> "$GITHUB_OUTPUT"
+
+      - name: download MicroSandbox CI helper
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: devsy-ci-microsandbox-linux
+          path: ${{ runner.temp }}
+
+      - name: cache provider assets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/microsandbox-provider
+          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-provider-${{ steps.pin.outputs.version }}
+
+      - name: download and verify provider assets
+        shell: bash
+        run: |
+          chmod +x "${RUNNER_TEMP}/devsy-ci-microsandbox"
+          "${RUNNER_TEMP}/devsy-ci-microsandbox" prepare-provider \
+            --version "${{ steps.pin.outputs.version }}" \
+            --output-dir "${RUNNER_TEMP}/microsandbox-provider"
+
+      - name: upload provider assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: microsandbox-provider-assets
+          path: ${{ runner.temp }}/microsandbox-provider/
+          if-no-files-found: error
+
+  # E2E tier, group "microsandbox": the MicroSandbox CI helper owns the run and
+  # its report checks.
+  integration-tests-microsandbox:
+    name: ${{ matrix.title }}
+    needs: [changes, plan, build-cli, prepare-microsandbox-provider]
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.microsandbox != '{"include":[]}'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - label: ide
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: machine-provider
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: integration
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: tunnel
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            flake-attempts: 2
-
-          - label: mcp
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: provider
-            runner: ubuntu-latest
-            free-disk-space: true
-            install-kind: true
-            requires-secret: false
-            flake-attempts: 2
-
-          - label: ssh
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: ssh-agent-forward
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: ssh-ports-attributes
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: ssh-tunnel-mode
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: ssh-credentials-server-race
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: build
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: true
-
-          - label: docker-install
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: exec
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: ci
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: feature
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: extends-up
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: down
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: rename
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: delivery
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: logs
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: templates
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: config-apply
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: run-user-commands
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: config-read
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          # Up tests
-
-          - label: up-workspaces
-            runner: ubuntu-latest
-            free-disk-space: true
-            install-kind: true
-            requires-secret: false
-
-          - label: up-behaviors
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          - label: up-handle-errors
-            runner: ubuntu-latest
-            free-disk-space: true
-            install-kind: true
-            requires-secret: false
-
-          - label: up-private-token
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: true
-
-          - label: up-provider-kubernetes
-            runner: ubuntu-latest
-            free-disk-space: true
-            install-kind: true
-            requires-secret: false
-
-          - label: up-provider-kubernetes-restricted-scc
-            runner: ubuntu-latest
-            free-disk-space: true
-            install-kind: true
-            requires-secret: false
-
-          - label: up-provider-podman-rootless-basic
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootless
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootless-exec
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootless
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootless-lifecycle
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootless
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootless-config
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootless
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootless-features
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootless
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootful-basic
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootful
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootful-lifecycle
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootful
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootful-lifecycle-2
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootful
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootful-config
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootful
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-podman-rootful-features
-            runner: ubuntu-24.04
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-podman: rootful
-            test-timeout: 600s
-            job-timeout-minutes: 20
-            flake-attempts: 2
-
-          - label: up-provider-docker
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: false
-
-          - label: up-provider-microsandbox
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-
-          # Snapshot tests
-
-          - label: snapshot
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            configure-insecure-registry: true
-
-          #  Up Docker Compose tests
-
-          - label: up-docker-compose
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-
-          # Up Docker Feature tests
-
-          - label: up-features
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: false
-
-          # Windows tests
-
-          - label: provider
-            runner: windows-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: false
-
-          - label: up-docker-wsl
-            runner: windows-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: false
-
-          - label: up-features
-            runner: windows-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: false
-          - label: ssh-proxy-command
-            runner: windows-latest
-            free-disk-space: false
-            install-kind: true
-            requires-secret: false
-
-
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.microsandbox) }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.job-timeout-minutes || 45 }}
+    timeout-minutes: ${{ matrix.job_timeout_minutes }}
     steps:
-      - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        background: true
-        if: matrix.free-disk-space == true && runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: install gnupg2
+        run: sudo apt-get install -y gnupg2
+
+      - name: download CI tool
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: devsy-ci-tool-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-tool/
+
+      - name: set up CI tool
+        shell: bash
+        run: |
+          tool="${RUNNER_TEMP//\\//}/devsy-ci-tool/devsy-ci-tool"
+          chmod +x "$tool"
+          echo "CI_TOOL=$tool" >> "$GITHUB_ENV"
+
+      - name: download CLI artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: devsy-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-bin/
+          merge-multiple: true
+
+      - name: download e2e test binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: e2e-test-${{ matrix.os }}
+          path: ./e2e/
+
+      - name: download runtime performance tools
+        if: matrix.performance_capture
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: runtime-performance-tools-linux
+          path: ${{ runner.temp }}/runtime-performance-tools/
+
+      - name: prepare runtime performance capture
+        if: matrix.performance_capture
+        shell: bash
+        run: |
+          chmod +x "${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-spawn-probe" \
+            "${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-supervisor"
+          install -d -m 700 "${RUNNER_TEMP}/microsandbox-performance"
+          {
+            echo "DEVSY_TEST_RUNTIME_SPAWN_PROBE=${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-spawn-probe"
+            echo "DEVSY_TEST_RUNTIME_SUPERVISOR=${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-supervisor"
+            echo "DEVSY_TEST_RUNTIME_PERFORMANCE_DIR=${RUNNER_TEMP}/microsandbox-performance"
+            echo "DEVSY_TEST_RUNTIME_REVISION=${{ github.sha }}"
+            echo "DEVSY_TEST_RUNTIME_SDK_VERSION=$(cat "${RUNNER_TEMP}/runtime-performance-tools/sdk-version")"
+          } >> "$GITHUB_ENV"
+
+      - name: download MicroSandbox CI helper
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: devsy-ci-microsandbox-linux
+          path: ${{ runner.temp }}
+
+      - name: setup MicroSandbox CI helper
+        run: chmod +x "${RUNNER_TEMP}/devsy-ci-microsandbox"
+
+      - name: setup executable
+        shell: bash
+        run: '"$CI_TOOL" e2e prepare --bin-src "$RUNNER_TEMP/devsy-bin" --e2e-dir ./e2e'
+
+      - name: download provider assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: microsandbox-provider-assets
+          path: ${{ runner.temp }}/microsandbox-provider/
+
+      - name: cache microsandbox release bundle (Linux)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/microsandbox-linux-x86_64-v0.7.13.tar.gz
+          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-bundle-v0.7.13
+
+      - name: install checksum-pinned microsandbox (Linux)
+        timeout-minutes: 5
+        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" install-linux'
+
+      - name: run MicroSandbox test
+        shell: bash
+        env:
+          GH_USERNAME: ${{ github.repository_owner }}
+          GH_ACCESS_TOKEN: ${{ github.token }}
+          GH_CREDENTIAL_USERNAME: x-access-token
+          TEST_TIMEOUT: ${{ matrix.test_timeout }}
+          DEVSY_REQUIRE_MICROSANDBOX: "true"
+          DEVSY_E2E_PROVIDER_DOWNLOAD_CACHE: ${{ runner.temp }}/microsandbox-provider/cache
+        run: |
+          export DEVSY_E2E_SENTINEL_FILE="${RUNNER_TEMP}/e2e-sentinels.jsonl"
+          (umask 077; : > "$DEVSY_E2E_SENTINEL_FILE")
+          set +e
+          "${RUNNER_TEMP}/devsy-ci-microsandbox" run --label "${{ matrix.name }}" --expected-count "${{ matrix.expected_spec_count }}" --provider-mode "${{ matrix.provider_mode }}" 2>&1 | tee "${RUNNER_TEMP}/e2e-output.log"
+          status=("${PIPESTATUS[@]}")
+          "$CI_TOOL" e2e sentinel-check "$DEVSY_E2E_SENTINEL_FILE" "${RUNNER_TEMP}/e2e-output.log"
+          check=$?
+          (( status[0] == 0 && status[1] == 0 && check == 0 ))
+
+      - name: upload MicroSandbox test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: microsandbox-${{ matrix.name }}-evidence
+          path: |
+            ${{ runner.temp }}/microsandbox-${{ matrix.name }}.json
+            ${{ runner.temp }}/microsandbox-${{ matrix.name }}.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: upload runtime performance evidence
+        if: always() && matrix.performance_capture
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: microsandbox-runtime-performance
+          path: ${{ runner.temp }}/microsandbox-performance/provider-performance.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # E2E tier, group "integration": runtimes (Docker, Podman, kind) are
+  # provisioned per suite from the matrix flags computed by `hack/ci matrix`.
+  integration-tests:
+    name: ${{ matrix.title }}
+    needs: [changes, plan, build-cli]
+    if: needs.changes.outputs.go == 'true' && needs.plan.outputs.integration != '{"include":[]}'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.integration) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.job_timeout_minutes }}
+    steps:
+      - uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
+        if: matrix.free_disk_space && matrix.os == 'linux'
         with:
           docker-images: false
           swap-storage: false
+          large-packages: false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
+      - uses: ./.github/actions/host-features
 
       - name: install gnupg2
-        if: runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        if: matrix.os == 'linux'
         run: sudo apt-get install -y gnupg2
 
-      - name: get operating system lowercase
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
-        id: os
+      - name: download CI tool
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: devsy-ci-tool-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-tool/
+
+      - name: set up CI tool
         shell: bash
         run: |
-          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
-          if [ "$OS" == "macos" ]; then
-            OS="darwin"
-          fi
-          echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
+          tool="${RUNNER_TEMP//\\//}/devsy-ci-tool/devsy-ci-tool"
+          chmod +x "$tool"
+          echo "CI_TOOL=$tool" >> "$GITHUB_ENV"
+
+      - name: download Podman CI helper
+        if: matrix.needs_podman_helper
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: devsy-ci-podman-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-podman/
+
+      - name: download E2E runtime helper
+        if: matrix.setup_docker_wsl
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: devsy-ci-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-e2e/
 
       - name: download CLI artifacts
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: devsy-${{ steps.os.outputs.runner_os }}
+          pattern: devsy-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
       - name: download Linux CLI artifacts for Windows
-        if: runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        if: matrix.os == 'windows'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: devsy-linux
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
       - name: download e2e test binary
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: e2e-test-${{ steps.os.outputs.runner_os }}
+          name: e2e-test-${{ matrix.os }}
           path: ./e2e/
 
-      - name: setup executable
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
-        shell: bash
-        working-directory: ./e2e
-        run: |
-          TEMP_DIR="${{ runner.temp }}"
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            TEMP_DIR="${TEMP_DIR//\\//}"
-          fi
+      - name: download GitHub credential fixture
+        if: matrix.ghfixture_linux
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ghfixture-linux
+          path: ./e2e/bin/
 
-          ls -R "$TEMP_DIR/devsy-bin/"
-          mkdir -p ./bin/
-          find "$TEMP_DIR/devsy-bin/" -type f -name "devsy-*" -exec cp {} ./bin \;
-          find ./bin -name "devsy-*" -exec chmod +x {} \;
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            chmod +x ./e2e.test
-          fi
-          ls -R ./bin/
+      - name: setup executable
+        shell: bash
+        run: '"$CI_TOOL" e2e prepare --bin-src "$RUNNER_TEMP/devsy-bin" --e2e-dir ./e2e'
 
       - name: generate uuid
-        if: matrix.install-kind == true && runner.os != 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        if: matrix.setup_kind_linux
         id: uuid
         shell: bash
         run: |
@@ -665,85 +1060,56 @@ jobs:
           echo "result=$UUID" >> "$GITHUB_OUTPUT"
 
       - name: cache podman installer (Windows)
-        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        if: matrix.setup_podman_windows
         id: podman-cache-windows
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/podman.msi
           key: ${{ runner.os }}-${{ runner.arch }}-podman-v5.8.2
 
-      - name: install and start podman (Windows)
-        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+      - name: install podman (Windows)
+        if: matrix.setup_podman_windows
         shell: pwsh
+        timeout-minutes: 5
         run: |
-          $msiPath = "$env:RUNNER_TEMP\podman.msi"
-          if ("${{ steps.podman-cache-windows.outputs.cache-hit }}" -ne "true") {
-            $msiUrl = "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi"
-            Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
-          }
+          & "$env:RUNNER_TEMP\devsy-ci-podman\devsy-ci-podman.exe" install `
+            --url "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi" `
+            --sha256 "eda54f26f9695d198d9a679fa45ae24ba35b78444f432b5fe0c122c5a3624c57" --msi-path "$env:RUNNER_TEMP\podman.msi" `
+            --install-dir "C:\Program Files\RedHat\Podman" --log-path "$env:RUNNER_TEMP\podman-install.log"
 
-          $expectedHash = "eda54f26f9695d198d9a679fa45ae24ba35b78444f432b5fe0c122c5a3624c57"
-          $actualHash = (Get-FileHash -Path $msiPath -Algorithm SHA256).Hash.ToLower()
-          if ($actualHash -ne $expectedHash) {
-            throw "SHA256 mismatch for podman MSI! Expected: $expectedHash, Got: $actualHash"
-          }
-          Write-Host "Podman MSI checksum verified: $actualHash"
-
-          $installDir = "C:\Program Files\RedHat\Podman"
-          $logFile = "$env:RUNNER_TEMP\podman-install.log"
-          $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msiPath`" /qn /norestart /l*v `"$logFile`" INSTALLDIR=`"$installDir`""
-          Write-Host "MSI exit code: $($proc.ExitCode)"
-
-          if (!(Test-Path "$installDir\podman.exe")) {
-            Write-Host "--- MSI install log (last 50 lines) ---"
-            Get-Content $logFile -Tail 50
-            Write-Host "--- Searching for podman.exe ---"
-            Get-ChildItem "C:\" -Filter "podman.exe" -Recurse -Depth 4 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
-            throw "podman.exe not found at $installDir"
-          }
-
-          echo "$installDir" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
-
-          wsl --set-default-version 2
-          & "$installDir\podman.exe" machine init
-          & "$installDir\podman.exe" machine set --rootful
-          & "$installDir\podman.exe" machine start
+      - name: start podman (Windows)
+        if: matrix.setup_podman_windows
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          & "$env:RUNNER_TEMP\devsy-ci-podman\devsy-ci-podman.exe" setup `
+            --mode rootful `
+            --podman-path "C:\Program Files\RedHat\Podman\podman.exe" `
+            --bootstrap-timeout 270s
 
       - name: cache kind.exe (Windows)
-        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
-        id: kind-cache-windows
+        if: matrix.setup_kind_windows
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/kind.exe
           key: ${{ runner.os }}-${{ runner.arch }}-kind-v0.33.0
 
       - name: setup kind (Windows)
-        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
-        shell: bash
+        if: matrix.setup_kind_windows
+        shell: pwsh
         env:
           KIND_EXPERIMENTAL_PROVIDER: podman
           DOCKER_HOST: npipe:////./pipe/podman-machine-default
         run: |
-          if [ "${{ steps.kind-cache-windows.outputs.cache-hit }}" != "true" ]; then
-            curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-windows-amd64"
-            expected="4b22adaa135368c5a465d56bbd8e520cbea87272a06ca00b6078e7b81515c9fc"
-            actual=$(sha256sum "$RUNNER_TEMP/kind.exe" | awk '{print $1}' | sed 's/^[^a-f0-9]*//')
-            if [ "$actual" != "$expected" ]; then
-              echo "SHA256 mismatch for kind.exe! Expected: $expected, Got: $actual"
-              exit 1
-            fi
-            echo "kind.exe checksum verified: $actual"
-          fi
-
-          export PATH="$RUNNER_TEMP:$PATH"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-
-          CLUSTER_NAME=$(python -c "import uuid; print(uuid.uuid4().hex)")
-          kind create cluster --name "$CLUSTER_NAME" --image kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+          & "$env:RUNNER_TEMP\devsy-ci-podman\devsy-ci-podman.exe" install-kind `
+            --url "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-windows-amd64" `
+            --sha256 "4b22adaa135368c5a465d56bbd8e520cbea87272a06ca00b6078e7b81515c9fc" `
+            --kind-path "$env:RUNNER_TEMP\kind.exe" `
+            --image "kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed"
 
       # NOTE: skevetter/setup-kind does not work on Windows runners
       - name: setup kind
-        if: matrix.install-kind == true && runner.os != 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        if: matrix.setup_kind_linux
         uses: skevetter/setup-kind@7febac2ed35df332069b3bb687c6b1fa00fc0883 # v1
         with:
           name: ${{ steps.uuid.outputs.result }}
@@ -752,163 +1118,185 @@ jobs:
           skipClusterLogsExport: true
 
       - name: cache podman installer (Linux)
-        if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
-        id: podman-cache-linux
+        if: matrix.setup_podman_linux
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/podman-linux-amd64.tar.gz
-          key: ${{ runner.os }}-${{ runner.arch }}-podman-static-v5.8.4
+          key: ${{ runner.os }}-${{ runner.arch }}-podman-static-v5.8.4-sha256-v2
 
       - name: install podman (Linux)
-        if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
+        if: matrix.setup_podman_linux
         timeout-minutes: 5
         run: |
-          archive="${{ runner.temp }}/podman-linux-amd64.tar.gz"
-          if [ "${{ steps.podman-cache-linux.outputs.cache-hit }}" != "true" ]; then
-            curl -fsSL -o "$archive" \
-              https://github.com/mgoltzsche/podman-static/releases/download/v5.8.4/podman-linux-amd64.tar.gz
-          fi
+          "$CI_TOOL" setup podman-linux \
+            --archive "${RUNNER_TEMP}/podman-linux-amd64.tar.gz" \
+            --url https://github.com/mgoltzsche/podman-static/releases/download/v5.8.4/podman-linux-amd64.tar.gz \
+            --sha256 a58765fe8be6ab3fb79f892f1a027b4ce4a7e8eb589df1ef960c167cbde08d69 \
+            --extract-dir "${RUNNER_TEMP}"
 
-          expectedHash="a58765fe8be6ab3fb79f892f1a027b4ce4a7e8eb589df1ef960c167cbde08d69"
-          actualHash=$(sha256sum "$archive" | cut -d' ' -f1)
-          if [ "$actualHash" != "$expectedHash" ]; then
-            echo "::error::SHA256 mismatch for podman-static archive! Expected: $expectedHash, Got: $actualHash"
-            exit 1
-          fi
-
-          tar -xzf "$archive" -C "${{ runner.temp }}"
-          sudo cp -r "${{ runner.temp }}/podman-linux-amd64/usr" "${{ runner.temp }}/podman-linux-amd64/etc" /
-
-          command -v newuidmap >/dev/null || sudo apt-get install -y uidmap
-
-      - name: Install Podman (Linux)
-        if: matrix.install-podman == 'rootless' && runner.os == 'Linux'
+      - name: configure and verify podman (Linux)
+        if: matrix.setup_podman_linux
         shell: bash
+        timeout-minutes: 5
         run: |
-          ./hack/ci/setup-podman-linux.sh rootless
+          chmod +x "${RUNNER_TEMP}/devsy-ci-podman/devsy-ci-podman"
+          "${RUNNER_TEMP}/devsy-ci-podman/devsy-ci-podman" setup \
+            --mode "${{ matrix.podman_mode }}" \
+            --podman-path /usr/local/bin/podman \
+            --crun-path /usr/local/bin/crun \
+            --bootstrap-timeout 270s
 
-      - name: Install Podman (Linux rootful)
-        if: matrix.install-podman == 'rootful' && runner.os == 'Linux'
-        shell: bash
-        run: |
-          ./hack/ci/setup-podman-linux.sh rootful
-
-      - name: get microsandbox latest version
-        if: matrix.install-microsandbox == true && runner.os == 'Linux'
-        id: msb-version
-        run: |
-          version=$(curl -fsSL https://api.github.com/repos/superradcompany/microsandbox/releases/latest | grep '"tag_name"' | head -1 | sed 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: cache microsandbox (Linux)
-        if: matrix.install-microsandbox == true && runner.os == 'Linux'
-        id: msb-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: setup WSL2 Ubuntu
+        id: setup_wsl
+        if: matrix.setup_docker_wsl
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: Vampire/setup-wsl@614202866847d986a4f737ae6020b760283d3f5a # v7.1.1
         with:
-          path: |
-            ~/.microsandbox
-            ~/.local/bin/msb
-            ~/.local/bin/microsandbox
-          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-${{ steps.msb-version.outputs.version }}
+          distribution: Ubuntu-24.04
+          use-cache: true
 
-      - name: Install microsandbox (Linux)
-        if: matrix.install-microsandbox == true && runner.os == 'Linux' && steps.msb-cache.outputs.cache-hit != 'true'
-        run: |
-          curl -fsSL https://install.microsandbox.dev | sh
+      - name: setup WSL2 Ubuntu (retry)
+        if: matrix.setup_docker_wsl && steps.setup_wsl.outcome != 'success'
+        timeout-minutes: 5
+        uses: Vampire/setup-wsl@614202866847d986a4f737ae6020b760283d3f5a # v7.1.1
+        with:
+          distribution: Ubuntu-24.04
+          use-cache: true
 
-      - name: configure microsandbox (Linux)
-        if: matrix.install-microsandbox == true && runner.os == 'Linux'
-        run: |
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          # The e2e test skips gracefully if KVM is unavailable on the runner.
-          "$HOME/.local/bin/msb" doctor || true
+      - name: provision Docker over WSL SSH
+        if: matrix.setup_docker_wsl
+        shell: pwsh
+        timeout-minutes: 15
+        run: >-
+          & "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe" docker-wsl setup
+          --distribution Ubuntu-24.04 --timeout 4m
+          --state-file "$env:RUNNER_TEMP\devsy-ci\docker-wsl-state.json"
 
-      - name: remove docker
-        if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+      # The WSLg specs and the parity probe need Compose on the Windows side.
+      # The fixture exports DOCKER_CONFIG, which holds the plugin.
+      - name: install pinned Windows Compose plugin
+        if: matrix.setup_docker_wsl
+        shell: pwsh
         run: |
-          sudo systemctl stop docker.socket docker.service
-          sudo apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-          sudo rm -rf /var/lib/docker /var/lib/containerd /usr/bin/docker /usr/bin/dockerd
+          if ([string]::IsNullOrEmpty($env:DOCKER_CONFIG)) { throw 'WSL fixture Docker config is missing' }
+          $pluginDir = Join-Path $env:DOCKER_CONFIG 'cli-plugins'
+          New-Item -ItemType Directory -Force $pluginDir | Out-Null
+          $plugin = Join-Path $pluginDir 'docker-compose.exe'
+          Invoke-WebRequest `
+            -Uri 'https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-windows-x86_64.exe' `
+            -OutFile $plugin
+          $expectedHash = '8aeaa0055e660e12cf07cd70680dc8333957fe6718528b91ec3da084eab62483'
+          $actualHash = (Get-FileHash -Path $plugin -Algorithm SHA256).Hash.ToLower()
+          if ($actualHash -ne $expectedHash) { throw 'Compose SHA256 mismatch' }
 
-      - name: configure insecure registry for snapshot tests (Linux)
-        if: matrix.configure-insecure-registry == true && runner.os == 'Linux'
+      - name: setup Go
+        if: matrix.setup_docker_wsl
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Restoring the 2 GB unit cache takes about 5 min on Windows, longer
+      # than compiling the two WSLg test packages cold.
+      - name: test real noninteractive WSLg discovery and Compose parity
+        if: matrix.setup_docker_wsl
+        shell: pwsh
+        timeout-minutes: 8
+        env:
+          DEVSY_WSLG_TEST_DISTRO: Ubuntu-24.04
+          DEVSY_WSLG_TEST_USER: devsyci
         run: |
-          echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
-          sudo mkdir -p /etc/docker
-          existing="$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')"
-          echo "$existing" | jq '.["insecure-registries"] = ((.["insecure-registries"] // []) + ["host.docker.internal:15500"] | unique)' \
-            | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
-          timeout 30 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+          docker compose version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -count=1 -v -timeout 3m ./pkg/wslg ./pkg/compose -run '^TestWSLg'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Runs the suite's `host_setup` actions from hack/ci/suites.yaml
+      # (for example removing Docker or trusting a local registry).
+      - name: host setup
+        shell: bash
+        run: '"$CI_TOOL" setup host --label "${{ matrix.name }}" --runner "${{ matrix.runner }}"'
 
       - name: generate GitHub App token
-        if: matrix.requires-secret == true && needs.can-read-secret.outputs.secret-set == 'true'
+        if: matrix.requires_secret
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
+      # Focused checks, privilege (sudo), runtime environment and post checks
+      # all come from the suite definition.
       - name: run test
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
         shell: bash
-        working-directory: ./e2e
         env:
           # NOTE: GitHub credentials are required for tests using private repos
           GH_USERNAME: ${{ github.repository_owner }}
           GH_ACCESS_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           GH_CREDENTIAL_USERNAME: x-access-token
-          TEST_TIMEOUT: ${{ matrix.test-timeout || '1500s' }}
-          FLAKE_ATTEMPTS: ${{ matrix.flake-attempts || '1' }}
         run: |
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            sudo \
-              GH_USERNAME="${GH_USERNAME}" \
-              GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
-              GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
-              KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
-              ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
-              PATH="${PATH}" \
-              ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
-          else
-            GH_USERNAME="${GH_USERNAME}" \
-              GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
-              GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
-              KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
-              PATH="${PATH}" \
-              DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
-              ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
-          fi
+          export DEVSY_E2E_SENTINEL_FILE="${RUNNER_TEMP}/e2e-sentinels.jsonl"
+          (umask 077; : > "$DEVSY_E2E_SENTINEL_FILE")
+          set +e
+          "$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e 2>&1 | tee "${RUNNER_TEMP}/e2e-output.log"
+          status=("${PIPESTATUS[@]}")
+          "$CI_TOOL" e2e sentinel-check "$DEVSY_E2E_SENTINEL_FILE" "${RUNNER_TEMP}/e2e-output.log"
+          check=$?
+          (( status[0] == 0 && status[1] == 0 && check == 0 ))
 
-      - name: verify docker is installed
-        if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
-        run: docker --version && docker ps
+      - name: tear down Docker WSL SSH fixture
+        if: always() && matrix.setup_docker_wsl
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          if (Test-Path "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe") {
+            & "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe" docker-wsl cleanup `
+              --state-file "$env:RUNNER_TEMP\devsy-ci\docker-wsl-state.json" --timeout 2m
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: upload report and setup or teardown diagnostics
+        if: always() && matrix.setup_docker_wsl
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: e2e-diagnostics-${{ matrix.name }}
+          path: |
+            e2e/${{ matrix.name }}-report.json
+            ${{ runner.temp }}/devsy-ci/docker-wsl-diagnostics.log
+          if-no-files-found: warn
 
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
     if: always()
+    permissions:
+      contents: read
     needs:
       - changes
+      - plan
       - precommit
       - lint
+      - shared-logging
+      - agent-skill
+      - unit-tests
+      - github-credential-host-tests
+      - provider-update-windows
       - licenses
       - build-cli
       - integration-tests-unprivileged
       - integration-tests
+      - prepare-microsandbox-provider
+      - integration-tests-microsandbox
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
       - name: Check required jobs
-        run: |
-          # Fail if any required job failed (not skipped)
-          if [[ "${{ needs.changes.result }}" == "failure" ]] || \
-             [[ "${{ needs.precommit.result }}" == "failure" ]] || \
-             [[ "${{ needs.lint.result }}" == "failure" ]] || \
-             [[ "${{ needs.licenses.result }}" == "failure" ]] || \
-             [[ "${{ needs.build-cli.result }}" == "failure" ]] || \
-             [[ "${{ needs.integration-tests-unprivileged.result }}" == "failure" ]] || \
-             [[ "${{ needs.integration-tests.result }}" == "failure" ]]; then
-            echo "One or more required jobs failed"
-            exit 1
-          fi
-          echo "All required jobs passed or were skipped"
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: go run ./hack/ci success --always-run changes,plan,precommit

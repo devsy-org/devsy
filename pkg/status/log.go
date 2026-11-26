@@ -9,16 +9,23 @@ type logReporter struct{}
 func NewLogReporter() Reporter { return logReporter{} }
 
 func (logReporter) Report(e Event) {
-	switch {
-	case e.Phase == PhaseFailed:
-		log.Debugf("up: phase %q failed: %s", e.Step, e.Err)
-	case e.Started && e.Step != "":
-		log.Debugf("up: entering phase %q: %s", e.Phase, e.Step)
-	case e.Started:
-		log.Debugf("up: entering phase %q", e.Phase)
-	case e.Step != "":
-		log.Debugf("up: completed phase %q: %s", e.Phase, e.Step)
+	pipeline := string(e.Pipeline)
+	if pipeline == "" {
+		pipeline = "up"
+	}
+	state := e.State
+	switch state {
+	case StateFailed:
+		message := ""
+		if e.Error != nil {
+			message = e.Error.Message
+		}
+		log.Debugf("%s: phase %q failed: %s", pipeline, e.Phase, message)
+	case StateStarted:
+		log.Debugf("%s: entering phase %q: %s", pipeline, e.Phase, e.Step)
+	case StateSkipped:
+		log.Debugf("%s: skipped phase %q: %s", pipeline, e.Phase, e.Step)
 	default:
-		log.Debugf("up: completed phase %q", e.Phase)
+		log.Debugf("%s: completed phase %q: %s", pipeline, e.Phase, e.Step)
 	}
 }

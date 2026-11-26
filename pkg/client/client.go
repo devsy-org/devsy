@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -78,8 +79,8 @@ type ProxyClient interface {
 	// Ssh starts an ssh tunnel to the workspace container
 	Ssh(ctx context.Context, options SshOptions) error
 
-	// OpenSSHTransport starts an SSH transport whose stdin/stdout carry the
-	// persistent SSH protocol.
+	// OpenSSHTransport starts a managed SSH transport whose peer may still be
+	// bootstrapping when the connection is returned. Use the managed SSH dialer.
 	OpenSSHTransport(
 		ctx context.Context,
 		options SSHTransportOptions,
@@ -168,10 +169,11 @@ type StatusOptions struct {
 }
 
 type CommandOptions struct {
-	Command string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
+	Command   string
+	Stdin     io.Reader
+	Stdout    io.Writer
+	Stderr    io.Writer
+	RawStdout bool
 }
 
 type CommandTransportOptions struct {
@@ -243,11 +245,28 @@ const (
 )
 
 type WorkspaceStatus struct {
-	ID       string `json:"id,omitempty"`
-	Context  string `json:"context,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	State    string `json:"state,omitempty"`
-	Recovery bool   `json:"recovery,omitempty"`
+	ID            string            `json:"id,omitempty"`
+	Context       string            `json:"context,omitempty"`
+	Provider      string            `json:"provider,omitempty"`
+	State         string            `json:"state,omitempty"`
+	Recovery      bool              `json:"recovery,omitempty"`
+	LastOperation *OperationSummary `json:"lastOperation,omitempty"`
+}
+
+type OperationSummary struct {
+	Timestamp      time.Time  `json:"timestamp"`
+	Pipeline       string     `json:"pipeline"`
+	Phase          string     `json:"phase"`
+	State          string     `json:"state"`
+	DurationMillis int64      `json:"durationMillis,omitempty"`
+	Error          *ErrorInfo `json:"error,omitempty"`
+}
+
+type ErrorInfo struct {
+	Code    string            `json:"code,omitempty"`
+	Message string            `json:"message"`
+	Hint    string            `json:"hint,omitempty"`
+	Context map[string]string `json:"context,omitempty"`
 }
 
 type User struct {

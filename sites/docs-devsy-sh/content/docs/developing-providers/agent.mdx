@@ -3,88 +3,57 @@ title: Provider Agent
 sidebar_label: Provider Agent
 ---
 
-When Devsy connects through a Provider to an environment, it will inject itself into the environment to handle the following tasks:
-- deploying the container
-- forward credentials
-- ssh server
-- auto-shutdown after a period of inactivity
+Devsy runs a copy of its CLI as an agent in the provider environment. For a remote provider, it places the binary on the remote machine. A local provider uses the host's binary. The agent deploys the workspace, forwards credentials, runs the SSH server, and manages inactivity shutdown.
 
-This counterpart is called the Devsy agent, which is available in the same Devsy binary under `devsy agent`.
-Within the `provider.yaml` you can configure certain parts of how local Devsy should interact with its agent counterpart.
-
-<Callout>
-Agent's **Driver** specifies how the whole container workload is deployed inside
-the provider's resources.
-
-Head over to the [drivers section](./driver.mdx) to understand how this impacts
-the provider
-</Callout>
-
-## Agent section
-
-The following options are available in the `agent` section
+Configure it in the `agent` section of `provider.yaml`. This example uses a local Docker daemon:
 
 ```yaml
-agent: # You can also use options within this section (see injectGitCredentials as an example)
-  path: ${DEVSY}
-  local: true # Optional, whether Devsy runs directly on this machine (no remote agent injection)
-  driver: docker # Optional, default: docker. One of: docker, kubernetes, apple, microsandbox, custom
-  inactivityTimeout: 10m
-  containerInactivityTimeout: 10m
-  injectGitCredentials: ${INJECT_GIT_CREDENTIALS}
-  injectDockerCredentials: ${INJECT_DOCKER_CREDENTIALS}
-  binaries:
-    MY_BINARY:
-      - os: linux
-        arch: amd64
-        path: https://url-to-binary.com
-        checksum: shasum-of-binary
-  exec:
-    shutdown: |-
-      ${MY_BINARY} stop
+agent:
+  local: true
+  driver: docker
 ```
 
-Breaking down the options:
+This section can use option values.
 
-- **path**: where to place the agent on the remote machine. This controls the agent's location; running on the local machine instead is controlled by the separate **local** field below, not by the value of `path`.
-- **local**: if true, signals that Devsy is running directly on the current machine (as opposed to a remote VM or container reached over SSH). All of Devsy's built-in providers (`docker`, `podman`, `kubernetes`, `apple`, `microsandbox`) set this to `true`.
-- **driver**: which driver to use to run the container, [check the Drivers section for more information](./driver.mdx)
-- **inactivityTimeout**: after how much time to shut down the machine. Use for machine providers
-- **containerInactivityTimeout**: after how much time to shut down the container. Use for non-machine providers
-- **injectGitCredentials**: whether to inject git credentials into the machine.
-- **injectDockerCredentials**: whether to inject docker credentials into the machine.
-- **exec.shutdown**: command to execute when shutting down the machine after Devsy has determined the `inactivityTimeout`. Option values will be available here as well. For example, you can reuse an option that stores a cloud api key within this command to terminate the machine.
-- **binaries**: this section can be used to declare additional binaries to download on the machine to use in `exec.shutdown`
+- **path**: path to the agent binary in the provider environment. If omitted, a local agent uses the current executable; a remote agent uses Devsy's default install path.
+- **local**: set to `true` when the agent runs on the user's machine. Leave it unset or `false` for a remote machine.
+- **driver**: how the container is deployed. One of `docker` (default), `kubernetes`, `apple`, `microsandbox`, `custom` or `external`. See [Drivers](./driver.mdx).
+- **inactivityTimeout**: how long an idle machine runs before Devsy stops it. Machine providers only.
+- **containerInactivityTimeout**: idle period monitored by the container daemon, as a Go duration such as `10m`. For Kubernetes, an empty value falls back to the deprecated `agent.kubernetes.inactivityTimeout`. If both fields are set, their durations must match. Clear both fields or set both to `0` to disable the timeout. For Kubernetes, expiry ends the pod. A detached Docker or Podman daemon does not stop its container when the timer expires.
+- **injectGitCredentials**, **injectDockerCredentials**: whether to forward those credentials into the environment. The context's credential-forwarding settings override these provider values. See [Credentials](../developing-in-workspaces/credentials.mdx).
+- **exec.shutdown**: the command that stops the machine once it is idle. Option values are available in it.
+- **binaries**: helper binaries for `exec.shutdown`. Declare them under `agent.binaries`, using the format in [Provider binaries](./binaries.mdx).
 
-<Callout>
-The `binaries` section is useful for injecting a helper binary in the machine, in order to
-use the specific cloud's APIs to shut down the machine, if a simple `shutdown -h now` does not work
-</Callout>
+## Docker management policy
 
-<Callout>
-The `binaries` section follows the same syntax and structure of the [binaries section in the main provider manifest](./binaries.mdx)
-</Callout>
+For the `docker` driver, the `agent.docker` section controls how Devsy manages Docker on the agent machine:
 
-## Auto-Inactivity Stop
+```yaml
+agent:
+  local: false
+  driver: docker
+  docker:
+    path: docker
+    install: false
+    configureDaemon: false
+```
 
-One of the most important features of Devsy is to make sure that developer environments use as little resources as possible when they are not used.
+Set `install: false` when the provider supplies a Docker CLI. If that executable is missing, Devsy reports an error instead of installing Docker. An existing executable remains usable. With `install` unset or `true`, Devsy retains its existing installation behavior.
 
-### Non-Machine Providers
+Set `configureDaemon: false` when the provider owns the Docker daemon, including a private daemon inside a VM. Devsy then does not read or modify the daemon configuration for its management step and does not reload the daemon. With `configureDaemon` unset or `true`, Devsy retains its existing behavior of configuring the daemon for a remote Docker agent. Local agents are not configured by this step. These settings accept provider option templates, which must resolve to valid boolean values before the agent starts Docker setup. This policy controls Devsy's daemon management, not arbitrary commands a user runs inside a devcontainer.
 
-For non-machine providers, Devsy can automatically kill the container it's running in by terminating the process with pid 1. This is useful for providers such as docker, podman, kubernetes or ssh, where you don't want the container to be running if it's not needed. The timeout can be configured through `agent.containerInactivityTimeout`. Devsy will then start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will start the container again.
+## Stopping idle environments
 
-### Machine Providers
+Inactivity shutdown depends on the provider and driver. Start a stopped workspace with `devsy workspace up`. State survives only if the provider keeps the storage. A shutdown command that deletes the machine must keep workspace data elsewhere, for example on a persistent volume.
 
-For machine providers, killing just the container within the remote machine is typically not enough as VMs still generate costs even if they are unused.
-Hence Devsy provides a way to configure automatically shutting down or deleting an unused machine on the cloud provider side if a developer is currently not working anymore.
-Devsy will then restart or recreate it again, when the development should continue.
+### Non-machine providers
 
-Devsy tries to make this as easy as possible for you, as it will automatically keep track of when a user is connected to a workspace or not and only needs the command to run when the machine should be stopped from the provider.
-This command can be defined through `agent.exec.shutdown`.
-All configured options are available in this command and helper binaries needed can be defined through `agent.exec.binaries`
+Set the timeout with `containerInactivityTimeout`.
 
-Official providers that use this method of automatically stopping an inactive machine are:
-- [devsy-provider-azure](https://github.com/devsy-org/devsy-provider-azure): Just uses `shutdown -t now` as `agent.exec.shutdown` to shutdown an unused machine.
-- [devsy-provider-aws](https://github.com/devsy-org/devsy-provider-aws): Uses the local `aws` cli tool to generate a temporary token, which is then saved in a Devsy option. This token is then used within `agent.exec.shutdown` to shutdown the machine on the agent side with an AWS api call.
-- [devsy-provider-gcloud](https://github.com/devsy-org/devsy-provider-gcloud): Uses the local `gcloud` cli tool to generate a temporary token, which is then saved in a Devsy option. This token is then used within `agent.exec.shutdown` to shutdown the machine on the agent side with an Google Cloud api call.
-- [devsy-provider-digitalocean](https://github.com/devsy-org/devsy-provider-digitalocean): Deletes the whole machine on inactivity as stopped machines are still billed by DigitalOcean. The local digital ocean token is reused on the agent side to make an API call to delete the whole machine and preserve the state in an extra volume.
+With the `kubernetes` driver, the Devsy daemon is the pod's main process. SSH sessions, hooks, and setup register with the daemon over a Unix socket in the pod before they run, and the daemon pauses the idle timer while they stay registered. If the connection drops, the registered work aborts. When the workspace stays idle for the timeout, the daemon exits, which ends the pod and keeps its volume. Other container drivers start a detached daemon whose exit does not stop the container. See [Auto-Inactivity Timeout](../developing-in-workspaces/inactivity-timeout.mdx#kubernetes) for activity rules and pod-layout restrictions.
+
+Any UID in the same container can block inactivity through a live activity connection. Only root and the daemon's UID can change setup or timeout policy. Do not expose the activity socket outside its container.
+
+### Machine providers
+
+Stopping only the container leaves the VM running and billed. Define `agent.exec.shutdown` with a command that stops or deletes the machine on the cloud side, and set `inactivityTimeout`. If the command needs a helper binary, declare it under `agent.binaries`. Check the provider's API and storage policy before choosing between stopping and deleting the machine.

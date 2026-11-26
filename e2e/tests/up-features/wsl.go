@@ -70,7 +70,7 @@ var _ = ginkgo.Describe(
 				),
 			)
 
-			f, err := setupDockerProvider(filepath.Join(initialDir, "bin"), "podman")
+			f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), "podman")
 			framework.ExpectNoError(err)
 
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
@@ -83,7 +83,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"ensure dependencies installed via features are accessible in lifecycle hooks",
 			func(ctx context.Context) {
-				f, err := setupDockerProvider(filepath.Join(initialDir, "bin"), "podman")
+				f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), "podman")
 				framework.ExpectNoError(err)
 
 				tempDir, err := framework.CopyToTempDir(

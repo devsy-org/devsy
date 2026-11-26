@@ -27,6 +27,23 @@ var (
 	}
 )
 
+// ParseAuthorProvider parses a manifest supplied by a provider author (download,
+// local file, built-in). Fields that Devsy generates at install time are cleared
+// so an author can never forge installation provenance or an icon revision.
+// Trusted installed JSON must keep using ParseProvider.
+func ParseAuthorProvider(reader io.Reader) (*ProviderConfig, error) {
+	parsedConfig, err := ParseProvider(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	parsedConfig.IconRevision = ""
+	parsedConfig.Source.ResolvedRef = ""
+	parsedConfig.Source.ResolvedManifestURL = ""
+
+	return parsedConfig, nil
+}
+
 func ParseProvider(reader io.Reader) (*ProviderConfig, error) {
 	payload, err := io.ReadAll(reader)
 	if err != nil {
@@ -188,6 +205,10 @@ func validateOptionCacheAndType(optionName string, optionValue *types.Option) er
 }
 
 func validateProviderType(config *ProviderConfig) error {
+	if config.Exec.Cancellation != ProviderCancellationDefault &&
+		config.Exec.Cancellation != ProviderCancellationFile {
+		return fmt.Errorf("exec.cancellation must be empty or file")
+	}
 	if config.IsProxyProvider() {
 		return validateProxyProvider(config)
 	}
@@ -264,12 +285,31 @@ func validateStandardProvider(config *ProviderConfig) error {
 	if err := validateAgentDriver(config); err != nil {
 		return err
 	}
+	if err := validateAgentDockerPolicies(config.Agent.Docker); err != nil {
+		return err
+	}
 
 	if err := validateBinaries("agent.binaries", config.Agent.Binaries); err != nil {
 		return err
 	}
 
 	return validateExecCommands(config)
+}
+
+func validateAgentDockerPolicies(docker ProviderDockerDriverConfig) error {
+	if value := docker.ConfigureDaemon; value != "" &&
+		!templatedValueRegex.MatchString(string(value)) {
+		if _, err := value.Bool(); err != nil {
+			return fmt.Errorf("agent.docker.configureDaemon: %w", err)
+		}
+	}
+	if value := docker.Install; value != "" &&
+		!templatedValueRegex.MatchString(string(value)) {
+		if _, err := value.Bool(); err != nil {
+			return fmt.Errorf("agent.docker.install: %w", err)
+		}
+	}
+	return nil
 }
 
 var validAgentDrivers = map[string]bool{
@@ -279,6 +319,7 @@ var validAgentDrivers = map[string]bool{
 	KubernetesDriver:   true,
 	AppleDriver:        true,
 	MicrosandboxDriver: true,
+	ExternalDriver:     true,
 }
 
 func validateAgentDriver(config *ProviderConfig) error {
@@ -288,8 +329,12 @@ func validateAgentDriver(config *ProviderConfig) error {
 
 	if !validAgentDrivers[config.Agent.Driver] {
 		return fmt.Errorf(
-			"agent.driver can only be docker, kubernetes, apple, microsandbox or custom",
+			"agent.driver can only be docker, kubernetes, apple, microsandbox, custom or external",
 		)
+	}
+
+	if config.Agent.Driver == ExternalDriver {
+		return ValidateExternalDriverConfig(config.Agent)
 	}
 
 	if config.Agent.Driver == CustomDriver {
@@ -323,7 +368,6 @@ func validateExecCommands(config *ProviderConfig) error {
 	if len(config.Exec.Command) == 0 {
 		return fmt.Errorf("exec.command is required")
 	}
-
 	if err := validateExecPair(
 		"exec.create",
 		"exec.delete",

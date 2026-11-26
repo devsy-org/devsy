@@ -48,7 +48,7 @@ func registerExecTool(s *sdkmcp.Server, cmd *ServeCmd, sem *opSemaphore) {
 		Description: "Run a one-shot command in a running workspace container. The " +
 			"workspace name must match workspace_list; the workspace must already be " +
 			"started (use workspace_start if not). 'command' is argv, NOT a shell " +
-			"string — pass [\"sh\", \"-c\", \"...\"] to use a shell. Each output " +
+			"string - pass [\"sh\", \"-c\", \"...\"] to use a shell. Each output " +
 			"stream is capped; long output is truncated tail-only with a marker.",
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in execInput,

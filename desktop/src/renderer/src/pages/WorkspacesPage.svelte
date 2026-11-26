@@ -1,4 +1,9 @@
 <script lang="ts">
+import WorkspaceOperation from "$lib/components/workspace/WorkspaceOperation.svelte"
+import {
+  workspaceJobBusy,
+  workspaceJobInterruptible,
+} from "$shared/workspace-operation.js"
 import {
   ArrowDownAZ,
   Box,
@@ -33,6 +38,10 @@ import {
 } from "$lib/stores/workspaces.js"
 import type { Workspace } from "$lib/types/index.js"
 import { timeAgo } from "$lib/utils/time.js"
+import {
+  workspaceLabel,
+  workspaceMatchesQuery,
+} from "$lib/utils/workspaceLabel.js"
 
 let createSheetOpen = $state(false)
 let search = $state("")
@@ -47,6 +56,10 @@ let sortBy = $state<"recent" | "name">("recent")
 
 let actingOn = $state<string | null>(null)
 let confirmDeleteId = $state<string | null>(null)
+let confirmDeleteLabel = $derived.by(() => {
+  const target = $workspaces.find((ws) => ws.id === confirmDeleteId)
+  return target ? workspaceLabel(target) : (confirmDeleteId ?? "")
+})
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 
@@ -55,7 +68,7 @@ let filtered = $derived.by(() => {
   let list = $workspaces.filter((ws) => {
     if (!q) return true
     return (
-      ws.id.toLowerCase().includes(q) ||
+      workspaceMatchesQuery(ws, q) ||
       (ws.source?.gitRepository ?? "").toLowerCase().includes(q) ||
       (ws.source?.localFolder ?? "").toLowerCase().includes(q) ||
       (ws.source?.image ?? "").toLowerCase().includes(q) ||
@@ -65,7 +78,9 @@ let filtered = $derived.by(() => {
   })
 
   if (sortBy === "name") {
-    list = [...list].sort((a, b) => a.id.localeCompare(b.id))
+    list = [...list].sort((a, b) =>
+      workspaceLabel(a).localeCompare(workspaceLabel(b)),
+    )
   } else {
     list = [...list].sort((a, b) => {
       const ta = a.lastUsed ? new Date(a.lastUsed).getTime() : 0
@@ -76,13 +91,6 @@ let filtered = $derived.by(() => {
 
   return list
 })
-
-function statusVariant(status?: string): "default" | "secondary" | "outline" {
-  const s = status?.toLowerCase()
-  if (s === "running") return "default"
-  if (s === "busy") return "secondary"
-  return "outline"
-}
 
 function isRunning(ws: Workspace) {
   return ws.status?.toLowerCase() === "running"
@@ -96,32 +104,11 @@ function isStopped(ws: Workspace) {
   )
 }
 
-function setWorkspaceStatus(id: string, status?: string) {
-  workspaces.update((current) =>
-    current.map((ws) => (ws.id === id ? { ...ws, status } : ws)),
-  )
-}
-
-// The delete job wins over the polled status until the next poll catches up.
-// A failed delete drops out of "deleting" so the row isn't stuck forever.
-function isDeleting(ws: Workspace): boolean {
-  const job = $workspaceJobs[ws.id]
-  return job?.activity === "deleting" && !job.error
-}
-
-function deleteError(ws: Workspace): string | undefined {
-  return $workspaceJobs[ws.id]?.error
-}
-
 async function handleStart(ws: Workspace) {
-  const previousStatus = ws.status
   actingOn = ws.id
-  setWorkspaceStatus(ws.id, "starting")
   try {
     await workspaceUp({ source: ws.id })
-    toasts.success(`Starting ${ws.id}`)
   } catch (err) {
-    setWorkspaceStatus(ws.id, previousStatus)
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
     actingOn = null
@@ -129,14 +116,10 @@ async function handleStart(ws: Workspace) {
 }
 
 async function handleStop(ws: Workspace) {
-  const previousStatus = ws.status
   actingOn = ws.id
-  setWorkspaceStatus(ws.id, "stopping")
   try {
     await workspaceStop(ws.id)
-    toasts.success(`Stopping ${ws.id}`)
   } catch (err) {
-    setWorkspaceStatus(ws.id, previousStatus)
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
     actingOn = null
@@ -145,16 +128,12 @@ async function handleStop(ws: Workspace) {
 
 async function handleDelete() {
   if (!confirmDeleteId) return
-  const previousStatus = $workspaces.find((ws) => ws.id === confirmDeleteId)?.status
   deleting = true
-  setWorkspaceStatus(confirmDeleteId, "deleting")
   try {
     await workspaceDelete(confirmDeleteId)
-    toasts.success(`Deleted ${confirmDeleteId}`)
     confirmDeleteOpen = false
     confirmDeleteId = null
   } catch (err) {
-    if (confirmDeleteId) setWorkspaceStatus(confirmDeleteId, previousStatus)
     toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
@@ -229,12 +208,17 @@ async function handleDelete() {
         </Table.Header>
         <Table.Body>
           {#each filtered as ws (ws.id)}
-            {@const busy = actingOn === ws.id || isDeleting(ws)}
+            {@const busy = actingOn === ws.id || workspaceJobBusy($workspaceJobs[ws.id])}
             <Table.Row
               class="cursor-pointer"
               onclick={() => goto(`/workspaces/${ws.id}`)}
             >
-              <Table.Cell class="font-medium">{ws.id}</Table.Cell>
+              <Table.Cell class="font-medium">
+                {workspaceLabel(ws)}
+                {#if ws.displayName}
+                  <span class="block text-xs font-normal text-muted-foreground">{ws.id}</span>
+                {/if}
+              </Table.Cell>
               <Table.Cell>
                 {#if ws.provider?.name}
                   <span class={badgeVariants({ variant: "secondary" })}>{ws.provider.name}</span>
@@ -246,16 +230,7 @@ async function handleDelete() {
                 {/if}
               </Table.Cell>
               <Table.Cell>
-                {#if isDeleting(ws)}
-                  <span class={badgeVariants({ variant: "secondary" })}>Deleting</span>
-                {:else if deleteError(ws)}
-                  <span class={badgeVariants({ variant: "destructive" })} title={deleteError(ws)}>
-                    Delete failed
-                  </span>
-                {:else}
-                  {@const statusLabel = ws.status ?? "Checking"}
-                  <span class={badgeVariants({ variant: statusVariant(statusLabel) })}>{statusLabel}</span>
-                {/if}
+                <WorkspaceOperation id={ws.id} status={ws.status} density="compact" />
               </Table.Cell>
               <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsed)}</Table.Cell>
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -270,12 +245,12 @@ async function handleDelete() {
                     {/snippet}
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Content align="end">
-                    {#if isRunning(ws)}
-                      <DropdownMenu.Item onclick={() => goto(`/workspaces/${ws.id}?action=open-ide`)}>
+                    {#if isRunning(ws) || workspaceJobInterruptible($workspaceJobs[ws.id])}
+                      <DropdownMenu.Item disabled={busy} onclick={() => goto(`/workspaces/${ws.id}?action=open-ide`)}>
                         <Play class="mr-2 h-4 w-4" />
                         Open IDE
                       </DropdownMenu.Item>
-                      <DropdownMenu.Item onclick={() => handleStop(ws)} disabled={busy}>
+                      <DropdownMenu.Item onclick={() => handleStop(ws)} disabled={busy && !workspaceJobInterruptible($workspaceJobs[ws.id])}>
                         <Square class="mr-2 h-4 w-4" />
                         Stop
                       </DropdownMenu.Item>
@@ -289,7 +264,7 @@ async function handleDelete() {
                     <DropdownMenu.Item
                       class="text-destructive data-highlighted:text-destructive"
                       onclick={() => { confirmDeleteId = ws.id; confirmDeleteOpen = true }}
-                      disabled={busy}
+                      disabled={busy && !workspaceJobInterruptible($workspaceJobs[ws.id])}
                     >
                       <Trash2 class="mr-2 h-4 w-4" />
                       Delete
@@ -308,7 +283,7 @@ async function handleDelete() {
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
   title="Delete workspace"
-  description="This action permanently deletes workspace '{confirmDeleteId}' and all associated data. This action cannot be undone."
+  description="This action permanently deletes workspace '{confirmDeleteLabel}' and all associated data. This action cannot be undone."
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={handleDelete}

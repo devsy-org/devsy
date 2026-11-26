@@ -34,7 +34,7 @@ func (c *client) Stop(ctx context.Context, opt clientpkg.StopOptions) error {
 	}
 
 	rawOptions, _ := json.Marshal(opt)
-	retStop, err := managementClient.Loft().
+	retStop, err := managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(workspace.Namespace).
 		Stop(ctx, workspace.Name, &managementv1.DevsyWorkspaceInstanceStop{
@@ -48,7 +48,12 @@ func (c *client) Stop(ctx context.Context, opt clientpkg.StopOptions) error {
 		return fmt.Errorf("no stop task id returned from server")
 	}
 
-	_, err = observeTask(ctx, managementClient, workspace, retStop.Status.TaskID, status.Nop())
+	_, err = observeTask(ctx, taskWait{
+		managementClient: managementClient,
+		instance:         workspace,
+		taskID:           retStop.Status.TaskID,
+		reporter:         status.Nop(),
+	})
 	if err != nil {
 		return fmt.Errorf("stop: %w", err)
 	}

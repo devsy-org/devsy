@@ -2,7 +2,10 @@ package local
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -89,5 +92,55 @@ func TestWithDefaults_JSONShapeHasTopLevelDefault(t *testing.T) {
 			"expected %s.%s == true in JSON output, got: %s",
 			testProviderSSH2, testDefaultJSONKey, raw,
 		)
+	}
+}
+
+func TestHandleList_CachedEntriesKeepRawDisplayName(t *testing.T) {
+	ws := &provider.Workspace{ID: "node-js", SSHHostAlias: "node"}
+	d := &Daemon{
+		workspaces:   provider.NewWorkspaceListEntries([]*provider.Workspace{ws}),
+		workspacesAt: time.Now(),
+		lastActivity: time.Now(),
+	}
+
+	rec := httptest.NewRecorder()
+	d.handleList(rec, httptest.NewRequest(http.MethodGet, "/list", nil))
+
+	var decoded []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(decoded) != 1 {
+		t.Fatalf("got %d entries, want 1", len(decoded))
+	}
+	entry := decoded[0]
+	if entry["displayName"] != "" {
+		t.Errorf("displayName = %v, want empty raw override", entry["displayName"])
+	}
+	if entry["effectiveDisplayName"] != "node-js" {
+		t.Errorf("effectiveDisplayName = %v, want node-js", entry["effectiveDisplayName"])
+	}
+	if entry["preferredSSHHost"] != "node.devsy" {
+		t.Errorf("preferredSSHHost = %v, want node.devsy", entry["preferredSSHHost"])
+	}
+	if entry["canonicalSSHHost"] != "node-js.devsy" {
+		t.Errorf("canonicalSSHHost = %v, want node-js.devsy", entry["canonicalSSHHost"])
+	}
+}
+
+func TestWantsFresh(t *testing.T) {
+	cases := map[string]bool{
+		"/list":                false,
+		"/list?fresh=true":     true,
+		"/list?fresh=false":    false,
+		"/list?fresh=1":        false,
+		"/list?other=true":     false,
+		"/list?fresh=true&a=b": true,
+	}
+	for target, want := range cases {
+		got := wantsFresh(httptest.NewRequest(http.MethodGet, target, nil))
+		if got != want {
+			t.Errorf("wantsFresh(%q) = %v, want %v", target, got, want)
+		}
 	}
 }

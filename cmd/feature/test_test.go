@@ -90,14 +90,13 @@ func TestTestCmd_DiscoverFeatures(t *testing.T) {
 		0o600,
 	))
 
-	cmd := &TestCmd{}
-	features, err := cmd.discoverFeatures(srcDir)
+	features, err := discoverLocalFeatures(srcDir, "read src/ directory", nil)
 	require.NoError(t, err)
 	assert.Len(t, features, 2)
 
 	ids := make(map[string]bool)
 	for _, f := range features {
-		ids[f.id] = true
+		ids[f.dir] = true
 	}
 	assert.True(t, ids["feature-a"])
 	assert.True(t, ids["feature-b"])
@@ -108,24 +107,22 @@ func TestTestCmd_DiscoverFeatures_EmptyDir(t *testing.T) {
 	srcDir := filepath.Join(projectDir, "src")
 	require.NoError(t, os.MkdirAll(srcDir, 0o700))
 
-	cmd := &TestCmd{}
-	_, err := cmd.discoverFeatures(srcDir)
+	_, err := discoverLocalFeatures(srcDir, "read src/ directory", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no features found")
 }
 
 func TestTestCmd_DiscoverFeatures_NonexistentDir(t *testing.T) {
-	cmd := &TestCmd{}
-	_, err := cmd.discoverFeatures("/nonexistent/path/src")
+	_, err := discoverLocalFeatures("/nonexistent/path/src", "read src/ directory", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "read src/ directory")
 }
 
 func TestTestCmd_FilterFeatures(t *testing.T) {
-	features := []featureEntry{
-		{id: "go", config: nil},
-		{id: "node", config: nil},
-		{id: "python", config: nil},
+	features := []localFeature{
+		{dir: "go", config: nil},
+		{dir: "node", config: nil},
+		{dir: "python", config: nil},
 	}
 
 	t.Run("empty filter returns all", func(t *testing.T) {
@@ -138,7 +135,7 @@ func TestTestCmd_FilterFeatures(t *testing.T) {
 		cmd := &TestCmd{Features: "go"}
 		result := cmd.filterFeatures(features)
 		assert.Len(t, result, 1)
-		assert.Equal(t, "go", result[0].id)
+		assert.Equal(t, "go", result[0].dir)
 	})
 
 	t.Run("multi filter", func(t *testing.T) {
@@ -163,7 +160,7 @@ func TestTestCmd_FilterFeatures(t *testing.T) {
 func TestTestCmd_GenerateDockerfile(t *testing.T) {
 	t.Run("basic dockerfile", func(t *testing.T) {
 		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: defaultRemoteUser}
-		feat := featureEntry{id: testFeatureID}
+		feat := localFeature{dir: testFeatureID}
 		df := generateDockerfileForTest(cmd, feat, nil)
 		assert.Contains(t, df, "FROM "+testBaseImage)
 		assert.Contains(t, df, "COPY src/my-feature /tmp/build-features/my-feature")
@@ -173,14 +170,14 @@ func TestTestCmd_GenerateDockerfile(t *testing.T) {
 
 	t.Run("with remote user", func(t *testing.T) {
 		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: "vscode"}
-		feat := featureEntry{id: testFeatureID}
+		feat := localFeature{dir: testFeatureID}
 		df := generateDockerfileForTest(cmd, feat, nil)
 		assert.Contains(t, df, "USER vscode")
 	})
 
 	t.Run("with options", func(t *testing.T) {
 		cmd := &TestCmd{BaseImage: testBaseImage, RemoteUser: defaultRemoteUser}
-		feat := featureEntry{id: "go"}
+		feat := localFeature{dir: "go"}
 		opts := map[string]string{"version": "1.21"}
 		df := generateDockerfileForTest(cmd, feat, opts)
 		assert.Contains(t, df, "ENV GO_VERSION=\"1.21\"")
@@ -188,7 +185,7 @@ func TestTestCmd_GenerateDockerfile(t *testing.T) {
 
 	t.Run("default base image", func(t *testing.T) {
 		cmd := &TestCmd{BaseImage: defaultBaseImage, RemoteUser: defaultRemoteUser}
-		feat := featureEntry{id: "feat"}
+		feat := localFeature{dir: "feat"}
 		df := generateDockerfileForTest(cmd, feat, nil)
 		assert.Contains(t, df, "FROM "+defaultBaseImage)
 	})
@@ -267,13 +264,13 @@ func TestTestCmd_TestDiscovery(t *testing.T) {
 		0o600,
 	))
 
-	feat := featureEntry{id: testFeatureID, config: nil}
+	feat := localFeature{dir: testFeatureID, config: nil}
 	cmd := &TestCmd{
 		BaseImage:  defaultBaseImage,
 		RemoteUser: defaultRemoteUser,
 	}
 
-	featureTestDir := filepath.Join(projectDir, "test", feat.id)
+	featureTestDir := filepath.Join(projectDir, "test", feat.dir)
 	globalTestScript := filepath.Join(featureTestDir, "test.sh")
 
 	_, err := os.Stat(globalTestScript)
@@ -293,6 +290,6 @@ func TestTestCmd_TestDiscovery(t *testing.T) {
 	assert.Contains(t, df, `MY_FEATURE_VERSION="3.11"`)
 }
 
-func generateDockerfileForTest(cmd *TestCmd, feat featureEntry, options map[string]string) string {
+func generateDockerfileForTest(cmd *TestCmd, feat localFeature, options map[string]string) string {
 	return cmd.generateDockerfileWithTest(feat, options, "")
 }

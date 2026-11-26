@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +28,7 @@ func NewCreateCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	createCmd := &cobra.Command{
 		Use:   "create CONTEXT",
-		Short: "Create a new Devsy context",
+		Short: "Create a context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args[0])
@@ -46,36 +45,25 @@ func NewCreateCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *CreateCmd) Run(ctx context.Context, context string) error {
-	devsyConfig, err := config.LoadConfig("", cmd.Provider)
-	if err != nil {
-		return err
-	} else if devsyConfig.Contexts[context] != nil {
-		return fmt.Errorf("context %q already exists", context)
-	}
+	return config.UpdateConfig("", cmd.Provider, func(devsyConfig *config.Config) error {
+		if devsyConfig.Contexts[context] != nil {
+			return fmt.Errorf("context %q already exists", context)
+		}
 
-	// verify name
-	if provider2.ProviderNameRegEx.MatchString(context) {
-		return fmt.Errorf("context name can only include lower case letters, numbers or dashes")
-	} else if len(context) > 48 {
-		return fmt.Errorf("context name cannot be longer than 48 characters")
-	}
-	devsyConfig.Contexts[context] = &config.ContextConfig{}
-
-	// check if there are create options set
-	if len(cmd.Options) > 0 {
-		err = setOptions(devsyConfig, context, cmd.Options)
-		if err != nil {
+		if err := config.ValidateContextName(context); err != nil {
 			return err
 		}
-	}
+		devsyConfig.Contexts[context] = &config.ContextConfig{}
 
-	devsyConfig.DefaultContext = context
-	err = config.SaveConfig(devsyConfig)
-	if err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
+		if len(cmd.Options) > 0 {
+			if err := setOptions(devsyConfig, context, cmd.Options); err != nil {
+				return err
+			}
+		}
 
-	return nil
+		devsyConfig.DefaultContext = context
+		return nil
+	})
 }
 
 func setOptions(devsyConfig *config.Config, context string, options []string) error {

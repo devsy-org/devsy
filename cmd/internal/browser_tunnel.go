@@ -194,14 +194,11 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 			return fmt.Errorf("forward gpg agent: %w", err)
 		}
 	}
-
-	// Launch the probe-then-open goroutine before the blocking
-	// StartBrowserTunnel call so the TCP probe runs concurrently with
-	// SSH dial + listener bind. The probe observes ctx so it unwinds
-	// when the helper receives a signal.
-	if cmd.OpenBrowser && cmd.TargetURL != "" {
-		go opener.OpenBrowserWhenReachable(ctx, cmd.TargetURL)
+	preparation, err := opener.NewBrowserPreparation(client.Context(), client.Workspace())
+	if err != nil {
+		return fmt.Errorf("identify browser preparation: %w", err)
 	}
+	defer preparation.Close()
 
 	return tunnel.StartBrowserTunnel(ctx, tunnel.BrowserTunnelParams{
 		DevsyConfig:        devsyConfig,
@@ -214,12 +211,27 @@ func (cmd *BrowserTunnelCmd) Run(ctx context.Context) error {
 		GitSSHSigningKey:   cmd.GitSSHSigningKey,
 		GPGAgentForwarding: cmd.GPGAgentForwarding,
 		ExtraListeners:     extraListeners,
+		OnPrepared: func(ctx context.Context) {
+			cmd.openPreparedBrowser(ctx, preparation)
+		},
 		// Helper lifecycle is owned by opener.KillBrowserTunnel and
 		// devsy stop/delete; the EXIT_AFTER_TIMEOUT idle shutdown
 		// would otherwise close the port-forward shortly after the
 		// browser tab goes quiet.
 		DisableIdleTimeout: true,
 	})
+}
+
+func (cmd *BrowserTunnelCmd) openPreparedBrowser(
+	ctx context.Context,
+	preparation *opener.BrowserPreparation,
+) {
+	if err := preparation.Mark(); err != nil {
+		pkglog.Debug("browser preparation marker unavailable")
+	}
+	if cmd.OpenBrowser && cmd.TargetURL != "" {
+		go opener.OpenBrowserWhenReachable(ctx, cmd.TargetURL)
+	}
 }
 
 // installSignalCancel registers a signal handler that cancels ctx on the

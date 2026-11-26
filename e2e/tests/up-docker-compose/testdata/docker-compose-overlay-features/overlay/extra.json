@@ -1,0 +1,6 @@
+{
+  "features": {
+    "./features/overlay-feature": {}
+  },
+  "postStartCommand": "echo runtime-overlay >> /tmp/runtime-overlay-starts"
+}
