@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	xdraw "golang.org/x/image/draw"
@@ -46,16 +47,47 @@ const (
 	docsWordmarkHeight = 329
 )
 
+const chromeEnv = "DEVSY_ICONS_CHROME"
+
+func playwrightChromium(home string) []string {
+	var found []string
+	for _, pattern := range []string{
+		"chromium-*/chrome-linux64/chrome",
+		"chromium-*/chrome-linux/chrome",
+	} {
+		matches, err := filepath.Glob(filepath.Join(home, ".cache", "ms-playwright", pattern))
+		if err == nil {
+			found = append(found, matches...)
+		}
+	}
+	slices.Sort(found)
+	slices.Reverse(found)
+	return found
+}
+
+func chromeFromEnv() (string, bool, error) {
+	path := os.Getenv(chromeEnv)
+	if path == "" {
+		return "", false, nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", true, fmt.Errorf("%s=%q: %w", chromeEnv, path, err)
+	}
+	return path, true, nil
+}
+
 func findChromeBinary() (string, error) {
+	if path, set, err := chromeFromEnv(); set {
+		return path, err
+	}
 	home, _ := os.UserHomeDir()
-	candidates := []string{
-		filepath.Join(home, ".cache", "ms-playwright", "chromium-1234", "chrome-linux64", "chrome"),
+	candidates := append(playwrightChromium(home),
 		"/usr/bin/google-chrome",
 		"/usr/bin/chromium-browser",
 		"/usr/bin/chromium",
 		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 		"/Applications/Chromium.app/Contents/MacOS/Chromium",
-	}
+	)
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			return c, nil
@@ -66,7 +98,7 @@ func findChromeBinary() (string, error) {
 			return path, nil
 		}
 	}
-	return "", errors.New("chromium or chrome executable not found")
+	return "", fmt.Errorf("chromium or chrome executable not found; set %s to its path", chromeEnv)
 }
 
 func validateRenderingDependencies() error {
@@ -383,11 +415,7 @@ func writeDocsIcons(repoRoot, svgPath string, frames map[int][]byte) error {
 	if _, err := os.Stat(mediaDir); err != nil {
 		return nil
 	}
-	docsIconPath := filepath.Join(mediaDir, "devsy-icon.png")
-	if err := os.WriteFile(docsIconPath, frames[1024], 0o644); err != nil {
-		return fmt.Errorf("write docs icon: %w", err)
-	}
-	// The home page logo is 30 px, so it loads this small frame, not the 1024 px file.
+	// The home page logo is 30 px, so the docs ship this small frame, not a 1024 px file.
 	smallIconPath := filepath.Join(mediaDir, "devsy-icon-128.png")
 	if err := os.WriteFile(smallIconPath, frames[128], 0o644); err != nil {
 		return fmt.Errorf("write small docs icon: %w", err)
