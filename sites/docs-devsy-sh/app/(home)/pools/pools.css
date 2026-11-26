@@ -42,6 +42,9 @@
   margin: 40px 0 0;
   font-size: 24px;
 }
+.home-page .pools-subhead-first {
+  margin: 0 0 16px;
+}
 .home-page .pools-steps {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   counter-reset: pool-step;
@@ -128,8 +131,7 @@
 .home-page .pools-interest .section-head {
   margin-bottom: 0;
 }
-.home-page .pools-form,
-.home-page .pools-closed {
+.home-page .pools-form {
   min-width: 0;
 }
 .home-page .field select {
@@ -189,15 +191,6 @@
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 3px;
-}
-.home-page .pools-closed {
-  padding: 24px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-}
-.home-page .pools-closed p {
-  margin: 0;
 }
 .home-page .hero-next {
   margin: 8px 0 0;

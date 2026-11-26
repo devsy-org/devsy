@@ -24,9 +24,15 @@ export const ROLES = [
   'Other',
 ] as const;
 
-// Setting NEXT_PUBLIC_POOLS_INTEREST_FORM=off at build time closes the form.
+const OFF_VALUES = new Set(['off', 'false', '0']);
+
+// Building with NEXT_PUBLIC_POOLS_INTEREST_FORM set to off, false or 0 (any case) closes the form.
+export function parseInterestMode(value: string | undefined): InterestMode {
+  return OFF_VALUES.has((value ?? '').trim().toLowerCase()) ? 'off' : 'on';
+}
+
 export function interestMode(): InterestMode {
-  return process.env.NEXT_PUBLIC_POOLS_INTEREST_FORM === 'off' ? 'off' : 'on';
+  return parseInterestMode(process.env.NEXT_PUBLIC_POOLS_INTEREST_FORM);
 }
 
 // Netlify Forms reads a static copy of the form from the built HTML, so the

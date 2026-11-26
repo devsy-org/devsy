@@ -58,17 +58,10 @@ function PrivacyNote() {
     <p className="pools-note">
       We store your email address and, if you give them, your company and role. Netlify, our form host,
       stores these submissions for us, with the date and time you sent the form. We use them only to contact
-      you about Devsy Pools. We do not sell them or share them with other companies. To have your data
+      you about Devsy Pools. We do not sell them or share them with other companies. Netlify passes each
+      submission to Akismet, a spam filter, to check it for spam. To have your data
       deleted, email <a className="pools-inline-link" href={`mailto:${REMOVAL_ADDRESS}`}>{REMOVAL_ADDRESS}</a>.
     </p>
-  );
-}
-
-function Closed() {
-  return (
-    <div className="pools-closed">
-      <p>The interest list is not open yet. Check back soon.</p>
-    </div>
   );
 }
 
@@ -188,7 +181,7 @@ function Form() {
 }
 
 export function InterestForm() {
-  const mode = interestMode();
+  if (interestMode() === 'off') return null;
   return (
     <section id="pools-interest" className="pools-interest" aria-labelledby="pools-interest-title">
       <div className="wrap">
@@ -196,14 +189,8 @@ export function InterestForm() {
           <h2 id="pools-interest-title">Register your interest in Devsy Pools</h2>
           <p>Tell us you are interested. We use your details only to contact you about Devsy Pools.</p>
         </div>
-        {mode === 'off' ? (
-          <Closed />
-        ) : (
-          <>
-            <Form />
-            <StaticNetlifyForm />
-          </>
-        )}
+        <Form />
+        <StaticNetlifyForm />
       </div>
     </section>
   );

@@ -3,34 +3,34 @@ import './pools.css';
 const BENEFITS = [
   {
     title: 'The same environment as your team.',
-    text: "Each agent session starts from your repository's devcontainer.json and is deleted when it ends.",
+    text: "Each agent session will start from your repository's devcontainer.json and be deleted when it ends.",
   },
   {
     title: 'Network access you control.',
-    text: 'Blocked unless you list it. Each allowed or blocked connection is logged.',
+    text: 'Connections will be blocked unless you list them. Each allowed or blocked connection will be logged.',
   },
   {
     title: 'Credentials that expire.',
-    text: 'Agents get short-lived, narrowly scoped access instead of long-lived secrets.',
+    text: 'Agents will get short-lived, narrowly scoped access instead of long-lived secrets.',
   },
   {
     title: 'A record security can read.',
-    text: 'Every session shows what it reached and what it used, and you can export it.',
+    text: 'Every session will show what it reached and what it used, and you will be able to export it.',
   },
 ];
 
 const STEPS = [
   {
     title: 'Describe the pool.',
-    text: 'Put a pool.yaml in git: the repository, the devcontainer, the allowed hosts, the credentials and the limits.',
+    text: 'You will put a pool.yaml in git: the repository, the devcontainer, the allowed hosts, the credentials and the limits.',
   },
   {
     title: 'Run it where you want.',
-    text: 'Start a pool on your own machine or cluster. It connects out to a control plane and needs no inbound port.',
+    text: 'You will start a pool on your own machine or cluster. It will connect out to a control plane and need no inbound port.',
   },
   {
     title: 'Let agents work, then review.',
-    text: 'Each session gets its own workspace. Afterwards, read the record of what it did.',
+    text: 'Each session will get its own workspace. Afterwards, you will read the record of what it did.',
   },
 ];
 
@@ -41,8 +41,8 @@ const ROADMAP = [
     items: [
       'Open-source workspaces from devcontainer.json on Docker, Kubernetes, cloud machines and SSH hosts',
       'Pool configuration and validation in the open-source repository',
-      'A local audit log for pool sessions',
-      'Control plane foundations: organizations, members and API keys, in private testing',
+      'A local audit log file and a command to read it, in the open-source repository',
+      'Control plane foundations: organizations, members and API keys, not public yet',
     ],
   },
   {
@@ -87,11 +87,12 @@ export function PoolsSection() {
           <h2 id="pools-title">Devsy Pools</h2>
           <p className="pools-sub">A governed place for coding agents to run, on your own machines.</p>
           <p className="pools-lede">
-            Run coding agents in a fresh workspace per session, with limited network access, short-lived
-            credentials and a record of what happened.
+            Devsy Pools will run coding agents in a fresh workspace per session, with limited network access,
+            short-lived credentials and a record of what happened.
           </p>
           <p className="pools-badge">In development. Some parts are in the open-source repository today.</p>
         </div>
+        <h3 className="pools-subhead pools-subhead-first">What Devsy Pools is designed to do</h3>
         <ul className="pools-benefits">
           {BENEFITS.map((benefit) => (
             <li key={benefit.title}>
@@ -100,7 +101,7 @@ export function PoolsSection() {
             </li>
           ))}
         </ul>
-        <h3 className="pools-subhead">How it works</h3>
+        <h3 className="pools-subhead">How it is planned to work</h3>
         <ol className="pools-steps">
           {STEPS.map((step) => (
             <li key={step.title}>
@@ -115,8 +116,8 @@ export function PoolsSection() {
             their own infrastructure, and the security teams that must sign off on them.
           </p>
           <p>
-            <strong>Free or paid.</strong> One host is free and open source. A control plane for many hosts and
-            teams is planned as a paid product.
+            <strong>Free or paid.</strong> One host will stay free and open source. A control plane for many hosts
+            and teams is planned as a paid product.
           </p>
           <a className="text-link" href="/docs/what-is-devsy">
             Read the docs
