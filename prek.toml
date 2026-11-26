@@ -137,7 +137,7 @@ hooks = [
   {
     id = "design-tokens-contrast",
     name = "design tokens contrast",
-    entry = "node design/tokens/contrast.mjs",
+    entry = "mise run design:tokens:check",
     language = "system",
     files = "^design/tokens/",
     pass_filenames = false
