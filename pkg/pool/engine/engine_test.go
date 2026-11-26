@@ -26,7 +26,10 @@ const (
 // orphanAfter is written out so a changed MaxFailures fails a test.
 const orphanAfter = 5
 
-const kindWorkspace = "workspace"
+const (
+	kindWorkspace = "workspace"
+	kindNetwork   = "network"
+)
 
 var errBoom = errors.New("boom")
 
@@ -225,7 +228,7 @@ func (s *EngineSuite) TestReclaimDeletesOnlyTheSessionsResources() {
 	s.fake.Add(provider.Resource{Kind: kindWorkspace, Name: "prefix", Labels: map[string]string{
 		provider.LabelPool: testPool, provider.LabelSession: cur.ID + "x",
 	}})
-	s.fake.Add(provider.Resource{Kind: "workspace", Name: "unlabelled"})
+	s.fake.Add(provider.Resource{Kind: kindWorkspace, Name: "unlabelled"})
 	s.now = cur.Updated
 	got, err := s.eng.Reclaim(context.Background(), cur.ID)
 	s.Require().NoError(err)
@@ -255,7 +258,7 @@ func (s *EngineSuite) TestReclaimBacksOffAndPersistsEachAttempt() {
 	s.Equal(1, got.Attempts)
 	ev := s.events()[0]
 	s.Equal("partial", ev.Data["devsy.reclaim.result"])
-	s.ElementsMatch([]any{kindContainer, "network"}, ev.Data["devsy.reclaim.remaining"])
+	s.ElementsMatch([]any{kindContainer, kindNetwork}, ev.Data["devsy.reclaim.remaining"])
 
 	calls := s.reclaimCalls()
 	_, err = s.eng.Reclaim(context.Background(), cur.ID)
@@ -450,7 +453,7 @@ func (s *EngineSuite) TestRemainingKindsAreMappedDeduplicatedAndSorted() {
 		{Kind: "sidecar", Name: "z-side"},
 		{Kind: "gizmo", Name: "unmapped"},
 		{Kind: "workspace", Name: "w1"},
-		{Kind: "network", Name: "n1"},
+		{Kind: kindNetwork, Name: "n1"},
 		{Kind: "workspace", Name: "w2"},
 	} {
 		r.Labels = s.poolLabels(cur.ID)
@@ -460,7 +463,7 @@ func (s *EngineSuite) TestRemainingKindsAreMappedDeduplicatedAndSorted() {
 	s.now = cur.Updated
 	_, err := s.eng.Reclaim(context.Background(), cur.ID)
 	s.Require().ErrorIs(err, ErrReclaimIncomplete)
-	s.Equal([]any{kindContainer, "network", "sidecar"},
+	s.Equal([]any{kindContainer, kindNetwork, "sidecar"},
 		s.events()[0].Data["devsy.reclaim.remaining"])
 }
 
