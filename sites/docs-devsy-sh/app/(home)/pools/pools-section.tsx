@@ -1,3 +1,4 @@
+import { interestMode } from './interest';
 import './pools.css';
 
 const BENEFITS = [
@@ -85,12 +86,12 @@ export function PoolsSection() {
         <div className="section-head">
           <p className="kicker">Coming next</p>
           <h2 id="pools-title">Devsy Pools</h2>
+          <p className="pools-badge">In development. Some parts are in the open-source repository today.</p>
           <p className="pools-sub">A governed place for coding agents to run, on your own machines.</p>
           <p className="pools-lede">
             Devsy Pools will run coding agents in a fresh workspace per session, with limited network access,
             short-lived credentials and a record of what happened.
           </p>
-          <p className="pools-badge">In development. Some parts are in the open-source repository today.</p>
         </div>
         <h3 className="pools-subhead pools-subhead-first">What Devsy Pools is designed to do</h3>
         <ul className="pools-benefits">
@@ -119,9 +120,16 @@ export function PoolsSection() {
             <strong>Free or paid.</strong> One host will stay free and open source. A control plane for many hosts
             and teams is planned as a paid product.
           </p>
-          <a className="text-link" href="/docs/what-is-devsy">
-            Read the docs
-          </a>
+          <div className="pools-links">
+            <a className="text-link" href="/docs/what-is-devsy">
+              Read the docs
+            </a>
+            {interestMode() === 'on' ? (
+              <a className="text-link" href="#pools-interest">
+                Register interest
+              </a>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>
@@ -148,7 +156,17 @@ export function Roadmap() {
             </div>
           ))}
         </div>
-        <p className="roadmap-note">Plans change. This is what we intend to build, in this order.</p>
+        <p className="roadmap-note">
+          Plans change. This is what we intend to build, in this order.
+          {interestMode() === 'on' ? (
+            <>
+              {' '}
+              <a className="text-link" href="#pools-interest">
+                Register interest
+              </a>
+            </>
+          ) : null}
+        </p>
       </div>
     </section>
   );
