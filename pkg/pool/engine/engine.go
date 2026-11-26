@@ -2,6 +2,25 @@
 // writes its audit event first, so a failed audit write leaves the session
 // where it was. The engine is the only writer of session state and serializes
 // its own calls. Neither a fake nor a real provider is started here.
+//
+// Run one Engine per pool. The mutex only orders calls on one Engine, so two
+// Engines on one store both write the audit event for the same change. The
+// pool lock keeps a second process out of the store.
+//
+// The store holds the committed state and reason. An audit event is written
+// before its transition, so it records intent: a failed or interrupted
+// transition can leave an event for a change that did not commit, or a change
+// that did (a directory sync error after the rename), so reload to find out.
+// A retry can log the same intended change again, as session.end possibly
+// with another reason, or as session.reclaim for the next attempt. An orphan
+// session has no record to retry from, so Reconcile writes its session.reclaim
+// first, with result partial, and then the outcome. A failure or cancel before
+// the removal finishes leaves the resources, and the next pass writes both
+// again. Once the removal has finished, a failed or canceled outcome write
+// leaves the partial event as the only one: nothing remains to find, so no
+// later pass writes the outcome, and partial does not prove anything is left.
+// Read state and reason from the store, and treat repeated events for one
+// session as retries.
 package engine
 
 import (
@@ -46,13 +65,15 @@ type Auditor interface {
 // Store is the part of *session.Store the engine uses.
 type Store interface {
 	Load(id string) (session.Session, error)
+	List() ([]session.Session, error)
 	Transition(id string, from, to session.State, reason string) (session.Session, error)
 	CountReclaimAttempt(id string) (session.Session, error)
 }
 
 // Config wires an Engine. Now defaults to time.Now. The engine holds its mutex
 // across store, provider and audit calls, so none of them may call back into
-// the same Engine.
+// the same Engine, and a provider must return promptly once its context is
+// canceled or every other call on the Engine waits behind it.
 type Config struct {
 	Pool     string
 	Store    Store

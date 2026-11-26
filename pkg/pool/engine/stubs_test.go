@@ -9,6 +9,8 @@ type nilStore struct{}
 
 func (nilStore) Load(string) (session.Session, error) { return session.Session{}, nil }
 
+func (nilStore) List() ([]session.Session, error) { return nil, nil }
+
 func (nilStore) Transition(string, session.State, session.State, string) (session.Session, error) {
 	return session.Session{}, nil
 }

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource-variable/inter/wght.css";
 
 @import "../../../../design/tokens/tokens.css";
 
@@ -9,6 +10,9 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
   }
 }
 

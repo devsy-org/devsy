@@ -68,14 +68,21 @@ type outcome struct {
 // say what is left. It records session.reclaim before any state change. A
 // session with no resources left becomes deleted. The MaxFailures-th failed
 // attempt makes a reclaiming session orphaned. An attempt that leaves
-// resources returns ErrReclaimIncomplete with the stored session. A canceled
-// context returns its error and records nothing for that attempt.
+// resources returns ErrReclaimIncomplete with the stored session. An attempt
+// that is not due returns ErrNotDue with the session as loaded, even when the
+// context is canceled. A context seen canceled before the attempt count is
+// stored changes nothing. One seen canceled after the provider calls keeps the
+// stored count, because it is written before the provider is touched, and
+// writes no event or state change. Such an attempt counts toward MaxFailures
+// and lengthens the next wait. A cancel that arrives during the result audit
+// does not stop it, and the transition then runs unless the audit or store
+// fails.
 func (e *Engine) Reclaim(ctx context.Context, id string) (session.Session, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	cur, err := e.dueSession(id)
 	if err != nil {
-		return session.Session{}, err
+		return cur, err
 	}
 	if err := ctx.Err(); err != nil {
 		return cur, err
@@ -84,7 +91,7 @@ func (e *Engine) Reclaim(ctx context.Context, id string) (session.Session, error
 	if err != nil {
 		return session.Session{}, err
 	}
-	out := e.removeResources(ctx, cur)
+	out := e.removeResources(ctx, cur.ID)
 	if err := ctx.Err(); err != nil {
 		return cur, err
 	}
@@ -106,8 +113,8 @@ func (e *Engine) dueSession(id string) (session.Session, error) {
 	return cur, nil
 }
 
-func (e *Engine) removeResources(ctx context.Context, s session.Session) outcome {
-	_ = e.provider.Reclaim(ctx, e.pool, s.ID)
+func (e *Engine) removeResources(ctx context.Context, id string) outcome {
+	_ = e.provider.Reclaim(ctx, e.pool, id)
 	listed, err := e.provider.List(ctx, e.pool)
 	if err != nil {
 		return outcome{result: resultFailed}
@@ -116,7 +123,7 @@ func (e *Engine) removeResources(ctx context.Context, s session.Session) outcome
 	if err != nil {
 		return outcome{result: resultFailed}
 	}
-	left := owned[s.ID]
+	left := owned[id]
 	if len(left) == 0 {
 		return outcome{result: resultDeleted}
 	}
