@@ -50,8 +50,9 @@ func Backoff(attempts int) time.Duration {
 	}
 }
 
-// Due is when the next reclaim attempt may run. The wait counts from the start
-// of the last attempt, which is when its count was stored.
+// Due is when the next reclaim attempt may run. The wait counts from when the
+// last attempt count was stored, at the start of that attempt. The move to
+// orphaned stores a newer time, at the end of the fifth attempt.
 func Due(s session.Session) time.Time {
 	return s.Updated.Add(Backoff(s.Attempts))
 }
@@ -91,7 +92,7 @@ func (e *Engine) Reclaim(ctx context.Context, id string) (session.Session, error
 }
 
 func (e *Engine) dueSession(id string) (session.Session, error) {
-	cur, err := e.store.Load(id)
+	cur, err := e.load(id)
 	if err != nil {
 		return session.Session{}, err
 	}
