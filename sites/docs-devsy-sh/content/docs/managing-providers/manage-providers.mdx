@@ -102,6 +102,12 @@ If you add with `--use=false`, run `devsy provider init microsandbox-external` b
 
 Install the standalone `sbx` CLI and sign in. See the [Docker Sandboxes guide](./docker-sandbox.mdx) for the prerelease manifest, host availability, and recovery instructions.
 
+### Windows provider launch errors
+
+Provider binary variables resolve to installed executable paths. An executable under a Windows profile path with spaces is treated as one command, rather than split at the spaces.
+
+If initialization reports `ERROR_INVALID_PARAMETER` while starting the executable, the provider did not run. This is a local process launch failure, not an SSH host error. Check the Windows version and try running the installed executable directly from a terminal. The error does not identify which process parameter Windows rejected.
+
 ## Set provider options
 
 Each provider has its own options. In the desktop app, open **Providers** and click **Edit** on a provider. With the CLI, set options when you add or initialize:
