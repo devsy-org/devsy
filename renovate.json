@@ -9,7 +9,9 @@
     "enabled": true
   },
   "minimumReleaseAge": "30 days",
-  "dependencyDashboard": false,
+  "dependencyDashboard": {
+    "enabled": false
+  },
   "prConcurrentLimit": 1,
   "platformAutomerge": true,
   "postUpdateOptions": ["gomodTidy"],
