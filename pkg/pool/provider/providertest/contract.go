@@ -265,6 +265,10 @@ func (s *contractSuite) TestUnlabelledAndForeignObjectsAreNeverTouched() {
 	for _, r := range s.list(spec.Pool) {
 		s.Require().NoError(s.p.Delete(ctx, spec.Pool, r))
 	}
+	for _, r := range untouched {
+		s.Require().NoError(s.p.Delete(ctx, spec.Pool, r))
+	}
+	s.ElementsMatch(untouched, s.untouchedInventory())
 	s.Require().NoError(s.p.Reclaim(ctx, spec.Pool, spec.Session))
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	s.Require().NoError(s.p.Reclaim(ctx, spec.Pool, spec.Session))
