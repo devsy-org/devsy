@@ -160,14 +160,17 @@ func (s *Store) removeFile() error {
 }
 
 // removeStaleTemps keeps recent temporary files, because a Save in another
-// process may still be about to rename one.
+// process may still be about to rename one. A modification time far in the
+// future counts as stale, so clock skew cannot keep a file forever.
 func removeStaleTemps(dir string) {
 	entries, _ := os.ReadDir(dir)
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() || !strings.HasPrefix(entry.Name(), tempPrefix) {
 			continue
 		}
-		if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > staleTempAge {
+		info, err := entry.Info()
+		if err == nil && (time.Since(info.ModTime()) > staleTempAge ||
+			time.Until(info.ModTime()) > staleTempAge) {
 			_ = os.Remove(filepath.Join(dir, entry.Name()))
 		}
 	}

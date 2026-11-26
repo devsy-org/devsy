@@ -31,10 +31,11 @@ const maxKeychainBytes = 2400
 var ErrUnconfirmed = errors.New("could not confirm removal from the OS keychain")
 
 // ErrKeychainUnreadable means no login was found and the OS keychain could not
-// be read, so a login may still be stored there. Unlock the keychain or log in
-// again.
-var ErrKeychainUnreadable = errors.New(
-	"could not read the OS keychain; unlock it or log in again",
+// be read, so a login may still be stored there. It wraps ErrNotLoggedIn, so a
+// caller that only checks for that still takes the log-in path, which writes the
+// file fallback when the keychain stays unavailable.
+var ErrKeychainUnreadable = fmt.Errorf(
+	"%w: could not read the OS keychain; unlock it or log in again", ErrNotLoggedIn,
 )
 
 var (
@@ -49,6 +50,9 @@ type Credential struct {
 	Token      string    `json:"token"`
 	ExpiresAt  time.Time `json:"expiresAt"`
 	UserID     string    `json:"userId,omitempty"`
+	// SavedAt is set by Save. Load uses it to pick the newest of a keychain and
+	// a file login.
+	SavedAt time.Time `json:"savedAt"`
 }
 
 // String hides the token, so a credential printed by mistake stays safe.
@@ -86,12 +90,13 @@ func (c Credential) validate() error {
 type Store struct {
 	keychain keychain
 	dir      func() (string, error)
+	now      func() time.Time
 }
 
 // New returns a store on the OS keychain. The fallback file sits next to the
 // Devsy config file.
 func New() *Store {
-	return &Store{keychain: systemKeychain{}, dir: configDir}
+	return &Store{keychain: systemKeychain{}, dir: configDir, now: time.Now}
 }
 
 // Save stores the credential in the keychain. When the keychain does not work
@@ -101,6 +106,7 @@ func (s *Store) Save(cred Credential) (warning string, err error) {
 	if err := cred.validate(); err != nil {
 		return "", err
 	}
+	cred.SavedAt = s.now().UTC()
 	data, err := json.Marshal(cred)
 	if err != nil {
 		return "", errors.New("encode gateway credential")
@@ -112,10 +118,10 @@ func (s *Store) Save(cred Credential) (warning string, err error) {
 }
 
 // Load returns the stored credential, or ErrNotLoggedIn. It does not check the
-// expiry. When both the keychain and the file hold a login, the later expiry
-// wins, so a keychain entry that could not be removed while the keychain was
-// locked never hides a newer login. When the keychain cannot be read, Load uses
-// the file if there is one. With no file it returns ErrKeychainUnreadable, not
+// expiry. When both the keychain and the file hold a login, the one saved last
+// wins, so a leftover from a locked keychain or a failed file removal never
+// hides a newer login. When the keychain cannot be read, Load uses the file if
+// there is one. With no file it returns ErrKeychainUnreadable, which wraps
 // ErrNotLoggedIn, because a login may be stored where Load cannot see it.
 func (s *Store) Load() (Credential, error) {
 	value, err := s.keychain.Get()
@@ -127,7 +133,7 @@ func (s *Store) Load() (Credential, error) {
 		return Credential{}, err
 	}
 	fromFile, fileErr := s.loadFile()
-	if fileErr == nil && fromFile.ExpiresAt.After(cred.ExpiresAt) {
+	if fileErr == nil && fromFile.SavedAt.After(cred.SavedAt) {
 		return fromFile, nil
 	}
 	return cred, nil
@@ -149,7 +155,10 @@ func (s *Store) removeOldFile() string {
 	if s.removeFile() == nil {
 		return ""
 	}
-	path, _ := s.filePath()
+	path, err := s.filePath()
+	if err != nil {
+		return "could not remove the old credential file; delete it by hand"
+	}
 	return fmt.Sprintf("could not remove the old credential file %s; delete it by hand", path)
 }
 

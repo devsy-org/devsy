@@ -59,9 +59,10 @@ func (f *fakeKeychain) Delete() error {
 
 type StoreSuite struct {
 	suite.Suite
-	dir  string
-	fake *fakeKeychain
-	cred Credential
+	ticks int
+	dir   string
+	fake  *fakeKeychain
+	cred  Credential
 }
 
 func TestStoreSuite(t *testing.T) {
@@ -205,7 +206,7 @@ func (s *StoreSuite) TestLoadReportsUnreadableKeychainWhenNothingElseIsStored() 
 	_, err := s.store().Load()
 
 	s.Require().ErrorIs(err, ErrKeychainUnreadable)
-	s.NotErrorIs(err, ErrNotLoggedIn)
+	s.Require().ErrorIs(err, ErrNotLoggedIn)
 	s.NotContains(err.Error(), canary)
 }
 
@@ -416,16 +417,32 @@ func (s *StoreSuite) TestDeleteRemovesStaleTemporaryFiles() {
 	s.NoFileExists(leftover)
 }
 
-func (s *StoreSuite) TestDeleteKeepsRecentTemporaryFiles() {
-	recent := s.writeTemp(s.dir, time.Second)
+func (s *StoreSuite) TestDeleteKeepsTemporaryFilesJustUnderTheLimit() {
+	recent := s.writeTemp(s.dir, 50*time.Second)
 
 	s.Require().NoError(s.store().Delete())
 
 	s.FileExists(recent)
 }
 
+func (s *StoreSuite) TestDeleteRemovesTemporaryFilesJustOverTheLimit() {
+	old := s.writeTemp(s.dir, 70*time.Second)
+
+	s.Require().NoError(s.store().Delete())
+
+	s.NoFileExists(old)
+}
+
+func (s *StoreSuite) TestDeleteRemovesFutureDatedTemporaryFiles() {
+	skewed := s.writeTemp(s.dir, -2*time.Hour)
+
+	s.Require().NoError(s.store().Delete())
+
+	s.NoFileExists(skewed)
+}
+
 func (s *StoreSuite) TestLoadPrefersNewerFileOverStaleKeychainEntry() {
-	s.fake.value, s.fake.has = s.entry("old-token", "2029-01-02T03:04:05Z"), true
+	s.fake.value, s.fake.has = s.entry("old-token", "2020-01-01T00:00:00Z"), true
 	s.fake.setErr = errors.New("locked")
 	s.fake.delErr = errors.New("locked")
 	s.fake.getErr = errors.New("locked")
@@ -441,12 +458,37 @@ func (s *StoreSuite) TestLoadPrefersNewerFileOverStaleKeychainEntry() {
 
 func (s *StoreSuite) TestLoadKeepsKeychainEntryWhenFileIsNotNewer() {
 	s.writeCredentialFile(0o600)
-	s.fake.value, s.fake.has = s.entry("keychain-token", "2031-01-02T03:04:05Z"), true
+	s.fake.value, s.fake.has = s.entry("keychain-token", "2020-01-01T00:00:00Z"), true
 
 	got, err := s.store().Load()
 
 	s.Require().NoError(err)
 	s.Equal("keychain-token", got.Token)
+}
+
+func (s *StoreSuite) TestLoadKeepsKeychainEntryWhenSavedAtIsEqual() {
+	saved := "2020-01-01T00:00:00Z"
+	s.fake.value, s.fake.has = s.entry("keychain-token", saved), true
+	s.Require().NoError(os.WriteFile(s.file(), []byte(s.entry("file-token", saved)), 0o600))
+
+	got, err := s.store().Load()
+
+	s.Require().NoError(err)
+	s.Equal("keychain-token", got.Token)
+}
+
+func (s *StoreSuite) TestLoadIgnoresExpiryWhenChoosingBetweenLogins() {
+	s.Require().NoError(os.WriteFile(s.file(), []byte(
+		`{"gatewayUrl":"https://other.example.test","token":"file-token",`+
+			`"expiresAt":"2031-01-02T03:04:05Z","savedAt":"2020-01-01T00:00:00Z"}`,
+	), 0o600))
+	s.fake.value, s.fake.has = s.entry("keychain-token", "2021-01-01T00:00:00Z"), true
+
+	got, err := s.store().Load()
+
+	s.Require().NoError(err)
+	s.Equal("keychain-token", got.Token)
+	s.Equal(testGateway, got.GatewayURL)
 }
 
 func (s *StoreSuite) TestDeleteRemovesLeftoversInDirectoryWithGlobCharacters() {
@@ -554,7 +596,7 @@ func (s *StoreSuite) TestSystemKeychainFailureFallsBackToFile() {
 }
 
 func (s *StoreSuite) store() *Store {
-	return &Store{keychain: s.fake, dir: func() (string, error) { return s.dir, nil }}
+	return &Store{keychain: s.fake, dir: func() (string, error) { return s.dir, nil }, now: s.clock}
 }
 
 func (s *StoreSuite) file() string { return filepath.Join(s.dir, fileName) }
@@ -570,6 +612,7 @@ func (s *StoreSuite) writeTemp(dir string, age time.Duration) string {
 // credOfEncodedSize returns a credential whose JSON form is exactly size bytes.
 func (s *StoreSuite) credOfEncodedSize(size int) Credential {
 	cred := s.cred
+	cred.SavedAt = s.clock()
 	base, err := json.Marshal(cred)
 	s.Require().NoError(err)
 	cred.Token += strings.Repeat("a", size-len(base))
@@ -579,13 +622,24 @@ func (s *StoreSuite) credOfEncodedSize(size int) Credential {
 	return cred
 }
 
-func (s *StoreSuite) entry(token, expires string) string {
+// clock returns a time one whole second after the last call, so saved times
+// are ordered and always encode to the same length.
+func (s *StoreSuite) clock() time.Time {
+	s.ticks++
+	return time.Date(2029, 1, 2, 3, 4, 5, 0, time.UTC).Add(time.Duration(s.ticks) * time.Second)
+}
+
+func (s *StoreSuite) entry(token, savedAt string) string {
 	return `{"gatewayUrl":"https://gw.example.test","token":"` + token +
-		`","expiresAt":"` + expires + `"}`
+		`","expiresAt":"2030-01-02T03:04:05Z","savedAt":"` + savedAt + `"}`
 }
 
 func (s *StoreSuite) systemStore() *Store {
-	return &Store{keychain: systemKeychain{}, dir: func() (string, error) { return s.dir, nil }}
+	return &Store{
+		keychain: systemKeychain{},
+		dir:      func() (string, error) { return s.dir, nil },
+		now:      s.clock,
+	}
 }
 
 func (s *StoreSuite) writeCredentialFile(mode os.FileMode) {
