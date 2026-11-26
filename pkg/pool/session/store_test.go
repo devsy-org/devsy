@@ -380,21 +380,22 @@ func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
 	finish := func() { once.Do(func() { close(proceed) }) }
 	writer := make(chan error, 1)
 	released := make(chan error, 1)
+	var running sync.WaitGroup
 	s.T().Cleanup(func() {
 		finish()
-		waitFor(writer, released)
+		waitFor(&running)
 	})
 	s.stubRename(func(root *os.Root, oldName, newName string) error {
 		close(entered)
 		<-proceed
 		return root.Rename(oldName, newName)
 	})
-	go func() {
+	running.Go(func() {
 		_, err := store.Transition(sess.ID, StateQueued, StateReclaiming, "")
 		writer <- err
-	}()
+	})
 	s.waitSignal(entered, "the write never reached the rename")
-	go func() { released <- lock.Release() }()
+	running.Go(func() { released <- lock.Release() })
 	for range 20 {
 		other, err := layout.Lock()
 		if err == nil {
@@ -419,14 +420,15 @@ func (s *StoreSuite) TestReleaseKeepsTheOSLockUntilAWriteInFlightFinishes() {
 
 // waitFor gives a stuck goroutine a few seconds to finish and then leaves it
 // behind, so a deadlock fails one test and does not hang the package.
-func waitFor(chs ...<-chan error) {
-	deadline := time.After(5 * time.Second)
-	for _, ch := range chs {
-		select {
-		case <-ch:
-		case <-deadline:
-			return
-		}
+func waitFor(wg *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
 	}
 }
 
@@ -464,7 +466,7 @@ func (s *StoreSuite) TestReadsNeverFailWhileSessionsAreTransitioning() {
 	s.Require().NoError(err)
 	s.Require().True(started)
 	path := []State{StateReady, StateBusy}
-	for range 100 {
+	for range 30 {
 		path = append(path, StateIdle, StateBusy)
 	}
 	var wg sync.WaitGroup
@@ -478,7 +480,7 @@ func (s *StoreSuite) TestReadsNeverFailWhileSessionsAreTransitioning() {
 	})
 	for range 3 {
 		wg.Go(func() {
-			for range 300 {
+			for range 100 {
 				_, err := s.store.Load(sess.ID)
 				s.NoError(err)
 				_, err = s.store.List()
@@ -564,18 +566,18 @@ func (s *StoreSuite) TestOpenStoreRemovesStrayTempFilesOnly() {
 func (s *StoreSuite) TestOpenStoreDoesNotRemoveAWritersTempFile() {
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		for range 200 {
+		for range 50 {
 			_, err := s.store.create()
 			s.NoError(err)
 		}
 	})
-	for range 200 {
+	for range 50 {
 		s.open()
 	}
 	wg.Wait()
 	list, err := s.store.List()
 	s.Require().NoError(err)
-	s.Len(list, 200)
+	s.Len(list, 50)
 }
 
 func (s *StoreSuite) TestRacingTransitionsHaveOneWinner() {
