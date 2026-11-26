@@ -181,8 +181,13 @@ async function handleCreate() {
 
         </button>
           {#if ctx.name !== $activeContext}
-            <div class="relative z-10 mt-4">
-              <Button variant="outline" size="sm" onclick={(e) => handleUse(e, ctx.name)}>
+            <div class="pointer-events-none relative z-10 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                class="pointer-events-auto"
+                onclick={(e) => handleUse(e, ctx.name)}
+              >
                 Set Active
               </Button>
             </div>
