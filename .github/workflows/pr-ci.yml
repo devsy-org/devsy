@@ -13,6 +13,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * *'
   pull_request:
 
 # Reruns get their own group so a retried attempt never cancels a newer push.
@@ -34,16 +36,33 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.go == 'true' }}
-      agent_skill: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.agent_skill == 'true' }}
-      licenses: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.licenses == 'true' }}
-      gh_credentials: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.gh_credentials == 'true' }}
-      provider_update: ${{ github.event_name != 'pull_request' || steps.filter.outputs.full == 'true' || steps.filter.outputs.provider_update == 'true' }}
-      shared_logging: ${{ github.event_name != 'pull_request' || steps.filter.outputs.shared_logging == 'true' }}
+      go: ${{ (github.event_name != 'pull_request' && steps.scope.outputs.light != 'true') || steps.filter.outputs.full == 'true' || steps.filter.outputs.go == 'true' }}
+      agent_skill: ${{ (github.event_name != 'pull_request' && steps.scope.outputs.light != 'true') || steps.filter.outputs.full == 'true' || steps.filter.outputs.agent_skill == 'true' }}
+      licenses: ${{ (github.event_name != 'pull_request' && steps.scope.outputs.light != 'true') || steps.filter.outputs.full == 'true' || steps.filter.outputs.licenses == 'true' }}
+      gh_credentials: ${{ (github.event_name != 'pull_request' && steps.scope.outputs.light != 'true') || steps.filter.outputs.full == 'true' || steps.filter.outputs.gh_credentials == 'true' }}
+      provider_update: ${{ (github.event_name != 'pull_request' && steps.scope.outputs.light != 'true') || steps.filter.outputs.full == 'true' || steps.filter.outputs.provider_update == 'true' }}
+      shared_logging: ${{ (github.event_name != 'pull_request' && steps.scope.outputs.light != 'true') || steps.filter.outputs.shared_logging == 'true' }}
       mode: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
       changed_files: ${{ steps.filter.outputs.all_files || '[]' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Only a push to main can skip the heavy jobs. Scheduled and manual runs
+      # never skip, and a failed or missing result here means a full run.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        if: github.event_name == 'push'
+        with:
+          go-version-file: go.mod
+
+      - name: decide whether this push needs the Go, e2e and microsandbox jobs
+        id: scope
+        if: github.event_name == 'push'
+        continue-on-error: true
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: go run ./hack/ci scope --before "$BEFORE_SHA" --sha "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         if: github.event_name == 'pull_request'

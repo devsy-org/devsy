@@ -50,8 +50,10 @@ type Manifest struct {
 }
 
 type SelectionConfig struct {
-	FullRunPaths []string `yaml:"full_run_paths"`
-	CorePaths    []string `yaml:"core_paths"`
+	FullRunPaths     []string `yaml:"full_run_paths"`
+	CorePaths        []string `yaml:"core_paths"`
+	LightRunPaths    []string `yaml:"light_run_paths"`
+	LightRunExcludes []string `yaml:"light_run_excludes"`
 }
 
 // UnitTier describes how Go unit tests run.
@@ -344,6 +346,12 @@ func (m *Manifest) validate() error {
 	}
 	if err := validateGlobs(m.Selection.CorePaths); err != nil {
 		return fmt.Errorf("core_paths: %w", err)
+	}
+	if err := validateGlobs(m.Selection.LightRunPaths); err != nil {
+		return fmt.Errorf("light_run_paths: %w", err)
+	}
+	if err := validateGlobs(m.Selection.LightRunExcludes); err != nil {
+		return fmt.Errorf("light_run_excludes: %w", err)
 	}
 	seen := map[string]bool{}
 	for _, s := range m.E2E.Suites {
