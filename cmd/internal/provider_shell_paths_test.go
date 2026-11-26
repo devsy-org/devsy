@@ -47,6 +47,7 @@ func TestProviderShellCommandPassesExecutablePathsToTheShell(t *testing.T) {
 		"--script-file", "s", "--force-file", "f", "--ack-file", "a", "--parent-pid", "7",
 		"--executable-path", "SSH_PROVIDER=C:\\Jane Doe\\a=b\\provider.exe",
 		"--executable-path", "OTHER=/x y/z",
+		"--executable-path", "EMPTY=",
 	})
 
 	require.NoError(t, command.Execute())
@@ -56,6 +57,7 @@ func TestProviderShellCommandPassesExecutablePathsToTheShell(t *testing.T) {
 		ExecutablePaths: map[string]string{
 			"SSH_PROVIDER": "C:\\Jane Doe\\a=b\\provider.exe",
 			"OTHER":        "/x y/z",
+			"EMPTY":        "",
 		},
 	}, got)
 }
