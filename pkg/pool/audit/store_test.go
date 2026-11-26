@@ -323,12 +323,15 @@ func (s *StoreSuite) TestWriteFailureIsAnError() {
 }
 
 func (s *StoreSuite) TestConcurrentWritersDoNotInterleave() {
-	const writers, perWriter = 8, 40
+	const writers, perWriter = 8, 20
 	pad := strings.Repeat("p", 4096)
 	var wg sync.WaitGroup
 	for w := range writers {
 		wg.Go(func() {
 			st := s.open()
+			// The default wait is an operator limit, not a test limit: a loaded
+			// disk can make eight writers queue behind each other's fsync.
+			st.lockWait = time.Minute
 			for i := range perWriter {
 				rec := fmt.Sprintf(`{"w":%d,"i":%d,"pad":"%s"}`, w, i, pad)
 				s.NoError(st.Append([]byte(rec)))

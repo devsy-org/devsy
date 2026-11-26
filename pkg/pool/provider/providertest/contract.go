@@ -24,7 +24,7 @@ const (
 // name with a new object that has a fresh UID. OnNextCall runs fn once inside the next operation,
 // after it starts and before it changes resources. Inventory returns every
 // object in the backend, labelled or not, so the suite can check that objects
-// outside a pool are never touched. New and Seed are required.
+// outside a pool are never touched. Every field is required.
 type Harness struct {
 	New        func(t *testing.T) provider.Provider
 	Seed       func(t *testing.T, p provider.Provider, r provider.Resource)
@@ -41,6 +41,10 @@ type contractSuite struct {
 // RunContract checks the pool provider interface using harness.
 func RunContract(t *testing.T, harness Harness) {
 	t.Helper()
+	if harness.New == nil || harness.Seed == nil ||
+		harness.OnNextCall == nil || harness.Inventory == nil {
+		t.Fatal("providertest: Harness needs New, Seed, OnNextCall and Inventory")
+	}
 	suite.Run(t, &contractSuite{harness: harness})
 }
 
@@ -258,9 +262,6 @@ func (s *contractSuite) TestDeleteRequiresUID() {
 }
 
 func (s *contractSuite) TestUnlabelledAndForeignObjectsAreNeverTouched() {
-	if s.harness.Inventory == nil {
-		s.T().Skip("a real provider must supply Harness.Inventory")
-	}
 	ctx := s.T().Context()
 	spec := s.spec("a")
 	s.Require().NoError(s.p.Spawn(ctx, spec))
@@ -320,9 +321,6 @@ func (s *contractSuite) TestCanceledOperationsDoNotChangeResources() {
 }
 
 func (s *contractSuite) TestCancellationInsideOperationsLeavesResourcesUnchanged() {
-	if s.harness.OnNextCall == nil {
-		s.T().Skip("a real provider must supply Harness.OnNextCall")
-	}
 	spec, pending := s.spec("a"), s.spec("a")
 	s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
 	before := s.list(spec.Pool)
@@ -393,13 +391,10 @@ func (s *contractSuite) seed(r provider.Resource) {
 	s.harness.Seed(s.T(), s.p, r)
 }
 
-// spawned returns the pool's objects from Inventory when the harness has one,
-// so the expectation does not depend on List itself.
+// spawned returns the pool's objects from Inventory, so the expectation does
+// not depend on List itself.
 func (s *contractSuite) spawned(pool string) []provider.Resource {
 	s.T().Helper()
-	if s.harness.Inventory == nil {
-		return s.list(pool)
-	}
 	var out []provider.Resource
 	for _, r := range s.harness.Inventory(s.T(), s.p) {
 		if r.Labels[provider.LabelPool] == pool {

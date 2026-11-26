@@ -275,6 +275,10 @@ run = [
   "npm run lint:check",
 ]
 
+[tasks."design:tokens:check"]
+description = "check the contrast of the shared design tokens"
+run = "node design/tokens/contrast.mjs"
+
 [tasks."desktop:test"]
 description = "run desktop unit tests"
 dir = "desktop"

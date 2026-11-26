@@ -133,5 +133,13 @@ hooks = [
     types = ["go"],
     pass_filenames = false,
     stages = ["pre-push"]
+  },
+  {
+    id = "design-tokens-contrast",
+    name = "design tokens contrast",
+    entry = "node design/tokens/contrast.mjs",
+    language = "system",
+    files = "^design/tokens/",
+    pass_filenames = false
   }
 ]

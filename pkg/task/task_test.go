@@ -1085,8 +1085,9 @@ func setPIDForTest(tk *Task) error {
 }
 
 type fakeProcessController struct {
-	terminate func(command.ProcessRef) error
-	cleanup   func(command.ProcessRef) error
+	terminate  func(command.ProcessRef) error
+	cleanup    func(command.ProcessRef) error
+	cleanupCtx func(context.Context, command.ProcessRef) error
 }
 
 func (f fakeProcessController) Terminate(ref command.ProcessRef) error {
@@ -1096,7 +1097,10 @@ func (f fakeProcessController) Terminate(ref command.ProcessRef) error {
 	return f.terminate(ref)
 }
 
-func (f fakeProcessController) CleanupAfterExit(ref command.ProcessRef) error {
+func (f fakeProcessController) CleanupAfterExit(ctx context.Context, ref command.ProcessRef) error {
+	if f.cleanupCtx != nil {
+		return f.cleanupCtx(ctx, ref)
+	}
 	if f.cleanup == nil {
 		return nil
 	}
@@ -1440,5 +1444,31 @@ func TestCancelRacingLateSuccessStillWinsAfterSuccessfulTermination(t *testing.T
 	}
 	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() {
 		t.Errorf("late worker success overwrote the accepted cancellation: %+v", state)
+	}
+}
+
+func TestCancelContextReturnsTheContextErrorFromFallbackCleanup(t *testing.T) {
+	store := newTestStore(t)
+	tk := newLiveWorkerTask(t, store)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store.processController = fakeProcessController{
+		terminate: func(command.ProcessRef) error {
+			_ = tk.ReleaseWorkerLock()
+			return errors.New("worker job is unavailable while the process is running")
+		},
+		cleanupCtx: func(ctx context.Context, _ command.ProcessRef) error {
+			cancel()
+			return ctx.Err()
+		},
+	}
+
+	err := tk.CancelContext(ctx)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("CancelContext = %v, want context.Canceled", err)
+	}
+	if strings.Contains(err.Error(), "is unavailable") {
+		t.Fatalf("CancelContext kept the worker job error: %v", err)
 	}
 }

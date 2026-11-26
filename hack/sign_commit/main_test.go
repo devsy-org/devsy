@@ -343,6 +343,8 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 func TestChangedFilesDetectsWorkingTree(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	dir := t.TempDir()
 	gitRun(t, dir, "init", "--quiet")
 	gitRun(t, dir, "config", "user.email", "t@t.com")

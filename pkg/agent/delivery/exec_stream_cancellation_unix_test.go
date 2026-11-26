@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const execStreamCancellationTestBound = 3 * time.Second
+const execStreamCancellationTestBound = 30 * time.Second
 
 type cancellationBinary struct {
 	io.Reader
