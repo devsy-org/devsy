@@ -106,6 +106,12 @@ func (p *Pool) validate(lines map[string]int) error {
 	return errs.join(lines)
 }
 
+// ValidPoolName reports whether name is a valid pool name, which is also the
+// directory name of the pool's state and part of every session ID.
+func ValidPoolName(name string) bool {
+	return namePattern.MatchString(name) && len(name) <= maxPoolNameLength
+}
+
 func validateName(errs *fieldErrors, path, name string, maxLen int) {
 	validateNameAt(errs, fieldPath{key: path, shown: path}, name, maxLen)
 }

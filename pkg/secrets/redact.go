@@ -75,12 +75,23 @@ func Combine(redactors ...*Redactor) *Redactor {
 func NewEnvironmentRedactor(env []string) *Redactor {
 	var sensitive []string
 	for _, entry := range env {
-		key, _, ok := strings.Cut(entry, "=")
-		if ok && isSensitiveEnvironmentKey(key) {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && isSensitiveEnvironmentKey(key) && !isFlagValue(value) {
 			sensitive = append(sensitive, entry)
 		}
 	}
 	return NewRedactor(sensitive)
+}
+
+// isFlagValue reports on/off style values. A switch such as
+// NATIVE_CREDENTIAL_TESTS=true carries no secret, and masking "true" or "1"
+// would corrupt unrelated command output such as `git config --get`.
+func isFlagValue(value string) bool {
+	switch strings.ToLower(value) {
+	case "true", "false", "yes", "no", "on", "off", "0", "1":
+		return true
+	}
+	return false
 }
 
 func isSensitiveEnvironmentKey(key string) bool {
