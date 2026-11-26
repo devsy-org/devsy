@@ -9,8 +9,10 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
 	"github.com/devsy-org/devsy/pkg/pool/provider"
 	"github.com/devsy-org/devsy/pkg/pool/session"
+	"github.com/google/uuid"
 )
 
 // Method identifies a provider operation in the call log and fault controls.
@@ -21,6 +23,9 @@ const (
 	MethodReclaim Method = "Reclaim"
 	MethodList    Method = "List"
 	MethodDelete  Method = "Delete"
+
+	networkKind   = "network"
+	workspaceKind = "workspace"
 )
 
 // Call records one invocation. Delete records the resource and its label values.
@@ -47,7 +52,6 @@ type resourceKey struct{ kind, name string }
 var (
 	_ provider.Provider = (*Fake)(nil)
 
-	errInvalidSpec     = errors.New("session ID does not belong to pool")
 	errNameUnavailable = errors.New("resource name is unavailable")
 )
 
@@ -99,6 +103,7 @@ func (f *Fake) Calls() []Call {
 }
 
 // Add seeds a resource, replacing any resource with the same kind and name.
+// It assigns a UID if the caller does not supply one.
 func (f *Fake) Add(r provider.Resource) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -115,13 +120,24 @@ func (f *Fake) Snapshot() []provider.Resource {
 // Spawn implements provider.Provider.
 func (f *Fake) Spawn(ctx context.Context, spec provider.Spec) error {
 	call := Call{Method: MethodSpawn, Pool: spec.Pool, Session: spec.Session}
-	return f.run(ctx, call, func() error { return f.spawnLocked(spec) })
+	return f.run(ctx, call, func() error {
+		if !poolconfig.ValidPoolName(spec.Pool) {
+			return provider.ErrInvalidPool
+		}
+		return f.spawnLocked(spec)
+	})
 }
 
 // Reclaim implements provider.Provider.
 func (f *Fake) Reclaim(ctx context.Context, pool, id string) error {
 	call := Call{Method: MethodReclaim, Pool: pool, Session: id}
 	return f.run(ctx, call, func() error {
+		if !poolconfig.ValidPoolName(pool) {
+			return provider.ErrInvalidPool
+		}
+		if !session.OwnsID(pool, id) {
+			return provider.ErrInvalidSession
+		}
 		for key, r := range f.resources {
 			if belongsTo(r, pool, id) {
 				delete(f.resources, key)
@@ -135,6 +151,9 @@ func (f *Fake) Reclaim(ctx context.Context, pool, id string) error {
 func (f *Fake) List(ctx context.Context, pool string) ([]provider.Resource, error) {
 	var resources []provider.Resource
 	err := f.run(ctx, Call{Method: MethodList, Pool: pool}, func() error {
+		if !poolconfig.ValidPoolName(pool) {
+			return provider.ErrInvalidPool
+		}
 		resources = f.collect(func(r provider.Resource) bool { return inPool(r, pool) })
 		return nil
 	})
@@ -150,8 +169,14 @@ func (f *Fake) Delete(ctx context.Context, pool string, resource provider.Resour
 		Resource: resource,
 	}
 	return f.run(ctx, call, func() error {
+		if !poolconfig.ValidPoolName(pool) {
+			return provider.ErrInvalidPool
+		}
+		if resource.UID == "" {
+			return provider.ErrUIDRequired
+		}
 		key := keyFor(resource)
-		if live, ok := f.resources[key]; ok && inPool(live, pool) {
+		if live, ok := f.resources[key]; ok && live.UID == resource.UID && inPool(live, pool) {
 			delete(f.resources, key)
 		}
 		return nil
@@ -195,7 +220,7 @@ func (f *Fake) failure(method Method) error {
 
 func (f *Fake) spawnLocked(spec provider.Spec) error {
 	if !session.OwnsID(spec.Pool, spec.Session) {
-		return errInvalidSpec
+		return provider.ErrInvalidSession
 	}
 	for _, r := range f.resources {
 		if belongsTo(r, spec.Pool, spec.Session) {
@@ -203,7 +228,7 @@ func (f *Fake) spawnLocked(spec provider.Spec) error {
 		}
 	}
 	workspace := provider.Resource{
-		Kind: "workspace",
+		Kind: workspaceKind,
 		Name: spec.Session,
 		Labels: map[string]string{
 			provider.LabelPool:    spec.Pool,
@@ -211,7 +236,7 @@ func (f *Fake) spawnLocked(spec provider.Spec) error {
 		},
 	}
 	network := workspace
-	network.Kind = "network"
+	network.Kind = networkKind
 	if f.nameTaken(workspace) || f.nameTaken(network) {
 		return errNameUnavailable
 	}
@@ -232,6 +257,9 @@ func (f *Fake) nameTaken(r provider.Resource) bool {
 func (f *Fake) addLocked(r provider.Resource) {
 	if f.resources == nil {
 		f.resources = make(map[resourceKey]provider.Resource)
+	}
+	if r.UID == "" {
+		r.UID = uuid.NewString()
 	}
 	f.resources[keyFor(r)] = r
 }

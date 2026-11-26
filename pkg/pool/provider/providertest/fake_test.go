@@ -16,7 +16,22 @@ type FakeSuite struct{ suite.Suite }
 func TestFakeSuite(t *testing.T) { suite.Run(t, new(FakeSuite)) }
 
 func TestFakeContract(t *testing.T) {
-	RunContract(t, func(*testing.T) provider.Provider { return new(Fake) })
+	RunContract(t, Harness{
+		New: func(*testing.T) provider.Provider { return new(Fake) },
+		Seed: func(_ *testing.T, p provider.Provider, r provider.Resource) {
+			p.(*Fake).Add(r)
+		},
+		Inventory: func(_ *testing.T, p provider.Provider) []provider.Resource {
+			return p.(*Fake).Snapshot()
+		},
+		OnNextCall: func(_ *testing.T, p provider.Provider, fn func()) {
+			f := p.(*Fake)
+			f.SetHook(func(context.Context, Call) {
+				f.SetHook(nil)
+				fn()
+			})
+		},
+	})
 }
 
 func (s *FakeSuite) TestErrorsAreScopedToEachMethod() {
@@ -46,7 +61,7 @@ func (s *FakeSuite) TestPartialSpawnCanBeReclaimed() {
 	s.Require().ErrorIs(f.Spawn(ctx, exampleSpec), injected)
 	partial := f.Snapshot()
 	s.Require().Len(partial, 1)
-	s.Equal("workspace", partial[0].Kind)
+	s.Equal(workspaceKind, partial[0].Kind)
 	s.Equal(exampleSpec.Pool, partial[0].Labels[provider.LabelPool])
 	s.Equal(exampleSpec.Session, partial[0].Labels[provider.LabelSession])
 	s.Require().ErrorIs(f.Spawn(ctx, exampleSpec), provider.ErrExists)
@@ -56,8 +71,9 @@ func (s *FakeSuite) TestPartialSpawnCanBeReclaimed() {
 	s.Require().NoError(f.Spawn(ctx, exampleSpec))
 	spawned := f.Snapshot()
 	s.Require().Len(spawned, 2)
-	s.Equal("network", spawned[0].Kind)
-	s.Equal("workspace", spawned[1].Kind)
+	s.Equal(networkKind, spawned[0].Kind)
+	s.Equal(workspaceKind, spawned[1].Kind)
+	s.NotEqual(spawned[0].UID, spawned[1].UID)
 }
 
 func (s *FakeSuite) TestInvalidSpawnCreatesNothing() {
@@ -102,22 +118,36 @@ func (s *FakeSuite) TestHookAndCallLog() {
 	s.Equal(want, f.Calls())
 }
 
-func (s *FakeSuite) TestReclaimAndSpawnLeaveAnotherPoolsLabelledResourceAlone() {
+func (s *FakeSuite) TestOperationsLeaveForeignAndUnlabelledResourcesAlone() {
 	f := new(Fake)
 	ctx := s.T().Context()
 	foreign := provider.Resource{
-		Kind: "workspace",
+		Kind: workspaceKind,
 		Name: "foreign",
+		UID:  "foreign-uid",
 		Labels: map[string]string{
 			provider.LabelPool:    "a-b",
 			provider.LabelSession: exampleSpec.Session,
 		},
 	}
 	f.Add(foreign)
-	s.Require().NoError(f.Reclaim(ctx, exampleSpec.Pool, exampleSpec.Session))
-	s.Equal([]provider.Resource{foreign}, f.Snapshot())
+	f.Add(provider.Resource{Kind: workspaceKind, Name: "unlabelled"})
+	f.Add(provider.Resource{
+		Kind:   workspaceKind,
+		Name:   "session-only",
+		Labels: map[string]string{provider.LabelSession: exampleSpec.Session},
+	})
+	before := f.Snapshot()
 	s.Require().NoError(f.Spawn(ctx, exampleSpec))
-	s.Len(f.Snapshot(), 3)
+	listed, err := f.List(ctx, exampleSpec.Pool)
+	s.Require().NoError(err)
+	s.Len(listed, 2)
+	s.Require().NoError(f.Reclaim(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.Equal(before, f.Snapshot())
+	for _, r := range before {
+		s.Require().NoError(f.Delete(ctx, exampleSpec.Pool, r))
+	}
+	s.Equal(before, f.Snapshot())
 }
 
 func (s *FakeSuite) TestCancelInsideHookStopsEveryMethod() {
@@ -166,17 +196,18 @@ func (s *FakeSuite) TestConcurrentSpawnsSeeTheSameSession() {
 func (s *FakeSuite) TestSnapshotCopiesArbitrarySeededResources() {
 	f := new(Fake)
 	invalid := provider.Resource{
-		Kind: "network",
+		Kind: networkKind,
 		Name: "z",
+		UID:  "seed-uid",
 		Labels: map[string]string{
 			provider.LabelPool:    exampleSpec.Pool,
 			provider.LabelSession: "invalid",
 		},
 	}
 	other := provider.Resource{
-		Kind: "network", Name: "a", Labels: map[string]string{provider.LabelPool: "a-b"},
+		Kind: networkKind, Name: "a", Labels: map[string]string{provider.LabelPool: "a-b"},
 	}
-	unlabelled := provider.Resource{Kind: "workspace", Name: "a"}
+	unlabelled := provider.Resource{Kind: workspaceKind, Name: "a"}
 	f.Add(invalid)
 	f.Add(unlabelled)
 	f.Add(other)
@@ -186,6 +217,11 @@ func (s *FakeSuite) TestSnapshotCopiesArbitrarySeededResources() {
 		provider.LabelSession: "invalid",
 	}
 	snapshot := f.Snapshot()
+	s.Require().Len(snapshot, 3)
+	s.Require().NotEmpty(snapshot[0].UID)
+	s.Require().NotEmpty(snapshot[2].UID)
+	s.NotEqual(snapshot[0].UID, snapshot[2].UID)
+	other.UID, unlabelled.UID = snapshot[0].UID, snapshot[2].UID
 	s.Equal([]provider.Resource{other, invalid, unlabelled}, snapshot)
 	snapshot[1].Labels[provider.LabelPool] = "changed in snapshot"
 	listed, err := f.List(s.T().Context(), exampleSpec.Pool)

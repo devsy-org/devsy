@@ -3,6 +3,7 @@ package provider
 import (
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -45,8 +46,9 @@ func (s *ClassifySuite) TestLabelClassification() {
 		{name: "no labels"},
 	} {
 		s.Run(tt.name, func() {
-			r := Resource{Kind: networkKind, Name: "example", Labels: tt.labels}
-			owned, orphans := Classify(pool, []Resource{r})
+			r := Resource{Kind: networkKind, Name: "example", UID: "object-1", Labels: tt.labels}
+			owned, orphans, err := Classify(pool, []Resource{r})
+			s.Require().NoError(err)
 			wantOwned := map[string][]Resource{}
 			if tt.owned {
 				wantOwned[id] = []Resource{r}
@@ -57,6 +59,21 @@ func (s *ClassifySuite) TestLabelClassification() {
 				wantOrphans = []Orphan{{Resource: r, Reason: tt.reason}}
 			}
 			s.Equal(wantOrphans, orphans)
+		})
+	}
+}
+
+func (s *ClassifySuite) TestRejectsInvalidPoolNames() {
+	for _, name := range []string{"", "A", "a_b", strings.Repeat("a", 33)} {
+		s.Run("pool="+name, func() {
+			input := []Resource{
+				{Kind: networkKind, Name: "example", Labels: map[string]string{LabelPool: name}},
+				{Kind: networkKind, Name: "unlabelled"},
+			}
+			owned, orphans, err := Classify(name, input)
+			s.Require().ErrorIs(err, ErrInvalidPool)
+			s.Empty(owned)
+			s.Empty(orphans)
 		})
 	}
 }
@@ -82,7 +99,8 @@ func (s *ClassifySuite) TestSortedCopiesAcrossInputOrders() {
 	for i := range before {
 		before[i].Labels = maps.Clone(before[i].Labels)
 	}
-	owned, orphans := Classify(pool, input)
+	owned, orphans, err := Classify(pool, input)
+	s.Require().NoError(err)
 	s.Equal(map[string][]Resource{
 		id:       {input[4], input[2], input[0]},
 		secondID: {input[6]},
@@ -95,7 +113,8 @@ func (s *ClassifySuite) TestSortedCopiesAcrossInputOrders() {
 
 	reversed := slices.Clone(input)
 	slices.Reverse(reversed)
-	reversedOwned, reversedOrphans := Classify(pool, reversed)
+	reversedOwned, reversedOrphans, err := Classify(pool, reversed)
+	s.Require().NoError(err)
 	s.Equal(owned, reversedOwned)
 	s.Equal(orphans, reversedOrphans)
 
