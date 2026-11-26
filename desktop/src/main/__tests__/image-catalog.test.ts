@@ -188,7 +188,9 @@ describe("loadCatalog", () => {
 
 describe("resolveCatalogUrl", () => {
   it("defaults to the images site", () => {
-    expect(DEFAULT_IMAGE_CATALOG_URL).toBe("https://images.devsy.sh/catalog.json")
+    expect(DEFAULT_IMAGE_CATALOG_URL).toBe(
+      "https://images.devsy.sh/catalog.json",
+    )
     expect(resolveCatalogUrl({})).toBe(DEFAULT_IMAGE_CATALOG_URL)
   })
 
