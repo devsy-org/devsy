@@ -1458,16 +1458,8 @@ func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) err
 	return errors.Join(stdoutErr, stderrErr)
 }
 
-const invalidProcessParameterHint = "Windows rejected starting the provider executable " +
-	"(ERROR_INVALID_PARAMETER) before it ran, so this is a local process-launch failure " +
-	"rather than a remote host error; the cause is unconfirmed, so please report the Windows " +
-	"version and whether running the executable directly from a terminal works"
-
 func providerLaunchError(action string, err error) error {
-	if isInvalidProcessParameter(err) {
-		return fmt.Errorf("run provider %s: %w; %s", action, err, invalidProcessParameterHint)
-	}
-	return fmt.Errorf("run provider %s: %w", action, err)
+	return fmt.Errorf("run provider %s: %w", action, shell.WithLaunchHint(err))
 }
 
 const providerCommandAction = "command"

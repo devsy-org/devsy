@@ -1,8 +1,10 @@
 package cmdinternal
 
 import (
+	"context"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,6 +28,49 @@ func TestParseExecutablePathsRejectsMalformedEntries(t *testing.T) {
 
 		require.ErrorContains(t, err, "want NAME=PATH", entry)
 	}
+}
+
+func TestParseExecutablePathsKeepsEmptyValue(t *testing.T) {
+	paths, err := parseExecutablePaths([]string{"A="})
+
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"A": ""}, paths)
+}
+
+func TestProviderShellCommandPassesExecutablePathsToTheShell(t *testing.T) {
+	var got shell.ProviderShellInvocation
+	command := newProviderShellCmd(func(_ context.Context, in shell.ProviderShellInvocation) error {
+		got = in
+		return nil
+	})
+	command.SetArgs([]string{
+		"--script-file", "s", "--force-file", "f", "--ack-file", "a", "--parent-pid", "7",
+		"--executable-path", "SSH_PROVIDER=C:\\Jane Doe\\a=b\\provider.exe",
+		"--executable-path", "OTHER=/x y/z",
+	})
+
+	require.NoError(t, command.Execute())
+
+	require.Equal(t, shell.ProviderShellInvocation{
+		ScriptPath: "s", ForcePath: "f", AckPath: "a", ParentPID: 7,
+		ExecutablePaths: map[string]string{
+			"SSH_PROVIDER": "C:\\Jane Doe\\a=b\\provider.exe",
+			"OTHER":        "/x y/z",
+		},
+	}, got)
+}
+
+func TestProviderShellCommandRejectsMalformedExecutablePath(t *testing.T) {
+	command := newProviderShellCmd(func(context.Context, shell.ProviderShellInvocation) error {
+		t.Fatal("the shell must not run")
+		return nil
+	})
+	command.SetArgs([]string{
+		"--script-file", "s", "--force-file", "f", "--ack-file", "a", "--parent-pid", "7",
+		"--executable-path", "no-separator",
+	})
+
+	require.ErrorContains(t, command.Execute(), "want NAME=PATH")
 }
 
 func TestProviderShellExecutablePathFlagIsHidden(t *testing.T) {

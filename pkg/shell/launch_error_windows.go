@@ -1,6 +1,6 @@
 //go:build windows
 
-package clientimplementation
+package shell
 
 import (
 	"errors"

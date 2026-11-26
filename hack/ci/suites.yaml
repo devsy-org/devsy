@@ -164,8 +164,13 @@ unit:
       description: native Windows provider executable launch and launch failure reporting
       os: [windows]
       packages: [./pkg/shell, ./pkg/client/clientimplementation]
-      run: '^(TestExecutablePathTestSuite|TestProviderCommandErrorTestSuite)$'
-      require_tests: [TestExecutablePathTestSuite, TestProviderCommandErrorTestSuite]
+      run: '^(TestExecutablePathTestSuite|TestProviderCommandErrorTestSuite|TestWithLaunchHint.*|TestProviderShellKeepsSpaced.*|TestSupervisedProviderShellKeepsSpaced.*)$'
+      require_tests:
+        - TestExecutablePathTestSuite
+        - TestProviderCommandErrorTestSuite
+        - TestWithLaunchHintAddsHintToRealInvalidParameterStartFailure
+        - TestProviderShellKeepsSpacedExecutablePathIntact
+        - TestSupervisedProviderShellKeepsSpacedExecutablePathIntact
       args: [-race, -count=1, -v, -timeout=5m]
 
     - name: windows-wslg-boundaries

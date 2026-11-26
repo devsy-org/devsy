@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/devsy-org/devsy/pkg/shell"
 	"golang.org/x/sys/windows"
 )
 
@@ -24,7 +25,7 @@ func (s *ProviderCommandErrorTestSuite) TestRealInvalidParameterStartFailureGets
 	err = providerLaunchError("lifecycle", startErr)
 
 	s.ErrorIs(err, windows.ERROR_INVALID_PARAMETER)
-	s.Contains(err.Error(), invalidProcessParameterHint)
+	s.Contains(err.Error(), shell.InvalidProcessParameterHint)
 	s.Contains(err.Error(), "The parameter is incorrect")
 }
 
@@ -34,5 +35,5 @@ func (s *ProviderCommandErrorTestSuite) TestInvalidParameterFromOutputWriterGets
 	err := providerLaunchError("lifecycle", writeErr)
 
 	s.ErrorIs(err, windows.ERROR_INVALID_PARAMETER)
-	s.NotContains(err.Error(), invalidProcessParameterHint)
+	s.NotContains(err.Error(), shell.InvalidProcessParameterHint)
 }
