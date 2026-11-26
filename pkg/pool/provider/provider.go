@@ -42,7 +42,10 @@ type Spec struct {
 
 // Provider manages session resources. Every method honors context cancellation
 // and rejects pool names that fail poolconfig.ValidPoolName with ErrInvalidPool
-// without changing resources.
+// without changing resources. A real provider must also return promptly once
+// its context is canceled, including from a blocked network call: the engine
+// holds a lock across each call, so a call that ignores the context stalls
+// every other engine operation.
 type Provider interface {
 	// Spawn creates all resources for a session and labels each with LabelPool
 	// and LabelSession. If the session already exists, it returns ErrExists

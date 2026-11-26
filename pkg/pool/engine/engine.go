@@ -2,6 +2,15 @@
 // writes its audit event first, so a failed audit write leaves the session
 // where it was. The engine is the only writer of session state and serializes
 // its own calls. Neither a fake nor a real provider is started here.
+//
+// Run one Engine per pool. The mutex only orders calls on one Engine, so two
+// Engines on one store both write the audit event for the same change. The
+// pool lock keeps a second process out of the store.
+//
+// The log is at least once. A crash after an event and before its state change
+// leaves an event that the retry writes again, possibly with another reason.
+// A reader takes the last session.end of a session: it matches the reason the
+// store kept. Only session.end can repeat this way for a given change.
 package engine
 
 import (
@@ -53,7 +62,8 @@ type Store interface {
 
 // Config wires an Engine. Now defaults to time.Now. The engine holds its mutex
 // across store, provider and audit calls, so none of them may call back into
-// the same Engine.
+// the same Engine, and a provider must return promptly once its context is
+// canceled or every other call on the Engine waits behind it.
 type Config struct {
 	Pool     string
 	Store    Store

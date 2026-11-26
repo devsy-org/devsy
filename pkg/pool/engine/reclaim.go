@@ -69,8 +69,11 @@ type outcome struct {
 // session with no resources left becomes deleted. The MaxFailures-th failed
 // attempt makes a reclaiming session orphaned. An attempt that leaves
 // resources returns ErrReclaimIncomplete with the stored session. An attempt
-// that is not due returns ErrNotDue with the session as loaded. A canceled
-// context returns its error and records nothing for that attempt.
+// that is not due returns ErrNotDue with the session as loaded. A context
+// canceled before the attempt returns its error and changes nothing. One
+// canceled during it keeps the stored attempt count, because the count is
+// written before the provider is touched, and writes no event or state change.
+// Such an attempt counts toward MaxFailures and lengthens the next wait.
 func (e *Engine) Reclaim(ctx context.Context, id string) (session.Session, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
