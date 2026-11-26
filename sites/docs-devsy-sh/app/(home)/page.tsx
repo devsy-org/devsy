@@ -50,7 +50,7 @@ function HomeHeader() {
     <header>
       <div className="wrap nav">
         <a className="brand" href="/" aria-label="Devsy home">
-          <img src="/docs/media/devsy-icon.png" alt="" width="30" height="30" />
+          <img src="/docs/media/devsy-icon-128.png" alt="" width="30" height="30" />
           devsy
         </a>
         <button
@@ -514,7 +514,7 @@ function HomeFooter() {
     <footer>
       <div className="wrap foot">
         <a className="brand" href="/" style={{ fontSize: 18 }} aria-label="Devsy home">
-          <img src="/docs/media/devsy-icon.png" alt="" width="24" height="24" />
+          <img src="/docs/media/devsy-icon-128.png" alt="" width="24" height="24" />
           devsy
         </a>
         <nav className="foot-links" aria-label="Footer navigation">

@@ -585,6 +585,11 @@ func writeDocsIcons(repoRoot string, frames map[int][]byte) error {
 	if err := os.WriteFile(docsIconPath, transparentDocsIcon, 0o644); err != nil {
 		return fmt.Errorf("write docs icon: %w", err)
 	}
+	// The home page logo is 30 px, so it loads this small frame, not the 1024 px file.
+	smallIconPath := filepath.Join(docsMediaDir, "devsy-icon-128.png")
+	if err := os.WriteFile(smallIconPath, frames[128], 0o644); err != nil {
+		return fmt.Errorf("write small docs icon: %w", err)
+	}
 	return writeDocsWordmarks(docsMediaDir, frames[256])
 }
 

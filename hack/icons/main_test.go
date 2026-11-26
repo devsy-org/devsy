@@ -252,3 +252,26 @@ func TestDocsIconPNGLeavesNoWhiteFringe(t *testing.T) {
 		t.Errorf("artwork interior changed to %v", got)
 	}
 }
+
+func TestSmallDocsIconIsSmallAndTransparent(t *testing.T) {
+	path := filepath.Join(
+		"..", "..", "sites", "docs-devsy-sh", "public", "docs", "media", "devsy-icon-128.png",
+	)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > 40*1024 {
+		t.Errorf("small docs icon is %d bytes, want at most 40 KiB", len(data))
+	}
+	decoded, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.Bounds().Dx(); got != 128 {
+		t.Errorf("small docs icon is %d px wide, want 128", got)
+	}
+	if color.NRGBAModel.Convert(decoded.At(0, 0)).(color.NRGBA).A != 0 {
+		t.Error("small docs icon corner must be transparent")
+	}
+}
