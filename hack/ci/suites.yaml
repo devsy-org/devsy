@@ -130,6 +130,14 @@ unit:
       require_tests: [TestTaskQueriesRejectUncertainRecords, TestGetWaitsForWriterHoldingExclusiveFileHandle]
       args: [-race, -count=1, -timeout=10m]
 
+    - name: windows-worker-exit-wait
+      description: native Windows wait for a worker whose job is already gone
+      os: [windows]
+      packages: [./pkg/command]
+      run: '^TestWaitForWorkerExit.*$'
+      require_tests: [TestWaitForWorkerExitReturnsWhenWorkerExits, TestWaitForWorkerExitTimesOutWhileWorkerRuns, TestWaitForWorkerExitStopsWhenContextIsCancelled]
+      args: [-race, -count=1, -v, -timeout=5m]
+
     - name: windows-pty
       description: native Windows pseudoconsole and PTY test helpers
       os: [windows]

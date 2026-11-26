@@ -211,13 +211,13 @@ func TestCleanupExitedWorkerTreeTerminatesCrashedWorkerTree(t *testing.T) {
 			return nil
 		},
 	}
-	if err := store.CleanupExitedWorkerTree(tk.ID()); err != nil {
+	if err := store.CleanupExitedWorkerTree(context.Background(), tk.ID()); err != nil {
 		t.Fatalf("CleanupExitedWorkerTree: %v", err)
 	}
 	if len(cleaned) != 1 || cleaned[0] != ref {
 		t.Fatalf("cleaned = %+v, want the saved reference", cleaned)
 	}
-	if err := store.CleanupExitedWorkerTree(tk.ID()); err != nil {
+	if err := store.CleanupExitedWorkerTree(context.Background(), tk.ID()); err != nil {
 		t.Fatalf("repeat CleanupExitedWorkerTree: %v", err)
 	}
 	if len(cleaned) != 1 {
@@ -251,7 +251,7 @@ func TestCleanupExitedWorkerTreeSkipsLiveWorker(t *testing.T) {
 			return nil
 		},
 	}
-	if err := store.CleanupExitedWorkerTree(tk.ID()); err != nil {
+	if err := store.CleanupExitedWorkerTree(context.Background(), tk.ID()); err != nil {
 		t.Fatalf("CleanupExitedWorkerTree: %v", err)
 	}
 }
@@ -271,7 +271,7 @@ func TestCleanupExitedWorkerTreeDoesNotReportSuccessWhileLockHeld(t *testing.T) 
 	if err := tk.Fail(ErrAbandoned); err != nil {
 		t.Fatalf("Fail: %v", err)
 	}
-	if err := store.CleanupExitedWorkerTree(tk.ID()); err == nil {
+	if err := store.CleanupExitedWorkerTree(context.Background(), tk.ID()); err == nil {
 		t.Fatal("cleanup reported success while worker lock was held")
 	}
 }

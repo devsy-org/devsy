@@ -166,7 +166,7 @@ func (s *Store) cleanupPendingLaunch(ctx context.Context, state *State) error {
 		if err := s.processController.Terminate(ref); err != nil {
 			return err
 		}
-		if err := s.processController.CleanupAfterExit(ref); err != nil {
+		if err := s.processController.CleanupAfterExit(ctx, ref); err != nil {
 			return err
 		}
 	}

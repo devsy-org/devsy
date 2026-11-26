@@ -3,9 +3,9 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -187,10 +187,12 @@ func savedWorkerRunning(ref ProcessRef) (bool, error) {
 	return isRunning(strconv.Itoa(ref.PID))
 }
 
-// waitForWorkerExit blocks until the worker's process object signals or the
-// timeout passes. The caller decides from savedWorkerRunning whether the worker
-// is still alive, so a timeout is not an error here.
-func waitForWorkerExit(ref ProcessRef, timeout time.Duration) error {
+// waitForWorkerExit blocks until the worker's process object signals, the
+// timeout passes or the context ends. The caller decides from savedWorkerRunning
+// whether the worker is still alive, so a timeout is not an error here. Each
+// blocking wait is one short slice, so the context is checked between slices
+// and the wait can never be INFINITE.
+func waitForWorkerExit(ctx context.Context, ref ProcessRef, timeout time.Duration) error {
 	handle, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(ref.PID))
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return nil
@@ -199,19 +201,45 @@ func waitForWorkerExit(ref ProcessRef, timeout time.Duration) error {
 		return fmt.Errorf("open worker %d: %w", ref.PID, err)
 	}
 	defer func() { _ = windows.CloseHandle(handle) }()
-	millis := min(max(timeout.Milliseconds(), 0), math.MaxUint32)
-	if _, err := windows.WaitForSingleObject(handle, uint32(millis)); err != nil {
-		return fmt.Errorf("wait for worker %d: %w", ref.PID, err)
+	deadline := time.Now().Add(timeout)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil
+		}
+		signaled, err := waitSlice(handle, ref.PID, remaining)
+		if err != nil || signaled {
+			return err
+		}
 	}
-	return nil
 }
 
-func cleanupExitedProcessRef(ref ProcessRef) error {
+// waitSlice blocks for one bounded slice and reports whether the process
+// signaled.
+func waitSlice(handle windows.Handle, pid int, remaining time.Duration) (bool, error) {
+	event, err := windows.WaitForSingleObject(handle, waitSliceMillis(remaining))
+	if err != nil {
+		return false, fmt.Errorf("wait for worker %d: %w", pid, err)
+	}
+	switch event {
+	case windows.WAIT_OBJECT_0:
+		return true, nil
+	case uint32(windows.WAIT_TIMEOUT):
+		return false, nil
+	default:
+		return false, fmt.Errorf("wait for worker %d returned unexpected result %#x", pid, event)
+	}
+}
+
+func cleanupExitedProcessRef(ctx context.Context, ref ProcessRef) error {
 	if ref.PID <= 0 {
 		return fmt.Errorf("invalid worker PID %d", ref.PID)
 	}
 	if ref.TreeKind == ProcessTreeWindowsJob {
-		return cleanupExitedJob(ref, exitedJobProbes{
+		return cleanupExitedJob(ctx, ref, exitedJobProbes{
 			terminateJob:  terminateNamedJob,
 			workerRunning: savedWorkerRunning,
 			waitForExit:   waitForWorkerExit,

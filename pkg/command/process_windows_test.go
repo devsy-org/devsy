@@ -3,6 +3,8 @@
 package command
 
 import (
+	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -198,7 +200,7 @@ func TestTerminateLegacyRefWithoutIdentityEndsDevsyTree(t *testing.T) {
 }
 
 func TestCleanupExitedLegacyRefWithoutIdentityFailsClosed(t *testing.T) {
-	err := cleanupExitedProcessRef(ProcessRef{
+	err := cleanupExitedProcessRef(context.Background(), ProcessRef{
 		PID: 4242, TreeKind: ProcessTreeLegacyPID,
 	})
 	if err == nil || !strings.Contains(err.Error(), "cannot verify descendants") {
@@ -211,7 +213,7 @@ func TestProcessRefRejectsInvalidPID(t *testing.T) {
 	if err := terminateProcessRef(ref); err == nil {
 		t.Fatal("terminateProcessRef accepted PID zero")
 	}
-	if err := cleanupExitedProcessRef(ref); err == nil {
+	if err := cleanupExitedProcessRef(context.Background(), ref); err == nil {
 		t.Fatal("cleanupExitedProcessRef accepted PID zero")
 	}
 }
@@ -806,4 +808,59 @@ func TestJobNameForDeletedHomePreservesShortParentAlias(t *testing.T) {
 			after,
 		)
 	}
+}
+
+func waitRef(cmd *exec.Cmd) ProcessRef {
+	return ProcessRef{PID: cmd.Process.Pid, TreeKind: ProcessTreeWindowsJob}
+}
+
+func TestWaitForWorkerExitReturnsWhenWorkerExits(t *testing.T) {
+	cmd := startHelper(t, helperEnvExitCode+"=0")
+	start := time.Now()
+
+	err := waitForWorkerExit(context.Background(), waitRef(cmd), time.Minute)
+	if err != nil {
+		t.Fatalf("waitForWorkerExit: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Fatalf("waitForWorkerExit took %v for a worker that exits at once", elapsed)
+	}
+	assertNotRunningEventually(t, cmd.Process.Pid)
+}
+
+func TestWaitForWorkerExitTimesOutWhileWorkerRuns(t *testing.T) {
+	cmd := startHelper(t)
+	timeout := 300 * time.Millisecond
+	start := time.Now()
+
+	err := waitForWorkerExit(context.Background(), waitRef(cmd), timeout)
+	if err != nil {
+		t.Fatalf("waitForWorkerExit: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < timeout {
+		t.Fatalf("waitForWorkerExit returned after %v, before the %v timeout", elapsed, timeout)
+	}
+	assertRunning(t, cmd.Process.Pid)
+}
+
+func TestWaitForWorkerExitStopsWhenContextIsCancelled(t *testing.T) {
+	cmd := startHelper(t)
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := waitForWorkerExit(cancelled, waitRef(cmd), time.Hour)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitForWorkerExit with cancelled context = %v, want context.Canceled", err)
+	}
+
+	ctx, stop := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer stop()
+	start := time.Now()
+	err = waitForWorkerExit(ctx, waitRef(cmd), time.Hour)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("waitForWorkerExit = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("waitForWorkerExit ignored the context for %v", elapsed)
+	}
+	assertRunning(t, cmd.Process.Pid)
 }

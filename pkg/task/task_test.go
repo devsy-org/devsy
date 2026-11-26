@@ -1096,7 +1096,7 @@ func (f fakeProcessController) Terminate(ref command.ProcessRef) error {
 	return f.terminate(ref)
 }
 
-func (f fakeProcessController) CleanupAfterExit(ref command.ProcessRef) error {
+func (f fakeProcessController) CleanupAfterExit(_ context.Context, ref command.ProcessRef) error {
 	if f.cleanup == nil {
 		return nil
 	}

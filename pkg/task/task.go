@@ -325,7 +325,7 @@ func (t *Task) CancelContext(ctx context.Context) error {
 	if err := t.store.CleanupCanceledWorkerTree(ctx, t.id); err != nil {
 		return err
 	}
-	return t.store.CleanupExitedWorkerTree(t.id)
+	return t.store.CleanupExitedWorkerTree(ctx, t.id)
 }
 
 func quiesceCancellation(t *Task, ctx context.Context) error {
@@ -441,7 +441,7 @@ func cancelWithoutWorker(t *Task, ctx context.Context, workerLock *flock.Flock) 
 		return nil
 	}
 	if ref, ok := state.ProcessReference(); ok {
-		if err := t.store.processController.CleanupAfterExit(ref); err != nil {
+		if err := t.store.processController.CleanupAfterExit(ctx, ref); err != nil {
 			return fmt.Errorf("cancel task %s: clean up worker tree: %w", t.id, err)
 		}
 	}
