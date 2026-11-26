@@ -150,6 +150,24 @@ func (s *FakeSuite) TestOperationsLeaveForeignAndUnlabelledResourcesAlone() {
 	s.Equal(before, f.Snapshot())
 }
 
+func (s *FakeSuite) TestInvalidPoolIsRejectedBeforeHookAndCallLog() {
+	f := new(Fake)
+	ctx := s.T().Context()
+	hooked := false
+	f.SetHook(func(context.Context, Call) { hooked = true })
+	for _, pool := range []string{"", "a_b"} {
+		resource := provider.Resource{Kind: workspaceKind, Name: "x", UID: "u"}
+		spec := provider.Spec{Pool: pool, Session: "p-a-xxxxxxxxxx"}
+		s.ErrorIs(f.Spawn(ctx, spec), provider.ErrInvalidPool)
+		s.ErrorIs(f.Reclaim(ctx, pool, "p-a-xxxxxxxxxx"), provider.ErrInvalidPool)
+		_, err := f.List(ctx, pool)
+		s.ErrorIs(err, provider.ErrInvalidPool)
+		s.ErrorIs(f.Delete(ctx, pool, resource), provider.ErrInvalidPool)
+	}
+	s.False(hooked)
+	s.Empty(f.Calls())
+}
+
 func (s *FakeSuite) TestCancelInsideHookStopsEveryMethod() {
 	ctx := s.T().Context()
 	for _, run := range []struct {

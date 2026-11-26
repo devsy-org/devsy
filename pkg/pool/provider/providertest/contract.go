@@ -3,6 +3,7 @@ package providertest
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -13,12 +14,14 @@ import (
 )
 
 const (
-	unlabelledName = "unlabelled"
-	otherPoolName  = "other-pool"
+	unlabelledName  = "unlabelled"
+	otherPoolName   = "other-pool"
+	sessionOnlyName = "session-only"
 )
 
 // Harness supplies a fresh, empty provider per test and direct backend seeding
-// for arbitrary labels. OnNextCall runs fn once inside the next operation,
+// for arbitrary labels. Seed replaces an existing object of the same kind and
+// name with a new object that has a fresh UID. OnNextCall runs fn once inside the next operation,
 // after it starts and before it changes resources. Inventory returns every
 // object in the backend, labelled or not, so the suite can check that objects
 // outside a pool are never touched. New and Seed are required.
@@ -67,12 +70,14 @@ func (s *contractSuite) TestListReturnsEveryResourceInPool() {
 	want := make(map[string][]provider.Resource)
 	for _, spec := range specs {
 		s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
-		want[spec.Pool] = s.withoutUIDs(s.list(spec.Pool))
+		want[spec.Pool] = s.withoutUIDs(s.spawned(spec.Pool))
+		s.Require().NotEmpty(want[spec.Pool])
 	}
+	kinds := []string{networkKind, workspaceKind}
 	for i := range seedCount {
 		pool := specs[i%len(specs)].Pool
 		r := provider.Resource{
-			Kind: networkKind,
+			Kind: kinds[i/len(specs)%len(kinds)],
 			Name: fmt.Sprintf("seed-%04d", i),
 			Labels: map[string]string{
 				provider.LabelPool:    pool,
@@ -204,16 +209,18 @@ func (s *contractSuite) TestDeleteIgnoresStaleUID() {
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	first := s.list(spec.Pool)
 	s.Require().NotEmpty(first)
-	s.Require().NoError(s.p.Reclaim(ctx, spec.Pool, spec.Session))
-	s.Require().NoError(s.p.Spawn(ctx, spec))
+	for _, r := range first {
+		s.seed(provider.Resource{Kind: r.Kind, Name: r.Name, Labels: maps.Clone(r.Labels)})
+	}
 	replacement := s.list(spec.Pool)
+	s.Require().Len(replacement, len(first))
 	liveUIDs := make(map[resourceKey]string, len(replacement))
 	for _, r := range replacement {
 		liveUIDs[keyFor(r)] = r.UID
 	}
 	for _, r := range first {
 		s.Require().NotEmpty(r.UID)
-		s.Require().NotEmpty(liveUIDs[keyFor(r)], "%s/%s was not recreated", r.Kind, r.Name)
+		s.Require().NotEmpty(liveUIDs[keyFor(r)], "%s/%s was not replaced", r.Kind, r.Name)
 		s.Require().NotEqual(r.UID, liveUIDs[keyFor(r)], "%s/%s", r.Kind, r.Name)
 		s.Require().NoError(s.p.Delete(ctx, spec.Pool, r))
 	}
@@ -248,8 +255,13 @@ func (s *contractSuite) TestUnlabelledAndForeignObjectsAreNeverTouched() {
 			provider.LabelSession: spec.Session,
 		},
 	})
+	s.seed(provider.Resource{
+		Kind:   networkKind,
+		Name:   sessionOnlyName,
+		Labels: map[string]string{provider.LabelSession: spec.Session},
+	})
 	untouched := s.untouchedInventory()
-	s.Require().Len(untouched, 2)
+	s.Require().Len(untouched, 3)
 	for _, r := range s.list(spec.Pool) {
 		s.Require().NoError(s.p.Delete(ctx, spec.Pool, r))
 	}
@@ -300,6 +312,10 @@ func (s *contractSuite) TestCancellationInsideOperationsLeavesResourcesUnchanged
 		{"Spawn", func(ctx context.Context) error { return s.p.Spawn(ctx, pending) }},
 		{"Reclaim", func(ctx context.Context) error { return s.p.Reclaim(ctx, spec.Pool, spec.Session) }},
 		{"Delete", func(ctx context.Context) error { return s.p.Delete(ctx, spec.Pool, before[0]) }},
+		{"List", func(ctx context.Context) error {
+			_, err := s.p.List(ctx, spec.Pool)
+			return err
+		}},
 	} {
 		s.Run(op.name, func() {
 			ctx, cancel := context.WithCancel(s.T().Context())
@@ -343,7 +359,7 @@ func (s *contractSuite) untouchedInventory() []provider.Resource {
 	s.T().Helper()
 	var out []provider.Resource
 	for _, r := range s.harness.Inventory(s.T(), s.p) {
-		if r.Name == unlabelledName || r.Name == otherPoolName {
+		if r.Name == unlabelledName || r.Name == otherPoolName || r.Name == sessionOnlyName {
 			out = append(out, r)
 		}
 	}
@@ -353,6 +369,22 @@ func (s *contractSuite) untouchedInventory() []provider.Resource {
 func (s *contractSuite) seed(r provider.Resource) {
 	s.T().Helper()
 	s.harness.Seed(s.T(), s.p, r)
+}
+
+// spawned returns the pool's objects from Inventory when the harness has one,
+// so the expectation does not depend on List itself.
+func (s *contractSuite) spawned(pool string) []provider.Resource {
+	s.T().Helper()
+	if s.harness.Inventory == nil {
+		return s.list(pool)
+	}
+	var out []provider.Resource
+	for _, r := range s.harness.Inventory(s.T(), s.p) {
+		if r.Labels[provider.LabelPool] == pool {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func (s *contractSuite) withoutUIDs(resources []provider.Resource) []provider.Resource {

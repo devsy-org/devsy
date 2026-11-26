@@ -120,21 +120,13 @@ func (f *Fake) Snapshot() []provider.Resource {
 // Spawn implements provider.Provider.
 func (f *Fake) Spawn(ctx context.Context, spec provider.Spec) error {
 	call := Call{Method: MethodSpawn, Pool: spec.Pool, Session: spec.Session}
-	return f.run(ctx, call, func() error {
-		if !poolconfig.ValidPoolName(spec.Pool) {
-			return provider.ErrInvalidPool
-		}
-		return f.spawnLocked(spec)
-	})
+	return f.run(ctx, call, func() error { return f.spawnLocked(spec) })
 }
 
 // Reclaim implements provider.Provider.
 func (f *Fake) Reclaim(ctx context.Context, pool, id string) error {
 	call := Call{Method: MethodReclaim, Pool: pool, Session: id}
 	return f.run(ctx, call, func() error {
-		if !poolconfig.ValidPoolName(pool) {
-			return provider.ErrInvalidPool
-		}
 		if !session.OwnsID(pool, id) {
 			return provider.ErrInvalidSession
 		}
@@ -151,9 +143,6 @@ func (f *Fake) Reclaim(ctx context.Context, pool, id string) error {
 func (f *Fake) List(ctx context.Context, pool string) ([]provider.Resource, error) {
 	var resources []provider.Resource
 	err := f.run(ctx, Call{Method: MethodList, Pool: pool}, func() error {
-		if !poolconfig.ValidPoolName(pool) {
-			return provider.ErrInvalidPool
-		}
 		resources = f.collect(func(r provider.Resource) bool { return inPool(r, pool) })
 		return nil
 	})
@@ -169,9 +158,6 @@ func (f *Fake) Delete(ctx context.Context, pool string, resource provider.Resour
 		Resource: resource,
 	}
 	return f.run(ctx, call, func() error {
-		if !poolconfig.ValidPoolName(pool) {
-			return provider.ErrInvalidPool
-		}
 		if resource.UID == "" {
 			return provider.ErrUIDRequired
 		}
@@ -184,6 +170,9 @@ func (f *Fake) Delete(ctx context.Context, pool string, resource provider.Resour
 }
 
 func (f *Fake) run(ctx context.Context, call Call, act func() error) error {
+	if !poolconfig.ValidPoolName(call.Pool) {
+		return provider.ErrInvalidPool
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
