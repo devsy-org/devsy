@@ -77,10 +77,28 @@ func (s *contractSuite) TestDeleteRemovesOnlyOneAndIsIdempotent() {
 	s.Require().NoError(s.p.Spawn(ctx, other))
 	before := s.list(spec.Pool)
 	s.Require().GreaterOrEqual(len(before), 2)
-	s.Require().NoError(s.p.Delete(ctx, before[0]))
+	s.Require().NoError(s.p.Delete(ctx, spec.Pool, before[0]))
 	s.ElementsMatch(before[1:], s.list(spec.Pool))
-	s.Require().NoError(s.p.Delete(ctx, before[0]))
+	s.Require().NoError(s.p.Delete(ctx, spec.Pool, before[0]))
 	s.ElementsMatch(before[1:], s.list(spec.Pool))
+}
+
+func (s *contractSuite) TestDeleteIgnoresForgedPoolLabels() {
+	ctx := s.T().Context()
+	victim, caller := s.spec("a-b"), s.spec("a")
+	s.Require().NoError(s.p.Spawn(ctx, victim))
+	s.Require().NoError(s.p.Spawn(ctx, caller))
+	before := s.list(victim.Pool)
+	s.Require().NotEmpty(before)
+	for _, live := range before {
+		forged := live
+		forged.Labels = map[string]string{
+			provider.LabelPool:    caller.Pool,
+			provider.LabelSession: caller.Session,
+		}
+		s.Require().NoError(s.p.Delete(ctx, caller.Pool, forged))
+	}
+	s.ElementsMatch(before, s.list(victim.Pool))
 }
 
 func (s *contractSuite) TestListReturnsLabelCopies() {
@@ -105,7 +123,7 @@ func (s *contractSuite) TestCanceledOperationsDoNotChangeResources() {
 	s.Require().ErrorIs(s.p.Reclaim(ctx, spec.Pool, spec.Session), context.Canceled)
 	_, err := s.p.List(ctx, spec.Pool)
 	s.Require().ErrorIs(err, context.Canceled)
-	s.Require().ErrorIs(s.p.Delete(ctx, before[0]), context.Canceled)
+	s.Require().ErrorIs(s.p.Delete(ctx, spec.Pool, before[0]), context.Canceled)
 	s.ElementsMatch(before, s.list(spec.Pool))
 }
 

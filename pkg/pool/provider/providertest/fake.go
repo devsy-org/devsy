@@ -142,15 +142,18 @@ func (f *Fake) List(ctx context.Context, pool string) ([]provider.Resource, erro
 }
 
 // Delete implements provider.Provider.
-func (f *Fake) Delete(ctx context.Context, resource provider.Resource) error {
+func (f *Fake) Delete(ctx context.Context, pool string, resource provider.Resource) error {
 	call := Call{
 		Method:   MethodDelete,
-		Pool:     resource.Labels[provider.LabelPool],
+		Pool:     pool,
 		Session:  resource.Labels[provider.LabelSession],
 		Resource: resource,
 	}
 	return f.run(ctx, call, func() error {
-		delete(f.resources, keyFor(resource))
+		key := keyFor(resource)
+		if live, ok := f.resources[key]; ok && inPool(live, pool) {
+			delete(f.resources, key)
+		}
 		return nil
 	})
 }

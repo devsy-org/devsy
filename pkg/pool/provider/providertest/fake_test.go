@@ -84,7 +84,7 @@ func (s *FakeSuite) TestHookAndCallLog() {
 		call.Resource.Labels[provider.LabelPool] = "changed in hook"
 		cancel()
 	})
-	s.Require().ErrorIs(f.Delete(canceled, resource), context.Canceled)
+	s.Require().ErrorIs(f.Delete(canceled, exampleSpec.Pool, resource), context.Canceled)
 	s.Len(f.Snapshot(), 2)
 	s.Equal(exampleSpec.Pool, resource.Labels[provider.LabelPool])
 	want := []Call{
@@ -100,6 +100,46 @@ func (s *FakeSuite) TestHookAndCallLog() {
 	s.Equal(want, calls)
 	calls[1].Resource.Labels[provider.LabelPool] = "changed in call copy"
 	s.Equal(want, f.Calls())
+}
+
+func (s *FakeSuite) TestReclaimAndSpawnLeaveAnotherPoolsLabelledResourceAlone() {
+	f := new(Fake)
+	ctx := s.T().Context()
+	foreign := provider.Resource{
+		Kind: "workspace",
+		Name: "foreign",
+		Labels: map[string]string{
+			provider.LabelPool:    "a-b",
+			provider.LabelSession: exampleSpec.Session,
+		},
+	}
+	f.Add(foreign)
+	s.Require().NoError(f.Reclaim(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.Equal([]provider.Resource{foreign}, f.Snapshot())
+	s.Require().NoError(f.Spawn(ctx, exampleSpec))
+	s.Len(f.Snapshot(), 3)
+}
+
+func (s *FakeSuite) TestCancelInsideHookStopsEveryMethod() {
+	ctx := s.T().Context()
+	for _, run := range []struct {
+		name string
+		call func(*Fake, context.Context) error
+	}{
+		{"spawn", func(f *Fake, c context.Context) error { return f.Spawn(c, exampleSpec) }},
+		{"reclaim", func(f *Fake, c context.Context) error {
+			return f.Reclaim(c, exampleSpec.Pool, exampleSpec.Session)
+		}},
+	} {
+		f := new(Fake)
+		s.Require().NoError(f.Spawn(ctx, provider.Spec{Pool: "a", Session: "p-a-yyyyyyyyyy"}))
+		before := f.Snapshot()
+		canceled, cancel := context.WithCancel(ctx)
+		f.SetHook(func(context.Context, Call) { cancel() })
+		s.Require().ErrorIs(run.call(f, canceled), context.Canceled, run.name)
+		s.Equal(before, f.Snapshot(), run.name)
+		cancel()
+	}
 }
 
 func (s *FakeSuite) TestConcurrentSpawnsSeeTheSameSession() {

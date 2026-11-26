@@ -43,5 +43,9 @@ type Provider interface {
 	List(ctx context.Context, pool string) ([]Resource, error)
 
 	// Delete removes exactly one listed resource. An absent resource is success.
-	Delete(ctx context.Context, resource Resource) error
+	// The caller's labels are not trusted: an implementation deletes only when
+	// the live resource still carries LabelPool equal to pool, and otherwise
+	// does nothing, so a stale or forged Resource cannot remove another pool's
+	// object.
+	Delete(ctx context.Context, pool string, resource Resource) error
 }
