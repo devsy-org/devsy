@@ -59,7 +59,9 @@ type Provider interface {
 	// Spawn returns ErrInvalidSession, and if CheckImage rejects Spec.Image it
 	// returns ErrInvalidImage, in both cases without changing anything. When
 	// Spawn fails or is canceled after creating some resources, it removes them
-	// again before it returns.
+	// again before it returns. A cancel does not kill a create command that
+	// has started, because a killed docker CLI can still finish in the daemon
+	// unseen, so Spawn may return up to a create timeout after the cancel.
 	Spawn(ctx context.Context, spec Spec) error
 
 	// Reclaim removes every resource with both LabelPool and LabelSession

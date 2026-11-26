@@ -54,15 +54,22 @@ type daemon struct {
 	// after the daemon did the work.
 	failAt      int
 	failApplied bool
+	// lateAfter makes a create that arrives with a finished context still
+	// happen in the daemon, just before that many later calls, as when a
+	// killed CLI leaves its work running.
+	lateAfter int
+	late      *lateCreate
+	// createOut replaces what a network create prints.
+	createOut string
+}
+
+type lateCreate struct {
+	args  []string
+	after int
 }
 
 func (d *daemon) Run(ctx context.Context, args ...string) ([]byte, error) {
-	d.mu.Lock()
-	d.calls = append(d.calls, slices.Clone(args))
-	n := len(d.calls)
-	before, once := d.before, d.once
-	d.once = nil
-	d.mu.Unlock()
+	n, before, once := d.enter(args)
 	if before != nil {
 		before(args)
 	}
@@ -70,10 +77,25 @@ func (d *daemon) Run(ctx context.Context, args ...string) ([]byte, error) {
 		once()
 	}
 	if err := ctx.Err(); err != nil {
+		d.delayCreate(args)
 		return nil, err
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.apply(n, args)
+}
+
+func (d *daemon) enter(args []string) (int, func([]string), func()) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.calls = append(d.calls, slices.Clone(args))
+	d.landLate()
+	before, once := d.before, d.once
+	d.once = nil
+	return len(d.calls), before, once
+}
+
+func (d *daemon) apply(n int, args []string) ([]byte, error) {
 	if n == d.failAt && !d.failApplied {
 		return nil, errInjected
 	}
@@ -81,7 +103,45 @@ func (d *daemon) Run(ctx context.Context, args ...string) ([]byte, error) {
 	if n == d.failAt && d.failApplied {
 		return nil, errInjected
 	}
-	return out, err
+	return d.printed(out, args), err
+}
+
+func (d *daemon) printed(out []byte, args []string) []byte {
+	if d.createOut != "" && args[0] == kindNetwork && args[1] == verbCreate && out != nil {
+		return []byte(d.createOut)
+	}
+	return out
+}
+
+// landLate runs with d.mu held.
+func (d *daemon) landLate() {
+	if d.late == nil {
+		return
+	}
+	if d.late.after--; d.late.after == 0 {
+		args := d.late.args
+		d.late = nil
+		_, _ = d.dispatch(args)
+	}
+}
+
+// flushLate lands a create that no later call reached, as when the daemon
+// finishes after the provider stopped looking.
+func (d *daemon) flushLate() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.late != nil {
+		d.late.after = 1
+		d.landLate()
+	}
+}
+
+func (d *daemon) delayCreate(args []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.lateAfter > 0 && d.late == nil && len(args) > 1 && args[1] == verbCreate {
+		d.late = &lateCreate{args: slices.Clone(args), after: d.lateAfter}
+	}
 }
 
 func (d *daemon) dispatch(args []string) ([]byte, error) {

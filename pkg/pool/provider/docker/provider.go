@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
 	"github.com/devsy-org/devsy/pkg/pool/provider"
@@ -51,16 +51,26 @@ var kinds = []kind{
 // relabelled or replaced object. That is why Delete needs no other guard.
 type Provider struct {
 	docker Runner
-	// mu orders Spawn and Reclaim, so a rollback never removes what a
-	// concurrent Spawn of the same session just created.
-	mu sync.Mutex
+	// locks orders Spawn and Reclaim of one session, so a rollback never
+	// removes what a concurrent Spawn of that session just created.
+	locks sessionLocks
+	// settle is the pause between rollback sweeps, bound is how long a
+	// rollback may take in all, createBound how long one create may run.
+	settle      time.Duration
+	bound       time.Duration
+	createBound time.Duration
 }
 
 var _ provider.Provider = (*Provider)(nil)
 
 // New returns a Provider that runs docker commands through r.
 func New(r Runner) *Provider {
-	return &Provider{docker: r}
+	return &Provider{
+		docker:      r,
+		settle:      settleDelay,
+		bound:       rollbackTimeout,
+		createBound: createTimeout,
+	}
 }
 
 // scope narrows a search. Empty fields match anything.
@@ -108,9 +118,13 @@ func (p *Provider) Reclaim(ctx context.Context, pool, sessionID string) error {
 	if !session.OwnsID(pool, sessionID) {
 		return provider.ErrInvalidSession
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.reclaim(ctx, pool, sessionID)
+	unlock, err := p.locks.lock(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	_, err = p.reclaim(ctx, pool, sessionID)
+	return err
 }
 
 // Delete removes one listed object when its live pool and session labels match.
@@ -138,18 +152,21 @@ func unchanged(live provider.Resource, pool string, listed provider.Resource) bo
 	return live.Labels[provider.LabelPool] == pool && sameSession(live.Labels, listed.Labels)
 }
 
-func (p *Provider) reclaim(ctx context.Context, pool, sessionID string) error {
+// reclaim makes one pass and returns how many objects it found.
+func (p *Provider) reclaim(ctx context.Context, pool, sessionID string) (int, error) {
 	var errs []error
+	n := 0
 	for _, k := range kinds {
 		found, err := p.find(ctx, []kind{k}, scope{pool: pool, session: sessionID})
 		if err != nil {
-			return errors.Join(append(errs, err)...)
+			return n, errors.Join(append(errs, err)...)
 		}
+		n += len(found)
 		for _, r := range found {
 			errs = append(errs, p.remove(ctx, k, r.UID))
 		}
 	}
-	return errors.Join(errs...)
+	return n, errors.Join(errs...)
 }
 
 func checkPool(ctx context.Context, pool string) error {

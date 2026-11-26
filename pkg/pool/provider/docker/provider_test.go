@@ -24,7 +24,7 @@ func TestProviderSuite(t *testing.T) { suite.Run(t, new(ProviderSuite)) }
 
 func (s *ProviderSuite) SetupTest() {
 	s.d = &daemon{}
-	s.p = New(s.d)
+	s.p = fast(s.d)
 }
 
 func (s *ProviderSuite) TestListReturnsOnlyTheExactPool() {

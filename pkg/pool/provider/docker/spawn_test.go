@@ -78,14 +78,14 @@ func (s *ProviderSuite) TestSpawnReportsExistingResourcesAndChangesNothing() {
 func (s *ProviderSuite) TestSpawnLeavesNothingBehindWhenAnyCommandFails() {
 	spec := s.spec()
 	clean := &daemon{}
-	s.Require().NoError(New(clean).Spawn(s.T().Context(), spec))
+	s.Require().NoError(fast(clean).Spawn(s.T().Context(), spec))
 	total := len(clean.commands())
 	for n := 1; n <= total; n++ {
 		for _, applied := range []bool{false, true} {
 			s.Run(fmt.Sprintf("call %d applied %v", n, applied), func() {
 				d := &daemon{failAt: n, failApplied: applied}
 				unrelated := d.add(kindNetwork, "unrelated", nil)
-				err := New(d).Spawn(s.T().Context(), spec)
+				err := fast(d).Spawn(s.T().Context(), spec)
 				s.Require().ErrorIs(err, errInjected)
 				s.NotErrorIs(err, provider.ErrExists)
 				s.noneFor(d, spec)
@@ -98,7 +98,7 @@ func (s *ProviderSuite) TestSpawnLeavesNothingBehindWhenAnyCommandFails() {
 func (s *ProviderSuite) TestSpawnCleansUpWhenCanceledAtAnyCommand() {
 	spec := s.spec()
 	clean := &daemon{}
-	s.Require().NoError(New(clean).Spawn(s.T().Context(), spec))
+	s.Require().NoError(fast(clean).Spawn(s.T().Context(), spec))
 	for n := 1; n <= len(clean.commands()); n++ {
 		s.Run(fmt.Sprintf("call %d", n), func() {
 			d := &daemon{}
@@ -109,7 +109,7 @@ func (s *ProviderSuite) TestSpawnCleansUpWhenCanceledAtAnyCommand() {
 					cancel()
 				}
 			}
-			s.Require().ErrorIs(New(d).Spawn(ctx, spec), context.Canceled)
+			s.Require().ErrorIs(fast(d).Spawn(ctx, spec), context.Canceled)
 			s.noneFor(d, spec)
 		})
 	}
@@ -119,10 +119,11 @@ func (s *ProviderSuite) TestSpawnReportsAFailedRollbackAndAReclaimFinishesIt() {
 	spec := s.spec()
 	boom := errors.New("daemon refused")
 	d := &daemon{failAt: 4, rmErr: boom}
-	p := New(d)
+	p := fast(d)
 	err := p.Spawn(s.T().Context(), spec)
 	s.Require().ErrorIs(err, errInjected)
 	s.Require().ErrorIs(err, boom)
+	s.ErrorIs(err, ErrReclaimIncomplete)
 	s.Contains(err.Error(), "rollback of session "+spec.Session)
 	s.Equal(1, d.count(), "the network stays for a later reclaim")
 	d.rmErr = nil

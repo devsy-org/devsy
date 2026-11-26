@@ -18,7 +18,7 @@ func TestContractAgainstTheSimulatedDaemon(t *testing.T) {
 	providertest.RunContract(t, providertest.Harness{
 		New: func(*testing.T) provider.Provider {
 			d := &daemon{}
-			return &simProvider{Provider: New(d), d: d}
+			return &simProvider{Provider: fast(d), d: d}
 		},
 		Seed: func(_ *testing.T, p provider.Provider, r provider.Resource) {
 			p.(*simProvider).d.seed(r.Kind, r.Name, r.Labels)
