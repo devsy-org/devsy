@@ -5,6 +5,7 @@ package command
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -186,27 +187,35 @@ func savedWorkerRunning(ref ProcessRef) (bool, error) {
 	return isRunning(strconv.Itoa(ref.PID))
 }
 
+// waitForWorkerExit blocks until the worker's process object signals or the
+// timeout passes. The caller decides from savedWorkerRunning whether the worker
+// is still alive, so a timeout is not an error here.
+func waitForWorkerExit(ref ProcessRef, timeout time.Duration) error {
+	handle, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(ref.PID))
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("open worker %d: %w", ref.PID, err)
+	}
+	defer func() { _ = windows.CloseHandle(handle) }()
+	millis := min(max(timeout.Milliseconds(), 0), math.MaxUint32)
+	if _, err := windows.WaitForSingleObject(handle, uint32(millis)); err != nil {
+		return fmt.Errorf("wait for worker %d: %w", ref.PID, err)
+	}
+	return nil
+}
+
 func cleanupExitedProcessRef(ref ProcessRef) error {
 	if ref.PID <= 0 {
 		return fmt.Errorf("invalid worker PID %d", ref.PID)
 	}
 	if ref.TreeKind == ProcessTreeWindowsJob {
-		terminated, err := terminateNamedJob(ref.TreeID)
-		if err != nil || terminated {
-			return err
-		}
-		running, err := savedWorkerRunning(ref)
-		if err != nil {
-			return err
-		}
-		if running {
-			return fmt.Errorf(
-				"worker job %s is unavailable while process %d is running",
-				ref.TreeID,
-				ref.PID,
-			)
-		}
-		return nil
+		return cleanupExitedJob(ref, exitedJobProbes{
+			terminateJob:  terminateNamedJob,
+			workerRunning: savedWorkerRunning,
+			waitForExit:   waitForWorkerExit,
+		})
 	}
 	if ref.TreeKind == ProcessTreeLegacyPID && ref.Identity != "" {
 		return killTreeAfterWorkerExit(strconv.Itoa(ref.PID), ref.TreeID, ref.Identity)
