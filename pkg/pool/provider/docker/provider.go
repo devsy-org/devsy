@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
 	"github.com/devsy-org/devsy/pkg/pool/provider"
@@ -50,7 +51,12 @@ var kinds = []kind{
 // relabelled or replaced object. That is why Delete needs no other guard.
 type Provider struct {
 	docker Runner
+	// mu orders Spawn and Reclaim, so a rollback never removes what a
+	// concurrent Spawn of the same session just created.
+	mu sync.Mutex
 }
+
+var _ provider.Provider = (*Provider)(nil)
 
 // New returns a Provider that runs docker commands through r.
 func New(r Runner) *Provider {
@@ -102,17 +108,9 @@ func (p *Provider) Reclaim(ctx context.Context, pool, sessionID string) error {
 	if !session.OwnsID(pool, sessionID) {
 		return provider.ErrInvalidSession
 	}
-	var errs []error
-	for _, k := range kinds {
-		found, err := p.find(ctx, []kind{k}, scope{pool: pool, session: sessionID})
-		if err != nil {
-			return errors.Join(append(errs, err)...)
-		}
-		for _, r := range found {
-			errs = append(errs, p.remove(ctx, k, r.UID))
-		}
-	}
-	return errors.Join(errs...)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.reclaim(ctx, pool, sessionID)
 }
 
 // Delete removes one listed object when its live pool and session labels match.
@@ -138,6 +136,20 @@ func (p *Provider) Delete(ctx context.Context, pool string, r provider.Resource)
 // the session label it was listed with.
 func unchanged(live provider.Resource, pool string, listed provider.Resource) bool {
 	return live.Labels[provider.LabelPool] == pool && sameSession(live.Labels, listed.Labels)
+}
+
+func (p *Provider) reclaim(ctx context.Context, pool, sessionID string) error {
+	var errs []error
+	for _, k := range kinds {
+		found, err := p.find(ctx, []kind{k}, scope{pool: pool, session: sessionID})
+		if err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+		for _, r := range found {
+			errs = append(errs, p.remove(ctx, k, r.UID))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func checkPool(ctx context.Context, pool string) error {

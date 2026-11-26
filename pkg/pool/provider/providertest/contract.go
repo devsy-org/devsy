@@ -13,6 +13,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+// testImage is the image reference contract specs carry. A real provider must
+// be able to create a workspace from it.
+const testImage = "busybox:1.37"
+
 const (
 	unlabelledName  = "unlabelled"
 	otherPoolName   = "other-pool"
@@ -139,11 +143,23 @@ func (s *contractSuite) TestSpawnRejectsInvalidSessionIDs() {
 	ctx := s.T().Context()
 	for _, id := range s.invalidSessionIDs() {
 		s.Run(id, func() {
-			spec := provider.Spec{Pool: "a", Session: id}
+			spec := provider.Spec{Pool: "a", Session: id, Image: testImage}
 			s.ErrorIs(s.p.Spawn(ctx, spec), provider.ErrInvalidSession)
 			for _, pool := range []string{spec.Pool, "a-b", "b"} {
 				s.Empty(s.list(pool))
 			}
+		})
+	}
+}
+
+func (s *contractSuite) TestSpawnRejectsInvalidImages() {
+	ctx := s.T().Context()
+	for _, image := range []string{"", "-x", "--privileged", "a b", "a\tb", "a\nb", "a\x00b"} {
+		s.Run(fmt.Sprintf("%q", image), func() {
+			spec := s.spec("a")
+			spec.Image = image
+			s.ErrorIs(s.p.Spawn(ctx, spec), provider.ErrInvalidImage)
+			s.Empty(s.list("a"))
 		})
 	}
 }
@@ -361,7 +377,7 @@ func (s *contractSuite) TestRejectsInvalidPoolNames() {
 				Labels: map[string]string{provider.LabelPool: pool},
 			})
 			s.ErrorIs(
-				s.p.Spawn(ctx, provider.Spec{Pool: pool, Session: spec.Session}),
+				s.p.Spawn(ctx, provider.Spec{Pool: pool, Session: spec.Session, Image: testImage}),
 				provider.ErrInvalidPool,
 				"Spawn",
 			)
@@ -430,5 +446,5 @@ func (s *contractSuite) spec(pool string) provider.Spec {
 	s.T().Helper()
 	id, err := session.NewID(pool)
 	s.Require().NoError(err)
-	return provider.Spec{Pool: pool, Session: id}
+	return provider.Spec{Pool: pool, Session: id, Image: testImage}
 }

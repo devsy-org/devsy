@@ -212,6 +212,9 @@ func (f *Fake) spawnLocked(spec provider.Spec) error {
 	if !session.OwnsID(spec.Pool, spec.Session) {
 		return provider.ErrInvalidSession
 	}
+	if err := provider.CheckImage(spec.Image); err != nil {
+		return err
+	}
 	for _, r := range f.resources {
 		if belongsTo(r, spec.Pool, spec.Session) {
 			return provider.ErrExists
