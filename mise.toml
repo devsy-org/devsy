@@ -276,7 +276,7 @@ run = [
 ]
 
 [tasks."desktop:icons"]
-description = "generate application icon assets from the canonical SVG source (needs Chrome or Chromium and ffmpeg)"
+description = "generate application icon assets from the canonical SVG source (needs Chrome or Chromium)"
 run = [
   "go run ./hack/icons --check-dependencies",
   "go run ./hack/icons",

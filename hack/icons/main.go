@@ -2,22 +2,21 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"image"
-	"image/color"
 	"image/png"
 	"io"
 	"log"
-	"math"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	xdraw "golang.org/x/image/draw"
 )
 
 var (
@@ -45,8 +44,6 @@ const (
 	fileURLScheme      = "file"
 	docsWordmarkWidth  = 1000
 	docsWordmarkHeight = 329
-	backgroundMin      = 235
-	edgeBandWidth      = 2
 )
 
 func findChromeBinary() (string, error) {
@@ -75,9 +72,6 @@ func findChromeBinary() (string, error) {
 func validateRenderingDependencies() error {
 	if _, err := findChromeBinary(); err != nil {
 		return fmt.Errorf("%w; install Chrome or Chromium before generating icons", err)
-	}
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return errors.New("ffmpeg executable not found; install ffmpeg before generating icons")
 	}
 	return nil
 }
@@ -172,11 +166,11 @@ func renderSVGPNG(svgPath, outPNG string, width, height int) error {
 		fmt.Sprintf("--window-size=%d,%d", width, height),
 		(&url.URL{Scheme: fileURLScheme, Path: renderPage}).String(),
 	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("render svg with chrome: %w, output: %s", err, string(out))
-	}
-	if _, err := os.Stat(outPNG); err != nil {
-		return fmt.Errorf("rendered png missing: %w", err)
+	_ = os.Remove(outPNG)
+	out, runErr := cmd.CombinedOutput()
+	// Chrome can exit non-zero from its teardown watchdog after it wrote the screenshot.
+	if info, err := os.Stat(outPNG); err != nil || info.Size() == 0 {
+		return fmt.Errorf("render svg with chrome: %v, output: %s", runErr, string(out))
 	}
 	return nil
 }
@@ -185,184 +179,14 @@ func renderMasterPNG(svgPath, outPNG string) error {
 	return renderSVGPNG(svgPath, outPNG, 1024, 1024)
 }
 
-// docsIconPNG removes the white the artwork was rendered on, so the rounded
-// corners are transparent. The corners are a squircle, so a circular mask would
-// leave a white fringe.
-func docsIconPNG(frame []byte) ([]byte, error) {
-	icon, err := decodeSquareNRGBA(frame)
-	if err != nil {
-		return nil, err
-	}
-	cutBackground(icon)
+func scaleFrame(src image.Image, size int) ([]byte, error) {
+	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Src, nil)
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, icon); err != nil {
-		return nil, fmt.Errorf("encode docs icon: %w", err)
+	if err := png.Encode(&encoded, dst); err != nil {
+		return nil, fmt.Errorf("encode %dx%d frame: %w", size, size, err)
 	}
 	return encoded.Bytes(), nil
-}
-
-func decodeSquareNRGBA(frame []byte) (*image.NRGBA, error) {
-	source, err := png.Decode(bytes.NewReader(frame))
-	if err != nil {
-		return nil, fmt.Errorf("decode docs icon: %w", err)
-	}
-	bounds := source.Bounds()
-	if bounds.Dx() != bounds.Dy() {
-		return nil, fmt.Errorf("docs icon must be square, got %dx%d", bounds.Dx(), bounds.Dy())
-	}
-	icon := image.NewNRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			icon.SetNRGBA(x, y, color.NRGBAModel.Convert(source.At(x, y)).(color.NRGBA))
-		}
-	}
-	return icon, nil
-}
-
-func cutBackground(icon *image.NRGBA) {
-	bounds := icon.Bounds()
-	for index, distance := range cornerBackground(icon) {
-		x, y := bounds.Min.X+index%bounds.Dx(), bounds.Min.Y+index/bounds.Dx()
-		switch {
-		case distance == 0:
-			icon.SetNRGBA(x, y, color.NRGBA{})
-		case distance > 0:
-			icon.SetNRGBA(x, y, unmatte(icon, x, y))
-		}
-	}
-}
-
-func isBackground(p color.NRGBA) bool {
-	return p.A == 0 || (p.R >= backgroundMin && p.G >= backgroundMin && p.B >= backgroundMin)
-}
-
-type point struct{ x, y int }
-
-var neighbours = []point{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
-
-type grid struct{ w, h int }
-
-func (g grid) contains(p point) bool { return p.x >= 0 && p.y >= 0 && p.x < g.w && p.y < g.h }
-
-func (g grid) index(p point) int { return p.y*g.w + p.x }
-
-type searchLimits struct {
-	limit  int
-	accept func(point) bool
-}
-
-func newSteps(g grid) []int {
-	steps := make([]int, g.w*g.h)
-	for i := range steps {
-		steps[i] = -1
-	}
-	return steps
-}
-
-// spread runs a breadth-first search from seeds and returns each pixel's step
-// count, or -1 where accept refused it or it lies past the step limit.
-func spread(g grid, seeds []point, search searchLimits) []int {
-	steps := newSteps(g)
-	queue := make([]point, 0, len(seeds))
-	for _, p := range seeds {
-		steps[g.index(p)] = 0
-		queue = append(queue, p)
-	}
-	for len(queue) > 0 {
-		p := queue[0]
-		queue = queue[1:]
-		if steps[g.index(p)] == search.limit {
-			continue
-		}
-		for _, d := range neighbours {
-			n := point{p.x + d.x, p.y + d.y}
-			if g.contains(n) && steps[g.index(n)] < 0 && search.accept(n) {
-				steps[g.index(n)] = steps[g.index(p)] + 1
-				queue = append(queue, n)
-			}
-		}
-	}
-	return steps
-}
-
-// cornerBackground returns, per pixel in row-major order, 0 for background
-// connected to a corner, 1 to edgeBandWidth for the artwork pixels next to it,
-// and -1 elsewhere.
-func cornerBackground(icon *image.NRGBA) []int {
-	b := icon.Bounds()
-	w, h := b.Dx(), b.Dy()
-	at := func(p point) color.NRGBA { return icon.NRGBAAt(b.Min.X+p.x, b.Min.Y+p.y) }
-	corners := []point{{0, 0}, {w - 1, 0}, {0, h - 1}, {w - 1, h - 1}}
-	seeds := make([]point, 0, len(corners))
-	for _, c := range corners {
-		if isBackground(at(c)) {
-			seeds = append(seeds, c)
-		}
-	}
-	g := grid{w, h}
-	region := spread(
-		g,
-		seeds,
-		searchLimits{w * h, func(p point) bool { return isBackground(at(p)) }},
-	)
-	var edge []point
-	for i, v := range region {
-		if v >= 0 {
-			edge = append(edge, point{i % w, i / w})
-		}
-	}
-	band := spread(g, edge, searchLimits{edgeBandWidth, func(point) bool { return true }})
-	for i, v := range region {
-		if v >= 0 {
-			band[i] = 0
-		}
-	}
-	return band
-}
-
-// unmatte recovers the artwork colour and coverage of an anti-aliased edge
-// pixel that was blended with white.
-func unmatte(icon *image.NRGBA, x, y int) color.NRGBA {
-	p := icon.NRGBAAt(x, y)
-	reference := p.G
-	for dy := -edgeBandWidth - 1; dy <= edgeBandWidth+1; dy++ {
-		for dx := -edgeBandWidth - 1; dx <= edgeBandWidth+1; dx++ {
-			if n := icon.NRGBAAt(x+dx, y+dy); n.A == 255 && n.G < reference {
-				reference = n.G
-			}
-		}
-	}
-	if reference >= 250 {
-		return p
-	}
-	alpha := math.Min(1, float64(255-p.G)/float64(255-reference))
-	if alpha <= 0 {
-		return color.NRGBA{}
-	}
-	channel := func(v uint8) uint8 {
-		c := (float64(v) - (1-alpha)*255) / alpha
-		return uint8(math.Max(0, math.Min(255, math.Round(c))))
-	}
-	return color.NRGBA{
-		R: channel(p.R),
-		G: channel(p.G),
-		B: channel(p.B),
-		A: uint8(math.Round(alpha * 255)),
-	}
-}
-
-func resizePNG(inPNG, outPNG string, size int) error {
-	cmd := exec.Command("ffmpeg",
-		"-y",
-		"-i", inPNG,
-		"-vf", fmt.Sprintf("scale=%d:%d", size, size),
-		"-update", "1",
-		outPNG,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("resize to %dx%d: %w, output: %s", size, size, err, string(out))
-	}
-	return nil
 }
 
 func writeICNSChunk(body *bytes.Buffer, tag [4]byte, data []byte) error {
@@ -474,51 +298,30 @@ func resolveSVGPath(resourcesDir string) string {
 	return svgPath
 }
 
-// roundMasterPNG gives the rendered master transparent corners and rewrites it,
-// so every size scaled from it keeps them.
-func roundMasterPNG(masterPNG string) ([]byte, error) {
-	rendered, err := os.ReadFile(masterPNG)
-	if err != nil {
-		return nil, err
-	}
-	rounded, err := docsIconPNG(rendered)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(masterPNG, rounded, 0o600); err != nil {
-		return nil, err
-	}
-	return rounded, nil
-}
-
 func renderAllFrames(svgPath, tmpDir string) (map[int][]byte, error) {
 	masterPNG := filepath.Join(tmpDir, "master-1024.png")
 	log.Println("Rendering 1024x1024 master PNG using headless browser...")
 	if err := renderMasterPNG(svgPath, masterPNG); err != nil {
 		return nil, err
 	}
-
-	log.Println("Rescaling icon resolutions...")
-	frames := make(map[int][]byte)
-	masterBytes, err := roundMasterPNG(masterPNG)
+	master, err := os.ReadFile(masterPNG)
 	if err != nil {
 		return nil, err
 	}
-	frames[1024] = masterBytes
+	src, err := png.Decode(bytes.NewReader(master))
+	if err != nil {
+		return nil, fmt.Errorf("decode master PNG: %w", err)
+	}
 
+	log.Println("Rescaling icon resolutions...")
+	frames := map[int][]byte{1024: master}
 	for _, s := range allSizes {
 		if s == 1024 {
 			continue
 		}
-		outPNG := filepath.Join(tmpDir, fmt.Sprintf("%dx%d.png", s, s))
-		if err := resizePNG(masterPNG, outPNG, s); err != nil {
+		if frames[s], err = scaleFrame(src, s); err != nil {
 			return nil, err
 		}
-		b, err := os.ReadFile(outPNG)
-		if err != nil {
-			return nil, err
-		}
-		frames[s] = b
 	}
 	return frames, nil
 }
@@ -551,7 +354,7 @@ func writeWindowsIcons(resourcesDir string, frames map[int][]byte) error {
 	return nil
 }
 
-func writeLinuxIcons(resourcesDir, repoRoot string, frames map[int][]byte) error {
+func writeLinuxIcons(resourcesDir string, frames map[int][]byte) error {
 	log.Println("Updating Linux icons and master icon.png...")
 	pngDst := filepath.Join(resourcesDir, "icon.png")
 	if err := os.WriteFile(pngDst, frames[1024], 0o644); err != nil {
@@ -568,39 +371,62 @@ func writeLinuxIcons(resourcesDir, repoRoot string, frames map[int][]byte) error
 		return err
 	}
 	log.Println("✓ Updated Linux icons (32x32, 128x128) and icon.png")
-
-	return writeDocsIcons(repoRoot, frames)
+	return nil
 }
 
-func writeDocsIcons(repoRoot string, frames map[int][]byte) error {
-	docsMediaDir := filepath.Join(repoRoot, "sites", "docs-devsy-sh", "public", "docs", "media")
-	if _, err := os.Stat(docsMediaDir); err != nil {
+func docsMediaDir(repoRoot string) string {
+	return filepath.Join(repoRoot, "sites", "docs-devsy-sh", "public", "docs", "media")
+}
+
+func writeDocsIcons(repoRoot, svgPath string, frames map[int][]byte) error {
+	mediaDir := docsMediaDir(repoRoot)
+	if _, err := os.Stat(mediaDir); err != nil {
 		return nil
 	}
-	transparentDocsIcon, err := docsIconPNG(frames[1024])
-	if err != nil {
-		return err
-	}
-	docsIconPath := filepath.Join(docsMediaDir, "devsy-icon.png")
-	if err := os.WriteFile(docsIconPath, transparentDocsIcon, 0o644); err != nil {
+	docsIconPath := filepath.Join(mediaDir, "devsy-icon.png")
+	if err := os.WriteFile(docsIconPath, frames[1024], 0o644); err != nil {
 		return fmt.Errorf("write docs icon: %w", err)
 	}
 	// The home page logo is 30 px, so it loads this small frame, not the 1024 px file.
-	smallIconPath := filepath.Join(docsMediaDir, "devsy-icon-128.png")
+	smallIconPath := filepath.Join(mediaDir, "devsy-icon-128.png")
 	if err := os.WriteFile(smallIconPath, frames[128], 0o644); err != nil {
 		return fmt.Errorf("write small docs icon: %w", err)
 	}
-	return writeDocsWordmarks(docsMediaDir, frames[256])
+	markup, err := iconMarkup(svgPath)
+	if err != nil {
+		return err
+	}
+	return writeDocsWordmarks(mediaDir, markup)
+}
+
+// iconMarkup returns the drawing inside the icon's root element so the
+// wordmarks embed the vector art itself.
+func iconMarkup(svgPath string) (string, error) {
+	data, err := os.ReadFile(svgPath)
+	if err != nil {
+		return "", fmt.Errorf("read icon svg: %w", err)
+	}
+	src := string(data)
+	open := strings.Index(src, "<svg")
+	closing := strings.LastIndex(src, "</svg>")
+	if open < 0 || closing < 0 {
+		return "", errors.New("icon svg has no root element")
+	}
+	end := strings.Index(src[open:], ">")
+	if end < 0 {
+		return "", errors.New("icon svg root element is not closed")
+	}
+	return strings.TrimSpace(src[open+end+1 : closing]), nil
 }
 
 //nolint:lll // The fixed vector path data must remain inline in the generated SVG.
-func docsWordmarkSVG(textColor string, iconPNG []byte) string {
-	iconDataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(iconPNG)
+func docsWordmarkSVG(textColor, iconMarkup string) string {
 	wordmark := fmt.Sprintf(`<svg width="%d" height="%d"
      viewBox="0 0 %d %d" fill="none" xmlns="http://www.w3.org/2000/svg">
   <title>Devsy</title>
-  <defs><clipPath id="app-icon"><rect x="40" y="40" width="249" height="249" rx="56"/></clipPath></defs>
-  <image href="%s" x="40" y="40" width="249" height="249" clip-path="url(#app-icon)"/>
+  <svg x="40" y="40" width="249" height="249" viewBox="0 0 1024 1024">
+    %s
+  </svg>
   <g fill="%s">
     <path transform="translate(340 215) scale(0.078125 -0.078125)" d="M930 950L930 1556L1114 1556L1114 0L930 0L930 168Q872 68 783.5 19.5Q695 -29 571 -29Q368 -29 240.5 133Q113 295 113 559Q113 823 240.5 985Q368 1147 571 1147Q695 1147 783.5 1098.5Q872 1050 930 950ZM303 559Q303 356 386.5 240.5Q470 125 616 125Q762 125 846 240.5Q930 356 930 559Q930 762 846 877.5Q762 993 616 993Q470 993 386.5 877.5Q303 762 303 559Z"/>
     <path transform="translate(438.563 215) scale(0.078125 -0.078125)" d="M1151 606L1151 516L305 516Q317 326 419.5 226.5Q522 127 705 127Q811 127 910.5 153Q1010 179 1108 231L1108 57Q1009 15 905 -7Q801 -29 694 -29Q426 -29 269.5 127Q113 283 113 549Q113 824 261.5 985.5Q410 1147 662 1147Q888 1147 1019.5 1001.5Q1151 856 1151 606ZM967 660Q965 811 882.5 901Q800 991 664 991Q510 991 417.5 904Q325 817 311 659Z"/>
@@ -614,13 +440,13 @@ func docsWordmarkSVG(textColor string, iconPNG []byte) string {
 		docsWordmarkHeight,
 		docsWordmarkWidth,
 		docsWordmarkHeight,
-		iconDataURL,
+		iconMarkup,
 		textColor,
 	)
 	return wordmark
 }
 
-func writeDocsWordmarks(docsMediaDir string, iconPNG []byte) error {
+func writeDocsWordmarks(mediaDir, iconMarkup string) error {
 	variants := []struct {
 		svgName   string
 		pngName   string
@@ -631,12 +457,12 @@ func writeDocsWordmarks(docsMediaDir string, iconPNG []byte) error {
 	}
 
 	for _, variant := range variants {
-		svgPath := filepath.Join(docsMediaDir, variant.svgName)
-		wordmarkSVG := docsWordmarkSVG(variant.textColor, iconPNG)
+		svgPath := filepath.Join(mediaDir, variant.svgName)
+		wordmarkSVG := docsWordmarkSVG(variant.textColor, iconMarkup)
 		if err := os.WriteFile(svgPath, []byte(wordmarkSVG), 0o644); err != nil {
 			return fmt.Errorf("write docs wordmark SVG: %w", err)
 		}
-		pngPath := filepath.Join(docsMediaDir, variant.pngName)
+		pngPath := filepath.Join(mediaDir, variant.pngName)
 		err := renderSVGPNG(svgPath, pngPath, docsWordmarkWidth, docsWordmarkHeight)
 		if err != nil {
 			return fmt.Errorf("render docs wordmark PNG: %w", err)
@@ -645,15 +471,29 @@ func writeDocsWordmarks(docsMediaDir string, iconPNG []byte) error {
 	return nil
 }
 
-func syncSVGDuplicates(svgPath, resourcesDir string) error {
-	boxSVG := filepath.Join(resourcesDir, "box-icon-app.svg")
-	if svgPath != boxSVG {
-		data, err := os.ReadFile(svgPath)
-		if err != nil {
-			return fmt.Errorf("read canonical svg: %w", err)
+func svgCopies(resourcesDir, repoRoot string) []string {
+	copies := []string{filepath.Join(resourcesDir, "box-icon-app.svg")}
+	docsSite := filepath.Join(repoRoot, "sites", "docs-devsy-sh")
+	if _, err := os.Stat(docsMediaDir(repoRoot)); err != nil {
+		return copies
+	}
+	return append(copies,
+		filepath.Join(docsSite, "app", "icon.svg"),
+		filepath.Join(docsMediaDir(repoRoot), "devsy-favicon.svg"),
+	)
+}
+
+func syncSVGDuplicates(svgPath string, targets []string) error {
+	data, err := os.ReadFile(svgPath)
+	if err != nil {
+		return fmt.Errorf("read canonical svg: %w", err)
+	}
+	for _, target := range targets {
+		if target == svgPath {
+			continue
 		}
-		if err := os.WriteFile(boxSVG, data, 0o644); err != nil {
-			return fmt.Errorf("sync box-icon-app.svg: %w", err)
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			return fmt.Errorf("sync %s: %w", filepath.Base(target), err)
 		}
 	}
 	return nil
@@ -666,10 +506,13 @@ func writeAllAssets(resourcesDir, repoRoot, svgPath string, frames map[int][]byt
 	if err := writeWindowsIcons(resourcesDir, frames); err != nil {
 		return err
 	}
-	if err := writeLinuxIcons(resourcesDir, repoRoot, frames); err != nil {
+	if err := writeLinuxIcons(resourcesDir, frames); err != nil {
 		return err
 	}
-	return syncSVGDuplicates(svgPath, resourcesDir)
+	if err := writeDocsIcons(repoRoot, svgPath, frames); err != nil {
+		return err
+	}
+	return syncSVGDuplicates(svgPath, svgCopies(resourcesDir, repoRoot))
 }
 
 func run() error {

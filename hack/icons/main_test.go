@@ -167,10 +167,12 @@ func TestRenderPageContentsScalesSVGToCanvas(t *testing.T) {
 	}
 }
 
+const brandViolet = "#7C5CFF"
+
 func TestDocsWordmarkSVG(t *testing.T) {
-	wordmark := docsWordmarkSVG("#FFFFFF", []byte("icon"))
-	if !strings.Contains(wordmark, `href="data:image/png;base64,aWNvbg=="`) {
-		t.Error("wordmark does not embed the generated application icon")
+	wordmark := docsWordmarkSVG("#FFFFFF", `<path d="M0 0"/>`)
+	if !strings.Contains(wordmark, `<path d="M0 0"/>`) {
+		t.Error("wordmark does not embed the application icon drawing")
 	}
 	if !strings.Contains(wordmark, `fill="#FFFFFF"`) {
 		t.Error("wordmark does not use its requested text color")
@@ -178,80 +180,131 @@ func TestDocsWordmarkSVG(t *testing.T) {
 	if strings.Contains(wordmark, "<text") || strings.Contains(wordmark, "font-family") {
 		t.Error("wordmark must use fixed vector paths instead of a system font")
 	}
+	if strings.Contains(wordmark, "<image") || strings.Contains(wordmark, "base64") {
+		t.Error("wordmark must not embed a raster image")
+	}
 }
 
-func TestDocsIconPNGHasTransparentCorners(t *testing.T) {
-	frame, err := os.ReadFile(filepath.Join("..", "..", "desktop", "resources", "icon.png"))
+func TestIconMarkupReturnsRootContents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "icon.svg")
+	src := "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 8 8\">\n  <path d=\"M0 0\"/>\n</svg>\n"
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := iconMarkup(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	transparentIcon, err := docsIconPNG(frame)
+	if got != `<path d="M0 0"/>` {
+		t.Errorf("unexpected markup %q", got)
+	}
+}
+
+func repoFile(parts ...string) string {
+	return filepath.Join(append([]string{"..", ".."}, parts...)...)
+}
+
+func TestShippedSVGsAreVectorOnly(t *testing.T) {
+	media := repoFile("sites", "docs-devsy-sh", "public", "docs", "media")
+	paths := []string{
+		repoFile("desktop", "resources", "icon.svg"),
+		repoFile("desktop", "resources", "box-icon-app.svg"),
+		repoFile("sites", "docs-devsy-sh", "app", "icon.svg"),
+		filepath.Join(media, "devsy-favicon.svg"),
+		filepath.Join(media, "devsy-logo-horizontal.svg"),
+		filepath.Join(media, "devsy-logo-horizontal-dark.svg"),
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := strings.ToLower(string(data))
+		for _, banned := range []string{"<image", "data:", "base64", "c2pa", "openai"} {
+			if strings.Contains(src, banned) {
+				t.Errorf("%s contains %q", path, banned)
+			}
+		}
+		if len(data) > 8*1024 {
+			t.Errorf("%s is %d bytes, want at most 8 KiB", path, len(data))
+		}
+	}
+}
+
+func TestIconSourceKeepsBrandViolet(t *testing.T) {
+	data, err := os.ReadFile(repoFile("desktop", "resources", "icon.svg"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := png.Decode(bytes.NewReader(transparentIcon))
+	if !strings.Contains(strings.ToUpper(string(data)), brandViolet) {
+		t.Errorf("icon.svg does not use %s", brandViolet)
+	}
+}
+
+func decodeScaledSquare(t *testing.T, size int) image.Image {
+	t.Helper()
+	source := image.NewNRGBA(image.Rect(0, 0, 256, 256))
+	for y := 64; y < 192; y++ {
+		for x := 64; x < 192; x++ {
+			source.SetNRGBA(x, y, testArt)
+		}
+	}
+	data, err := scaleFrame(source, size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decoded
+}
+
+func nearArt(p color.NRGBA) bool {
+	return absDiff(p.R, testArt.R) <= 12 && absDiff(p.B, testArt.B) <= 12
+}
+
+func TestScaleFrameKeepsColorAtTransparentEdges(t *testing.T) {
+	decoded := decodeScaledSquare(t, 16)
+	if got := color.NRGBAModel.Convert(decoded.At(0, 0)).(color.NRGBA).A; got != 0 {
+		t.Errorf("corner alpha is %d, want 0", got)
+	}
+	if got := color.NRGBAModel.Convert(decoded.At(8, 8)); got != testArt {
+		t.Errorf("interior is %v, want %v", got, testArt)
+	}
+	for y := range 16 {
+		for x := range 16 {
+			p := color.NRGBAModel.Convert(decoded.At(x, y)).(color.NRGBA)
+			if p.A > 0 && !nearArt(p) {
+				t.Fatalf("pixel %d,%d is %v, edge color must stay %v", x, y, p, testArt)
+			}
+		}
+	}
+}
+
+func absDiff(a, b uint8) int {
+	return max(int(a)-int(b), int(b)-int(a))
+}
+
+func TestMasterIconHasTransparentCornersAndVioletBody(t *testing.T) {
+	data, err := os.ReadFile(repoFile("desktop", "resources", "icon.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(data))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if color.NRGBAModel.Convert(decoded.At(0, 0)).(color.NRGBA).A != 0 {
-		t.Error("docs icon corner must be transparent")
+		t.Error("master icon corner must be transparent")
 	}
-	if color.NRGBAModel.Convert(decoded.At(512, 512)).(color.NRGBA).A != 255 {
-		t.Error("docs icon center must remain opaque")
+	want := color.NRGBA{R: 0x7C, G: 0x5C, B: 0xFF, A: 255}
+	if got := color.NRGBAModel.Convert(decoded.At(120, 512)); got != want {
+		t.Errorf("icon body is %v, want %v", got, want)
 	}
 }
 
 var testArt = color.NRGBA{R: 110, G: 80, B: 250, A: 255}
-
-// bevelledIcon is artwork on white whose corners are cut by diagonals.
-func bevelledIcon(size, corner int) []byte {
-	source := image.NewNRGBA(image.Rect(0, 0, size, size))
-	for y := range size {
-		for x := range size {
-			p := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-			far := size - 1
-			if min(x+y, far-x+y, x+far-y, 2*far-x-y) >= corner {
-				p = testArt
-			}
-			source.SetNRGBA(x, y, p)
-		}
-	}
-	var frame bytes.Buffer
-	if err := png.Encode(&frame, source); err != nil {
-		panic(err)
-	}
-	return frame.Bytes()
-}
-
-func firstOpaqueWhite(img image.Image) (image.Point, bool) {
-	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
-		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
-			p := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			if p.A == 255 && p.R >= backgroundMin && p.G >= backgroundMin && p.B >= backgroundMin {
-				return image.Pt(x, y), true
-			}
-		}
-	}
-	return image.Point{}, false
-}
-
-func TestDocsIconPNGLeavesNoWhiteFringe(t *testing.T) {
-	const size = 256
-	cut, err := docsIconPNG(bevelledIcon(size, 64))
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := png.Decode(bytes.NewReader(cut))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if at, found := firstOpaqueWhite(decoded); found {
-		t.Fatalf("opaque white pixel left at %v", at)
-	}
-	if got := color.NRGBAModel.Convert(decoded.At(size/2, size/2)); got != testArt {
-		t.Errorf("artwork interior changed to %v", got)
-	}
-}
 
 func TestSmallDocsIconIsSmallAndTransparent(t *testing.T) {
 	path := filepath.Join(
