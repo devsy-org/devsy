@@ -23,6 +23,14 @@ const (
 	testVersion = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
 )
 
+// orphanAfter is written out so a changed MaxFailures fails a test.
+const orphanAfter = 5
+
+const (
+	kindWorkspace = "workspace"
+	kindNetwork   = "network"
+)
+
 var errBoom = errors.New("boom")
 
 type recordedEvent struct {
@@ -217,10 +225,10 @@ func (s *EngineSuite) TestReclaimDeletesOnlyTheSessionsResources() {
 	other := s.sessionIn(session.StateReady)
 	s.spawn(cur.ID)
 	s.spawn(other.ID)
-	s.fake.Add(provider.Resource{Kind: "workspace", Name: "prefix", Labels: map[string]string{
+	s.fake.Add(provider.Resource{Kind: kindWorkspace, Name: "prefix", Labels: map[string]string{
 		provider.LabelPool: testPool, provider.LabelSession: cur.ID + "x",
 	}})
-	s.fake.Add(provider.Resource{Kind: "workspace", Name: "unlabelled"})
+	s.fake.Add(provider.Resource{Kind: kindWorkspace, Name: "unlabelled"})
 	s.now = cur.Updated
 	got, err := s.eng.Reclaim(context.Background(), cur.ID)
 	s.Require().NoError(err)
@@ -250,7 +258,7 @@ func (s *EngineSuite) TestReclaimBacksOffAndPersistsEachAttempt() {
 	s.Equal(1, got.Attempts)
 	ev := s.events()[0]
 	s.Equal("partial", ev.Data["devsy.reclaim.result"])
-	s.ElementsMatch([]any{"container", "network"}, ev.Data["devsy.reclaim.remaining"])
+	s.ElementsMatch([]any{kindContainer, kindNetwork}, ev.Data["devsy.reclaim.remaining"])
 
 	calls := s.reclaimCalls()
 	_, err = s.eng.Reclaim(context.Background(), cur.ID)
@@ -284,30 +292,31 @@ func (s *EngineSuite) TestTheAttemptIsStoredBeforeTheProviderIsCalled() {
 }
 
 func (s *EngineSuite) TestTheFifthFailureOrphansAndRetriesContinue() {
+	s.Equal(orphanAfter, MaxFailures)
 	cur := s.sessionIn(session.StateReclaiming)
 	s.spawn(cur.ID)
 	s.fake.SetError(providertest.MethodReclaim, errBoom)
 	s.now = cur.Updated
-	for attempt := 1; attempt <= MaxFailures; attempt++ {
+	for attempt := 1; attempt <= orphanAfter; attempt++ {
 		eng := s.build(s.store)
 		got, err := eng.Reclaim(context.Background(), cur.ID)
 		s.Require().ErrorIs(err, ErrReclaimIncomplete)
 		s.Equal(attempt, got.Attempts)
 		wantState := session.StateReclaiming
-		if attempt == MaxFailures {
+		if attempt == orphanAfter {
 			wantState = session.StateOrphaned
 		}
 		s.Equal(wantState, got.State, "attempt %d", attempt)
 		s.now = Due(s.load(cur.ID))
 	}
-	last := s.events()[MaxFailures-1]
+	last := s.events()[orphanAfter-1]
 	s.Equal(true, last.Data["devsy.reclaim.orphaned"])
-	s.Equal(false, s.events()[MaxFailures-2].Data["devsy.reclaim.orphaned"])
+	s.Equal(false, s.events()[orphanAfter-2].Data["devsy.reclaim.orphaned"])
 
 	got, err := s.eng.Reclaim(context.Background(), cur.ID)
 	s.Require().ErrorIs(err, ErrReclaimIncomplete)
 	s.Equal(session.StateOrphaned, got.State)
-	s.Equal(MaxFailures+1, got.Attempts)
+	s.Equal(orphanAfter+1, got.Attempts)
 
 	s.fake.SetError(providertest.MethodReclaim, nil)
 	s.now = Due(s.load(cur.ID))
@@ -380,6 +389,7 @@ func (s *EngineSuite) TestACanceledContextRecordsNothing() {
 	_, err = s.eng.Reclaim(ctx, cur.ID)
 	s.Require().ErrorIs(err, context.Canceled)
 	s.Equal(session.StateReclaiming, s.load(cur.ID).State)
+	s.Equal(1, s.load(cur.ID).Attempts, "the attempt was stored before the call")
 	s.Empty(s.events(), "an interrupted attempt writes no audit event")
 }
 
@@ -394,6 +404,87 @@ func (s *EngineSuite) TestAClockThatSteppedBackDoesNotStallReclaim() {
 	_, err = s.eng.Reclaim(context.Background(), cur.ID)
 	s.Require().ErrorIs(err, ErrReclaimIncomplete)
 	s.Equal(2, s.load(cur.ID).Attempts)
+}
+
+func (s *EngineSuite) TestAnEngineRefusesASessionFromAnotherPool() {
+	cur := s.sessionIn(session.StateReady)
+	reclaiming := s.sessionIn(session.StateReclaiming)
+	s.spawn(reclaiming.ID)
+	eng, err := New(Config{
+		Pool: "other", Store: s.store, Audit: s.spy, Provider: s.fake,
+		Now: func() time.Time { return s.now },
+	})
+	s.Require().NoError(err)
+	_, err = eng.Fail(cur.ID, EndFailed)
+	s.Require().ErrorIs(err, ErrForeignPool)
+	_, err = eng.BeginReclaim(cur.ID, EndTTL)
+	s.Require().ErrorIs(err, ErrForeignPool)
+	s.now = reclaiming.Updated
+	_, err = eng.Reclaim(context.Background(), reclaiming.ID)
+	s.Require().ErrorIs(err, ErrForeignPool)
+	s.Equal(cur, s.load(cur.ID))
+	s.Equal(reclaiming, s.load(reclaiming.ID))
+	s.Empty(s.events())
+	s.Len(s.fake.Snapshot(), 2, "the pool's resources stay")
+	s.Len(s.fake.Calls(), 1, "only the test's own spawn")
+}
+
+func (s *EngineSuite) TestAFailedSessionReclaimsWhateverReasonIsSupplied() {
+	for _, reason := range []EndReason{"", "bogus", EndTTL} {
+		cur := s.sessionIn(session.StateFailed)
+		got, err := s.eng.BeginReclaim(cur.ID, reason)
+		s.Require().NoError(err, reason)
+		s.Equal("failed", got.Reason)
+	}
+	s.Empty(s.events())
+}
+
+func (s *EngineSuite) TestAnEndBeforeTheSessionWasCreatedReportsZeroDuration() {
+	cur := s.sessionIn(session.StateReady)
+	s.now = cur.Created.Add(-time.Hour)
+	_, err := s.eng.Fail(cur.ID, EndFailed)
+	s.Require().NoError(err)
+	s.InDelta(0, s.events()[0].Data["devsy.duration_ms"], 0)
+}
+
+func (s *EngineSuite) TestRemainingKindsAreMappedDeduplicatedAndSorted() {
+	cur := s.sessionIn(session.StateReclaiming)
+	for _, r := range []provider.Resource{
+		{Kind: "sidecar", Name: "z-side"},
+		{Kind: "gizmo", Name: "unmapped"},
+		{Kind: "workspace", Name: "w1"},
+		{Kind: kindNetwork, Name: "n1"},
+		{Kind: "workspace", Name: "w2"},
+	} {
+		r.Labels = s.poolLabels(cur.ID)
+		s.fake.Add(r)
+	}
+	s.fake.SetError(providertest.MethodReclaim, errBoom)
+	s.now = cur.Updated
+	_, err := s.eng.Reclaim(context.Background(), cur.ID)
+	s.Require().ErrorIs(err, ErrReclaimIncomplete)
+	s.Equal([]any{kindContainer, kindNetwork, "sidecar"},
+		s.events()[0].Data["devsy.reclaim.remaining"])
+}
+
+func (s *EngineSuite) TestOnlyUnmappedKindsLeaveRemainingOut() {
+	cur := s.sessionIn(session.StateReclaiming)
+	s.fake.Add(provider.Resource{Kind: "gizmo", Name: "g", Labels: s.poolLabels(cur.ID)})
+	s.fake.SetError(providertest.MethodReclaim, errBoom)
+	s.now = cur.Updated
+	_, err := s.eng.Reclaim(context.Background(), cur.ID)
+	s.Require().ErrorIs(err, ErrReclaimIncomplete)
+	ev := s.events()[0]
+	s.Equal("partial", ev.Data["devsy.reclaim.result"])
+	s.NotContains(ev.Data, "devsy.reclaim.remaining")
+}
+
+func (s *EngineSuite) poolLabels(id string) map[string]string {
+	labels := map[string]string{provider.LabelPool: testPool}
+	if id != "" {
+		labels[provider.LabelSession] = id
+	}
+	return labels
 }
 
 func (s *EngineSuite) build(store Store) *Engine {

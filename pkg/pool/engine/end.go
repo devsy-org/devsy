@@ -44,24 +44,32 @@ func (e *Engine) BeginReclaim(id string, reason EndReason) (session.Session, err
 }
 
 func (e *Engine) end(id string, to session.State, reason EndReason) (session.Session, error) {
-	if !reason.valid() {
-		return session.Session{}, ErrInvalidEndReason
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	cur, err := e.store.Load(id)
+	cur, err := e.load(id)
 	if err != nil {
 		return session.Session{}, err
 	}
 	if !endable(cur.State) || !session.CanTransition(cur.State, to) {
 		return session.Session{}, ErrNotEndable
 	}
-	if cur.State == session.StateFailed {
-		reason = EndReason(cur.Reason)
-	} else if err := e.writeEnd(cur, reason); err != nil {
+	reason, err = e.recordEnd(cur, reason)
+	if err != nil {
 		return session.Session{}, err
 	}
 	return e.store.Transition(id, cur.State, to, string(reason))
+}
+
+// recordEnd writes session.end for a live session. A failed session already
+// did, so it keeps its stored reason and the supplied one is not checked.
+func (e *Engine) recordEnd(cur session.Session, reason EndReason) (EndReason, error) {
+	if cur.State == session.StateFailed {
+		return EndReason(cur.Reason), nil
+	}
+	if !reason.valid() {
+		return "", ErrInvalidEndReason
+	}
+	return reason, e.writeEnd(cur, reason)
 }
 
 // endable excludes orphaned, which can also reach reclaiming but already

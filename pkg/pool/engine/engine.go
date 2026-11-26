@@ -25,6 +25,8 @@ var (
 	ErrAuditFailed = errors.New("audit write failed")
 	// ErrInvalidEndReason reports an end reason outside the audit enum.
 	ErrInvalidEndReason = errors.New("end reason is not valid")
+	// ErrForeignPool reports a session record that belongs to another pool.
+	ErrForeignPool = errors.New("session belongs to another pool")
 	// ErrNotEndable reports a session that cannot end from its state.
 	ErrNotEndable = errors.New("session cannot end from its state")
 	// ErrNotReclaimable reports a session that is not reclaiming or orphaned.
@@ -49,7 +51,9 @@ type Store interface {
 	CountReclaimAttempt(id string) (session.Session, error)
 }
 
-// Config wires an Engine. Now defaults to time.Now.
+// Config wires an Engine. Now defaults to time.Now. The engine holds its mutex
+// across store, provider and audit calls, so none of them may call back into
+// the same Engine.
 type Config struct {
 	Pool     string
 	Store    Store
@@ -83,6 +87,19 @@ func New(cfg Config) (*Engine, error) {
 		pool: cfg.Pool, store: cfg.Store, auditor: cfg.Audit,
 		provider: cfg.Provider, now: cfg.Now,
 	}, nil
+}
+
+// load reads a session and refuses one the store holds for another pool, so a
+// miswired store cannot make the engine audit or delete the wrong pool's work.
+func (e *Engine) load(id string) (session.Session, error) {
+	cur, err := e.store.Load(id)
+	if err != nil {
+		return session.Session{}, err
+	}
+	if cur.Pool != e.pool {
+		return session.Session{}, ErrForeignPool
+	}
+	return cur, nil
 }
 
 func (e *Engine) audit(typ, id string, data map[string]any) error {
