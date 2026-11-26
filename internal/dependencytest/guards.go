@@ -12,6 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Environment returns a sorted snapshot of the process environment. The
+// environment is process-global, so a test that uses it with Preserve must not
+// run in parallel with tests that change the environment.
 func Environment() []string {
 	env := os.Environ()
 	slices.Sort(env)
@@ -81,6 +84,9 @@ func snapshotEntry(root *os.Root, path string) (Entry, error) {
 	return entry, err
 }
 
+// Preserve records the environment and the tree under root, and fails the test
+// at cleanup if either changed. It detects changes only. It does not restore
+// them, and a failed test leaves the changed state in place.
 func Preserve(t testing.TB, root string) {
 	t.Helper()
 	env := Environment()
