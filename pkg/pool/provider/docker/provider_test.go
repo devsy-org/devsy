@@ -208,6 +208,21 @@ func (s *ProviderSuite) TestDeleteToleratesAnObjectThatVanishedButReportsOtherFa
 	}
 }
 
+func (s *ProviderSuite) TestDeleteReportsTheRemoveErrorWhenTheLookupAfterItFailsToo() {
+	c, _ := s.spawnLike("a", s.sessionID("a"))
+	listed := s.list()
+	boom := errors.New("daemon refused")
+	s.d.rmErr = boom
+	// Delete runs ls, inspect, rm, then the confirming ls.
+	s.d.failAt = len(s.d.commands()) + 4
+	for _, r := range listed {
+		if r.UID == c {
+			s.ErrorIs(s.p.Delete(s.T().Context(), "a", r), boom)
+		}
+	}
+	s.True(s.d.has(c), "the object was never removed, so nil would hide a leak")
+}
+
 func (s *ProviderSuite) TestReclaimRemovesOneSessionContainersFirst() {
 	id := s.sessionID("a")
 	s.spawnLike("a", id)
