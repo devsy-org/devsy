@@ -17,6 +17,7 @@ import ErrorCard from "$lib/components/ErrorCard.svelte"
 import type { CLIError } from "$shared/cli-error.js"
 import {
   providerAdd,
+  dependencyInspect,
   providerAvailable,
   providerInitStreaming,
   providerList,
@@ -29,6 +30,7 @@ import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
+import { dependencyToolForBuiltin } from "$lib/utils/provider-source.js"
 import {
   initialProviderOptionValue,
   normalizeProviderOptionEnums,
@@ -148,6 +150,9 @@ let installedProvider = $derived(
   $providers.find((p) => p.name === providerName),
 )
 let options = $state<Record<string, ProviderOption>>({})
+let dependencyReport = $state<unknown | null>(null)
+let dependencyNeedsGuidance = $state(false)
+let dependencyGuidance = $state("")
 let optionValues = $state<Record<string, string>>({})
 let editedOptionKeys = $state<Record<string, true>>({})
 let loadingOptions = $state(false)
@@ -248,6 +253,9 @@ function reset() {
   adding = false
   providerName = ""
   options = {}
+  dependencyReport = null
+  dependencyNeedsGuidance = false
+  dependencyGuidance = ""
   optionValues = {}
   editedOptionKeys = {}
   loadingOptions = false
@@ -326,24 +334,30 @@ function nameExists(name: string): boolean {
   return get(providers).some((p) => p.name === name)
 }
 
-async function handleSelect() {
-  const operationSession = activeSession
-  const src = source.trim()
+function selectedInstallationName(src: string): string | undefined {
   if (!src) {
     error = "Provider source is required"
-    return
+    return undefined
   }
   if (needsCustomName && !customName.trim()) {
     error = "Enter an installation name for this custom source."
-    return
+    return undefined
   }
   const name = customName.trim() || src
-  const providerSource =
-    selectedProviderOption && name === src ? undefined : src
   if (nameExists(name)) {
     error = `Provider "${name}" already exists. Choose a different name.`
-    return
+    return undefined
   }
+  return name
+}
+
+async function handleSelect() {
+  const operationSession = activeSession
+  const src = source.trim()
+  const name = selectedInstallationName(src)
+  if (name === undefined) return
+  const providerSource =
+    selectedProviderOption && name === src ? undefined : src
 
   error = ""
   adding = true
@@ -370,12 +384,63 @@ async function handleSelect() {
 
   const loaded = await loadProviderOptions(operationSession)
   if (!isCurrentSession(operationSession)) return
+  await inspectWizardDependency(src, operationSession)
+  if (!isCurrentSession(operationSession)) return
   adding = false
   currentStep = "configure"
   if (!loaded) return
-  if (visibleOptions.length === 0) {
+  if (visibleOptions.length === 0 && !dependencyNeedsGuidance) {
     currentStep = "initialize"
     void startInit(operationSession)
+  }
+}
+
+async function inspectWizardDependency(
+  providerSource: string,
+  session: SetupSession,
+): Promise<void> {
+  const tool = dependencyToolForBuiltin(providerSource)
+  if (!tool) return
+  try {
+    const report = await dependencyInspect(tool, session.providerName)
+    if (!isCurrentSession(session)) return
+    dependencyReport = report
+    dependencyNeedsGuidance = false
+    dependencyGuidance = ""
+    if (report === null) return
+    const value = report as {
+      schema?: unknown
+      schemaVersion?: unknown
+      surveyMode?: unknown
+      executed?: unknown
+      availability?: unknown
+      reasonCode?: unknown
+      message?: unknown
+    }
+    const valid =
+      value.schema === "devsy.dependencies.report.v1" &&
+      value.schemaVersion === 1 &&
+      value.surveyMode === "passive" &&
+      value.executed === false &&
+      typeof value.availability === "string" &&
+      typeof value.reasonCode === "string" &&
+      typeof value.message === "string"
+    dependencyNeedsGuidance =
+      !valid ||
+      value.availability === "missing" ||
+      value.availability === "incomplete" ||
+      value.reasonCode === "dependency_path_invalid" ||
+      value.reasonCode === "dependency_platform_unsupported"
+    if (dependencyNeedsGuidance) {
+      dependencyGuidance = valid
+        ? "Check the saved tool path or configuration outside Devsy, then retry inspection."
+        : "Dependency status could not be interpreted safely."
+    }
+  } catch (inspectionError) {
+    if (!isCurrentSession(session)) return
+    dependencyReport = null
+    dependencyNeedsGuidance = true
+    dependencyGuidance = `Could not inspect the provider dependency: ${extractErrorMessage(inspectionError)}`
   }
 }
 
@@ -415,6 +480,7 @@ async function retryLoadProviderOptions() {
 async function handleConfigure() {
   const operationSession = activeSession
   if (!optionsLoaded) return
+  if (dependencyNeedsGuidance && visibleOptions.length === 0) return
   if (visibleOptions.length === 0) {
     error = ""
     currentStep = "initialize"
@@ -448,6 +514,12 @@ async function handleConfigure() {
     return
   }
   if (!isCurrentSession(operationSession)) return
+  await inspectWizardDependency(source.trim(), operationSession)
+  if (!isCurrentSession(operationSession)) return
+  if (dependencyNeedsGuidance) {
+    saving = false
+    return
+  }
   saving = false
   currentStep = "initialize"
   void startInit(operationSession)
@@ -697,6 +769,18 @@ function handleDone() {
               <Spinner class="size-6" />
             </div>
           {:else}
+            {#if dependencyReport !== null || dependencyNeedsGuidance}
+              <section aria-label="Dependency inspection" class="rounded-md border p-3 text-sm">
+                <h3 class="font-medium">Passive dependency status</h3>
+                {#if dependencyReport !== null}
+                  <pre class="mt-2 whitespace-pre-wrap break-words text-xs">{JSON.stringify(dependencyReport, null, 2)}</pre>
+                {/if}
+                {#if dependencyNeedsGuidance}<p class="mt-2 text-muted-foreground">{dependencyGuidance}</p>{/if}
+                {#if dependencyNeedsGuidance && dependencyToolForBuiltin(source.trim())}
+                  <Button variant="outline" class="mt-2" onclick={() => inspectWizardDependency(source.trim(), activeSession)}>Retry inspection</Button>
+                {/if}
+              </section>
+            {/if}
             {#if !optionsLoaded}
               <Button variant="outline" class="w-full" onclick={retryLoadProviderOptions}>
                 Retry loading options
@@ -870,7 +954,7 @@ function handleDone() {
           {#if adding}<Loader2 class="mr-2 h-4 w-4 animate-spin" />Adding...{:else}Continue{/if}
         </Button>
       {:else if currentStep === "configure"}
-        <Button class={footerPrimaryButtonClass} disabled={saving || loadingOptions || !optionsLoaded || hasUnfilledRequired} onclick={handleConfigure}>
+        <Button class={footerPrimaryButtonClass} disabled={saving || loadingOptions || !optionsLoaded || hasUnfilledRequired || (dependencyNeedsGuidance && visibleOptions.length === 0)} onclick={handleConfigure}>
           {#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />Saving...{:else}Continue{/if}
         </Button>
       {:else if currentStep === "initialize"}

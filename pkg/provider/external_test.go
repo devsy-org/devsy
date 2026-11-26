@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devsy-org/devsy/internal/dependencytest"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -153,6 +154,7 @@ func (s *externalConfigSuite) TestPreparedPaths() {
 				// An unrelated tool need not be available to resolve the selected runtime.
 				agent.Binaries["UNUSED_TOOL"] = nil
 				binary.Checksum = strings.ToUpper(binary.Checksum)
+				dependencytest.Preserve(s.T(), root)
 				resolved, err := ResolveExternalRuntimeBinary(agent, root)
 				s.Require().NoError(err)
 				s.Equal(expected, resolved)
@@ -205,6 +207,7 @@ func (s *externalConfigSuite) TestVerificationPreservesFiles() {
 	binary := agent.Binaries["RUNTIME"][0]
 	binary.Path = filepath.Join(root, "runtime λ")
 	s.writeExecutable(binary.Path, "unexpected content")
+	dependencytest.Preserve(s.T(), root)
 	_, err := ResolveExternalRuntimeBinary(agent, root)
 	s.Require().ErrorContains(err, "checksum verification failed")
 	contents, err := os.ReadFile(binary.Path)

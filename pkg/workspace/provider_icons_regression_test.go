@@ -222,7 +222,7 @@ func (s *providerIconSuite) TestCloneWithMissingIconCacheStillRejectsUnavailable
 	// An installed provider may only offer binaries for a different platform.
 	otherOS := updateWindowsOS
 	if runtime.GOOS == otherOS {
-		otherOS = "linux"
+		otherOS = dependencyTestLinuxOS
 	}
 	binary := updateTestBinary("https://example.invalid/runtime", []byte("runtime"))
 	binary.OS = otherOS

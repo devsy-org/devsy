@@ -14,6 +14,7 @@ type ProviderVersionsState =
   typeof providerVersionsStore extends Readable<infer State> ? State : never
 
 const providerOptions = vi.fn()
+const dependencyInspect = vi.fn()
 const providerUse = vi.fn()
 const providerUpdateStreaming = vi.fn()
 const providerDelete = vi.fn()
@@ -40,6 +41,7 @@ const providerVersionsBox = vi.hoisted(() => ({
 let progressCallback: ((progress: CommandProgress) => void) | null = null
 
 vi.mock("$lib/ipc/commands.js", () => ({
+  dependencyInspect: (...args: unknown[]) => dependencyInspect(...args),
   providerOptions: (...args: unknown[]) => providerOptions(...args),
   providerUse: (...args: unknown[]) => providerUse(...args),
   providerUpdateStreaming: (...args: unknown[]) =>
@@ -163,6 +165,7 @@ describe("ProviderSheet", () => {
       },
     }))
     providerOptions.mockReset()
+    dependencyInspect.mockReset().mockResolvedValue(null)
     providerOptions.mockImplementation(async (name: string) => {
       await new Promise((r) => setTimeout(r, MOCK_IPC_DELAY_MS))
       return {
@@ -202,6 +205,85 @@ describe("ProviderSheet", () => {
     expect(providerOptions).toHaveBeenCalledTimes(1)
     expect(providerOptions).toHaveBeenCalledWith("ssh")
     unmount()
+  })
+
+  it("keeps the options form usable while passive inspection is pending", async () => {
+    const inspection = deferred<unknown | null>()
+    dependencyInspect.mockReturnValueOnce(inspection.promise)
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("docker", { source: { raw: "docker" } }),
+        open: true,
+      },
+    })
+
+    expect(await screen.findByRole("textbox", { name: "Token" })).toBeDefined()
+    expect(dependencyInspect).toHaveBeenCalledOnce()
+    inspection.resolve(null)
+    unmount()
+  })
+
+  it("shows missing passive dependency status and tolerates unavailable inspection", async () => {
+    dependencyInspect
+      .mockResolvedValueOnce({
+        schema: "devsy.dependencies.report.v1",
+        schemaVersion: 1,
+        surveyMode: "passive",
+        executed: false,
+        availability: "missing",
+        compatibility: "unknown",
+        reasonCode: "dependency_missing",
+        message:
+          "Passive inspection does not establish executable identity, version, compatibility, or readiness.",
+      })
+      .mockResolvedValueOnce(null)
+    const first = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("renamed-docker", { source: { raw: "docker" } }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    expect(
+      screen.getByText(
+        "Passive inspection does not establish executable identity, version, compatibility, or readiness.",
+      ),
+    ).toBeDefined()
+    expect(
+      screen.getByText("Review dependency requirements outside Devsy."),
+    ).toBeDefined()
+    expect(dependencyInspect).toHaveBeenCalledWith("docker", "renamed-docker")
+    first.unmount()
+
+    const second = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("podman", { source: { raw: "podman" } }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    expect(
+      screen.queryByText(/unavailable in this Devsy CLI version/),
+    ).toBeNull()
+    second.unmount()
+
+    const external = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("docker", {
+          source: {
+            raw: "docker",
+            github: "github.com/example/other-provider",
+          },
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    expect(dependencyInspect).toHaveBeenCalledTimes(2)
+    expect(
+      screen.queryByRole("region", { name: "Dependency status" }),
+    ).toBeNull()
+    external.unmount()
   })
 
   it("uses manifest groups and keeps searched edits without exposing hidden fields", async () => {
@@ -934,6 +1016,38 @@ describe("ProviderSheet", () => {
     await flushAsync()
 
     expect(providerOptions).toHaveBeenCalledTimes(1)
+    unmount()
+  })
+
+  it("clears a built-in dependency report when its source changes under the same name", async () => {
+    dependencyInspect.mockResolvedValue({
+      schema: "devsy.dependencies.report.v1",
+      schemaVersion: 1,
+      surveyMode: "passive",
+      executed: false,
+      availability: "missing",
+      reasonCode: "dependency_missing",
+      message: "Dependency is missing.",
+    })
+    const { rerender, unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("docker", { source: { raw: "docker" } }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    expect(screen.getByText("Dependency is missing.")).toBeDefined()
+
+    await rerender({
+      provider: makeProvider("docker", {
+        source: { github: "github.com/example/provider", raw: "docker" },
+      }),
+      open: true,
+    })
+    await flushAsync()
+    expect(screen.queryByText("Dependency is missing.")).toBeNull()
+    expect(providerOptions).toHaveBeenCalledTimes(2)
+    expect(dependencyInspect).toHaveBeenCalledOnce()
     unmount()
   })
 
