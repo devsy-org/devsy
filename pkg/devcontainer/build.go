@@ -2,7 +2,10 @@ package devcontainer
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -43,17 +46,15 @@ func (r *runner) build(
 	if err != nil {
 		return nil, err
 	}
-
-	// Add extra devcontainer config if provided
-	if options.ExtraDevContainerPath != "" {
+	overlay, err := overlayForParsedConfig(ctx, parsedConfig, options.ExtraDevContainerPath)
+	if err != nil {
+		return nil, err
+	}
+	if overlay != nil {
 		if buildInfo.ImageMetadata == nil {
 			buildInfo.ImageMetadata = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err := config.ParseDevContainerJSONFile(ctx, options.ExtraDevContainerPath)
-		if err != nil {
-			return nil, err
-		}
-		config.AddConfigToImageMetadata(extraConfig, buildInfo.ImageMetadata)
+		config.AddConfigToImageMetadata(overlay, buildInfo.ImageMetadata)
 	}
 
 	return buildInfo, nil
@@ -174,9 +175,11 @@ func (r *runner) buildAndExtendImage(
 	imageBuildInfo, err := r.getImageBuildInfoFromDockerfile(
 		ctx,
 		substitutionContext,
-		string(base.content),
-		parsedConfig.Config.GetArgs(),
-		parsedConfig.Config.GetTarget(),
+		dockerfileInput{
+			content:   string(base.content),
+			buildArgs: parsedConfig.Config.GetArgs(),
+			target:    parsedConfig.Config.GetTarget(),
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get image build info: %w", err)
@@ -251,11 +254,24 @@ func (r *runner) getImageBuildInfoFromImage(
 	substitutionContext *config.SubstitutionContext,
 	imageName string,
 ) (*config.ImageBuildInfo, error) {
-	imageDetails, err := r.inspectImage(ctx, imageName)
-	if err != nil {
-		return nil, err
+	imageDetails := r.imageDetails
+	var err error
+	if imageDetails != nil && imageName != r.imageDetailsImage {
+		return nil, fmt.Errorf("configured image details do not match selected image %q", imageName)
 	}
+	if imageDetails == nil {
+		imageDetails, err = r.inspectImage(ctx, imageName)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return imageBuildInfoFromDetails(substitutionContext, imageDetails)
+}
 
+func imageBuildInfoFromDetails(
+	substitutionContext *config.SubstitutionContext,
+	imageDetails *config.ImageDetails,
+) (*config.ImageBuildInfo, error) {
 	user := "root"
 	if imageDetails.Config.User != "" {
 		user = imageDetails.Config.User
@@ -273,13 +289,19 @@ func (r *runner) getImageBuildInfoFromImage(
 	}, nil
 }
 
+// dockerfileInput is the Dockerfile content and build settings to inspect.
+type dockerfileInput struct {
+	content   string
+	buildArgs map[string]string
+	target    string
+}
+
 func (r *runner) getImageBuildInfoFromDockerfile(
 	ctx context.Context,
 	substitutionContext *config.SubstitutionContext,
-	dockerFileContent string,
-	buildArgs map[string]string,
-	target string,
+	input dockerfileInput,
 ) (*config.ImageBuildInfo, error) {
+	dockerFileContent, buildArgs, target := input.content, input.buildArgs, input.target
 	parsedDockerfile, err := dockerfile.Parse(dockerFileContent)
 	if err != nil {
 		return nil, fmt.Errorf("parse dockerfile: %w", err)
@@ -463,6 +485,7 @@ func (r *runner) buildImage(
 			return nil, err
 		}
 		if prebuilt != nil {
+			buildkit.RecordSkipped(ctx, "prebuild", "prebuild_reused")
 			return prebuilt, nil
 		}
 	}
@@ -509,17 +532,15 @@ func (r *runner) executeBuild(
 		return buildInfo, nil
 	}
 
-	// check if we should fallback to dockerless.
-	// This should only be OSS kubernetes as of March 06, 2025.
-	dockerDriver, ok := r.driver.(driver.ImageDriver)
-	if options.ForceDockerless || !ok {
+	// Without an image backend, builds use the existing dockerless fallback.
+	if options.ForceDockerless || r.imageBackend == nil {
 		if r.workspaceConfig.Agent.Dockerless.Disabled == pkgconfig.BoolTrue {
 			return nil, fmt.Errorf(
 				"cannot build devcontainer because driver is non-docker and dockerless fallback is disabled",
 			)
 		}
 
-		return dockerlessFallback(&dockerlessFallbackParams{
+		buildInfo, err := dockerlessFallback(&dockerlessFallbackParams{
 			localWorkspaceFolder:     r.localWorkspaceFolder,
 			containerWorkspaceFolder: params.substitutionContext.ContainerWorkspaceFolder,
 			parsedConfig:             params.parsedConfig,
@@ -528,9 +549,14 @@ func (r *runner) executeBuild(
 			dockerfileContent:        params.dockerfileContent,
 			options:                  options,
 		})
+		if err == nil {
+			r.generatedBuildArtifacts = buildInfo.GeneratedBuildArtifacts
+			r.generatedBuildContext = buildInfo.GeneratedBuildContext
+		}
+		return buildInfo, err
 	}
 
-	return dockerDriver.BuildDevContainer(ctx, driver.BuildRequest{
+	return r.imageBackend.BuildDevContainer(ctx, driver.BuildRequest{
 		PrebuildHash:         prebuildHash,
 		ParsedConfig:         params.parsedConfig,
 		ExtendedBuildInfo:    params.extendedBuildInfo,
@@ -638,52 +664,151 @@ type dockerlessFallbackParams struct {
 	options                  provider.BuildOptions
 }
 
+// dockerlessFallback stages the devsy build files and returns the dockerless BuildInfo.
 func dockerlessFallback(params *dockerlessFallbackParams) (*config.BuildInfo, error) {
 	parsedConfig := params.parsedConfig
 	extendedBuildInfo := params.extendedBuildInfo
-	options := params.options
 
-	contextPath := config.GetContextPath(parsedConfig.Config)
-	devsyInternalFolder := filepath.Join(contextPath, config.DevsyContextFeatureFolder)
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err := os.MkdirAll(devsyInternalFolder, 0o755)
+	workspaceRoot, contextPath, err := config.CanonicalWorkspacePath(
+		params.localWorkspaceFolder,
+		config.GetContextPath(parsedConfig.Config),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("create devsy folder: %w", err)
+		return nil, err
+	}
+	devsyInternalFolder, err := createDevsyFolder(params.localWorkspaceFolder, contextPath)
+	if err != nil {
+		return nil, err
 	}
 
-	// build dockerfile
-	devsyDockerfile, err := build.RewriteDockerfile(params.dockerfileContent, extendedBuildInfo)
-	if err != nil {
-		return nil, fmt.Errorf("rewrite dockerfile: %w", err)
-	} else if devsyDockerfile == "" {
-		devsyDockerfile = filepath.Join(devsyInternalFolder, "Dockerfile-without-features")
-		err = os.WriteFile(devsyDockerfile, []byte(params.dockerfileContent), 0o600)
+	if extendedBuildInfo.FeaturesBuildInfo != nil {
+		err = validateFeaturesFolder(
+			params.localWorkspaceFolder,
+			extendedBuildInfo.FeaturesBuildInfo.FeaturesFolder,
+			devsyInternalFolder,
+		)
 		if err != nil {
-			return nil, fmt.Errorf("write devsy dockerfile: %w", err)
+			return nil, err
 		}
 	}
 
-	// get build args and target
-	containerContext, containerDockerfile := getContainerContextAndDockerfile(
+	devsyDockerfile, err := writeDevsyDockerfile(
 		params.localWorkspaceFolder,
-		params.containerWorkspaceFolder,
+		params.dockerfileContent,
+		devsyInternalFolder,
+		extendedBuildInfo,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	artifacts, err := dockerlessArtifactManifest(devsyDockerfile, extendedBuildInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	dockerless, err := dockerlessContainerBuild(
+		params,
+		workspaceRoot,
 		contextPath,
 		devsyDockerfile,
 	)
-	buildArgs, target := build.GetBuildArgsAndTarget(parsedConfig, extendedBuildInfo)
+	if err != nil {
+		return nil, err
+	}
 	return &config.BuildInfo{
-		ImageMetadata: extendedBuildInfo.MetadataConfig,
-		Dockerless: &config.BuildInfoDockerless{
-			Context:    containerContext,
-			Dockerfile: containerDockerfile,
+		GeneratedBuildArtifacts: artifacts,
+		GeneratedBuildContext:   contextPath,
+		ImageMetadata:           extendedBuildInfo.MetadataConfig,
+		Dockerless:              dockerless,
+		RegistryCache:           params.options.RegistryCache,
+		Tags:                    params.options.Tag,
+	}, nil
+}
 
-			BuildArgs: buildArgs,
-			Target:    target,
+// createDevsyFolder validates the devsy folder inside the build context and creates it.
+func createDevsyFolder(localWorkspaceFolder, contextPath string) (string, error) {
+	devsyInternalFolder := filepath.Join(contextPath, config.DevsyContextFeatureFolder)
+	if err := validateGeneratedArtifactDestination(
+		localWorkspaceFolder,
+		devsyInternalFolder,
+	); err != nil {
+		return "", err
+	}
+	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
+	err := os.MkdirAll(devsyInternalFolder, 0o755)
+	if err != nil {
+		return "", fmt.Errorf("create devsy folder: %w", err)
+	}
+	return devsyInternalFolder, nil
+}
 
-			User: params.buildInfo.User,
-		},
-		RegistryCache: options.RegistryCache,
-		Tags:          options.Tag,
+// validateFeaturesFolder checks that the generated feature folder is the devsy folder.
+func validateFeaturesFolder(localWorkspaceFolder, featureFolder, devsyInternalFolder string) error {
+	_, canonicalFeatureFolder, pathErr := config.CanonicalWorkspacePath(
+		localWorkspaceFolder,
+		featureFolder,
+	)
+	if pathErr != nil || canonicalFeatureFolder != devsyInternalFolder {
+		return fmt.Errorf("generated feature directory does not match the build context")
+	}
+	return validateGeneratedArtifactDestination(
+		localWorkspaceFolder,
+		filepath.Join(featureFolder, "Dockerfile-with-features"),
+	)
+}
+
+// writeDevsyDockerfile returns the rewritten Dockerfile path, or writes the original
+// Dockerfile into the devsy folder when RewriteDockerfile returns no path.
+func writeDevsyDockerfile(
+	localWorkspaceFolder, dockerfileContent, devsyInternalFolder string,
+	extendedBuildInfo *feature.ExtendedBuildInfo,
+) (string, error) {
+	devsyDockerfile, err := build.RewriteDockerfile(dockerfileContent, extendedBuildInfo)
+	if err != nil {
+		return "", fmt.Errorf("rewrite dockerfile: %w", err)
+	}
+	if devsyDockerfile != "" {
+		return devsyDockerfile, nil
+	}
+	devsyDockerfile = filepath.Join(devsyInternalFolder, "Dockerfile-without-features")
+	err = validateGeneratedArtifactDestination(localWorkspaceFolder, devsyDockerfile)
+	if err != nil {
+		return "", err
+	}
+	err = os.WriteFile(devsyDockerfile, []byte(dockerfileContent), 0o600)
+	if err != nil {
+		return "", fmt.Errorf("write devsy dockerfile: %w", err)
+	}
+	return devsyDockerfile, nil
+}
+
+// dockerlessContainerBuild maps the generated paths into the container and resolves
+// build args and target.
+func dockerlessContainerBuild(
+	params *dockerlessFallbackParams,
+	workspaceRoot, contextPath, devsyDockerfile string,
+) (*config.BuildInfoDockerless, error) {
+	_, containerDockerfilePath, err := config.CanonicalWorkspacePath(
+		params.localWorkspaceFolder,
+		devsyDockerfile,
+	)
+	if err != nil {
+		return nil, err
+	}
+	containerContext, containerDockerfile := getContainerContextAndDockerfile(
+		workspaceRoot,
+		params.containerWorkspaceFolder,
+		contextPath,
+		containerDockerfilePath,
+	)
+	buildArgs, target := build.GetBuildArgsAndTarget(params.parsedConfig, params.extendedBuildInfo)
+	return &config.BuildInfoDockerless{
+		Context:    containerContext,
+		Dockerfile: containerDockerfile,
+		BuildArgs:  buildArgs,
+		Target:     target,
+		User:       params.buildInfo.User,
 	}, nil
 }
 
@@ -712,4 +837,136 @@ func featureSecretOpts(options provider.BuildOptions) *feature.SecretOptions {
 		Prompter:    &feature.TerminalSecretPrompter{},
 	}
 	return opts
+}
+
+// Later additions must not acquire ignore exceptions.
+func dockerlessArtifactManifest(
+	dockerfile string,
+	extended *feature.ExtendedBuildInfo,
+) ([]config.GeneratedBuildArtifact, error) {
+	paths, err := generatedArtifactFiles(dockerfile, extended)
+	if err != nil {
+		return nil, err
+	}
+	var artifacts []config.GeneratedBuildArtifact
+	seen := map[string]bool{}
+	for _, p := range paths {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		artifact, err := recordGeneratedArtifact(p)
+		if err != nil {
+			return nil, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	return artifacts, nil
+}
+
+func generatedArtifactFiles(
+	dockerfile string,
+	extended *feature.ExtendedBuildInfo,
+) ([]string, error) {
+	paths := []string{dockerfile}
+	if extended.FeaturesBuildInfo == nil {
+		return paths, nil
+	}
+	err := filepath.WalkDir(
+		extended.FeaturesBuildInfo.FeaturesFolder,
+		func(p string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			include, err := includeGeneratedArtifactEntry(p, entry)
+			if err != nil {
+				return err
+			}
+			if include {
+				paths = append(paths, p)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("record generated feature files: %w", err)
+	}
+	return paths, nil
+}
+
+func includeGeneratedArtifactEntry(p string, entry fs.DirEntry) (bool, error) {
+	if !entry.IsDir() {
+		return true, nil
+	}
+	entries, err := os.ReadDir(p)
+	return len(entries) == 0, err
+}
+
+func recordGeneratedArtifact(p string) (config.GeneratedBuildArtifact, error) {
+	info, err := os.Lstat(p)
+	if err != nil {
+		return config.GeneratedBuildArtifact{}, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(p)
+		return config.GeneratedBuildArtifact{Path: p, LinkTarget: target}, err
+	}
+	if info.IsDir() {
+		return config.GeneratedBuildArtifact{Path: p, Directory: true}, nil
+	}
+	if !info.Mode().IsRegular() {
+		return config.GeneratedBuildArtifact{}, fmt.Errorf(
+			"generated build artifact %q is not a regular file",
+			p,
+		)
+	}
+	// #nosec G304 -- files produced by the current build.
+	f, err := os.Open(p)
+	if err != nil {
+		return config.GeneratedBuildArtifact{}, err
+	}
+	h := sha256.New()
+	_, err = io.Copy(h, f)
+	closeErr := f.Close()
+	if err != nil {
+		return config.GeneratedBuildArtifact{}, err
+	}
+	if closeErr != nil {
+		return config.GeneratedBuildArtifact{}, closeErr
+	}
+	return config.GeneratedBuildArtifact{Path: p, SHA256: fmt.Sprintf("%x", h.Sum(nil))}, nil
+}
+
+func validateGeneratedArtifactDestination(workspace, destination string) error {
+	root, absolute, err := config.CanonicalWorkspacePath(workspace, destination)
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(root, absolute)
+	if err != nil {
+		return fmt.Errorf(
+			"generated build artifact destination %q is outside workspace",
+			destination,
+		)
+	}
+	return rejectArtifactDestinationSymlinks(root, relative)
+}
+
+func rejectArtifactDestinationSymlinks(root, relative string) error {
+	current := root
+	components := append([]string{""}, strings.Split(relative, string(filepath.Separator))...)
+	for _, component := range components {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("generated build artifact destination %q contains a symlink", current)
+		}
+	}
+	return nil
 }

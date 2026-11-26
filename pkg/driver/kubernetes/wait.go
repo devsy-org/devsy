@@ -2,32 +2,30 @@ package kubernetes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/driver/kubernetes/throttledlogger"
-	"github.com/devsy-org/devsy/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*corev1.Pod, error) {
+func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) error {
 	throttledLogger := throttledlogger.NewThrottledLogger(time.Second * 5)
 
 	timeoutDuration, err := time.ParseDuration(k.options.PodTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("parse pod timeout: %w", err)
+		return fmt.Errorf("parse pod timeout: %w", err)
 	}
 
 	started := time.Now()
 	var pod *corev1.Pod
 	err = wait.PollUntilContextTimeout(
 		ctx,
-		time.Second,
+		podPollInterval,
 		timeoutDuration,
 		true,
 		func(ctx context.Context) (bool, error) {
@@ -36,10 +34,10 @@ func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*core
 			if err != nil {
 				return false, err
 			} else if pod == nil {
-				return true, nil
+				return false, fmt.Errorf("pod %q disappeared while waiting for it to start", id)
 			}
 
-			return k.evaluatePodStatus(ctx, pod, &podStatusParams{
+			return k.evaluatePodStatus(pod, &podStatusParams{
 				id:              id,
 				started:         started,
 				throttledLogger: throttledLogger,
@@ -47,7 +45,7 @@ func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*core
 		},
 	)
 
-	return pod, err
+	return err
 }
 
 type podStatusParams struct {
@@ -57,7 +55,6 @@ type podStatusParams struct {
 }
 
 func (k *KubernetesDriver) evaluatePodStatus(
-	ctx context.Context,
 	pod *corev1.Pod,
 	params *podStatusParams,
 ) (bool, error) {
@@ -85,7 +82,7 @@ func (k *KubernetesDriver) evaluatePodStatus(
 		return false, err
 	}
 
-	return k.checkContainerStatuses(ctx, pod, params.id, params.throttledLogger)
+	return k.checkContainerStatuses(pod, params.id, params.throttledLogger)
 }
 
 func podConditionMessage(pod *corev1.Pod, started time.Time) string {
@@ -204,13 +201,12 @@ func initContainerReady(
 }
 
 func (k *KubernetesDriver) checkContainerStatuses(
-	ctx context.Context,
 	pod *corev1.Pod,
 	id string,
 	throttledLogger *throttledlogger.ThrottledLogger,
 ) (bool, error) {
 	for _, c := range pod.Status.ContainerStatuses {
-		proceed, err := k.checkContainerStatus(ctx, id, &c, throttledLogger)
+		proceed, err := k.checkContainerStatus(id, &c, throttledLogger)
 		if err != nil || !proceed {
 			return false, err
 		}
@@ -220,22 +216,10 @@ func (k *KubernetesDriver) checkContainerStatuses(
 }
 
 func (k *KubernetesDriver) checkContainerStatus(
-	ctx context.Context,
 	id string,
 	c *corev1.ContainerStatus,
 	throttledLogger *throttledlogger.ThrottledLogger,
 ) (bool, error) {
-	// delete succeeded pods
-	if IsTerminated(c) && Succeeded(c) {
-		// delete pod that is succeeded
-		log.Debugf("Delete Pod %q because it is succeeded", id)
-		if err := k.waitPodDeleted(ctx, id); err != nil {
-			return false, err
-		}
-
-		return false, nil
-	}
-
 	if IsWaiting(c) {
 		return handleContainerWaiting(id, c, throttledLogger)
 	}
@@ -335,6 +319,8 @@ func restartableInitContainer(p *corev1.ContainerRestartPolicy) bool {
 	return p != nil && *p == corev1.ContainerRestartPolicyAlways
 }
 
+// waitPodDeleted deletes the pod for an explicit stop and waits until the API
+// server reports it gone.
 func (k *KubernetesDriver) waitPodDeleted(ctx context.Context, id string) error {
 	err := k.client.Client().CoreV1().Pods(k.namespace).Delete(ctx, id, metav1.DeleteOptions{
 		GracePeriodSeconds: &[]int64{10}[0],
@@ -347,23 +333,5 @@ func (k *KubernetesDriver) waitPodDeleted(ctx context.Context, id string) error 
 		return fmt.Errorf("delete pod: %w", err)
 	}
 
-	err = wait.PollUntilContextTimeout(
-		ctx,
-		time.Second,
-		time.Minute*2,
-		true,
-		func(ctx context.Context) (bool, error) {
-			_, err := k.client.Client().CoreV1().Pods(k.namespace).Get(ctx, id, metav1.GetOptions{})
-			if err != nil {
-				return true, nil
-			}
-
-			return false, nil
-		},
-	)
-	if err != nil {
-		return errors.New("timeout waiting for pod to be deleted")
-	}
-
-	return nil
+	return k.waitPodGone(ctx, id, "")
 }

@@ -43,6 +43,9 @@ type PostStartOptions struct {
 	Arch                      string
 	DownloadURL               string
 	PreferInContainerDownload bool
+	// SkipVersionCheck permits custom agent versions while retaining transfer
+	// completeness and executable validation.
+	SkipVersionCheck bool
 }
 
 // Cleaner removes the resources a delivery created for a workspace. Cleanup is
@@ -56,4 +59,18 @@ type AgentDelivery interface {
 	Phase() DeliveryPhase
 	DeliverPreStart(ctx context.Context, opts PreStartOptions) error
 	DeliverPostStart(ctx context.Context, opts PostStartOptions) error
+}
+
+// BinarySourcePolicy reports whether delivery consumes the supplied binary source
+// and architecture. Shell injection resolves architecture inside the container.
+type BinarySourcePolicy interface {
+	UsesBinarySource() bool
+}
+
+// UsesBinarySource preserves binary streaming for strategies without an explicit policy.
+func UsesBinarySource(strategy AgentDelivery) bool {
+	if policy, ok := strategy.(BinarySourcePolicy); ok {
+		return policy.UsesBinarySource()
+	}
+	return true
 }

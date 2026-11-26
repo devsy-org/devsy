@@ -1,0 +1,160 @@
+package ssh
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
+)
+
+// stoppedHoldWindow spans the health loop's 30-second, three-failure threshold.
+const stoppedHoldWindow = 100 * time.Second
+
+var _ = ginkgo.Describe(
+	"devsy workspace task cancel",
+	ginkgo.Label("task-cancel"),
+	ginkgo.Ordered,
+	func() {
+		var initialDir string
+
+		ginkgo.BeforeEach(func() {
+			var err error
+			initialDir, err = os.Getwd()
+			framework.ExpectNoError(err)
+		})
+
+		ginkgo.It("should cancel a detached tunnel task and keep the workspace stopped",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
+
+				f := setupTunnelProvider(ctx, initialDir)
+
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				})
+
+				taskID, err := startDetachedTunnelUp(ctx, f, tempDir)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceTaskCancel(cleanupCtx, taskID)
+				})
+
+				active := waitDetachedTunnelReady(ctx, f, taskID)
+				gomega.Expect(active.PID).NotTo(gomega.BeZero(),
+					"detached up worker should publish its pid")
+
+				framework.ExpectNoError(f.DevsyWorkspaceTaskCancel(ctx, taskID))
+
+				canceled := waitDetachedTaskCanceled(ctx, f, taskID)
+				gomega.Expect(canceled.Error).To(gomega.Equal("canceled"))
+
+				gomega.Eventually(func() bool {
+					running, err := command.IsRunning(strconv.Itoa(active.PID))
+					return err == nil && !running
+				}).WithContext(ctx).WithTimeout(30*time.Second).WithPolling(time.Second).
+					Should(gomega.BeTrue(),
+						"detached worker process should be gone after cancel")
+
+				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
+
+				expectWorkspaceStaysStopped(ctx, f, tempDir)
+			},
+		)
+
+		ginkgo.It("should retain nested status history for a detached worker with status disabled",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
+				f := setupTunnelProvider(ctx, initialDir)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				})
+
+				taskID, err := startDetachedTunnelUp(ctx, f, tempDir, "--no-status")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceTaskCancel(cleanupCtx, taskID)
+				})
+				waitDetachedTunnelReady(ctx, f, taskID)
+				framework.ExpectNoError(f.DevsyWorkspaceTaskCancel(ctx, taskID))
+				canceled := waitDetachedTaskCanceled(ctx, f, taskID)
+				gomega.Expect(canceled.Error).To(gomega.Equal("canceled"))
+
+				followOut, _, followErr := f.ExecCommandCapture(ctx, []string{
+					"workspace", "task", "logs", taskID, "--follow", "--result-format=json",
+				})
+				gomega.Expect(followErr).To(gomega.HaveOccurred())
+				expectNestedWorkerCompletion(followOut)
+			},
+		)
+
+		ginkgo.It("should quiesce a persisted detached task when stop runs without a task ID",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
+
+				f := setupTunnelProvider(ctx, initialDir)
+
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+				})
+
+				taskID, err := startDetachedTunnelUp(ctx, f, tempDir)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceTaskCancel(cleanupCtx, taskID)
+				})
+
+				waitDetachedTunnelReady(ctx, f, taskID)
+
+				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
+
+				canceled := waitDetachedTaskCanceled(ctx, f, taskID)
+				gomega.Expect(canceled.Error).To(gomega.Equal("canceled"))
+
+				expectWorkspaceStaysStopped(ctx, f, tempDir)
+			},
+		)
+	},
+)
+
+func expectNestedWorkerCompletion(output string) {
+	found := false
+	for line := range strings.SplitSeq(output, "\n") {
+		var event struct {
+			Kind              string `json:"kind"`
+			ParentOperationID string `json:"parentOperationId"`
+			State             string `json:"state"`
+		}
+		if json.Unmarshal([]byte(line), &event) != nil || event.Kind != "status" {
+			continue
+		}
+		if event.ParentOperationID != "" &&
+			(event.State == "succeeded" || event.State == "failed") {
+			found = true
+			break
+		}
+	}
+	gomega.Expect(found).To(gomega.BeTrue(),
+		"follow output should contain a nested worker completion with a parent operation ID: %s", output)
+}
+
+func expectWorkspaceStaysStopped(ctx context.Context, f *framework.Framework, workspace string) {
+	gomega.Consistently(func() string {
+		status, err := f.DevsyStatus(ctx, workspace)
+		if err != nil {
+			return "status error: " + err.Error()
+		}
+		return status.State
+	}).WithContext(ctx).WithTimeout(stoppedHoldWindow).WithPolling(10 * time.Second).
+		Should(gomega.Equal(client.StatusStopped))
+}

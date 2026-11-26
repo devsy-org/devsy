@@ -7,11 +7,16 @@ import (
 
 // LocalSource adapts the Devsy Store to the generic source interface.
 type LocalSource struct {
-	store   Store
+	store   localSecretReader
 	context string
 }
 
-func NewLocalSource(store Store, contextName string) *LocalSource {
+type localSecretReader interface {
+	Get(string, string) (string, error)
+	Meta(string, string) (SecretMeta, error)
+}
+
+func NewLocalSource(store localSecretReader, contextName string) *LocalSource {
 	return &LocalSource{store: store, context: contextName}
 }
 

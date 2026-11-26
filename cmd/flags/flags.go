@@ -16,10 +16,12 @@ type GlobalFlags struct {
 	Owner     platform.OwnerFilter
 
 	LogOutput    string
+	LogLevel     string
 	ResultFormat string
 	Verbosity    int
 	Quiet        bool
 	Debug        bool
+	NoStatus     bool
 }
 
 // SetGlobalFlags applies the global flags.
@@ -42,6 +44,12 @@ func registerCoreFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 		"",
 		"If defined will override the default devsy home",
 	)
+	flags.StringVar(
+		&globalFlags.LogLevel,
+		names.LogLevel,
+		"",
+		"The log level override. Can be error, warn, info, debug, or trace",
+	)
 	flags.StringVar(&globalFlags.Context, names.Context, "", "The context to use")
 	flags.StringVar(
 		&globalFlags.Provider,
@@ -52,6 +60,10 @@ func registerCoreFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 }
 
 func registerOutputFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
+	flags.BoolVar(
+		&globalFlags.NoStatus, names.NoStatus, false,
+		"Suppress live CLI progress messages; preserve results, errors, and recorded events",
+	)
 	flags.StringVar(
 		&globalFlags.ResultFormat,
 		names.ResultFormat,
@@ -80,7 +92,7 @@ func registerVerbosityFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 		names.Quiet,
 		"q",
 		false,
-		"Suppress all log output except fatal errors",
+		"Suppress all log output except errors",
 	)
 	flags.BoolVar(
 		&globalFlags.Debug,
@@ -91,7 +103,7 @@ func registerVerbosityFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 }
 
 func registerHiddenFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
-	flags.Var(&globalFlags.Owner, names.Owner, "Show pro workspaces for owner")
+	flags.Var(&globalFlags.Owner, names.Owner, "Show platform workspaces for owner")
 	_ = flags.MarkHidden(names.Owner)
 	flags.StringVar(&globalFlags.UID, names.UID, "", "Set UID for workspace")
 	_ = flags.MarkHidden(names.UID)

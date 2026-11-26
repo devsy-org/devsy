@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/ci"
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
+	"github.com/devsy-org/devsy/cmd/container"
 	"github.com/devsy-org/devsy/cmd/context"
 	envcmd "github.com/devsy-org/devsy/cmd/env"
 	"github.com/devsy-org/devsy/cmd/feature"
@@ -21,7 +22,8 @@ import (
 	cmdinternal "github.com/devsy-org/devsy/cmd/internal"
 	"github.com/devsy-org/devsy/cmd/machine"
 	"github.com/devsy-org/devsy/cmd/mcp"
-	"github.com/devsy-org/devsy/cmd/pro"
+	"github.com/devsy-org/devsy/cmd/platform"
+	poolcmd "github.com/devsy-org/devsy/cmd/pool"
 	"github.com/devsy-org/devsy/cmd/provider"
 	secretscmd "github.com/devsy-org/devsy/cmd/secrets"
 	snapshotcmd "github.com/devsy-org/devsy/cmd/snapshot"
@@ -30,7 +32,9 @@ import (
 	wsCmdPkg "github.com/devsy-org/devsy/cmd/workspace"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/clihelp"
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/flatpak"
@@ -41,6 +45,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 	"k8s.io/klog/v2"
@@ -54,14 +59,9 @@ const (
 	flagLogOutput = "--" + names.LogOutput
 	flagLogFormat = "--" + names.LogFormat
 
-	// envProEnabled gates registration of the `pro` command tree. The pro
-	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
-	// expose it (e.g. for internal testing).
-	envProEnabled = "DEVSY_PRO_ENABLED"
-
 	internalCommand = "internal"
 
-	rootLong = "Devsy — standardized development workspaces built on devcontainers, " +
+	rootLong = "Devsy - standardized development workspaces built on devcontainers, " +
 		"running on Docker, Kubernetes, cloud providers, and SSH remote hosts."
 
 	rootExample = `- Start a workspace from the current directory:
@@ -77,8 +77,10 @@ const (
     $ devsy provider add docker`
 )
 
-func proEnabled() bool {
-	return os.Getenv(envProEnabled) == "true"
+// platformEnabled keeps the platform command tree off until DEVSY_PLATFORM_ENABLED=true;
+// the feature is not ready for general use.
+func platformEnabled() bool {
+	return config.IsPlatformEnabled()
 }
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
@@ -102,6 +104,31 @@ func logOutputFromArgs(args []string) string {
 	return ""
 }
 
+func defaultLogLevel(globalFlags *flags.GlobalFlags) string {
+	devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
+	if err != nil {
+		return log.DefaultLevel
+	}
+	if level := devsyConfig.ContextOption(config.ContextOptionLogLevel); level != "" {
+		return level
+	}
+	return log.DefaultLevel
+}
+
+func validateLogLevel(level string) error {
+	if level == "" {
+		return nil
+	}
+	if _, ok := log.LevelFromString(level); !ok {
+		return fmt.Errorf(
+			"invalid log level %q, expected one of: %s",
+			level,
+			strings.Join(log.ValidLevels(), ", "),
+		)
+	}
+	return nil
+}
+
 func isMachineConsumer(logOutput string, isInternal bool) bool {
 	switch {
 	case isInternal:
@@ -116,6 +143,7 @@ func isMachineConsumer(logOutput string, isInternal bool) bool {
 }
 
 func Execute() {
+	command.MarkInheritedFDsCloseOnExec()
 	os.Exit(run())
 }
 
@@ -190,11 +218,14 @@ func configureOutput(
 		}
 	}
 	log.Init(log.Config{
-		Verbosity: globalFlags.Verbosity,
-		Quiet:     globalFlags.Quiet,
-		Debug:     globalFlags.Debug,
-		Format:    format,
-		Redactor:  secrets.NewEnvironmentRedactor(os.Environ()),
+		Verbosity:    globalFlags.Verbosity,
+		Quiet:        globalFlags.Quiet,
+		Debug:        globalFlags.Debug,
+		Level:        globalFlags.LogLevel,
+		DefaultLevel: defaultLogLevel(globalFlags),
+		VerbositySet: rootCmd.PersistentFlags().Changed(names.Verbose),
+		Format:       format,
+		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 	})
 	return machineMode
 }
@@ -217,6 +248,9 @@ func exitCodeForError(err error, machineMode bool) int {
 		return exitcode.Success
 	}
 
+	if code, ok := unsafeOutputExitCode(err); ok {
+		return code
+	}
 	cliErr := clierr.Classify(err)
 
 	// Stay transparent for unclassified child-process exits (e.g. `devsy ssh -- cmd`).
@@ -236,16 +270,52 @@ func exitCodeForError(err error, machineMode bool) int {
 	return exitcode.Failure
 }
 
+func unsafeOutputExitCode(err error) (int, bool) {
+	unsafe, ok := errors.AsType[interface {
+		error
+		SkipFinalStatus() bool
+	}](err)
+	if !ok || !unsafe.SkipFinalStatus() {
+		return 0, false
+	}
+	if commandExit, ok := errors.AsType[*workspace.CommandExitError](err); ok {
+		return commandExit.Code, true
+	}
+	return exitcode.Failure, true
+}
+
+func commandExitCode(commandExit *workspace.CommandExitError, machineMode bool) int {
+	if machineMode || commandExit.Cause != nil {
+		renderCLIError(clierr.Classify(commandExit), machineMode)
+	}
+	return commandExit.Code
+}
+
 func passthroughExitCode(err error, machineMode bool) (int, bool) {
+	if commandExit, ok := errors.AsType[*workspace.CommandExitError](err); ok {
+		return commandExitCode(commandExit, machineMode), true
+	}
 	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
 		if machineMode {
-			log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
+			renderCLIError(
+				clierr.Classify(fmt.Errorf(
+					"SSH command failed with exit code %d",
+					sshExitErr.ExitStatus(),
+				)),
+				true,
+			)
 		}
 		return sshExitErr.ExitStatus(), true
 	}
 	if execExitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		if machineMode {
-			log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
+			renderCLIError(
+				clierr.Classify(fmt.Errorf(
+					"command failed with exit code %d",
+					execExitErr.ExitCode(),
+				)),
+				true,
+			)
 		}
 		return execExitErr.ExitCode(), true
 	}
@@ -257,32 +327,43 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 		return
 	}
 	if machineMode {
-		log.JSONError(cliErr)
+		if err := devcconfig.WriteCLIErrorJSON(os.Stderr, cliErr); err != nil {
+			log.Errorf("failed to write CLI error envelope: %v", err)
+		}
 		return
 	}
+	writeCLIErrorText(cliErr)
+}
+
+func writeCLIErrorText(cliErr *clierr.CLIError) {
 	redactor := secrets.NewEnvironmentRedactor(os.Environ())
 	fmt.Fprintf(os.Stderr, "Error: %s\n", redactor.Redact(cliErr.Message))
 	if cliErr.Code != "" && cliErr.Code != clierr.CodeUnknown {
 		fmt.Fprintf(os.Stderr, "Error code: %s\n", redactor.Redact(string(cliErr.Code)))
 	}
-	if len(cliErr.Context) > 0 {
-		fmt.Fprintln(os.Stderr, "Context:")
-		keys := make([]string, 0, len(cliErr.Context))
-		for key := range cliErr.Context {
-			keys = append(keys, key)
-		}
-		slices.Sort(keys)
-		for _, key := range keys {
-			fmt.Fprintf(
-				os.Stderr,
-				"  %s: %s\n",
-				redactor.Redact(key),
-				redactor.Redact(cliErr.Context[key]),
-			)
-		}
-	}
+	writeCLIErrorContext(cliErr.Context, redactor)
 	if cliErr.Hint != "" {
 		fmt.Fprintf(os.Stderr, "Try: %s\n", redactor.Redact(cliErr.Hint))
+	}
+}
+
+func writeCLIErrorContext(errContext map[string]string, redactor *secrets.Redactor) {
+	if len(errContext) == 0 {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "Context:")
+	keys := make([]string, 0, len(errContext))
+	for key := range errContext {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		fmt.Fprintf(
+			os.Stderr,
+			"  %s: %s\n",
+			redactor.Redact(key),
+			redactor.Redact(errContext[key]),
+		)
 	}
 }
 
@@ -307,38 +388,7 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
 	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
-		cobraCmd.SilenceUsage = true
-		logFormat := globalFlags.LogOutput
-		if logFormat == "" {
-			if isMachineConsumer("", topLevelCommand(cobraCmd) == internalCommand) {
-				logFormat = logOutputJSON
-			} else {
-				logFormat = logOutputText
-			}
-		}
-
-		log.Init(log.Config{
-			Verbosity: globalFlags.Verbosity,
-			Quiet:     globalFlags.Quiet,
-			Debug:     globalFlags.Debug,
-			Format:    logFormat,
-			Redactor:  secrets.NewEnvironmentRedactor(os.Environ()),
-		})
-		klog.SetLogger(logr.New(log.LogrSink()))
-
-		if globalFlags.DevsyHome != "" {
-			_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
-		}
-
-		devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
-		if err == nil {
-			current := telemetry.FromContext(cobraCmd.Context())
-			cobraCmd.SetContext(telemetry.WithCollector(
-				cobraCmd.Context(),
-				telemetry.ApplyCLIConfig(devsyConfig, current),
-			))
-		}
-		return nil
+		return rootPreRun(cobraCmd, globalFlags, persistentFlags)
 	}
 	rootCmd.PersistentPostRunE = func(_ *cobra.Command, _ []string) error {
 		if globalFlags.DevsyHome != "" {
@@ -356,12 +406,14 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	rootCmd.AddCommand(
 		ci.NewCICmd(globalFlags),
 		cliconfig.NewConfigCmd(globalFlags),
+		container.NewContainerCmd(globalFlags, rootCmd.PersistentPreRunE),
 		context.NewContextCmd(globalFlags),
 		envcmd.NewEnvCmd(globalFlags),
 		feature.NewFeatureCmd(globalFlags),
 		ide.NewIDECmd(globalFlags),
 		machine.NewMachineCmd(globalFlags),
 		mcp.NewMCPCmd(globalFlags),
+		poolcmd.NewPoolCmd(globalFlags),
 		provider.NewProviderCmd(globalFlags),
 		secretscmd.NewSecretsCmd(globalFlags),
 		snapshotcmd.NewSnapshotCmd(globalFlags),
@@ -370,7 +422,70 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		wsCmdPkg.NewWorkspaceCmd(globalFlags),
 		cmdinternal.NewInternalCmd(globalFlags),
 	)
-	if proEnabled() {
-		rootCmd.AddCommand(pro.NewProCmd(globalFlags))
+	if platformEnabled() {
+		rootCmd.AddCommand(platform.NewPlatformCmd(globalFlags))
 	}
+}
+
+func rootPreRun(
+	cobraCmd *cobra.Command,
+	globalFlags *flags.GlobalFlags,
+	persistentFlags *pflag.FlagSet,
+) error {
+	if err := validateLogLevel(globalFlags.LogLevel); err != nil {
+		return err
+	}
+	if globalFlags.DevsyHome != "" {
+		_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
+	}
+	if err := checkPendingContextDeletion(cobraCmd); err != nil {
+		return err
+	}
+	cobraCmd.SilenceUsage = true
+
+	log.Init(log.Config{
+		Verbosity:    globalFlags.Verbosity,
+		Quiet:        globalFlags.Quiet,
+		Debug:        globalFlags.Debug,
+		Level:        globalFlags.LogLevel,
+		DefaultLevel: defaultLogLevel(globalFlags),
+		VerbositySet: persistentFlags.Changed(names.Verbose),
+		Format:       resolveLogFormat(cobraCmd, globalFlags.LogOutput),
+		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
+	})
+	klog.SetLogger(logr.New(log.LogrSink()))
+
+	devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
+	if err == nil {
+		current := telemetry.FromContext(cobraCmd.Context())
+		cobraCmd.SetContext(telemetry.WithCollector(
+			cobraCmd.Context(),
+			telemetry.ApplyCLIConfig(devsyConfig, current),
+		))
+	}
+	return nil
+}
+
+// checkPendingContextDeletion blocks commands until a crashed deletion is
+// resumed, because its stores are only partially cleaned. It reads only
+// recovery metadata; the matching delete command validates and resumes under
+// the config lock.
+func checkPendingContextDeletion(cobraCmd *cobra.Command) error {
+	parent := cobraCmd.Parent()
+	isContextDelete := cobraCmd.Name() == "delete" && parent != nil &&
+		parent.Name() == "context"
+	if isContextDelete {
+		return nil
+	}
+	return config.CheckPendingContextDeletion()
+}
+
+func resolveLogFormat(cobraCmd *cobra.Command, logFormat string) string {
+	if logFormat != "" {
+		return logFormat
+	}
+	if isMachineConsumer("", topLevelCommand(cobraCmd) == internalCommand) {
+		return logOutputJSON
+	}
+	return logOutputText
 }

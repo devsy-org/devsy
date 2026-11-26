@@ -5,6 +5,7 @@ import electronUpdater, { type AppUpdater } from "electron-updater"
 import semver from "semver"
 import { trackEvent } from "./analytics.js"
 import { clearAppQuitting, markAppQuitting } from "./app-lifecycle.js"
+import { mainLog } from "./logging.js"
 
 export type ReleaseChannel = "stable" | "beta"
 
@@ -39,7 +40,8 @@ export function classifyCandidate(
   candidateVersion: string,
 ): CandidateResult {
   const current = semver.clean(currentVersion) ?? semver.valid(currentVersion)
-  const candidate = semver.clean(candidateVersion) ?? semver.valid(candidateVersion)
+  const candidate =
+    semver.clean(candidateVersion) ?? semver.valid(candidateVersion)
 
   if (!current || !candidate) {
     return { kind: "invalid", version: candidateVersion }
@@ -93,7 +95,7 @@ export function logUpdateDecision(params: UpdateDecisionLog): void {
     `result=${params.result}`,
     params.error ? `error=${params.error}` : null,
   ].filter(Boolean)
-  console.info(parts.join(" "))
+  mainLog.info(parts.join(" "))
 }
 
 export interface UpdateProgress {
@@ -159,7 +161,9 @@ function settingsPath(): string {
 
 function loadSettings(): PersistedSettings {
   try {
-    return JSON.parse(readFileSync(settingsPath(), "utf-8")) as PersistedSettings
+    return JSON.parse(
+      readFileSync(settingsPath(), "utf-8"),
+    ) as PersistedSettings
   } catch {
     return {}
   }
@@ -173,7 +177,7 @@ function saveSettings(patch: PersistedSettings): void {
     writeFileSync(tmp, JSON.stringify({ ...current, ...patch }))
     renameSync(tmp, target)
   } catch (err) {
-    console.warn("[updater] failed to persist settings:", err)
+    mainLog.warn("[updater] failed to persist settings:", err)
   }
 }
 
@@ -188,7 +192,7 @@ function getCurrentVersion(): string | null {
     const v = app.getVersion()
     return v || null
   } catch (err) {
-    console.error(
+    mainLog.error(
       "Auto-update: unable to read app version:",
       err instanceof Error ? err.message : String(err),
     )
@@ -229,7 +233,7 @@ function setStatus(status: UpdateStatus): void {
     try {
       listener(status)
     } catch (error) {
-      console.error("[updater] status listener failed:", error)
+      mainLog.error("[updater] status listener failed:", error)
     }
   }
 }
@@ -260,11 +264,16 @@ function normalizeReleaseNotes(
 
 function classifyError(err: Error): UpdateErrorCode {
   const m = err.message.toLowerCase()
-  if (m.includes("cannot find channel") || (m.includes("404") && m.includes(".yml"))) {
+  if (
+    m.includes("cannot find channel") ||
+    (m.includes("404") && m.includes(".yml"))
+  ) {
     return "channel-missing"
   }
-  if (m.includes("net::") || m.includes("network") || m.includes("enotfound")) return "network"
-  if (m.includes("sha512") || m.includes("checksum") || m.includes("integrity")) return "verification"
+  if (m.includes("net::") || m.includes("network") || m.includes("enotfound"))
+    return "network"
+  if (m.includes("sha512") || m.includes("checksum") || m.includes("integrity"))
+    return "verification"
   return "feed-error"
 }
 
@@ -515,7 +524,7 @@ export async function initAutoUpdater(
         currentVersion,
         code,
       })
-      console.warn("Auto-update: channel manifest missing:", err.message)
+      mainLog.warn("Auto-update: channel manifest missing:", err.message)
       return
     }
     setStatus({
@@ -524,7 +533,7 @@ export async function initAutoUpdater(
       code,
       error: err.message,
     })
-    console.error("Auto-update error:", err.message)
+    mainLog.error("Auto-update error:", err.message)
   })
 
   const runBackgroundCheck = (): void => {
@@ -534,7 +543,7 @@ export async function initAutoUpdater(
     checkInFlight = true
     void runUpdateCheck(autoUpdater)
       .catch((err: Error) => {
-        console.error("Update check failed:", err.message)
+        mainLog.error("Update check failed:", err.message)
       })
       .finally(() => {
         checkInFlight = false
@@ -578,9 +587,7 @@ function getUpdater(): AppUpdater | null {
   return autoUpdater
 }
 
-async function runUpdateCheck(
-  autoUpdater: AppUpdater,
-): Promise<void> {
+async function runUpdateCheck(autoUpdater: AppUpdater): Promise<void> {
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {
@@ -600,7 +607,9 @@ export async function checkForUpdates(): Promise<void> {
   }
 }
 
-export async function switchReleaseChannel(channel: ReleaseChannel): Promise<void> {
+export async function switchReleaseChannel(
+  channel: ReleaseChannel,
+): Promise<void> {
   if (channel !== currentChannel && isChannelSwitchBlocked()) {
     throw channelSwitchBlockedError()
   }
@@ -637,8 +646,7 @@ export async function downloadUpdate(): Promise<void> {
   if (!currentVersion) return
   const candidate = activeCandidate
   if (
-    !candidate ||
-    candidate.state !== "available" ||
+    candidate?.state !== "available" ||
     candidate.version !== lastStatus.availableVersion ||
     classifyCandidate(currentVersion, candidate.version).kind !== "newer"
   ) {
@@ -687,7 +695,7 @@ export async function installUpdate(): Promise<void> {
       code: "install-failed",
       error: message,
     })
-    console.error("Update installation failed:", message)
+    mainLog.error("Update installation failed:", message)
     throw error
   }
 }

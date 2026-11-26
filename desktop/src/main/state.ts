@@ -1,12 +1,23 @@
+import { mainLog } from "./logging.js"
+
 export interface Workspace {
   id: string
   lastUsed?: string
   status?: string
+  displayName?: string
+  effectiveDisplayName?: string
+  sshHostAlias?: string
+  preferredSSHHost?: string
+  canonicalSSHHost?: string
   [key: string]: unknown
 }
 
 export interface Provider {
   name: string
+  icon?: string
+  iconDark?: string
+  iconRevision?: string
+  state?: { singleMachine?: boolean; [key: string]: unknown }
   [key: string]: unknown
 }
 
@@ -23,6 +34,9 @@ export interface Context {
 export class DaemonState {
   private workspaces = new Map<string, Workspace>()
   private providers = new Map<string, Provider>()
+  private providerWriteRevision = 0
+  private providerIconIdentityRevisions = new Map<string, number>()
+  private providerIconContextRevision = 0
   private machines = new Map<string, Machine>()
   private contexts: Context[] = []
   private activeContext = ""
@@ -60,10 +74,65 @@ export class DaemonState {
     return () => this.workspaceListeners.delete(listener)
   }
 
-  updateProviders(list: Provider[]): boolean {
-    const newMap = new Map(list.map((p) => [p.name, p]))
+  providerReadRevision(): number {
+    return this.providerWriteRevision
+  }
+
+  providerIconContextReadRevision(): number {
+    return this.providerIconContextRevision
+  }
+
+  providerIconIdentityReadRevision(
+    context: string,
+    providerName: string,
+  ): number {
+    return (
+      this.providerIconIdentityRevisions.get(`${context}\0${providerName}`) ?? 0
+    )
+  }
+
+  updateProviders(
+    list: Provider[],
+    readRevision = this.providerWriteRevision,
+  ): boolean {
+    if (readRevision < this.providerWriteRevision) return false
+    const newMap = new Map(list.map((provider) => [provider.name, provider]))
     if (this.mapsEqual(this.providers, newMap)) return false
+
+    const context = this.currentContext()
+    const names = new Set([...this.providers.keys(), ...newMap.keys()])
+    for (const name of names) {
+      const previous = this.providers.get(name)
+      const next = newMap.get(name)
+      if (
+        !previous ||
+        !next ||
+        previous.icon !== next.icon ||
+        previous.iconDark !== next.iconDark ||
+        previous.iconRevision !== next.iconRevision
+      ) {
+        const key = `${context}\0${name}`
+        this.providerIconIdentityRevisions.set(
+          key,
+          (this.providerIconIdentityRevisions.get(key) ?? 0) + 1,
+        )
+      }
+    }
     this.providers = newMap
+    return true
+  }
+
+  confirmProviderSingleMachine(name: string, singleMachine: boolean): boolean {
+    // Invalidate provider reads that started before the successful CLI write,
+    // even when the provider is not in the cache or already has this value.
+    this.providerWriteRevision++
+    const provider = this.providers.get(name)
+    if (!provider || provider.state?.singleMachine === singleMachine)
+      return false
+    this.providers.set(name, {
+      ...provider,
+      state: { ...provider.state, singleMachine },
+    })
     return true
   }
 
@@ -79,6 +148,9 @@ export class DaemonState {
     const currentJson = JSON.stringify(this.contexts)
     if (contextsJson === currentJson && active === this.activeContext)
       return false
+    if (active !== this.activeContext) {
+      this.providerIconContextRevision++
+    }
     this.contexts = contexts
     this.activeContext = active
     return true
@@ -115,12 +187,12 @@ export class DaemonState {
   // watcher's first poll picks up the new workspace) the active context is
   // used instead of a hard-coded "default", so creation logs land alongside
   // the workspace they're describing rather than orphaned under `default/`.
-  // Both fallback branches emit a console.warn so log misrouting is visible.
+  // Both fallback branches emit a main warning so log misrouting is visible.
   workspaceContext(workspaceId: string): string {
     const ws = this.workspaces.get(workspaceId)
     if (!ws) {
       const active = this.currentContext()
-      console.warn(
+      mainLog.warn(
         `[state] workspaceContext: workspace ${workspaceId} not found in state; falling back to active context %q`,
         active,
       )
@@ -128,7 +200,7 @@ export class DaemonState {
     }
     if (typeof ws.context !== "string" || ws.context === "") {
       const active = this.currentContext()
-      console.warn(
+      mainLog.warn(
         `[state] workspaceContext: workspace ${workspaceId} has no context field; falling back to active context %q`,
         active,
       )
@@ -151,7 +223,7 @@ export class DaemonState {
       try {
         listener()
       } catch (error) {
-        console.error("[state] workspace listener failed:", error)
+        mainLog.error("[state] workspace listener failed:", error)
       }
     }
   }

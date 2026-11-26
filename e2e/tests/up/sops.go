@@ -34,7 +34,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: testDockerCommand}
-			dtc.f, err = setupDockerProvider(
+			dtc.f, err = framework.SetupDockerProvider(
 				filepath.Join(dtc.initialDir, "bin"),
 				testDockerCommand,
 			)
@@ -63,11 +63,11 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				envValue, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-env-check.out")
+				envValue, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/sops-env-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(envValue)).To(gomega.Equal(sopsE2EPlaintext))
 
-				mountValue, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-mount-check.out")
+				mountValue, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/sops-mount-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(mountValue)).To(gomega.Equal(sopsE2EMounted))
 			},
@@ -88,7 +88,7 @@ var _ = ginkgo.Describe(
 				err = dtc.f.DevsyUp(ctx, tempDir)
 				framework.ExpectNoError(err)
 
-				value, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
+				value, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(value)).To(gomega.Equal(sopsE2EPlaintext))
 			},
@@ -123,7 +123,7 @@ var _ = ginkgo.Describe(
 				err = dtc.f.DevsyUp(ctx, gitURI)
 				framework.ExpectNoError(err)
 
-				value, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
+				value, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(value)).To(gomega.Equal(sopsE2EPlaintext))
 			},
@@ -147,9 +147,10 @@ var _ = ginkgo.Describe(
 					"sops-failure",
 					filepath.Join(tempDir, "secrets.enc.yaml"),
 				)
-				framework.ExpectNoError(os.Setenv("SOPS_AGE_KEY", ""))
-				framework.ExpectNoError(
-					os.Setenv("SOPS_AGE_KEY_FILE", filepath.Join(tempDir, "missing-age-key")),
+				framework.SetEnvForSpec("SOPS_AGE_KEY", "")
+				framework.SetEnvForSpec(
+					"SOPS_AGE_KEY_FILE",
+					filepath.Join(tempDir, "missing-age-key"),
 				)
 
 				stdout, stderr, upErr := dtc.f.DevsyUpStreams(
@@ -170,33 +171,11 @@ var _ = ginkgo.Describe(
 )
 
 func useSOPSAgeIdentity() {
-	setSOPSEnv("SOPS_AGE_KEY", sopsE2EAgeIdentity)
-	unsetSOPSEnv("SOPS_AGE_KEY_FILE")
-	unsetSOPSEnv("SOPS_AGE_KEY_CMD")
-}
-
-func setSOPSEnv(name, value string) {
-	previous, had := os.LookupEnv(name)
-	framework.ExpectNoError(os.Setenv(name, value))
-	ginkgo.DeferCleanup(func() {
-		if had {
-			_ = os.Setenv(name, previous)
-			return
-		}
-		_ = os.Unsetenv(name)
-	})
-}
-
-func unsetSOPSEnv(name string) {
-	previous, had := os.LookupEnv(name)
-	framework.ExpectNoError(os.Unsetenv(name))
-	ginkgo.DeferCleanup(func() {
-		if had {
-			_ = os.Setenv(name, previous)
-			return
-		}
-		_ = os.Unsetenv(name)
-	})
+	framework.RegisterSecret(sopsE2EPlaintext)
+	framework.RegisterSecret(sopsE2EMounted)
+	framework.SetEnvForSpec("SOPS_AGE_KEY", sopsE2EAgeIdentity)
+	framework.UnsetEnvForSpec("SOPS_AGE_KEY_FILE")
+	framework.UnsetEnvForSpec("SOPS_AGE_KEY_CMD")
 }
 
 func registerSOPSSource(ctx context.Context, dtc *dockerTestContext, name, filePath string) {

@@ -5,8 +5,13 @@ import (
 	"testing"
 )
 
+const (
+	nameHeader = "Name"
+	ageHeader  = "Age"
+)
+
 func TestRender(t *testing.T) {
-	headers := []string{"Name", "Age"}
+	headers := []string{nameHeader, ageHeader}
 	rows := [][]string{
 		{"Alice", "30"},
 		{"Bob", "25"},
@@ -23,13 +28,13 @@ func TestRender(t *testing.T) {
 	if !strings.Contains(out, "Name") {
 		t.Errorf("expected output to contain header 'Name', got:\n%s", out)
 	}
-	if !strings.Contains(out, "Age") {
+	if !strings.Contains(out, ageHeader) {
 		t.Errorf("expected output to contain header 'Age', got:\n%s", out)
 	}
 }
 
 func TestRenderEmpty(t *testing.T) {
-	headers := []string{"Name", "Age"}
+	headers := []string{nameHeader, ageHeader}
 	rows := [][]string{}
 
 	out := Render(headers, rows)
@@ -41,7 +46,7 @@ func TestRenderEmpty(t *testing.T) {
 
 func TestMarkdown(t *testing.T) {
 	got := Markdown(
-		[]string{"Name", "Age"},
+		[]string{nameHeader, ageHeader},
 		[][]string{{"Alice", "30"}, {"Bob", "25"}},
 	)
 	want := "| Name | Age |\n| --- | --- |\n| Alice | 30 |\n| Bob | 25 |\n"

@@ -2,6 +2,9 @@ package up
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +13,10 @@ import (
 	"syscall"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -19,9 +25,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/telemetry"
+	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -32,11 +40,16 @@ type UpCmd struct {
 	provider2.CLIOptions
 	*flags.GlobalFlags
 
+	secretOptions *secrets.StoreOptions
+
 	Machine string
 
 	ProviderOptions []string
 
 	FromSnapshot string // snapshot ref to restore from, e.g. ghcr.io/acme/s:my-ws-20260731150405-abcxyz
+
+	DisplayName  string
+	SSHHostAlias string
 
 	ConfigureSSH       bool
 	GPGAgentForwarding bool
@@ -58,13 +71,17 @@ type UpCmd struct {
 	// Read via Changed() so unset is distinguishable from explicit false.
 	pullFromInsideContainerFlag bool
 	// See cmd.runDetached.
-	Detach bool
+	Detach               bool
+	InteractivePostStart bool
 	// Set only on the detached child re-exec.
-	taskID string
+	taskID     string
+	workerTask *task.Task
 	// Out receives result/error JSON envelopes; nil falls back to os.Stdout.
 	Out io.Writer
 	// Set at the start of Run; nil until then.
 	statusReporter status.Reporter
+	// setupHop mirrors retained setup history into this process's store.
+	setupHop *tunnelserver.SetupLogHop
 
 	// resolveWorkspace overrides workspace.Resolve; nil falls back to workspace.Resolve.
 	resolveWorkspace func(
@@ -113,6 +130,11 @@ func RunHeadless(
 	client client2.BaseWorkspaceClient,
 	opts HeadlessOptions,
 ) (*config2.Result, error) {
+	if opts.CLIOptions.LifecycleTerminal != nil {
+		return nil, fmt.Errorf(
+			"interactive lifecycle terminals are not supported by headless execution",
+		)
+	}
 	gCopy := *opts.GlobalFlags
 	cmd := &UpCmd{
 		GlobalFlags:        &gCopy,
@@ -258,14 +280,42 @@ func (cmd *UpCmd) Run(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	args []string,
+) (retErr error) {
+	if cmd.workerTask == nil && cmd.taskID != "" {
+		t, err := cmd.openTask()
+		if err != nil {
+			return err
+		}
+		cmd.workerTask = t
+		defer func() {
+			retErr = finalizeWorkerTask(t, retErr)
+			cmd.workerTask = nil
+		}()
+	}
+	return cmd.runWorkspace(ctx, devsyConfig, client)
+}
+
+func (cmd *UpCmd) runWorkspace(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
 ) error {
+	if err := cmd.validateInteractiveRoute(client); err != nil {
+		return err
+	}
+	cmd.LifecycleTerminal = nil
 	cmd.prepareWorkspace(client)
 
-	emitJSON, out, err := cmd.configureRun()
+	emitJSON, out, err := cmd.configureRun(client.Workspace())
 	if err != nil {
 		return err
 	}
 
+	if cmd.InteractivePostStart {
+		if err := cmd.createLifecycleTerminalRequest(client); err != nil {
+			return err
+		}
+	}
 	t, err := cmd.setUpTask(client, emitJSON, out)
 	if err != nil {
 		return err
@@ -273,7 +323,6 @@ func (cmd *UpCmd) Run(
 
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
-		failTask(t, err)
 		return reportErr(err, emitJSON, out)
 	}
 	if wctx == nil || cmd.Prebuild {
@@ -288,14 +337,30 @@ func (cmd *UpCmd) Run(
 		out:         out,
 	})
 	if err != nil {
-		failTask(t, err)
 		return err
 	}
-	succeedTask(t, wctx.result)
+	return succeedTask(t, wctx.result)
+}
+
+func (cmd *UpCmd) createLifecycleTerminalRequest(client client2.BaseWorkspaceClient) error {
+	workspace := client.WorkspaceConfig()
+	if workspace == nil || workspace.UID == "" {
+		return fmt.Errorf("--interactive-post-start requires a resolved workspace UID")
+	}
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("create lifecycle terminal nonce: %w", err)
+	}
+	cmd.LifecycleTerminal = &provider2.LifecycleTerminalRequest{
+		ProtocolVersion: tunnel.LifecycleTerminalProtocolVersion,
+		Nonce:           hex.EncodeToString(nonce),
+		Context:         client.Context(),
+		WorkspaceUID:    workspace.UID,
+	}
 	return nil
 }
 
-func (cmd *UpCmd) configureRun() (bool, io.Writer, error) {
+func (cmd *UpCmd) configureRun(workspaceID string) (bool, io.Writer, error) {
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
 		return false, nil, err
@@ -305,7 +370,11 @@ func (cmd *UpCmd) configureRun() (bool, io.Writer, error) {
 		cmd.ResultFormat,
 		out,
 		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus && cmd.workerTask == nil,
 	)
+	if err == nil {
+		cmd.statusReporter = withJournal(cmd.statusReporter, workspaceID)
+	}
 	return mode == output.ModeJSON, out, err
 }
 
@@ -318,28 +387,22 @@ func (cmd *UpCmd) finishWithoutWorkspace(
 	if err := status.Run(ctx, cmd.reporter(), status.Operation{
 		Phase: status.PhaseReady,
 	}, func(context.Context) error { return nil }); err != nil {
-		failTask(t, err)
 		return reportErr(err, emitJSON, out)
 	}
-	succeedTask(t, nil)
-	return nil // Platform mode or prebuild-only run.
+	return succeedTask(t, nil)
 }
 
-// setUpTask opens the run's task (if any), tees the status reporter into it,
+// setUpTask tees the status reporter into the claimed task (if any),
 // and records the workspace ID on it.
 func (cmd *UpCmd) setUpTask(
 	client client2.BaseWorkspaceClient,
 	emitJSON bool,
 	out io.Writer,
 ) (*task.Task, error) {
-	t, err := cmd.openTask()
-	if err != nil {
-		return nil, reportErr(err, emitJSON, out)
-	}
+	t := cmd.workerTask
 	if t != nil {
 		cmd.statusReporter = status.Tee(cmd.statusReporter, t.Reporter())
 		if err := t.SetWorkspaceID(client.Workspace()); err != nil {
-			failTask(t, err)
 			return nil, reportErr(err, emitJSON, out)
 		}
 	}
@@ -509,28 +572,44 @@ func reportErr(err error, _ bool, _ io.Writer) error {
 // emitUpResult writes the JSON result envelope for a completed `up` invocation.
 func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 	containerID := config2.GetContainerID(wctx.result)
+	workdir := wctx.workdir
 	var warnings []string
 	recovery := false
 	if wctx.result != nil {
 		warnings = wctx.result.HostWarnings
 		recovery = wctx.result.RecoveryContainer
+		if workdir == "" && wctx.result.SubstitutionContext != nil {
+			workdir = wctx.result.SubstitutionContext.ContainerWorkspaceFolder
+		}
 	}
 	_ = config2.WriteResultJSON(out, config2.ResultEnvelope{
 		ContainerID:           containerID,
 		RemoteUser:            wctx.user,
-		RemoteWorkspaceFolder: wctx.workdir,
+		RemoteWorkspaceFolder: workdir,
 		URL:                   ideURL,
 		Warnings:              warnings,
 		Recovery:              recovery,
+		RunID:                 wctx.runID,
 	})
 }
 
-func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
-	if err := cmd.validate(); err != nil {
+func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) (retErr error) {
+	t, err := cmd.openTask()
+	if err != nil {
 		return err
 	}
-	if cmd.Detach && cmd.taskID == "" {
-		return cmd.runDetached(args)
+	cmd.workerTask = t
+	defer func() {
+		retErr = finalizeWorkerTask(t, retErr)
+		cmd.workerTask = nil
+	}()
+
+	return cmd.executeUp(cobraCmd, args)
+}
+
+func (cmd *UpCmd) executeUp(cobraCmd *cobra.Command, args []string) error {
+	if err := cmd.validate(); err != nil {
+		return err
 	}
 	cmd.applyPullFromInsideContainerOverride(cobraCmd)
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
@@ -538,6 +617,9 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load devsy config: %w", err)
 	}
 	cmd.applyConfig(devsyConfig)
+	if cmd.Detach && cmd.taskID == "" {
+		return cmd.runDetached(args, devsyConfig)
+	}
 
 	ctx, cancel := WithSignals(cobraCmd.Context())
 	defer cancel()
@@ -564,6 +646,7 @@ type workspaceContext struct {
 	user       string
 	workdir    string
 	tunnelPort int
+	runID      string
 }
 
 func (cmd *UpCmd) applyPullFromInsideContainerOverride(cobraCmd *cobra.Command) {
@@ -611,18 +694,44 @@ func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 		targetIDE = cmd.IDE
 	}
 
-	if !cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
-		cmd.SSHAuthSockID = util.RandStringBytes(10)
-		log.Debug("reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
-	} else if cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
-		log.Debug(
-			"reusing SSH_AUTH_SOCK is not supported with platform mode, consider launching the IDE from the platform UI",
-		)
+	if ide.ReusesAuthSock(targetIDE) {
+		if cmd.Platform.Enabled {
+			log.Debug(
+				"reusing SSH_AUTH_SOCK is not supported with platform mode, consider launching the IDE from the platform UI",
+			)
+		} else {
+			cmd.SSHAuthSockID = util.RandStringBytes(10)
+			log.Debug("reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
+		}
 	}
 }
 
-// executeDevsyUp runs the agent and returns workspace context.
+// executeDevsyUp runs the agent and returns workspace context. The run that
+// retains its build and lifecycle output starts here so the foreground command,
+// the detached worker and the headless path all record the same way.
 func (cmd *UpCmd) executeDevsyUp(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) (*workspaceContext, error) {
+	run := cmd.startSetupRun(client)
+	cmd.setupHop = tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{
+		Session: run, Receive: true,
+	})
+	defer cmd.setupHop.Close()
+	wctx, err := cmd.runDevsyUp(run.Context(ctx), devsyConfig, client)
+	run.Finish(err, true)
+	if err != nil {
+		return nil, clierr.WithContext(err, run.FailureContext())
+	}
+	if wctx != nil && run != nil {
+		wctx.runID = run.RunID
+	}
+
+	return wctx, nil
+}
+
+func (cmd *UpCmd) runDevsyUp(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
@@ -634,7 +743,7 @@ func (cmd *UpCmd) executeDevsyUp(
 	if cmd.Platform.Enabled {
 		return nil, nil
 	}
-	// Guard against a result that lacks the substitution context — that
+	// Guard against a result that lacks the substitution context - that
 	// indicates the agent returned a half-populated result (e.g. an inner
 	// container-setup failure that didn't carry through as result.Error).
 	// Without this, downstream openIDE would nil-deref on
@@ -735,8 +844,24 @@ func watchForForceShutdown(ctx context.Context, done <-chan struct{}) {
 	signal.Notify(signals, shutdownSignals...)
 	select {
 	case <-signals:
-		os.Exit(1) // second signal — force shutdown
+		terminal.RestoreAll()
+		os.Exit(1) // second signal - force shutdown
 	case <-done:
 		signal.Stop(signals)
 	}
+}
+
+func finalizeWorkerTask(t *task.Task, err error) error {
+	if t == nil {
+		return err
+	}
+	if err != nil {
+		if failErr := t.Fail(err); failErr != nil {
+			err = errors.Join(err, fmt.Errorf("record detached task failure: %w", failErr))
+		}
+	}
+	if releaseErr := t.ReleaseWorkerLock(); releaseErr != nil {
+		err = errors.Join(err, fmt.Errorf("release detached worker lock: %w", releaseErr))
+	}
+	return err
 }

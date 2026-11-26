@@ -3,48 +3,38 @@ title: Prebuild a Workspace
 sidebar_label: Prebuild a Workspace
 ---
 
-## Prebuild a Workspace
+A prebuild is an image built ahead of time from `devcontainer.json`, its features, and any Dockerfile. When a matching prebuild exists, Devsy uses it instead of building.
 
-Prebuilding a workspace means building a ready-to-use docker image out of the `devcontainer.json`, its referenced features and optionally a linked `Dockerfile`.
-Usually when creating a new workspace, Devsy will first build a docker image based on the configuration and then later use this image to create the development environment.
-With prebuilds, this step can be omitted and Devsy can directly use the docker image to start the development environment. This can save start up time, especially for more complex development environments.
+## How it works
 
-### How does it work?
+Devsy computes a prebuild hash from these inputs:
 
-Based on the `devcontainer.json` configuration, Devsy will generate a hash in the form of `devsy-HASH` and use this as a tag for the created docker image.
-You can then reference docker image repositories, where Devsy will search this tag and if found uses it instead of building the image itself.
+- The target architecture.
+- The build-relevant parts of `devcontainer.json`: name, features, image, Dockerfile, and build settings.
+- The Dockerfile contents.
+- The build context, excluding files matched by `.dockerignore`.
 
-To prebuild a workspace, you can run the following command:
-```
-# Prebuild the docker image for github.com/my-org/my-repo and save it in image registry ghcr.io/my-org/my-repo
+The image tag is `devsy-` followed by 32 hex characters. Devsy looks for that tag in each prebuild repository and uses the image it finds.
+
+To build and push a prebuild, run:
+
+```sh
 devsy workspace build github.com/my-org/my-repo --repository ghcr.io/my-org/my-repo
 ```
 
-<Callout title="Detecting existing Prebuilds">
-Devsy will only build the workspace if there isn't an existing prebuild found in the specified docker image repository
-</Callout>
+If the repository already has the matching tag, Devsy skips the build and pushes nothing. Otherwise Devsy builds and pushes the image. Pushing needs write access to the repository. If the push permission check fails, the build fails with `cannot push to repository`.
 
-Devsy will use the current provider for doing this, which means you can also use remote providers to prebuild an image. You can even have a separate provider just for prebuilding images.
+## Use a prebuild
 
-## Using Prebuilds
+Pass the repository when you create a workspace:
 
-Using prebuilds means you specify a docker image repository, where Devsy will search for an image with a specific hash generated from the devcontainer configuration. You can either specify this prebuild repository via a flag during workspace creation or directly in the `devcontainer.json`.
-
-<Callout title="Prebuild not found">
-If a prebuild cannot be found in the given repository or credentials are missing locally, Devsy will just skip the repository.
-</Callout>
-
-### Reference Prebuild Repository as Flag
-
-When creating a new workspace, you can define the prebuild repository via the `--prebuild-repo` flag:
-```
+```sh
 devsy workspace up github.com/my-org/my-repo --prebuild-repo ghcr.io/my-org/my-repo
 ```
 
-### Reference Prebuild Repository in devcontainer.json
+You can also set it in `devcontainer.json`. The value can be a string or an array. Devsy checks every entry for a prebuild and pushes to the first one:
 
-It's also possible to include the prebuild repository directly in the `devcontainer.json`, which makes it easy to automate prebuilding through a CI/CD pipeline on changes. You can specify the prebuild repository via:
-```
+```json
 {
   "name": "my-project",
   "customizations": {
@@ -54,3 +44,5 @@ It's also possible to include the prebuild repository directly in the `devcontai
   }
 }
 ```
+
+If a repository lookup fails, including on missing credentials, Devsy tries the next repository. If no repository has a matching image, Devsy builds the image. If Devsy finds an image but cannot inspect it, the build fails.

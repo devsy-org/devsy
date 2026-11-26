@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -33,14 +34,21 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
+)
+
+const (
+	docker = "docker"
 )
 
 // UpCmd holds the up cmd flags.
 type UpCmd struct {
 	*flags.GlobalFlags
 
-	WorkspaceInfo string
+	WorkspaceInfo             string
+	LifecycleTerminalProtocol int
+	protocolSet               bool
 }
 
 // NewUpCmd creates a new command.
@@ -53,6 +61,7 @@ func NewUpCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Starts a new devcontainer",
 		Args:  cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
+			cmd.protocolSet = cobraCmd.Flags().Changed("lifecycle-terminal-protocol")
 			return cmd.Run(cobraCmd.Context())
 		},
 	}
@@ -60,11 +69,20 @@ func NewUpCmd(flags *flags.GlobalFlags) *cobra.Command {
 		upCmd,
 		cliflags.String(&cmd.WorkspaceInfo, names.WorkspaceInfo, "", "The workspace info"),
 	)
+	upCmd.Flags().
+		IntVar(&cmd.LifecycleTerminalProtocol, "lifecycle-terminal-protocol", 0, "Lifecycle terminal protocol version")
 	_ = upCmd.MarkFlagRequired(names.WorkspaceInfo)
 	return upCmd
 }
 
 func (cmd *UpCmd) Run(ctx context.Context) error {
+	decoded, _, err := agent.DecodeWorkspaceInfo(cmd.WorkspaceInfo)
+	if err != nil {
+		return err
+	}
+	if err := cmd.validateTerminal(decoded.CLIOptions.LifecycleTerminal); err != nil {
+		return err
+	}
 	workspaceInfo, err := cmd.loadWorkspaceInfo(ctx)
 	if err != nil {
 		return err
@@ -98,6 +116,16 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	return nil
 }
 
+func (cmd *UpCmd) validateTerminal(request *provider.LifecycleTerminalRequest) error {
+	if cmd.protocolSet != (request != nil) ||
+		(cmd.protocolSet && (cmd.LifecycleTerminalProtocol != int(tunnel.LifecycleTerminalProtocolVersion) ||
+			request.ProtocolVersion != tunnel.LifecycleTerminalProtocolVersion ||
+			int(request.ProtocolVersion) != cmd.LifecycleTerminalProtocol)) {
+		return fmt.Errorf("lifecycle terminal protocol and request mismatch")
+	}
+	return nil
+}
+
 func (cmd *UpCmd) loadWorkspaceInfo(ctx context.Context) (*provider.AgentWorkspaceInfo, error) {
 	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfoAndDeleteOld(
 		cmd.WorkspaceInfo,
@@ -126,12 +154,23 @@ func (cmd *UpCmd) handleInitError(
 	err error,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) error {
+	if workspaceInfo.WorkspaceWasExisting {
+		return err
+	}
+	preserveContent := false
+	if _, existing := errors.AsType[*existingContentPreparationError](err); existing {
+		if workspaceInfo.ContentFolder != workspaceInfo.Workspace.Source.LocalFolder {
+			return err
+		}
+		preserveContent = true
+	}
 	deleteErr := clientimplementation.DeleteWorkspaceFolder(
 		clientimplementation.DeleteWorkspaceFolderParams{
 			Context:              workspaceInfo.Workspace.Context,
 			WorkspaceID:          workspaceInfo.Workspace.ID,
 			SSHConfigPath:        workspaceInfo.Workspace.SSHConfigPath,
 			SSHConfigIncludePath: workspaceInfo.Workspace.SSHConfigIncludePath,
+			PreserveContent:      preserveContent,
 		},
 	)
 	if deleteErr != nil {
@@ -186,16 +225,55 @@ func (cmd *UpCmd) devsyUp(
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	tunnelClient tunnel.TunnelClient,
 ) (*config2.Result, error) {
+	secretResponse, err := tunnelClient.Secrets(ctx, &tunnel.Empty{})
+	if err != nil {
+		return nil, fmt.Errorf("fetch workspace secrets: %w", err)
+	}
+	secretsEnv, secretsMount := splitSecrets(secretResponse.GetSecrets())
+	cliOptions := workspaceInfo.CLIOptions
+	cliOptions.SecretsEnv = secretsEnv
+	cliOptions.SecretsMount = secretsMount
+	workspaceInfo.CLIOptions.SecretsEnv = nil
+	workspaceInfo.CLIOptions.SecretsMount = nil
+
+	run := startProviderRun(workspaceInfo, append(slices.Clone(secretsEnv), secretsMount...))
+	cliOptions.SetupParentProducerID = run.ProducerID()
+	hop := tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{
+		Session: run, Upstream: tunnelClient, Receive: true,
+	})
+	defer hop.Close()
+	ctx = tunnelserver.WithSetupLogOptions(run.Context(ctx), hop.Options())
+
 	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
+		run.Finish(err, false)
 		return nil, err
 	}
 
 	reporter := tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient)
-	return runner.Up(ctx, devcontainer.UpOptions{
-		CLIOptions:    workspaceInfo.CLIOptions,
-		RegistryCache: workspaceInfo.RegistryCache,
+	result, err := runner.Up(ctx, devcontainer.UpOptions{
+		CLIOptions:              cliOptions,
+		LifecycleTerminalClient: tunnelClient,
+		RegistryCache:           workspaceInfo.RegistryCache,
 	}, workspaceInfo.InjectTimeout, reporter)
+	run.Finish(err, false)
+	if !hop.Flush(ctx) {
+		_ = run.Store.AddCondition(run.RunID, workspacelogs.ConditionInterrupted)
+	}
+
+	return result, err
+}
+
+func splitSecrets(secrets []*tunnel.Secret) (env, mount []string) {
+	for _, secret := range secrets {
+		entry := secret.GetName() + "=" + secret.GetValue()
+		if secret.GetMount() {
+			mount = append(mount, entry)
+		} else {
+			env = append(env, entry)
+		}
+	}
+	return env, mount
 }
 
 func CreateRunner(
@@ -210,36 +288,64 @@ func CreateRunner(
 	)
 }
 
+// InitContentFolder reports whether content or a fallback configuration permits
+// source reuse; that result does not indicate ownership of the content directory.
 func InitContentFolder(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (bool, error) {
+	state, err := initContentFolder(ctx, workspaceInfo)
+	return state.skipSource, err
+}
+
+type contentFolderState struct {
+	existed    bool
+	skipSource bool
+}
+
+func initContentFolder(
+	ctx context.Context,
+	workspaceInfo *provider.AgentWorkspaceInfo,
+) (contentFolderState, error) {
 	exists, err := contentFolderExists(workspaceInfo.ContentFolder)
+	state := contentFolderState{existed: exists, skipSource: exists}
 	if err != nil {
-		return false, err
+		return state, err
 	}
 	if exists {
-		return true, nil
+		if err := downloadWorkspaceBinaries(ctx, workspaceInfo); err != nil {
+			// Initialization cleanup must not own content that predates this attempt.
+			return state, &existingContentPreparationError{cause: err}
+		}
+		return state, nil
 	}
 
 	if err := createContentFolder(workspaceInfo.ContentFolder); err != nil {
-		return false, err
+		return state, err
 	}
 
 	if err := downloadWorkspaceBinaries(ctx, workspaceInfo); err != nil {
 		_ = os.RemoveAll(workspaceInfo.ContentFolder)
-		return false, err
+		return state, err
 	}
 
 	if workspaceInfo.LastDevContainerConfig != nil {
 		if err := ensureLastDevContainerJson(workspaceInfo); err != nil {
 			log.Errorf("ensure devcontainer.json: %v", err)
 		}
-		return true, nil
+		state.skipSource = true
 	}
 
-	return false, nil
+	return state, nil
 }
+
+type existingContentPreparationError struct {
+	cause error
+}
+
+func (e *existingContentPreparationError) Error() string { return e.cause.Error() }
+
+func (e *existingContentPreparationError) Unwrap() error { return e.cause }
 
 func contentFolderExists(path string) (bool, error) {
 	_, err := os.Stat(path)
@@ -265,6 +371,9 @@ func downloadWorkspaceBinaries(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) error {
+	if len(workspaceInfo.Agent.Binaries) == 0 {
+		return nil
+	}
 	binariesDir, err := agent.GetAgentBinariesDir(
 		workspaceInfo.Agent.DataPath,
 		workspaceInfo.Workspace.Context,
@@ -278,6 +387,7 @@ func downloadWorkspaceBinaries(
 		)
 	}
 
+	log.Info("Preparing runtime files for this workspace; the provider is already configured")
 	_, err = provider.DownloadBinaries(ctx, workspaceInfo.Agent.Binaries, binariesDir)
 	if err != nil {
 		return fmt.Errorf(
@@ -298,6 +408,9 @@ type workspaceInitializer struct {
 	logger               tunnelserver.Logger
 	dockerCredentialsDir string
 	gitCredentialsHelper string
+	installDocker        func(context.Context) (string, error)
+	findDarwinDocker     func() (string, error)
+	configureDocker      func(context.Context) error
 }
 
 type initWorkspaceParams struct {
@@ -324,6 +437,10 @@ func initWorkspace(
 }
 
 func (w *workspaceInitializer) initialize(ctx context.Context) error {
+	if err := w.validateDockerManagement(); err != nil {
+		return err
+	}
+
 	if err := w.initializeTunnel(ctx); err != nil {
 		return err
 	}
@@ -361,7 +478,11 @@ func (w *workspaceInitializer) tryConfigureDockerDaemon(ctx context.Context) {
 		log.Debug("skipping configuring docker daemon")
 		return
 	}
-	if err := configureDockerDaemon(ctx); err != nil {
+	configure := w.configureDocker
+	if configure == nil {
+		configure = configureDockerDaemon
+	}
+	if err := configure(ctx); err != nil {
 		log.Warn(
 			"could not find docker daemon config file, if using the registry cache, " +
 				"ensure the daemon is configured with containerd-snapshotter=true, " +
@@ -426,26 +547,50 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 		return "", nil
 	}
 
-	if dockerCmd != "docker" {
-		path, err := exec.LookPath(dockerCmd)
-		if err != nil {
-			return "", fmt.Errorf("custom docker path %q not found: %w", dockerCmd, err)
-		}
-		return path, nil
+	if dockerCmd != docker {
+		return findCustomDockerCLI(dockerCmd)
 	}
 
-	if dockerCmd == "docker" && runtime.GOOS == "darwin" {
-		return findDarwinDockerCLI()
+	if runtime.GOOS == "darwin" {
+		path, err := w.discoverDarwinDockerCLI()
+		if err == nil || !w.isDockerInstallDisabled() {
+			return path, err
+		}
 	}
 
 	if w.isDockerInstallDisabled() {
-		log.Debug(
-			"docker not found but installation was disabled, installing anyway as it is required",
+		return "", fmt.Errorf(
+			"docker CLI is unavailable and agent.docker.install is false (executable %q)",
+			dockerCmd,
 		)
 	}
 
+	return w.installMissingDocker(ctx)
+}
+
+func findCustomDockerCLI(dockerCmd string) (string, error) {
+	path, err := exec.LookPath(dockerCmd)
+	if err != nil {
+		return "", fmt.Errorf("custom docker path %q not found: %w", dockerCmd, err)
+	}
+	return path, nil
+}
+
+func (w *workspaceInitializer) discoverDarwinDockerCLI() (string, error) {
+	find := w.findDarwinDocker
+	if find == nil {
+		find = findDarwinDockerCLI
+	}
+	return find()
+}
+
+func (w *workspaceInitializer) installMissingDocker(ctx context.Context) (string, error) {
 	log.Debug("attempting to install docker")
-	dockerPath, err := installDocker(ctx)
+	install := w.installDocker
+	if install == nil {
+		install = installDocker
+	}
+	dockerPath, err := install(ctx)
 	log.Debugf("docker installation path=%q, err=%v", dockerPath, err)
 	return dockerPath, err
 }
@@ -465,7 +610,7 @@ func findDarwinDockerCLI() (string, error) {
 func darwinDockerCandidatePaths(homeDir string) []string {
 	paths := append([]string(nil), darwinDockerPaths...)
 	if homeDir != "" {
-		paths = append(paths, filepath.Join(homeDir, ".rd", "bin", "docker"))
+		paths = append(paths, filepath.Join(homeDir, ".rd", "bin", docker))
 	}
 	return paths
 }
@@ -488,10 +633,13 @@ func (w *workspaceInitializer) getDockerCommand() string {
 		log.Debugf("using custom docker path %s", w.workspaceInfo.Agent.Docker.Path)
 		return w.workspaceInfo.Agent.Docker.Path
 	}
-	return "docker"
+	return docker
 }
 
 func (w *workspaceInitializer) isDockerInstallDisabled() bool {
+	if w.workspaceInfo.Agent.Docker.Install == "" {
+		return false
+	}
 	install, err := w.workspaceInfo.Agent.Docker.Install.Bool()
 	return err == nil && !install
 }
@@ -513,7 +661,7 @@ func (w *workspaceInitializer) waitForDocker(resultChan <-chan dockerInstallResu
 	result := <-resultChan
 
 	dockerPath := w.workspaceInfo.Agent.Docker.Path
-	if result.path != "" && (dockerPath == "" || dockerPath == "docker") {
+	if result.path != "" && (dockerPath == "" || dockerPath == docker) {
 		w.workspaceInfo.Agent.Docker.Path = result.path
 		log.Debugf("set docker path to %s", result.path)
 	}
@@ -525,9 +673,25 @@ func (w *workspaceInitializer) waitForDocker(resultChan <-chan dockerInstallResu
 	return nil
 }
 
+func (w *workspaceInitializer) validateDockerManagement() error {
+	if _, err := w.workspaceInfo.Agent.Docker.Install.Bool(); err != nil {
+		return fmt.Errorf("agent.docker.install: %w", err)
+	}
+	if _, err := w.workspaceInfo.Agent.Docker.ConfigureDaemon.Bool(); err != nil {
+		return fmt.Errorf("agent.docker.configureDaemon: %w", err)
+	}
+	return nil
+}
+
 func (w *workspaceInitializer) shouldConfigureDockerDaemon() bool {
 	if !w.workspaceInfo.Agent.IsDockerDriver() {
 		return false
+	}
+	if w.workspaceInfo.Agent.Docker.ConfigureDaemon != "" {
+		configure, err := w.workspaceInfo.Agent.Docker.ConfigureDaemon.Bool()
+		if err != nil || !configure {
+			return false
+		}
 	}
 
 	local, err := w.workspaceInfo.Agent.Local.Bool()
@@ -549,38 +713,60 @@ type prepareWorkspaceParams struct {
 // prepareWorkspace initializes the workspace content folder and downloads/prepares the workspace source.
 // Note: This function modifies params.workspaceInfo.ContentFolder when platform is enabled with a local folder.
 func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error {
-	if params.workspaceInfo.CLIOptions.Platform.Enabled &&
-		params.workspaceInfo.Workspace.Source.LocalFolder != "" {
-		params.workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(
-			params.workspaceInfo.Origin,
-		)
-	}
+	useAgentContentDir(params.workspaceInfo)
 
-	exists, err := InitContentFolder(ctx, params.workspaceInfo)
+	folder, err := initContentFolder(ctx, params.workspaceInfo)
 	if err != nil {
 		return err
 	}
-	if exists && !params.workspaceInfo.CLIOptions.Recreate {
+	if folder.skipSource && !params.workspaceInfo.CLIOptions.Recreate {
 		params.logger.Debugf("workspace exists, skip downloading")
 		return nil
 	}
 
-	phase := status.Phase("")
-	switch {
-	case params.workspaceInfo.CLIOptions.Reset:
-		phase = status.PhaseResettingWorkspace
-	case params.workspaceInfo.CLIOptions.Recreate:
-		phase = status.PhaseRebuildingWorkspace
+	phase := prepareWorkspacePhase(params.workspaceInfo)
+	err = prepareWorkspaceWithStatus(ctx, params.reporter, phase, func(ctx context.Context) error {
+		return prepareWorkspaceSource(ctx, params, folder.skipSource)
+	})
+	if err != nil && !folder.existed {
+		// An unfinished folder must not make the next attempt skip source preparation.
+		if cleanupErr := os.RemoveAll(params.workspaceInfo.ContentFolder); cleanupErr != nil {
+			return errors.Join(
+				err, fmt.Errorf("remove unfinished workspace content: %w", cleanupErr),
+			)
+		}
 	}
-	if phase == "" || params.reporter == nil {
-		return prepareWorkspaceSource(ctx, params, exists)
+	return err
+}
+
+func useAgentContentDir(workspaceInfo *provider.AgentWorkspaceInfo) {
+	if workspaceInfo.CLIOptions.Platform.Enabled &&
+		workspaceInfo.Workspace.Source.LocalFolder != "" {
+		workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(workspaceInfo.Origin)
+	}
+}
+
+func prepareWorkspacePhase(workspaceInfo *provider.AgentWorkspaceInfo) status.Phase {
+	switch {
+	case workspaceInfo.CLIOptions.Reset:
+		return status.PhaseResettingWorkspace
+	case workspaceInfo.CLIOptions.Recreate:
+		return status.PhaseRebuildingWorkspace
+	}
+	return ""
+}
+
+func prepareWorkspaceWithStatus(
+	ctx context.Context,
+	reporter status.Reporter,
+	phase status.Phase,
+	prepare func(context.Context) error,
+) error {
+	if phase == "" || reporter == nil {
+		return prepare(ctx)
 	}
 
-	return status.Run(ctx, params.reporter, status.Operation{
-		Phase: phase,
-	}, func(ctx context.Context) error {
-		return prepareWorkspaceSource(ctx, params, exists)
-	})
+	return status.Run(ctx, reporter, status.Operation{Phase: phase}, prepare)
 }
 
 // prepareWorkspaceSource dispatches on the workspace source type (git, local
@@ -868,7 +1054,7 @@ func tryMergeRootlessDockerConfig() error {
 		return err
 	}
 
-	dockerConfigDir := filepath.Join(homeDir, ".config", "docker")
+	dockerConfigDir := filepath.Join(homeDir, ".config", docker)
 	if _, err := os.Stat(dockerConfigDir); errors.Is(err, os.ErrNotExist) {
 		return err
 	}

@@ -1,6 +1,6 @@
 # Documentation
 
-This website is built using [Fumadocs](https://fumadocs.dev/), a Next.js-based documentation framework.
+The site uses [Fumadocs](https://fumadocs.dev/), a Next.js documentation framework.
 
 ## Installation
 
@@ -8,13 +8,13 @@ This website is built using [Fumadocs](https://fumadocs.dev/), a Next.js-based d
 npm install
 ```
 
-## Local Development
+## Local development
 
 ```sh
 npm run dev
 ```
 
-This command starts a local development server. Most changes are reflected live without having to restart the server.
+Starts a local development server. Most changes appear without a restart.
 
 ## Build
 
@@ -22,12 +22,12 @@ This command starts a local development server. Most changes are reflected live 
 npm run build
 ```
 
-This command generates a static export into the `out` directory and can be served using any static content hosting service.
+Writes a static export to the `out` directory. Serve that directory from any static host.
 
-## Check Links
+## Check links
 
 ```sh
 npm run check-links
 ```
 
-This command validates internal links across the docs content.
+Checks internal links in the docs content.

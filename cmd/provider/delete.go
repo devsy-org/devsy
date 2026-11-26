@@ -33,19 +33,25 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 	deleteCmd := &cobra.Command{
 		Use:     "delete [name]",
 		Aliases: []string{"rm"},
-		Short:   "Deletes an existing provider",
+		Short:   "Delete a provider",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
-		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(
+			rootCmd *cobra.Command,
+			args []string,
+			toComplete string,
+		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetProviderSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 	}
@@ -73,8 +79,24 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("specify a provider to delete")
 	}
 
+	unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, provider)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+	if err != nil {
+		return err
+	}
+
 	// delete the provider
-	err = DeleteProvider(ctx, devsyConfig, provider, cmd.IgnoreNotFound, cmd.Force)
+	err = DeleteProvider(
+		ctx,
+		devsyConfig,
+		provider,
+		DeleteOptions{IgnoreNotFound: cmd.IgnoreNotFound, Force: cmd.Force},
+	)
 	if err != nil {
 		return err
 	}
@@ -83,24 +105,31 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
+// DeleteOptions controls DeleteProvider.
+type DeleteOptions struct {
+	IgnoreNotFound bool
+	Force          bool
+}
+
 func DeleteProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	provider string,
-	ignoreNotFound, force bool,
+	opts DeleteOptions,
 ) error {
-	// if force is not set, check if the provider is associated with a pro instance or workspace
+	ignoreNotFound, force := opts.IgnoreNotFound, opts.Force
+	// if force is not set, check if the provider is associated with a platform instance or workspace
 	if !force {
-		// check if this provider is associated with a pro instance
-		proInstances, err := workspace.ListProInstances(devsyConfig)
+		// check if this provider is associated with a platform instance
+		platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 		if err != nil {
-			return fmt.Errorf("list pro instances: %w", err)
+			return fmt.Errorf("list platform instances: %w", err)
 		}
-		for _, instance := range proInstances {
+		for _, instance := range platformInstances {
 			if instance.Provider == provider {
 				return fmt.Errorf(
-					"cannot delete provider %q, because it is connected to Pro instance %q. "+
-						"Removing the Pro instance will automatically delete this provider",
+					"cannot delete provider %q, because it is connected to Platform instance %q. "+
+						"Removing the Platform instance will automatically delete this provider",
 					instance.Provider,
 					instance.Host,
 				)
@@ -130,17 +159,23 @@ func DeleteProvider(
 	return DeleteProviderConfig(devsyConfig, provider, ignoreNotFound)
 }
 
-func DeleteProviderConfig(devsyConfig *config.Config, provider string, ignoreNotFound bool) error {
-	if devsyConfig.Current().DefaultProvider == provider {
-		devsyConfig.Current().DefaultProvider = ""
-	}
-	delete(devsyConfig.Current().Providers, provider)
-	err := config.SaveConfig(devsyConfig)
+func DeleteProviderConfig(
+	devsyConfig *config.Config,
+	providerName string,
+	ignoreNotFound bool,
+) error {
+	err := config.UpdateConfig(devsyConfig.DefaultContext, "", func(c *config.Config) error {
+		if c.Current().DefaultProvider == providerName {
+			c.Current().DefaultProvider = ""
+		}
+		delete(c.Current().Providers, providerName)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	providerDir, err := provider2.GetProviderDir(devsyConfig.DefaultContext, provider)
+	providerDir, err := provider2.GetProviderDir(devsyConfig.DefaultContext, providerName)
 	if err != nil {
 		return err
 	}
@@ -150,10 +185,8 @@ func DeleteProviderConfig(devsyConfig *config.Config, provider string, ignoreNot
 			if ignoreNotFound {
 				return nil
 			}
-
-			return fmt.Errorf("provider %q does not exist", provider)
+			return fmt.Errorf("provider %q does not exist", providerName)
 		}
-
 		return err
 	}
 	err = os.RemoveAll(providerDir)

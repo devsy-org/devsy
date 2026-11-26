@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"runtime"
 	"strings"
 	"testing"
@@ -84,6 +85,65 @@ func TestRedactingWriterRedactsSecretSplitAcrossWrites(t *testing.T) {
 	}
 }
 
+type shortWriter struct{}
+
+func (shortWriter) Write([]byte) (int, error) { return 0, nil }
+
+type countingWriter struct{ writes int }
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.writes++
+	return len(p), nil
+}
+
+func TestRedactingWritersReportShortWrites(t *testing.T) {
+	redactor := secrets.NewRedactor(nil)
+	writers := []struct {
+		name   string
+		writer io.Writer
+	}{
+		{"redacting", RedactingWriter{Next: shortWriter{}, Redactor: redactor}},
+		{"streaming", &StreamingRedactingWriter{Next: shortWriter{}, Redactor: redactor}},
+	}
+	for _, tt := range writers {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.writer.Write([]byte("plain text"))
+			if !errors.Is(err, io.ErrShortWrite) {
+				t.Fatalf("Write error = %v, want ErrShortWrite", err)
+			}
+		})
+	}
+}
+
+func TestStreamingRedactingWriterFlushOnlyWritesPendingBytes(t *testing.T) {
+	var next countingWriter
+	w := &StreamingRedactingWriter{Next: &next, Redactor: secrets.NewRedactor(nil)}
+	_, err := w.Write([]byte("plain text"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if next.writes != 1 {
+		t.Fatalf("downstream writes = %d, want 1", next.writes)
+	}
+}
+
+func TestStreamingRedactingWriterFlushReportsShortWrite(t *testing.T) {
+	w := &StreamingRedactingWriter{
+		Next:     shortWriter{},
+		Redactor: secrets.NewRedactor([]string{"hidden"}),
+	}
+	_, err := w.Write([]byte("h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Flush(); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("Flush error = %v, want ErrShortWrite", err)
+	}
+}
+
 func TestBoundedBufferRedactsSecretSplitAcrossWrites(t *testing.T) {
 	secret := captureTestSecret
 	b := NewBuffer(secrets.NewRedactor([]string{"TOKEN=" + secret}))
@@ -117,6 +177,32 @@ func TestRunCapturesFailureOutput(t *testing.T) {
 	}
 	if !strings.Contains(result.DisplayCommand, "sh -c") {
 		t.Errorf("display command = %q", result.DisplayCommand)
+	}
+}
+
+func TestRunKeepsFunctionalStdoutIndependentOfDiagnosticLimits(t *testing.T) {
+	if runtime.GOOS == testWindows {
+		t.Skip("test command uses sh")
+	}
+	payload := captureTestSecret + "\n" + strings.Repeat("extension\n", MaxCapturedLines+20) +
+		captureTestSecret + "\n"
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), "sh", []string{"-c", "cat"}, Options{
+		Stdin:    strings.NewReader(payload),
+		Stdout:   &stdout,
+		Redactor: secrets.NewRedactor([]string{captureToken + captureTestSecret}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != payload {
+		t.Fatal("functional stdout was truncated or redacted")
+	}
+	if !result.Truncated || strings.Contains(result.Stdout, captureTestSecret) {
+		t.Fatal("diagnostic stdout must remain bounded and redacted")
+	}
+	if !strings.Contains(result.Stdout, "***") {
+		t.Fatal("trailing credential should be masked in diagnostics")
 	}
 }
 
@@ -180,8 +266,8 @@ func TestDiagnosticOutputAnnotatesTruncatedTail(t *testing.T) {
 	if !strings.Contains(got, "warning\nlast useful line") {
 		t.Fatalf("diagnostic output = %q, want stderr before stdout", got)
 	}
-	if !strings.Contains(got, "additional output omitted") || !strings.Contains(got, "--verbose") {
-		t.Fatalf("diagnostic output = %q, want truncation guidance", got)
+	if !strings.Contains(got, "additional output omitted") || strings.Contains(got, "--verbose") {
+		t.Fatalf("diagnostic output = %q, want neutral truncation text", got)
 	}
 }
 

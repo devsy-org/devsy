@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +15,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/encoding"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -99,28 +99,41 @@ func (cmd *ContainerTunnelCmd) Run(cobraCtx context.Context) error {
 	}
 
 	return agent.Tunnel(ctx, agent.TunnelOptions{
-		Exec: func(
-			ctx context.Context,
-			user, command string,
-			stdin io.Reader,
-			stdout, stderr io.Writer,
-		) error {
+		Exec: func(ctx context.Context, req agent.ExecRequest) error {
 			return runner.Command(ctx, devcontainer.CommandParams{
-				User:    user,
-				Command: command,
-				Stdin:   stdin,
-				Stdout:  stdout,
-				Stderr:  stderr,
+				User:      req.User,
+				Command:   req.Command,
+				Stdin:     req.Stdin,
+				Stdout:    req.Stdout,
+				Stderr:    req.Stderr,
+				RawStdout: true,
 			})
 		},
-		User:            cmd.User,
-		Stdin:           os.Stdin,
-		Stdout:          os.Stdout,
-		Stderr:          os.Stderr,
-		Timeout:         workspaceInfo.InjectTimeout,
-		RemoteAgentPath: workspaceInfo.Agent.ContainerInstallPath(),
-		DownloadURL:     workspaceInfo.Agent.DownloadURL,
+		RuntimeHealthCheck: containerRuntimeHealthCheck(workspaceInfo),
+		User:               cmd.User,
+		Stdin:              os.Stdin,
+		Stdout:             os.Stdout,
+		Stderr:             os.Stderr,
+		Timeout:            workspaceInfo.InjectTimeout,
+		RemoteAgentPath:    workspaceInfo.Agent.ContainerInstallPath(),
+		DownloadURL:        workspaceInfo.Agent.DownloadURL,
 	})
+}
+
+func containerRuntimeHealthCheck(info *provider2.AgentWorkspaceInfo) func(context.Context) error {
+	if info.Agent.Driver != "" && info.Agent.Driver != provider2.DockerDriver {
+		return nil
+	}
+	path := info.Agent.Docker.Path
+	if path == "" {
+		path = "docker"
+	}
+	var environment []string
+	for name, value := range info.Agent.Docker.Env {
+		environment = append(environment, name+"="+value)
+	}
+	helper := &docker.DockerHelper{DockerCommand: path, Environment: environment}
+	return helper.CheckRuntimeHealth
 }
 
 // watchForSighup cancels on SIGHUP (the SSH channel driving this process

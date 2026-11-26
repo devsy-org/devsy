@@ -2,9 +2,11 @@ package env
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/internal/managedvalue"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
@@ -28,20 +30,51 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
-	contextName, store, err := resolveContext(cmd.GlobalFlags)
+	if err := envstore.ValidateName(name); err != nil {
+		return err
+	}
+	unlock, err := config.LockConfig()
 	if err != nil {
 		return err
 	}
-	meta, err := store.Meta(contextName, name)
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
-	if meta.Sensitive() {
-		return fmt.Errorf("%q is a secret; use \"devsy secret delete\"", name)
+	contextName := devsyConfig.DefaultContext
+	store, err := envstore.NewStoreForConfig(devsyConfig)
+	if err != nil {
+		return err
 	}
-	if err := store.Delete(contextName, name); err != nil {
+	_, err = store.Meta(contextName, name)
+	if err != nil {
+		return err
+	}
+	if err := deleteEnvironmentValue(deleteEnvRequest{
+		config:  devsyConfig,
+		store:   store,
+		context: contextName,
+		name:    name,
+		save:    config.SaveConfig,
+	}); err != nil {
 		return err
 	}
 	log.Infof("env var %q deleted from context %q", name, contextName)
 	return nil
+}
+
+type deleteEnvRequest struct {
+	config  *config.Config
+	store   interface{ Delete(string, string) error }
+	context string
+	name    string
+	save    func(*config.Config) error
+}
+
+func deleteEnvironmentValue(request deleteEnvRequest) error {
+	return managedvalue.Delete(managedvalue.DeleteRequest{
+		Config: request.config, Store: request.store, Context: request.context,
+		Name: request.name, Binding: managedvalue.EnvBinding, Save: request.save,
+	})
 }

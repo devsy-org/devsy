@@ -1,6 +1,8 @@
 package analytics
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -25,21 +27,41 @@ func NewClient() Client {
 		return NewNoopClient()
 	}
 
-	phClient, err := posthog.NewWithConfig(posthogAPIKey, posthog.Config{
-		Endpoint:     posthogEndpoint,
-		DisableGeoIP: new(false),
-	})
+	cfg, trace := posthogConfig(posthogEndpoint)
+	phClient, err := posthog.NewWithConfig(posthogAPIKey, cfg)
 	if err != nil {
 		log.Debugf("failed to initialize analytics client: %v", err)
 		return NewNoopClient()
 	}
 
-	return &client{phClient: phClient}
+	return &client{phClient: phClient, flushTimeout: flushTimeout, trace: trace}
 }
 
+func posthogConfig(endpoint string) (posthog.Config, *phaseTrace) {
+	transport, trace := newTracingTransport()
+	return posthog.Config{
+		Endpoint:     endpoint,
+		DisableGeoIP: new(false),
+		Transport:    transport,
+		// Bounds Close as well, so no shutdown path can block the CLI.
+		ShutdownTimeout: flushTimeout,
+		Logger:          quietLogger{},
+	}, trace
+}
+
+// quietLogger keeps the SDK off stderr, which machine consumers parse.
+type quietLogger struct{}
+
+func (quietLogger) Debugf(format string, args ...any) { log.Debugf("posthog: "+format, args...) }
+func (quietLogger) Logf(format string, args ...any)   { log.Debugf("posthog: "+format, args...) }
+func (quietLogger) Warnf(format string, args ...any)  { log.Debugf("posthog: "+format, args...) }
+func (quietLogger) Errorf(format string, args ...any) { log.Debugf("posthog: "+format, args...) }
+
 type client struct {
-	phClient  posthog.Client
-	closeOnce sync.Once
+	phClient     posthog.Client
+	flushTimeout time.Duration
+	trace        *phaseTrace
+	closeOnce    sync.Once
 }
 
 func (c *client) RecordEvent(event Event) {
@@ -105,15 +127,19 @@ func (c *client) Flush() {
 	}
 	// The underlying client's Close drains the queue but can only be called once.
 	c.closeOnce.Do(func() {
-		done := make(chan error, 1)
-		go func() { done <- c.phClient.Close() }()
-		select {
-		case err := <-done:
-			if err != nil {
-				log.Debugf("error flushing analytics client: %v", err)
-			}
-		case <-time.After(flushTimeout):
-			log.Debugf("analytics flush timed out after %s; dropping queued events", flushTimeout)
+		// On deadline the SDK cancels the in-flight upload, so nothing keeps
+		// running after Flush returns.
+		ctx, cancel := context.WithTimeout(context.Background(), c.flushTimeout)
+		defer cancel()
+		switch err := c.phClient.CloseWithContext(ctx); {
+		case err == nil:
+		case errors.Is(err, context.DeadlineExceeded):
+			log.Debugf(
+				"analytics flush timed out after %s; dropping queued events (%s)",
+				c.flushTimeout, c.trace.summary(),
+			)
+		default:
+			log.Debugf("error flushing analytics client: %v", err)
 		}
 	})
 }

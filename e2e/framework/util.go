@@ -62,13 +62,31 @@ func CopyToTempDir(relativePath string) (string, error) {
 	return CopyToTempDirInDir("", relativePath)
 }
 
+// WriteTempDevcontainer writes content to devcontainer.json inside a new temp dir named by prefix and returns the dir.
+// The caller owns cleanup of the returned dir.
+func WriteTempDevcontainer(prefix, content string) string {
+	tempDir, err := os.MkdirTemp("", prefix)
+	ExpectNoError(err)
+
+	devcontainerDir := filepath.Join(tempDir, ".devcontainer")
+	ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
+	ExpectNoError(
+		os.WriteFile(
+			filepath.Join(devcontainerDir, "devcontainer.json"),
+			[]byte(content),
+			0o600,
+		),
+	)
+	return tempDir
+}
+
 func CleanupTempDir(initialDir, tempDir string) {
 	err := os.Chdir(initialDir)
 	ExpectNoError(err)
 
 	err = os.RemoveAll(tempDir)
 	if err != nil {
-		fmt.Println("WARN:", err)
+		_, _ = fmt.Fprintln(os.Stdout, "WARN:", err)
 	}
 }
 
@@ -147,6 +165,7 @@ func copyDir(src, dst string) error {
 }
 
 func copyFile(src, dst string) error {
+	//nolint:gosec // test helper opens paths the test itself created
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -164,6 +183,7 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
+	//nolint:gosec // test helper opens paths the test itself created
 	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return err

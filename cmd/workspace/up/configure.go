@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 )
 
 // configureWorkspace sets up SSH, Git, and dotfiles.
@@ -114,6 +115,10 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		return nil
 	}
 
+	if err := checkPreferredSSHHost(client); err != nil {
+		return err
+	}
+
 	path, err := devssh.ResolveSSHConfigPath(cmd.SSHConfigPath)
 	if err != nil {
 		return err
@@ -128,6 +133,11 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		sshConfigIncludePath = includePath
 	}
 
+	owner, err := sshOwner(client)
+	if err != nil {
+		return err
+	}
+
 	return devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        path,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -138,7 +148,18 @@ func (cmd *UpCmd) reconfigureSSHWithTunnel(
 		TunnelPort:           wctx.tunnelPort,
 		AgentForwarding:      devsyConfig.ContextOptionBool(config.ContextOptionSSHAgentForwarding),
 		Provider:             client.Provider(),
+		ResolvePreferredHost: func() string { return sshPresentation(client) },
+		Owner:                owner,
 	})
+}
+
+func sshOwner(client client2.BaseWorkspaceClient) (devssh.Owner, error) {
+	uid := ""
+	if ws := client.WorkspaceConfig(); ws != nil {
+		uid = ws.UID
+	}
+
+	return devssh.NewOwner(client.Context(), uid)
 }
 
 type configureSSHParams struct {
@@ -152,6 +173,10 @@ type configureSSHParams struct {
 }
 
 func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams) error {
+	if err := checkPreferredSSHHost(client); err != nil {
+		return err
+	}
+
 	path, err := devssh.ResolveSSHConfigPath(params.sshConfigPath)
 	if err != nil {
 		return fmt.Errorf("invalid ssh config path: %w", err)
@@ -167,6 +192,11 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		sshConfigIncludePath = includePath
 	}
 
+	owner, err := sshOwner(client)
+	if err != nil {
+		return err
+	}
+
 	err = devssh.ConfigureSSHConfig(devssh.SSHConfigParams{
 		SSHConfigPath:        sshConfigPath,
 		SSHConfigIncludePath: sshConfigIncludePath,
@@ -178,10 +208,30 @@ func configureSSH(client client2.BaseWorkspaceClient, params configureSSHParams)
 		AgentForwarding:      params.agentForwarding,
 		DevsyHome:            params.devsyHome,
 		Provider:             client.Provider(),
+		ResolvePreferredHost: func() string { return sshPresentation(client) },
+		Owner:                owner,
 	})
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func checkPreferredSSHHost(client client2.BaseWorkspaceClient) error {
+	ws := client.WorkspaceConfig()
+	if ws == nil {
+		return nil
+	}
+
+	return workspace2.ValidatePreferredSSHHost(client.Context(), ws.ID, sshPresentation(client))
+}
+
+func sshPresentation(client client2.BaseWorkspaceClient) string {
+	ws := client.WorkspaceConfig()
+	if ws == nil {
+		return ""
+	}
+
+	return ws.PreferredSSHHostCommitted()
 }

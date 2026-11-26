@@ -3,29 +3,51 @@ import { existsSync } from "node:fs"
 import { mkdir, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
+import { isAppNavigationRequest } from "../shared/app-route.js"
 import type { CLIError, OperationStatus } from "../shared/cli-error.js"
 import {
   normalizeOperationStatus,
   parseCliEnvelope,
+  runIdentityFromContext,
+  runIdFromPayload,
 } from "../shared/cli-error.js"
+import type { ProviderIconRequest } from "../shared/provider-icon.js"
+import type { LogRunExportResult } from "../shared/workspace-logs.js"
+import type { WorkspaceActivity } from "../shared/workspace-operation.js"
+import {
+  buildWorkspaceEditArgs,
+  buildWorkspaceUpPresentationArgs,
+  parseWorkspacePresentationResult,
+  presentationFailureFromCliError,
+  validateWorkspacePresentationRequest,
+  type WorkspacePresentationReply,
+  type WorkspacePresentationRequest,
+} from "../shared/workspace-presentation.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
-import type { CliRunner } from "./cli.js"
+import type { AppNavigationController } from "./app-navigation.js"
+import { sanitizeAppSettingsPatch } from "./app-settings.js"
+import type { CliInvocationOptions, CliRunner, StreamLine } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
+import type { LinuxDesktopIntegration } from "./linux-desktop-integration.js"
 import type { LogStore } from "./log-store.js"
-import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
+import { mainLog, registeredSecretValues } from "./logging.js"
 import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
-import type {
-  ProviderActivity,
-  ProviderJobs,
-} from "./provider-jobs.js"
+import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
+import { ProviderIconReader } from "./provider-icons.js"
+import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
+import { createRendererErrorHandler } from "./renderer-error.js"
+import { sendRendererEvent } from "./renderer-events.js"
+import { isTrustedSecretIpcSender } from "./secret-ipc-policy.js"
+import { SecretSession } from "./secret-session.js"
+import type { SettingsService } from "./settings-service.js"
 import type { DaemonState } from "./state.js"
 import {
   checkForUpdates,
-  switchReleaseChannel,
   downloadUpdate,
   getAutoDownloadEnabled,
   getLastStatus,
@@ -33,13 +55,100 @@ import {
   installUpdate,
   type ReleaseChannel,
   setAutoDownloadEnabled,
+  switchReleaseChannel,
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
-import { normalizeWorkspaceStatus } from "./workspace-status.js"
-import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
+import { WorkspaceLogError, WorkspaceLogReader } from "./workspace-logs.js"
+import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
 const execFileAsync = promisify(execFile)
+
+interface SecretIpcFailure {
+  ok: false
+  message: string
+}
+
+type SecretUnlockResult = (SecretIpcFailure | { ok: true }) & {
+  remembered?: true
+}
+
+type SecretUnlockInput =
+  | SecretIpcFailure
+  | { ok: true; requestId?: string; passphrase?: string; remember: boolean }
+
+const protectionDescriptions: Record<string, string> = {
+  "set-passphrase": "Set a passphrase for all file-backed secrets?",
+  "change-passphrase": "Change the passphrase for all file-backed secrets?",
+  "remove-passphrase":
+    "Remove passphrase protection from all file-backed secrets?",
+  remember: "Remember the secrets passphrase in your OS keychain?",
+  forget: "Forget the secrets passphrase stored in your OS keychain?",
+}
+
+function protectionFailure(
+  err: unknown,
+  credentials: Array<string | undefined>,
+): { ok: false; message: string; cliError?: CLIError } {
+  const redact = (value: string) =>
+    credentials.reduce<string>(
+      (text, credential) =>
+        credential ? text.replaceAll(credential, "***") : text,
+      value,
+    )
+  const error = (err as { cliError?: CLIError } | null)?.cliError
+  const cliError = error
+    ? {
+        code: redact(error.code),
+        message: redact(error.message),
+        hint: error.hint ? redact(error.hint) : undefined,
+        context: error.context
+          ? Object.fromEntries(
+              Object.entries(error.context).map(([key, value]) => [
+                redact(key),
+                redact(value),
+              ]),
+            )
+          : undefined,
+      }
+    : undefined
+  return {
+    ok: false,
+    message: cliError?.message ?? "Secret protection operation failed.",
+    cliError,
+  }
+}
+
+/** Validate and snapshot renderer input before any asynchronous approval. */
+function validateSecretUnlockInput(args: unknown): SecretUnlockInput {
+  if (!args || typeof args !== "object")
+    return { ok: false, message: "Invalid unlock request." }
+  const input = args as {
+    requestId?: string
+    passphrase?: unknown
+    remember?: unknown
+  }
+  const passphrase = input.passphrase
+  const remember = input.remember === undefined ? false : input.remember
+  if (typeof remember !== "boolean")
+    return { ok: false, message: "Invalid remember preference." }
+  if (
+    passphrase !== undefined &&
+    (typeof passphrase !== "string" || !passphrase.trim())
+  )
+    return { ok: false, message: "Enter a non-empty passphrase." }
+  return { ok: true, requestId: input.requestId, passphrase, remember }
+}
+
+function providerVersionFlags(tag: unknown, required = false): string[] {
+  if (tag === undefined || tag === "") {
+    if (!required) return []
+    throw new Error("A provider version tag is required.")
+  }
+  if (typeof tag !== "string")
+    throw new Error("Provider version tag must be a string.")
+  return ["--version", tag]
+}
 
 interface SecretEntry {
   name: string
@@ -47,12 +156,21 @@ interface SecretEntry {
   created?: string
   lastUsed?: string
   orphaned?: boolean
+  availability?:
+    | "available"
+    | "locked"
+    | "missing"
+    | "backend_unavailable"
+    | "unknown"
   backend?: "keyring" | "file"
+  attached?: boolean
 }
 
 interface EnvEntry {
   name: string
   value: string
+  context: string
+  attached: boolean
 }
 
 function dockerArch(nodeArch: string): string {
@@ -71,6 +189,7 @@ type UpdateInfo = {
 }
 
 let providerUpdateCache: Record<string, UpdateInfo> = {}
+let providerUpdateCacheCheckedAt: string | null = null
 
 const IMAGE_CATALOG_URL =
   process.env.DEVSY_IMAGE_CATALOG_URL ??
@@ -100,19 +219,30 @@ interface IpcDependencies {
   cli: CliRunner
   state: DaemonState
   logStore: LogStore
-	 machineDiagnosticsStore?: MachineDiagnosticsStore
-	 machineDiagnosticsManager?: MachineDiagnosticsManager
+  machineDiagnosticsStore?: MachineDiagnosticsStore
+  machineDiagnosticsManager?: MachineDiagnosticsManager
   pty: PtyManager
   getMainWindow: () => BrowserWindow | null
   providerJobs: ProviderJobs
   workspaceJobs: WorkspaceJobs
   workspaceSnapshot?: () => unknown
+  refreshWorkspaces?: () => Promise<void>
   onRendererReady?: (sender: Electron.WebContents) => void
+  appNavigation?: AppNavigationController
+  settingsService?: SettingsService
+  linuxDesktopIntegration?: LinuxDesktopIntegration
+  secretSessionTimeoutMs?: number
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
 function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
   return `${new Date().toISOString()}\t${level}\t${line}`
+}
+
+function displayCliLine(line: string, meta?: StreamLine): string {
+  return meta?.cliError
+    ? formatLogLine(meta.cliError.message, "ERROR")
+    : formatLogLine(line)
 }
 
 interface ProgressSink {
@@ -124,18 +254,24 @@ interface ProgressSink {
       cliError?: CLIError
       success?: boolean
     },
-  ): Promise<void>
+  ): Promise<string | undefined>
 }
 
 function redactSensitiveText(value: string): string {
   const secrets = Object.entries(process.env)
-    .filter(([name, secret]) =>
-      secret &&
-      /(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|AUTH|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)/i.test(name),
+    .filter(
+      ([name, secret]) =>
+        secret &&
+        /(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|AUTH|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)/i.test(
+          name,
+        ),
     )
     .map(([, secret]) => secret as string)
     .sort((a, b) => b.length - a.length)
-  const redacted = secrets.reduce((text, secret) => text.split(secret).join("***"), value)
+  const redacted = secrets.reduce(
+    (text, secret) => text.split(secret).join("***"),
+    value,
+  )
   return redacted
     .replace(/(https?:\/\/)[^\s/@]+@/gi, "$1***@")
     .replace(/(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+/gi, "$1***")
@@ -171,9 +307,13 @@ function redactOperationStatus(value: OperationStatus): OperationStatus {
     error: value.error
       ? {
           ...value.error,
-          code: value.error.code ? redactSensitiveText(value.error.code) : undefined,
+          code: value.error.code
+            ? redactSensitiveText(value.error.code)
+            : undefined,
           message: redactSensitiveText(value.error.message),
-          hint: value.error.hint ? redactSensitiveText(value.error.hint) : undefined,
+          hint: value.error.hint
+            ? redactSensitiveText(value.error.hint)
+            : undefined,
           context: value.error.context
             ? Object.fromEntries(
                 Object.entries(value.error.context).map(([key, text]) => [
@@ -215,17 +355,19 @@ function createLogSink(
     if (!done && buf.length === 0) return
     const lines = buf
     buf = []
-    const win = getWin()
-    if (!win || win.isDestroyed?.()) return
-    win.webContents.send("command-progress", {
+    sendRendererEvent(getWin, "command-progress", {
       commandId,
       lines: lines.map(redactSensitiveText),
       done,
       ...(extra
         ? {
             ...extra,
-            message: extra.message ? redactSensitiveText(extra.message) : undefined,
-            cliError: extra.cliError ? redactCLIError(extra.cliError) : undefined,
+            message: extra.message
+              ? redactSensitiveText(extra.message)
+              : undefined,
+            cliError: extra.cliError
+              ? redactCLIError(extra.cliError)
+              : undefined,
           }
         : {}),
     })
@@ -246,14 +388,21 @@ function createLogSink(
       finished = true
       const safeLine = redactSensitiveText(finalLine)
       buf.push(safeLine)
+      let flushError: string | undefined
       try {
-        appendLog?.(safeLine)
-        await flush?.()
+        try {
+          appendLog?.(safeLine)
+        } finally {
+          await flush?.()
+        }
       } catch (error) {
-        // Log persistence must not change a command's actual outcome.
-        console.warn("[workspace-operation] log flush failed", error)
+        flushError = redactSensitiveText(
+          `Workspace log could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        mainLog.warn("[workspace-operation] log flush failed", error)
       }
       post(true, { message: finalLine, ...extra })
+      return flushError
     },
   }
 }
@@ -262,9 +411,432 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   tunnelProcesses: Map<string, import("node:child_process").ChildProcess>
   scheduleProviderUpdateCheck: () => void
   runInitialProviderUpdateCheck: () => void
-  workspaceActions: { stop: (workspaceId: string) => Promise<void> }
+  workspaceActions: {
+    stop: (workspaceId: string) => Promise<void>
+    start: (workspaceId: string) => Promise<void>
+  }
 } {
-	const { cli, state, logStore, pty, providerJobs, workspaceJobs, machineDiagnosticsStore, machineDiagnosticsManager, getMainWindow } = deps
+  const {
+    cli,
+    state,
+    logStore,
+    pty,
+    providerJobs,
+    workspaceJobs,
+    machineDiagnosticsManager,
+    getMainWindow,
+  } = deps
+  const secretSession = new SecretSession(deps.secretSessionTimeoutMs)
+  const providerIcons = new ProviderIconReader(cli)
+  let providerIconContextRevision = -1
+  const providerIconIdentityRevisions = new Map<string, number>()
+  // Clearing the session revokes cache updates from protection operations already in flight.
+  let secretCacheGeneration = 0
+  const requestSecretUnlock = async () => {
+    const win = getMainWindow()
+    return secretSession.request(
+      (requestId) => {
+        if (!win || win.isDestroyed()) return false
+        if (win.isMinimized()) win.restore()
+        if (!win.isVisible()) win.show()
+        win.focus()
+        win.webContents.send("secret_unlock_required", { requestId })
+        return true
+      },
+      win
+        ? (cancel) => {
+            const onNavigation = (
+              _event: Electron.Event,
+              _url: string,
+              isInPlace: boolean,
+              isMainFrame: boolean,
+            ) => {
+              if (!isInPlace && isMainFrame) cancel()
+            }
+            const onRendererGone = () => cancel()
+            const onClosed = () => cancel()
+            win.webContents.on("did-start-navigation", onNavigation)
+            win.webContents.on("render-process-gone", onRendererGone)
+            win.webContents.on("destroyed", onRendererGone)
+            win.on("closed", onClosed)
+            return () => {
+              win.webContents.removeListener(
+                "did-start-navigation",
+                onNavigation,
+              )
+              win.webContents.removeListener(
+                "render-process-gone",
+                onRendererGone,
+              )
+              win.webContents.removeListener("destroyed", onRendererGone)
+              win.removeListener("closed", onClosed)
+            }
+          }
+        : undefined,
+    )
+  }
+  cli.setUnlockHandler(requestSecretUnlock)
+  const secretDocumentURL =
+    !app.isPackaged && process.env.ELECTRON_RENDERER_URL
+      ? process.env.ELECTRON_RENDERER_URL
+      : pathToFileURL(join(__dirname, "../renderer/index.html")).href
+  ipcMain.on(
+    "renderer-error",
+    createRendererErrorHandler({
+      getWindow: getMainWindow,
+      expectedDocumentURL: secretDocumentURL,
+      log: (summary) => mainLog.error("Renderer error", summary),
+      registeredValues: registeredSecretValues,
+    }),
+  )
+  const secretRequestDenied: SecretIpcFailure = {
+    ok: false,
+    message: "Secret operations require the main application window.",
+  }
+
+  const staleSecretUnlockRequest: SecretIpcFailure = {
+    ok: false,
+    message: "Unlock request is no longer active.",
+  }
+
+  const rememberedUnlockCanceled = {
+    ok: false,
+    remembered: true,
+    message:
+      "The passphrase was saved in the OS keychain, but unlocking was canceled. Use Forget to remove the remembered credential.",
+  } satisfies SecretUnlockResult
+  const credentialSubmissions = new Set<string>()
+  const secretUnlockNotices = new Map<
+    string,
+    { requestId: string; message: string }
+  >()
+
+  function retainRememberedUnlockNotice(requestId: string): SecretUnlockResult {
+    if (!secretUnlockNotices.has(requestId)) {
+      secretUnlockNotices.set(requestId, {
+        requestId,
+        message: rememberedUnlockCanceled.message,
+      })
+      try {
+        const win = getMainWindow()
+        if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
+          win.webContents.send("secret_unlock_notice")
+      } catch {
+        // The replacement renderer can fetch retained notices after mounting.
+      }
+    }
+    return rememberedUnlockCanceled
+  }
+
+  ipcMain.handle("secret_unlock_notices", (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return { ok: true, notices: [...secretUnlockNotices.values()] }
+  })
+  ipcMain.handle("secret_unlock_notice_ack", (event, args: unknown) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    const requestId =
+      args &&
+      typeof args === "object" &&
+      !Array.isArray(args) &&
+      "requestId" in args
+        ? args.requestId
+        : undefined
+    if (typeof requestId !== "string" || !requestId.trim())
+      return { ok: false, message: "A valid unlock request ID is required." }
+    secretUnlockNotices.delete(requestId)
+    return { ok: true }
+  })
+
+  function pendingSecretUnlockFailure(
+    event: Electron.IpcMainInvokeEvent,
+    requestId: string | undefined,
+  ): SecretIpcFailure | undefined {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (!secretSession.isPending(requestId)) return staleSecretUnlockRequest
+    return undefined
+  }
+
+  async function rememberUnlockCredential(
+    event: Electron.IpcMainInvokeEvent,
+    win: BrowserWindow,
+    requestId: string | undefined,
+    passphrase: string,
+  ): Promise<SecretUnlockResult> {
+    try {
+      const confirmation = await dialog.showMessageBox(win, {
+        type: "warning",
+        title: "Secret protection",
+        message: "Remember the secrets passphrase in your OS keychain?",
+        detail:
+          "This changes the shared secret store across all contexts. Approved saving may finish after unlock cancellation; Forget removes the saved credential.",
+        buttons: ["Cancel", "Continue"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      const approvalFailure = pendingSecretUnlockFailure(event, requestId)
+      if (approvalFailure) return approvalFailure
+      if (confirmation.response !== 1)
+        return { ok: false, message: "Secret protection change canceled." }
+      await cli.runRaw(["secret", "protection", "remember"], {
+        env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
+        unlockRetried: true,
+      })
+      if (pendingSecretUnlockFailure(event, requestId))
+        return rememberedUnlockCanceled
+      return { ok: true, remembered: true }
+    } catch {
+      return {
+        ok: false,
+        message: "The passphrase could not be verified and remembered.",
+      }
+    }
+  }
+
+  function completeSecretUnlock(
+    event: Electron.IpcMainInvokeEvent,
+    requestId: string | undefined,
+    passphrase: string | undefined,
+  ): SecretIpcFailure | { ok: true } {
+    const failure = pendingSecretUnlockFailure(event, requestId)
+    if (failure) return failure
+    if (!secretSession.submit(requestId, passphrase))
+      return staleSecretUnlockRequest
+    return { ok: true }
+  }
+
+  async function applySecretUnlockCredential(
+    event: Electron.IpcMainInvokeEvent,
+    win: BrowserWindow,
+    requestId: string,
+    passphrase: string,
+    remember: boolean,
+  ): Promise<SecretUnlockResult> {
+    if (!remember) return completeSecretUnlock(event, requestId, passphrase)
+    const remembered = await rememberUnlockCredential(
+      event,
+      win,
+      requestId,
+      passphrase,
+    )
+    if (!remembered.ok)
+      return remembered.remembered
+        ? retainRememberedUnlockNotice(requestId)
+        : remembered
+    // Approval authorizes persistence, but stale completion must not settle a newer unlock.
+    const completed = completeSecretUnlock(event, requestId, passphrase)
+    if (!completed.ok) return retainRememberedUnlockNotice(requestId)
+    return { ok: true, remembered: true }
+  }
+
+  ipcMain.handle("secret_unlock_submit", async (event, args: unknown) => {
+    const win = getMainWindow()
+    if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
+      return secretRequestDenied
+    const input = validateSecretUnlockInput(args)
+    if (!input.ok) return input
+    const { requestId, passphrase, remember } = input
+    if (!secretSession.isPending(requestId)) return staleSecretUnlockRequest
+    // Cancellation remains available while this request's approved remember is running.
+    if (passphrase === undefined)
+      return completeSecretUnlock(event, requestId, undefined)
+    if (credentialSubmissions.has(requestId))
+      return {
+        ok: false,
+        message: "An unlock submission is already in progress.",
+      }
+    credentialSubmissions.add(requestId)
+    try {
+      return await applySecretUnlockCredential(
+        event,
+        win,
+        requestId,
+        passphrase,
+        remember,
+      )
+    } finally {
+      credentialSubmissions.delete(requestId)
+    }
+  })
+  ipcMain.handle("secret_unlock_request", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    const generation = secretCacheGeneration
+    const passphrase = await requestSecretUnlock()
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (passphrase === undefined || generation !== secretCacheGeneration)
+      return { ok: false, message: "Secret unlock canceled." }
+    try {
+      const status = await cli.run<{
+        availability: string
+        reasonCode?: string
+      }>(["secret", "protection", "status"], {
+        env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
+        allowUnlockPrompt: false,
+      })
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      if (generation !== secretCacheGeneration)
+        return { ok: false, message: "Secret unlock canceled." }
+      if (status.availability !== "available") {
+        const message = "The secret store could not be unlocked."
+        return {
+          ok: false,
+          message,
+          cliError: {
+            code: (status.reasonCode ?? "unlock_failed").replaceAll(
+              passphrase,
+              "***",
+            ),
+            message,
+          },
+        }
+      }
+      updateProtectedSessionCredential(event, generation, passphrase)
+      return { ok: true }
+    } catch (err) {
+      const error = (err as { cliError?: CLIError } | null)?.cliError
+      const message = "The secret store could not be unlocked."
+      return {
+        ok: false,
+        message,
+        cliError: error
+          ? {
+              code: error.code.replaceAll(passphrase, "***"),
+              message,
+            }
+          : undefined,
+      }
+    }
+  })
+  ipcMain.handle("secret_protection_status", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return {
+      ...(await cli.run<Record<string, unknown>>([
+        "secret",
+        "protection",
+        "status",
+      ])),
+      sessionUnlocked: cli.hasSessionPassphrase(),
+    }
+  })
+  ipcMain.handle("secret_session_clear", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    secretCacheGeneration++
+    cli.setSessionPassphrase(undefined)
+    secretSession.cancelCurrent()
+  })
+  function protectionApprovalFailure(
+    event: Electron.IpcMainInvokeEvent,
+    generation: number,
+    response: number,
+  ): SecretIpcFailure | undefined {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (generation !== secretCacheGeneration || response !== 1)
+      return { ok: false, message: "Secret protection change canceled." }
+    return undefined
+  }
+
+  function updateProtectedSessionCredential(
+    event: Electron.IpcMainInvokeEvent,
+    generation: number,
+    value: string | undefined,
+  ): void {
+    if (generation !== secretCacheGeneration) return
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return
+    cli.setSessionPassphrase(value)
+  }
+
+  ipcMain.handle(
+    "secret_protection_action",
+    async (
+      event,
+      args: {
+        action: string
+        newPassphrase?: string
+        currentPassphrase?: string
+      },
+    ) => {
+      const win = getMainWindow()
+      if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
+        return secretRequestDenied
+      const allowed = [
+        "set-passphrase",
+        "change-passphrase",
+        "remove-passphrase",
+        "remember",
+        "forget",
+      ]
+      if (!args || typeof args !== "object" || !allowed.includes(args.action))
+        return { ok: false, message: "Unknown protection action." }
+      const action = args.action
+      const { newPassphrase, currentPassphrase } = args
+      if (
+        currentPassphrase !== undefined &&
+        typeof currentPassphrase !== "string"
+      )
+        return { ok: false, message: "Enter a valid current passphrase." }
+      if (newPassphrase !== undefined && typeof newPassphrase !== "string")
+        return { ok: false, message: "Enter a non-empty passphrase." }
+      const options: CliInvocationOptions = {
+        allowUnlockPrompt: false,
+        ...(currentPassphrase !== undefined
+          ? { env: { DEVSY_SECRETS_PASSPHRASE: currentPassphrase } }
+          : {}),
+      }
+      const cacheGeneration = secretCacheGeneration
+      const changesPassphrase = [
+        "set-passphrase",
+        "change-passphrase",
+      ].includes(action)
+      try {
+        const command = ["secret", "protection", action]
+        if (changesPassphrase) {
+          if (typeof newPassphrase !== "string" || !newPassphrase.trim())
+            return { ok: false, message: "Enter a non-empty passphrase." }
+        }
+        const confirmation = await dialog.showMessageBox(win, {
+          type: "warning",
+          title: "Secret protection",
+          message: protectionDescriptions[action],
+          detail: "This changes the shared secret store across all contexts.",
+          buttons: ["Cancel", "Continue"],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        })
+        const approvalFailure = protectionApprovalFailure(
+          event,
+          cacheGeneration,
+          confirmation.response,
+        )
+        if (approvalFailure) return approvalFailure
+        if (changesPassphrase && typeof newPassphrase === "string") {
+          await cli.runRawStdin([...command, "--stdin"], newPassphrase, options)
+          updateProtectedSessionCredential(
+            event,
+            cacheGeneration,
+            newPassphrase,
+          )
+        } else {
+          await cli.runRaw(command, options)
+          if (action === "remove-passphrase")
+            updateProtectedSessionCredential(event, cacheGeneration, undefined)
+        }
+        return { ok: true }
+      } catch (err) {
+        return protectionFailure(err, [currentPassphrase, newPassphrase])
+      }
+    },
+  )
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess
@@ -344,18 +916,29 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       tunnelProc.kill("SIGTERM")
       await tunnelExit
       // If process did not close in time, forcefully kill and suppress any late callbacks
-      if (!settled || (tunnelProc.exitCode === null && tunnelProc.signalCode === null)) {
+      if (
+        !settled ||
+        (tunnelProc.exitCode === null && tunnelProc.signalCode === null)
+      ) {
         // Suppress workspace callbacks from the onLine handler
-        const suppressWorkspaceFn = (tunnelProc as unknown as { _suppressWorkspaceCallbacks?: () => void })._suppressWorkspaceCallbacks
+        const suppressWorkspaceFn = (
+          tunnelProc as unknown as { _suppressWorkspaceCallbacks?: () => void }
+        )._suppressWorkspaceCallbacks
         if (suppressWorkspaceFn) suppressWorkspaceFn()
 
         // Suppress callbacks at the readline level
-        const suppressFn = (tunnelProc as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks
+        const suppressFn = (
+          tunnelProc as unknown as { _suppressCallbacks?: () => void }
+        )._suppressCallbacks
         if (suppressFn) suppressFn()
 
         // Close readline interfaces
-        const rlStdout = (tunnelProc as unknown as { _rlStdout?: { close: () => void } })._rlStdout
-        const rlStderr = (tunnelProc as unknown as { _rlStderr?: { close: () => void } })._rlStderr
+        const rlStdout = (
+          tunnelProc as unknown as { _rlStdout?: { close: () => void } }
+        )._rlStdout
+        const rlStderr = (
+          tunnelProc as unknown as { _rlStderr?: { close: () => void } }
+        )._rlStderr
         if (rlStdout) rlStdout.close()
         if (rlStderr) rlStderr.close()
 
@@ -382,13 +965,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
    * workspace's log directory.
    */
   async function quiesceWorkspace(workspaceId: string): Promise<void> {
-    await serializePerWorkspace(workspaceId, async () => {
-      await cancelActiveUp(workspaceId)
-      await Promise.all([
-        cli.cancelFor(workspaceId),
-        pty.cancelFor(workspaceId),
-      ])
-    })
+    await serializePerWorkspace(workspaceId, () =>
+      quiesceWorkspaceLocked(workspaceId),
+    )
+  }
+
+  /** Callers must already hold the per-workspace lock. */
+  async function quiesceWorkspaceLocked(workspaceId: string): Promise<void> {
+    await cancelActiveUp(workspaceId)
+    await Promise.all([cli.cancelFor(workspaceId), pty.cancelFor(workspaceId)])
   }
 
   function errorMessage(error: unknown): string {
@@ -412,7 +997,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     if (!workspaceJobs.owns(workspaceId, commandId)) return true
     const status = redactOperationStatus(normalizeOperationStatus(envelope))
     workspaceJobs.progress(workspaceId, commandId, status)
-    deps.getMainWindow()?.webContents.send("workspace-status", { commandId, workspaceId, ...status })
+    sendRendererEvent(deps.getMainWindow, "workspace-status", {
+      commandId,
+      workspaceId,
+      ...status,
+    })
     return true
   }
 
@@ -434,15 +1023,21 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     try {
       result = await fn()
     } catch (error) {
+      providerIcons.invalidateProvider(name)
       const cliError = (error as { cliError?: CLIError }).cliError
         ? redactCLIError((error as { cliError: CLIError }).cliError)
         : undefined
       await providerJobs.finish(
         name,
-        cliError ?? redactCLIError({ code: "provider_failed", message: errorMessage(error) }),
+        cliError ??
+          redactCLIError({
+            code: "provider_failed",
+            message: errorMessage(error),
+          }),
       )
       throw error
     }
+    providerIcons.invalidateProvider(name)
     await providerJobs.finish(name)
     return result
   }
@@ -464,7 +1059,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             if (stream !== "stdout") return
             const envelope = parseCliEnvelope(line)
             if (envelope?.kind === "status") {
-              const status = redactOperationStatus(normalizeOperationStatus(envelope))
+              const status = redactOperationStatus(
+                normalizeOperationStatus(envelope),
+              )
               providerJobs.reportStatus(name, status)
             }
           },
@@ -530,10 +1127,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   // ── Workspaces ──
   ipcMain.handle("workspace_list", () => state.workspaceList())
-  ipcMain.handle("workspace_snapshot", () => deps.workspaceSnapshot?.() ?? {
-    workspaces: state.workspaceList(), jobs: workspaceJobs.snapshot(), revision: workspaceJobs.revision,
-  })
-  ipcMain.handle("workspace_refresh", (_event, args: { workspaceId: string }) => workspaceJobs.retryRefresh(args.workspaceId))
+  ipcMain.handle(
+    "workspace_snapshot",
+    () =>
+      deps.workspaceSnapshot?.() ?? {
+        workspaces: state.workspaceList(),
+        jobs: workspaceJobs.snapshot(),
+        revision: workspaceJobs.revision,
+      },
+  )
+  ipcMain.handle("workspace_refresh", (_event, args: { workspaceId: string }) =>
+    workspaceJobs.retryRefresh(args.workspaceId),
+  )
 
   ipcMain.handle(
     "workspace_status",
@@ -550,7 +1155,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.recovery) cliArgs.push("--recovery")
       const generation = workspaceJobs.generation(args.workspaceId)
       const raw = await cli.runRaw(cliArgs)
-      if (!args.recovery && generation === workspaceJobs.generation(args.workspaceId)) {
+      if (
+        !args.recovery &&
+        generation === workspaceJobs.generation(args.workspaceId)
+      ) {
         const status = normalizeWorkspaceStatus(raw)
         if (status && state.updateWorkspaceStatus(args.workspaceId, status)) {
           // The watcher owns renderer broadcasts; this update still keeps
@@ -577,6 +1185,66 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   )
 
   ipcMain.handle(
+    "workspace_edit",
+    async (
+      _event,
+      request: WorkspacePresentationRequest,
+    ): Promise<WorkspacePresentationReply> => {
+      const invalid = validateWorkspacePresentationRequest(request)
+      if (invalid) return { ok: false, ...invalid }
+      trackEvent("workspace_edit", {
+        workspace_ref: hashWorkspaceRef(request.workspaceId),
+      })
+      const context =
+        request.context || state.workspaceContext(request.workspaceId)
+      try {
+        const raw = await cli.run<unknown>(
+          buildWorkspaceEditArgs(request, context),
+        )
+        const result = parseWorkspacePresentationResult(raw)
+        if (!result) {
+          await deps.refreshWorkspaces?.().catch((error) => {
+            mainLog.warn("[workspace-edit] workspace refresh failed", error)
+          })
+          return {
+            ok: false,
+            field: "workspace",
+            code: "failed",
+            message: "Workspace edit returned an unexpected result.",
+          }
+        }
+        const stale =
+          result.id !== request.workspaceId ||
+          result.uid !== request.expectedUid ||
+          result.context !== context
+        await deps.refreshWorkspaces?.().catch((error) => {
+          mainLog.warn("[workspace-edit] workspace refresh failed", error)
+        })
+        if (stale) {
+          return {
+            ok: false,
+            field: "workspace",
+            code: "stale",
+            message: "The workspace changed while saving. Reload and retry.",
+          }
+        }
+        return { ok: true, result }
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const failure = presentationFailureFromCliError(
+          cliError ? redactCLIError(cliError) : undefined,
+          redactSensitiveText(errorMessage(err)),
+        )
+        return {
+          ok: false,
+          ...failure,
+          message: redactSensitiveText(failure.message),
+        }
+      }
+    },
+  )
+
+  ipcMain.handle(
     "workspace_set_ide",
     async (_event, args: { workspaceId: string; ide: string }) => {
       trackEvent("workspace_set_ide", {
@@ -589,13 +1257,65 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   // ── Providers ──
   ipcMain.handle("provider_list", async () => {
+    const readRevision = state.providerReadRevision()
     const raw = await cli.run<Record<string, ProviderEntry>>([
       "provider",
       "list",
     ])
     const providers = parseProviderEntries(raw)
-    state.updateProviders(providers as any[])
+    state.updateProviders(providers, readRevision)
     return state.providerList()
+  })
+
+  // Installed-asset reader only: the renderer names a provider and theme, never
+  // a URL or path. Same top-level-document sender policy as secret IPC.
+  ipcMain.handle("provider_icon", async (event, args: ProviderIconRequest) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      throw new Error("Provider icons require the main application window.")
+    const context = args?.context || state.currentContext()
+    const contextRevision = state.providerIconContextReadRevision()
+    if (contextRevision !== providerIconContextRevision) {
+      providerIcons.invalidateAll()
+      providerIconContextRevision = contextRevision
+    }
+    const providerName = args.providerName
+    const identityKey = `${context}\0${providerName}`
+    const identityRevision = state.providerIconIdentityReadRevision(
+      context,
+      providerName,
+    )
+    const previousIdentityRevision =
+      providerIconIdentityRevisions.get(identityKey)
+    if (
+      previousIdentityRevision !== undefined &&
+      previousIdentityRevision !== identityRevision
+    )
+      providerIcons.invalidateProvider(providerName)
+    providerIconIdentityRevisions.set(identityKey, identityRevision)
+
+    const result = await providerIcons.read({ ...args, context })
+    const currentContextRevision = state.providerIconContextReadRevision()
+    if (currentContextRevision !== contextRevision) {
+      providerIcons.invalidateAll()
+      providerIconContextRevision = currentContextRevision
+      return { revision: "", stale: true }
+    }
+
+    const currentIdentityRevision = state.providerIconIdentityReadRevision(
+      context,
+      providerName,
+    )
+    if (currentIdentityRevision !== identityRevision) {
+      providerIcons.invalidateProvider(providerName)
+      const current =
+        context === state.currentContext()
+          ? state
+              .providerList()
+              .find((provider) => provider.name === providerName)
+          : undefined
+      return { revision: current?.iconRevision ?? "", stale: true }
+    }
+    return result
   })
 
   ipcMain.handle(
@@ -625,10 +1345,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         await providerJobs.finish(
           args.name,
           redactCLIError(
-            cliError ?? { code: "provider_failed", message: errorMessage(error) },
+            cliError ?? {
+              code: "provider_failed",
+              message: errorMessage(error),
+            },
           ),
         )
         throw error
+      } finally {
+        providerIcons.invalidateProvider(args.name)
       }
     },
   )
@@ -636,13 +1361,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
     trackEvent("provider_delete")
     await cli.runRaw(["provider", "delete", args.name])
+    providerIcons.invalidateProvider(args.name)
     // Drop any retained failure so a re-added provider starts clean.
     providerJobs.clear(args.name)
   })
 
-  // Releases a job the caller opened but will not finish — e.g. the wizard
+  // Releases a job the caller opened but will not finish - e.g. the wizard
   // installs a provider, then the user skips initialization or closes the
-  // dialog. Without this the card would spin on "installing…" indefinitely.
+  // dialog. Without this the card would spin on "installing..." indefinitely.
   ipcMain.handle(
     "provider_release_job",
     async (_event, args: { name: string }) => {
@@ -690,12 +1416,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           if (stream === "stdout") {
             const envelope = parseCliEnvelope(line)
             if (envelope?.kind === "status") {
-              const status = redactOperationStatus(normalizeOperationStatus(envelope))
+              const status = redactOperationStatus(
+                normalizeOperationStatus(envelope),
+              )
               providerJobs.reportStatus(args.name, status)
               return
             }
           }
-          const formatted = redactSensitiveText(formatLogLine(line))
+          const formatted = redactSensitiveText(displayCliLine(line, meta))
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: formatted,
@@ -717,10 +1445,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   },
                 ),
           )
-          const exitMsg = redactSensitiveText(formatLogLine(
-            `Exit code: ${code}`,
-            code === 0 ? "INFO" : "ERROR",
-          ))
+          const exitMsg = redactSensitiveText(
+            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+          )
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: exitMsg,
@@ -739,16 +1466,154 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   // set-source installs replacement binaries and clears Initialized, since
   // the new binary has not run its init. Chain init so the provider ends up
   // usable rather than sitting in a needs-re-init state the user must notice.
-  ipcMain.handle("provider_update", async (_event, args: { name: string }) => {
-    await withProviderJob(args.name, "updating", async () => {
-      await runProviderWithStatus(args.name, [
-        "provider",
-        "set-source",
-        args.name,
-        "--use=false",
-      ])
-      await runProviderWithStatus(args.name, ["provider", "init", args.name])
-    })
+  ipcMain.handle(
+    "provider_update",
+    async (_event, args: { name: string; tag?: unknown }) => {
+      const versionFlags = providerVersionFlags(args.tag)
+      await withProviderJob(args.name, "updating", async () => {
+        await runProviderWithStatus(args.name, [
+          "provider",
+          "set-source",
+          args.name,
+          "--use=false",
+          ...versionFlags,
+        ])
+        await runProviderWithStatus(args.name, ["provider", "init", args.name])
+      })
+    },
+  )
+
+  ipcMain.handle(
+    "provider_update_streaming",
+    async (_event, args: { name: string; tag?: unknown }) => {
+      const versionFlags = providerVersionFlags(args.tag)
+      const cmdId = crypto.randomUUID()
+      const win = deps.getMainWindow()
+      providerJobs.start(args.name, "updating")
+
+      const sendProgress = (message: string, level?: string) => {
+        const formatted = redactSensitiveText(formatLogLine(message))
+        providerJobs.appendLog(args.name, formatted)
+        win?.webContents.send("command-progress", {
+          commandId: cmdId,
+          message: formatted,
+          level,
+          done: false,
+        })
+      }
+
+      const runStep = (cliArgs: string[]): Promise<void> =>
+        new Promise((resolve, reject) => {
+          cli
+            .runStreaming(
+              cliArgs,
+              (line, stream, meta) => {
+                if (stream === "stdout") {
+                  const envelope = parseCliEnvelope(line)
+                  if (envelope?.kind === "status") {
+                    providerJobs.reportStatus(
+                      args.name,
+                      redactOperationStatus(normalizeOperationStatus(envelope)),
+                    )
+                    return
+                  }
+                }
+                sendProgress(line, meta?.level)
+              },
+              (code, cliError) => {
+                if (code === 0) {
+                  resolve()
+                  return
+                }
+                reject(
+                  Object.assign(
+                    new Error(
+                      cliError?.message ??
+                        `${cliArgs.join(" ")} exited with ${code}`,
+                    ),
+                    { cliError },
+                  ),
+                )
+              },
+            )
+            .catch(reject)
+        })
+
+      void (async () => {
+        let failure: CLIError | undefined
+        try {
+          sendProgress("Downloading provider update", "info")
+          await runStep([
+            "provider",
+            "set-source",
+            args.name,
+            "--use=false",
+            ...versionFlags,
+          ])
+          sendProgress("Initializing updated provider", "info")
+          await runStep(["provider", "init", args.name])
+        } catch (error) {
+          failure = (error as { cliError?: CLIError }).cliError ?? {
+            code: "provider_update_failed",
+            message: errorMessage(error),
+          }
+        }
+        providerIcons.invalidateProvider(args.name)
+        try {
+          await providerJobs.finish(
+            args.name,
+            failure ? redactCLIError(failure) : undefined,
+          )
+        } catch (error) {
+          failure = {
+            code: "provider_refresh_failed",
+            message:
+              "The provider updated, but its current state could not be refreshed.",
+            hint: "Refresh provider status to try again.",
+            context: { cause: errorMessage(error) },
+          }
+          await providerJobs.finish(args.name, redactCLIError(failure))
+        }
+        win?.webContents.send("command-progress", {
+          commandId: cmdId,
+          message: redactSensitiveText(
+            formatLogLine(
+              failure ? "Provider update failed" : "Provider update complete",
+              failure ? "ERROR" : "INFO",
+            ),
+          ),
+          level: failure ? "error" : "info",
+          success: !failure,
+          cliError: failure ? redactCLIError(failure) : undefined,
+          done: true,
+        })
+      })()
+
+      return cmdId
+    },
+  )
+
+  ipcMain.handle(
+    "provider_refresh_state",
+    async (_event, args: { name: string }) => {
+      try {
+        await providerJobs.retryRefresh(args.name)
+        return { ok: true } as const
+      } catch (error) {
+        return { ok: false, message: errorMessage(error) } as const
+      }
+    },
+  )
+
+  ipcMain.handle("provider_available", async () => {
+    const names = await cli.run<unknown>(["provider", "list", "--available"])
+    if (
+      !Array.isArray(names) ||
+      names.some((name) => typeof name !== "string" || !name.trim())
+    ) {
+      throw new Error("Provider catalog returned invalid data.")
+    }
+    return names
   })
 
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
@@ -757,12 +1622,27 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "provider_set_options",
-    async (_event, args: { name: string; options: string[] }) => {
+    async (
+      _event,
+      args: { name: string; options: string[]; singleMachine?: boolean },
+    ) => {
+      if (
+        args.singleMachine !== undefined &&
+        typeof args.singleMachine !== "boolean"
+      ) {
+        throw new Error("Single-machine selection must be a boolean.")
+      }
       const cliArgs = ["provider", "set", args.name, "--skip-init"]
+      if (args.singleMachine !== undefined) {
+        cliArgs.push(`--single-machine=${args.singleMachine}`)
+      }
       for (const opt of args.options) {
         cliArgs.push("-o", opt)
       }
       await cli.runRaw(cliArgs)
+      if (args.singleMachine !== undefined) {
+        state.confirmProviderSingleMachine(args.name, args.singleMachine)
+      }
     },
   )
 
@@ -776,6 +1656,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "--skip-init",
         `--single-machine=${args.enabled}`,
       ])
+      state.confirmProviderSingleMachine(args.name, args.enabled)
     },
   )
 
@@ -783,6 +1664,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "provider_rename",
     async (_event, args: { name: string; newName: string }) => {
       await cli.runRaw(["provider", "rename", args.name, args.newName])
+      providerIcons.invalidateProvider(args.name)
+      providerIcons.invalidateProvider(args.newName)
     },
   )
 
@@ -806,7 +1689,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "provider_set_version",
-    async (_event, args: { name: string; tag: string }) => {
+    async (_event, args: { name: string; tag?: unknown }) => {
+      const versionFlags = providerVersionFlags(args.tag, true)
       // Pinning a version swaps binaries via the same update path, so it
       // clears Initialized and needs the same re-init as a source change.
       await withProviderJob(args.name, "updating", async () => {
@@ -814,8 +1698,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           "provider",
           "set-source",
           args.name,
-          "--version",
-          args.tag,
+          ...versionFlags,
         ])
         await runProviderWithStatus(args.name, ["provider", "init", args.name])
       })
@@ -825,12 +1708,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("provider_check_updates", async () => {
     const out = await computeUpdateChecks()
     providerUpdateCache = out
+    providerUpdateCacheCheckedAt = new Date().toISOString()
     return out
   })
 
-  ipcMain.handle("provider_get_update_cache", async () => {
-    return providerUpdateCache
-  })
+  ipcMain.handle("provider_get_update_cache", async () => ({
+    updates: providerUpdateCache,
+    lastCheckedAt: providerUpdateCacheCheckedAt,
+  }))
 
   ipcMain.handle("image_catalog_get", async () => {
     const { cachePath, seedPath } = imageCatalogPaths()
@@ -897,7 +1782,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const cliArgs = ["machine", "delete", args.id, "--context", key.context]
       if (args.force) cliArgs.push("--force")
       await cli.runRaw(cliArgs)
-		machineDiagnosticsManager?.delete(key)
+      machineDiagnosticsManager?.delete(key)
     },
   )
 
@@ -908,7 +1793,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("machine_stop", async (_event, args: { id: string }) => {
     const key = { context: state.currentContext(), machineId: args.id }
     await cli.runRaw(["machine", "stop", args.id, "--context", key.context])
-		machineDiagnosticsManager?.markStopped(key)
+    machineDiagnosticsManager?.markStopped(key)
   })
 
   ipcMain.handle("machine_status", async (_event, args: { id: string }) => {
@@ -916,22 +1801,36 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   })
 
   ipcMain.handle("machine_diagnostics_get", (_event, args: { id: string }) => {
-		return machineDiagnosticsManager?.getCached({ context: state.currentContext(), machineId: args.id }) ?? null
+    return (
+      machineDiagnosticsManager?.getCached({
+        context: state.currentContext(),
+        machineId: args.id,
+      }) ?? null
+    )
   })
 
-  ipcMain.handle("machine_diagnostics_refresh", async (_event, args: { id: string }) => {
-		if (!machineDiagnosticsManager) throw new Error("machine diagnostics manager is unavailable")
-		const key = { context: state.currentContext(), machineId: args.id }
-		const merged = await machineDiagnosticsManager.refresh(key)
-    getMainWindow()?.webContents.send("machine-diagnostics-changed", { machineId: args.id, context: key.context, diagnostics: merged })
-    return merged
-  })
+  ipcMain.handle(
+    "machine_diagnostics_refresh",
+    async (_event, args: { id: string }) => {
+      if (!machineDiagnosticsManager)
+        throw new Error("machine diagnostics manager is unavailable")
+      const key = { context: state.currentContext(), machineId: args.id }
+      const merged = await machineDiagnosticsManager.refresh(key)
+      getMainWindow()?.webContents.send("machine-diagnostics-changed", {
+        machineId: args.id,
+        context: key.context,
+        diagnostics: merged,
+      })
+      return merged
+    },
+  )
 
   // ── Contexts ──
   ipcMain.handle("context_list", () => state.contextList())
 
   ipcMain.handle("context_use", async (_event, args: { name: string }) => {
     await cli.runRaw(["context", "use", args.name])
+    providerIcons.invalidateAll()
   })
 
   ipcMain.handle(
@@ -965,23 +1864,43 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     }
   })
 
-  ipcMain.handle("context_delete", async (_event, args: { name: string }) => {
+  ipcMain.handle("context_delete", async (event, args: { name: string }) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
     await cli.runRaw(["context", "delete", args.name])
+    providerIcons.invalidateAll()
   })
 
-  ipcMain.handle("secret_list", async () =>
-    cli.run<SecretEntry[]>(["secret", "list"]),
-  )
+  function variableContextArgs(context: string | undefined): string[] {
+    if (context === undefined) return []
+    if (typeof context !== "string" || !context.trim())
+      throw new Error("A valid context is required.")
+    return ["--context", context]
+  }
+
+  ipcMain.handle("secret_list", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return cli.run<SecretEntry[]>(["secret", "list"])
+  })
 
   // Returns an envelope rather than throwing so a structured cliError survives
   // the IPC boundary (see provider_init above).
   ipcMain.handle(
     "secret_set",
-    async (_event, args: { name: string; value: string }) => {
+    async (event, args: { name: string; value: string; context?: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
       trackEvent("secret_set")
       try {
         await cli.runRawStdin(
-          ["secret", "set", args.name, "--stdin"],
+          [
+            ...variableContextArgs(args.context),
+            "secret",
+            "set",
+            args.name,
+            "--stdin",
+          ],
           args.value,
         )
         return { ok: true } as const
@@ -993,28 +1912,19 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("secret_delete", async (_event, args: { name: string }) => {
-    trackEvent("secret_delete")
-    try {
-      await cli.runRaw(["secret", "delete", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
-
-  ipcMain.handle("env_list", async () => cli.run<EnvEntry[]>(["env", "list"]))
-
-  // Returns an envelope rather than throwing so a structured cliError survives
-  // the IPC boundary (see provider_init above).
   ipcMain.handle(
-    "env_set",
-    async (_event, args: { name: string; value: string }) => {
-      trackEvent("env_set")
+    "secret_delete",
+    async (event, args: { name: string; context?: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      trackEvent("secret_delete")
       try {
-        await cli.runRaw(["env", "set", args.name, "--value", args.value])
+        await cli.runRaw([
+          ...variableContextArgs(args.context),
+          "secret",
+          "delete",
+          args.name,
+        ])
         return { ok: true } as const
       } catch (err) {
         const cliError = (err as { cliError?: CLIError }).cliError
@@ -1024,17 +1934,147 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("env_delete", async (_event, args: { name: string }) => {
-    trackEvent("env_delete")
-    try {
-      await cli.runRaw(["env", "delete", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
+  ipcMain.handle(
+    "secret_attach",
+    async (event, args: { name: string; context: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      trackEvent("secret_attach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "secret",
+          "attach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "secret_detach",
+    async (event, args: { name: string; context: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      trackEvent("secret_detach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "secret",
+          "detach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle("env_list", async (_event, args?: { context?: string }) =>
+    cli.run<EnvEntry[]>([...variableContextArgs(args?.context), "env", "list"]),
+  )
+
+  // Returns an envelope rather than throwing so a structured cliError survives
+  // the IPC boundary (see provider_init above).
+  ipcMain.handle(
+    "env_set",
+    async (_event, args: { name: string; value: string; context?: string }) => {
+      trackEvent("env_set")
+      try {
+        await cli.runRaw([
+          ...variableContextArgs(args.context),
+          "env",
+          "set",
+          args.name,
+          "--value",
+          args.value,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "env_delete",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_delete")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "delete",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "env_attach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_attach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "attach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "env_detach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_detach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "detach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
 
   // ── System ──
   ipcMain.handle("devsy_version", async () => {
@@ -1091,241 +2131,332 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
+  // Retained build and lifecycle history. The reader owns only its own
+  // requests; closing a history view must not touch the task follower.
+  const logReader = new WorkspaceLogReader(cli)
+  const cancelledAsNull = async <T>(read: Promise<T>): Promise<T | null> => {
+    try {
+      return await read
+    } catch (error) {
+      if (error instanceof WorkspaceLogError && error.code === "cancelled")
+        return null
+      throw error
+    }
+  }
+  ipcMain.handle("workspace_log_runs", (_event, args: unknown) =>
+    cancelledAsNull(logReader.runs(args)),
+  )
+  ipcMain.handle("workspace_log_run_read", (_event, args: unknown) =>
+    cancelledAsNull(logReader.read(args)),
+  )
+  ipcMain.handle("workspace_log_run_cancel", () => logReader.cancel())
   ipcMain.handle(
-    "workspace_up",
-    async (
-      _event,
-      args: {
-        source: string
-        workspaceId?: string
-        provider?: string
-        ide?: string
-        ideLaunch?: "auto" | "headless" | "skip"
-        debug?: boolean
-        workspaceFolder?: string
-        devcontainer?: string
-        prebuildRepository?: string
-        platform?: string
-        recovery?: boolean
-        commandId?: string
-      },
-    ) => {
-      trackEvent("workspace_create", {
-        provider: args.provider,
-        workspace_ref: hashWorkspaceRef(args.workspaceId ?? args.source),
-      })
-      const cliArgs = ["workspace", "up", args.source]
-      if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
-      if (args.provider) cliArgs.push("--provider", args.provider)
-      if (args.ide) cliArgs.push("--ide", args.ide)
-      if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
-      if (args.debug) cliArgs.push("--debug")
-      if (args.workspaceFolder)
-        cliArgs.push("--workspace-folder", args.workspaceFolder)
-      if (args.devcontainer) cliArgs.push("--devcontainer", args.devcontainer)
-      if (args.prebuildRepository)
-        cliArgs.push("--prebuild-repo", args.prebuildRepository)
-      if (args.platform) cliArgs.push("--platform", args.platform)
-      if (args.recovery) cliArgs.push("--recovery")
+    "workspace_log_run_export",
+    async (_event, args: unknown): Promise<LogRunExportResult> => {
+      const runId =
+        args && typeof args === "object"
+          ? String((args as { runId?: unknown }).runId ?? "")
+          : ""
+      const options = {
+        defaultPath: `devsy-setup-${runId.slice(0, 8) || "run"}.txt`,
+        filters: [{ name: "Text", extensions: ["txt"] }],
+      }
+      const win = deps.getMainWindow()
+      const picked = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options)
+      if (picked.canceled || !picked.filePath) return { status: "canceled" }
+      try {
+        const done = await logReader.exportRun(args, picked.filePath)
+        return { status: "saved", path: picked.filePath, ...done }
+      } catch (error) {
+        if (error instanceof WorkspaceLogError && error.code === "cancelled")
+          return { status: "canceled" }
+        throw error
+      }
+    },
+  )
 
-      const wsId = args.workspaceId ?? args.source
-      const cmdId = args.commandId ?? crypto.randomUUID()
-      const activity = args.workspaceId ? "creating" : "starting"
-      const generation = workspaceJobs.start(wsId, activity, cmdId)
-      const started = performance.now()
-      const timing = (stage: string) =>
-        console.debug(
-          `[workspace-operation] ${cmdId} ${stage} ${Math.round(performance.now() - started)}ms`,
-        )
-      timing("accepted")
-      void (async () => {
-        const logPath = logStore.createLogFile(
-          state.workspaceContext(wsId),
-          wsId,
-        )
-        const sink = createLogSink(
-          deps.getMainWindow,
-          cmdId,
-          (line) => logStore.appendLog(logPath, line),
-          () => logStore.closeLog(logPath),
-        )
+  const runWorkspaceUp = (args: {
+    source: string
+    workspaceId?: string
+    displayName?: string
+    sshHostAlias?: string
+    provider?: string
+    ide?: string
+    ideLaunch?: "auto" | "headless" | "skip"
+    workspaceFolder?: string
+    devcontainer?: string
+    prebuildRepository?: string
+    platform?: string
+    recovery?: boolean
+    commandId?: string
+  }): { commandId: string; completion: Promise<void> } => {
+    trackEvent("workspace_create", {
+      provider: args.provider,
+      workspace_ref: hashWorkspaceRef(args.workspaceId ?? args.source),
+    })
+    const cliArgs = ["workspace", "up", args.source]
+    if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
+    cliArgs.push(...buildWorkspaceUpPresentationArgs(args))
+    if (args.provider) cliArgs.push("--provider", args.provider)
+    if (args.ide) cliArgs.push("--ide", args.ide)
+    if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
+    if (args.workspaceFolder)
+      cliArgs.push("--workspace-folder", args.workspaceFolder)
+    if (args.devcontainer) cliArgs.push("--devcontainer", args.devcontainer)
+    if (args.prebuildRepository)
+      cliArgs.push("--prebuild-repo", args.prebuildRepository)
+    if (args.platform) cliArgs.push("--platform", args.platform)
+    if (args.recovery) cliArgs.push("--recovery")
 
-        await serializePerWorkspace(wsId, async () => {
-          // Tear down any prior run for this workspace before starting a new
-          // one.
-          let taskId: string
-          try {
-            workspaceJobs.phase(wsId, cmdId, "Closing connections")
-            await cancelActiveUp(wsId)
-            timing("shutdown-complete")
-            workspaceJobs.phase(wsId, cmdId, "Launching command")
-            timing("cli-launch")
-            // Submit: returns immediately with the background task's id.
-            const submitted = await cli.run<{ kind: string; id: string }>([
-              ...cliArgs,
-              "--detach",
-            ])
-            if (!submitted?.id) {
-              throw new Error("workspace up --detach returned no task id")
-            }
-            taskId = submitted.id
-          } catch (error) {
-            const err = error as Error & { cliError?: CLIError }
-            void sink.done(formatLogLine(err.message, "ERROR"), {
+    const wsId = args.workspaceId ?? args.source
+    const cmdId = args.commandId ?? crypto.randomUUID()
+    const activity = args.workspaceId ? "creating" : "starting"
+    const generation = workspaceJobs.start(wsId, activity, cmdId)
+    const completion = runDetachedUp({
+      wsId,
+      cmdId,
+      generation,
+      cliArgs,
+      prepare: () => cancelActiveUp(wsId),
+    })
+    return { commandId: cmdId, completion }
+  }
+
+  type DetachedUpRun = {
+    wsId: string
+    cmdId: string
+    generation: number
+    cliArgs: string[]
+    /** Runs under the per-workspace lock, before the task is submitted. */
+    prepare: () => Promise<void>
+  }
+
+  /**
+   * Submits `workspace up --detach` and follows its task. Shared by create,
+   * start, rebuild and reset so task ownership, cancellation and result
+   * handling live in one place.
+   */
+  function runDetachedUp(run: DetachedUpRun): Promise<void> {
+    const { wsId, cmdId, generation, cliArgs } = run
+    const started = performance.now()
+    const timing = (stage: string) =>
+      mainLog.debug(
+        `[workspace-operation] ${cmdId} ${stage} ${Math.round(performance.now() - started)}ms`,
+      )
+    timing("accepted")
+    let failureSink = createLogSink(deps.getMainWindow, cmdId)
+    return (async () => {
+      const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
+      const sink = createLogSink(
+        deps.getMainWindow,
+        cmdId,
+        (line) => logStore.appendLog(logPath, line),
+        () => logStore.closeLog(logPath),
+      )
+
+      failureSink = sink
+      const finishUp = async (
+        line: string,
+        extra: Parameters<ProgressSink["done"]>[1],
+        error?: string,
+      ) => {
+        const flushError = await sink.done(line, extra)
+        await workspaceJobs.finish(wsId, generation, error, flushError)
+      }
+
+      workspaceJobs.phase(wsId, cmdId, "Closing connections")
+      await serializePerWorkspace(wsId, async () => {
+        // Tear down any prior run for this workspace before starting a new
+        // one.
+        let taskId: string
+        try {
+          await run.prepare()
+          timing("shutdown-complete")
+          workspaceJobs.phase(wsId, cmdId, "Launching command")
+          timing("cli-launch")
+          // Submit: returns immediately with the background task's id.
+          const submitted = await cli.run<{
+            kind: string
+            id: string
+            runId?: string
+          }>([...cliArgs, "--detach"])
+          if (!submitted?.id) {
+            throw new Error("workspace up --detach returned no task id")
+          }
+          taskId = submitted.id
+          workspaceJobs.setRun(wsId, cmdId, {
+            runId: runIdFromPayload(submitted),
+          })
+        } catch (error) {
+          const safe = redactCLIError(cliErrorOrFallback(error, "up_failed"))
+          await finishUp(
+            formatLogLine(safe.message, "ERROR"),
+            {
               level: "error",
               success: false,
-              cliError: err.cliError ?? {
-                code: "up_failed",
-                message: err.message,
-              },
-            })
-            await workspaceJobs.finish(
-              wsId,
-              generation,
-              redactCLIError(
-                err.cliError ?? { code: "up_failed", message: err.message },
-              ).message,
-            )
-            return cmdId
+              cliError: safe,
+            },
+            safe.message,
+          )
+          return cmdId
+        }
+        activeUpTasks.set(wsId, taskId)
+
+        // A newer submission may already own the entry and must stay cancellable.
+        const releaseTask = () => {
+          if (activeUpTasks.get(wsId) === taskId) {
+            activeUpTasks.delete(wsId)
           }
-          activeUpTasks.set(wsId, taskId)
+        }
 
-          // A newer submission may already own the entry and must stay cancellable.
-          const releaseTask = () => {
-            if (activeUpTasks.get(wsId) === taskId) {
-              activeUpTasks.delete(wsId)
-            }
-          }
+        let firstProgress = true
+        let signalledDone = false
+        let suppressCallbacks = false
+        let child: import("node:child_process").ChildProcess
+        try {
+          child = await cli.runStreaming(
+            ["workspace", "task", "logs", taskId, "--follow"],
+            (line, stream, meta) => {
+              if (
+                signalledDone ||
+                suppressCallbacks ||
+                !workspaceJobs.owns(wsId, cmdId)
+              )
+                return
 
-          let firstProgress = true
-          let signalledDone = false
-          let suppressCallbacks = false
-          let child: import("node:child_process").ChildProcess
-          try {
-            child = await cli.runStreaming(
-              ["workspace", "task", "logs", taskId, "--follow"],
-              (line, stream) => {
-                if (
-                  signalledDone ||
-                  suppressCallbacks ||
-                  !workspaceJobs.owns(wsId, cmdId)
+              if (firstProgress) {
+                timing("first-progress")
+                firstProgress = false
+              }
+              // Structured NDJSON envelopes only ever appear on stdout; stderr
+              // carries freeform zap log lines.
+              const envelope =
+                stream === "stdout" ? parseCliEnvelope(line) : undefined
+
+              if (envelope?.kind === "status") {
+                const status = redactOperationStatus(
+                  normalizeOperationStatus(envelope),
                 )
-                  return
+                workspaceJobs.progress(wsId, cmdId, status)
+                sendRendererEvent(deps.getMainWindow, "workspace-status", {
+                  commandId: cmdId,
+                  workspaceId: wsId,
+                  ...status,
+                })
+                return
+              }
 
-                if (firstProgress) {
-                  timing("first-progress")
-                  firstProgress = false
-                }
-                // Structured NDJSON envelopes only ever appear on stdout; stderr
-                // carries freeform zap log lines.
-                const envelope =
-                  stream === "stdout" ? parseCliEnvelope(line) : undefined
+              const formatted = displayCliLine(line, meta)
 
-                if (envelope?.kind === "status") {
-                  const status = redactOperationStatus(
-                    normalizeOperationStatus(envelope),
-                  )
-                  workspaceJobs.progress(wsId, cmdId, status)
-                  deps.getMainWindow()?.webContents.send("workspace-status", {
-                    commandId: cmdId,
-                    workspaceId: wsId,
-                    ...status,
-                  })
-                  return
-                }
+              if (envelope?.kind === "result") {
+                signalledDone = true
+                workspaceJobs.setRun(wsId, cmdId, {
+                  runId: runIdFromPayload(envelope),
+                })
+                releaseTask()
+                timing("completed")
+                void finishUp(formatted, { success: true })
+                return
+              }
 
-                const formatted = formatLogLine(line)
-
-                if (envelope?.kind === "result") {
-                  signalledDone = true
-                  releaseTask()
-                  timing("completed")
-                  void workspaceJobs.finish(wsId, generation)
-                  void sink.done(formatted, { success: true })
-                  return
-                }
-
-                if (envelope?.kind === "error") {
-                  signalledDone = true
-                  releaseTask()
-                  void workspaceJobs.finish(
-                    wsId,
-                    generation,
-                    redactCLIError({
-                      code: envelope.code ?? "up_failed",
-                      message: envelope.message,
-                    }).message,
-                  )
-                  void sink.done(formatted, {
-                    level: "error",
-                    success: false,
-                    cliError: {
-                      code: envelope.code ?? "up_failed",
-                      message: envelope.message,
-                      hint: envelope.hint,
-                      context: envelope.context,
-                    },
-                  })
-                  return
-                }
-
-                if (!sink.line(formatted)) return logStore.onDrain(logPath)
-              },
-              (code, cliError) => {
-                // No releaseTask: the follower dying says nothing about the
-                // detached worker, and would orphan a still-running task.
-                if (tunnelProcesses.get(wsId) === child) {
-                  tunnelProcesses.delete(wsId)
-                }
-                if (
-                  signalledDone ||
-                  suppressCallbacks ||
-                  !workspaceJobs.owns(wsId, cmdId)
-                )
-                  return
-                // A follower exiting is not evidence that the detached task finished.
-                void reconcileDetachedTask(
+              if (envelope?.kind === "error") {
+                signalledDone = true
+                workspaceJobs.setRun(
                   wsId,
                   cmdId,
-                  generation,
-                  taskId,
-                  sink,
-                  releaseTask,
+                  runIdentityFromContext(envelope.context),
                 )
-              },
-              wsId,
-            )
-            // Expose a method to suppress callbacks from cancelActiveUp
-            ;(
-              child as unknown as { _suppressWorkspaceCallbacks?: () => void }
-            )._suppressWorkspaceCallbacks = () => {
-              suppressCallbacks = true
-            }
-          } catch (error) {
-            // A failed follower does not prove that the detached task failed.
-            // Keep its cancellation handle and reconcile from persisted task state.
-            void reconcileDetachedTask(
-              wsId,
-              cmdId,
-              generation,
-              taskId,
-              sink,
-              releaseTask,
-            )
-            return cmdId
-          }
-          tunnelProcesses.set(wsId, child)
+                releaseTask()
+                const safe = redactCLIError({
+                  code: envelope.code ?? "up_failed",
+                  message: envelope.message,
+                  hint: envelope.hint,
+                  context: envelope.context,
+                })
+                void finishUp(
+                  formatted,
+                  {
+                    level: "error",
+                    success: false,
+                    cliError: safe,
+                  },
+                  safe.message,
+                )
+                return
+              }
 
+              if (!sink.line(formatted)) return logStore.onDrain(logPath)
+            },
+            (_code, _cliError) => {
+              // No releaseTask: the follower dying says nothing about the
+              // detached worker, and would orphan a still-running task.
+              if (tunnelProcesses.get(wsId) === child) {
+                tunnelProcesses.delete(wsId)
+              }
+              if (
+                signalledDone ||
+                suppressCallbacks ||
+                !workspaceJobs.owns(wsId, cmdId)
+              )
+                return
+              // A follower exiting is not evidence that the detached task finished.
+              void reconcileDetachedTask(
+                wsId,
+                cmdId,
+                generation,
+                taskId,
+                sink,
+                releaseTask,
+              )
+            },
+            wsId,
+          )
+          ;(
+            child as unknown as { _suppressWorkspaceCallbacks?: () => void }
+          )._suppressWorkspaceCallbacks = () => {
+            suppressCallbacks = true
+          }
+        } catch {
+          // A failed follower does not prove that the detached task failed.
+          // Keep its cancellation handle and reconcile from persisted task state.
+          void reconcileDetachedTask(
+            wsId,
+            cmdId,
+            generation,
+            taskId,
+            sink,
+            releaseTask,
+          )
           return cmdId
-        })
-      })().catch(async (error) => {
-        await workspaceJobs.finish(
-          wsId,
-          generation,
-          redactCLIError(cliErrorOrFallback(error, "up_failed")).message,
-        )
+        }
+        tunnelProcesses.set(wsId, child)
+
+        return cmdId
       })
-      return cmdId
+    })().catch(async (error) => {
+      const safe = redactCLIError(cliErrorOrFallback(error, "up_failed"))
+      let flushError: string | undefined
+      if (workspaceJobs.owns(wsId, cmdId)) {
+        flushError = await failureSink.done(
+          formatLogLine(safe.message, "ERROR"),
+          {
+            success: false,
+            level: "error",
+            cliError: safe,
+          },
+        )
+      }
+      await workspaceJobs.finish(wsId, generation, safe.message, flushError)
+    })
+  }
+  ipcMain.handle(
+    "workspace_up",
+    (event, args: Parameters<typeof runWorkspaceUp>[0]) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      return runWorkspaceUp(args).commandId
     },
   )
 
@@ -1354,13 +2485,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         for (const line of raw.split("\n")) {
           const envelope = parseCliEnvelope(line)
           if (envelope?.kind === "result") {
+            workspaceJobs.setRun(wsId, commandId, {
+              runId: runIdFromPayload(envelope),
+            })
             release()
-            await sink
-              .done(formatLogLine("Completed"), { success: true })
-              .catch((error) =>
-                console.warn("[workspace-operation] log flush failed", error),
-              )
-            await workspaceJobs.finish(wsId, generation)
+            const flushError = await sink.done(formatLogLine("Completed"), {
+              success: true,
+            })
+            await workspaceJobs.finish(wsId, generation, undefined, flushError)
             return
           }
           if (envelope?.kind === "status")
@@ -1370,7 +2502,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               redactOperationStatus(normalizeOperationStatus(envelope)),
             )
         }
-      } catch (error) {
+      } catch {
         // task get can also fail because the store/CLI is unavailable. Only a
         // persisted terminal task state authorizes declaring the worker failed.
         try {
@@ -1380,6 +2512,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               status: string
               error?: string
               errorCode?: string
+              runId?: string
             }>
           >(["workspace", "task", "list"])
           const task = tasks.find((task) => task.id === taskId)
@@ -1387,16 +2520,27 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             task?.status === "failed" &&
             workspaceJobs.owns(wsId, commandId)
           ) {
+            workspaceJobs.setRun(wsId, commandId, {
+              runId: runIdFromPayload(task),
+            })
             release()
             const safe = redactCLIError({
               code: task.errorCode ?? "up_failed",
               message: task.error || "Workspace task failed",
             })
-            await sink.done(formatLogLine(safe.message, "ERROR"), {
-              success: false,
-              cliError: safe,
-            })
-            await workspaceJobs.finish(wsId, generation, safe.message)
+            const flushError = await sink.done(
+              formatLogLine(safe.message, "ERROR"),
+              {
+                success: false,
+                cliError: safe,
+              },
+            )
+            await workspaceJobs.finish(
+              wsId,
+              generation,
+              safe.message,
+              flushError,
+            )
             return
           }
         } catch {
@@ -1415,7 +2559,6 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   type WorkspaceActionSource = "renderer" | "tray"
   type StopWorkspaceArgs = {
     workspaceId: string
-    debug?: boolean
     commandId?: string
   }
 
@@ -1433,7 +2576,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     )
     const started = performance.now()
     const timing = (stage: string) =>
-      console.debug(
+      mainLog.debug(
         `[workspace-operation] ${commandId} ${stage} ${Math.round(performance.now() - started)}ms`,
       )
     trackEvent(
@@ -1457,7 +2600,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           (line) => logStore.appendLog(logPath, line),
           () => logStore.closeLog(logPath),
         )
-        if (args.debug) cliArgs.push("--debug")
+        const progressSink = sink
         workspaceJobs.phase(args.workspaceId, commandId, "Launching command")
         timing("cli-launch")
         let firstProgress = true
@@ -1465,7 +2608,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           void cli
             .runStreaming(
               cliArgs,
-              (line, stream) => {
+              (line, stream, meta) => {
                 if (!workspaceJobs.owns(args.workspaceId, commandId)) return
                 if (firstProgress) {
                   timing("first-progress")
@@ -1480,7 +2623,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   )
                 )
                   return
-                if (!sink!.line(formatLogLine(line)))
+                if (!progressSink.line(displayCliLine(line, meta)))
                   return logStore.onDrain(logPath)
               },
               (code, cliError) => {
@@ -1500,35 +2643,67 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             .catch(reject)
         })
         timing("completed")
-        await sink
+        const flushError = await sink
           .done(formatLogLine("Completed"), { success: true })
-          .catch((error) =>
-            console.warn("[workspace-operation] log flush failed", error),
-          )
-        await workspaceJobs.finish(args.workspaceId, generation)
+          .catch((error) => {
+            mainLog.warn("[workspace-operation] log flush failed", error)
+            return undefined
+          })
+        await workspaceJobs.finish(
+          args.workspaceId,
+          generation,
+          undefined,
+          flushError,
+        )
         timing("reconciled")
       } catch (error) {
         const cliError = redactCLIError(
           cliErrorOrFallback(error, "workspace_operation_failed"),
         )
-        if (sink)
-          await sink
-            .done(formatLogLine(cliError.message, "ERROR"), {
-              success: false,
-              level: "error",
-              cliError,
-            })
-            .catch(() => {})
+        const flushError = await sink
+          ?.done(formatLogLine(cliError.message, "ERROR"), {
+            success: false,
+            level: "error",
+            cliError,
+          })
+          .catch(() => undefined)
         await workspaceJobs.finish(
           args.workspaceId,
           generation,
           cliError.message,
+          flushError,
         )
         throw error
       }
     })()
     // IPC acknowledges acceptance. All subsequent errors live in the shared job.
     void completion.catch(() => {})
+    return { commandId, completion }
+  }
+
+  /** Rebuild and reset: a detached up, so run identity reaches the job. */
+  function startWorkspaceUp(
+    args: StopWorkspaceArgs,
+    activity: "rebuilding" | "resetting",
+    flag: "--recreate" | "--reset",
+  ): { commandId: string; completion: Promise<void> } {
+    const commandId = args.commandId ?? crypto.randomUUID()
+    const generation = workspaceJobs.start(
+      args.workspaceId,
+      activity,
+      commandId,
+    )
+    trackEvent(`workspace_${activity === "rebuilding" ? "rebuild" : "reset"}`, {
+      workspace_ref: hashWorkspaceRef(args.workspaceId),
+      source: "renderer",
+    })
+    const completion = runDetachedUp({
+      wsId: args.workspaceId,
+      cmdId: commandId,
+      generation,
+      cliArgs: ["workspace", "up", args.workspaceId, flag],
+      prepare: () => quiesceWorkspaceLocked(args.workspaceId),
+    })
     return { commandId, completion }
   }
 
@@ -1558,26 +2733,16 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "--force",
       ]).commandId,
   )
-  ipcMain.handle(
-    "workspace_rebuild",
-    (_event, args: StopWorkspaceArgs) =>
-      startWorkspaceAction(args, "rebuilding", [
-        "workspace",
-        "up",
-        args.workspaceId,
-        "--recreate",
-      ]).commandId,
-  )
-  ipcMain.handle(
-    "workspace_reset",
-    (_event, args: StopWorkspaceArgs) =>
-      startWorkspaceAction(args, "resetting", [
-        "workspace",
-        "up",
-        args.workspaceId,
-        "--reset",
-      ]).commandId,
-  )
+  ipcMain.handle("workspace_rebuild", (event, args: StopWorkspaceArgs) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return startWorkspaceUp(args, "rebuilding", "--recreate").commandId
+  })
+  ipcMain.handle("workspace_reset", (event, args: StopWorkspaceArgs) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return startWorkspaceUp(args, "resetting", "--reset").commandId
+  })
 
   // ── Terminal ──
   ipcMain.handle(
@@ -1593,7 +2758,16 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       _event,
       args: { workspaceId: string; cols: number; rows: number },
     ) => {
-      return deps.pty.createSshSession(args.workspaceId, args.cols, args.rows)
+      const diagnosticLogPath = logStore.createDiagnosticLogPath(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+      )
+      return deps.pty.createSshSession(
+        args.workspaceId,
+        args.cols,
+        args.rows,
+        diagnosticLogPath,
+      )
     },
   )
 
@@ -1783,10 +2957,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("app_ready", (event) => {
     deps.onRendererReady?.(event.sender)
     setImmediate(() => {
+      secretSession.notifyPending()
       if (!event.sender.isDestroyed()) {
         event.sender.send("update-status", getLastStatus())
       }
     })
+  })
+
+  ipcMain.handle("app_navigation_applied", (event, value: unknown) => {
+    if (!isAppNavigationRequest(value)) return
+    const win = deps.getMainWindow()
+    if (!win || win.isDestroyed() || win.webContents !== event.sender) return
+    deps.appNavigation?.navigationApplied(value)
   })
 
   ipcMain.handle("install_update", async () => {
@@ -1834,6 +3016,40 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
+  ipcMain.handle("get_app_settings", () => {
+    if (!deps.settingsService) throw new Error("Settings service unavailable")
+    return deps.settingsService.status()
+  })
+
+  ipcMain.handle(
+    "set_app_settings",
+    async (_event, args: { patch?: Record<string, unknown> }) => {
+      if (!deps.settingsService) throw new Error("Settings service unavailable")
+      return deps.settingsService.update(sanitizeAppSettingsPatch(args?.patch))
+    },
+  )
+
+  ipcMain.handle("get_linux_desktop_integration", () => {
+    if (!deps.linuxDesktopIntegration) {
+      throw new Error("Linux desktop integration unavailable")
+    }
+    return deps.linuxDesktopIntegration.status()
+  })
+
+  ipcMain.handle("install_linux_desktop_integration", () => {
+    if (!deps.linuxDesktopIntegration) {
+      throw new Error("Linux desktop integration unavailable")
+    }
+    return deps.linuxDesktopIntegration.install()
+  })
+
+  ipcMain.handle("remove_linux_desktop_integration", () => {
+    if (!deps.linuxDesktopIntegration) {
+      throw new Error("Linux desktop integration unavailable")
+    }
+    return deps.linuxDesktopIntegration.remove()
+  })
+
   // ── Analytics ──
   ipcMain.handle(
     "analytics_track",
@@ -1856,6 +3072,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     void (async () => {
       try {
         providerUpdateCache = await computeUpdateChecks()
+        providerUpdateCacheCheckedAt = new Date().toISOString()
       } catch {
         // Silently swallow background errors.
       }
@@ -1872,11 +3089,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     runInitialProviderUpdateCheck: runUpdateCheck,
     workspaceActions: {
       async stop(workspaceId: string): Promise<void> {
-        const { completion } = await startWorkspaceStop(
-          { workspaceId },
-          "tray",
-        )
+        const { completion } = await startWorkspaceStop({ workspaceId }, "tray")
         await completion
+      },
+      async start(workspaceId: string): Promise<void> {
+        await runWorkspaceUp({
+          source: workspaceId,
+          commandId: crypto.randomUUID(),
+        }).completion
       },
     },
   }

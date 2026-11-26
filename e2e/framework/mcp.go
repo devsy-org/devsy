@@ -168,7 +168,7 @@ func (c *MCPClient) send(req jsonRPCRequest) error {
 }
 
 // readResponseFor reads and discards notifications (no id) until it finds
-// the response matching id — tool calls that stream log progress interleave
+// the response matching id - tool calls that stream log progress interleave
 // notifications with the eventual response on the same stream.
 func (c *MCPClient) readResponseFor(id int64) (*jsonRPCResponse, error) {
 	for {
@@ -190,7 +190,7 @@ func (c *MCPClient) readResponseFor(id int64) (*jsonRPCResponse, error) {
 // readResponseForCtx races readResponseFor against ctx so a hung server
 // can't block the caller past its deadline. bufio.Reader isn't safe for
 // concurrent use, so a cancellation that fires while the read is still in
-// flight leaves that goroutine's read outstanding on c.stdout — the client
+// flight leaves that goroutine's read outstanding on c.stdout - the client
 // is marked poisoned and every later call on it fails fast instead of
 // risking a second concurrent read.
 func (c *MCPClient) readResponseForCtx(ctx context.Context, id int64) (*jsonRPCResponse, error) {

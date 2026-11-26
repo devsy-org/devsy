@@ -14,6 +14,8 @@ import (
 // noopForward is a ForwardingFunction that immediately closes the local
 // connection. This lets portForwarding exercise its idle/cancellation paths
 // without needing a real *ssh.Client.
+const networkTCP = "tcp"
+
 func noopForward(_ context.Context, localConn net.Conn, _ *ssh.Client, _ forwardTarget) {
 	_ = localConn.Close()
 }
@@ -32,11 +34,13 @@ func TestPortForwarding_IdleTimeoutReturnsErrIdleTimeout(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- portForwarding(
-			ctx, nil, lis,
-			lis.Addr().String(), "tcp", "127.0.0.1:0",
-			15*time.Millisecond, noopForward,
-		)
+		errCh <- portForwarding(ctx, nil, lis, forwardRoute{
+			srcAddr:          lis.Addr().String(),
+			dstNetwork:       networkTCP,
+			dstAddr:          "127.0.0.1:0",
+			exitAfterTimeout: 15 * time.Millisecond,
+			forwardFn:        noopForward,
+		})
 	}()
 
 	// Open and close a connection so the connection counter starts the idle
@@ -69,12 +73,14 @@ func TestPortForwarding_ParentCancelNotIdleTimeout(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- portForwarding(
-			ctx, nil, lis,
-			lis.Addr().String(), "tcp", "127.0.0.1:0",
+		errCh <- portForwarding(ctx, nil, lis, forwardRoute{
+			srcAddr:    lis.Addr().String(),
+			dstNetwork: networkTCP,
+			dstAddr:    "127.0.0.1:0",
 			// Use a long idle timeout so it cannot fire during the test.
-			10*time.Second, noopForward,
-		)
+			exitAfterTimeout: 10 * time.Second,
+			forwardFn:        noopForward,
+		})
 	}()
 
 	// Cancel before any idle timer could be relevant.
@@ -163,7 +169,12 @@ func TestPortForwarding_ReleasesListenerOnTransportDeath(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- portForwarding(t.Context(), client, lis, addr, "tcp", "127.0.0.1:9", 0, forward)
+		done <- portForwarding(t.Context(), client, lis, forwardRoute{
+			srcAddr:    addr,
+			dstNetwork: networkTCP,
+			dstAddr:    "127.0.0.1:9",
+			forwardFn:  forward,
+		})
 	}()
 
 	time.Sleep(100 * time.Millisecond)

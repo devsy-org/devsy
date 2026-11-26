@@ -126,7 +126,7 @@ func (c *client) RefreshSelf(ctx context.Context) error {
 		return fmt.Errorf("create mangement client: %w", err)
 	}
 
-	c.self, err = managementClient.Loft().
+	c.self, err = managementClient.Devsy().
 		ManagementV1().
 		Selves().
 		Create(ctx, &managementv1.Self{}, metav1.CreateOptions{})
@@ -159,7 +159,7 @@ func (c *client) Logout(ctx context.Context) error {
 		return fmt.Errorf("create management client: %w", err)
 	}
 
-	self, err := managementClient.Loft().
+	self, err := managementClient.Devsy().
 		ManagementV1().
 		Selves().
 		Create(ctx, &managementv1.Self{}, metav1.CreateOptions{})
@@ -168,7 +168,7 @@ func (c *client) Logout(ctx context.Context) error {
 	}
 
 	if self.Status.AccessKey != "" && self.Status.AccessKeyType == storagev1.AccessKeyTypeLogin {
-		err = managementClient.Loft().
+		err = managementClient.Devsy().
 			ManagementV1().
 			OwnedAccessKeys().
 			Delete(ctx, self.Status.AccessKey, metav1.DeleteOptions{})
@@ -194,17 +194,20 @@ func (c *client) Save() error {
 		c.config.APIVersion = "storage.devsy.sh/v1"
 	}
 
-	err := os.MkdirAll(filepath.Dir(c.configPath), 0o755)
+	err := os.MkdirAll(filepath.Dir(c.configPath), 0o750)
 	if err != nil {
 		return err
 	}
 
-	out, err := json.Marshal(c.config)
+	//nolint:gosec // value is a config field or a version number, not a secret or overflow risk
+	out, err := json.Marshal(
+		c.config,
+	) //nolint:gosec // config file is written with 0600 permissions
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(c.configPath, out, 0o660)
+	return os.WriteFile(c.configPath, out, 0o600)
 }
 
 func (c *client) ManagementConfig() (*rest.Config, error) {
@@ -231,7 +234,7 @@ type keyStruct struct {
 func verifyHost(host string) error {
 	if !strings.HasPrefix(host, "https") {
 		return fmt.Errorf(
-			"cannot log into a non https loft instance %q, make sure you have TLS enabled",
+			"cannot log into a non https devsy instance %q, make sure you have TLS enabled",
 			host,
 		)
 	}
@@ -299,8 +302,8 @@ func (c *client) Login(host string, insecure bool) error {
 		msg += " --insecure"
 	}
 	msg += "'"
-	log.Infof(msg, host, pkgconfig.BinaryName+" pro login", host)
-	log.Infof("Logging into Devsy Pro")
+	log.Infof(msg, host, pkgconfig.BinaryName+" platform login", host)
+	log.Infof("Logging into Devsy Platform")
 
 	key = <-keyChannel
 
@@ -387,7 +390,7 @@ func (c *client) deleteOldAccessKey() {
 		return
 	}
 
-	self, err := managementClient.Loft().
+	self, err := managementClient.Devsy().
 		ManagementV1().
 		Selves().
 		Create(context.TODO(), &managementv1.Self{}, metav1.CreateOptions{})
@@ -395,7 +398,7 @@ func (c *client) deleteOldAccessKey() {
 		return
 	}
 	if self.Status.AccessKey != "" && self.Status.AccessKeyType == storagev1.AccessKeyTypeLogin {
-		_ = managementClient.Loft().
+		_ = managementClient.Devsy().
 			ManagementV1().
 			OwnedAccessKeys().
 			Delete(context.TODO(), self.Status.AccessKey, metav1.DeleteOptions{})
@@ -409,7 +412,7 @@ func (c *client) verifyConnection() error {
 	}
 
 	// try to get self
-	_, err = managementClient.Loft().
+	_, err = managementClient.Devsy().
 		ManagementV1().
 		Selves().
 		Create(context.TODO(), &managementv1.Self{}, metav1.CreateOptions{})
@@ -417,12 +420,10 @@ func (c *client) verifyConnection() error {
 		return nil
 	}
 
-	var urlError *url.Error
-	if errors.As(err, &urlError) {
-		var authErr x509.UnknownAuthorityError
-		if errors.As(urlError.Err, &authErr) {
+	if urlError, ok := errors.AsType[*url.Error](err); ok {
+		if _, ok := errors.AsType[x509.UnknownAuthorityError](urlError.Err); ok {
 			return fmt.Errorf(
-				"unsafe login endpoint %q, if you wish to login into an insecure loft endpoint run with the '--insecure' flag",
+				"unsafe login endpoint %q, if you wish to login into an insecure devsy endpoint run with the '--insecure' flag",
 				c.config.Host,
 			)
 		}
@@ -431,7 +432,7 @@ func (c *client) verifyConnection() error {
 	return fmt.Errorf("error logging in: %w", err)
 }
 
-// VerifyVersion checks if the Loft version is compatible with this CLI version.
+// VerifyVersion checks if the Devsy version is compatible with this CLI version.
 func VerifyVersion(baseClient Client) error {
 	v, err := baseClient.Version()
 	if err != nil {
@@ -456,20 +457,26 @@ func VerifyVersion(baseClient Client) error {
 		return err
 	}
 
-	if int(cliVersion.Major) > backendMajor {
+	//nolint:gosec // value is a config field or a version number, not a secret or overflow risk
+	if int(
+		cliVersion.Major,
+	) > backendMajor { //nolint:gosec // major versions are small non-negative numbers
 		return fmt.Errorf(
 			"unsupported %[1]s version %[2]s. Downgrade your CLI to below v%[3]d.0.0 to support this version, "+
 				"as %[1]s v%[3]d.0.0 and newer versions are incompatible with v%[4]d.x.x",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			v.Version,
 			cliVersion.Major,
 			backendMajor,
 		)
-	} else if int(cliVersion.Major) < backendMajor {
+		//nolint:gosec // value is a config field or a version number, not a secret or overflow risk
+	} else if int(
+		cliVersion.Major,
+	) < backendMajor { //nolint:gosec // major versions are small non-negative numbers
 		return fmt.Errorf(
 			"unsupported %[1]s version %[2]s. Upgrade your CLI to v%[3]d.0.0 or above to support this version, "+
 				"as %[1]s v%[3]d.0.0 and newer versions are incompatible with v%[4]d.x.x",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			v.Version,
 			backendMajor,
 			cliVersion.Major,
@@ -484,7 +491,8 @@ func (c *client) restConfig(hostSuffix string) (*rest.Config, error) {
 		return nil, errors.New("no config loaded")
 	} else if c.config.Host == "" || c.config.AccessKey == "" {
 		return nil, errors.New(
-			"not logged in, run 'devsy pro start' or 'devsy pro login [devsy-pro-url]'",
+			"not logged in, run 'devsy platform start' or " +
+				"'devsy platform login [devsy-platform-url]'",
 		)
 	}
 
@@ -533,7 +541,7 @@ func GetRestConfig(host, token string, insecure bool) (*rest.Config, error) {
 }
 
 func startServer(redirectURI string, keyChannel chan keyStruct) *http.Server {
-	srv := &http.Server{Addr: ":25843"}
+	srv := &http.Server{Addr: ":25843", ReadHeaderTimeout: 10 * time.Second}
 
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		keys, ok := r.URL.Query()["key"]

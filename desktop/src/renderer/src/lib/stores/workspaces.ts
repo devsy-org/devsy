@@ -2,11 +2,18 @@ import { derived, get, writable } from "svelte/store"
 import { workspaceSnapshot } from "$lib/ipc/commands.js"
 import { onWorkspacesChanged } from "$lib/ipc/events.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
+import { goto } from "$lib/router.js"
 import type {
   Workspace,
   WorkspaceJob,
   WorkspaceStatus,
 } from "$lib/types/index.js"
+import { workspaceLogsRoute } from "$shared/app-route.js"
+import {
+  workspaceConfirmedToast,
+  workspaceFailedHeadline,
+} from "$shared/workspace-operation.js"
+import { activeContext } from "./contexts.js"
 import { toasts } from "./toasts.js"
 
 export const workspaces = writable<Workspace[]>([])
@@ -25,9 +32,27 @@ export const workspaceStatuses = derived(workspaceJobs, ($jobs) => {
   return statuses
 })
 
+/** Pins View logs to the failed run (and step) when the CLI recorded one. */
+function failureLogsRoute(
+  id: string,
+  list: Workspace[],
+  job: WorkspaceJob,
+): string {
+  if (!job.runId) return `/workspaces/${id}?tab=logs`
+  return workspaceLogsRoute(id, {
+    context:
+      list.find((workspace) => workspace.id === id)?.context ||
+      get(activeContext) ||
+      "default",
+    runId: job.runId,
+    invocationId: job.failedInvocationId,
+  })
+}
+
 let unlisten: UnlistenFn | null = null
 let lifecycle = 0
 let revision = -1
+let seeded = false
 const notified = new Set<string>()
 
 function apply(
@@ -38,27 +63,36 @@ function apply(
 ) {
   if (nextRevision <= revision) return
   revision = nextRevision
-  const previous = get(workspaceJobs)
+  const shouldNotify = notify && seeded
+  seeded = true
   const pending = Object.entries(jobs).filter(
     ([id, job]) =>
       !updated.some((workspace) => workspace.id === id) &&
       (job.state === "running" ||
+        !!job.logError ||
         (job.activity === "creating" && job.state !== "succeeded")),
   )
   workspaces.set([...updated, ...pending.map(([id]) => ({ id }))])
   workspaceJobs.set(jobs)
   for (const [id, job] of Object.entries(jobs)) {
-    if (job.state === "running") continue
-    if (!notify || !previous[id] || notified.has(job.commandId)) {
+    if (job.state === "running" || job.state === "reconciling") continue
+    if (!shouldNotify || notified.has(job.commandId)) {
       notified.add(job.commandId)
       continue
     }
     notified.add(job.commandId)
-    if (job.error) toasts.error(`${id}: ${job.error}`)
-    else
-      toasts.success(
-        `${id}: ${job.activity === "deleting" ? "Deleted" : "Operation completed"}`,
+    if (job.state === "failed")
+      toasts.error(
+        `${id}: ${workspaceFailedHeadline(job.activity)} - ${job.error ?? "Workspace operation failed"}`,
+        {
+          sticky: true,
+          action: {
+            label: "View logs",
+            onClick: () => goto(failureLogsRoute(id, updated, job)),
+          },
+        },
       )
+    else toasts.success(`${id}: ${workspaceConfirmedToast(job.activity)}`)
   }
 }
 
@@ -88,6 +122,19 @@ export async function initWorkspaces() {
 
 export function destroyWorkspaces() {
   lifecycle++
+  notified.clear()
+  seeded = false
   unlisten?.()
   unlisten = null
+}
+
+export async function reloadWorkspaces() {
+  const epoch = lifecycle
+  try {
+    const snapshot = await workspaceSnapshot()
+    if (epoch === lifecycle)
+      apply(snapshot.workspaces, snapshot.jobs, snapshot.revision, false)
+  } catch {
+    return
+  }
 }

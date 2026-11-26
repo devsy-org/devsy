@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 )
+
+const editorFontSize = "editor.fontSize"
 
 type SettingsSuite struct {
 	suite.Suite
@@ -20,6 +23,62 @@ func TestSettingsSuite(t *testing.T) {
 
 func (s *SettingsSuite) SetupTest() {
 	s.tmpDir = s.T().TempDir()
+	s.T().Setenv("XDG_CONFIG_HOME", filepath.Join(s.tmpDir, ".config"))
+}
+
+func (s *SettingsSuite) TestLinuxSettingsRespectXDGConfigHome() {
+	xdg := filepath.Join(s.tmpDir, "xdg")
+	s.T().Setenv("XDG_CONFIG_HOME", xdg)
+	s.Equal(xdg, userSettingsBaseDir(s.tmpDir, "linux"))
+	if runtime.GOOS == "linux" {
+		s.T().Setenv("HOME", s.tmpDir)
+		s.Require().NoError(ensureHostSettingsWithTimeout(FlavorStable, "60"))
+		settings, err := readSettingsFile(filepath.Join(xdg, "Code", "User", "settings.json"))
+		s.Require().NoError(err)
+		s.Equal(float64(60), settings[settingConnectTimeout])
+	}
+	s.T().Setenv("XDG_CONFIG_HOME", "")
+	s.Equal(filepath.Join(s.tmpDir, ".config"), userSettingsBaseDir(s.tmpDir, "linux"))
+}
+
+func (s *SettingsSuite) TestHostTimeoutPreservesSettingsAndTargetsFlavor() {
+	s.T().Setenv("HOME", s.tmpDir)
+	s.T().Setenv("APPDATA", s.tmpDir)
+	path, err := userSettingsPath(FlavorCursor)
+	s.Require().NoError(err)
+	s.writeJSON(path, map[string]any{
+		settingConnectTimeout: float64(15),
+		editorFontSize:        float64(14),
+	})
+	stablePath, err := userSettingsPath(FlavorStable)
+	s.Require().NoError(err)
+	s.writeJSON(stablePath, map[string]any{settingConnectTimeout: float64(22)})
+
+	s.Require().NoError(ensureHostSettingsWithTimeout(FlavorCursor, "60"))
+	settings, err := readSettingsFile(path)
+	s.Require().NoError(err)
+	s.Equal(float64(60), settings[settingConnectTimeout])
+	s.Equal(float64(14), settings[editorFontSize])
+	s.Equal(false, settings[settingUseExecServer])
+	stable, err := readSettingsFile(stablePath)
+	s.Require().NoError(err)
+	s.Equal(float64(22), stable[settingConnectTimeout])
+
+	EnsureHostSettings(FlavorCursor)
+	settings, err = readSettingsFile(path)
+	s.Require().NoError(err)
+	s.Equal(float64(60), settings[settingConnectTimeout])
+}
+
+func (s *SettingsSuite) TestHostTimeoutReportsInvalidSettings() {
+	s.T().Setenv("HOME", s.tmpDir)
+	s.T().Setenv("APPDATA", s.tmpDir)
+	path, err := userSettingsPath(FlavorStable)
+	s.Require().NoError(err)
+	s.writeRaw(path, "{ invalid")
+	s.Error(ensureHostSettingsWithTimeout(FlavorStable, "60"))
+	s.writeJSON(path, map[string]any{})
+	s.Error(ensureHostSettingsWithTimeout(FlavorStable, "0"))
 }
 
 func (s *SettingsSuite) TestMergeUserSettings_CreatesNewFile() {
@@ -40,7 +99,7 @@ func (s *SettingsSuite) TestMergeUserSettings_CreatesNewFile() {
 func (s *SettingsSuite) TestMergeUserSettings_PreservesExistingSettings() {
 	path := filepath.Join(s.tmpDir, "settings.json")
 	existing := map[string]any{
-		"editor.fontSize":      float64(14),
+		editorFontSize:         float64(14),
 		"workbench.colorTheme": "One Dark Pro",
 	}
 	s.writeJSON(path, existing)
@@ -55,7 +114,7 @@ func (s *SettingsSuite) TestMergeUserSettings_PreservesExistingSettings() {
 
 	var settings map[string]any
 	s.Require().NoError(json.Unmarshal(data, &settings))
-	s.Equal(float64(14), settings["editor.fontSize"])
+	s.Equal(float64(14), settings[editorFontSize])
 	s.Equal("One Dark Pro", settings["workbench.colorTheme"])
 	s.Equal(false, settings[settingUseExecServer])
 }
@@ -102,7 +161,7 @@ func (s *SettingsSuite) TestRemoveUserSetting_RemovesKey() {
 	path := filepath.Join(s.tmpDir, "settings.json")
 	initial := map[string]any{
 		settingUseExecServer: false,
-		"editor.fontSize":    float64(14),
+		editorFontSize:       float64(14),
 	}
 	s.writeJSON(path, initial)
 
@@ -111,7 +170,7 @@ func (s *SettingsSuite) TestRemoveUserSetting_RemovesKey() {
 	settings, err := readSettingsFile(path)
 	s.Require().NoError(err)
 	s.NotContains(settings, settingUseExecServer, "useExecServer should have been removed")
-	s.Equal(float64(14), settings["editor.fontSize"], "other settings should be preserved")
+	s.Equal(float64(14), settings[editorFontSize], "other settings should be preserved")
 }
 
 func (s *SettingsSuite) TestRemoveUserSetting_NoFile() {
@@ -120,7 +179,7 @@ func (s *SettingsSuite) TestRemoveUserSetting_NoFile() {
 
 func (s *SettingsSuite) TestRemoveUserSetting_KeyNotPresent() {
 	path := filepath.Join(s.tmpDir, "settings.json")
-	initial := map[string]any{"editor.fontSize": float64(14)}
+	initial := map[string]any{editorFontSize: float64(14)}
 	s.writeJSON(path, initial)
 
 	removeUserSetting(path, "nonexistent.key")
@@ -149,7 +208,7 @@ func (s *SettingsSuite) TestMergeUserSettings_HandlesLineComments() {
 
 	var settings map[string]any
 	s.Require().NoError(json.Unmarshal(data, &settings))
-	s.Equal(float64(14), settings["editor.fontSize"])
+	s.Equal(float64(14), settings[editorFontSize])
 	s.Equal("Monokai", settings["workbench.colorTheme"])
 	s.Equal(false, settings[settingUseExecServer])
 }
@@ -176,7 +235,7 @@ func (s *SettingsSuite) TestMergeUserSettings_HandlesBlockComments() {
 
 	var settings map[string]any
 	s.Require().NoError(json.Unmarshal(data, &settings))
-	s.Equal(float64(16), settings["editor.fontSize"])
+	s.Equal(float64(16), settings[editorFontSize])
 	s.Equal("Solarized Dark", settings["workbench.colorTheme"])
 	s.Equal(false, settings[settingUseExecServer])
 }
@@ -199,7 +258,7 @@ func (s *SettingsSuite) TestMergeUserSettings_HandlesTrailingCommas() {
 
 	var settings map[string]any
 	s.Require().NoError(json.Unmarshal(data, &settings))
-	s.Equal(float64(12), settings["editor.fontSize"])
+	s.Equal(float64(12), settings[editorFontSize])
 	s.Equal("Nord", settings["workbench.colorTheme"])
 	s.Equal(float64(4), settings["editor.tabSize"])
 	s.Equal(false, settings[settingUseExecServer])
@@ -229,7 +288,7 @@ func (s *SettingsSuite) TestMergeUserSettings_HandlesMixedJSONC() {
 
 	var settings map[string]any
 	s.Require().NoError(json.Unmarshal(data, &settings))
-	s.Equal(float64(14), settings["editor.fontSize"])
+	s.Equal(float64(14), settings[editorFontSize])
 	s.Equal("One Dark Pro", settings["workbench.colorTheme"])
 	s.Equal("on", settings["editor.wordWrap"])
 	s.Equal("afterDelay", settings["files.autoSave"])
@@ -256,7 +315,7 @@ func (s *SettingsSuite) TestMergeUserSettings_HandlesCommentsAroundTargetSetting
 
 	var settings map[string]any
 	s.Require().NoError(json.Unmarshal(data, &settings))
-	s.Equal(float64(14), settings["editor.fontSize"])
+	s.Equal(float64(14), settings[editorFontSize])
 	s.Equal("Monokai", settings["workbench.colorTheme"])
 	s.Equal(false, settings[settingUseExecServer])
 }

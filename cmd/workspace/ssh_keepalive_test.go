@@ -73,13 +73,10 @@ func TestCheckKeepAliveResponseWithDevsySSHServer(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = listener.Close() }()
 
-	server, err := sshserver.NewServer(
-		listener.Addr().String(),
-		hostKeyPEM,
-		nil,
-		t.TempDir(),
-		"",
-	)
+	server, err := sshserver.NewServer(listener.Addr().String(), sshserver.ServerOptions{
+		HostKey: hostKeyPEM,
+		Workdir: t.TempDir(),
+	})
 	require.NoError(t, err)
 
 	serveDone := make(chan error, 1)

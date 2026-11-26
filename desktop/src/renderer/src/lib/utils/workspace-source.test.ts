@@ -7,6 +7,7 @@ import type {
 import {
   buildDevcontainerArg,
   buildWorkspaceSource,
+  describeWorkspaceSource,
 } from "./workspace-source.js"
 
 function gitForm(overrides: Partial<GitSourceForm>): GitSourceForm {
@@ -42,7 +43,9 @@ function imageForm(overrides: Partial<ImageSourceForm>): ImageSourceForm {
 
 describe("buildWorkspaceSource", () => {
   it("git: bare repo url, no suffixes", () => {
-    const out = buildWorkspaceSource(gitForm({ repoUrl: "github.com/org/repo" }))
+    const out = buildWorkspaceSource(
+      gitForm({ repoUrl: "github.com/org/repo" }),
+    )
     expect(out.source).toBe("github.com/org/repo")
     expect(out.devcontainer).toBeUndefined()
     expect(out.prebuildRepository).toBeUndefined()
@@ -50,42 +53,68 @@ describe("buildWorkspaceSource", () => {
 
   it("git: branch ref appends @branch", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "github.com/org/repo", refType: "branch", refValue: "dev" }),
+      gitForm({
+        repoUrl: "github.com/org/repo",
+        refType: "branch",
+        refValue: "dev",
+      }),
     )
     expect(out.source).toBe("github.com/org/repo@dev")
   })
 
   it("git: commit ref appends @sha256:", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "github.com/org/repo", refType: "commit", refValue: "abc123" }),
+      gitForm({
+        repoUrl: "github.com/org/repo",
+        refType: "commit",
+        refValue: "abc123",
+      }),
     )
     expect(out.source).toBe("github.com/org/repo@sha256:abc123")
   })
 
   it("git: PR ref appends @pull/N/head for GitHub", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "github.com/org/repo", refType: "pr", refValue: "42" }),
+      gitForm({
+        repoUrl: "github.com/org/repo",
+        refType: "pr",
+        refValue: "42",
+      }),
     )
     expect(out.source).toBe("github.com/org/repo@pull/42/head")
   })
 
   it("git: MR ref appends @merge-requests/N/head for GitLab", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "gitlab.com/org/repo", refType: "pr", refValue: "7125" }),
+      gitForm({
+        repoUrl: "gitlab.com/org/repo",
+        refType: "pr",
+        refValue: "7125",
+      }),
     )
     expect(out.source).toBe("gitlab.com/org/repo@merge-requests/7125/head")
   })
 
   it("git: MR ref detects self-hosted GitLab by hostname", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "git@gitlab.example.com:org/repo.git", refType: "pr", refValue: "7" }),
+      gitForm({
+        repoUrl: "git@gitlab.example.com:org/repo.git",
+        refType: "pr",
+        refValue: "7",
+      }),
     )
-    expect(out.source).toBe("git@gitlab.example.com:org/repo.git@merge-requests/7/head")
+    expect(out.source).toBe(
+      "git@gitlab.example.com:org/repo.git@merge-requests/7/head",
+    )
   })
 
   it("git: PR ref uses pull/N/head when only the owner/path says gitlab", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "git@github.com:gitlab-org/repo.git", refType: "pr", refValue: "7" }),
+      gitForm({
+        repoUrl: "git@github.com:gitlab-org/repo.git",
+        refType: "pr",
+        refValue: "7",
+      }),
     )
     expect(out.source).toBe("git@github.com:gitlab-org/repo.git@pull/7/head")
   })
@@ -104,7 +133,11 @@ describe("buildWorkspaceSource", () => {
 
   it("git: subpath without ref appends @subpath: directly", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "github.com/org/repo", refValue: "", subPath: "packages/api" }),
+      gitForm({
+        repoUrl: "github.com/org/repo",
+        refValue: "",
+        subPath: "packages/api",
+      }),
     )
     expect(out.source).toBe("github.com/org/repo@subpath:packages/api")
   })
@@ -123,7 +156,11 @@ describe("buildWorkspaceSource", () => {
 
   it("git: empty refValue omits the ref even if refType set", () => {
     const out = buildWorkspaceSource(
-      gitForm({ repoUrl: "github.com/org/repo", refType: "commit", refValue: "" }),
+      gitForm({
+        repoUrl: "github.com/org/repo",
+        refType: "commit",
+        refValue: "",
+      }),
     )
     expect(out.source).toBe("github.com/org/repo")
   })
@@ -139,7 +176,10 @@ describe("buildWorkspaceSource", () => {
     const out = buildWorkspaceSource(
       gitForm({
         repoUrl: "github.com/org/repo",
-        devcontainer: { mode: "path", value: ".devcontainer/devcontainer.json" },
+        devcontainer: {
+          mode: "path",
+          value: ".devcontainer/devcontainer.json",
+        },
         prebuildRepository: "ghcr.io/org/prebuilds",
       }),
     )
@@ -148,9 +188,7 @@ describe("buildWorkspaceSource", () => {
   })
 
   it("local: uses localPath as source", () => {
-    const out = buildWorkspaceSource(
-      localForm({ localPath: "/home/me/proj" }),
-    )
+    const out = buildWorkspaceSource(localForm({ localPath: "/home/me/proj" }))
     expect(out.source).toBe("/home/me/proj")
   })
 
@@ -166,7 +204,10 @@ describe("buildWorkspaceSource", () => {
     const out = buildWorkspaceSource(
       localForm({
         localPath: "/home/me/proj",
-        devcontainer: { mode: "path", value: ".devcontainer/devcontainer.json" },
+        devcontainer: {
+          mode: "path",
+          value: ".devcontainer/devcontainer.json",
+        },
         prebuildRepository: "ghcr.io/org/prebuilds",
       }),
     )
@@ -194,7 +235,9 @@ describe("buildWorkspaceSource", () => {
 describe("buildDevcontainerArg", () => {
   it("auto omits the flag", () => {
     expect(buildDevcontainerArg({ mode: "auto", value: "" })).toBeUndefined()
-    expect(buildDevcontainerArg({ mode: "auto", value: "ignored" })).toBeUndefined()
+    expect(
+      buildDevcontainerArg({ mode: "auto", value: "ignored" }),
+    ).toBeUndefined()
   })
 
   it("none maps to the none token", () => {
@@ -203,7 +246,10 @@ describe("buildDevcontainerArg", () => {
 
   it("path passes the raw path", () => {
     expect(
-      buildDevcontainerArg({ mode: "path", value: ".devcontainer/devcontainer.json" }),
+      buildDevcontainerArg({
+        mode: "path",
+        value: ".devcontainer/devcontainer.json",
+      }),
     ).toBe(".devcontainer/devcontainer.json")
   })
 
@@ -214,7 +260,9 @@ describe("buildDevcontainerArg", () => {
   })
 
   it("id prefixes with id:", () => {
-    expect(buildDevcontainerArg({ mode: "id", value: "backend" })).toBe("id:backend")
+    expect(buildDevcontainerArg({ mode: "id", value: "backend" })).toBe(
+      "id:backend",
+    )
   })
 
   it("trims the value", () => {
@@ -228,4 +276,41 @@ describe("buildDevcontainerArg", () => {
     expect(buildDevcontainerArg({ mode: "image", value: "" })).toBeUndefined()
     expect(buildDevcontainerArg({ mode: "id", value: "   " })).toBeUndefined()
   })
+})
+
+describe("describeWorkspaceSource", () => {
+  it.each([
+    [
+      { gitRepository: "https://example.test/team/repository" },
+      "Repository",
+      "https://example.test/team/repository",
+    ],
+    [
+      { localFolder: "/Users/developer/a project" },
+      "Local folder",
+      "/Users/developer/a project",
+    ],
+    [
+      { image: "registry.example.test/team/image:version" },
+      "Container image",
+      "registry.example.test/team/image:version",
+    ],
+    [
+      { container: "imported-container-id" },
+      "Existing container",
+      "imported-container-id",
+    ],
+    [
+      { snapshot: "registry.example.test/team/snapshot:backup" },
+      "Snapshot",
+      "registry.example.test/team/snapshot:backup",
+    ],
+    [undefined, "Source", "Not available"],
+    [{}, "Source", "Not available"],
+  ] as const)(
+    "describes %j without replacing its reference",
+    (source, label, value) => {
+      expect(describeWorkspaceSource(source)).toEqual({ label, value })
+    },
+  )
 })

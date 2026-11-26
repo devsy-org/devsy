@@ -39,6 +39,7 @@ func ReadConfig(contextName string, providerName string) (*client.Config, error)
 		return nil, err
 	}
 
+	//nolint:gosec // path is the user devsy config
 	content, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err

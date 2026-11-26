@@ -11,6 +11,7 @@ import {
 import { goto } from "$lib/router.js"
 import { paletteOpen } from "$lib/stores/command-palette.js"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { preferredSshHost, workspaceLabel } from "$lib/utils/workspaceLabel.js"
 import { providers } from "$lib/stores/providers.js"
 import { machines } from "$lib/stores/machines.js"
 import { secrets } from "$lib/stores/secrets.js"
@@ -25,7 +26,7 @@ const CATEGORY_ICONS: Record<string, typeof LayoutDashboard> = {
   Providers: Plug,
   Machines: Server,
   Secrets: Lock,
-  "Env Vars": Braces,
+  "Environment Variables": Braces,
   "SSH Keys": KeyRound,
 }
 
@@ -86,14 +87,14 @@ let allItems = $derived.by(() => {
       label: "Secrets",
       description: "Manage secrets",
       category: "Navigation",
-      href: "/secrets",
+      href: "/variables?tab=secrets",
     },
     {
       id: "nav-env",
-      label: "Env Vars",
+      label: "Environment Variables",
       description: "Manage environment variables",
       category: "Navigation",
-      href: "/env",
+      href: "/variables?tab=env",
     },
     {
       id: "nav-terminals",
@@ -121,8 +122,11 @@ let allItems = $derived.by(() => {
   for (const ws of $workspaces) {
     items.push({
       id: `ws-${ws.id}`,
-      label: ws.id,
-      description: ws.provider?.name ?? "",
+      label: workspaceLabel(ws),
+      description: [ws.provider?.name, ws.displayName ? ws.id : ""]
+        .filter(Boolean)
+        .join(" - "),
+      keywords: [ws.id, preferredSshHost(ws)],
       category: "Workspaces",
       href: `/workspaces/${ws.id}`,
     })
@@ -150,21 +154,21 @@ let allItems = $derived.by(() => {
 
   for (const s of $secrets) {
     items.push({
-      id: `secret-${s.name}`,
+      id: `secret-${s.context}-${s.name}`,
       label: s.name,
       description: "Secret",
       category: "Secrets",
-      href: "/secrets",
+      href: "/variables?tab=secrets",
     })
   }
 
   for (const e of $envVars) {
     items.push({
-      id: `env-${e.name}`,
+      id: `env-${e.context}-${e.name}`,
       label: e.name,
       description: "Environment variable",
-      category: "Env Vars",
-      href: "/env",
+      category: "Environment Variables",
+      href: "/variables?tab=env",
     })
   }
 
@@ -203,7 +207,7 @@ function selectItem(item: PaletteItem) {
         {#each group.items as item (item.id)}
           {@const Icon = item.category ? CATEGORY_ICONS[item.category] : undefined}
           <Command.Item
-            value="{item.label} {item.description ?? ''}"
+            value="{item.label} {item.description ?? ''} {(item.keywords ?? []).join(' ')}"
             onSelect={() => selectItem(item)}
           >
             {#if Icon}

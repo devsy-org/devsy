@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -22,4 +23,25 @@ func runCaptured(ctx context.Context, cmd *exec.Cmd) (subprocess.Result, error) 
 
 func capturedOutput(result subprocess.Result) string {
 	return result.DiagnosticOutput()
+}
+
+// dockerCLI builds a docker/podman invocation. A non-nil env is appended to
+// the parent environment.
+func dockerCLI(ctx context.Context, command string, env []string, args ...string) *exec.Cmd {
+	// #nosec G204 -- args are constructed internally, not from user input
+	cmd := exec.CommandContext(ctx, command, args...)
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
+	return cmd
+}
+
+// runDockerCLI runs a docker/podman command and wraps a failure with its
+// captured output.
+func runDockerCLI(ctx context.Context, cmd *exec.Cmd) error {
+	result, err := runCaptured(ctx, cmd)
+	if err != nil {
+		return fmt.Errorf("%s: %w", capturedOutput(result), err)
+	}
+	return nil
 }

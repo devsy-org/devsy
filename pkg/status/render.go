@@ -22,6 +22,7 @@ type ReporterOptions struct {
 	Envelope    func(Event) error
 	Interactive bool
 	Verbose     bool
+	NoStatus    bool
 	// SuppressFailureDetails leaves failure details to the command boundary.
 	SuppressFailureDetails bool
 }
@@ -34,7 +35,46 @@ const (
 
 // NewReporter selects a status presentation.
 func NewReporter(opts ReporterOptions) (Reporter, error) {
-	return newReporter(resolveFormat(opts), opts)
+	r, err := newReporter(resolveFormat(opts), opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.NoStatus && os.Getenv("DEVSY_UI") != "true" {
+		return Nop(), nil
+	}
+	return r, nil
+}
+
+// CLIOptions configures the progress reporter for a CLI command.
+type CLIOptions struct {
+	Format   string
+	Out      io.Writer
+	Prefix   string
+	Pipeline Pipeline
+	Labels   map[Phase]string
+	Envelope func(Event) error
+	Verbose  bool
+	NoStatus bool
+}
+
+// NewCLIReporter builds the progress reporter for CLI commands: NewReporter
+// with failure details left to the command boundary, and every event stamped
+// with o.Pipeline.
+func NewCLIReporter(o CLIOptions) (Reporter, error) {
+	r, err := NewReporter(ReporterOptions{
+		Format:                 o.Format,
+		Out:                    o.Out,
+		Prefix:                 o.Prefix,
+		Labels:                 o.Labels,
+		Envelope:               o.Envelope,
+		Verbose:                o.Verbose,
+		NoStatus:               o.NoStatus,
+		SuppressFailureDetails: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ForPipeline(r, o.Pipeline), nil
 }
 
 func resolveFormat(opts ReporterOptions) string {

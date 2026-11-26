@@ -15,7 +15,12 @@ const REMOTE = {
   version: 1,
   categories: [{ id: "languages", label: "Languages" }],
   images: [
-    { id: "remote-img", ref: "remote:1", name: "Remote", categories: ["languages"] },
+    {
+      id: "remote-img",
+      ref: "remote:1",
+      name: "Remote",
+      categories: ["languages"],
+    },
   ],
 }
 

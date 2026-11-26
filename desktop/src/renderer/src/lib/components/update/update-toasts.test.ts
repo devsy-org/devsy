@@ -46,9 +46,21 @@ describe("update-toasts", () => {
     expect(listeners.length).toBe(1)
     const emit = listeners[0]
 
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "1.0.0",
+    })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "1.0.0",
+    })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "1.0.0",
+    })
 
     expect(toastFns.info).toHaveBeenCalledTimes(1)
   })
@@ -58,8 +70,16 @@ describe("update-toasts", () => {
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.1" })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "1.0.0",
+    })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "1.0.1",
+    })
 
     expect(toastFns.info).toHaveBeenCalledTimes(2)
   })
@@ -69,38 +89,64 @@ describe("update-toasts", () => {
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
-    emit({ state: "error", currentVersion: "1.0.0", error: "feed down", code: "feed-error" })
+    emit({
+      state: "error",
+      currentVersion: "1.0.0",
+      error: "feed down",
+      code: "feed-error",
+    })
 
     expect(toastFns.error).not.toHaveBeenCalled()
   })
 
   it("fires error toast after markUserInitiated, then resets the flag", async () => {
-    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    const { initUpdateToasts, markUserInitiated } = await import(
+      "./update-toasts.js"
+    )
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
     markUserInitiated()
-    emit({ state: "error", currentVersion: "1.0.0", error: "feed down", code: "feed-error" })
+    emit({
+      state: "error",
+      currentVersion: "1.0.0",
+      error: "feed down",
+      code: "feed-error",
+    })
     expect(toastFns.error).toHaveBeenCalledTimes(1)
 
     // Different error to bypass dedupe; flag should already be reset, so silent.
-    emit({ state: "error", currentVersion: "1.0.0", error: "different", code: "network" })
+    emit({
+      state: "error",
+      currentVersion: "1.0.0",
+      error: "different",
+      code: "network",
+    })
     expect(toastFns.error).toHaveBeenCalledTimes(1)
   })
 
   it("suppresses error toast when code is dev-mode", async () => {
-    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    const { initUpdateToasts, markUserInitiated } = await import(
+      "./update-toasts.js"
+    )
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
     markUserInitiated()
-    emit({ state: "error", currentVersion: "1.0.0", error: "x", code: "dev-mode" })
+    emit({
+      state: "error",
+      currentVersion: "1.0.0",
+      error: "x",
+      code: "dev-mode",
+    })
 
     expect(toastFns.error).not.toHaveBeenCalled()
   })
 
   it("openUpdateDialog calls the bound opener", async () => {
-    const { bindDialogOpener, openUpdateDialog } = await import("./update-toasts.js")
+    const { bindDialogOpener, openUpdateDialog } = await import(
+      "./update-toasts.js"
+    )
     const opener = vi.fn()
     bindDialogOpener(opener)
     openUpdateDialog()
@@ -112,7 +158,11 @@ describe("update-toasts", () => {
     initUpdateToasts(() => false)
     const emit = listeners[0]
 
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "1.0.0",
+    })
 
     expect(toastFns.info).not.toHaveBeenCalled()
     expect(toastFns.default).toHaveBeenCalledTimes(1)
@@ -123,14 +173,22 @@ describe("update-toasts", () => {
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "1.0.0",
+    })
     emit({
       state: "downloading",
       currentVersion: "1.0.0",
       availableVersion: "1.0.0",
       progress: { percent: 50, bytesPerSecond: 0, transferred: 0, total: 0 },
     })
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "2.0.0" })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "2.0.0",
+    })
 
     expect(toastFns.info).toHaveBeenCalledTimes(2)
   })
@@ -146,7 +204,9 @@ describe("update-toasts", () => {
   })
 
   it("fires success toast on user-initiated up-to-date check", async () => {
-    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    const { initUpdateToasts, markUserInitiated } = await import(
+      "./update-toasts.js"
+    )
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
@@ -157,24 +217,34 @@ describe("update-toasts", () => {
   })
 
   it("shows the packaged-build message for user-initiated dev-mode checks", async () => {
-    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    const { initUpdateToasts, markUserInitiated } = await import(
+      "./update-toasts.js"
+    )
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
     markUserInitiated()
     emit({ state: "up-to-date", currentVersion: "0.1.0", code: "dev-mode" })
 
-    expect(toastFns.info).toHaveBeenCalledWith("Updates run in packaged builds.")
+    expect(toastFns.info).toHaveBeenCalledWith(
+      "Updates run in packaged builds.",
+    )
     expect(toastFns.success).not.toHaveBeenCalled()
   })
 
   it("does not claim to be up to date for an ineligible newer update", async () => {
-    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    const { initUpdateToasts, markUserInitiated } = await import(
+      "./update-toasts.js"
+    )
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
     markUserInitiated()
-    emit({ state: "not-available", currentVersion: "1.0.0", code: "not-eligible" })
+    emit({
+      state: "not-available",
+      currentVersion: "1.0.0",
+      code: "not-eligible",
+    })
 
     expect(toastFns.info).toHaveBeenCalledWith(
       "A newer update is not available for this device yet.",
@@ -187,7 +257,11 @@ describe("update-toasts", () => {
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
-    emit({ state: "downloaded", currentVersion: "1.0.0", availableVersion: "1.1.0" })
+    emit({
+      state: "downloaded",
+      currentVersion: "1.0.0",
+      availableVersion: "1.1.0",
+    })
 
     expect(toastFns.success).toHaveBeenCalledWith(
       "Update v1.1.0 ready",
@@ -198,12 +272,18 @@ describe("update-toasts", () => {
   })
 
   it("clears userInitiated flag on available so subsequent up-to-date is silent", async () => {
-    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    const { initUpdateToasts, markUserInitiated } = await import(
+      "./update-toasts.js"
+    )
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
     markUserInitiated()
-    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.1.0" })
+    emit({
+      state: "available",
+      currentVersion: "1.0.0",
+      availableVersion: "1.1.0",
+    })
     expect(toastFns.info).toHaveBeenCalledTimes(1)
 
     // Subsequent background up-to-date should not fire success toast

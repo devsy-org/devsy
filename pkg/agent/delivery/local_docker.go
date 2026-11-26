@@ -8,12 +8,15 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
 )
@@ -33,6 +36,7 @@ const (
 
 type LocalDockerDelivery struct {
 	DockerCommand   string
+	Runtime         docker.RuntimeName
 	Environment     []string
 	HelperImage     string
 	ExpectedVersion string
@@ -45,6 +49,9 @@ func (d *LocalDockerDelivery) Phase() DeliveryPhase {
 func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStartOptions) error {
 	if opts.BinarySource == nil {
 		return fmt.Errorf("binary source is required for local docker delivery")
+	}
+	if err := rejectAgentMountConflicts(opts.RunOptions); err != nil {
+		return err
 	}
 
 	volumeName := volumePrefix + opts.WorkspaceID
@@ -70,6 +77,24 @@ func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStart
 	opts.RunOptions.Env[pkgconfig.EnvAgentPath] = volumeMountPath + "/" + binaryName()
 
 	return nil
+}
+
+func rejectAgentMountConflicts(run *driver.RunOptions) error {
+	if mount := run.WorkspaceMount; mount != nil && isAgentMountTarget(mount.Target) {
+		return fmt.Errorf("agent mount target %s is already in use", volumeMountPath)
+	}
+	for _, mount := range run.Mounts {
+		if mount != nil && isAgentMountTarget(mount.Target) {
+			return fmt.Errorf("agent mount target %s is already in use", volumeMountPath)
+		}
+	}
+
+	return nil
+}
+
+func isAgentMountTarget(target string) bool {
+	cleaned := path.Clean(target)
+	return cleaned == volumeMountPath || strings.HasPrefix(cleaned, volumeMountPath+"/")
 }
 
 func (d *LocalDockerDelivery) DeliverPostStart(_ context.Context, _ PostStartOptions) error {
@@ -133,11 +158,7 @@ func (d *LocalDockerDelivery) createVolume(
 ) error {
 	args := append([]string{"volume", "create"}, pkgconfig.LabelArgs(labels)...)
 	args = append(args, name)
-	result, err := runCaptured(ctx, d.cmd(ctx, args...))
-	if err != nil {
-		return fmt.Errorf("%s: %w", capturedOutput(result), err)
-	}
-	return nil
+	return runDockerCLI(ctx, d.cmd(ctx, args...))
 }
 
 func (d *LocalDockerDelivery) helperImageName() string {
@@ -152,6 +173,70 @@ func (d *LocalDockerDelivery) expectedVersion() string {
 }
 
 func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeName string) string {
+	if d.isPodman() {
+		version, err := d.detectVolumeVersionFromMount(ctx, volumeName)
+		if err == nil {
+			return version
+		}
+		log.Debugf("containerless Podman agent version detection failed; trying helper: %v", err)
+	}
+	return d.detectVolumeVersionWithHelper(ctx, volumeName)
+}
+
+func (d *LocalDockerDelivery) detectVolumeVersionFromMount(
+	ctx context.Context,
+	volumeName string,
+) (string, error) {
+	mountpoint, err := d.volumeMountpoint(ctx, volumeName)
+	if err != nil {
+		return "", err
+	}
+	binaryPath := filepath.Join(mountpoint, binaryName())
+	if _, err := os.Stat(binaryPath); errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	} else if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return d.detectVolumeVersionViaUnshare(ctx, binaryPath)
+		}
+		return "", err
+	}
+	return d.detectBinaryVersion(ctx, binaryPath)
+}
+
+func (d *LocalDockerDelivery) detectBinaryVersion(
+	ctx context.Context,
+	binaryPath string,
+) (string, error) {
+	cmd := exec.CommandContext(
+		ctx,
+		binaryPath,
+		"--version",
+	) // #nosec G204 -- path comes from inspected volume
+	out, err := cmd.Output()
+	if err == nil {
+		return strings.TrimSpace(string(out)), nil
+	}
+	if errors.Is(err, os.ErrPermission) {
+		return d.detectVolumeVersionViaUnshare(ctx, binaryPath)
+	}
+	return "", err
+}
+
+func (d *LocalDockerDelivery) detectVolumeVersionViaUnshare(
+	ctx context.Context,
+	binaryPath string,
+) (string, error) {
+	result, err := runCaptured(ctx, d.cmd(ctx, "unshare", binaryPath, "--version"))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
+func (d *LocalDockerDelivery) detectVolumeVersionWithHelper(
+	ctx context.Context,
+	volumeName string,
+) string {
 	binaryPath := volumeMountPath + "/" + binaryName()
 	script := fmt.Sprintf(
 		`[ -x "%s" ] && "%s" --version 2>/dev/null || true`,
@@ -189,6 +274,9 @@ func (d *LocalDockerDelivery) populateVolume(
 		return fmt.Errorf("read binary: %w", err)
 	}
 
+	if d.isPodman() {
+		return d.populatePodmanVolume(ctx, volumeName, data)
+	}
 	err = d.populateVolumeWithHelper(ctx, volumeName, bytes.NewReader(data))
 	if err == nil {
 		return nil
@@ -196,6 +284,27 @@ func (d *LocalDockerDelivery) populateVolume(
 	log.Debugf("helper container populate failed, trying direct copy: %v", err)
 
 	return d.populateVolumeDirectCopy(ctx, volumeName, data)
+}
+
+func (d *LocalDockerDelivery) populatePodmanVolume(
+	ctx context.Context,
+	volumeName string,
+	data []byte,
+) error {
+	directErr := d.populateVolumeDirectCopy(ctx, volumeName, data)
+	if directErr == nil {
+		return nil
+	}
+	log.Debugf("containerless Podman agent population failed; trying helper: %v", directErr)
+	helperErr := d.populateVolumeWithHelper(ctx, volumeName, bytes.NewReader(data))
+	if helperErr == nil {
+		return nil
+	}
+	return fmt.Errorf(
+		"podman direct copy failed: %w; helper fallback failed: %v",
+		directErr,
+		helperErr,
+	)
 }
 
 func (d *LocalDockerDelivery) populateVolumeWithHelper(
@@ -220,11 +329,7 @@ func (d *LocalDockerDelivery) populateVolumeWithHelper(
 	cmd := d.cmd(ctx, args...)
 	cmd.Stdin = binary
 
-	result, err := runCaptured(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("%s: %w", capturedOutput(result), err)
-	}
-	return nil
+	return runDockerCLI(ctx, cmd)
 }
 
 // populateVolumeDirectCopy writes the agent binary to a volume mountpoint the
@@ -277,7 +382,10 @@ func (d *LocalDockerDelivery) populateVolumeViaUnshare(
 }
 
 func (d *LocalDockerDelivery) isPodman() bool {
-	return filepath.Base(d.dockerCommand()) == podmanCmd
+	if d.Runtime != "" {
+		return d.Runtime == docker.RuntimePodman
+	}
+	return docker.DetectRuntime(d.dockerCommand()).Name() == docker.RuntimePodman
 }
 
 func (d *LocalDockerDelivery) volumeMountpoint(
@@ -298,11 +406,7 @@ func (d *LocalDockerDelivery) volumeMountpoint(
 // removeVolume force-removes a single named volume. It is safe to call for a
 // non-existent volume since removal is forced.
 func (d *LocalDockerDelivery) removeVolume(ctx context.Context, name string) error {
-	result, err := runCaptured(ctx, d.cmd(ctx, "volume", "rm", "-f", name))
-	if err != nil {
-		return fmt.Errorf("%s: %w", capturedOutput(result), err)
-	}
-	return nil
+	return runDockerCLI(ctx, d.cmd(ctx, "volume", "rm", "-f", name))
 }
 
 // listManagedVolumes returns the names of devsy-managed volumes owned by the
@@ -330,12 +434,7 @@ func (d *LocalDockerDelivery) listManagedVolumes(
 }
 
 func (d *LocalDockerDelivery) cmd(ctx context.Context, args ...string) *exec.Cmd {
-	// #nosec G204 -- args are constructed internally, not from user input
-	cmd := exec.CommandContext(ctx, d.dockerCommand(), args...)
-	if d.Environment != nil {
-		cmd.Env = append(os.Environ(), d.Environment...)
-	}
-	return cmd
+	return dockerCLI(ctx, d.dockerCommand(), d.Environment, args...)
 }
 
 func (d *LocalDockerDelivery) dockerCommand() string {

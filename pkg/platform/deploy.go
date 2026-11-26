@@ -32,7 +32,7 @@ func WaitForPodReady(
 	kubeClient kubernetes.Interface,
 	namespace string,
 ) (*corev1.Pod, error) {
-	// wait until we have a running loft pod
+	// wait until we have a running devsy pod
 	now := time.Now()
 	pod := &corev1.Pod{}
 	err := wait.PollUntilContextTimeout(
@@ -41,12 +41,12 @@ func WaitForPodReady(
 		Timeout(),
 		true,
 		func(ctx context.Context) (bool, error) {
-			loftPod, found, err := pollLoftPodReady(ctx, kubeClient, namespace, &now)
+			devsyPod, found, err := pollDevsyPodReady(ctx, kubeClient, namespace, &now)
 			if err != nil {
 				return false, err
 			}
-			if loftPod != nil {
-				pod = loftPod
+			if devsyPod != nil {
+				pod = devsyPod
 			}
 			return found, nil
 		},
@@ -58,25 +58,25 @@ func WaitForPodReady(
 	return pod, nil
 }
 
-func pollLoftPodReady(
+func pollDevsyPodReady(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	namespace string,
 	now *time.Time,
 ) (*corev1.Pod, bool, error) {
-	loftPod := latestLoftPod(ctx, kubeClient, namespace, now)
-	if loftPod == nil {
+	devsyPod := latestDevsyPod(ctx, kubeClient, namespace, now)
+	if devsyPod == nil {
 		return nil, false, nil
 	}
 
 	found := false
-	for i := range loftPod.Status.ContainerStatuses {
-		containerStatus := loftPod.Status.ContainerStatuses[i]
+	for i := range devsyPod.Status.ContainerStatuses {
+		containerStatus := devsyPod.Status.ContainerStatuses[i]
 		ready, err := evalContainerStatus(evalContainerStatusParams{
 			ctx:             ctx,
 			kubeClient:      kubeClient,
 			namespace:       namespace,
-			loftPod:         loftPod,
+			devsyPod:        devsyPod,
 			containerStatus: containerStatus,
 			now:             now,
 		})
@@ -91,10 +91,10 @@ func pollLoftPodReady(
 		}
 	}
 
-	return loftPod, found, nil
+	return devsyPod, found, nil
 }
 
-func latestLoftPod(
+func latestDevsyPod(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	namespace string,
@@ -104,12 +104,12 @@ func latestLoftPod(
 		LabelSelector: "app=devsy",
 	})
 	if err != nil {
-		log.Warnf("Error trying to retrieve %s pod: %v", pkgconfig.ProductNamePro, err)
+		log.Warnf("Error trying to retrieve %s pod: %v", pkgconfig.ProductNamePlatform, err)
 		return nil
 	}
 	if len(pods.Items) == 0 {
 		if time.Now().After(now.Add(time.Second * 10)) {
-			log.Infof("Still waiting for a %s pod", pkgconfig.ProductNamePro)
+			log.Infof("Still waiting for a %s pod", pkgconfig.ProductNamePlatform)
 			*now = time.Now()
 		}
 		return nil
@@ -126,7 +126,7 @@ type evalContainerStatusParams struct {
 	ctx             context.Context
 	kubeClient      kubernetes.Interface
 	namespace       string
-	loftPod         *corev1.Pod
+	devsyPod        *corev1.Pod
 	containerStatus corev1.ContainerStatus
 	now             *time.Time
 }
@@ -138,7 +138,7 @@ func evalContainerStatus(params evalContainerStatusParams) (bool, error) {
 		return true, nil
 	case containerStatus.State.Terminated != nil ||
 		(containerStatus.State.Waiting != nil && CriticalStatus[containerStatus.State.Waiting.Reason]):
-		return false, loftPodFailureError(params)
+		return false, devsyPodFailureError(params)
 	case containerStatus.State.Waiting != nil && time.Now().After(params.now.Add(time.Second*10)):
 		logContainerWaiting(containerStatus)
 		*params.now = time.Now()
@@ -147,7 +147,7 @@ func evalContainerStatus(params evalContainerStatusParams) (bool, error) {
 	return false, nil
 }
 
-func loftPodFailureError(params evalContainerStatusParams) error {
+func devsyPodFailureError(params evalContainerStatusParams) error {
 	containerStatus := params.containerStatus
 	reason := ""
 	message := ""
@@ -161,7 +161,7 @@ func loftPodFailureError(params evalContainerStatusParams) error {
 
 	out, err := params.kubeClient.CoreV1().
 		Pods(params.namespace).
-		GetLogs(params.loftPod.Name, &corev1.PodLogOptions{
+		GetLogs(params.devsyPod.Name, &corev1.PodLogOptions{
 			Container: "manager",
 		}).
 		Do(params.ctx).
@@ -169,7 +169,7 @@ func loftPodFailureError(params evalContainerStatusParams) error {
 	if err != nil {
 		return fmt.Errorf(
 			"there seems to be an issue with %s starting up: %s (%s). Reach out to our support at https://devsy.sh/",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			message,
 			reason,
 		)
@@ -182,7 +182,7 @@ func loftPodFailureError(params evalContainerStatusParams) error {
 			"%[1]s logs: \n%[2]v \nThere seems to be an issue with %[1]s starting up. "+
 				"Looks like you try to install %[1]s into an air-gapped environment, "+
 				"reach out to our support at https://devsy.sh/ for an offline license",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			string(out),
 		)
 	}
@@ -190,7 +190,7 @@ func loftPodFailureError(params evalContainerStatusParams) error {
 	return fmt.Errorf(
 		"%[1]s logs: \n%[2]v \nThere seems to be an issue with %[1]s starting up: %[3]s (%[4]s). "+
 			"Reach out to our support at https://devsy.sh/",
-		pkgconfig.ProductNamePro,
+		pkgconfig.ProductNamePlatform,
 		string(out),
 		message,
 		reason,
@@ -202,20 +202,20 @@ func logContainerWaiting(containerStatus corev1.ContainerStatus) {
 	case containerStatus.State.Waiting.Message != "":
 		log.Infof(
 			"Keep waiting, %s container is still starting up: %s (%s)",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			containerStatus.State.Waiting.Message,
 			containerStatus.State.Waiting.Reason,
 		)
 	case containerStatus.State.Waiting.Reason != "":
 		log.Infof(
 			"Keep waiting, %s container is still starting up: %s",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 			containerStatus.State.Waiting.Reason,
 		)
 	default:
 		log.Infof(
 			"Keep waiting, %s container is still starting up",
-			pkgconfig.ProductNamePro,
+			pkgconfig.ProductNamePlatform,
 		)
 	}
 }

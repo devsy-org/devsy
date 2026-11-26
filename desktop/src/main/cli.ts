@@ -1,15 +1,25 @@
 import type { ChildProcess } from "node:child_process"
 import { execFile as execFileCb, spawn } from "node:child_process"
+import { homedir } from "node:os"
 import { createInterface } from "node:readline"
 import type { Readable } from "node:stream"
 import { promisify } from "node:util"
 import type { CLIError, CliLogLine } from "../shared/cli-error.js"
+import {
+  cliErrorFromEnvelope,
+  cliErrorFromLegacy,
+} from "../shared/cli-error.js"
 import { getAnalyticsDistinctId } from "./analytics.js"
+import { desktopExecutablePath } from "./executable-path.js"
 
 const execFile = promisify(execFileCb)
 const MAX_CONCURRENT = 50
+type CliLogOutput = "json" | "logfmt" | "text"
+type CliResultFormat = "auto" | "json" | "plain"
 
-function backpressureController(source: Readable): (r: void | Promise<void>) => void {
+function backpressureController(
+  source: Readable,
+): (r: void | Promise<void>) => void {
   let pending = 0
   return (result) => {
     if (!result || typeof (result as Promise<void>).then !== "function") return
@@ -30,6 +40,24 @@ export interface StreamLine {
   cliError?: CLIError
   /** Log level from the parsed line, if available. */
   level?: "info" | "warn" | "error"
+}
+
+export interface CliInvocationOptions {
+  env?: NodeJS.ProcessEnv
+  stdin?: string
+  /** Explicit credential workflows handle unlock errors in their own dialog. */
+  allowUnlockPrompt?: boolean
+  /** Internal retry guard: never repeatedly prompt for one invocation. */
+  unlockRetried?: boolean
+  /** Raises the stdout cap of run() above Node's 1 MiB default. */
+  maxBuffer?: number
+  signal?: AbortSignal
+}
+
+export interface CliInvocationPolicy {
+  diagnosticLogLevel: import("../shared/app-settings.js").LogLevel
+  logOutput: CliLogOutput
+  resultFormat: CliResultFormat
 }
 
 /**
@@ -59,7 +87,9 @@ function extractCliErrorFromStderr(stderr: string): CLIError | undefined {
   let found: CLIError | undefined
   for (const line of stderr.split(/\r?\n/)) {
     const parsed = parseStderrLine(line)
-    if (parsed?.cliError) found = parsed.cliError
+    const direct = cliErrorFromEnvelope(parsed)
+    const legacy = cliErrorFromLegacy(parsed)
+    if (direct ?? legacy) found = direct ?? legacy
   }
   return found
 }
@@ -112,7 +142,7 @@ function parseCommandResult<T>(stdout: string): T {
 
 /**
  * Parse a single stderr line as a zap JSON record. Returns undefined when the
- * line is not valid JSON or not a plain object — callers should treat the line
+ * line is not valid JSON or not a plain object - callers should treat the line
  * as opaque text in that case.
  */
 function parseStderrLine(line: string): CliLogLine | undefined {
@@ -124,15 +154,15 @@ function parseStderrLine(line: string): CliLogLine | undefined {
       return obj as CliLogLine
     }
   } catch {
-    // not JSON — fall through
+    // not JSON - fall through
   }
   return undefined
 }
 
 /**
  * On macOS, GUI apps (including Electron) inherit a minimal PATH that excludes
- * /usr/local/bin and /opt/homebrew/bin. This means tools like docker, git, etc.
- * installed via Homebrew or Docker Desktop are invisible to child processes.
+ * Homebrew and user-local bin directories. This means separately installed tools
+ * can be invisible to child processes or shadowed by a version-manager shim.
  * We augment PATH so all spawned CLI processes can find these tools.
  */
 function buildEnv(): NodeJS.ProcessEnv {
@@ -145,16 +175,11 @@ function buildEnv(): NodeJS.ProcessEnv {
   if (process.platform !== "darwin") return baseEnv
 
   const currentPath = process.env.PATH ?? ""
-  const extraDirs = [
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-  ]
-  const extraSet = new Set(extraDirs)
-  const existingDirs = currentPath
-    .split(":")
-    .filter((directory) => directory !== "" && !extraSet.has(directory))
-  const mergedPath = [...extraDirs, ...existingDirs].join(":")
+  const mergedPath = desktopExecutablePath(
+    currentPath,
+    process.platform,
+    homedir(),
+  )
   if (mergedPath === currentPath) return baseEnv
 
   return {
@@ -163,12 +188,26 @@ function buildEnv(): NodeJS.ProcessEnv {
   }
 }
 
+function requestedResultFormat(args: string[]): string | undefined {
+  const index = args.findIndex(
+    (arg) => arg === "--result-format" || arg.startsWith("--result-format="),
+  )
+  if (index === -1) return undefined
+  const arg = args[index]
+  return arg.includes("=") ? arg.split("=", 2)[1] : args[index + 1]
+}
+
 export class CliRunner {
   private execPath: string
   private prefixArgs: string[]
   private env: NodeJS.ProcessEnv
   private running = 0
   private queue: Array<() => void> = []
+  private policy: CliInvocationPolicy = {
+    diagnosticLogLevel: "info",
+    logOutput: "json",
+    resultFormat: "json",
+  }
 
   constructor(private binaryPath: string) {
     if (/\.[cm]?js$/.test(binaryPath)) {
@@ -179,6 +218,120 @@ export class CliRunner {
       this.prefixArgs = []
     }
     this.env = buildEnv()
+  }
+
+  private sessionPassphrase: string | undefined
+  private unlockHandler?: () => Promise<string | undefined>
+
+  setUnlockHandler(handler: () => Promise<string | undefined>): void {
+    this.unlockHandler = handler
+  }
+
+  setSessionPassphrase(value: string | undefined): void {
+    this.sessionPassphrase = value
+  }
+
+  hasSessionPassphrase(): boolean {
+    return this.sessionPassphrase !== undefined
+  }
+
+  private commandNeedsSecret(args: string[]): boolean {
+    const valueFlags = new Set([
+      "--context",
+      "-c",
+      "--log-level",
+      "--log-output",
+      "--log-format",
+      "--result-format",
+      "--config",
+      "--config-dir",
+    ])
+    let commandIndex = 0
+    while (commandIndex < args.length && args[commandIndex].startsWith("-")) {
+      const flag = args[commandIndex++]
+      if (valueFlags.has(flag)) commandIndex++
+    }
+    const rootCommand = args[commandIndex]
+    const command = args[commandIndex + 1]
+    return (
+      (rootCommand === "secret" &&
+        ["set", "get", "delete", "list", "protection"].includes(command)) ||
+      (rootCommand === "context" && ["delete", "rm"].includes(command)) ||
+      (rootCommand === "workspace" && command === "up") ||
+      rootCommand === "up"
+    )
+  }
+
+  private invocationEnv(
+    args: string[],
+    options: CliInvocationOptions,
+  ): NodeJS.ProcessEnv {
+    const env = { ...this.env, ...options.env }
+    // Unlock material is withheld from unrelated commands.
+    if (!this.commandNeedsSecret(args)) {
+      delete env.DEVSY_SECRETS_PASSPHRASE
+      delete env.DEVSY_SECRETS_PASSPHRASE_FILE
+    } else if (
+      options.env?.DEVSY_SECRETS_PASSPHRASE === undefined &&
+      this.sessionPassphrase !== undefined
+    ) {
+      env.DEVSY_SECRETS_PASSPHRASE = this.sessionPassphrase
+      delete env.DEVSY_SECRETS_PASSPHRASE_FILE
+    }
+    return env
+  }
+
+  private async unlockForRetry(
+    args: string[],
+    error: unknown,
+    options: CliInvocationOptions,
+  ): Promise<boolean> {
+    if (
+      options.allowUnlockPrompt === false ||
+      !this.commandNeedsSecret(args) ||
+      options.unlockRetried ||
+      (error as { cliError?: CLIError })?.cliError?.code !==
+        "unlock_required" ||
+      !this.unlockHandler
+    )
+      return false
+    const passphrase = await this.unlockHandler()
+    if (passphrase === undefined) return false
+    this.sessionPassphrase = passphrase
+    return true
+  }
+
+  setDiagnosticLogLevel(
+    level: import("../shared/app-settings.js").LogLevel,
+  ): void {
+    this.policy.diagnosticLogLevel = level
+  }
+
+  private argsWithLogLevel(args: string[]): string[] {
+    const explicit = args.some(
+      (arg) => arg === "--log-level" || arg.startsWith("--log-level="),
+    )
+    return [
+      ...this.prefixArgs,
+      ...args,
+      ...(explicit ? [] : ["--log-level", this.policy.diagnosticLogLevel]),
+    ]
+  }
+
+  private argsWithProtocol(
+    args: string[],
+    includeResultFormat = false,
+  ): string[] {
+    const fullArgs = this.argsWithLogLevel(args)
+    const hasFlag = (flag: string) =>
+      fullArgs.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
+    if (includeResultFormat && !hasFlag("--result-format")) {
+      fullArgs.push("--result-format", this.policy.resultFormat)
+    }
+    if (!hasFlag("--log-output") && !hasFlag("--log-format")) {
+      fullArgs.push("--log-output", this.policy.logOutput)
+    }
+    return fullArgs
   }
 
   private acquire(): Promise<void> {
@@ -200,64 +353,121 @@ export class CliRunner {
     if (next) next()
   }
 
-  async run<T>(args: string[]): Promise<T> {
+  async run<T>(args: string[], options: CliInvocationOptions = {}): Promise<T> {
+    const requestedFormat =
+      requestedResultFormat(args) ?? this.policy.resultFormat
+    if (requestedFormat !== "json") {
+      throw new Error(
+        `run() parses JSON results; got --result-format=${requestedFormat}. Use runRaw() for non-JSON output`,
+      )
+    }
     await this.acquire()
+    let released = false
     try {
-      const fullArgs = [
-        ...this.prefixArgs,
-        ...args,
-        "--result-format",
-        "json",
-        "--log-output",
-        "json",
-      ]
-      const { stdout } = await execFile(this.execPath, fullArgs, {
-        env: this.env,
-      })
+      const fullArgs = this.argsWithProtocol(args, true)
+      const stdout =
+        options.stdin === undefined
+          ? (
+              await execFile(this.execPath, fullArgs, {
+                env: this.invocationEnv(args, options),
+                ...(options.maxBuffer === undefined
+                  ? {}
+                  : { maxBuffer: options.maxBuffer }),
+                ...(options.signal === undefined
+                  ? {}
+                  : { signal: options.signal }),
+              })
+            ).stdout
+          : await this.spawnWithStdin(
+              fullArgs,
+              options.stdin,
+              this.invocationEnv(args, options),
+            )
       return parseCommandResult<T>(stdout)
     } catch (error: unknown) {
-      throw this.wrapError(error)
-    } finally {
+      const wrapped = this.wrapError(error, options)
       this.release()
+      released = true
+      if (await this.unlockForRetry(args, wrapped, options)) {
+        return this.run<T>(args, { ...options, unlockRetried: true })
+      }
+      throw wrapped
+    } finally {
+      if (!released) this.release()
     }
   }
 
-  async runRaw(args: string[]): Promise<string> {
+  async runRaw(
+    args: string[],
+    options: CliInvocationOptions = {},
+  ): Promise<string> {
     await this.acquire()
+    let released = false
     try {
+      if (options.stdin !== undefined)
+        return await this.spawnWithStdin(
+          this.argsWithProtocol(args),
+          options.stdin,
+          this.invocationEnv(args, options),
+        )
       const { stdout } = await execFile(
         this.execPath,
-        [...this.prefixArgs, ...args, "--log-output", "json"],
-        { env: this.env },
+        this.argsWithProtocol(args),
+        { env: this.invocationEnv(args, options) },
       )
       return stdout
     } catch (error: unknown) {
-      throw this.wrapError(error)
-    } finally {
+      const wrapped = this.wrapError(error, options)
       this.release()
+      released = true
+      if (await this.unlockForRetry(args, wrapped, options)) {
+        return this.runRaw(args, { ...options, unlockRetried: true })
+      }
+      throw wrapped
+    } finally {
+      if (!released) this.release()
     }
   }
 
   /** Writes `input` via stdin so secret values never appear in argv (e.g. `ps`). */
-  async runRawStdin(args: string[], input: string): Promise<string> {
+  async runRawStdin(
+    args: string[],
+    input: string,
+    options: CliInvocationOptions = {},
+  ): Promise<string> {
     await this.acquire()
+    let released = false
     try {
       return await this.spawnWithStdin(
-        [...this.prefixArgs, ...args, "--log-output", "json"],
+        this.argsWithProtocol(args),
         input,
+        this.invocationEnv(args, options),
       )
     } catch (error: unknown) {
-      throw this.wrapError(error)
-    } finally {
+      const wrapped = this.wrapError(error, { ...options, stdin: input })
       this.release()
+      released = true
+      if (await this.unlockForRetry(args, wrapped, options)) {
+        return this.runRawStdin(args, input, {
+          ...options,
+          unlockRetried: true,
+        })
+      }
+      throw wrapped
+    } finally {
+      if (!released) this.release()
     }
   }
 
   // Uses spawn, not execFile: async execFile ignores { input } (Sync-only), which
   // would leave the child blocked reading stdin forever.
-  private spawnWithStdin(args: string[], input: string): Promise<string> {
+  private spawnWithStdin(
+    args: string[],
+    input: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.execPath, args, { env: this.env })
+      const child = spawn(this.execPath, args, { env })
       this.activeChildren.add(child)
       let stdout = ""
       let stderr = ""
@@ -293,6 +503,12 @@ export class CliRunner {
    * the workspace's log directory, causing ENOENT crashes in appendLog.
    */
   private childrenByWorkspace = new Map<string, Set<ChildProcess>>()
+  /** Invalidates unlock retries without letting newer calls erase cancellation. */
+  private workspaceCancellationGenerations = new Map<string, number>()
+
+  private workspaceCancellationGeneration(workspaceId: string): number {
+    return this.workspaceCancellationGenerations.get(workspaceId) ?? 0
+  }
 
   async runStreaming(
     args: string[],
@@ -303,13 +519,37 @@ export class CliRunner {
     ) => void | Promise<void>,
     onExit: (code: number, cliError?: CLIError) => void,
     workspaceId?: string,
+    options: CliInvocationOptions = {},
+    retryCancellationGeneration?: number,
   ): Promise<ChildProcess> {
+    // A retry keeps its originating generation. A new call captures the
+    // latest generation, so it remains valid after an older call is canceled.
+    const cancellationGeneration = workspaceId
+      ? (retryCancellationGeneration ??
+        this.workspaceCancellationGeneration(workspaceId))
+      : undefined
     await this.acquire()
-    const child = spawn(
-      this.execPath,
-      [...this.prefixArgs, ...args, "--log-output", "json"],
-      { env: this.env },
-    )
+    if (
+      workspaceId &&
+      cancellationGeneration !==
+        this.workspaceCancellationGeneration(workspaceId)
+    ) {
+      this.release()
+      throw new Error("Workspace CLI invocation was cancelled")
+    }
+    const invocationEnv = this.invocationEnv(args, options)
+    const credentials = [
+      invocationEnv.DEVSY_SECRETS_PASSPHRASE,
+      this.sessionPassphrase,
+    ].filter((value): value is string => Boolean(value))
+    const redact = (value: string) =>
+      credentials.reduce(
+        (text, credential) => text.replaceAll(credential, "***"),
+        value,
+      )
+    const child = spawn(this.execPath, this.argsWithProtocol(args), {
+      env: invocationEnv,
+    })
 
     this.activeChildren.add(child)
     if (workspaceId) {
@@ -329,6 +569,28 @@ export class CliRunner {
       const rl = createInterface({ input: child.stdout })
       rl.on("line", (line) => {
         if (suppressCallbacks) return
+        line = redact(line)
+        const parsed = parseStderrLine(line)
+        const direct = cliErrorFromEnvelope(parsed)
+        const statusError = parsed?.error as
+          | { code?: string; message?: string }
+          | undefined
+        const cliError =
+          direct ??
+          (statusError?.code === "unlock_required"
+            ? {
+                code: "unlock_required",
+                message: statusError.message ?? "Secret store unlock required",
+              }
+            : undefined)
+        if (cliError) lastCliError = cliError
+        if (
+          cliError?.code === "unlock_required" &&
+          !options.unlockRetried &&
+          this.commandNeedsSecret(args) &&
+          this.unlockHandler
+        )
+          return
         applyBackpressure(onLine(line, "stdout"))
       })
       // Store readline interface for cleanup
@@ -340,14 +602,22 @@ export class CliRunner {
       const rl = createInterface({ input: child.stderr })
       rl.on("line", (line) => {
         if (suppressCallbacks) return
+        line = redact(line)
         const parsed = parseStderrLine(line)
-        if (parsed?.cliError) {
-          lastCliError = parsed.cliError
-        }
+        const direct = cliErrorFromEnvelope(parsed)
+        const legacy = cliErrorFromLegacy(parsed)
+        if (direct ?? legacy) lastCliError = direct ?? legacy
+        if (
+          (direct ?? legacy)?.code === "unlock_required" &&
+          !options.unlockRetried &&
+          this.commandNeedsSecret(args) &&
+          this.unlockHandler
+        )
+          return
         const meta: StreamLine = {
           raw: line,
           parsed,
-          cliError: parsed?.cliError,
+          cliError: direct ?? legacy,
           level: normalizeLevel(parsed?.level),
         }
         applyBackpressure(onLine(line, "stderr", meta))
@@ -355,9 +625,10 @@ export class CliRunner {
       // Store readline interface for cleanup
       ;(child as unknown as { _rlStderr?: typeof rl })._rlStderr = rl
     }
-
     // Expose a method to suppress callbacks (used by cancelFor timeout)
-    ;(child as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks = () => {
+    ;(
+      child as unknown as { _suppressCallbacks?: () => void }
+    )._suppressCallbacks = () => {
       suppressCallbacks = true
     }
 
@@ -374,7 +645,38 @@ export class CliRunner {
         }
       }
       this.release()
-      onExit(code, cliError)
+      if (
+        cliError?.code === "unlock_failed" &&
+        options.allowUnlockPrompt !== false
+      )
+        this.sessionPassphrase = undefined
+      if (
+        code !== 0 &&
+        cliError?.code === "unlock_required" &&
+        !options.unlockRetried &&
+        this.commandNeedsSecret(args) &&
+        this.unlockHandler
+      ) {
+        void this.unlockForRetry(args, { cliError }, options)
+          .then(async (retry) => {
+            if (
+              retry &&
+              (!workspaceId ||
+                cancellationGeneration ===
+                  this.workspaceCancellationGeneration(workspaceId))
+            )
+              await this.runStreaming(
+                args,
+                onLine,
+                onExit,
+                workspaceId,
+                { ...options, unlockRetried: true },
+                cancellationGeneration,
+              )
+            else onExit(code, cliError)
+          })
+          .catch(() => onExit(code, cliError))
+      } else onExit(code, cliError)
     }
 
     // Expose finish for cancelFor timeout handling
@@ -407,6 +709,10 @@ export class CliRunner {
    * already-unlinked log file.
    */
   async cancelFor(workspaceId: string): Promise<void> {
+    this.workspaceCancellationGenerations.set(
+      workspaceId,
+      this.workspaceCancellationGeneration(workspaceId) + 1,
+    )
     const bucket = this.childrenByWorkspace.get(workspaceId)
     if (!bucket || bucket.size === 0) return
 
@@ -415,17 +721,14 @@ export class CliRunner {
       let timedOut = false
       waits.push(
         new Promise<void>((resolve) => {
-          let settled = false
           let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
             timer = null
-            settled = true
             timedOut = true
             resolve()
           }, 2000)
 
           if (child.exitCode !== null || child.signalCode !== null) {
             if (timer) clearTimeout(timer)
-            settled = true
             resolve()
             return
           }
@@ -434,7 +737,6 @@ export class CliRunner {
               clearTimeout(timer)
               timer = null
             }
-            settled = true
             resolve()
           })
         }).then(() => {
@@ -443,19 +745,32 @@ export class CliRunner {
             // Run lifecycle cleanup BEFORE suppressing callbacks/removing listeners
             // so finish(...) can properly clean up sessions and call onExit
             if (timedOut) {
-              const finishFn = (child as unknown as { _finish?: (code: number, cliError?: CLIError) => void })._finish
+              const finishFn = (
+                child as unknown as {
+                  _finish?: (code: number, cliError?: CLIError) => void
+                }
+              )._finish
               if (finishFn) {
-                finishFn(-1, { code: "timeout", message: "Process did not exit in time" })
+                finishFn(-1, {
+                  code: "timeout",
+                  message: "Process did not exit in time",
+                })
               }
             }
 
             // Now suppress callbacks at the source
-            const suppressFn = (child as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks
+            const suppressFn = (
+              child as unknown as { _suppressCallbacks?: () => void }
+            )._suppressCallbacks
             if (suppressFn) suppressFn()
 
             // Close readline interfaces
-            const rlStdout = (child as unknown as { _rlStdout?: { close: () => void } })._rlStdout
-            const rlStderr = (child as unknown as { _rlStderr?: { close: () => void } })._rlStderr
+            const rlStdout = (
+              child as unknown as { _rlStdout?: { close: () => void } }
+            )._rlStdout
+            const rlStderr = (
+              child as unknown as { _rlStderr?: { close: () => void } }
+            )._rlStderr
             if (rlStdout) rlStdout.close()
             if (rlStderr) rlStderr.close()
 
@@ -490,22 +805,59 @@ export class CliRunner {
     return join(resourcesPath, "bin", binaryName)
   }
 
-  private wrapError(error: unknown): Error & { cliError?: CLIError } {
+  private wrapError(
+    error: unknown,
+    options: CliInvocationOptions = {},
+  ): Error & { cliError?: CLIError } {
+    const credentials = [
+      this.sessionPassphrase,
+      this.env.DEVSY_SECRETS_PASSPHRASE,
+      options.env?.DEVSY_SECRETS_PASSPHRASE,
+      options.stdin,
+    ].filter((value): value is string => Boolean(value))
+    const redact = (value: string) =>
+      credentials.reduce(
+        (text, credential) => text.replaceAll(credential, "***"),
+        value,
+      )
+
     if (error instanceof Error && "stderr" in error) {
       const stderr = CliRunner.stripAnsi(
         String((error as { stderr: string }).stderr),
       )
-      const cliError = extractCliErrorFromStderr(stderr)
+      const extracted = extractCliErrorFromStderr(stderr)
+      const cliError = extracted
+        ? {
+            ...extracted,
+            message: redact(extracted.message),
+            hint: extracted.hint ? redact(extracted.hint) : undefined,
+            context: extracted.context
+              ? Object.fromEntries(
+                  Object.entries(extracted.context).map(([key, value]) => [
+                    redact(key),
+                    redact(value),
+                  ]),
+                )
+              : undefined,
+          }
+        : undefined
+      if (
+        cliError?.code === "unlock_failed" &&
+        options.allowUnlockPrompt !== false
+      )
+        this.sessionPassphrase = undefined
       const message = cliError
         ? cliError.message
         : this.sanitizeMessage(stderr || error.message)
-      const wrapped = new Error(message) as Error & { cliError?: CLIError }
+      const wrapped = new Error(redact(message)) as Error & {
+        cliError?: CLIError
+      }
       if (cliError) wrapped.cliError = cliError
       return wrapped
     }
     return error instanceof Error
-      ? new Error(this.sanitizeMessage(error.message))
-      : new Error(String(error))
+      ? new Error(redact(this.sanitizeMessage(error.message)))
+      : new Error(redact(String(error)))
   }
 
   /** Strip the full binary path from error messages to avoid exposing system paths to the user. */

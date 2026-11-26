@@ -216,6 +216,29 @@ type ContainerRuntime interface {
 	// ProbeEnv reads the container's environment via shell. Returns an empty
 	// map on any failure; probeMode comes from devcconfig.UserEnvProbe.
 	ProbeEnv(ctx context.Context, target ContainerTarget, probeMode string) map[string]string
+}
+
+// CommandExitError preserves a guest command's exit status at the CLI boundary.
+type CommandExitError struct {
+	Code  int
+	Cause error
+}
+
+func (e *CommandExitError) Error() string {
+	if e.Cause != nil {
+		if e.Code == 0 {
+			return fmt.Sprintf("workspace command output: %v", e.Cause)
+		}
+		return fmt.Sprintf("workspace command failed with exit code %d: %v", e.Code, e.Cause)
+	}
+	return fmt.Sprintf("workspace command failed with exit code %d", e.Code)
+}
+
+func (e *CommandExitError) Unwrap() error { return e.Cause }
+
+// CommandRuntime exposes the native CLI used by legacy raw-command callers.
+type CommandRuntime interface {
+	ContainerRuntime
 
 	// Command returns the container CLI binary to invoke for a raw
 	// (interactive) exec that bypasses the helper.
@@ -227,12 +250,16 @@ type ContainerRuntime interface {
 
 // ExecRequest is the per-call input to ContainerRuntime.Exec.
 type ExecRequest struct {
-	Target  ContainerTarget
-	Workdir string
-	Env     map[string]string
-	Argv    []string
-	Stdout  io.Writer
-	Stderr  io.Writer
+	Target     ContainerTarget
+	Workdir    string
+	Env        map[string]string
+	Argv       []string
+	Stdout     io.Writer
+	Stderr     io.Writer
+	Stdin      io.Reader
+	TTY        bool
+	LiveStdout bool
+	LiveStderr bool
 }
 
 // ContainerTarget identifies a container and the user to exec as.
@@ -294,6 +321,9 @@ func (r *DockerRuntime) FindRunning(
 }
 
 func (r *DockerRuntime) Exec(ctx context.Context, req ExecRequest) (int, error) {
+	if req.LiveStdout || req.LiveStderr {
+		return execWithRunner(ctx, req, r.liveRunner(req.LiveStdout, req.LiveStderr, req.Env))
+	}
 	return execWithRunner(ctx, req, r.runner())
 }
 
@@ -303,6 +333,31 @@ func (r *DockerRuntime) ProbeEnv(
 	probe string,
 ) map[string]string {
 	return probeEnvWithRunner(ctx, target, probe, r.runner())
+}
+
+func (r *DockerRuntime) liveRunner(
+	liveStdout, liveStderr bool,
+	env map[string]string,
+) containerRunFunc {
+	redactionEnv := make([]string, 0, len(env))
+	for key, value := range env {
+		redactionEnv = append(redactionEnv, key+"="+value)
+	}
+	return func(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+		streams := docker.Streams{
+			Stdin:        stdin,
+			Stdout:       stdout,
+			Stderr:       stderr,
+			RedactionEnv: redactionEnv,
+		}
+		if liveStdout {
+			streams.Stdout, streams.LiveStdout = nil, stdout
+		}
+		if liveStderr {
+			streams.Stderr, streams.LiveStderr = nil, stderr
+		}
+		return r.helper.Run(ctx, args, streams)
+	}
 }
 
 // runner adapts the helper's Streams-based Run to containerRunFunc.
@@ -324,36 +379,53 @@ type containerRunFunc func(
 
 // execWithRunner builds the exec argument list and runs it via run, translating
 // a non-zero process exit into a returned exit code rather than an error.
-func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) (int, error) {
-	execArgs := []string{"exec", "-i"}
+// execFlags returns the docker exec options that precede the container ID.
+func execFlags(req ExecRequest) []string {
+	args := []string{"exec", "-i"}
+	if req.TTY {
+		args = append(args, "-t")
+	}
 	for k, v := range req.Env {
-		execArgs = append(execArgs, "-e", k+"="+v)
+		args = append(args, "-e", k+"="+v)
 	}
 	if req.Workdir != "" {
-		execArgs = append(execArgs, "--workdir", req.Workdir)
+		args = append(args, "--workdir", req.Workdir)
 	}
 	if req.Target.User != "" {
-		execArgs = append(execArgs, "--user", req.Target.User)
+		args = append(args, "--user", req.Target.User)
 	}
+
+	return args
+}
+
+func discardIfNil(w io.Writer) io.Writer {
+	if w == nil {
+		return io.Discard
+	}
+
+	return w
+}
+
+func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) (int, error) {
+	execArgs := execFlags(req)
 	execArgs = append(execArgs, req.Target.ContainerID)
 	execArgs = append(execArgs, req.Argv...)
 
-	stdout := req.Stdout
-	if stdout == nil {
-		stdout = io.Discard
-	}
-	stderr := req.Stderr
-	if stderr == nil {
-		stderr = io.Discard
-	}
-
-	err := run(ctx, execArgs, nil, stdout, stderr)
+	err := run(ctx, execArgs, req.Stdin, discardIfNil(req.Stdout), discardIfNil(req.Stderr))
 	if err == nil {
 		return 0, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+		return -1, fmt.Errorf("exec in container %s: %w", req.Target.ContainerID, err)
+	}
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		if outputErr, found := errors.AsType[*docker.LiveOutputError](err); found {
+			return exitErr.ExitCode(), outputErr
+		}
 		return exitErr.ExitCode(), nil
+	}
+	if outputErr, found := err.(*docker.LiveOutputError); found {
+		return 0, outputErr
 	}
 	return -1, fmt.Errorf("exec in container %s: %w", req.Target.ContainerID, err)
 }
@@ -366,6 +438,14 @@ func probeEnvWithRunner(
 	probe string,
 	run containerRunFunc,
 ) map[string]string {
+	return probeEnvWithCommand(ctx, probe, func(flag, command string, stdout io.Writer) error {
+		return run(ctx, buildProbeArgs(target, flag, command), nil, stdout, io.Discard)
+	})
+}
+
+type probeCommand func(flag, command string, stdout io.Writer) error
+
+func probeEnvWithCommand(ctx context.Context, probe string, run probeCommand) map[string]string {
 	userEnvProbe, err := devcconfig.NewUserEnvProbe(probe)
 	if err != nil {
 		log.Warnf("Invalid userEnvProbe %q, using default: %v", probe, err)
@@ -374,34 +454,21 @@ func probeEnvWithRunner(
 	if userEnvProbe == devcconfig.NoneProbe {
 		return map[string]string{}
 	}
-
 	shellFlag := probeShellFlag(userEnvProbe)
-	out, sep, probeErr := runProbeCommand(ctx, target, shellFlag, run)
-	if probeErr != nil {
-		log.Warnf("Failed to probe user env: %v", probeErr)
-		return map[string]string{}
-	}
-	return parseEnvOutput(out, sep)
-}
-
-func runProbeCommand(
-	ctx context.Context,
-	target ContainerTarget,
-	shellFlag string,
-	run containerRunFunc,
-) ([]byte, byte, error) {
-	args := buildProbeArgs(target, shellFlag, "cat /proc/self/environ")
 	var stdout bytes.Buffer
-	if err := run(ctx, args, nil, &stdout, io.Discard); err == nil {
-		return stdout.Bytes(), 0, nil
+	sep := byte(0)
+	if err := run(shellFlag, "cat /proc/self/environ", &stdout); err != nil {
+		if ctx.Err() != nil {
+			return map[string]string{}
+		}
+		stdout.Reset()
+		if err := run(shellFlag, "printenv", &stdout); err != nil {
+			log.Warnf("Failed to probe user env: %v", err)
+			return map[string]string{}
+		}
+		sep = '\n'
 	}
-
-	args = buildProbeArgs(target, shellFlag, "printenv")
-	stdout.Reset()
-	if err := run(ctx, args, nil, &stdout, io.Discard); err != nil {
-		return nil, 0, fmt.Errorf("probe user env: %w", err)
-	}
-	return stdout.Bytes(), '\n', nil
+	return parseEnvOutput(stdout.Bytes(), sep)
 }
 
 // ExecOneShotOptions configures a single non-interactive exec inside a
@@ -541,7 +608,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	unlock := client.Unlock
 
 	workspaceConfig := client.WorkspaceConfig()
-	runtime, err := NewContainerRuntime(workspaceConfig, "")
+	runtime, err := NewWorkspaceRuntime(devsyConfig, client, "")
 	if err != nil {
 		unlock()
 		return resolvedExecTarget{}, err

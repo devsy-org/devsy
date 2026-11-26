@@ -3,59 +3,149 @@ title: Troubleshooting
 sidebar_label: Troubleshooting
 ---
 
-This purpose of this page is to outline any known issues with using devsy and provide known workarounds / fixes.
+Known issues and workarounds. For Linux problems, see [Linux troubleshooting](./linux-troubleshooting.mdx).
 
 ### Utilities not found in PATH
 
-If Devsy Desktop reports that it cannot find utilities in the PATH, you may need to wrap the call in a shell. Something like
+If Devsy Desktop cannot find tools such as `docker` in your `PATH`, start it through your shell. On macOS:
 
+```sh
+#!/usr/bin/env sh
+exec "$SHELL" -lic 'exec /Applications/Devsy.app/Contents/MacOS/Devsy'
 ```
-#! /usr/bin/env sh
 
-exec $SHELL -c 'exec /Applications/Devsy.app/Contents/MacOS/Devsy'
-```
+### Port forwarding does not work without an IDE
 
-### Port forwarding not working when NOT using an ide
+Port forwarding needs an open SSH session. With `--ide none`, keep one open with `devsy workspace ssh WORKSPACE_NAME`. Ports declared in Docker Compose do not need it.
 
-Devsy relies on an active SSH session to perform port forwarding to the local host. When running Devsy without an IDE, such as `--ide none`,
-an active SSH session needs to be open using `devsy workspace ssh {workspace}` (unless you are specifying forwarded ports using docker compose).
+### Reading CLI errors
 
-### Structured CLI errors
-
-Devsy classifies common failures and prints a stable error `code` alongside a `message`. Errors are emitted as a JSON object matching:
+Pass `--log-output json` to get errors as JSON with a stable `code` and a `message`. Some errors also include a `hint` and a `context` object.
 
 ```json
 {
   "code": "UNKNOWN",
-  "message": "exit status 1: Cannot connect to the Docker daemon"
+  "message": "exit status 1: something failed"
 }
 ```
 
-This happens automatically whenever Devsy detects a non-interactive/machine consumer (for example, stderr is not a TTY, `--log-output json` or `logfmt` is set, or Devsy Desktop invokes the CLI) — human-readable output is used otherwise. Pass `--log-output json` (or `logfmt`) explicitly to force structured errors, or `--log-output text` to force human-readable ones.
-
-There are only four stable codes:
-
 | Code | Meaning |
 |---|---|
-| `RATE_LIMITED` | An upstream API rate-limited the request. Wait and retry, or authenticate for a higher limit. |
-| `PANIC` | Devsy recovered from an internal panic; the message contains the recovered value. |
-| `BUILD_FAILED_RECOVERABLE` | The devcontainer build failed in a way that can be retried (e.g. with `--recovery`). |
-| `UNKNOWN` | Devsy could not classify the error into one of the above; the raw underlying error text is preserved verbatim in `message`. |
+| `RATE_LIMITED` | An upstream API rate-limited the request. Wait and retry, or authenticate. |
+| `BUILD_FAILED_RECOVERABLE` | The devcontainer build failed in a way that can be retried, for example with `--recovery`. |
+| `docker_daemon_unreachable` | Docker is not running or not reachable. |
+| `canceled` | The operation was canceled. |
+| `deadline_exceeded` | The operation timed out. |
+| `unlock_required`, `unlock_failed` | The secrets store is locked, or unlocking it failed. |
+| `secret_backend_unavailable` | The secrets backend could not be reached. |
+| `secret_store_corrupt` | The secrets store could not be read. |
+| `secret_not_found` | The requested secret does not exist. |
+| `PANIC` | Devsy hit an internal error. Report it. |
+| `UNKNOWN` | The error was not classified. The original text is in `message`. |
 
-In practice, most environment-level failures — such as "Docker is not running," "permission denied connecting to docker.sock," or "Podman user socket unavailable" — do not have a dedicated code today. They surface as `code: "UNKNOWN"` with the original OS or daemon error text preserved in `message`. Re-run with `--debug` to see the full original error chain.
+Run with `--debug` to see the full error chain.
+
+### Find the right log
+
+Devsy keeps four kinds of logs. Pick one by the question you have.
+
+| Question | Source | Command |
+| --- | --- | --- |
+| What is the container or runtime printing now? | Container and runtime logs | `devsy workspace logs WORKSPACE_NAME` |
+| What did the build and each lifecycle hook print, and how did each end? | Retained setup history | `devsy workspace logs WORKSPACE_NAME --source setup` |
+| What state changes did the workspace go through? | Status events | `devsy workspace events` |
+| What did a background task print? | Task logs | `devsy workspace task logs` |
+
+Reading logs never reruns lifecycle commands or starts, unpauses, rebuilds or installs anything. Stored history shows without a running workspace.
+
+### Read setup history
+
+List retained runs in the selected context, newest first. This works for removed workspaces too:
+
+```sh
+devsy workspace logs my-workspace --source setup --list
+```
+
+Read the latest run, including output of hooks that succeeded:
+
+```sh
+devsy workspace logs my-workspace --source setup --result-format=plain
+```
+
+Read one hook in one run. `RUN_ID` is the run UUID from `--list` or from the command that created the run. It is not the workspace name or an `op-N` ID:
+
+```sh
+devsy workspace logs my-workspace --source setup --run RUN_ID \
+  --hook postCreateCommand --result-format=plain
+```
+
+Read one command from a hook that runs several named or parallel commands, using its invocation ID:
+
+```sh
+devsy workspace logs my-workspace --source setup --run RUN_ID --invocation INVOCATION_ID
+```
+
+Follow a run, including hooks that keep running after `devsy workspace up` returns. Ctrl-C stops only the reader:
+
+```sh
+devsy workspace logs my-workspace --source setup --run RUN_ID --follow
+```
+
+Read a run after a failed creation or CI cleanup removed the workspace. Without a workspace name you must give a run UUID:
+
+```sh
+devsy workspace logs --source setup --run RUN_ID --context CONTEXT
+```
+
+Page through long output with `--limit` and `--after`. The default is 500 output records per page and the maximum is 2000. With `--list`, the default is 20 runs and the maximum is 100. `--after` takes the cursor from the previous page, with the same selectors:
+
+```sh
+devsy workspace logs my-workspace --source setup --run RUN_ID --limit 200 --after CURSOR
+```
+
+Use `--result-format=json` for machine-readable output. Each invocation prints one JSON response, and with `--follow` one response per line.
+
+A failed hook is still a successful read. The command exits zero and returns the hook's exit status in the output. Invalid selectors, invalid cursors and unreadable local storage are command errors. See [Setup history](./setup-history.mdx) for limits, redaction and when history is unavailable.
+
+### Hide live progress while keeping diagnostics
+
+Pass `--no-status` to hide live progress messages. Diagnostics still follow `--quiet`, `--log-level` and the diagnostic format settings. A command's stdout and stderr stay on their original streams, and event and task recording continue. The flag does not turn off capture or history. `--quiet` also leaves capture on, and setup history stays readable with both flags.
+
+### VS Code editor launch diagnostics
+
+For VS Code, VSCodium and related editors, a failed CLI launch records the `flavor`, `operation`, `route`, failed `stage` and failure `class`, such as `exit status 1` or `permission denied`. A successful URI-handler fallback does not erase that CLI warning. With `--debug`, the logs also record executable resolution, extension enumeration and installation, and dispatch stages. Use the `operation` value to match records in the workspace task's logs.
+
+Diagnostics omit executable paths, command arguments, folder URIs, editor output and error text, because these can contain private paths, host names or credentials. Failure classes and stage names remain. The `cli_kind` value names an executable or batch wrapper. It does not show that a Windows wrapper ran.
+
+A dispatched launch request means the editor CLI or OS URI handler accepted it. Devsy does not track whether the editor stayed running or connected over SSH. If the editor closes or does not connect, collect its own logs and check them for private data before you share them.
+
+### Interactive postStartCommand errors
+
+`devsy workspace up --interactive-post-start` checks the request before it starts work. It fails with one of these messages:
+
+| Message | Fix |
+| --- | --- |
+| `--interactive-post-start cannot be combined with --detach, --prebuild, --recovery, --skip-post-start, or --skip-non-blocking-commands` | Remove the conflicting flag, or drop `--interactive-post-start`. |
+| `--interactive-post-start requires plain output; JSON result output cannot share the terminal` | Remove the JSON result format. |
+| `--interactive-post-start requires an attached terminal and is unavailable in DEVSY_UI mode` | Run the command in a terminal. Devsy Desktop sets this mode. |
+| `--interactive-post-start requires attached stdin and stdout terminals: ...` | Run the command in a terminal, not in a script, a pipe, or with redirected output. |
+| `--interactive-post-start is unsupported with proxy workspaces`, `... with daemon workspaces`, or `... with platform-managed workspaces` | Run without the option. These routes do not support it yet. |
+| `postStartCommand merged index N has multiple nonempty named commands` | Keep one named command in object `N`, or run without the option so they run in parallel. |
+
+### Interactive postStartCommand limits
+
+- A background job started without `nohup` receives SIGHUP when the hook exits. Start it with `nohup` and redirect its output, for example `nohup ./server > server.log 2>&1 &`.
+- A host helper that reads `/dev/tty` while the hook runs, such as some credential helpers, can compete with the hook for input.
+- Hook output appears only in the terminal. See [Setup history](./setup-history.mdx#interactive-hooks).
 
 ### Windows: `line 2: $'\r': command not found`
 
-Windows line endings break shell scripts inside the container. Add the following to `.gitattributes`:
+Windows line endings break shell scripts inside the container. Add this to `.gitattributes`:
 
 ```
 *.sh eol=lf
 ```
 
-### NeoVim: `$TERM` issues over SSH
+### Neovim: `$TERM` issues over SSH
 
-NeoVim can misbehave when `$TERM` isn't set correctly over the SSH provider. A workaround is documented in [issue #1187](https://github.com/devsy-org/devsy/issues/1187).
-
-### VS Code Browser workspace fails to open on first create
-
-Earlier versions of Devsy could race when bootstrapping the workspace metadata file used by the VS Code Browser tunnel, causing the first browser session to fail right after `devsy workspace up --ide openvscode`. This is fixed — if you previously hit this, re-run `devsy workspace up` on the affected workspace. When Devsy exits because the workspace could not be located, it returns exit code `75`, which parent processes (including Devsy Desktop) treat as a transient signal and retry.
+See [issue #1187](https://github.com/devsy-org/devsy/issues/1187) for a workaround.

@@ -2,7 +2,12 @@
 import { goto, querystring } from "$lib/router.js"
 import { onMount, onDestroy } from "svelte"
 import {
+  Archive,
+  ArrowLeft,
   Check,
+  Container,
+  FolderOpen,
+  GitBranch,
   ChevronsUpDown,
   ClipboardCopy,
   Ellipsis,
@@ -30,10 +35,18 @@ import * as Accordion from "$lib/components/ui/accordion/index.js"
 import * as Tabs from "$lib/components/ui/tabs/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
+import WorkspaceRunLogs from "$lib/components/log/WorkspaceRunLogs.svelte"
 import TerminalComponent from "$lib/components/terminal/Terminal.svelte"
 import WorkspaceOperation from "$lib/components/workspace/WorkspaceOperation.svelte"
-import { workspaceJobBusy, workspaceJobInterruptible } from "$shared/workspace-operation.js"
-import { workspaces, workspaceJobs } from "$lib/stores/workspaces.js"
+import {
+  workspaceJobBusy,
+  workspaceJobInterruptible,
+} from "$shared/workspace-operation.js"
+import {
+  workspaces,
+  workspaceJobs,
+  reloadWorkspaces,
+} from "$lib/stores/workspaces.js"
 import { addTerminal, removeTerminal } from "$lib/stores/terminals.js"
 import { destroyTerminalInstance } from "$lib/stores/terminal-instances.js"
 import { terminalCreateSsh, terminalClose } from "$lib/ipc/terminal.js"
@@ -43,12 +56,15 @@ import {
   workspaceRebuild,
   workspaceReset,
   workspaceDelete,
+  workspaceEdit,
+  WorkspaceEditError,
   workspaceRename,
   workspaceSetIde,
   workspaceStatus,
   workspaceLogsList,
   workspaceLogRead,
   workspaceLogDelete,
+  workspaceLogRunRead,
 } from "$lib/ipc/commands.js"
 import { onCommandProgress } from "$lib/ipc/events.js"
 import {
@@ -63,6 +79,21 @@ import { extractErrorMessage } from "$lib/utils/error.js"
 import { trackEngagement } from "$lib/analytics.js"
 import type { CommandProgress, LogEntry } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
+import { isRunId } from "$shared/workspace-logs.js"
+import { describeWorkspaceSource } from "$lib/utils/workspace-source.js"
+import {
+  canonicalSshHost,
+  preferredSshHost,
+  workspaceLabel,
+} from "$lib/utils/workspaceLabel.js"
+import {
+  buildWorkspacePresentationRequest,
+  SSH_HOST_SUFFIX,
+  validateDisplayLabel,
+  validateSshAlias,
+  type WorkspacePresentationBase,
+  type WorkspacePresentationField,
+} from "$shared/workspace-presentation.js"
 import { formatTimestamp } from "$lib/utils/time.js"
 import {
   isRecoverableBuildFailure,
@@ -111,8 +142,15 @@ const IDE_OPTIONS = [
 
 let id = $derived(params.id ?? "")
 let workspace = $derived($workspaces.find((ws) => ws.id === id))
-// ".devsy" matches config.SSHHostSuffix on the backend (".<binary-name>").
-let sshHost = $derived(`${id}.devsy`)
+let sourceDescription = $derived(describeWorkspaceSource(workspace?.source))
+let workspaceDisplayLabel = $derived(workspace ? workspaceLabel(workspace) : id)
+let canonicalHost = $derived(
+  workspace ? canonicalSshHost(workspace) : `${id}${SSH_HOST_SUFFIX}`,
+)
+let sshHost = $derived(
+  workspace ? preferredSshHost(workspace) : `${id}${SSH_HOST_SUFFIX}`,
+)
+let isPlatformWorkspace = $derived(Boolean(workspace?.pro))
 
 let isRunning = $derived(workspace?.status?.toLowerCase() === "running")
 let isStopped = $derived(
@@ -133,18 +171,105 @@ let isBusy = $derived.by(() => {
 const BUILD_OPS = new Set(["Start", "Open IDE", "Recovery", "Rebuild", "Reset"])
 
 let activeTab = $state("overview")
+$effect(() => {
+  const tab = new URLSearchParams($querystring ?? "").get("tab")
+  if (tab === "overview" || tab === "logs" || tab === "terminal")
+    activeTab = tab
+})
+// A run link (notification, toast, wizard) pins the history view to one run
+// and, when known, one invocation.
+let linkedRun = $derived.by(() => {
+  const qs = new URLSearchParams($querystring ?? "")
+  const runId = qs.get("run")
+  if (!isRunId(runId)) return undefined
+  const invocation = qs.get("invocation")
+  return {
+    runId,
+    context: qs.get("context") ?? undefined,
+    invocationId: isRunId(invocation) ? invocation : undefined,
+  }
+})
+let viewLogsPinned = $state(false)
+let jobPin = $derived.by(() => {
+  const job = $workspaceJobs[id]
+  return viewLogsPinned && job?.state === "failed" && job.runId
+    ? { runId: job.runId, invocationId: job.failedInvocationId }
+    : undefined
+})
+let pin = $derived(linkedRun ?? jobPin)
+let logContext = $derived(linkedRun?.context ?? workspace?.context ?? "default")
+// "pending" until a linked run is checked against the live workspace.
+let probed = $state<{ key: string; owned: boolean } | undefined>()
+let linkKey = $derived(
+  linkedRun && workspace
+    ? `${linkedRun.runId}|${linkedRun.context ?? ""}|${workspace.uid ?? ""}`
+    : "",
+)
+// Only a linked run on a live workspace needs the check. The history view
+// stays unmounted until it settles, because the main process keeps one read
+// in flight and the probe must not be superseded by the view's own read.
+let linkOwnership = $derived(
+  !linkKey
+    ? ("owned" as const)
+    : probed?.key !== linkKey
+      ? ("pending" as const)
+      : probed.owned
+        ? ("owned" as const)
+        : ("foreign" as const),
+)
+let readOnlyHistory = $derived(
+  !!linkedRun && (!workspace || linkOwnership === "foreign"),
+)
+
+$effect(() => {
+  const link = linkedRun
+  const ws = workspace
+  const key = linkKey
+  if (!link || !ws || !key) return
+  let current = true
+  workspaceLogRunRead({
+    context: link.context ?? ws.context ?? "default",
+    runId: link.runId,
+    limit: 1,
+  })
+    .then((res) => {
+      if (!current || !res) return
+      probed = {
+        key,
+        owned:
+          res.run.workspaceUid !== null &&
+          res.run.workspaceUid === ws.uid &&
+          res.run.context === (ws.context ?? res.run.context),
+      }
+    })
+    .catch(() => {
+      if (current) probed = { key, owned: false }
+    })
+  return () => {
+    current = false
+  }
+})
 let outputLines = $state<string[]>([])
 let commandId = $state<string | null>(null)
 let operationLabel = $state("")
 let awaitingAcceptance = $state(false)
-let operationRunning = $derived(awaitingAcceptance || workspaceJobBusy($workspaceJobs[id]))
+let operationRunning = $derived(
+  awaitingAcceptance || workspaceJobBusy($workspaceJobs[id]),
+)
 $effect(() => {
   const job = $workspaceJobs[id]
   if (job && (!awaitingAcceptance || job.commandId === commandId)) {
     awaitingAcceptance = false
     if (commandId !== job.commandId) {
       commandId = job.commandId
-      operationLabel = ({ creating: "Create", starting: "Start", stopping: "Stop", deleting: "Delete", rebuilding: "Rebuild", resetting: "Reset" })[job.activity]
+      operationLabel = {
+        creating: "Create",
+        starting: "Start",
+        stopping: "Stop",
+        deleting: "Delete",
+        rebuilding: "Rebuild",
+        resetting: "Reset",
+      }[job.activity]
       outputLines = []
     }
   }
@@ -215,6 +340,14 @@ let ideSetSeq = 0
 let renaming = $state(false)
 let renameValue = $state("")
 let renameSaving = $state(false)
+let editingPresentation = $state(false)
+let labelDraft = $state("")
+let aliasDraft = $state("")
+let presentationSaving = $state(false)
+let presentationBase = $state<WorkspacePresentationBase | null>(null)
+let presentationErrors = $state<
+  Partial<Record<WorkspacePresentationField, string>>
+>({})
 let editingFolder = $state(false)
 let folderValue = $state("")
 let customFolder = $state("")
@@ -297,6 +430,10 @@ onMount(async () => {
   void reconcileRecoveryFromStatus()
 
   const qs = new URLSearchParams($querystring ?? "")
+  const tab = qs.get("tab")
+  if (tab === "logs" || tab === "terminal" || tab === "overview") {
+    activeTab = tab
+  }
   const action = qs.get("action")
   if (action === "open-ide" || action === "start") {
     // Clear query param so refresh doesn't re-trigger
@@ -414,12 +551,8 @@ function handleSshExit(exitCode?: number, _signal?: number) {
 
 function handleGpgForwardFailed(reason: string) {
   toasts.error(
-    `GPG agent forwarding failed for ${id}, continuing without it: ${reason}`,
+    `GPG agent forwarding is unavailable for ${id}: ${reason}. The terminal will continue without GPG signing.`,
   )
-}
-
-function isDebug(): boolean {
-  return loadLocalOptions().debugFlag
 }
 
 function startStreamingOp(label: string): string {
@@ -447,7 +580,6 @@ async function handleStart() {
     await workspaceUp({
       source: id,
       ide,
-      debug: isDebug(),
       workspaceFolder: folder,
       commandId: cmdId,
     })
@@ -485,7 +617,6 @@ async function handleRecovery() {
       source: id,
       ide,
       recovery: true,
-      debug: isDebug(),
       workspaceFolder: folder,
       commandId: cmdId,
     })
@@ -507,7 +638,6 @@ async function handleOpenIde() {
       source: id,
       ide,
       ideLaunch: "auto",
-      debug: isDebug(),
       workspaceFolder: folder,
       commandId: cmdId,
     })
@@ -520,7 +650,7 @@ async function handleOpenIde() {
 async function handleStop() {
   const cmdId = startStreamingOp("Stop")
   try {
-    await workspaceStop(id, isDebug(), cmdId)
+    await workspaceStop(id, cmdId)
   } catch (err) {
     awaitingAcceptance = false
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
@@ -531,7 +661,7 @@ async function handleRebuild() {
   confirmRebuildOpen = false
   const cmdId = startStreamingOp("Rebuild")
   try {
-    await workspaceRebuild(id, isDebug(), cmdId)
+    await workspaceRebuild(id, cmdId)
   } catch (err) {
     awaitingAcceptance = false
     toasts.error(`Failed to rebuild: ${extractErrorMessage(err)}`)
@@ -542,7 +672,7 @@ async function handleReset() {
   confirmResetOpen = false
   const cmdId = startStreamingOp("Reset")
   try {
-    await workspaceReset(id, isDebug(), cmdId)
+    await workspaceReset(id, cmdId)
   } catch (err) {
     awaitingAcceptance = false
     toasts.error(`Failed to reset: ${extractErrorMessage(err)}`)
@@ -554,7 +684,7 @@ async function handleDelete() {
   const cmdId = startStreamingOp("Delete")
   deleting = true
   try {
-    await workspaceDelete(id, isDebug(), cmdId)
+    await workspaceDelete(id, cmdId)
   } catch (err) {
     awaitingAcceptance = false
     deleting = false
@@ -599,47 +729,133 @@ async function handleRenameConfirmed() {
   await performRename(pendingRenameTarget)
   confirmRenameOpen = false
 }
+
+function startPresentationEdit() {
+  if (!workspace) return
+  if (!workspace.uid) {
+    toasts.error("Workspace identity is not available yet. Try again shortly.")
+    return
+  }
+  const base: WorkspacePresentationBase = {
+    id: workspace.id,
+    uid: workspace.uid,
+    context: workspace.context ?? "",
+    displayName: workspace.displayName ?? "",
+    sshHostAlias: workspace.sshHostAlias ?? "",
+  }
+  presentationBase = base
+  labelDraft = base.displayName
+  aliasDraft = base.sshHostAlias
+  presentationErrors = {}
+  editingPresentation = true
+}
+
+function resetPresentationEdit() {
+  editingPresentation = false
+  presentationBase = null
+  presentationErrors = {}
+  presentationSaving = false
+}
+
+function cancelPresentationEdit() {
+  if (presentationSaving) return
+  resetPresentationEdit()
+}
+
+$effect(() => {
+  const base = presentationBase
+  if (!base) return
+  if (
+    base.id !== id ||
+    workspace?.uid !== base.uid ||
+    (workspace?.context ?? "") !== base.context
+  )
+    resetPresentationEdit()
+})
+
+async function savePresentation() {
+  const base = presentationBase
+  if (!base || presentationSaving) return
+  const localErrors = {
+    displayName: validateDisplayLabel(labelDraft) ?? undefined,
+    sshHostAlias:
+      aliasDraft.trim() === base.sshHostAlias
+        ? undefined
+        : (validateSshAlias(aliasDraft) ?? undefined),
+  }
+  if (localErrors.displayName || localErrors.sshHostAlias) {
+    presentationErrors = localErrors
+    return
+  }
+  const request = buildWorkspacePresentationRequest(base, {
+    displayName: labelDraft,
+    sshHostAlias: aliasDraft,
+  })
+  if (!request) {
+    resetPresentationEdit()
+    return
+  }
+  presentationSaving = true
+  presentationErrors = {}
+  try {
+    await workspaceEdit(request)
+    await reloadWorkspaces()
+    if (presentationBase === base) resetPresentationEdit()
+    toasts.success("Workspace details saved")
+  } catch (err) {
+    if (presentationBase !== base) return
+    if (err instanceof WorkspaceEditError) {
+      const conflictNote =
+        err.code === "conflict" &&
+        err.conflict &&
+        !err.message.includes(err.conflict)
+          ? ` Conflicts with ${err.conflict}.`
+          : ""
+      presentationErrors = { [err.field]: `${err.message}${conflictNote}` }
+    } else {
+      presentationErrors = { workspace: extractErrorMessage(err) }
+    }
+  } finally {
+    if (presentationBase === base) presentationSaving = false
+  }
+}
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col gap-4">
+<div class="mx-auto flex w-full min-h-0 max-w-6xl flex-1 flex-col gap-5">
   <Button variant="ghost" size="sm" class="w-fit" onclick={() => goto("/workspaces")}>
-    &larr; Back
+    <ArrowLeft class="size-4" aria-hidden="true" />
+    Workspaces
   </Button>
 
-  {#if !workspace}
+  {#if readOnlyHistory && linkedRun}
+    <section aria-label="Retained run history" class="space-y-3">
+      <p class="text-sm text-muted-foreground">
+        {workspace
+          ? "This run belongs to a different workspace generation. Showing its retained history read-only."
+          : "This workspace no longer exists. Showing its retained history read-only."}
+      </p>
+      <WorkspaceRunLogs
+        readOnly
+        context={logContext}
+        pinnedRunId={linkedRun.runId}
+        pinnedInvocationId={linkedRun.invocationId}
+      />
+    </section>
+  {:else if workspace && linkOwnership === "pending"}
+    <p class="text-sm text-muted-foreground">Checking run history...</p>
+  {:else if !workspace}
     <p class="text-muted-foreground">Workspace not found.</p>
   {:else}
-    <!-- Hero banner -->
-    <div class="rounded-xl border bg-card p-5">
+    <section aria-label="Workspace status and actions" class="rounded-xl border bg-card p-5 sm:p-6">
       <div class="flex flex-wrap items-start justify-between gap-4">
-        <div class="min-w-0 space-y-2">
+        <div class="w-full min-w-0 space-y-3">
           <div class="flex flex-wrap items-center gap-3">
-            {#if renaming}
-              <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); handleRename() }}>
-                <Input
-                  data-slot="workspace-rename-input"
-                  value={renameValue}
-                  oninput={(e) => (renameValue = e.currentTarget.value)}
-                  class="h-8 w-56 text-lg font-bold"
-                  disabled={renameSaving}
-                />
-                <Button data-slot="workspace-rename-save" variant="outline" size="sm" type="submit" disabled={renameSaving || !renameValue.trim()}>
-                  {renameSaving ? "Saving..." : "Save"}
-                </Button>
-                <Button data-slot="workspace-rename-cancel" variant="ghost" size="sm" type="button" onclick={() => (renaming = false)} disabled={renameSaving}>
-                  Cancel
-                </Button>
-              </form>
-            {:else}
-              <h1 class="truncate text-2xl font-bold">{id}</h1>
-              <Button data-slot="workspace-rename-btn" variant="ghost" size="icon-sm" onclick={startRename} disabled={operationRunning}>
+            <h1 class="min-w-0 text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">{workspaceDisplayLabel}</h1>
+            {#if !isPlatformWorkspace && !editingPresentation}
+              <Button data-slot="workspace-presentation-edit-btn" variant="ghost" size="icon-sm" onclick={startPresentationEdit}>
                 <Pencil class="h-4 w-4" />
-                <span class="sr-only">Rename</span>
+                <span class="sr-only">Edit display label and SSH alias</span>
               </Button>
-            {/if}
-            <WorkspaceOperation {id} status={workspace.status} />
-            {#if operationRunning || isBusy}
-              <Spinner class="size-3" />
             {/if}
             {#if inRecovery}
               <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
@@ -648,42 +864,90 @@ async function handleRenameConfirmed() {
               </span>
             {/if}
           </div>
+          {#if workspace.displayName || workspaceDisplayLabel !== id}
+            <p class="text-sm text-muted-foreground [overflow-wrap:anywhere]">ID <span class="select-text font-mono text-foreground" data-slot="workspace-id-caption">{id}</span></p>
+          {/if}
 
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-            <span>{workspace.provider?.name ?? "No provider"}</span>
-            {#if workspace.machine?.id}<span aria-hidden="true">&middot;</span><span>{workspace.machine.id}</span>{/if}
-            {#if workspace.context}<span aria-hidden="true">&middot;</span><span>{workspace.context}</span>{/if}
+          {#if editingPresentation}
+            <form
+              class="w-full max-w-xl space-y-4 rounded-lg border bg-muted/30 p-4"
+              aria-label="Edit display label and SSH alias"
+              data-slot="workspace-presentation-form"
+              onsubmit={(e) => { e.preventDefault(); savePresentation() }}
+            >
+              <div class="space-y-1.5">
+                <label for="workspace-display-label" class="text-sm font-medium">Display label</label>
+                <Input
+                  id="workspace-display-label"
+                  data-slot="workspace-display-label-input"
+                  value={labelDraft}
+                  oninput={(e) => { labelDraft = e.currentTarget.value; presentationErrors = { ...presentationErrors, displayName: undefined } }}
+                  placeholder={id}
+                  autocomplete="off"
+                  aria-invalid={presentationErrors.displayName ? true : undefined}
+                  aria-describedby={presentationErrors.displayName ? "workspace-display-label-hint workspace-display-label-error" : "workspace-display-label-hint"}
+                  disabled={presentationSaving}
+                />
+                <p id="workspace-display-label-hint" class="text-xs leading-5 text-muted-foreground">Only changes how this workspace is shown. Leave empty to show the ID.</p>
+                {#if presentationErrors.displayName}
+                  <p id="workspace-display-label-error" class="text-xs font-medium text-destructive" role="alert">{presentationErrors.displayName}</p>
+                {/if}
+              </div>
+
+              <div class="space-y-1.5">
+                <label for="workspace-ssh-alias" class="text-sm font-medium">SSH alias</label>
+                <div class="flex items-center gap-2">
+                  <Input
+                    id="workspace-ssh-alias"
+                    data-slot="workspace-ssh-alias-input"
+                    value={aliasDraft}
+                    oninput={(e) => { aliasDraft = e.currentTarget.value; presentationErrors = { ...presentationErrors, sshHostAlias: undefined } }}
+                    placeholder={id}
+                    autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck={false}
+                    class="font-mono"
+                    aria-invalid={presentationErrors.sshHostAlias ? true : undefined}
+                    aria-describedby={presentationErrors.sshHostAlias ? "workspace-ssh-alias-hint workspace-ssh-alias-error" : "workspace-ssh-alias-hint"}
+                    disabled={presentationSaving}
+                  />
+                  <span class="font-mono text-sm text-muted-foreground" data-slot="workspace-ssh-alias-suffix">{SSH_HOST_SUFFIX}</span>
+                </div>
+                <p id="workspace-ssh-alias-hint" class="text-xs leading-5 text-muted-foreground">Preferred SSH host. The canonical host {canonicalHost} keeps working. Leave empty to use it.</p>
+                {#if presentationErrors.sshHostAlias}
+                  <p id="workspace-ssh-alias-error" class="text-xs font-medium text-destructive" role="alert">{presentationErrors.sshHostAlias}</p>
+                {/if}
+              </div>
+
+              {#if presentationErrors.workspace}
+                <p id="workspace-presentation-error" class="text-sm font-medium text-destructive" role="alert">{presentationErrors.workspace}</p>
+              {/if}
+
+              <div class="flex items-center gap-2">
+                <Button data-slot="workspace-presentation-save" type="submit" size="sm" disabled={presentationSaving}>
+                  {#if presentationSaving}<Spinner />{/if}
+                  Save
+                </Button>
+                <Button data-slot="workspace-presentation-cancel" type="button" variant="ghost" size="sm" onclick={cancelPresentationEdit} disabled={presentationSaving}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          {/if}
+
+          <WorkspaceOperation {id} status={workspace.status} density="expanded" onViewLogs={() => { viewLogsPinned = true; activeTab = "logs" }} />
+
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground [overflow-wrap:anywhere]">
+            <span>Provider <span class="font-medium text-foreground">{workspace.provider?.name ?? "Not configured"}</span></span>
+            {#if workspace.machine?.id}<span>Machine <span class="font-medium text-foreground [overflow-wrap:anywhere]">{workspace.machine.id}</span></span>{/if}
+            {#if workspace.context}<span>Context <span class="font-medium text-foreground">{workspace.context}</span></span>{/if}
           </div>
 
-          <div class="flex items-center gap-1.5">
-            <code class="rounded bg-muted px-2 py-1 font-mono text-xs">ssh {sshHost}</code>
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  <Button variant="ghost" size="icon-sm" {...props} onclick={() => copyToClipboard(`ssh ${sshHost}`)}>
-                    <ClipboardCopy class="h-3.5 w-3.5" />
-                    <span class="sr-only">Copy SSH command</span>
-                  </Button>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content>Copy SSH command</Tooltip.Content>
-            </Tooltip.Root>
-          </div>
         </div>
 
-        <ButtonGroup.Root class="shrink-0">
+        <div class="flex w-full flex-wrap items-center gap-2 border-t pt-4">
           <Button
-            variant="destructive"
-            size="sm"
-            onclick={handleStop}
-            disabled={!workspaceJobInterruptible($workspaceJobs[id]) && (operationRunning || (!isRunning && !isBusy))}
-          >
-            {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
-            Stop
-          </Button>
-
-          <Button
-            variant="default"
+            variant={isRunning ? "outline" : "default"}
             size="sm"
             onclick={handleStart}
             disabled={operationRunning || connecting || isRunning || isBusy || !isStopped}
@@ -692,7 +956,7 @@ async function handleRenameConfirmed() {
             Start
           </Button>
 
-          <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning || currentIde === "none"}>
+          <Button variant={isRunning && currentIde !== "none" ? "default" : "outline"} size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning || currentIde === "none"}>
             {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
             Open IDE
           </Button>
@@ -702,11 +966,21 @@ async function handleRenameConfirmed() {
               Disconnect
             </Button>
           {:else}
-            <Button variant="outline" size="sm" onclick={async () => { if (sshSessionId) await handleDisconnect(); handleConnect() }} disabled={!isRunning || connecting}>
+            <Button variant={isRunning && currentIde === "none" ? "default" : "outline"} size="sm" onclick={async () => { if (sshSessionId) await handleDisconnect(); handleConnect() }} disabled={!isRunning || connecting}>
               {#if connecting}<Spinner />{:else}<SquareTerminal class="h-4 w-4" />{/if}
               SSH Terminal
             </Button>
           {/if}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={handleStop}
+            disabled={!workspaceJobInterruptible($workspaceJobs[id]) && (operationRunning || (!isRunning && !isBusy))}
+          >
+            {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
+            Stop
+          </Button>
 
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
@@ -737,9 +1011,9 @@ async function handleRenameConfirmed() {
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
-        </ButtonGroup.Root>
+        </div>
       </div>
-    </div>
+    </section>
 
     {#if buildFailed}
       <div class="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -790,108 +1064,189 @@ async function handleRenameConfirmed() {
         <Tabs.Trigger value="terminal" class={tabTriggerClass}>Terminal</Tabs.Trigger>
       </Tabs.List>
 
-      <Tabs.Content value="overview">
-        <div class="mt-4 grid grid-cols-2 gap-4 text-sm">
-          <div class="text-muted-foreground">ID</div>
-          <div>{workspace.id}</div>
+      <Tabs.Content value="overview" class="min-h-0 overflow-y-auto">
+        <div class="mt-4 grid gap-5 lg:grid-cols-2">
+          <section aria-labelledby="workspace-project-title" class="min-w-0 rounded-xl border bg-card p-5">
+            <div class="mb-5 flex items-center gap-2">
+              {#if workspace.source?.gitRepository}<GitBranch class="size-4 text-muted-foreground" aria-hidden="true" />
+              {:else if workspace.source?.localFolder}<FolderOpen class="size-4 text-muted-foreground" aria-hidden="true" />
+              {:else if workspace.source?.snapshot}<Archive class="size-4 text-muted-foreground" aria-hidden="true" />
+              {:else}<Container class="size-4 text-muted-foreground" aria-hidden="true" />{/if}
+              <h2 id="workspace-project-title" class="font-semibold">Project</h2>
+            </div>
+            <dl class="space-y-4 text-sm">
+              <div class="space-y-1.5">
+                <dt class="text-muted-foreground">{sourceDescription.label}</dt>
+                <dd class="select-text leading-6 [overflow-wrap:anywhere]">{sourceDescription.value}</dd>
+              </div>
+              {#if workspace.source?.gitBranch}
+                <div class="space-y-1.5"><dt class="text-muted-foreground">Branch</dt><dd class="font-mono [overflow-wrap:anywhere]">{workspace.source.gitBranch}</dd></div>
+              {/if}
+              {#if workspace.source?.gitCommit}
+                <div class="space-y-1.5"><dt class="text-muted-foreground">Commit</dt><dd class="font-mono [overflow-wrap:anywhere]">{workspace.source.gitCommit}</dd></div>
+              {/if}
+            </dl>
+            <div class="mt-6 border-t pt-5">
+              <h3 class="mb-2 text-sm font-medium">Connect from your terminal</h3>
+              <div class="flex min-w-0 items-start gap-2 rounded-lg bg-muted/50 p-3">
+                <code class="min-w-0 flex-1 select-text font-mono text-sm [overflow-wrap:anywhere]">ssh {sshHost}</code>
+                <Tooltip.Root>
+                  <Tooltip.Trigger>
+                    {#snippet child({ props })}
+                      <Button variant="ghost" size="icon-sm" {...props} onclick={() => copyToClipboard(`ssh ${sshHost}`)}>
+                        <ClipboardCopy class="h-3.5 w-3.5" />
+                        <span class="sr-only">Copy SSH command</span>
+                      </Button>
+                    {/snippet}
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>Copy SSH command</Tooltip.Content>
+                </Tooltip.Root>
+              </div>
+              <p class="mt-2 text-xs leading-5 text-muted-foreground">Use this SSH command while the workspace is running.</p>
+              {#if sshHost !== canonicalHost}
+                <p class="mt-1 text-xs leading-5 text-muted-foreground">Also reachable as <code class="font-mono">ssh {canonicalHost}</code>.</p>
+              {/if}
+            </div>
+          </section>
 
-          <div class="text-muted-foreground">UID</div>
-          <div>{workspace.uid ?? "N/A"}</div>
+          <section aria-labelledby="workspace-settings-title" class="min-w-0 rounded-xl border bg-card p-5">
+            <h2 id="workspace-settings-title" class="mb-5 font-semibold">Editor and folder</h2>
+            <div class="space-y-5 text-sm">
+              <div class="space-y-2">
+                <h3 class="font-medium">IDE</h3>
+                <Popover.Root bind:open={ideComboOpen}>
+                  <Popover.Trigger>
+                    {#snippet child({ props })}
+                      <Button {...props} variant="outline" aria-label="Workspace IDE" class="h-9 w-full justify-between text-left">
+                        <span class="truncate">{IDE_OPTIONS.find((i) => i.value === currentIde)?.label ?? "None"}</span>
+                        <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    {/snippet}
+                  </Popover.Trigger>
+                  <Popover.Content class="w-[var(--bits-popover-anchor-width)] p-0" align="start">
+                    <Command.Root shouldFilter={false}>
+                      <Command.Input placeholder="Search IDEs..." bind:value={ideSearch} />
+                      <Command.List class="max-h-60">
+                        <Command.Empty>No IDE found.</Command.Empty>
+                        <Command.Group>
+                          {#each filteredIdes as ide (ide.value)}
+                            <Command.Item
+                              value={ide.value}
+                              class="justify-start"
+                              onSelect={async () => {
+                                const seq = ++ideSetSeq
+                                const prev = selectedIde
+                                selectedIde = ide.value
+                                ideComboOpen = false
+                                ideSearch = ""
+                                try {
+                                  await workspaceSetIde(id, ide.value)
+                                } catch (err) {
+                                  if (seq !== ideSetSeq) return
+                                  selectedIde = prev
+                                  toasts.error(`Failed to set IDE: ${extractErrorMessage(err)}`)
+                                }
+                              }}
+                            >
+                              <Check class="mr-2 h-4 w-4 {currentIde === ide.value ? 'opacity-100' : 'opacity-0'}" />
+                              {ide.label}
+                            </Command.Item>
+                          {/each}
+                        </Command.Group>
+                      </Command.List>
+                    </Command.Root>
+                  </Popover.Content>
+                </Popover.Root>
+                <p class="text-xs leading-5 text-muted-foreground">Choose the editor used by Open IDE.</p>
+              </div>
+              <div class="space-y-2 border-t pt-5">
+                <h3 class="font-medium">Workspace folder</h3>
+                {#if editingFolder}
+                  <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); setWorkspaceFolder(id, folderValue.trim()); customFolder = folderValue.trim(); editingFolder = false; toasts.success("Workspace folder updated") }}>
+                    <Input
+                      aria-label="Workspace folder override"
+                      value={folderValue}
+                      oninput={(e) => (folderValue = e.currentTarget.value)}
+                      placeholder="/workspaces/my-project"
+                      class="h-9 min-w-0 flex-1 font-mono text-sm"
+                    />
+                    <Button variant="outline" size="sm" type="submit" class="h-9">Save</Button>
+                    <Button variant="ghost" size="sm" type="button" class="h-9" onclick={() => (editingFolder = false)}>Cancel</Button>
+                  </form>
+                {:else}
+                  <span class="inline-flex items-center gap-2">
+                    <span class="font-mono text-sm [overflow-wrap:anywhere]">{customFolder || "Automatic"}</span>
+                    <Button variant="ghost" size="icon-sm" onclick={() => { folderValue = customFolder; editingFolder = true }} disabled={operationRunning}>
+                      <Pencil class="h-3 w-3" />
+                      <span class="sr-only">Edit workspace folder</span>
+                    </Button>
+                  </span>
+                {/if}
+                <p class="text-xs leading-5 text-muted-foreground">{customFolder ? "Editor folder override for this workspace." : "Uses the folder resolved from your project configuration. Set an override only if you need a different editor folder."}</p>
+              </div>
+            </div>
+          </section>
 
-          <div class="text-muted-foreground">IDE</div>
-          <div>
-            <Popover.Root bind:open={ideComboOpen}>
-              <Popover.Trigger>
-                {#snippet child({ props })}
-                  <Button variant="outline" class="h-8 w-48 justify-between text-left" {...props}>
-                    <span class="truncate">{IDE_OPTIONS.find((i) => i.value === currentIde)?.label ?? "None"}</span>
-                    <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <section aria-labelledby="workspace-info-title" class="min-w-0 rounded-xl border bg-card p-5 lg:col-span-2">
+            <h2 id="workspace-info-title" class="mb-4 font-semibold">Workspace information</h2>
+            <dl class="grid gap-4 text-sm sm:grid-cols-2">
+              <div class="space-y-1.5"><dt class="text-muted-foreground">Created</dt><dd>{workspace.creationTimestamp ? formatTimestamp(workspace.creationTimestamp) : "Not available"}</dd></div>
+              <div class="space-y-1.5"><dt class="text-muted-foreground">Last used</dt><dd>{workspace.lastUsed ? formatTimestamp(workspace.lastUsed) : "Not available"}</dd></div>
+            </dl>
+            <details class="mt-5 border-t pt-4 text-sm">
+              <summary class="w-fit cursor-pointer rounded-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">Technical details</summary>
+              <dl class="mt-4 grid gap-4 sm:grid-cols-2">
+                <div class="space-y-1.5"><dt class="text-muted-foreground">Workspace ID (permanent)</dt><dd class="select-text font-mono [overflow-wrap:anywhere]" data-slot="workspace-id-value">{workspace.id}</dd></div>
+                <div class="space-y-1.5"><dt class="text-muted-foreground">Canonical SSH host</dt><dd class="select-text font-mono [overflow-wrap:anywhere]" data-slot="workspace-canonical-host">{canonicalHost}</dd></div>
+                {#if sshHost !== canonicalHost}
+                  <div class="space-y-1.5"><dt class="text-muted-foreground">Preferred SSH host</dt><dd class="select-text font-mono [overflow-wrap:anywhere]">{sshHost}</dd></div>
+                {/if}
+                <div class="space-y-1.5"><dt class="text-muted-foreground">UID</dt><dd class="select-text font-mono [overflow-wrap:anywhere]">{workspace.uid ?? "Not available"}</dd></div>
+              </dl>
+              <div class="mt-5 space-y-3 border-t pt-4">
+                <h3 class="font-medium">Change workspace ID</h3>
+                <p class="text-xs leading-5 text-muted-foreground">Advanced. The ID is the permanent internal identifier and canonical SSH host. Changing it renames the workspace and deletes the existing container; the source code and devcontainer config are preserved. To change only how the workspace is named or reached, use the display label and SSH alias instead.</p>
+                {#if renaming}
+                  <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); handleRename() }}>
+                    <Input
+                      aria-label="New workspace ID"
+                      data-slot="workspace-rename-input"
+                      value={renameValue}
+                      oninput={(e) => (renameValue = e.currentTarget.value)}
+                      class="h-8 w-56"
+                      disabled={renameSaving}
+                    />
+                    <Button data-slot="workspace-rename-save" variant="outline" size="sm" type="submit" disabled={renameSaving || !renameValue.trim()}>
+                      {renameSaving ? "Saving..." : "Change ID"}
+                    </Button>
+                    <Button data-slot="workspace-rename-cancel" variant="ghost" size="sm" type="button" onclick={() => (renaming = false)} disabled={renameSaving}>
+                      Cancel
+                    </Button>
+                  </form>
+                {:else}
+                  <Button data-slot="workspace-rename-btn" variant="outline" size="sm" onclick={startRename} disabled={operationRunning}>
+                    Change workspace ID
                   </Button>
-                {/snippet}
-              </Popover.Trigger>
-              <Popover.Content class="w-48 p-0" align="start">
-                <Command.Root shouldFilter={false}>
-                  <Command.Input placeholder="Search IDEs..." bind:value={ideSearch} />
-                  <Command.List class="max-h-60">
-                    <Command.Empty>No IDE found.</Command.Empty>
-                    <Command.Group>
-                      {#each filteredIdes as ide (ide.value)}
-                        <Command.Item
-                          value={ide.value}
-                          class="justify-start"
-                          onSelect={async () => {
-                            const seq = ++ideSetSeq
-                            const prev = selectedIde
-                            selectedIde = ide.value
-                            ideComboOpen = false
-                            ideSearch = ""
-                            try {
-                              await workspaceSetIde(id, ide.value)
-                            } catch (err) {
-                              if (seq !== ideSetSeq) return
-                              selectedIde = prev
-                              toasts.error(`Failed to set IDE: ${extractErrorMessage(err)}`)
-                            }
-                          }}
-                        >
-                          <Check class="mr-2 h-4 w-4 {currentIde === ide.value ? 'opacity-100' : 'opacity-0'}" />
-                          {ide.label}
-                        </Command.Item>
-                      {/each}
-                    </Command.Group>
-                  </Command.List>
-                </Command.Root>
-              </Popover.Content>
-            </Popover.Root>
-          </div>
-
-          <div class="text-muted-foreground">Workspace Folder</div>
-          <div>
-            {#if editingFolder}
-              <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); setWorkspaceFolder(id, folderValue.trim()); customFolder = folderValue.trim(); editingFolder = false; toasts.success("Workspace folder updated") }}>
-                <Input
-                  value={folderValue}
-                  oninput={(e) => (folderValue = e.currentTarget.value)}
-                  placeholder="/workspaces/my-project"
-                  class="h-7 w-56 text-xs font-mono"
-                />
-                <Button variant="outline" size="sm" type="submit" class="h-7 text-xs">Save</Button>
-                <Button variant="ghost" size="sm" type="button" class="h-7 text-xs" onclick={() => (editingFolder = false)}>Cancel</Button>
-              </form>
-            {:else}
-              <span class="inline-flex items-center gap-2">
-                <span class="font-mono text-xs">{customFolder || "Default"}</span>
-                <Button variant="ghost" size="icon-sm" onclick={() => { folderValue = customFolder; editingFolder = true }} disabled={operationRunning}>
-                  <Pencil class="h-3 w-3" />
-                  <span class="sr-only">Edit workspace folder</span>
-                </Button>
-              </span>
-            {/if}
-          </div>
-
-          <div class="text-muted-foreground">Source</div>
-          <div class="truncate">
-            {workspace.source?.gitRepository
-              ?? workspace.source?.localFolder
-              ?? workspace.source?.image
-              ?? "N/A"}
-          </div>
-
-          {#if workspace.source?.gitBranch}
-            <div class="text-muted-foreground">Branch</div>
-            <div>{workspace.source.gitBranch}</div>
-          {/if}
-
-          <div class="text-muted-foreground">Created</div>
-          <div>{workspace.creationTimestamp ? formatTimestamp(workspace.creationTimestamp) : "N/A"}</div>
-
-          <div class="text-muted-foreground">Last Used</div>
-          <div>{workspace.lastUsed ? formatTimestamp(workspace.lastUsed) : "N/A"}</div>
+                {/if}
+              </div>
+            </details>
+          </section>
         </div>
       </Tabs.Content>
 
       <Tabs.Content value="logs" class="min-h-0 flex-1 overflow-hidden">
-        <div class="mt-4 flex min-h-0 flex-1 flex-col h-full overflow-hidden">
+        <div class="mt-4 flex min-h-0 flex-1 flex-col h-full overflow-y-auto">
+          <div class="mb-3">
+            <h3 class="mb-2 text-sm font-medium">Setup and build history</h3>
+            <WorkspaceRunLogs
+              context={logContext}
+              workspaceId={id}
+              workspaceUid={workspace?.uid}
+              pinnedRunId={pin?.runId}
+              pinnedInvocationId={pin?.invocationId}
+              operationRunId={$workspaceJobs[id]?.runId}
+            />
+          </div>
           <Accordion.Root type="multiple" value={["live-output"]} class="w-full overflow-hidden">
             <Accordion.Item value="live-output">
               <Accordion.Trigger>
@@ -933,7 +1288,7 @@ async function handleRenameConfirmed() {
 
             <Accordion.Item value="log-files">
               <Accordion.Trigger>
-                Log Files
+                Desktop diagnostic files
                 {#if logEntries.length > 0}
                   <span class="ml-2 text-xs text-muted-foreground">({logEntries.length} files)</span>
                 {/if}

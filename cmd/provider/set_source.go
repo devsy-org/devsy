@@ -10,7 +10,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/provider"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -32,9 +32,10 @@ func NewSetSourceCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	setSourceCmd := &cobra.Command{
 		Use:   "set-source [name] [name, GitHub link, URL or path]",
-		Short: "Set or change a provider's source (replaces the registered name, repo, URL, or path)",
+		Short: "Set a provider's source",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
+
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
@@ -56,41 +57,56 @@ func NewSetSourceCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
-	if cmd.Version != "" {
-		return cmd.runPinVersion(ctx, devsyConfig, args)
+	if len(args) == 0 {
+		return fmt.Errorf("provider name is required")
 	}
+	providerName := args[0]
 
-	if len(args) != 1 && len(args) != 2 {
-		return fmt.Errorf("specify either a local file, URL or Git repository. " +
-			"E.g. devsy provider set-source my-provider " + config.ProviderPrefix + "gcloud")
+	unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, providerName)
+	if err != nil {
+		return err
 	}
+	defer unlock()
 
-	providerSource := ""
-	if len(args) == 2 {
-		providerSource = args[1]
-	}
-
-	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	var providerConfig *provider.ProviderConfig
-	err = status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseInstallingProvider, Step: args[0]},
-		func(ctx context.Context) error {
-			var updateErr error
-			providerConfig, updateErr = workspace.UpdateProvider(
-				ctx,
-				devsyConfig,
-				args[0],
-				providerSource,
-			)
-			return updateErr
-		},
+	if cmd.Version != "" {
+		return cmd.runPinVersion(ctx, devsyConfig, args)
+	}
+
+	return cmd.setSource(ctx, devsyConfig, providerName, args)
+}
+
+// setSource points the provider at the source in args and optionally activates it.
+// The caller holds the provider lock.
+func (cmd *SetSourceCmd) setSource(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerName string,
+	args []string,
+) error {
+	providerSource, err := sourceArg(args)
+	if err != nil {
+		return err
+	}
+
+	reporter, err := newStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
 	)
+	if err != nil {
+		return err
+	}
+
+	providerConfig, err := updateProviderSource(ctx, reporter, devsyConfig, providerSourceChange{
+		name:   providerName,
+		source: providerSource,
+	})
 	if err != nil {
 		return err
 	}
@@ -105,12 +121,55 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 	return cmd.activateProvider(ctx, devsyConfig, providerConfig, reporter)
 }
 
+func sourceArg(args []string) (string, error) {
+	switch len(args) {
+	case 1:
+		return "", nil
+	case 2:
+		return args[1], nil
+	default:
+		return "", fmt.Errorf("specify either a local file, URL or Git repository. " +
+			"E.g. devsy provider set-source my-provider " + config.ProviderPrefix + "gcloud")
+	}
+}
+
+// providerSourceChange names a provider and the source to switch it to.
+type providerSourceChange struct {
+	name, source string
+}
+
+func updateProviderSource(
+	ctx context.Context,
+	reporter status.Reporter,
+	devsyConfig *config.Config,
+	change providerSourceChange,
+) (*provider2.ProviderConfig, error) {
+	providerName, providerSource := change.name, change.source
+	var providerConfig *provider2.ProviderConfig
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseInstallingProvider, Step: providerName},
+		func(ctx context.Context) error {
+			var updateErr error
+			providerConfig, updateErr = workspace.UpdateProvider(
+				ctx,
+				devsyConfig,
+				providerName,
+				providerSource,
+			)
+			return updateErr
+		},
+	)
+	return providerConfig, err
+}
+
 // activateProvider configures and activates a newly sourced provider,
 // preserving previously user-provided option values.
 func (cmd *SetSourceCmd) activateProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	providerConfig *provider.ProviderConfig,
+	providerConfig *provider2.ProviderConfig,
 	reporter status.Reporter,
 ) error {
 	return status.Run(
@@ -127,7 +186,7 @@ func (cmd *SetSourceCmd) activateProvider(
 				return fmt.Errorf("configure provider: %w", err)
 			}
 
-			return writeDefaultProvider(cmd.Context, providerConfig.Name)
+			return writeDefaultProvider(devsyConfig.DefaultContext, providerConfig.Name)
 		},
 	)
 }

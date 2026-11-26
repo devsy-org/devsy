@@ -6,7 +6,23 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/stretchr/testify/require"
 )
+
+func TestValidateImageMetadata(t *testing.T) {
+	for _, valid := range []string{
+		`{}`,
+		`[{"postStartCommand":"echo start"}]`,
+		`[{"postStartCommand":["sh","-c","echo start"]}]`,
+		`[{"postStartCommand":{"first":"echo one","second":["echo","two"]}},{}]`,
+		`[{"postStartCommand":"echo repeat"},{"postStartCommand":"echo repeat"}]`,
+	} {
+		require.NoError(t, ValidateImageMetadata(valid))
+	}
+	for _, invalid := range []string{"", "{", "null", "[]", "[null]", `[{},null]`, `[{"postStartCommand":42}]`} {
+		require.Error(t, ValidateImageMetadata(invalid))
+	}
+}
 
 func TestFeatureConfigToImageMetadata_ExcludesContainerEnv(t *testing.T) {
 	feature := &config.FeatureConfig{

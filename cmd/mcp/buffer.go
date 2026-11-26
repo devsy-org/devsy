@@ -23,7 +23,7 @@ func (b *BoundedBuffer) Write(p []byte) (int, error) {
 	n := len(p)
 	b.written += int64(n)
 	if len(p) >= b.cap {
-		// Incoming chunk fills or exceeds cap — keep only the last cap bytes.
+		// Incoming chunk fills or exceeds cap - keep only the last cap bytes.
 		b.buf = append(b.buf[:0], p[len(p)-b.cap:]...)
 		return n, nil
 	}

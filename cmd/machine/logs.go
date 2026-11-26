@@ -28,7 +28,7 @@ func NewLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &LogsCmd{GlobalFlags: globalFlags}
 	c := &cobra.Command{
 		Use:   "logs [name]",
-		Short: "Show Devsy machine diagnostic events",
+		Short: "Show machine diagnostic events",
 		RunE:  func(c *cobra.Command, args []string) error { return cmd.Run(c.Context(), args) },
 	}
 	cliflags.Add(

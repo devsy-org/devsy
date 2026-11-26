@@ -24,9 +24,7 @@ var _ = ginkgo.Describe("extends up", ginkgo.Label("extends-up"), func() {
 		f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), "docker")
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/extends-up/testdata/up-extends")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata("tests/extends-up/testdata/up-extends", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 		err = f.DevsyUp(ctx, tempDir)

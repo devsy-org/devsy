@@ -13,7 +13,7 @@ import (
 )
 
 // dockerInternalHost is the well-known hostname Docker Desktop/OrbStack/etc.
-// resolve, from inside any container, to the host machine itself — used by
+// resolve, from inside any container, to the host machine itself - used by
 // local registry fixtures (e.g. e2e tests) that must be reachable both from
 // the host CLI process and from a workspace's own container, where
 // "localhost" would otherwise resolve to the container's own loopback.

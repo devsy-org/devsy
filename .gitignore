@@ -5,6 +5,7 @@
 /e2e/bin
 /devsy
 /devsy.exe
+/ci
 /devsy
 /dist
 # Unit test targets

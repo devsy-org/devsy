@@ -1,0 +1,10 @@
+{
+  "name": "Overlay Compose Feature Test",
+  "dockerComposeFile": "docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "features": {
+    "./features/base-feature": {}
+  },
+  "waitFor": "postStartCommand"
+}

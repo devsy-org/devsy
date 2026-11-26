@@ -202,9 +202,13 @@ func (h *AppleHelper) InspectContainers(
 		return nil, nil
 	}
 	args := append([]string{"inspect"}, ids...)
-	out, err := h.buildCmd(ctx, args...).Output()
+	cmd := h.buildCmd(ctx, args...)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return nil, fmt.Errorf("inspect container: %w", command.WrapCommandError(out, err))
+		return nil, fmt.Errorf(
+			"inspect container: %w",
+			err,
+		)
 	}
 
 	var raw []containerInspect
@@ -273,9 +277,14 @@ func (h *AppleHelper) InspectImage(
 	imageName string,
 	tryRemote bool,
 ) (*config.ImageDetails, error) {
-	out, err := h.buildCmd(ctx, "image", "inspect", imageName).Output()
+	cmd := h.buildCmd(ctx, "image", "inspect", imageName)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		err = fmt.Errorf("inspect image %s: %w", imageName, command.WrapCommandError(out, err))
+		err = fmt.Errorf(
+			"inspect image %s: %w",
+			imageName,
+			err,
+		)
 	} else {
 		var raw []imageInspect
 		switch {
@@ -309,9 +318,13 @@ func (h *AppleHelper) InspectImage(
 }
 
 func (h *AppleHelper) GetImageTag(ctx context.Context, imageID string) (string, error) {
-	out, err := h.buildCmd(ctx, "image", "inspect", imageID).Output()
+	cmd := h.buildCmd(ctx, "image", "inspect", imageID)
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return "", fmt.Errorf("inspect image: %w", command.WrapCommandError(out, err))
+		return "", fmt.Errorf(
+			"inspect image: %w",
+			err,
+		)
 	}
 	var raw []imageInspect
 	if err := json.Unmarshal(out, &raw); err != nil {
@@ -370,9 +383,13 @@ func (h *AppleHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 }
 
 func (h *AppleHelper) listContainers(ctx context.Context) ([]containerInspect, error) {
-	out, err := h.buildCmd(ctx, "list", "--all", "--format", "json").Output()
+	cmd := h.buildCmd(ctx, "list", "--all", "--format", "json")
+	out, err := command.Output(cmd, command.IncludeFailureStdout)
 	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", command.WrapCommandError(out, err))
+		return nil, fmt.Errorf(
+			"list containers: %w",
+			err,
+		)
 	}
 	var raw []containerInspect
 	if err := json.Unmarshal(out, &raw); err != nil {

@@ -1,9 +1,11 @@
 <script lang="ts">
 import {
+  AlertCircle,
   ArrowDownAZ,
   ChevronsUpDown,
   Hash,
   Plug,
+  RefreshCw,
   SearchX,
 } from "@lucide/svelte"
 import { onMount } from "svelte"
@@ -11,11 +13,16 @@ import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
+import { providerSourceReference } from "$lib/utils/provider-source.js"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import ProviderCard from "$lib/components/provider/ProviderCard.svelte"
 import ProviderSheet from "$lib/components/provider/ProviderSheet.svelte"
 import { providers, providersLoading } from "$lib/stores/providers.js"
-import { refreshUpdates } from "$lib/stores/providerVersions.js"
+import {
+  loadCachedUpdates,
+  providerVersions,
+  refreshUpdates,
+} from "$lib/stores/providerVersions.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
 
@@ -34,9 +41,18 @@ function closeSheet() {
   if (activeId) goto("/providers")
 }
 
-onMount(() => {
-  refreshUpdates().catch(() => {})
+onMount(async () => {
+  await loadCachedUpdates().catch(() => undefined)
+  await refreshUpdates().catch(() => undefined)
 })
+
+function checkedLabel(checkedAt: Date | null): string {
+  if (!checkedAt) return "Updates not checked yet"
+  return `Last checked ${checkedAt.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  })}`
+}
 
 let filtered = $derived.by(() => {
   const q = search.toLowerCase()
@@ -45,7 +61,8 @@ let filtered = $derived.by(() => {
     return (
       p.name.toLowerCase().includes(q) ||
       (p.description ?? "").toLowerCase().includes(q) ||
-      (p.version ?? "").toLowerCase().includes(q)
+      (p.version ?? "").toLowerCase().includes(q) ||
+      (providerSourceReference(p.source) ?? "").toLowerCase().includes(q)
     )
   })
 
@@ -59,15 +76,40 @@ let filtered = $derived.by(() => {
 })
 </script>
 
-<div class="space-y-6">
-  <div class="flex items-center justify-between">
-    <h1 class="text-2xl font-bold">Providers</h1>
+<div class="mx-auto w-full max-w-6xl space-y-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <h1 class="text-2xl font-semibold tracking-tight">Providers</h1>
+      <p class="text-sm text-muted-foreground">Choose where your workspaces run. Manage setup and provider settings here.</p>
+    </div>
     <Button onclick={() => goto("/providers/add")}>Add Provider</Button>
   </div>
 
-  <div class="flex gap-2">
+  <div class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 px-3 py-2" role="status">
+    <div class="min-w-0 flex-1 text-sm">
+      <div class="text-muted-foreground">{checkedLabel($providerVersions.lastCheckedAt)}</div>
+      {#if $providerVersions.refreshError}
+        <div class="mt-0.5 flex items-center gap-1 text-destructive">
+          <AlertCircle class="size-3.5 shrink-0" />
+          <span>DevSy could not check for updates. Cached results may be out of date.</span>
+        </div>
+      {/if}
+    </div>
+    <Button
+      variant="outline"
+      size="sm"
+      onclick={() => refreshUpdates().catch(() => undefined)}
+      disabled={$providerVersions.refreshing}
+    >
+      <RefreshCw class={$providerVersions.refreshing ? "mr-2 size-4 animate-spin" : "mr-2 size-4"} />
+      {$providerVersions.refreshing ? "Checking..." : "Check now"}
+    </Button>
+  </div>
+
+  <div class="flex flex-wrap gap-2">
     <Input
-      placeholder="Search by name, description, version..."
+      aria-label="Search installed providers"
+      placeholder="Search by name, source, description, version..."
       value={search}
       oninput={(e) => (search = e.currentTarget.value)}
       class="flex-1"
@@ -75,7 +117,7 @@ let filtered = $derived.by(() => {
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
-          <Button variant="outline" class="w-36 justify-between" {...props}>
+          <Button {...props} aria-label="Sort providers" variant="outline" class="w-36 justify-between">
             {#if sortBy === "name"}
               <ArrowDownAZ class="mr-2 h-4 w-4" /> Name
             {:else}
@@ -98,6 +140,8 @@ let filtered = $derived.by(() => {
     </DropdownMenu.Root>
   </div>
 
+  <p class="text-sm text-muted-foreground" aria-live="polite">{filtered.length} of {$providers.length} installed providers</p>
+
   {#if $providersLoading}
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {#each Array(3) as _}
@@ -109,6 +153,7 @@ let filtered = $derived.by(() => {
       {#if search}
         <SearchX class="h-10 w-10 text-muted-foreground" />
         <p class="text-muted-foreground">No providers match your search.</p>
+        <Button variant="outline" onclick={() => (search = "")}>Clear search</Button>
       {:else}
         <Plug class="h-10 w-10 text-muted-foreground" />
         <p class="text-muted-foreground">No providers configured yet.</p>

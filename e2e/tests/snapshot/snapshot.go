@@ -37,11 +37,15 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		// startLocalRegistry); opt the spawned devsy CLI subprocesses into
 		// treating host.docker.internal refs as insecure for this suite only.
 		framework.ExpectNoError(os.Setenv(pkgconfig.EnvInsecureDockerInternal, "true"))
+		ginkgo.DeferCleanup(os.Unsetenv, pkgconfig.EnvInsecureDockerInternal)
 
 		var err error
 		dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
 		registryHost, cleanupReg, err = startLocalRegistry(ctx, dockerHelper)
 		framework.ExpectNoError(err)
+		if cleanupReg != nil {
+			ginkgo.DeferCleanup(cleanupReg)
+		}
 
 		initialDir, err := os.Getwd()
 		framework.ExpectNoError(err)
@@ -49,20 +53,11 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		framework.ExpectNoError(err)
 	})
 
-	ginkgo.AfterEach(func() {
-		_ = os.Unsetenv(pkgconfig.EnvInsecureDockerInternal)
-		if cleanupReg != nil {
-			cleanupReg()
-		}
-	})
-
 	ginkgo.It("creates, mutates, and restores a snapshot", func(ctx context.Context) {
 		initialDir, err := os.Getwd()
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata("tests/snapshot/testdata/docker", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
@@ -116,9 +111,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		initialDir, err := os.Getwd()
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata("tests/snapshot/testdata/docker", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
@@ -207,16 +200,13 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 			initialDir, err := os.Getwd()
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/snapshot/testdata/docker", initialDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 			framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
 
 			registry := registryHost + "/e2e/snapshots"
 
 			cleanupReg() // kill the registry before create runs, forcing a mid-push failure
-			cleanupReg = func() {}
 
 			_, _, err = f.ExecCommandCapture(ctx, []string{
 				snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registry, debugFlag,
@@ -243,9 +233,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		initialDir, err := os.Getwd()
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker-multi-mount")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata("tests/snapshot/testdata/docker-multi-mount", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
 
@@ -270,9 +258,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		initialDir, err := os.Getwd()
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata("tests/snapshot/testdata/docker", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
 
@@ -340,9 +326,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		initialDir, err := os.Getwd()
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata("tests/snapshot/testdata/docker", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
 
@@ -407,9 +391,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		initialDir, err := os.Getwd()
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker-runargs")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata("tests/snapshot/testdata/docker-runargs", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
 
@@ -448,9 +430,7 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		initialDir, err := os.Getwd()
 		framework.ExpectNoError(err)
 
-		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker-nonroot")
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		tempDir := framework.CopyTestdata("tests/snapshot/testdata/docker-nonroot", initialDir)
 		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
 

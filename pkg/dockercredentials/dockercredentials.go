@@ -1,10 +1,12 @@
 package dockercredentials
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"al.essio.dev/pkg/shellescape"
@@ -74,16 +76,28 @@ func ConfigureCredentialsContainer(userName string, port int) error {
 		configDir = filepath.Join(userHome, ".docker")
 	}
 
-	return configureCredentials(userName, "#!/bin/sh", "/usr/local/bin", configDir, port)
+	return configureCredentials(userName, port, credentialLayout{
+		shebang:   "#!/bin/sh",
+		targetDir: "/usr/local/bin",
+		configDir: configDir,
+	})
 }
 
 const AzureContainerRegistryUsername = "00000000-0000-0000-0000-000000000000"
 
+// credentialLayout is where the credential helper is installed and where it reads config.
+type credentialLayout struct {
+	shebang   string
+	targetDir string
+	configDir string
+}
+
 func configureCredentials(
-	userName, shebang string,
-	targetDir, configDir string,
+	userName string,
 	port int,
+	layout credentialLayout,
 ) error {
+	shebang, targetDir, configDir := layout.shebang, layout.targetDir, layout.configDir
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return err
@@ -158,41 +172,14 @@ func buildHelperContent(binaryPath, shebang string, port int) []byte {
 }
 
 func ConfigureCredentialsDockerless(targetFolder string, port int) (string, error) {
-	dockerConfigDir := newDockerCredentialsDir(targetFolder)
-
-	if err := preserveDockerConfig(dockerConfigDir); err != nil {
-		_ = os.RemoveAll(dockerConfigDir)
-		return "", err
-	}
-
-	err := configureCredentials(
-		"",
-		"#!/.dockerless/bin/sh",
-		dockerConfigDir,
-		dockerConfigDir,
-		port,
-	)
-	if err != nil {
-		_ = os.RemoveAll(dockerConfigDir)
-		return "", err
-	}
-
-	err = os.Setenv("DOCKER_CONFIG", dockerConfigDir)
-	if err != nil {
-		_ = os.RemoveAll(dockerConfigDir)
-		return "", err
-	}
-
-	err = appendToPath(dockerConfigDir)
-	if err != nil {
-		_ = os.RemoveAll(dockerConfigDir)
-		return "", err
-	}
-
-	return dockerConfigDir, nil
+	return configureCredentialsInDir(targetFolder, port, "#!/.dockerless/bin/sh")
 }
 
 func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) {
+	return configureCredentialsInDir(targetFolder, port, "#!/bin/sh")
+}
+
+func configureCredentialsInDir(targetFolder string, port int, shebang string) (string, error) {
 	dockerConfigDir := newDockerCredentialsDir(targetFolder)
 
 	if err := preserveDockerConfig(dockerConfigDir); err != nil {
@@ -200,7 +187,11 @@ func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) 
 		return "", err
 	}
 
-	err := configureCredentials("", "#!/bin/sh", dockerConfigDir, dockerConfigDir, port)
+	err := configureCredentials("", port, credentialLayout{
+		shebang:   shebang,
+		targetDir: dockerConfigDir,
+		configDir: dockerConfigDir,
+	})
 	if err != nil {
 		_ = os.RemoveAll(dockerConfigDir)
 		return "", err
@@ -234,7 +225,20 @@ func preserveDockerConfig(dockerConfigDir string) error {
 		return err
 	}
 
-	// Copy config.json if it exists
+	if err := preserveConfigFile(srcDir, dockerConfigDir); err != nil {
+		return err
+	}
+	if err := preserveCliPluginsExtraDir(
+		srcDir,
+		filepath.Join(dockerConfigDir, config.ConfigFileName),
+	); err != nil {
+		return err
+	}
+
+	return preserveContexts(srcDir, dockerConfigDir)
+}
+
+func preserveConfigFile(srcDir, dockerConfigDir string) error {
 	srcConfigFile := filepath.Join(srcDir, config.ConfigFileName)
 	if _, err := os.Stat(srcConfigFile); err == nil {
 		destConfigFile := filepath.Join(dockerConfigDir, config.ConfigFileName)
@@ -244,8 +248,10 @@ func preserveDockerConfig(dockerConfigDir string) error {
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect Docker config: %w", err)
 	}
+	return nil
+}
 
-	// Copy contexts if they exist
+func preserveContexts(srcDir, dockerConfigDir string) error {
 	srcContextsDir := filepath.Join(srcDir, "contexts")
 	if _, err := os.Stat(srcContextsDir); err == nil {
 		destContextsDir := filepath.Join(dockerConfigDir, "contexts")
@@ -255,8 +261,95 @@ func preserveDockerConfig(dockerConfigDir string) error {
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect Docker contexts: %w", err)
 	}
-
 	return nil
+}
+
+func preserveCliPluginsExtraDir(srcDir, configFile string) error {
+	pluginDir, err := dockerCLIPluginsDir(srcDir)
+	if err != nil {
+		return err
+	}
+	if pluginDir == "" {
+		return nil
+	}
+	dockerConfig, err := readCopiedDockerConfig(configFile)
+	if err != nil {
+		return err
+	}
+	pluginDirs, err := preservedDockerCLIPluginDirs(dockerConfig)
+	if err != nil {
+		return err
+	}
+	if slices.Contains(pluginDirs, pluginDir) {
+		return nil
+	}
+	pluginDirs = append(pluginDirs, pluginDir)
+	return writeDockerCLIPluginDirs(configFile, dockerConfig, pluginDirs)
+}
+
+func writeDockerCLIPluginDirs(
+	configFile string,
+	dockerConfig map[string]json.RawMessage,
+	pluginDirs []string,
+) error {
+	pluginDirsJSON, err := json.Marshal(pluginDirs)
+	if err != nil {
+		return fmt.Errorf("encode Docker CLI plugin directories: %w", err)
+	}
+	dockerConfig["cliPluginsExtraDirs"] = pluginDirsJSON
+	contents, err := json.Marshal(dockerConfig)
+	if err != nil {
+		return fmt.Errorf("encode copied Docker config: %w", err)
+	}
+	if err := os.WriteFile(configFile, contents, 0o600); err != nil {
+		return fmt.Errorf("preserve Docker CLI plugin directory: %w", err)
+	}
+	return nil
+}
+
+func dockerCLIPluginsDir(srcDir string) (string, error) {
+	pluginDir := filepath.Join(srcDir, "cli-plugins")
+	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
+		return "", nil
+	} else if err != nil {
+		return "", fmt.Errorf("inspect Docker CLI plugins: %w", err)
+	}
+	pluginDir, err := filepath.Abs(pluginDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve Docker CLI plugin directory: %w", err)
+	}
+	return pluginDir, nil
+}
+
+func readCopiedDockerConfig(configFile string) (map[string]json.RawMessage, error) {
+	path := filepath.Clean(configFile)
+	// #nosec G304 -- path comes from Devsy's selected Docker config directory.
+	contents, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		contents = []byte("{}")
+	} else if err != nil {
+		return nil, fmt.Errorf("read copied Docker config: %w", err)
+	}
+	var dockerConfig map[string]json.RawMessage
+	if err := json.Unmarshal(contents, &dockerConfig); err != nil {
+		return nil, fmt.Errorf("parse copied Docker config: %w", err)
+	}
+	if dockerConfig == nil {
+		dockerConfig = make(map[string]json.RawMessage)
+	}
+	return dockerConfig, nil
+}
+
+func preservedDockerCLIPluginDirs(dockerConfig map[string]json.RawMessage) ([]string, error) {
+	var pluginDirs []string
+	pluginDirsJSON, ok := dockerConfig["cliPluginsExtraDirs"]
+	if !ok {
+		return nil, nil
+	}
+	if err := json.Unmarshal(pluginDirsJSON, &pluginDirs); err != nil {
+		return nil, fmt.Errorf("parse Docker CLI plugin directories: %w", err)
+	}
+	return pluginDirs, nil
 }
 
 func ListCredentials() (*ListResponse, error) {

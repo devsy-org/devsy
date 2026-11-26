@@ -158,7 +158,15 @@ func IsHostAgentInvocation(agentDir string) bool {
 	return !containerDetector()
 }
 
-func GetAgentBinariesDir(agentDir, context, workspaceID string) (string, error) {
+// resolveAgentWorkspaceDir returns the workspace dir for an invocation without
+// checking that it exists. Host invocations use the provider layout
+// (.../workspaces/<id>/agent); container invocations use
+// <home>/contexts/<ctx>/workspaces/<id>. prepareHome selects
+// PrepareAgentHomeDir (create) over FindAgentHomeDir (lookup).
+func resolveAgentWorkspaceDir(
+	agentDir, context, workspaceID string,
+	prepareHome bool,
+) (string, error) {
 	if context == "" {
 		context = config.DefaultContext
 	}
@@ -167,71 +175,45 @@ func GetAgentBinariesDir(agentDir, context, workspaceID string) (string, error) 
 		if err != nil {
 			return "", err
 		}
-		return GetAgentBinariesDirFromWorkspaceDir(workspaceDir)
+		return workspaceDir, nil
 	}
 
-	homeDir, err := FindAgentHomeDir(agentDir)
+	findHome := FindAgentHomeDir
+	if prepareHome {
+		findHome = PrepareAgentHomeDir
+	}
+	homeDir, err := findHome(agentDir)
 	if err != nil {
 		return "", err
 	}
 
-	workspaceDir := filepath.Join(homeDir, "contexts", context, "workspaces", workspaceID)
+	return filepath.Join(homeDir, "contexts", context, "workspaces", workspaceID), nil
+}
 
+func GetAgentBinariesDir(agentDir, context, workspaceID string) (string, error) {
+	workspaceDir, err := resolveAgentWorkspaceDir(agentDir, context, workspaceID, false)
+	if err != nil {
+		return "", err
+	}
 	return GetAgentBinariesDirFromWorkspaceDir(workspaceDir)
 }
 
 func GetAgentWorkspaceDir(agentDir, context, workspaceID string) (string, error) {
-	if context == "" {
-		context = config.DefaultContext
-	}
-	if IsHostAgentInvocation(agentDir) {
-		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
-		if err != nil {
-			return "", err
-		}
-		if _, statErr := os.Stat(workspaceDir); statErr == nil {
-			return workspaceDir, nil
-		}
-		return "", os.ErrNotExist
-	}
-
-	homeDir, err := FindAgentHomeDir(agentDir)
+	workspaceDir, err := resolveAgentWorkspaceDir(agentDir, context, workspaceID, false)
 	if err != nil {
 		return "", err
 	}
-
-	workspaceDir := filepath.Join(homeDir, "contexts", context, "workspaces", workspaceID)
-
-	_, err = os.Stat(workspaceDir)
-	if err == nil {
-		return workspaceDir, nil
+	if _, statErr := os.Stat(workspaceDir); statErr != nil {
+		return "", os.ErrNotExist
 	}
-
-	return "", os.ErrNotExist
+	return workspaceDir, nil
 }
 
 func CreateAgentWorkspaceDir(agentDir, context, workspaceID string) (string, error) {
-	if context == "" {
-		context = config.DefaultContext
-	}
-	if IsHostAgentInvocation(agentDir) {
-		workspaceDir, err := provider2.GetWorkspaceAgentDir(context, workspaceID)
-		if err != nil {
-			return "", err
-		}
-		// #nosec G301 -- mirrors the legacy 0o755 perms below.
-		if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
-			return "", err
-		}
-		return workspaceDir, nil
-	}
-
-	homeDir, err := PrepareAgentHomeDir(agentDir)
+	workspaceDir, err := resolveAgentWorkspaceDir(agentDir, context, workspaceID, true)
 	if err != nil {
 		return "", err
 	}
-
-	workspaceDir := filepath.Join(homeDir, "contexts", context, "workspaces", workspaceID)
 
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
 	err = os.MkdirAll(workspaceDir, 0o755)

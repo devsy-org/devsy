@@ -3,37 +3,92 @@ title: Auto-Inactivity Timeout
 sidebar_label: Auto-Inactivity Timeout
 ---
 
-By default, most providers are able to automatically shutdown unused workspaces to save costs. For example, for cloud providers such as AWS, Azure and Google Cloud, Devsy will automatically stop the machine to save costs when workspaces are not used.
+Providers can stop idle workspaces to save resources. Start a stopped workspace with `devsy workspace up`. Workspace data persists if the provider preserves storage.
 
-Machines stopped this way preserve the data and state, so when a workspace [is started again](./connect-to-a-workspace.mdx), Devsy will simply restart the machine and the workspace.
+## Configure the timeout
 
-<Callout>
-All official Devsy providers offer this pre-configured to 5-10 minutes. Check the provider options to see how to change the timeout.
+Apple, Docker, Kubernetes, Microsandbox, and Podman have an `INACTIVITY_TIMEOUT` option. Values use Go duration format, such as `10m` or `1h`. See [Set provider options](../managing-providers/manage-providers.mdx#set-provider-options).
+
+Defaults when the option is unset:
+
+- Machine providers use the `inactivityTimeout` value from the provider, or 20 minutes if the provider sets none.
+- Docker, Kubernetes, Podman, Apple, and Microsandbox containers never time out when `INACTIVITY_TIMEOUT` is unset or `0`.
+
+## How it works
+
+**Kubernetes:** The Devsy daemon is the main process of the workspace pod. Setup keeps a connection to the daemon open and counts as activity until setup ends. After the timeout passes with no activity, the daemon stops its child processes, logs that the timeout was reached, and exits. The pod ends and the workspace volume stays. See [Kubernetes](#kubernetes).
+
+**Docker, Podman, Apple, and Microsandbox:** A daemon in the container watches for activity. For Microsandbox, Devsy also passes the timeout to the microsandbox CLI as `--idle-timeout`.
+
+<Callout type="warn" title="Docker and Podman">
+The detached container daemon exits when its timeout expires, but that exit does not stop a Docker or Podman container. Do not rely on `INACTIVITY_TIMEOUT` to stop these containers. Stop them explicitly with `devsy workspace stop`.
 </Callout>
 
-## Configuring the timeout
-
-Changing the default setting for inactivity timeout can be done by [configuring the provider options](../managing-providers/manage-providers.mdx#set-provider-options). Typically there is an option called `INACTIVITY_TIMEOUT` that controls this behaviour.
-
-<Callout>
-More info about the provider's auto-shutdown can be found in the [agent's development guide](../developing-providers/agent.mdx#machine-providers)
-That will explain how this is done and what can be configured.
+<Callout type="warn" title="Apple provider">
+The Apple provider option describes the timeout as deleting the container instead of stopping it. Deleting a container loses files outside mounted volumes.
 </Callout>
 
-## How does it work?
+**Machine providers:** A Devsy daemon runs on the VM. When every workspace on the machine has been idle for the timeout, the daemon runs `agent.exec.shutdown`, a command the provider defines. State persists only if the provider keeps storage.
 
-### Non-Machine Providers
+See the [agent guide](../developing-providers/agent.mdx#machine-providers) for how providers implement this, and [Machine diagnostics](../managing-machines/machine-diagnostics.mdx) for debugging.
 
-For non-machine providers, Devsy can automatically kill the container it's running in by terminating the process with pid 1. This is useful for providers such as docker, podman, kubernetes or ssh, where you don't want the container to be running if it's not needed. If configured on the provider, Devsy will start a process within the container to keep track of activity and then kill itself when the user hasn't connected for the given duration. This will not erase any state within the container and instead only stop it. Then when the user wants to start working with the workspace again, Devsy will restart the container.
+## What counts as activity
 
-<Callout type="warn" title="Apple provider deletes rather than stops">
-The Apple provider is the exception: its `INACTIVITY_TIMEOUT` option description states that it deletes the container after the idle period, rather than just stopping it like Docker, Podman and Microsandbox. As with any deleted (non-machine) container, only data on mounted volumes survives; anything in the writable layer is lost.
+A workspace is active while either of these holds:
+
+- A tracked `devsy workspace ssh` session is connected. Devsy records activity when the session connects, periodically while it stays open, and when it ends. The idle period starts at disconnect.
+- Setup is running: the synchronous `devsy workspace up` setup, deferred lifecycle hooks, and `postAttachCommand`.
+
+CPU use and processes you start yourself do not count as activity. For example, `nohup make &` in a closed session does not reset the idle timer.
+
+The daemon checks idle time about once a second. A managed Kubernetes pod ends a few seconds after the timeout passes.
+
+On Kubernetes, SSH sessions and hooks register with the daemon before they do work and stay active while their connection lasts. If the daemon connection is lost, Devsy cancels the protected work. Failed activity-file writes or a full disk cannot hide live work.
+
+Other container daemons read legacy activity-file timestamps. If a daemon cannot read the activity file, it logs an error and the timeout stays inactive until the file is readable.
+
+Managed clients read the daemon configuration mounted at `/var/run/secrets/devsy/daemon_config`. If a managed workspace cannot find it, Devsy returns an error and does not fall back to file heartbeats. Linux process-start identity must stay readable through `/proc`, or registration fails and Devsy cancels the protected connection.
+
+Any Unix user in the same container can block idle stop through a live activity connection. Users in a container are not isolated from each other. Only root and the daemon's UID can change setup and timeout policy.
+
+## Kubernetes
+
+Set `INACTIVITY_TIMEOUT` on the Kubernetes provider, such as `1h`. In a custom provider, the deprecated `inactivityTimeout` field under `agent.kubernetes` is an alias. Devsy uses it only when `containerInactivityTimeout` is empty. If both are set, they must match.
+
+The timeout is off when it is empty or `0`, when `shutdownAction` is `none`, or when `devsy workspace up` runs with `--disable-daemon`. A negative or unparsable value is an error. Kubernetes rejects `stopCompose` with a positive timeout.
+
+`--disable-daemon` applies to that one command. The next `up` without the flag uses the provider timeout and shutdown action again.
+
+When the saved run configuration changes, including a recreate that changes the workspace image or Dockerless topology, the Kubernetes credentials on your machine need `update` permission on `persistentvolumeclaims` in the workspace namespace. Devsy updates only the run-information annotation, before it changes daemon configuration or creates the new pod. Unchanged run options cause no update. Devsy does not change your RBAC roles. If the update is denied or conflicts, Devsy stops and keeps the volume and its previous record. An explicit `--recreate` may already have stopped the old pod.
+
+When the workspace stops:
+
+- The pod can stay in the `Succeeded` or `Failed` phase until the next `devsy workspace up` or `devsy workspace stop`. The next `up` deletes the finished pod and creates a new one on the same persistent volume claim. No recreate flag is needed.
+- Files on the workspace volume persist. Files in the container filesystem outside mounted volumes are lost, because the new pod starts from the image.
+- `devsy workspace stop` deletes the pod through the Kubernetes API from your machine. The pod gets no Kubernetes credentials of its own.
+
+When `WORKSPACE_VOLUME_MOUNT` selects a parent of the workspace folder, the pod mounts that parent. Reuse and resume keep the same workspace subdirectory on the volume.
+
+Pod layout rules:
+
+- One regular `devsy` container, any number of normal init containers, and native sidecars (init containers with `restartPolicy: Always`). Native sidecars end with the pod.
+- With a positive timeout, Devsy rejects extra regular containers in `spec.containers`, such as those from a pod manifest template or an admission webhook. The pod would keep running while they run. The error names the containers. Without a timeout, or with `shutdownAction: none`, extra containers are allowed.
+- With a positive timeout, the Devsy daemon must be the main process of the container. Devsy rejects a `devcontainer.json` with `overrideCommand: false` and an image entrypoint or command.
+- Dockerless builds do not support a positive timeout.
+
+Devsy checks the pod manifest template against the merged shutdown action and `--disable-daemon` before an explicit `--recreate` stops the existing pod. It can check admission-webhook changes only after it creates the pod.
+
+<Callout type="warn" title="Layout validation">
+The rules above do not cover every pod layout. Test these on a non-production workspace before you rely on the timeout: restricted non-root security, native sidecars or extra init containers, admission-webhook layouts, Devsy Platform routes, and upgrades from an earlier Devsy version.
 </Callout>
 
-### Machine Providers
+A pod whose daemon uses an older lifecycle protocol must be replaced once. `devsy workspace up` reports the incompatible owner and asks you to restart the workspace. Run `devsy workspace stop`, then `devsy workspace up`. The persistent volume stays. Replacing the agent binary alone does not upgrade a daemon that already runs in the pod.
 
-For machine providers, killing just the container within the remote machine is typically not enough as VMs still generate costs even if they are unused. Instead, Devsy will install itself as a Daemon into the remote VM and track the activity from there. If there wasn't activity for a given amount of time, Devsy will automatically shutdown the machine or even delete it, based on whichever is more cost-effective for the given cloud provider. Then when the developer wants to resume development, Devsy restarts or recreates the virtual machine.
+## Shutdown action
 
-<Callout>
-See [agent's development guide](../developing-providers/agent.mdx#machine-providers) to learn more about how inactivity-timeout works on the provider side.
-</Callout>
+Set `shutdownAction` in `devcontainer.json`. It is not a provider option.
+
+- `none` turns off the container timeout monitor. For machines, it also stops `agent.exec.shutdown` from running.
+- Any other value allows the container timeout monitor to run when the effective timeout is positive. For machines, `agent.exec.shutdown` runs when the timeout passes, if the command is set.
+
+When `shutdownAction` is unset, the default is `stopCompose` for Compose workspaces and `stopContainer` for all others. Apart from `none`, and apart from Kubernetes rejecting `stopCompose`, the value does not change what the container timeout does.

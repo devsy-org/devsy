@@ -12,8 +12,7 @@ func TestApplePreflightBinaryMissing(t *testing.T) {
 	d := &appleDriver{command: "devsy-nonexistent-container-binary", Apple: &mockClient{}}
 
 	err := d.Preflight(context.Background(), driver.PreflightOptions{})
-	var perr *driver.PreflightError
-	if !errors.As(err, &perr) {
+	if _, ok := errors.AsType[*driver.PreflightError](err); !ok {
 		t.Fatalf("expected *driver.PreflightError, got %v (%T)", err, err)
 	}
 }
@@ -32,8 +31,7 @@ func TestApplePreflightOptOutSystemDown(t *testing.T) {
 	d := &appleDriver{command: "sh", Apple: m}
 
 	err := d.Preflight(context.Background(), driver.PreflightOptions{DisableAutoStart: true})
-	var perr *driver.PreflightError
-	if !errors.As(err, &perr) {
+	if _, ok := errors.AsType[*driver.PreflightError](err); !ok {
 		t.Fatalf("expected *driver.PreflightError when opted out and system down, got %v", err)
 	}
 }

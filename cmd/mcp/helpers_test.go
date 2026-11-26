@@ -39,3 +39,32 @@ func TestOpResultHandler_Error(t *testing.T) {
 		t.Fatalf("error path must leave ok zero")
 	}
 }
+
+const requireFieldName = "name"
+
+func TestRequireField(t *testing.T) {
+	tests := []struct {
+		name    string
+		field   string
+		value   string
+		wantErr string
+	}{
+		{name: "empty name", field: requireFieldName, value: "", wantErr: "name is required"},
+		{name: "empty source", field: "source", value: "", wantErr: "source is required"},
+		{name: "non-empty value passes", field: requireFieldName, value: "ws-1", wantErr: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := requireField(tt.field, tt.value)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("requireField(%q, %q) = %v, want nil", tt.field, tt.value, err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("requireField(%q, %q) = %v, want %q", tt.field, tt.value, err, tt.wantErr)
+			}
+		})
+	}
+}

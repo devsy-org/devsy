@@ -13,9 +13,12 @@ import (
 )
 
 func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (string, error) {
-	dockerDriver, ok := r.driver.(driver.ImageDriver)
-	if !ok {
-		return "", fmt.Errorf("building only supported with docker driver")
+	if err := r.prepareWSLg(ctx, options.CLIOptions); err != nil {
+		return "", err
+	}
+	defer func() { r.wslgSnapshot = nil }()
+	if err := r.prepareStandaloneBuild(); err != nil {
+		return "", err
 	}
 
 	substitutedConfig, substitutionContext, err := r.getSubstitutedConfig(options.CLIOptions)
@@ -35,35 +38,35 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 
 	prebuildImage := r.determinePrebuildImage(options, prebuildRepo, buildInfo)
 
-	if buildInfo.ImageName == prebuildImage {
-		return buildInfo.ImageName, nil
+	if shouldPushPrebuild(options, buildInfo, prebuildImage) {
+		if err := r.pushPrebuildImage(ctx, pushPrebuildImageParams{
+			imagePublisher:    r.imageBackend,
+			substitutedConfig: substitutedConfig,
+			buildInfo:         buildInfo,
+			prebuildImage:     prebuildImage,
+			options:           options,
+			prebuildRepo:      prebuildRepo,
+		}); err != nil {
+			return "", err
+		}
 	}
-
-	// should we push?
-	if options.SkipPush {
-		return prebuildImage, nil
-	}
-
-	// if push happened during build, skip the separate push workflow
-	// When PushDuringBuild is enabled, BuildKit already pushed the image directly to the
-	// registry during the build process. Skip the tag/push workflow below to avoid
-	// redundant operations. The image is already in the registry.
-	if options.PushDuringBuild {
-		return prebuildImage, nil
-	}
-
-	if err := r.pushPrebuildImage(ctx, pushPrebuildImageParams{
-		dockerDriver:      dockerDriver,
-		substitutedConfig: substitutedConfig,
-		buildInfo:         buildInfo,
-		prebuildImage:     prebuildImage,
-		options:           options,
-		prebuildRepo:      prebuildRepo,
-	}); err != nil {
-		return "", err
-	}
-
 	return prebuildImage, nil
+}
+
+func (r *runner) prepareStandaloneBuild() error {
+	r.imageDetails = nil
+	r.imageDetailsImage = ""
+	if d, ok := r.driver.(driver.ImageDetailsDriver); ok {
+		if _, err := d.ImageDetails(
+			driver.ImageDetailsRequest{UnsupportedReason: "standalone workspace build"},
+		); err != nil {
+			return err
+		}
+	}
+	if r.imageBackend == nil {
+		return fmt.Errorf("building requires an image backend")
+	}
+	return nil
 }
 
 // determinePrebuildImage computes the prebuild image reference, defaulting an
@@ -87,8 +90,16 @@ func (r *runner) determinePrebuildImage(
 	}
 }
 
+func shouldPushPrebuild(
+	options provider.BuildOptions,
+	buildInfo *config.BuildInfo,
+	prebuildImage string,
+) bool {
+	return buildInfo.ImageName != prebuildImage && !options.SkipPush && !options.PushDuringBuild
+}
+
 type pushPrebuildImageParams struct {
-	dockerDriver      driver.ImageDriver
+	imagePublisher    driver.ImagePublisher
 	substitutedConfig *config.SubstitutedConfig
 	buildInfo         *config.BuildInfo
 	prebuildImage     string
@@ -98,7 +109,7 @@ type pushPrebuildImageParams struct {
 
 func (r *runner) pushPrebuildImage(ctx context.Context, params pushPrebuildImageParams) error {
 	if isDockerComposeConfig(params.substitutedConfig.Config) {
-		if err := params.dockerDriver.TagDevContainer(
+		if err := params.imagePublisher.TagDevContainer(
 			ctx,
 			params.buildInfo.ImageName,
 			params.prebuildImage,
@@ -122,12 +133,12 @@ func (r *runner) pushPrebuildImage(ctx context.Context, params pushPrebuildImage
 		)
 	}
 
-	return tagAndPushImages(ctx, params.dockerDriver, params.prebuildImage, params.buildInfo.Tags)
+	return tagAndPushImages(ctx, params.imagePublisher, params.prebuildImage, params.buildInfo.Tags)
 }
 
 func tagAndPushImages(
 	ctx context.Context,
-	dockerDriver driver.ImageDriver,
+	imagePublisher driver.ImagePublisher,
 	prebuildImage string,
 	tags []string,
 ) error {
@@ -141,14 +152,14 @@ func tagAndPushImages(
 
 	// tag the image
 	for _, imageRef := range imageRefs {
-		if err := dockerDriver.TagDevContainer(ctx, prebuildImage, imageRef); err != nil {
+		if err := imagePublisher.TagDevContainer(ctx, prebuildImage, imageRef); err != nil {
 			return fmt.Errorf("tag image: %w", err)
 		}
 	}
 
 	// push the image to the registry
 	for _, imageRef := range imageRefs {
-		if err := dockerDriver.PushDevContainer(ctx, imageRef); err != nil {
+		if err := imagePublisher.PushDevContainer(ctx, imageRef); err != nil {
 			return fmt.Errorf("push image: %w", err)
 		}
 	}

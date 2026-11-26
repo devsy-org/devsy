@@ -2,7 +2,6 @@ package jetbrains
 
 import (
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/ide"
 )
 
 const (
@@ -11,21 +10,7 @@ const (
 	DataSpellDownloadArm64Template = "https://download.jetbrains.com/ds/dataspell-%s-aarch64.tar.gz"
 )
 
-var DataSpellOptions = ide.Options{
-	VersionOption: {
-		Name:        VersionOption,
-		Description: versionOptionDescription,
-		Default:     versionOptionDefault,
-	},
-	DownloadArm64Option: {
-		Name:        DownloadArm64Option,
-		Description: downloadArm64OptionDescription,
-	},
-	DownloadAmd64Option: {
-		Name:        DownloadAmd64Option,
-		Description: downloadAmd64OptionDescription,
-	},
-}
+var DataSpellOptions = newProductOptions()
 
 func NewDataSpellServer(
 	userName string,
@@ -35,8 +20,10 @@ func NewDataSpellServer(
 		DataSpellOptions,
 		values,
 		DataSpellProductCode,
-		DataSpellDownloadAmd64Template,
-		DataSpellDownloadArm64Template,
+		downloadTemplates{
+			amd64: DataSpellDownloadAmd64Template,
+			arm64: DataSpellDownloadArm64Template,
+		},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "dataspell",

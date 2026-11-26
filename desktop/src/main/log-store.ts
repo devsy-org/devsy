@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs"
 import { basename, join } from "node:path"
+import { mainLog } from "./logging.js"
 
 // safeLogFilename strips any directory components from filename so a caller
 // can't traverse out of the per-workspace logs dir with "../" segments.
@@ -62,12 +63,22 @@ export class LogStore {
   createLogFile(context: string, workspaceId: string): string {
     const dir = this.workspaceLogDir(context, workspaceId)
     mkdirSync(dir, { recursive: true })
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-    const suffix = String(counter++).padStart(4, "0")
-    const filename = `${timestamp}-${suffix}.log`
+    const filename = this.nextLogFilename()
     const filePath = join(dir, filename)
-    writeFileSync(filePath, "")
+    writeFileSync(filePath, "", { mode: 0o600 })
     return filePath
+  }
+
+  createDiagnosticLogPath(context: string, workspaceId: string): string {
+    const dir = this.workspaceLogDir(context, workspaceId)
+    mkdirSync(dir, { recursive: true })
+    return join(dir, this.nextLogFilename("-ssh-diagnostics"))
+  }
+
+  private nextLogFilename(suffix = ""): string {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+    const sequence = String(counter++).padStart(4, "0")
+    return `${timestamp}-${sequence}${suffix}.log`
   }
 
   appendLog(logPath: string, line: string): boolean {
@@ -76,7 +87,7 @@ export class LogStore {
       stream = createWriteStream(logPath, { flags: "a" })
       stream.on("error", (err) => {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-          console.error(`log write failed for ${logPath}:`, err)
+          mainLog.error(`log write failed for ${logPath}:`, err)
         }
       })
       this.streams.set(logPath, stream)
@@ -124,14 +135,20 @@ export class LogStore {
 
   readLog(context: string, workspaceId: string, filename: string): string {
     return readFileSync(
-      join(this.workspaceLogDir(context, workspaceId), safeLogFilename(filename)),
+      join(
+        this.workspaceLogDir(context, workspaceId),
+        safeLogFilename(filename),
+      ),
       "utf-8",
     )
   }
 
   deleteLog(context: string, workspaceId: string, filename: string): void {
     unlinkSync(
-      join(this.workspaceLogDir(context, workspaceId), safeLogFilename(filename)),
+      join(
+        this.workspaceLogDir(context, workspaceId),
+        safeLogFilename(filename),
+      ),
     )
   }
 

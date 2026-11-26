@@ -36,7 +36,7 @@ func NewApplyCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	applyFlags := &ApplyFlags{}
 	applyCmd := &cobra.Command{
 		Use:   "apply",
-		Short: "Fetch template from OCI registry and scaffold devcontainer config",
+		Short: "Scaffold devcontainer config from an OCI registry template",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runApply(applyFlags)
 		},

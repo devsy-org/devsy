@@ -29,6 +29,9 @@ type Workspace struct {
 	// UID is used to identify this specific workspace
 	UID string `json:"uid,omitempty"`
 
+	DisplayName  string `json:"displayName,omitempty"`
+	SSHHostAlias string `json:"sshHostAlias,omitempty"`
+
 	// Picture is the project social media image
 	Picture string `json:"picture,omitempty"`
 
@@ -47,8 +50,13 @@ type Workspace struct {
 	// DevContainerImage is the container image to use, overriding whatever is in the devcontainer.json
 	DevContainerImage string `json:"devContainerImage,omitempty"`
 
-	// DevContainerPath is the relative path where the devcontainer.json is located.
+	// DevContainerPath is the path to the devcontainer.json relative to the
+	// workspace folder: the content root including the git subpath, if any.
 	DevContainerPath string `json:"devContainerPath,omitempty"`
+
+	// DevContainerID is the selected named devcontainer profile. It is persisted
+	// so lifecycle operations reuse the same profile instead of rediscovering it.
+	DevContainerID string `json:"devContainerID,omitempty"`
 
 	// DevContainerSource is the devcontainer source override (e.g. "image:<ref>"
 	// or "none") that ignores the project's devcontainer.json. It is persisted so
@@ -73,8 +81,9 @@ type Workspace struct {
 	// Origin is the place where this config file was loaded from
 	Origin string `json:"-"`
 
-	// Pro signals this workspace is remote and doesn't necessarily exist locally. It also has more metadata about the pro workspace
-	Pro *ProMetadata `json:"pro,omitempty"`
+	// Platform signals this workspace is remote and doesn't necessarily exist locally.
+	// It also has more metadata about the platform workspace
+	Platform *PlatformMetadata `json:"pro,omitempty"`
 
 	// Path to the file where the SSH config to access the workspace is stored
 	SSHConfigPath string `json:"sshConfigPath,omitempty"`
@@ -83,7 +92,7 @@ type Workspace struct {
 	SSHConfigIncludePath string `json:"sshConfigIncludePath,omitempty"`
 }
 
-type ProMetadata struct {
+type PlatformMetadata struct {
 	// InstanceName is the platform CRD name for this workspace
 	InstanceName string `json:"instanceName,omitempty"`
 
@@ -148,6 +157,13 @@ type WorkspaceSource struct {
 	Snapshot string `json:"snapshot,omitempty"`
 }
 
+// ContainerLifecycleOwner identifies who owns inactivity shutdown in a container.
+type ContainerLifecycleOwner string
+
+// ContainerLifecycleOwnerManagedDaemon means the container's main process is the
+// Devsy daemon, which owns the inactivity timer.
+const ContainerLifecycleOwnerManagedDaemon ContainerLifecycleOwner = "managedDaemon"
+
 type ContainerWorkspaceInfo struct {
 	// IDE holds the ide config options
 	IDE WorkspaceIDEConfig `json:"ide"`
@@ -158,9 +174,13 @@ type ContainerWorkspaceInfo struct {
 	// Dockerless holds custom dockerless configuration
 	Dockerless ProviderDockerlessOptions `json:"dockerless"`
 
-	// ContainerTimeout is the timeout in minutes to wait until the agent tries
-	// to delete the container.
+	// ContainerTimeout is the effective Go duration of inactivity after which
+	// the container is stopped. Empty disables it.
 	ContainerTimeout string `json:"containerInactivityTimeout,omitempty"`
+
+	// LifecycleOwner names the process that owns inactivity shutdown inside the
+	// container. Empty means the legacy detached daemon.
+	LifecycleOwner ContainerLifecycleOwner `json:"lifecycleOwner,omitempty"`
 
 	// Source is a WorkspaceSource to be used inside the container
 	Source WorkspaceSource `json:"source"`
@@ -173,6 +193,20 @@ type ContainerWorkspaceInfo struct {
 
 	// Agent holds the agent info
 	Agent ProviderAgentConfig `json:"agent"`
+
+	// SetupRun names the retained setup history this container setup records
+	// into. Nil when no history is requested.
+	SetupRun *SetupRunRef `json:"setupRun,omitempty"`
+}
+
+// SetupRunRef identifies a retained setup history run and the workspace
+// generation it belongs to. It holds no secrets.
+type SetupRunRef struct {
+	RunID            string `json:"runId"`
+	ParentProducerID string `json:"parentProducerId,omitempty"`
+	Context          string `json:"context"`
+	WorkspaceUID     string `json:"workspaceUid,omitempty"`
+	WorkspaceID      string `json:"workspaceId,omitempty"`
 }
 
 type AgentWorkspaceInfo struct {
@@ -204,6 +238,10 @@ type AgentWorkspaceInfo struct {
 	// Origin holds the folder where this config was loaded from
 	Origin string `json:"-"`
 
+	// WorkspaceWasExisting records same-UID reuse during agent initialization.
+	// It is local ownership state, never supplied or persisted through JSON.
+	WorkspaceWasExisting bool `json:"-"`
+
 	// InjectTimeout specifies how long to wait for the agent to be injected into the dev container
 	InjectTimeout time.Duration `json:"injectTimeout,omitempty"`
 
@@ -219,9 +257,24 @@ type GitToken struct {
 	Token    string `json:"token,omitempty"`
 }
 
+type LifecycleTerminalRequest struct {
+	ProtocolVersion uint32 `json:"protocolVersion"`
+	Nonce           string `json:"nonce"`
+	Context         string `json:"context"`
+	WorkspaceUID    string `json:"workspaceUid"`
+}
+
 type CLIOptions struct {
 	// Platform are the platform options
 	Platform devsy.PlatformOptions `json:"platformOptions"`
+
+	// SetupRunID names the retained setup history this invocation records to.
+	// It is non-secret, set fresh for every invocation, and never reused from
+	// persisted state.
+	SetupRunID string `json:"setupRunId,omitempty"`
+	// SetupParentProducerID is the producer in the previous process hop.
+	SetupParentProducerID string                    `json:"setupParentProducerId,omitempty"`
+	LifecycleTerminal     *LifecycleTerminalRequest `json:"lifecycleTerminal,omitempty"`
 
 	// up options
 	ID                          string            `json:"id,omitempty"`
@@ -236,6 +289,7 @@ type CLIOptions struct {
 	WorkspaceEnv                []string          `json:"workspaceEnv,omitempty"`
 	WorkspaceEnvFile            []string          `json:"workspaceEnvFile,omitempty"`
 	SecretsEnv                  []string          `json:"secretsEnv,omitempty"`
+	TerminalSecretEnvNames      []string          `json:"terminalSecretEnvNames,omitempty"`
 	SecretsMount                []string          `json:"secretsMount,omitempty"`
 	BuildSecrets                []string          `json:"buildSecrets,omitempty"`
 	GitToken                    *GitToken         `json:"gitToken,omitempty"`
@@ -535,11 +589,46 @@ func isPlausibleGitSource(s string) bool {
 	if !gitURLSchemes[u.Scheme] || u.Host == "" {
 		return false
 	}
-	// Catch nested schemes like "https://git:https://host/repo" — Host would
+	// Catch nested schemes like "https://git:https://host/repo" - Host would
 	// be "git" and a real port would be missing.
 	return !strings.Contains(u.Host, ":") || u.Port() != ""
 }
 
-func (w *Workspace) IsPro() bool {
-	return w.Pro != nil
+func (w *Workspace) IsPlatform() bool {
+	return w.Platform != nil
+}
+
+func (w *Workspace) EffectiveDisplayName() string {
+	if w.Platform != nil {
+		if name := strings.TrimSpace(w.Platform.DisplayName); name != "" {
+			return name
+		}
+	}
+	if name := strings.TrimSpace(w.DisplayName); name != "" {
+		return name
+	}
+
+	return w.ID
+}
+
+func (w *Workspace) CanonicalSSHHost() string {
+	return w.ID + config.SSHHostSuffix
+}
+
+func (w *Workspace) PreferredSSHHost() string {
+	if w.Platform == nil && w.SSHHostAlias != "" {
+		return w.SSHHostAlias + config.SSHHostSuffix
+	}
+
+	return w.CanonicalSSHHost()
+}
+
+func (w *Workspace) PreferredSSHHostCommitted() string {
+	current := *w
+	committed, err := LoadWorkspaceConfig(w.Context, w.ID)
+	if err == nil && committed.UID == w.UID {
+		current.SSHHostAlias = committed.SSHHostAlias
+	}
+
+	return current.PreferredSSHHost()
 }

@@ -1,0 +1,20 @@
+package watch
+
+import (
+	"github.com/devsy-org/devsy/cmd/platform/flags"
+	"github.com/spf13/cobra"
+)
+
+// NewCmd creates a new cobra command.
+func NewCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+	c := &cobra.Command{
+		Use:    "watch",
+		Short:  "Devsy Platform Provider watch commands",
+		Args:   cobra.NoArgs,
+		Hidden: true,
+	}
+
+	c.AddCommand(NewWorkspacesCmd(globalFlags))
+
+	return c
+}

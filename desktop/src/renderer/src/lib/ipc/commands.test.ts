@@ -7,15 +7,31 @@ import {
   auditRecent,
   contextUse,
   devsyVersion,
+  envAttach,
+  envDelete,
+  envDetach,
+  envList,
+  envSet,
   machineCreate,
   machineDelete,
   machineStatus,
   openDirectoryDialog,
   providerAdd,
   providerSetOptions,
+  providerUpdateStreaming,
+  secretAttach,
+  secretDelete,
+  secretDetach,
+  secretProtectionAction,
+  secretProtectionStatus,
+  secretSessionClear,
+  secretSet,
+  secretUnlockRequest,
   sshKeyGenerate,
   sshKeyList,
+  WorkspaceEditError,
   workspaceDelete,
+  workspaceEdit,
   workspaceRebuild,
   workspaceStatus,
   workspaceStop,
@@ -26,6 +42,25 @@ describe("IPC commands", () => {
   beforeEach(() => {
     resetTauriMocks()
     mockInvoke.mockResolvedValue(undefined)
+  })
+
+  it("forwards a confirmed provider version without replacing its identity", async () => {
+    mockInvoke.mockResolvedValue("update-command")
+    expect(await providerUpdateStreaming("microsandbox", "v0.2.0")).toBe(
+      "update-command",
+    )
+    expect(mockInvoke).toHaveBeenCalledWith("provider_update_streaming", {
+      name: "microsandbox",
+      tag: "v0.2.0",
+    })
+  })
+
+  it("leaves provider refreshes without a confirmed version unversioned", async () => {
+    await providerUpdateStreaming("microsandbox")
+    expect(mockInvoke).toHaveBeenCalledWith("provider_update_streaming", {
+      name: "microsandbox",
+      tag: undefined,
+    })
   })
 
   describe("workspace commands", () => {
@@ -44,6 +79,71 @@ describe("IPC commands", () => {
         ide: "vscode",
       })
       expect(result).toBe("cmd-123")
+    })
+
+    it("workspaceUp forwards display label and ssh alias only when given", async () => {
+      mockInvoke.mockResolvedValue("cmd-1")
+      await workspaceUp({
+        source: "repo",
+        workspaceId: "ws",
+        displayName: "My WS",
+        sshHostAlias: "mine",
+      })
+      expect(mockInvoke).toHaveBeenCalledWith("workspace_up", {
+        source: "repo",
+        workspaceId: "ws",
+        displayName: "My WS",
+        sshHostAlias: "mine",
+      })
+    })
+
+    it("workspaceEdit returns the result on success", async () => {
+      const result = {
+        id: "ws",
+        uid: "u",
+        context: "default",
+        displayName: "My WS",
+        sshHostAlias: "",
+        effectiveDisplayName: "My WS",
+        preferredSSHHost: "ws.devsy",
+        canonicalSSHHost: "ws.devsy",
+        sshEntryUpdated: false,
+      }
+      mockInvoke.mockResolvedValue({ ok: true, result })
+      await expect(
+        workspaceEdit({
+          workspaceId: "ws",
+          expectedUid: "u",
+          displayName: "My WS",
+        }),
+      ).resolves.toEqual(result)
+      expect(mockInvoke).toHaveBeenCalledWith("workspace_edit", {
+        workspaceId: "ws",
+        expectedUid: "u",
+        displayName: "My WS",
+      })
+    })
+
+    it("workspaceEdit throws a field-specific error on failure", async () => {
+      mockInvoke.mockResolvedValue({
+        ok: false,
+        field: "sshHostAlias",
+        code: "conflict",
+        message: "taken",
+        conflict: "other",
+      })
+      const error = await workspaceEdit({
+        workspaceId: "ws",
+        expectedUid: "u",
+        sshHostAlias: "x",
+      }).catch((err) => err)
+      expect(error).toBeInstanceOf(WorkspaceEditError)
+      expect(error).toMatchObject({
+        field: "sshHostAlias",
+        code: "conflict",
+        message: "taken",
+        conflict: "other",
+      })
     })
 
     it("workspaceUp forwards ideLaunch", async () => {
@@ -142,6 +242,55 @@ describe("IPC commands", () => {
     })
   })
 
+  describe("managed secret commands", () => {
+    it("secretAttach sends the secret name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await secretAttach("DB_PASSWORD", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("secret_attach", {
+        name: "DB_PASSWORD",
+        context: "staging",
+      })
+    })
+
+    it("secretDetach sends the secret name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await secretDetach("DB_PASSWORD", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("secret_detach", {
+        name: "DB_PASSWORD",
+        context: "staging",
+      })
+    })
+  })
+
+  describe("managed environment commands", () => {
+    it("envAttach sends the variable name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await envAttach("LOG_LEVEL", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("env_attach", {
+        name: "LOG_LEVEL",
+        context: "staging",
+      })
+    })
+
+    it("envDetach sends the variable name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await envDetach("LOG_LEVEL", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("env_detach", {
+        name: "LOG_LEVEL",
+        context: "staging",
+      })
+    })
+
+    it("envDelete sends the variable name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await envDelete("LOG_LEVEL", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("env_delete", {
+        name: "LOG_LEVEL",
+        context: "staging",
+      })
+    })
+  })
+
   describe("provider commands", () => {
     it("providerAdd passes name and source", async () => {
       await providerAdd("docker", "https://example.com/provider")
@@ -182,6 +331,21 @@ describe("IPC commands", () => {
         options: [],
       })
     })
+
+    it.each([true, false])(
+      "providerSetOptions preserves installation mode %s",
+      async (singleMachine) => {
+        await providerSetOptions("custom", { REGION: "local" }, singleMachine)
+        expect(mockInvoke).toHaveBeenCalledExactlyOnceWith(
+          "provider_set_options",
+          {
+            name: "custom",
+            options: ["REGION=local"],
+            singleMachine,
+          },
+        )
+      },
+    )
   })
 
   describe("machine commands", () => {
@@ -338,5 +502,94 @@ describe("IPC commands", () => {
         name: "test-key",
       })
     })
+  })
+})
+
+describe("typed variable and protection commands", () => {
+  beforeEach(() => {
+    resetTauriMocks()
+    mockInvoke.mockResolvedValue({ ok: true })
+  })
+  it("transports row context for secret mutations and env update", async () => {
+    await secretSet("TOKEN", "value", "other")
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_set", {
+      name: "TOKEN",
+      value: "value",
+      context: "other",
+    })
+    await secretDelete("TOKEN", "other")
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_delete", {
+      name: "TOKEN",
+      context: "other",
+    })
+    await envSet("PORT", "", "other")
+    expect(mockInvoke).toHaveBeenLastCalledWith("env_set", {
+      name: "PORT",
+      value: "",
+      context: "other",
+    })
+  })
+  it("transports explicit context for environment listing", async () => {
+    const rows = [{ name: "PORT", value: "8080", context: "other" }]
+    mockInvoke.mockResolvedValue(rows)
+    expect(await envList("other")).toEqual(rows)
+    expect(mockInvoke).toHaveBeenLastCalledWith("env_list", {
+      context: "other",
+    })
+  })
+  it("preserves the default environment listing invocation", async () => {
+    mockInvoke.mockResolvedValue([])
+    expect(await envList()).toEqual([])
+    expect(mockInvoke).toHaveBeenLastCalledWith("env_list")
+  })
+  it("preserves omitted context payloads", async () => {
+    await secretSet("TOKEN", "value")
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_set", {
+      name: "TOKEN",
+      value: "value",
+    })
+  })
+  it("passes explicit current/new fields and retains structured failures", async () => {
+    const failure = {
+      ok: false,
+      cliError: { code: "unlock_failed", message: "failure" },
+    }
+    mockInvoke.mockResolvedValue(failure)
+    expect(
+      await secretProtectionAction({
+        action: "change-passphrase",
+        currentPassphrase: "current",
+        newPassphrase: "next",
+      }),
+    ).toEqual(failure)
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_protection_action", {
+      action: "change-passphrase",
+      currentPassphrase: "current",
+      newPassphrase: "next",
+    })
+  })
+  it("wraps status, unlock request and session clear channels", async () => {
+    mockInvoke.mockResolvedValue({
+      availability: "locked",
+      keySource: "passphrase",
+    })
+    await secretProtectionStatus()
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_protection_status")
+    await secretUnlockRequest()
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_unlock_request")
+    mockInvoke.mockResolvedValue(undefined)
+    await secretSessionClear()
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_session_clear")
+  })
+})
+
+describe("protection read and clear denial", () => {
+  it("rejects a status denial instead of storing it as status", async () => {
+    mockInvoke.mockResolvedValue({ ok: false, message: "Request denied." })
+    await expect(secretProtectionStatus()).rejects.toThrow("Request denied.")
+  })
+  it("surfaces session-clear denial", async () => {
+    mockInvoke.mockResolvedValue({ ok: false, message: "Request denied." })
+    await expect(secretSessionClear()).rejects.toThrow("Request denied.")
   })
 })

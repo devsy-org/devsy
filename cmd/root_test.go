@@ -11,11 +11,16 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	devsy = "devsy"
 )
 
 func TestExitCodeForError_WorkspaceNotFound(t *testing.T) {
@@ -48,6 +53,49 @@ func TestRenderCLIErrorRedactsEnvironmentSecrets(t *testing.T) {
 	output := string(data)
 	assert.NotContains(t, output, "root-error-secret-846302")
 	assert.Contains(t, output, "***")
+}
+
+func TestRenderCLIErrorMachineModeWritesDirectEnvelope(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	original := os.Stderr
+	os.Stderr = w
+	renderCLIError(&clierr.CLIError{Code: clierr.CodeUnknown, Message: "machine failure"}, true)
+	require.NoError(t, w.Close())
+	os.Stderr = original
+	var envelope struct {
+		Kind    string `json:"kind"`
+		Outcome string `json:"outcome"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.NewDecoder(r).Decode(&envelope))
+	assert.Equal(t, "error", envelope.Kind)
+	assert.Equal(t, "error", envelope.Outcome)
+	assert.Equal(t, "machine failure", envelope.Message)
+}
+
+func TestRenderCLIErrorMachineModeIgnoresDiagnosticLevel(t *testing.T) {
+	for _, level := range log.ValidLevels() {
+		t.Run(level, func(t *testing.T) {
+			log.Init(log.Config{Level: level})
+			r, w, err := os.Pipe()
+			require.NoError(t, err)
+			original := os.Stderr
+			os.Stderr = w
+			renderCLIError(
+				&clierr.CLIError{Code: clierr.CodeUnknown, Message: "machine failure"},
+				true,
+			)
+			require.NoError(t, w.Close())
+			os.Stderr = original
+
+			var envelope devcconfig.ErrorEnvelope
+			require.NoError(t, json.NewDecoder(r).Decode(&envelope))
+			assert.Equal(t, "error", envelope.Kind)
+			assert.Equal(t, "error", envelope.Outcome)
+			assert.Equal(t, "machine failure", envelope.Message)
+		})
+	}
 }
 
 func TestTopLevelCommand(t *testing.T) {
@@ -167,7 +215,7 @@ func TestConfigureOutput_SilencesCobra(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(config.EnvUI, "")
 			rootCmd, globalFlags := BuildRoot()
-			os.Args = append([]string{"devsy"}, tc.args...)
+			os.Args = append([]string{devsy}, tc.args...)
 			machineMode := configureOutput(rootCmd, globalFlags, tc.isInternal)
 			assert.Equal(t, tc.wantSilent, machineMode)
 			assert.True(t, rootCmd.SilenceErrors)
@@ -193,7 +241,7 @@ func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rootCmd, globalFlags := BuildRoot()
 			globalFlags.Verbosity = 1
-			os.Args = []string{"devsy", flagLogOutput, tc.flag}
+			os.Args = []string{devsy, flagLogOutput, tc.flag}
 			configureOutput(rootCmd, globalFlags, false)
 
 			var sink bytes.Buffer
@@ -251,7 +299,7 @@ func TestConfigureOutput_DefaultMachineModeUsesJSONLogs(t *testing.T) {
 	t.Cleanup(func() { os.Args = originalArgs })
 	rootCmd, globalFlags := BuildRoot()
 	globalFlags.Verbosity = 1
-	os.Args = []string{"devsy", internalCommand}
+	os.Args = []string{devsy, internalCommand}
 	assert.True(t, configureOutput(rootCmd, globalFlags, true))
 
 	var sink bytes.Buffer
@@ -263,4 +311,11 @@ func TestConfigureOutput_DefaultMachineModeUsesJSONLogs(t *testing.T) {
 	line := strings.TrimSpace(sink.String())
 	var record map[string]any
 	require.NoError(t, json.Unmarshal([]byte(line), &record), "machine-mode default log: %q", line)
+}
+
+func TestExitCodeForErrorPreservesWorkspaceCommandExit(t *testing.T) {
+	for _, machine := range []bool{false, true} {
+		err := fmt.Errorf("execute workspace command: %w", &workspace.CommandExitError{Code: 17})
+		assert.Equal(t, 17, exitCodeForError(err, machine))
+	}
 }

@@ -2,11 +2,14 @@ package devcontainer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/clierr"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/driver/drivercreate"
@@ -15,6 +18,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
+	"github.com/devsy-org/devsy/pkg/wslg"
 )
 
 // Runner drives the lifecycle of a single workspace's dev container.
@@ -44,11 +49,21 @@ type CommandParams struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
+	// RawStdout keeps binary protocols out of text redaction and its suffix buffer.
+	RawStdout bool
+	// RequireRunning makes the call exec-only: it never starts or unpauses the
+	// workload and fails when the runtime cannot guarantee that.
+	RequireRunning bool
 }
+
+// ErrRequireRunningUnsupported is returned when the runtime cannot enforce an
+// exec-only call.
+var ErrRequireRunningUnsupported = errors.New("runtime does not support exec-only commands")
 
 // UpOptions configures a single Up invocation.
 type UpOptions struct {
 	provider.CLIOptions
+	LifecycleTerminalClient tunnel.TunnelClient `json:"-"`
 
 	// NoBuild is set by the container tunnel to force pre-built images; it is
 	// distinct from the embedded CLIOptions.NoBuild used by the build command.
@@ -77,20 +92,28 @@ type runContainerParams struct {
 }
 
 type runner struct {
-	driver driver.Driver
+	driver       driver.Driver
+	imageBackend driver.ImageBackend
 
 	workspaceConfig  *provider.AgentWorkspaceInfo
 	agentPath        string
 	agentDownloadURL string
 
-	localWorkspaceFolder string
+	localWorkspaceFolder    string
+	generatedBuildArtifacts []config.GeneratedBuildArtifact
+	generatedBuildContext   string
 
 	id       string
 	idLabels []string
 
-	recovering bool
+	recovering        bool
+	overlayExisting   *config.ContainerDetails
+	imageDetails      *config.ImageDetails
+	imageDetailsImage string
 
-	reporter status.Reporter
+	lifecycleTerminalClient tunnel.TunnelClient
+	reporter                status.Reporter
+	wslgSnapshot            *wslg.Snapshot
 }
 
 func NewRunner(
@@ -98,7 +121,7 @@ func NewRunner(
 	agentPath, agentDownloadURL string,
 	workspaceConfig *provider.AgentWorkspaceInfo,
 ) (Runner, error) {
-	drv, err := drivercreate.NewDriver(ctx, workspaceConfig)
+	bundle, err := drivercreate.New(ctx, workspaceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -106,12 +129,13 @@ func NewRunner(
 	preflightOpts := driver.PreflightOptions{
 		DisableAutoStart: workspaceConfig.CLIOptions.NoAutoStart || driver.AutoStartDisabledByEnv(),
 	}
-	if err := driver.DriverPreflight(ctx, drv, preflightOpts); err != nil {
+	if err := driver.DriverPreflight(ctx, bundle.Runtime, preflightOpts); err != nil {
 		return nil, err
 	}
 
 	return &runner{
-		driver:               drv,
+		driver:               bundle.Runtime,
+		imageBackend:         bundle.Images,
 		agentPath:            agentPath,
 		agentDownloadURL:     agentDownloadURL,
 		localWorkspaceFolder: workspaceConfig.ContentFolder,
@@ -135,10 +159,28 @@ func (r *runner) Up(
 	timeout time.Duration,
 	reporter status.Reporter,
 ) (*config.Result, error) {
+	if err := pkgconfig.ValidateUserLabels(r.workspaceConfig.CLIOptions.IDLabels); err != nil {
+		return nil, err
+	}
+	if r.workspaceConfig.CLIOptions.LifecycleTerminal != nil &&
+		options.LifecycleTerminalClient == nil {
+		return nil, fmt.Errorf("lifecycle terminal request requires a lifecycle terminal client")
+	}
+	r.lifecycleTerminalClient = options.LifecycleTerminalClient
+	defer func() { r.lifecycleTerminalClient = nil }()
+	r.imageDetails = nil
+	r.imageDetailsImage = ""
 	if reporter == nil {
 		reporter = status.Nop()
 	}
 	r.reporter = reporter
+	if err := r.prepareWSLg(ctx, options.CLIOptions); err != nil {
+		return nil, err
+	}
+	defer func() { r.wslgSnapshot = nil }()
+	selectionWarning := r.compatibilitySelectionWarning(
+		r.effectiveDevContainerSelection(options.CLIOptions),
+	)
 
 	log.Debugf(
 		"Up devcontainer for workspace %q with timeout %s",
@@ -146,6 +188,170 @@ func (r *runner) Up(
 		timeout,
 	)
 
+	substitutedConfig, substitutionContext, err := r.resolveUpConfig(ctx, reporter, options)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupBuildInformation(substitutedConfig.Config)
+	defaultSelection := overlayConfigKind(substitutedConfig.Config) == overlayDefaultSelection
+	if err := r.checkSelectionBeforeInitialize(
+		ctx,
+		substitutedConfig,
+		options,
+		defaultSelection,
+	); err != nil {
+		return nil, err
+	}
+	if err := r.runInitializePhase(ctx, reporter, substitutedConfig, options); err != nil {
+		return nil, err
+	}
+	if err := r.afterInitialize(ctx, substitutedConfig, options, defaultSelection); err != nil {
+		return nil, err
+	}
+	params := &runContainerParams{
+		parsedConfig:        substitutedConfig,
+		substitutionContext: substitutionContext,
+		options:             options,
+		timeout:             timeout,
+	}
+	return r.runContainerWithStatus(ctx, params, selectionWarning)
+}
+
+func (r *runner) Command(ctx context.Context, params CommandParams) error {
+	if params.RequireRunning && !driver.DriverSupportsRequireRunning(r.driver) {
+		return ErrRequireRunningUnsupported
+	}
+
+	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
+		WorkspaceID:    r.id,
+		User:           params.User,
+		Command:        params.Command,
+		Stdin:          params.Stdin,
+		Stdout:         params.Stdout,
+		Stderr:         params.Stderr,
+		RawStdout:      params.RawStdout,
+		RequireRunning: params.RequireRunning,
+	})
+}
+
+func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
+	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
+	if err != nil {
+		return nil, fmt.Errorf("find dev container: %w", err)
+	}
+	return containerDetails, nil
+}
+
+func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
+	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
+}
+
+func (r *runner) runContainerWithStatus(
+	ctx context.Context,
+	params *runContainerParams,
+	selectionWarning string,
+) (*config.Result, error) {
+	var result *config.Result
+	err := status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhasePreparingDevContainer},
+		func(ctx context.Context) error {
+			var dispatchErr error
+			result, dispatchErr = r.dispatchByConfigKind(ctx, params.parsedConfig, params)
+			return dispatchErr
+		},
+	)
+	r.annotateUpResult(result, selectionWarning)
+	return result, err
+}
+
+func (r *runner) annotateUpResult(result *config.Result, selectionWarning string) {
+	if result == nil {
+		return
+	}
+	result.RecoveryContainer = r.recovering
+	if selectionWarning != "" {
+		result.HostWarnings = append(result.HostWarnings, selectionWarning)
+	}
+}
+
+func (r *runner) checkSelectionBeforeInitialize(
+	ctx context.Context,
+	substitutedConfig *config.SubstitutedConfig,
+	options UpOptions,
+	defaultSelection bool,
+) error {
+	if !defaultSelection {
+		return r.checkOverlayRecreation(ctx, substitutedConfig, options)
+	}
+	return r.checkWSLgReuseBeforeInitialize(ctx, substitutedConfig.Config, options)
+}
+
+func (r *runner) afterInitialize(
+	ctx context.Context,
+	substitutedConfig *config.SubstitutedConfig,
+	options UpOptions,
+	defaultSelection bool,
+) error {
+	if err := r.prepareImageDetails(substitutedConfig, options, defaultSelection); err != nil {
+		return err
+	}
+	if defaultSelection {
+		// Detection follows initialization so the hook can generate project files.
+		if err := r.resolveDefaultContainerConfig(substitutedConfig.Config, options); err != nil {
+			return err
+		}
+		if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
+			return err
+		}
+	}
+	return r.validateOverlayUpAssets(ctx, substitutedConfig, options)
+}
+
+// runInitializePhase skips initializeCommand in recovery and platform modes.
+// Recovery skips it so a failing host hook cannot block the recovery container.
+func (r *runner) runInitializePhase(
+	ctx context.Context,
+	reporter status.Reporter,
+	substitutedConfig *config.SubstitutedConfig,
+	options UpOptions,
+) error {
+	switch {
+	case options.Recovery:
+		status.Skip(reporter, status.PhaseInitializeCommand, "recovery mode")
+		recordInitializeSkipped(ctx, "recovery_excluded")
+		return nil
+	case options.Platform.Enabled:
+		// Platform workspaces execute initialization remotely; this host-side
+		// phase is intentionally not run and must not appear successful.
+		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
+		recordInitializeSkipped(ctx, "platform_excluded")
+		return nil
+	default:
+		return status.Run(
+			ctx,
+			reporter,
+			status.Operation{Phase: status.PhaseInitializeCommand},
+			func(ctx context.Context) error {
+				if err := r.runInitializeCommand(
+					ctx,
+					substitutedConfig.Config,
+					options,
+				); err != nil {
+					return clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
+				}
+				return nil
+			},
+		)
+	}
+}
+
+func (r *runner) resolveUpConfig(
+	ctx context.Context,
+	reporter status.Reporter,
+	options UpOptions,
+) (*config.SubstitutedConfig, *config.SubstitutionContext, error) {
 	var substitutedConfig *config.SubstitutedConfig
 	var substitutionContext *config.SubstitutionContext
 	err := status.Run(
@@ -162,85 +368,9 @@ func (r *runner) Up(
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer cleanupBuildInformation(substitutedConfig.Config)
-
-	// Recovery skips initializeCommand: a failing host hook must not block the
-	// recovery container.
-	switch {
-	case options.Recovery:
-		status.Skip(reporter, status.PhaseInitializeCommand, "recovery mode")
-	case options.Platform.Enabled:
-		// Platform workspaces execute initialization remotely; this host-side
-		// phase is intentionally not run and must not appear successful.
-		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
-	default:
-		err = status.Run(
-			ctx,
-			reporter,
-			status.Operation{Phase: status.PhaseInitializeCommand},
-			func(ctx context.Context) error {
-				if err := r.runInitializeCommand(
-					ctx,
-					substitutedConfig.Config,
-					options,
-				); err != nil {
-					return clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
-				}
-				return nil
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	params := &runContainerParams{
-		parsedConfig:        substitutedConfig,
-		substitutionContext: substitutionContext,
-		options:             options,
-		timeout:             timeout,
-	}
-
-	var result *config.Result
-	err = status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseReady},
-		func(ctx context.Context) error {
-			var dispatchErr error
-			result, dispatchErr = r.dispatchByConfigKind(ctx, substitutedConfig, params)
-			return dispatchErr
-		},
-	)
-	if result != nil {
-		result.RecoveryContainer = r.recovering
-	}
-	return result, err
-}
-
-func (r *runner) Command(ctx context.Context, params CommandParams) error {
-	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
-		WorkspaceID: r.id,
-		User:        params.User,
-		Command:     params.Command,
-		Stdin:       params.Stdin,
-		Stdout:      params.Stdout,
-		Stderr:      params.Stderr,
-	})
-}
-
-func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
-	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
-	if err != nil {
-		return nil, fmt.Errorf("find dev container: %w", err)
-	}
-	return containerDetails, nil
-}
-
-func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
-	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
+	return substitutedConfig, substitutionContext, nil
 }
 
 // dispatchByConfigKind routes to the container implementation for the config's
@@ -267,6 +397,22 @@ func (r *runner) dispatchByConfigKind(
 	}
 }
 
+// recordInitializeSkipped keeps the reason the host-side initializeCommand did
+// not run in the retained setup history.
+func recordInitializeSkipped(ctx context.Context, reason string) {
+	rec := workspacelogs.RecorderFrom(ctx)
+	if rec == nil {
+		return
+	}
+	rec.Invocation(workspacelogs.Invocation{
+		ID:     workspacelogs.NewID(),
+		Phase:  "lifecycle",
+		Hook:   "initializeCommand",
+		State:  workspacelogs.InvocationSkipped,
+		Reason: reason,
+	})
+}
+
 // runInitializeCommand runs the host-side initializeCommand hook. The hook is
 // never executed in platform mode.
 func (r *runner) runInitializeCommand(
@@ -290,26 +436,41 @@ func (r *runner) runDefaultContainer(
 	ctx context.Context,
 	params *runContainerParams,
 ) (*config.Result, error) {
-	conf := params.parsedConfig.Config
+	if err := r.resolveDefaultContainerConfig(
+		params.parsedConfig.Config,
+		params.options,
+	); err != nil {
+		return nil, err
+	}
+	return r.runSingleContainer(ctx, params)
+}
+
+func (r *runner) resolveDefaultContainerConfig(
+	conf *config.DevContainerConfig,
+	options UpOptions,
+) error {
+	if overlayConfigKind(conf) != overlayDefaultSelection {
+		return nil
+	}
 
 	const missingProps = "dev container config is missing one of " +
 		"\"image\", \"dockerFile\" or \"dockerComposeFile\" properties"
 
-	if fallback := params.options.FallbackImage; fallback != "" {
+	if fallback := options.FallbackImage; fallback != "" {
 		log.Warnf("%s, using fallback image %q", missingProps, fallback)
 		conf.ImageContainer = config.ImageContainer{Image: fallback}
-		return r.runSingleContainer(ctx, params)
+		return nil
 	}
 
 	log.Warn(missingProps + ", defaulting to auto-detection")
 
 	lang, err := language.DetectLanguage(r.localWorkspaceFolder)
 	if err != nil || language.MapConfig[lang] == nil {
-		return nil, fmt.Errorf("could not detect project language and %s", missingProps)
+		return fmt.Errorf("could not detect project language and %s", missingProps)
 	}
 	conf.ImageContainer = language.MapConfig[lang].ImageContainer
 
-	return r.runSingleContainer(ctx, params)
+	return nil
 }
 
 func isDockerFileConfig(config *config.DevContainerConfig) bool {

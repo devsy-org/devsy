@@ -1,13 +1,17 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/clierr"
 )
 
-const errBoom = "boom"
+const (
+	errBoom             = "boom"
+	testVolumeMountType = "volume"
+)
 
 func TestResultErrRecoveryAvailable(t *testing.T) {
 	err := (&Result{Error: "build image: boom", RecoveryAvailable: true}).Err()
@@ -156,3 +160,41 @@ const (
 	testInspectUser   = "inspect-user"
 	testLabelUser     = "label-user"
 )
+
+func TestWorkspaceMountIncompleteResults(t *testing.T) {
+	for _, result := range []*Result{nil, {}, {MergedConfig: &MergedDevContainerConfig{}}} {
+		if GetWorkspaceMount(result) != nil {
+			t.Fatal("incomplete result invented a workspace mount")
+		}
+		if len(GetMounts(result)) != 0 {
+			t.Fatal("incomplete result invented mounts")
+		}
+	}
+	result := &Result{
+		SubstitutionContext: &SubstitutionContext{
+			WorkspaceMount: "type=volume,src=workspace,dst=/workspace",
+		},
+	}
+	if GetWorkspaceMount(result).Type != testVolumeMountType {
+		t.Fatal("workspace mount type lost")
+	}
+	if len(GetMounts(result)) != 1 {
+		t.Fatal("workspace mount omitted")
+	}
+}
+
+func TestGeneratedArtifactsCannotBeGrantedBySerializedResult(t *testing.T) {
+	var result Result
+	err := json.Unmarshal(
+		[]byte(
+			`{"GeneratedBuildContext":"/private","GeneratedBuildArtifacts":[{"Path":"/private/secret","SHA256":"trusted"}]}`,
+		),
+		&result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GeneratedBuildContext != "" || len(result.GeneratedBuildArtifacts) > 0 {
+		t.Fatal("remote result granted generated artifact authority")
+	}
+}

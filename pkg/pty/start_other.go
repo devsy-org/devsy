@@ -52,7 +52,12 @@ func tryStartPty(cmdPty *Cmd, opts startOptions) (*otherPty, Process, error) {
 		cmdPty.Context = context.Background()
 	}
 	cmdExec := cmdPty.AsExec()
-	cmdExec.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	attrs := syscall.SysProcAttr{}
+	if cmdExec.SysProcAttr != nil {
+		attrs = *cmdExec.SysProcAttr
+	}
+	attrs.Setsid, attrs.Setctty = true, true
+	cmdExec.SysProcAttr = &attrs
 	cmdExec.Stdout = opty.tty
 	cmdExec.Stderr = opty.tty
 	cmdExec.Stdin = opty.tty

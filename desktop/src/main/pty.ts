@@ -1,7 +1,8 @@
-import { platform } from "node:os"
+import { homedir, platform } from "node:os"
 import { dirname } from "node:path"
 import type { BrowserWindow } from "electron"
 import type { IPty } from "node-pty"
+import { desktopExecutablePath } from "./executable-path.js"
 
 // Lazy-load node-pty so the app can start even when the native module is unavailable
 // (e.g. during e2e tests where native bindings aren't rebuilt for Electron's ABI).
@@ -25,6 +26,11 @@ function requirePty(): typeof import("node-pty") {
 interface PtyDeps {
   binaryPath: string
   getMainWindow: () => BrowserWindow | null
+  spawnPty?: typeof import("node-pty").spawn
+}
+
+export function sshTerminalArgs(workspaceId: string): string[] {
+  return ["--log-level=error", "workspace", "ssh", workspaceId]
 }
 
 export class PtyManager {
@@ -40,15 +46,12 @@ export class PtyManager {
   constructor(private deps: PtyDeps) {
     // Build an augmented PATH so shells spawned from the Electron GUI can find
     // the bundled devsy binary and common macOS tool directories.
-    const currentPath = process.env.PATH ?? ""
+    const currentPath = desktopExecutablePath(
+      process.env.PATH ?? "",
+      platform(),
+      homedir(),
+    )
     const extraDirs = [dirname(deps.binaryPath)]
-    if (platform() === "darwin") {
-      extraDirs.push(
-        "/usr/local/bin",
-        "/opt/homebrew/bin",
-        "/opt/homebrew/sbin",
-      )
-    }
     const missing = extraDirs.filter((d) => !currentPath.split(":").includes(d))
     const augmentedPath =
       missing.length > 0 ? `${missing.join(":")}:${currentPath}` : currentPath
@@ -60,15 +63,16 @@ export class PtyManager {
   }
 
   createSession(cols: number, rows: number): string {
-    const pty = requirePty()
+    const spawn = this.deps.spawnPty ?? requirePty().spawn
     const shell =
       platform() === "win32" ? "powershell.exe" : process.env.SHELL || "/bin/sh"
 
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(shell, [], {
+    const proc = spawn(shell, [], {
       name: "xterm-256color",
       cols,
       rows,
+      cwd: homedir(),
       env: this.env,
     })
 
@@ -76,14 +80,27 @@ export class PtyManager {
     return sessionId
   }
 
-  createSshSession(workspaceId: string, cols: number, rows: number): string {
-    const pty = requirePty()
+  createSshSession(
+    workspaceId: string,
+    cols: number,
+    rows: number,
+    diagnosticLogPath?: string,
+  ): string {
+    const spawn = this.deps.spawnPty ?? requirePty().spawn
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(this.deps.binaryPath, ["workspace", "ssh", workspaceId], {
+    const proc = spawn(this.deps.binaryPath, sshTerminalArgs(workspaceId), {
       name: "xterm-256color",
       cols,
       rows,
-      env: this.env,
+      env: {
+        ...this.env,
+        ...(diagnosticLogPath
+          ? {
+              DEVSY_GPG_FORWARD_DIAGNOSTIC_FILE: diagnosticLogPath,
+              DEVSY_GPG_FORWARD_SESSION_ID: sessionId,
+            }
+          : {}),
+      },
     })
 
     this.wire(sessionId, proc, workspaceId)
@@ -105,10 +122,8 @@ export class PtyManager {
       let timedOut = false
       waits.push(
         new Promise<void>((resolve) => {
-          let settled = false
           let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
             timer = null
-            settled = true
             timedOut = true
             disposable.dispose()
             resolve()
@@ -119,7 +134,6 @@ export class PtyManager {
               clearTimeout(timer)
               timer = null
             }
-            settled = true
             disposable.dispose()
             resolve()
           })
@@ -135,15 +149,22 @@ export class PtyManager {
                 const bucket = this.sessionsByWorkspace.get(workspaceId)
                 if (bucket) {
                   bucket.delete(id)
-                  if (bucket.size === 0) this.sessionsByWorkspace.delete(workspaceId)
+                  if (bucket.size === 0)
+                    this.sessionsByWorkspace.delete(workspaceId)
                 }
               }
-              this.send("terminal:exit", { sessionId: id, exitCode: -1, signal: "SIGKILL" })
+              this.send("terminal:exit", {
+                sessionId: id,
+                exitCode: -1,
+                signal: "SIGKILL",
+              })
             }
 
             proc.kill("SIGKILL")
             // Remove all event handlers to suppress late data/exit callbacks
-            ;(proc as unknown as { removeAllListeners?: () => void }).removeAllListeners?.()
+            ;(
+              proc as unknown as { removeAllListeners?: () => void }
+            ).removeAllListeners?.()
           } catch {
             // Process may have already exited
           }

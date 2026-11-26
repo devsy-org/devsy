@@ -1,0 +1,40 @@
+name: Cache Prune
+
+# Caches stay restorable for 7 days after their last use, and the store holds
+# 10 GB, so closed pull requests and last week's unit caches crowd out main's.
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: list the caches without deleting them
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  cache-prune:
+    name: Prune unrestorable caches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Delete caches of closed pull requests and earlier unit weeks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry-run == true }}
+        run: go run ./hack/ci cache-prune --dry-run="$DRY_RUN"

@@ -86,9 +86,11 @@ var _ = ginkgo.Describe(
 					func(ctx context.Context) {
 						tempDir, err := setupWorkspaceAndUp(
 							ctx,
-							"tests/up/testdata/docker-initcmd-parallel",
-							initialDir,
 							f,
+							workspaceSource{
+								"tests/up/testdata/docker-initcmd-parallel",
+								initialDir,
+							},
 						)
 						framework.ExpectNoError(err)
 
@@ -110,6 +112,8 @@ var _ = ginkgo.Describe(
 				ginkgo.It( //nolint:dupl // mirrors rootless lifecycle secrets-file test
 					"should inject secrets-file env into lifecycle commands",
 					func(ctx context.Context) {
+						framework.RegisterSecret("test-value-12345")
+						framework.RegisterSecret("second-secret-42")
 						tempDir, err := setupWorkspace(
 							"tests/up/testdata/docker-secrets-file",
 							initialDir,

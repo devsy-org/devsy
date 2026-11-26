@@ -78,10 +78,10 @@ func (cmd *DaemonDiagnosticsCmd) readResponse() (machinediagnostics.ReadResponse
 		Now:      time.Now(),
 	}
 	if cmd.StateRoot == "" && cmd.StateLayout == "" {
-		return machinediagnostics.ReadFromLocator(
-			machinediagnostics.DefaultLocatorPath,
+		return machinediagnostics.ReadActive(
 			options,
-		), nil
+			os.UserCacheDir,
+		)
 	}
 	if cmd.StateRoot == "" || cmd.StateLayout == "" {
 		return machinediagnostics.ReadResponse{}, fmt.Errorf(

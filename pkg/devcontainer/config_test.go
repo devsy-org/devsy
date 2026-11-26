@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -10,7 +11,19 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const testWorkspaceFolder = "/workspace"
+const (
+	testWorkspace = "test-workspace"
+	alpineLatest  = "alpine:latest"
+)
+
+const (
+	testWorkspaceFolder     = "/workspace"
+	testDevContainerProfile = "max"
+	testEmbeddedImage       = "embedded"
+	testNestedSubPath       = "app"
+	testLegacyConfigPath    = ".devcontainer/legacy/devcontainer.json"
+	testRootConfigPath      = ".devcontainer/devcontainer.json"
+)
 
 type SubstituteTestSuite struct {
 	suite.Suite
@@ -27,7 +40,7 @@ func (s *SubstituteTestSuite) SetupTest() {
 		localWorkspaceFolder: testWorkspaceFolder,
 		workspaceConfig: &provider2.AgentWorkspaceInfo{
 			Workspace: &provider2.Workspace{
-				ID: "test-workspace",
+				ID: testWorkspace,
 			},
 		},
 	}
@@ -114,7 +127,7 @@ func (s *SubstituteTestSuite) TestSubstitute_MultipleInitEnvVars() {
 func (s *SubstituteTestSuite) TestSubstitute_EmptyInitEnv() {
 	rawConfig := &config.DevContainerConfig{
 		ImageContainer: config.ImageContainer{
-			Image: "alpine:latest",
+			Image: alpineLatest,
 		},
 	}
 	options := provider2.CLIOptions{
@@ -124,13 +137,13 @@ func (s *SubstituteTestSuite) TestSubstitute_EmptyInitEnv() {
 	result, _, err := s.runner.substitute(options, rawConfig)
 
 	s.NoError(err)
-	s.Equal("alpine:latest", result.Config.Image)
+	s.Equal(alpineLatest, result.Config.Image)
 }
 
 func (s *SubstituteTestSuite) TestSubstitute_InitEnvInRemoteEnv() {
 	rawConfig := &config.DevContainerConfig{
 		ImageContainer: config.ImageContainer{
-			Image: "alpine:latest",
+			Image: alpineLatest,
 		},
 		DevContainerConfigBase: config.DevContainerConfigBase{
 			RemoteEnv: map[string]*string{
@@ -167,7 +180,7 @@ func (s *SubstituteTestSuite) TestSubstitute_MissingVariable() {
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeatures() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		AdditionalFeatures: `{"ghcr.io/devcontainers/features/git:1": {}}`,
@@ -181,7 +194,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeatures() {
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesMergesWithExisting() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		DevContainerConfigBase: config.DevContainerConfigBase{
 			Features: map[string]any{
 				"ghcr.io/devcontainers/features/node:1": map[string]any{"version": "20"},
@@ -202,7 +215,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesMergesWithExistin
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesOverridesExisting() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		DevContainerConfigBase: config.DevContainerConfigBase{
 			Features: map[string]any{
 				"ghcr.io/devcontainers/features/node:1": map[string]any{"version": "18"},
@@ -224,7 +237,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesOverridesExisting
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesInvalidJSON() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		AdditionalFeatures: `{invalid json`,
@@ -238,7 +251,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesInvalidJSON() {
 
 func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesEmpty() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		AdditionalFeatures: "",
@@ -253,7 +266,7 @@ func (s *SubstituteTestSuite) TestSubstitute_AdditionalFeaturesEmpty() {
 func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyApplied() {
 	const testVal = "delegated"
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		WorkspaceMountConsistency: testVal,
@@ -268,7 +281,7 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyApplied() 
 func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyReplacesExisting() {
 	const testVal = "delegated"
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		NonComposeBase: config.NonComposeBase{
 			WorkspaceMount: ptr("type=bind,source=/src,target=/ws,consistency='consistent'"),
 		},
@@ -286,7 +299,7 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyReplacesEx
 
 func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyEmpty() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		WorkspaceMountConsistency: "",
@@ -300,7 +313,7 @@ func (s *SubstituteTestSuite) TestSubstitute_WorkspaceMountConsistencyEmpty() {
 
 func (s *SubstituteTestSuite) TestSubstitute_CLIMountsAppended() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 	}
 	options := provider2.CLIOptions{
 		Mounts: []string{
@@ -323,7 +336,7 @@ func (s *SubstituteTestSuite) TestSubstitute_CLIMountsAppended() {
 
 func (s *SubstituteTestSuite) TestSubstitute_CLIMountsMergedWithExisting() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		NonComposeBase: config.NonComposeBase{
 			Mounts: []*config.Mount{
 				{Type: "bind", Source: "/existing", Target: "/existing-target"},
@@ -346,7 +359,7 @@ func (s *SubstituteTestSuite) TestSubstitute_CLIMountsMergedWithExisting() {
 
 func (s *SubstituteTestSuite) TestSubstitute_CLIMountsEmpty() {
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		NonComposeBase: config.NonComposeBase{
 			Mounts: []*config.Mount{
 				{Type: "bind", Source: "/existing", Target: "/existing-target"},
@@ -366,7 +379,7 @@ func (s *SubstituteTestSuite) TestSubstitute_LocalEnvInMountSource() {
 	s.T().Setenv("HOME", "/home/test")
 
 	rawConfig := &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		ImageContainer: config.ImageContainer{Image: alpineLatest},
 		NonComposeBase: config.NonComposeBase{
 			Mounts: []*config.Mount{
 				{
@@ -458,7 +471,7 @@ func newRunnerAt(folder string) *runner {
 		id:                   "test-id",
 		localWorkspaceFolder: folder,
 		workspaceConfig: &provider2.AgentWorkspaceInfo{
-			Workspace: &provider2.Workspace{ID: "test-workspace"},
+			Workspace: &provider2.Workspace{ID: testWorkspace},
 		},
 	}
 }
@@ -473,6 +486,31 @@ func seedAmbiguousProfiles(t *testing.T, folder string) {
 		body := `{"image":"repo/image","features":{"ghcr.io/x/y:1":{}}}`
 		file := filepath.Join(dir, "devcontainer.json")
 		if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func seedConfigAt(t *testing.T, folder, relativePath string) {
+	t.Helper()
+	file := filepath.Join(folder, filepath.FromSlash(relativePath))
+	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(`{"image":"seed"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func seedNamedProfiles(t *testing.T, folder string, ids ...string) {
+	t.Helper()
+	for _, id := range ids {
+		dir := filepath.Join(folder, ".devcontainer", id)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		body := []byte(`{"image":"` + id + `"}`)
+		if err := os.WriteFile(filepath.Join(dir, "devcontainer.json"), body, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -571,6 +609,485 @@ func TestGetRawConfig_CLISourceOverridesPersisted(t *testing.T) {
 	}
 }
 
+func TestGetRawConfig_PersistedIDSelectsProfile(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile, "max-nvidia", "max-vaapi")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerID = testDevContainerProfile
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != testDevContainerProfile {
+		t.Errorf("Image = %q, want %s", conf.Image, testDevContainerProfile)
+	}
+}
+
+func TestGetRawConfig_ExplicitSelectorOverridesPersistedSelector(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile, "max-nvidia")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerSource = "image:persisted"
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{DevContainerID: "max-nvidia"})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "max-nvidia" {
+		t.Errorf("Image = %q, want max-nvidia", conf.Image)
+	}
+}
+
+func TestGetRawConfig_ExplicitPathOverridesPersistedID(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile, "max-vaapi")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerID = testDevContainerProfile
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{
+		DevContainerPath: ".devcontainer/max-vaapi/devcontainer.json",
+	})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "max-vaapi" {
+		t.Errorf("Image = %q, want max-vaapi", conf.Image)
+	}
+}
+
+func TestGetRawConfig_LastConfigPathCompatibilityFallback(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, "max", "max-nvidia")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: ".devcontainer/" + testDevContainerProfile + "/devcontainer.json",
+	}
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != testDevContainerProfile {
+		t.Errorf("Image = %q, want %s", conf.Image, testDevContainerProfile)
+	}
+}
+
+func TestEffectiveDevContainerSelection_Origins(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(*runner)
+		options    provider2.CLIOptions
+		wantOrigin devContainerSelectionOrigin
+	}{
+		{
+			name:       "CLI",
+			options:    provider2.CLIOptions{DevContainerPath: testRootConfigPath},
+			wantOrigin: selectionCLI,
+		},
+		{
+			name: "persisted workspace",
+			setup: func(r *runner) {
+				r.workspaceConfig.Workspace.DevContainerPath = testRootConfigPath
+			},
+			wantOrigin: selectionPersistedWorkspace,
+		},
+		{
+			name: "last resolved compatibility",
+			setup: func(r *runner) {
+				seedConfigAt(t, r.localWorkspaceFolder, testRootConfigPath)
+				r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+					Path: testRootConfigPath,
+				}
+			},
+			wantOrigin: selectionLastResolvedCompatibility,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRunnerAt(t.TempDir())
+			if tt.setup != nil {
+				tt.setup(r)
+			}
+			selection := r.effectiveDevContainerSelection(tt.options)
+			if selection.origin != tt.wantOrigin {
+				t.Fatalf("selection origin = %v, want %v", selection.origin, tt.wantOrigin)
+			}
+		})
+	}
+}
+
+func TestCompatibilitySelectionWarning_NewRootConfigDetected(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != testLegacyConfigPath {
+		t.Fatalf("pinned selection path = %q, want %q", selection.path, testLegacyConfigPath)
+	}
+	warning := r.compatibilitySelectionWarning(selection)
+	for _, want := range []string{
+		testLegacyConfigPath,
+		testRootConfigPath,
+		"--recreate --devcontainer \"" + testRootConfigPath + "\"",
+	} {
+		if !strings.Contains(warning, want) {
+			t.Errorf("warning %q does not contain %q", warning, want)
+		}
+	}
+	if strings.Contains(warning, folder) {
+		t.Errorf("warning contains absolute workspace path: %q", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_QuotesDiscoveredPathWithSpaces(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, "custom/devcontainer.json")
+	seedConfigAt(t, folder, ".devcontainer/my profile/devcontainer.json")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "custom/devcontainer.json",
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	warning := r.compatibilitySelectionWarning(selection)
+	if !strings.Contains(
+		warning,
+		`--recreate --devcontainer ".devcontainer/my profile/devcontainer.json"`,
+	) {
+		t.Errorf("warning %q does not quote the suggested path", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_SamePathNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testRootConfigPath,
+	}
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_ExplicitSelectionsNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+	for _, selection := range []devContainerSelection{
+		{path: testRootConfigPath, origin: selectionCLI},
+		{path: testLegacyConfigPath, origin: selectionPersistedWorkspace},
+		{},
+	} {
+		if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+			t.Errorf("warning for origin %v = %q, want empty", selection.origin, warning)
+		}
+	}
+}
+
+func TestCompatibilitySelectionWarning_AmbiguousDiscoveryNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, ".devcontainer/other/devcontainer.json")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != testLegacyConfigPath {
+		t.Fatalf("pinned selection path = %q, want %q", selection.path, testLegacyConfigPath)
+	}
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_GitSubpathUsesWorkspaceRelativePaths(t *testing.T) {
+	folder := t.TempDir()
+	subPath := filepath.Join("app", "app")
+	pinnedPath := filepath.ToSlash(filepath.Join(subPath, testLegacyConfigPath))
+	rootPath := filepath.ToSlash(filepath.Join(subPath, testRootConfigPath))
+	seedConfigAt(t, folder, pinnedPath)
+	seedConfigAt(t, folder, rootPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.Source.GitSubPath = subPath
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: pinnedPath,
+	}
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	warning := r.compatibilitySelectionWarning(selection)
+	if !strings.Contains(warning, testLegacyConfigPath) ||
+		!strings.Contains(warning, testRootConfigPath) || strings.Contains(warning, folder) {
+		t.Fatalf("unexpected workspace-relative warning: %q", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_MissingPathFallsBackToDiscovery(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: ".devcontainer/removed/devcontainer.json",
+	}
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.origin != selectionNone {
+		t.Fatalf("selection origin = %v, want none", selection.origin)
+	}
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+	resolved, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig(): %v", err)
+	}
+	if resolved.Image != "seed" {
+		t.Fatalf("resolved image = %q, want discovered root config", resolved.Image)
+	}
+}
+
+func TestCompatibilitySelectionDrift_EmbeddedConfigNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{}
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.origin != selectionNone {
+		t.Fatalf("selection origin = %v, want none", selection.origin)
+	}
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestCompatibilitySelectionDrift_PersistedExplicitSelectionNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerID = "legacy"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.origin != selectionPersistedWorkspace {
+		t.Fatalf("selection origin = %v, want persisted workspace", selection.origin)
+	}
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json",
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != testRootConfigPath {
+		t.Fatalf("selection path = %q, want .devcontainer/devcontainer.json", selection.path)
+	}
+}
+
+// Last-path conversion must strip only the applied subpath.
+func TestEffectiveDevContainerSelection_LastPathRepeatedSubPathSegment(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testNestedSubPath+"/app/.devcontainer/devcontainer.json")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.Source.GitSubPath = testNestedSubPath
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testNestedSubPath + "/app/.devcontainer/devcontainer.json",
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != "app/.devcontainer/devcontainer.json" {
+		t.Fatalf(
+			"selection path = %q, want app/.devcontainer/devcontainer.json",
+			selection.path,
+		)
+	}
+}
+
+// Stored git subpaths may have a leading slash, while last paths do not.
+func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.Source.GitSubPath = "/devsy/jupyter-notebook-hello-world"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json",
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != testRootConfigPath {
+		t.Fatalf("selection path = %q, want .devcontainer/devcontainer.json", selection.path)
+	}
+}
+
+// An embedded config (from the provider protocol) outranks a persisted
+// path or id to preserve pre-persistence behavior.
+func TestGetRawConfig_EmbeddedConfigWinsOverPersistedPath(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: testEmbeddedImage},
+	}
+	r.workspaceConfig.Workspace.DevContainerPath =
+		".devcontainer/" + testDevContainerProfile + "/devcontainer.json"
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != testEmbeddedImage {
+		t.Errorf(
+			"Image = %q, want embedded (persisted path must not override the embedded config)",
+			conf.Image,
+		)
+	}
+}
+
+func TestGetRawConfig_EmbeddedConfigWinsOverPersistedID(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: testEmbeddedImage},
+	}
+	r.workspaceConfig.Workspace.DevContainerID = testDevContainerProfile
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != testEmbeddedImage {
+		t.Errorf(
+			"Image = %q, want embedded (persisted id must not override the embedded config)",
+			conf.Image,
+		)
+	}
+}
+
+func TestDevContainerConfigExists_TreatsOnlyNotExistAsAbsent(t *testing.T) {
+	folder := t.TempDir()
+	// A regular file where a directory should be makes stat fail with
+	// ENOTDIR. That must count as present so the parse step surfaces the
+	// real filesystem error instead of silently skipping the recorded path.
+	if err := os.WriteFile(filepath.Join(folder, "cfg"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !devContainerConfigExists(folder, "cfg/devcontainer.json") {
+		t.Error("ENOTDIR stat error treated as absent; want present")
+	}
+	if devContainerConfigExists(folder, "missing/devcontainer.json") {
+		t.Error("missing file treated as present; want absent")
+	}
+	if !devContainerConfigExists(folder, "cfg") {
+		t.Error("existing file treated as absent; want present")
+	}
+}
+
+func TestGetRawConfig_LastPathFallbackSkipsMissingFile(t *testing.T) {
+	r := newRunnerAt(t.TempDir())
+	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "devsy/jupyter-notebook-hello-world/.devcontainer.json",
+	}
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	const defaultImage = "mcr.microsoft.com/devcontainers/base:ubuntu"
+	if conf.Image != defaultImage {
+		t.Errorf("Image = %q, want auto-detected default %s", conf.Image, defaultImage)
+	}
+}
+
+func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: testEmbeddedImage},
+	}
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: ".devcontainer/" + testDevContainerProfile + "/devcontainer.json",
+	}
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != testEmbeddedImage {
+		t.Errorf(
+			"Image = %q, want embedded (last path must not override the embedded config)",
+			conf.Image,
+		)
+	}
+}
+
+// Persisted paths are workspace-folder-relative and must not be stripped.
+func TestGetRawConfig_PersistedPathRepeatedSubPathSegment(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, testNestedSubPath, testNestedSubPath, ".devcontainer")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	configFile := filepath.Join(dir, "devcontainer.json")
+	if err := os.WriteFile(configFile, []byte(`{"image":"nested"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := newRunnerAt(root)
+	r.workspaceConfig.Workspace.Source.GitSubPath = testNestedSubPath
+	r.workspaceConfig.Workspace.DevContainerPath = "app/.devcontainer/devcontainer.json"
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "nested" {
+		t.Errorf("Image = %q, want nested", conf.Image)
+	}
+}
+
+func TestGetRawConfig_InvalidPersistedID(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile, "max-nvidia")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerID = "missing"
+
+	_, err := r.getRawConfig(provider2.CLIOptions{})
+	if err == nil {
+		t.Fatal("expected invalid persisted ID to fail")
+	}
+	if !strings.Contains(err.Error(), `devcontainer with ID "missing" not found`) {
+		t.Fatalf("error = %q, want missing ID error", err)
+	}
+}
+
 func TestGetRawConfig_SourceNoneWithImageBypassesDiscovery(t *testing.T) {
 	folder := t.TempDir()
 	seedAmbiguousProfiles(t, folder)
@@ -609,7 +1126,7 @@ func TestGetRawConfig_SourcePreservesRootDevcontainerJSON(t *testing.T) {
 		t.Fatalf("getRawConfig: %v", err)
 	}
 
-	got, err := os.ReadFile(rootConfig) //nolint:gosec // G304 — test temp file
+	got, err := os.ReadFile(rootConfig) //nolint:gosec // G304 - test temp file
 	if err != nil {
 		t.Fatal(err)
 	}

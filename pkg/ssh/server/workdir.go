@@ -7,6 +7,11 @@ import (
 )
 
 func findWorkdir(workdir string, userName string) string {
+	home, _ := command.GetHome(userName)
+	return findWorkdirWithHome(workdir, home)
+}
+
+func findWorkdirWithHome(workdir, home string) string {
 	// check if requested workdir exists
 	if workdir != "" {
 		_, err := os.Stat(workdir)
@@ -16,7 +21,6 @@ func findWorkdir(workdir string, userName string) string {
 	}
 
 	// fall back to home directory
-	home, _ := command.GetHome(userName)
 	if _, err := os.Stat(home); err == nil {
 		workdir = home
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/internal/serverutil"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -44,7 +45,11 @@ func NewJupyterNotebookServer(
 }
 
 func (o *JupyterNotbookServer) Install() error {
-	if err := o.installNotebook(); err != nil {
+	if err := serverutil.InstallPythonTool(o.userName, serverutil.PythonTool{
+		Name:       "jupyter notebook",
+		Package:    "notebook",
+		Executable: "jupyter",
+	}); err != nil {
 		return err
 	}
 	return o.Start()
@@ -70,35 +75,4 @@ func (o *JupyterNotbookServer) Start() error {
 		cmd.Dir = o.workspaceFolder
 		return cmd, nil
 	})
-}
-
-func (o *JupyterNotbookServer) installNotebook() error {
-	if command.ExistsForUser("jupyter", o.userName) {
-		return nil
-	}
-
-	runCommand, err := ide.PythonInstallCommand(o.userName, "notebook")
-	if err != nil {
-		return err
-	}
-
-	args := []string{}
-	if o.userName != "" {
-		args = append(args, "su", o.userName, "-c", runCommand)
-	} else {
-		args = append(args, "sh", "-c", runCommand)
-	}
-
-	log.Infof("installing jupyter notebook")
-	//nolint:gosec // args are constructed from trusted inputs
-	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf(
-			"error installing jupyter notebook: %w",
-			command.WrapCommandError(out, err),
-		)
-	}
-
-	log.Info("installed jupyter notebook")
-	return nil
 }

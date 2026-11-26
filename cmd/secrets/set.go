@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/internal/secretstore"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -65,17 +69,59 @@ func (cmd *SetCmd) Run(_ context.Context, name string) error {
 		return err
 	}
 
-	contextName, store, err := resolveContext(cmd.GlobalFlags)
+	unlock, err := config.LockConfig()
 	if err != nil {
 		return err
 	}
+	defer unlock()
 
-	if err := store.Set(contextName, name, value, secrets.KindSecret); err != nil {
+	return cmd.setLocked(name, value)
+}
+
+// setLocked writes the secret while the config lock is held.
+func (cmd *SetCmd) setLocked(name, value string) error {
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
+	if err != nil {
+		return err
+	}
+	contextName := devsyConfig.DefaultContext
+	store, err := secrets.NewSecretStoreForConfig(devsyConfig, secretstore.Options())
+	if err != nil {
+		return err
+	}
+	if err := rejectEnvVarSecret(devsyConfig, contextName, name); err != nil {
+		return err
+	}
+
+	envs, err := envstore.NewStoreForConfig(devsyConfig)
+	if err != nil {
+		return err
+	}
+	// Complete any legacy plaintext migration before entering the secret domain.
+	if _, err := envs.List(contextName); err != nil {
+		return err
+	}
+	if err := setSecretValue(store, envs, secretSetTarget{
+		context: contextName, name: name, value: value,
+	}); err != nil {
 		return err
 	}
 
 	log.Infof("secret %q set in context %q", name, contextName)
 	return nil
+}
+
+// rejectEnvVarSecret refuses to convert a name that is attached as an
+// environment variable into a secret.
+func rejectEnvVarSecret(devsyConfig *config.Config, contextName, name string) error {
+	current := devsyConfig.Contexts[contextName]
+	if current == nil || !slices.Contains(current.EnvVars, name) {
+		return nil
+	}
+	return fmt.Errorf(
+		"%q is attached as an environment variable; detach it before converting it to a secret",
+		name,
+	)
 }
 
 func (cmd *SetCmd) resolveValue(name string) (string, error) {

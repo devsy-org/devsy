@@ -30,13 +30,6 @@ func (cmd *GetCmd) Run(_ context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	meta, err := store.Meta(contextName, name)
-	if err != nil {
-		return err
-	}
-	if meta.Sensitive() {
-		return fmt.Errorf("%q is a secret; use \"devsy secret get\"", name)
-	}
 	value, err := store.Get(contextName, name)
 	if err != nil {
 		return err

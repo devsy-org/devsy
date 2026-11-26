@@ -20,7 +20,8 @@ import (
 
 var configTTL time.Duration = time.Hour * 24 * 90 // 90 days
 
-// NewInstanceKubeConfig creates a KubeConfig (clientcmdapi.Config) based for either a space instance or virtual cluster instance.
+// NewInstanceKubeConfig creates a KubeConfig (clientcmdapi.Config) based for either a space instance or virtual cluster
+// instance.
 // We return the config as byte slice to ensure correct handling and formatting through the `clientcmd` methods.
 func NewInstanceKubeConfig(
 	ctx context.Context,
@@ -107,7 +108,7 @@ func kubeConfigForSpaceInstance(
 		return nil, err
 	}
 
-	spaceInstance, err := managementClient.Loft().
+	spaceInstance, err := managementClient.Devsy().
 		ManagementV1().
 		SpaceInstances(namespace).
 		Get(ctx, spaceInstanceName, metav1.GetOptions{})
@@ -130,7 +131,7 @@ func kubeConfigForSpaceInstance(
 	ttl := int64(configTTL.Seconds())
 
 	// direct cluster access?
-	if hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint] != "" {
+	if hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint] != "" {
 		return directClusterEndpointKubeConfigForSpace(directClusterEndpointForSpaceParams{
 			ctx:              ctx,
 			managementClient: managementClient,
@@ -174,21 +175,12 @@ type directClusterEndpointForSpaceParams struct {
 func directClusterEndpointKubeConfigForSpace(
 	p directClusterEndpointForSpaceParams,
 ) (*clientcmdapi.Config, error) {
-	tok := &managementv1.DirectClusterEndpointToken{
-		Spec: managementv1.DirectClusterEndpointTokenSpec{
-			Scope: p.scope,
-			TTL:   p.ttl,
-		},
-	}
-	directClusterEndpointToken, err := p.managementClient.Loft().
-		ManagementV1().
-		DirectClusterEndpointTokens().
-		Create(p.ctx, tok, metav1.CreateOptions{})
+	token, err := createDirectClusterEndpointToken(p.ctx, p.managementClient, p.scope, p.ttl)
 	if err != nil {
-		return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
+		return nil, err
 	}
 
-	directClusterEndpoint := p.hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint]
+	directClusterEndpoint := p.hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint]
 	host := fmt.Sprintf(
 		"https://%s/kubernetes/project/%s/space/%s",
 		directClusterEndpoint,
@@ -198,7 +190,7 @@ func directClusterEndpointKubeConfigForSpace(
 
 	return newKubeConfig(
 		host,
-		directClusterEndpointToken.Status.Token,
+		token,
 		p.spaceInstance.Spec.ClusterRef.Namespace,
 	), nil
 }
@@ -230,7 +222,7 @@ func kubeConfigViaAccessKey(p accessKeyKubeConfigParams) (*clientcmdapi.Config, 
 			},
 		},
 	}
-	ownedAccessKey, err := p.managementClient.Loft().
+	ownedAccessKey, err := p.managementClient.Devsy().
 		ManagementV1().
 		OwnedAccessKeys().
 		Create(p.ctx, key, metav1.CreateOptions{})
@@ -264,7 +256,7 @@ func kubeConfigForVirtualClusterInstance(
 		return nil, err
 	}
 
-	virtualClusterInstance, err := managementClient.Loft().
+	virtualClusterInstance, err := managementClient.Devsy().
 		ManagementV1().
 		VirtualClusterInstances(namespace).
 		Get(ctx, virtualClusterInstanceName, metav1.GetOptions{})
@@ -373,7 +365,7 @@ func directVirtualClusterKubeConfig(
 	}
 
 	// direct cluster access?
-	if hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint] != "" {
+	if hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint] != "" {
 		cfg, err = directClusterEndpointKubeConfig(p.req, hostCluster)
 		return cfg, true, err
 	}
@@ -398,7 +390,7 @@ func directIngressKubeConfig(req vClusterKubeConfigRequest) (*clientcmdapi.Confi
 			CertificateTTL: &certTTL,
 		},
 	}
-	directVirtualClusterKubeConfig, err := req.managementClient.Loft().
+	directVirtualClusterKubeConfig, err := req.managementClient.Devsy().
 		ManagementV1().
 		VirtualClusterInstances(req.namespace).
 		GetKubeConfig(req.ctx, req.instance.Name, config, metav1.CreateOptions{})
@@ -418,21 +410,17 @@ func directClusterEndpointKubeConfig(
 	req vClusterKubeConfigRequest,
 	hostCluster managementv1.Cluster,
 ) (*clientcmdapi.Config, error) {
-	tok := &managementv1.DirectClusterEndpointToken{
-		Spec: managementv1.DirectClusterEndpointTokenSpec{
-			Scope: req.scope,
-			TTL:   req.ttl,
-		},
-	}
-	directClusterEndpointToken, err := req.managementClient.Loft().
-		ManagementV1().
-		DirectClusterEndpointTokens().
-		Create(req.ctx, tok, metav1.CreateOptions{})
+	token, err := createDirectClusterEndpointToken(
+		req.ctx,
+		req.managementClient,
+		req.scope,
+		req.ttl,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("create direct cluster endpoint token: %w", err)
+		return nil, err
 	}
 
-	directClusterEndpoint := hostCluster.GetAnnotations()[annotations.LoftDirectClusterEndpoint]
+	directClusterEndpoint := hostCluster.GetAnnotations()[annotations.DirectClusterEndpoint]
 	host := fmt.Sprintf(
 		"https://%s/kubernetes/project/%s/virtualcluster/%s",
 		directClusterEndpoint,
@@ -442,9 +430,31 @@ func directClusterEndpointKubeConfig(
 
 	return newKubeConfig(
 		host,
-		directClusterEndpointToken.Status.Token,
+		token,
 		req.instance.Spec.ClusterRef.Namespace,
 	), nil
+}
+
+func createDirectClusterEndpointToken(
+	ctx context.Context,
+	managementClient kube.Interface,
+	scope *storagev1.AccessKeyScope,
+	ttl int64,
+) (string, error) {
+	tok := &managementv1.DirectClusterEndpointToken{
+		Spec: managementv1.DirectClusterEndpointTokenSpec{
+			Scope: scope,
+			TTL:   ttl,
+		},
+	}
+	created, err := managementClient.Devsy().
+		ManagementV1().
+		DirectClusterEndpointTokens().
+		Create(ctx, tok, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("create direct cluster endpoint token: %w", err)
+	}
+	return created.Status.Token, nil
 }
 
 func findHostCluster(
@@ -457,7 +467,7 @@ func findHostCluster(
 	if err != nil {
 		return managementv1.Cluster{}, err
 	}
-	projectClusters, err := managementClient.Loft().
+	projectClusters, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		ListClusters(ctx, projectName, metav1.GetOptions{})

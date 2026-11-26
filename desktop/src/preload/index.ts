@@ -1,7 +1,12 @@
 import type { IpcRendererEvent } from "electron"
 import { contextBridge, ipcRenderer } from "electron"
+import type { RendererErrorSummary } from "../shared/renderer-error.js"
 
 contextBridge.exposeInMainWorld("electronAPI", {
+  reportRendererError: (summary: RendererErrorSummary): void => {
+    ipcRenderer.send("renderer-error", summary)
+  },
+
   invoke: (channel: string, args?: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(channel, args),
 

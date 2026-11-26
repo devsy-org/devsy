@@ -1,12 +1,20 @@
 // @vitest-environment node
-import { WorkspaceJobs } from "../workspace-jobs.js"
+
 import { EventEmitter } from "node:events"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { WorkspaceJobs } from "../workspace-jobs.js"
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
+let trustedEvent: unknown
 
 vi.mock("electron", () => ({
-  app: { getPath: () => "/tmp", getVersion: () => "0.0.0" },
+  app: {
+    getPath: () => "/tmp",
+    getAppPath: () => "/tmp",
+    getVersion: () => "0.0.0",
+  },
   dialog: {},
   ipcMain: {
     handle: (channel: string, fn: (...args: unknown[]) => unknown) => {
@@ -26,7 +34,10 @@ const { registerIpcHandlers } = await import("../ipc.js")
 async function invokeUp(workspaceId: string): Promise<string> {
   const handler = handlers.get("workspace_up")
   if (!handler) throw new Error("workspace_up not registered")
-  const id = (await handler({}, { source: workspaceId, workspaceId })) as string
+  const id = (await handler(trustedEvent, {
+    source: workspaceId,
+    workspaceId,
+  })) as string
   await new Promise((resolve) => setTimeout(resolve, 10))
   return id
 }
@@ -65,6 +76,7 @@ function setup(
 ) {
   const calls: string[][] = []
   const cli = {
+    setUnlockHandler: vi.fn(),
     run: vi.fn(async (args: string[]) => {
       calls.push(args)
       if (overrides.run) return overrides.run(args)
@@ -93,11 +105,20 @@ function setup(
   const onWorkspaceStopComplete = vi.fn(async () => undefined)
   const win = {
     webContents: {
+      mainFrame: {
+        url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
+        isDestroyed: () => false,
+      },
+      isDestroyed: () => false,
       send: (channel: string, payload: Record<string, unknown>) => {
         sent.push({ channel, payload })
       },
     },
     isDestroyed: () => false,
+  }
+  trustedEvent = {
+    sender: win.webContents,
+    senderFrame: win.webContents.mainFrame,
   }
   const jobs = new WorkspaceJobs()
   jobs.setRefresh(onWorkspaceStopComplete)
@@ -144,6 +165,7 @@ function statusEnvelope(phase: string, step?: string) {
 
 describe("workspace_up detached task tracking", () => {
   beforeEach(() => {
+    vi.stubEnv("ELECTRON_RENDERER_URL", "")
     handlers.clear()
     vi.clearAllMocks()
   })
@@ -305,6 +327,7 @@ describe("workspace_up detached task tracking", () => {
         schemaVersion: 1,
         pipeline: "workspace_up",
         operationId: "op-17",
+        parentOperationId: "op-3",
         phase: "building_image",
         state: "succeeded",
         durationMs: 8214,
@@ -318,8 +341,10 @@ describe("workspace_up detached task tracking", () => {
     ).toMatchObject({
       workspaceId: "ws-1",
       phase: "building_image",
+      pipeline: "workspace_up",
       state: "succeeded",
       operationId: "op-17",
+      parentOperationId: "op-3",
       durationMs: 8214,
     })
   })

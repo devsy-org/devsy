@@ -86,7 +86,9 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
-    electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
+    electronUpdaterMock.autoUpdater.emit("update-available", {
+      version: "2.0.0",
+    })
     electronUpdaterMock.autoUpdater.emit("download-progress", {
       percent: 42,
       bytesPerSecond: 1000,
@@ -129,8 +131,12 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
-    electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
-    electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "2.0.0" })
+    electronUpdaterMock.autoUpdater.emit("update-available", {
+      version: "2.0.0",
+    })
+    electronUpdaterMock.autoUpdater.emit("update-downloaded", {
+      version: "2.0.0",
+    })
     await installUpdate()
     expect(isAppQuitting()).toBe(true)
     expect(
@@ -138,9 +144,11 @@ describe("updater", () => {
     ).toHaveBeenCalledTimes(1)
   })
   it("restores lifecycle state when quitAndInstall fails", async () => {
-    electronUpdaterMock.autoUpdater.quitAndInstall.mockImplementationOnce(() => {
-      throw new Error("install failed")
-    })
+    electronUpdaterMock.autoUpdater.quitAndInstall.mockImplementationOnce(
+      () => {
+        throw new Error("install failed")
+      },
+    )
     const { getLastStatus, initAutoUpdater, installUpdate } = await import(
       "../updater.js"
     )
@@ -148,7 +156,9 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
-    electronUpdaterMock.autoUpdater.emit("update-available", { version: "9.9.9" })
+    electronUpdaterMock.autoUpdater.emit("update-available", {
+      version: "9.9.9",
+    })
     electronUpdaterMock.autoUpdater.emit("update-downloaded", {
       version: "9.9.9",
     })
@@ -162,7 +172,9 @@ describe("updater", () => {
     })
 
     await installUpdate()
-    expect(electronUpdaterMock.autoUpdater.quitAndInstall).toHaveBeenCalledTimes(2)
+    expect(
+      electronUpdaterMock.autoUpdater.quitAndInstall,
+    ).toHaveBeenCalledTimes(2)
     expect(isAppQuitting()).toBe(true)
   })
 
@@ -213,7 +225,9 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
-    electronUpdaterMock.autoUpdater.emit("update-available", { version: "9.9.9" })
+    electronUpdaterMock.autoUpdater.emit("update-available", {
+      version: "9.9.9",
+    })
     electronUpdaterMock.autoUpdater.emit("update-downloaded", {
       version: "9.9.9",
     })
@@ -285,7 +299,9 @@ describe("updater", () => {
         electronUpdaterMock.autoUpdater.checkForUpdates,
       ).toHaveBeenCalledTimes(1)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "9.9.9" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "9.9.9",
+      })
       electronUpdaterMock.autoUpdater.emit("update-downloaded", {
         version: "9.9.9",
       })
@@ -301,9 +317,8 @@ describe("updater", () => {
   })
 
   it("guards downloadUpdate so it only runs when an update is available and newer", async () => {
-    const { initAutoUpdater, downloadUpdate, setAutoDownloadEnabled } = await import(
-      "../updater.js"
-    )
+    const { initAutoUpdater, downloadUpdate, setAutoDownloadEnabled } =
+      await import("../updater.js")
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
@@ -311,12 +326,18 @@ describe("updater", () => {
 
     // Initially idle
     await downloadUpdate()
-    expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+    expect(
+      electronUpdaterMock.autoUpdater.downloadUpdate,
+    ).not.toHaveBeenCalled()
 
     // Available with a newer version
-    electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.1.0" })
+    electronUpdaterMock.autoUpdater.emit("update-available", {
+      version: "1.1.0",
+    })
     await downloadUpdate()
-    expect(electronUpdaterMock.autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1)
+    expect(
+      electronUpdaterMock.autoUpdater.downloadUpdate,
+    ).toHaveBeenCalledTimes(1)
   })
 
   it("guards installUpdate so it only runs when status is downloaded", async () => {
@@ -327,23 +348,36 @@ describe("updater", () => {
 
     // State is idle
     await installUpdate()
-    expect(electronUpdaterMock.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+    expect(
+      electronUpdaterMock.autoUpdater.quitAndInstall,
+    ).not.toHaveBeenCalled()
   })
 
   describe("release channel switching", () => {
     it("rejects a channel switch while an update check is in flight", async () => {
       let resolveCheck: (() => void) | undefined
       electronUpdaterMock.autoUpdater.checkForUpdates.mockImplementationOnce(
-        () => new Promise<void>((resolve) => { resolveCheck = resolve }),
+        () =>
+          new Promise<void>((resolve) => {
+            resolveCheck = resolve
+          }),
       )
-      const { checkForUpdates, getReleaseChannel, initAutoUpdater, switchReleaseChannel } = await import(
-        "../updater.js"
-      )
-      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      const {
+        checkForUpdates,
+        getReleaseChannel,
+        initAutoUpdater,
+        switchReleaseChannel,
+      } = await import("../updater.js")
+      const win = {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() },
+      } as never
       await initAutoUpdater(() => win)
 
       const checking = checkForUpdates()
-      await expect(switchReleaseChannel("beta")).rejects.toThrow("Cannot switch release channel")
+      await expect(switchReleaseChannel("beta")).rejects.toThrow(
+        "Cannot switch release channel",
+      )
       expect(getReleaseChannel()).toBe("stable")
       expect(electronUpdaterMock.autoUpdater.channel).toBe("latest")
 
@@ -352,39 +386,70 @@ describe("updater", () => {
     })
 
     it("rejects a channel switch during an automatic download", async () => {
-      const { getReleaseChannel, initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
-      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      const { getReleaseChannel, initAutoUpdater, switchReleaseChannel } =
+        await import("../updater.js")
+      const win = {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() },
+      } as never
       await initAutoUpdater(() => win)
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "2.0.0",
+      })
 
-      await expect(switchReleaseChannel("beta")).rejects.toThrow("Cannot switch release channel")
+      await expect(switchReleaseChannel("beta")).rejects.toThrow(
+        "Cannot switch release channel",
+      )
       expect(getReleaseChannel()).toBe("stable")
       expect(electronUpdaterMock.autoUpdater.channel).toBe("latest")
     })
 
     it("rejects a channel switch after an update is staged", async () => {
-      const { getReleaseChannel, initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
-      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      const { getReleaseChannel, initAutoUpdater, switchReleaseChannel } =
+        await import("../updater.js")
+      const win = {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() },
+      } as never
       await initAutoUpdater(() => win)
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
-      electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "2.0.0" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "2.0.0",
+      })
+      electronUpdaterMock.autoUpdater.emit("update-downloaded", {
+        version: "2.0.0",
+      })
 
-      await expect(switchReleaseChannel("beta")).rejects.toThrow("Cannot switch release channel")
+      await expect(switchReleaseChannel("beta")).rejects.toThrow(
+        "Cannot switch release channel",
+      )
       expect(getReleaseChannel()).toBe("stable")
       expect(electronUpdaterMock.autoUpdater.channel).toBe("latest")
     })
 
     it("switches from an available manual update after clearing its candidate", async () => {
-      const { getLastStatus, getReleaseChannel, initAutoUpdater, setAutoDownloadEnabled, switchReleaseChannel } = await import("../updater.js")
-      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      const {
+        getLastStatus,
+        getReleaseChannel,
+        initAutoUpdater,
+        setAutoDownloadEnabled,
+        switchReleaseChannel,
+      } = await import("../updater.js")
+      const win = {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() },
+      } as never
       await initAutoUpdater(() => win)
       setAutoDownloadEnabled(false)
       await Promise.resolve()
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
-      electronUpdaterMock.autoUpdater.checkForUpdates.mockImplementationOnce(() => {
-        electronUpdaterMock.autoUpdater.emit("checking-for-update")
-        return Promise.resolve()
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "2.0.0",
       })
+      electronUpdaterMock.autoUpdater.checkForUpdates.mockImplementationOnce(
+        () => {
+          electronUpdaterMock.autoUpdater.emit("checking-for-update")
+          return Promise.resolve()
+        },
+      )
 
       await switchReleaseChannel("beta")
 
@@ -394,27 +459,56 @@ describe("updater", () => {
     })
 
     it("ignores a stale completion and never makes it installable", async () => {
-      const { getLastStatus, initAutoUpdater, installUpdate, setAutoDownloadEnabled } = await import("../updater.js")
-      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      const {
+        getLastStatus,
+        initAutoUpdater,
+        installUpdate,
+        setAutoDownloadEnabled,
+      } = await import("../updater.js")
+      const win = {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() },
+      } as never
       await initAutoUpdater(() => win)
       setAutoDownloadEnabled(false)
       await Promise.resolve()
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
-      electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "3.0.0" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "2.0.0",
+      })
+      electronUpdaterMock.autoUpdater.emit("update-downloaded", {
+        version: "3.0.0",
+      })
 
-      expect(getLastStatus()).toMatchObject({ state: "available", availableVersion: "2.0.0" })
+      expect(getLastStatus()).toMatchObject({
+        state: "available",
+        availableVersion: "2.0.0",
+      })
       await installUpdate()
-      expect(electronUpdaterMock.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+      expect(
+        electronUpdaterMock.autoUpdater.quitAndInstall,
+      ).not.toHaveBeenCalled()
     })
   })
 
   describe("classifyCandidate", () => {
     it("classifies newer, same, older, and invalid correctly", async () => {
       const { classifyCandidate } = await import("../updater.js")
-      expect(classifyCandidate("1.17.0", "1.18.0")).toEqual({ kind: "newer", version: "1.18.0" })
-      expect(classifyCandidate("1.17.0", "1.17.1")).toEqual({ kind: "newer", version: "1.17.1" })
-      expect(classifyCandidate("1.17.0", "1.17.0")).toEqual({ kind: "same", version: "1.17.0" })
-      expect(classifyCandidate("1.17.0", "1.16.2")).toEqual({ kind: "older", version: "1.16.2" })
+      expect(classifyCandidate("1.17.0", "1.18.0")).toEqual({
+        kind: "newer",
+        version: "1.18.0",
+      })
+      expect(classifyCandidate("1.17.0", "1.17.1")).toEqual({
+        kind: "newer",
+        version: "1.17.1",
+      })
+      expect(classifyCandidate("1.17.0", "1.17.0")).toEqual({
+        kind: "same",
+        version: "1.17.0",
+      })
+      expect(classifyCandidate("1.17.0", "1.16.2")).toEqual({
+        kind: "older",
+        version: "1.16.2",
+      })
       expect(classifyCandidate("1.18.0-beta.2", "1.18.0-beta.3")).toEqual({
         kind: "newer",
         version: "1.18.0-beta.3",
@@ -423,8 +517,14 @@ describe("updater", () => {
         kind: "older",
         version: "1.17.0",
       })
-      expect(classifyCandidate("1.17.0", "garbage")).toEqual({ kind: "invalid", version: "garbage" })
-      expect(classifyCandidate("garbage", "1.17.0")).toEqual({ kind: "invalid", version: "1.17.0" })
+      expect(classifyCandidate("1.17.0", "garbage")).toEqual({
+        kind: "invalid",
+        version: "garbage",
+      })
+      expect(classifyCandidate("garbage", "1.17.0")).toEqual({
+        kind: "invalid",
+        version: "1.17.0",
+      })
     })
   })
 
@@ -436,7 +536,9 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.16.2",
+      })
       expect(send).toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({
@@ -449,7 +551,9 @@ describe("updater", () => {
         "update-status",
         expect.objectContaining({ state: "available" }),
       )
-      expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+      expect(
+        electronUpdaterMock.autoUpdater.downloadUpdate,
+      ).not.toHaveBeenCalled()
     })
 
     it("cancels autoDownload and ignores download events for rejected candidate", async () => {
@@ -459,7 +563,9 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.16.2",
+      })
       expect(electronUpdaterMock.autoUpdater.autoDownload).toBe(false)
       expect(send).toHaveBeenCalledWith(
         "update-status",
@@ -472,7 +578,9 @@ describe("updater", () => {
         transferred: 50,
         total: 100,
       })
-      electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "1.16.2" })
+      electronUpdaterMock.autoUpdater.emit("update-downloaded", {
+        version: "1.16.2",
+      })
 
       expect(send).not.toHaveBeenCalledWith(
         "update-status",
@@ -491,7 +599,9 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.17.0" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.17.0",
+      })
       expect(send).toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({
@@ -513,7 +623,9 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.18.0",
+      })
       expect(send).toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({
@@ -531,7 +643,9 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.17.1" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.17.1",
+      })
       expect(send).toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({
@@ -544,13 +658,17 @@ describe("updater", () => {
 
     it("accepts preview progression (1.18.0-beta.2 vs 1.18.0-beta.3) as available", async () => {
       mockAppVersion = "1.18.0-beta.2"
-      const { initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
+      const { initAutoUpdater, switchReleaseChannel } = await import(
+        "../updater.js"
+      )
       const send = vi.fn()
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
       await switchReleaseChannel("beta")
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0-beta.3" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.18.0-beta.3",
+      })
       expect(send).toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({
@@ -563,13 +681,17 @@ describe("updater", () => {
 
     it("rejects older stable feed after preview switch (1.18.0-beta.2 vs 1.17.0 on stable)", async () => {
       mockAppVersion = "1.18.0-beta.2"
-      const { initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
+      const { initAutoUpdater, switchReleaseChannel } = await import(
+        "../updater.js"
+      )
       const send = vi.fn()
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
       await switchReleaseChannel("stable")
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.17.0" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.17.0",
+      })
       expect(send).toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({ state: "up-to-date" }),
@@ -587,7 +709,9 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "not-a-version" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "not-a-version",
+      })
       expect(send).toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({
@@ -600,7 +724,9 @@ describe("updater", () => {
         "update-status",
         expect.objectContaining({ state: "up-to-date" }),
       )
-      expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+      expect(
+        electronUpdaterMock.autoUpdater.downloadUpdate,
+      ).not.toHaveBeenCalled()
     })
 
     it("reports feed-error when current app version is malformed", async () => {
@@ -610,7 +736,9 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.18.0",
+      })
       expect(send).toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({
@@ -623,12 +751,19 @@ describe("updater", () => {
         "update-status",
         expect.objectContaining({ state: "up-to-date" }),
       )
-      expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+      expect(
+        electronUpdaterMock.autoUpdater.downloadUpdate,
+      ).not.toHaveBeenCalled()
     })
 
     it("enforces allowDowngrade is false across channel configurations", async () => {
-      const { initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
-      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      const { initAutoUpdater, switchReleaseChannel } = await import(
+        "../updater.js"
+      )
+      const win = {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() },
+      } as never
       await initAutoUpdater(() => win)
       expect(electronUpdaterMock.autoUpdater.allowDowngrade).toBe(false)
 
@@ -648,13 +783,21 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0" })
-      const availableStatus = send.mock.calls[send.mock.calls.length - 1][1] as Record<string, unknown>
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.18.0",
+      })
+      const availableStatus = send.mock.calls[
+        send.mock.calls.length - 1
+      ][1] as Record<string, unknown>
       expect(availableStatus.availableVersion).toBe("1.18.0")
       expect(availableStatus.version).toBeUndefined()
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
-      const upToDateStatus = send.mock.calls[send.mock.calls.length - 1][1] as Record<string, unknown>
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.16.2",
+      })
+      const upToDateStatus = send.mock.calls[
+        send.mock.calls.length - 1
+      ][1] as Record<string, unknown>
       expect(upToDateStatus.feedVersion).toBe("1.16.2")
       expect(upToDateStatus.version).toBeUndefined()
     })
@@ -669,35 +812,45 @@ describe("updater", () => {
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.16.2",
+      })
       expect(infoSpy).toHaveBeenCalledWith(
         expect.stringMatching(
           /\[updater\] check result: current=1\.17\.0 feed=1\.16\.2 channel=stable result=feed-behind/,
         ),
       )
 
-      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0" })
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "1.18.0",
+      })
       expect(infoSpy).toHaveBeenCalledWith(
         expect.stringMatching(
           /\[updater\] check result: current=1\.17\.0 feed=1\.18\.0 available=1\.18\.0 channel=stable result=newer/,
         ),
       )
 
-      electronUpdaterMock.autoUpdater.emit("update-not-available", { version: "1.17.0" })
+      electronUpdaterMock.autoUpdater.emit("update-not-available", {
+        version: "1.17.0",
+      })
       expect(infoSpy).toHaveBeenCalledWith(
         expect.stringMatching(
           /\[updater\] check result: current=1\.17\.0 feed=1\.17\.0 channel=stable result=same/,
         ),
       )
 
-      electronUpdaterMock.autoUpdater.emit("update-not-available", { version: "1.16.2" })
+      electronUpdaterMock.autoUpdater.emit("update-not-available", {
+        version: "1.16.2",
+      })
       expect(infoSpy).toHaveBeenCalledWith(
         expect.stringMatching(
           /\[updater\] check result: current=1\.17\.0 feed=1\.16\.2 channel=stable result=feed-behind/,
         ),
       )
 
-      electronUpdaterMock.autoUpdater.emit("update-not-available", { version: "1.18.0" })
+      electronUpdaterMock.autoUpdater.emit("update-not-available", {
+        version: "1.18.0",
+      })
       expect(infoSpy).toHaveBeenCalledWith(
         expect.stringMatching(
           /\[updater\] check result: current=1\.17\.0 feed=1\.18\.0 channel=stable result=not-eligible/,

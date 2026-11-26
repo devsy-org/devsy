@@ -1,0 +1,4 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postCreateCommand": "echo part-before; while [ ! -f /tmp/release-hook ]; do sleep 0.2; done; echo part-after"
+}

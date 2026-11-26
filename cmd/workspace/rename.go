@@ -38,11 +38,13 @@ func NewRenameCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			if len(args) == 0 {
 				return completion.GetWorkspaceSuggestions(
 					rootCmd,
-					cmd.Context,
-					cmd.Provider,
-					args,
-					toComplete,
-					cmd.Owner,
+					completion.SuggestionRequest{
+						Context:    cmd.Context,
+						Provider:   cmd.Provider,
+						Args:       args,
+						ToComplete: toComplete,
+						Owner:      cmd.Owner,
+					},
 				)
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -71,7 +73,11 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	if workspace.Exists(ctx, devsyConfig, []string{newName}, "", cmd.Owner) != "" {
+	if workspace.Exists(
+		ctx,
+		devsyConfig,
+		workspace.LookupOptions{Args: []string{newName}, Owner: cmd.Owner},
+	) != "" {
 		return fmt.Errorf("workspace %s already exists", newName)
 	}
 

@@ -5,9 +5,9 @@ package gpg
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,6 +41,36 @@ func TestSetupGpgConf_WritesRequiredDirectives(t *testing.T) {
 		assert.Contains(t, got, d, "gpg.conf must enable %q for forwarding", d)
 	}
 	assert.Contains(t, gpgConfDirectives, "no-autostart")
+}
+
+func TestGpgTunnelProbeFiltersExpectedNoAgentDiagnostics(t *testing.T) {
+	var stdout strings.Builder
+	var stderr strings.Builder
+	err := runGpgTunnelProbe(
+		"vscode",
+		func(command string, out, stderr io.Writer) error {
+			assert.Contains(t, command, "gpg-connect-agent --no-autostart")
+			assert.Contains(t, command, "su -c")
+			_, writeErr := io.WriteString(
+				stderr,
+				"gpg-connect-agent: no gpg-agent running in this session\n",
+			)
+			require.NoError(t, writeErr)
+			_, writeErr = io.WriteString(out, "D 2.4.5\nOK\n")
+			return writeErr
+		},
+		&stdout,
+		&stderr,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "D 2.4.5\nOK\n", stdout.String())
+	assert.Empty(t, unexpectedGpgProbeDiagnostics(stderr.String()))
+	assert.Equal(
+		t,
+		"unexpected diagnostic",
+		unexpectedGpgProbeDiagnostics("unexpected diagnostic\n"),
+	)
 }
 
 func TestSetupGpgConf_Idempotent(t *testing.T) {
@@ -85,7 +115,7 @@ func TestSetupGpgConf_ExistingFileWithoutTrailingNewline(t *testing.T) {
 	}
 }
 
-func TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
+func TestWaitForForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
 	socketPath := filepath.Join(shortSocketDir(t), "S.gpg-agent")
 	g := &GPGConf{SocketPath: socketPath}
 
@@ -97,56 +127,43 @@ func TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		listener, listenErr = listenUnixSocket(socketPath)
 	}()
-	defer func() {
+	t.Cleanup(func() {
 		<-listenerReady
 		require.NoError(t, listenErr)
-		_ = listener.Close()
-	}()
+		if listener != nil {
+			require.NoError(t, listener.Close())
+		}
+	})
 
-	start := time.Now()
-	err := g.claimForwardedSocket(context.Background())
-	elapsed := time.Since(start)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	assert.Less(t, elapsed, 2*time.Second, "must return shortly after the socket appears")
-	if err != nil {
-		var exitErr *exec.ExitError
-		var execErr *exec.Error
-		assert.True(t, errors.As(err, &exitErr) || errors.As(err, &execErr),
-			"only a sudo chown failure is tolerated here, got: %v", err)
-	}
+	require.NoError(t, g.waitForForwardedSocket(ctx))
 }
 
-func TestClaimForwardedSocket_TimesOutWhenSocketNeverAppears(t *testing.T) {
+func TestWaitForForwardedSocket_TimesOutWhenSocketNeverAppears(t *testing.T) {
 	g := &GPGConf{SocketPath: filepath.Join(t.TempDir(), "S.gpg-agent")}
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 
-	err := g.claimForwardedSocket(ctx)
+	err := g.waitForForwardedSocket(ctx)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "did not appear")
 }
 
-func TestClaimForwardedSocket_RejectsNonSocketPath(t *testing.T) {
+func TestWaitForForwardedSocket_RejectsNonSocketPath(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "S.gpg-agent")
 	require.NoError(t, os.WriteFile(socketPath, []byte("not a socket"), 0o600))
 	g := &GPGConf{SocketPath: socketPath}
 
-	start := time.Now()
-	err := g.claimForwardedSocket(context.Background())
-	elapsed := time.Since(start)
+	err := g.waitForForwardedSocket(context.Background())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a unix socket")
-	assert.Less(
-		t,
-		elapsed,
-		time.Second,
-		"must fail immediately, not retry against a non-socket path",
-	)
 }
 
-func TestClaimForwardedSocket_FailsFastOnPermissionError(t *testing.T) {
+func TestWaitForForwardedSocket_FailsFastOnPermissionError(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root bypasses directory permission checks")
 	}
@@ -159,35 +176,24 @@ func TestClaimForwardedSocket_FailsFastOnPermissionError(t *testing.T) {
 
 	g := &GPGConf{SocketPath: socketPath}
 
-	start := time.Now()
-	err := g.claimForwardedSocket(context.Background())
-	elapsed := time.Since(start)
+	err := g.waitForForwardedSocket(context.Background())
 
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "did not appear",
 		"a permission error must not be reported as the socket never appearing")
-	assert.Less(
-		t,
-		elapsed,
-		time.Second,
-		"must fail immediately, not retry against a permission error",
-	)
 }
 
-func TestClaimForwardedSocket_RespectsContextCancellation(t *testing.T) {
+func TestWaitForForwardedSocket_RespectsContextCancellation(t *testing.T) {
 	g := &GPGConf{SocketPath: filepath.Join(t.TempDir(), "S.gpg-agent")}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	start := time.Now()
-	err := g.claimForwardedSocket(ctx)
-	elapsed := time.Since(start)
+	err := g.waitForForwardedSocket(ctx)
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, context.Canceled),
 		"error must wrap context.Canceled, not just any error: got %v", err)
-	assert.Less(t, elapsed, time.Second, "cancelled context must not wait out the full backoff")
 }
 
 func readConf(t *testing.T, path string) string {

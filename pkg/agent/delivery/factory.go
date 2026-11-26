@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/inject"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -15,6 +16,7 @@ type FactoryOptions struct {
 	IsRemoteDocker             bool
 	WorkspaceID                string
 	DockerCommand              string
+	Runtime                    docker.RuntimeName
 	HelperImage                string
 	KubernetesAgentInstallPath string
 	ContainerID                string
@@ -22,42 +24,33 @@ type FactoryOptions struct {
 	WorkspaceConfig            *provider.AgentWorkspaceInfo
 	DownloadURL                string
 	ExecFunc                   inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
-	PodExec                    PodExecFunc
+	ArgvExec                   ArgvExecFunc
+	// PodExec is a compatibility alias for ArgvExec.
+	PodExec PodExecFunc
 }
 
 func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 	driverType := opts.WorkspaceConfig.Agent.Driver
-	if d := namedDriverDelivery(driverType, opts); d != nil {
-		return d
+	if opts.ArgvExec == nil {
+		opts.ArgvExec = opts.PodExec
 	}
-
-	if opts.IsRemoteDocker {
-		log.Debugf("using remote docker delivery (docker cp)")
-		return remoteDockerDelivery(opts)
-	}
-
 	if driverType == "" || driverType == provider.DockerDriver {
+		if opts.IsRemoteDocker {
+			return remoteDockerDelivery(opts)
+		}
 		return dockerDelivery(opts)
 	}
-
-	return legacyShellDelivery(opts, fmt.Sprintf("driver: %s", driverType), "")
-}
-
-// namedDriverDelivery returns the delivery strategy for driver types that
-// dispatch on an exact name match, or nil if driverType matches none of them.
-func namedDriverDelivery(driverType string, opts FactoryOptions) AgentDelivery {
-	switch driverType {
-	case provider.CustomDriver:
-		return legacyShellDelivery(opts, "custom driver", "")
-	case provider.KubernetesDriver:
-		return kubernetesDelivery(opts)
-	case provider.AppleDriver:
-		return appleDelivery(opts)
-	case provider.MicrosandboxDriver:
-		return microsandboxDelivery(opts)
-	default:
-		return nil
+	installPath := ""
+	if driverType == provider.KubernetesDriver {
+		installPath = opts.KubernetesAgentInstallPath
 	}
+	if opts.ArgvExec != nil {
+		return &KubernetesDelivery{Exec: opts.ArgvExec, InstallPath: installPath}
+	}
+	if driverType == provider.AppleDriver {
+		return appleDelivery(opts)
+	}
+	return legacyShellDelivery(opts, fmt.Sprintf("driver: %s", driverType), installPath)
 }
 
 // appleDelivery launches the agent in one shell exec, which keeps the VM
@@ -68,29 +61,6 @@ func appleDelivery(opts FactoryOptions) AgentDelivery {
 	return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: opts.DownloadURL}
 }
 
-func kubernetesDelivery(opts FactoryOptions) AgentDelivery {
-	if opts.PodExec == nil {
-		return legacyShellDelivery(
-			opts,
-			"kubernetes pod exec unavailable",
-			opts.KubernetesAgentInstallPath,
-		)
-	}
-	log.Debugf("using kubernetes-native delivery (exec stream)")
-	return &KubernetesDelivery{Exec: opts.PodExec, InstallPath: opts.KubernetesAgentInstallPath}
-}
-
-// microsandboxDelivery streams the agent binary over the SDK's guest exec
-// (as kubernetes does), falling back to shell delivery when the driver
-// exposes no argv exec.
-func microsandboxDelivery(opts FactoryOptions) AgentDelivery {
-	if opts.PodExec == nil {
-		return legacyShellDelivery(opts, "microsandbox argv exec unavailable", "")
-	}
-	log.Debugf("using stream delivery (exec stream) for microsandbox")
-	return &KubernetesDelivery{Exec: opts.PodExec}
-}
-
 // dockerDelivery is only reached when the caller (NewAgentDelivery) has
 // already determined, from the workspace's resolved DOCKER_HOST, that the
 // daemon is local.
@@ -98,6 +68,7 @@ func dockerDelivery(opts FactoryOptions) AgentDelivery {
 	log.Debugf("using local docker delivery (named volume)")
 	return &LocalDockerDelivery{
 		DockerCommand: opts.DockerCommand,
+		Runtime:       opts.Runtime,
 		Environment:   opts.DockerEnv,
 		HelperImage:   opts.HelperImage,
 	}
@@ -141,6 +112,7 @@ func CommandFunc(
 			Stdin:       stdin,
 			Stdout:      stdout,
 			Stderr:      stderr,
+			RawStdout:   true,
 		})
 	}
 }

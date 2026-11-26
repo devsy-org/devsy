@@ -1,0 +1,6 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/base:alpine",
+  "containerEnv": {
+    "ATTACHED_SECRET": "base-value"
+  }
+}

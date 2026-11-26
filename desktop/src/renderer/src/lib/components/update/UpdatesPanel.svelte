@@ -24,7 +24,11 @@ import {
   installUpdate,
   type ReleaseChannel,
 } from "$lib/ipc/commands.js"
-import { updateStatus, lastCheckedAt, isChecking } from "$lib/stores/updates.svelte.js"
+import {
+  updateStatus,
+  lastCheckedAt,
+  isChecking,
+} from "$lib/stores/updates.svelte.js"
 import { markUserInitiated } from "./update-toasts.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
@@ -94,7 +98,7 @@ onMount(async () => {
   try {
     releaseChannel = await getReleaseChannel()
   } catch {
-    // Ignore — defaults to stable
+    // Ignore - defaults to stable
   }
 })
 </script>
@@ -121,17 +125,16 @@ onMount(async () => {
 
         <div class="min-w-0 flex-1 space-y-2">
           {#if s.state === "checking"}
-            <p class="text-sm font-medium">Checking for updates…</p>
+            <p class="text-sm font-medium">Checking for updates...</p>
             <div class="flex items-center gap-3 text-xs text-muted-foreground">
               {#if installedVersion}
                 <span>Installed: v{installedVersion}</span>
               {/if}
-              <span>{channelLabel(releaseChannel)} channel</span>
             </div>
           {:else if s.state === "available"}
             <p class="text-sm font-medium">Devsy {s.availableVersion} is available</p>
             <p class="text-xs text-muted-foreground">
-              Installed v{installedVersion || "unknown"} · {channelLabel(releaseChannel)} channel
+              Installed v{installedVersion || "unknown"}
             </p>
           {:else if s.state === "downloading"}
             <p class="text-sm font-medium">Downloading Devsy {s.availableVersion}</p>
@@ -151,7 +154,6 @@ onMount(async () => {
               {#if installedVersion}
                 <span>Version {installedVersion}</span>
               {/if}
-              <span>{channelLabel(releaseChannel)} channel</span>
             </div>
           {:else if s.code === "dev-mode"}
             <p class="text-sm font-medium">Updates run in packaged builds</p>
@@ -169,7 +171,6 @@ onMount(async () => {
               {#if installedVersion}
                 <span>Installed: v{installedVersion}</span>
               {/if}
-              <span>{channelLabel(releaseChannel)} channel</span>
               {#if lastChecked}
                 <span>Last checked at {fmtTime(lastChecked)}</span>
               {/if}
@@ -180,7 +181,6 @@ onMount(async () => {
               {#if installedVersion}
                 <span>Version {installedVersion}</span>
               {/if}
-              <span>{channelLabel(releaseChannel)} channel</span>
               {#if lastChecked}
                 <span>Last checked at {fmtTime(lastChecked)}</span>
               {/if}
@@ -219,7 +219,7 @@ onMount(async () => {
               class="gap-2"
             >
               <RefreshCw class="h-3.5 w-3.5 {isChecking() ? 'animate-spin' : ''}" />
-              {isChecking() ? "Checking…" : "Check now"}
+              {isChecking() ? "Checking..." : "Check now"}
             </Button>
           {/if}
         </div>
@@ -231,7 +231,7 @@ onMount(async () => {
 
   <section class="space-y-3">
     <Label>Release channel</Label>
-    <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Release Channel">
+    <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Release channel">
       {#each CHANNELS as c (c.value)}
         <button
           type="button"
@@ -248,7 +248,6 @@ onMount(async () => {
               <CheckCircle2 class="h-3.5 w-3.5 text-primary" />
             {/if}
           </div>
-          <p class="mt-1 text-xs {c.unstable ? 'text-yellow-600 dark:text-yellow-400' : 'text-muted-foreground'}">{c.cadence}</p>
         </button>
       {/each}
     </div>
@@ -256,29 +255,37 @@ onMount(async () => {
 
   <Separator />
 
-  <section class="space-y-3">
-    <Label>Update Behavior</Label>
+  <section>
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <p class="text-sm">Download updates automatically</p>
-        <p class="text-xs text-muted-foreground">
-          Updates download in the background; you choose when to restart.
+        <Label for="auto-download-updates">Automatically download updates</Label>
+        <p id="auto-download-updates-description" class="text-xs text-muted-foreground">
+          Restart Devsy when you're ready to install.
         </p>
       </div>
-      <Switch checked={$autoUpdate} onCheckedChange={(v) => setAutoUpdate(v)} />
+      <Switch
+        id="auto-download-updates"
+        aria-describedby="auto-download-updates-description"
+        checked={$autoUpdate}
+        onCheckedChange={(v) => setAutoUpdate(v)}
+      />
     </div>
   </section>
 
-  <section class="flex items-center justify-between text-xs text-muted-foreground">
-    <span>Devsy {appVersion ? `v${appVersion}` : "version unavailable"}</span>
-    <span>{channelLabel(releaseChannel)} channel</span>
-  </section>
+  <Separator />
+
+  <dl class="text-sm">
+    <div class="flex items-center justify-between gap-4">
+      <dt class="text-muted-foreground">Current version</dt>
+      <dd class="font-medium">{appVersion ? `v${appVersion}` : "Unavailable"}</dd>
+    </div>
+  </dl>
 </div>
 
 <ConfirmDialog
   bind:open={confirmOpen}
   title="Switch to the Stable channel?"
-  description="You may currently be on a newer Preview build than the latest Stable release. You'll stay on your current version until Stable catches up — no downgrade happens automatically."
+  description="You may currently be on a newer Preview build than the latest Stable release. You'll stay on your current version until Stable catches up - no downgrade happens automatically."
   confirmLabel="Switch to Stable"
   cancelLabel="Stay on Preview"
   variant="default"

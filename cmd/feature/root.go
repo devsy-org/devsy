@@ -8,7 +8,7 @@ import (
 func NewFeatureCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	featureCmd := &cobra.Command{
 		Use:           "feature",
-		Short:         "Commands for inspecting and managing dev container features",
+		Short:         "Manage devcontainer features",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,

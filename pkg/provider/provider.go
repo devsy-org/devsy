@@ -26,6 +26,10 @@ type ProviderConfig struct {
 	// IconDark holds an image URL that will be displayed in dark mode
 	IconDark string `json:"iconDark,omitempty"`
 
+	// IconRevision selects the immutable cached icon revision installed with this
+	// provider. It is generated at install time and never read from author manifests.
+	IconRevision string `json:"iconRevision,omitempty"`
+
 	// Home holds the provider home URL
 	Home string `json:"home,omitempty"`
 
@@ -77,6 +81,14 @@ type ProviderSource struct {
 
 	// Raw is the exact string we used to load the provider
 	Raw string `json:"raw,omitempty"`
+
+	// ResolvedRef is the effective GitHub release tag this installation was taken
+	// from. It is installation provenance, not a pin for future updates.
+	ResolvedRef string `json:"resolvedRef,omitempty"`
+
+	// ResolvedManifestURL is the logical manifest URL used as the base for
+	// source-relative assets. Query strings and credentials are never stored.
+	ResolvedManifestURL string `json:"resolvedManifestURL,omitempty"`
 }
 
 type ProviderAgentConfig struct {
@@ -92,12 +104,12 @@ type ProviderAgentConfig struct {
 	// DownloadURL is the base url where to download the agent from
 	DownloadURL string `json:"downloadURL,omitempty"`
 
-	// Timeout is the timeout in minutes to wait until the agent tries
-	// to turn of the server.
+	// Timeout is the Go duration (e.g. 10m) of inactivity after which the agent
+	// tries to turn off the server.
 	Timeout string `json:"inactivityTimeout,omitempty"`
 
-	// ContainerTimeout is the timeout in minutes to wait until the agent tries
-	// to delete the container.
+	// ContainerTimeout is the Go duration (e.g. 10m) of inactivity after which the
+	// container is stopped. Empty or zero disables it.
 	ContainerTimeout string `json:"containerInactivityTimeout,omitempty"`
 
 	// InjectGitCredentials signals Devsy if git credentials should get synced into
@@ -117,8 +129,7 @@ type ProviderAgentConfig struct {
 	// Dockerless holds custom dockerless configuration
 	Dockerless ProviderDockerlessOptions `json:"dockerless"`
 
-	// Driver is the driver to use for deploying the devcontainer. Currently supports
-	// docker (default) or kubernetes (experimental)
+	// Driver selects the runtime used to deploy the devcontainer.
 	Driver string `json:"driver,omitempty"`
 
 	// Docker holds docker specific configuration
@@ -135,6 +146,8 @@ type ProviderAgentConfig struct {
 
 	// Microsandbox holds microsandbox microVM specific configuration
 	Microsandbox ProviderMicrosandboxDriverConfig `json:"microsandbox"`
+
+	External ProviderExternalDriverConfig `json:"external,omitzero"`
 }
 
 type ProviderDockerlessOptions struct {
@@ -316,7 +329,16 @@ const (
 	CustomDriver       = "custom"
 	AppleDriver        = "apple"
 	MicrosandboxDriver = "microsandbox"
+	ExternalDriver     = "external"
 )
+
+// ProviderExternalDriverConfig selects a declared agent binary, not a PATH executable.
+type ProviderExternalDriverConfig struct {
+	Binary string `json:"binary,omitempty"`
+	// Args is static argv appended to the executable, without shell or option expansion.
+	Args         types.StrArray `json:"args,omitempty"`
+	ImageBackend string         `json:"imageBackend,omitempty"`
+}
 
 // ProviderAppleDriverConfig holds configuration for the Apple container driver,
 // which runs Linux containers as lightweight VMs on Apple silicon (macOS 26+).
@@ -397,7 +419,8 @@ type ProviderDockerDriverConfig struct {
 	Path string `json:"path,omitempty"`
 
 	// If false, Devsy will not try to install docker into the machine.
-	Install types.StrBool `json:"install,omitempty"`
+	Install         types.StrBool `json:"install,omitempty"`
+	ConfigureDaemon types.StrBool `json:"configureDaemon,omitempty"`
 
 	// Builder to use with docker
 	Builder string `json:"builder,omitempty"`
@@ -430,7 +453,10 @@ type ProviderKubernetesDriverConfig struct {
 	ClusterRole                  string `json:"clusterRole,omitempty"`
 	ServiceAccount               string `json:"serviceAccount,omitempty"`
 
-	Architecture      string `json:"architecture,omitempty"`
+	Architecture    string `json:"architecture,omitempty"`
+	ImageConfigFile string `json:"imageConfigFile,omitempty"`
+	// InactivityTimeout is a deprecated alias of Agent.ContainerTimeout, used only
+	// when the canonical field is empty.
 	InactivityTimeout string `json:"inactivityTimeout,omitempty"`
 	StorageClass      string `json:"storageClass,omitempty"`
 
@@ -492,7 +518,16 @@ type ProviderBinary struct {
 	Name string `json:"name,omitempty"`
 }
 
+type ProviderCancellationMode string
+
+const (
+	ProviderCancellationDefault ProviderCancellationMode = ""
+	ProviderCancellationFile    ProviderCancellationMode = "file"
+)
+
 type ProviderCommands struct {
+	Cancellation ProviderCancellationMode `json:"cancellation,omitempty"`
+
 	// Init is run directly after `devsy provider init`
 	Init types.StrArray `json:"init,omitempty"`
 
@@ -590,7 +625,7 @@ type GetProxyCommands struct {
 	// Self gets self for this provider
 	Self types.StrArray `json:"self,omitempty"`
 
-	// Version gets the for this pro instance
+	// Version gets the for this platform instance
 	Version types.StrArray `json:"version,omitempty"`
 }
 

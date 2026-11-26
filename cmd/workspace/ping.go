@@ -23,7 +23,7 @@ func NewPingCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	}
 	troubleshootCmd := &cobra.Command{
 		Use:   "ping [workspace-path|workspace-name]",
-		Short: "Ping a Devsy Pro workspace",
+		Short: "Ping a Devsy Platform workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
@@ -32,11 +32,13 @@ func NewPingCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 		Hidden: true,
@@ -63,7 +65,7 @@ func (cmd *PingCmd) Run(ctx context.Context, args []string) error {
 
 	daemonClient, ok := client.(client2.DaemonClient)
 	if !ok {
-		return fmt.Errorf("ping is only available for pro workspaces")
+		return fmt.Errorf("ping is only available for platform workspaces")
 	}
 
 	return daemonClient.Ping(ctx, os.Stdout)

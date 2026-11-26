@@ -1,6 +1,7 @@
 package tunnelserver
 
 import (
+	"context"
 	"strings"
 
 	"github.com/devsy-org/api/pkg/devsy"
@@ -9,13 +10,34 @@ import (
 	"github.com/devsy-org/devsy/pkg/netstat"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 type Option func(*tunnelServer) *tunnelServer
 
+func WithAllowGitHubCredentials(allow bool) Option {
+	return func(s *tunnelServer) *tunnelServer { s.allowGitHubCredentials = allow; return s }
+}
+
 func WithWorkspace(workspace *provider2.Workspace) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.workspace = workspace
+		return s
+	}
+}
+
+// WithWorkspaceMount limits workspace ignore rules to this mount.
+func WithWorkspaceMount(mount *config.Mount) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.workspaceMount = mount
+		return s
+	}
+}
+
+// WithSnapshotBuildContext identifies generated residue to exclude, never upload authority.
+func WithSnapshotBuildContext(context string) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.snapshotBuildContext = context
 		return s
 	}
 }
@@ -76,6 +98,14 @@ func WithGitToken(token *provider2.GitToken) Option {
 	}
 }
 
+// WithGitSSHSigningKey configures the host Git SSH signing key for fallback resolution.
+func WithGitSSHSigningKey(signingKey string) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.gitSSHSigningKey = signingKey
+		return s
+	}
+}
+
 // WithStatusReporter forwards inbound StatusUpdate RPCs to reporter. A nil
 // reporter is ignored, since it would replace the Nop default and panic.
 func WithStatusReporter(reporter status.Reporter) Option {
@@ -83,6 +113,41 @@ func WithStatusReporter(reporter status.Reporter) Option {
 		if reporter != nil {
 			s.statusReporter = reporter
 		}
+		return s
+	}
+}
+
+// WithSetupLogSink accepts AppendSetupLogs batches for the sink's expected run.
+// A nil sink leaves the RPC unimplemented, which senders treat as an old peer.
+func WithSetupLogSink(sink *workspacelogs.Sink) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.setupLogSink = sink
+		return s
+	}
+}
+
+type LifecycleTerminalOwner interface {
+	Serve(ctx context.Context, stream tunnel.Tunnel_LifecycleTerminalServer) error
+}
+
+func WithLifecycleTerminalOwner(
+	owner LifecycleTerminalOwner,
+	req provider2.LifecycleTerminalRequest,
+) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.lifecycleTerminalOwner = owner
+		s.lifecycleTerminalRequest = req
+		return s
+	}
+}
+
+func WithLifecycleTerminalUpstream(
+	client tunnel.TunnelClient,
+	req provider2.LifecycleTerminalRequest,
+) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.lifecycleTerminalUpstream = client
+		s.lifecycleTerminalRequest = req
 		return s
 	}
 }

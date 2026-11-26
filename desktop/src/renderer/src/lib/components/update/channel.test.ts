@@ -14,9 +14,11 @@ describe("channel labels", () => {
     expect(CHANNELS.map((c) => c.value)).toEqual(["stable", "beta"])
   })
 
-  it("flags Preview as unstable", () => {
-    expect(CHANNELS.find((c) => c.value === "beta")?.unstable).toBe(true)
-    expect(CHANNELS.find((c) => c.value === "stable")?.unstable).toBe(false)
+  it("exposes the channel choices without redundant presentation copy", () => {
+    expect(CHANNELS).toEqual([
+      { value: "stable", label: "Stable" },
+      { value: "beta", label: "Preview" },
+    ])
   })
 })
 

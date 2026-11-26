@@ -4,7 +4,16 @@ import (
 	_ "embed"
 	"testing"
 
+	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/stretchr/testify/suite"
+)
+
+const (
+	baseVersion = "BASE_VERSION"
+)
+
+const (
+	testBaseImageArg = "BASE_IMAGE"
 )
 
 //go:embed test_Dockerfile
@@ -28,6 +37,27 @@ func (s *ParseTestSuite) TestBuildContextFiles() {
 	s.Equal("files", files[1])
 }
 
+func (s *ParseTestSuite) TestBuildContextFilesPreservesAddAndCopyOrder() {
+	const sourceFile = "source.txt"
+	dockerFile, err := Parse(`FROM alpine AS build
+ADD archive.tar config.json /build/
+RUN echo done
+FROM alpine
+COPY source.txt other.txt /app/
+COPY --from=build /build/tool /usr/local/bin/
+COPY source.txt source.txt /copies/
+ADD assets /app/assets`)
+	s.Require().NoError(err)
+	dockerFile.Stages[0].Instructions = append(dockerFile.Stages[0].Instructions,
+		&parser.Node{Value: "INVALID"})
+
+	s.Equal([]string{
+		"archive.tar", "config.json", sourceFile, "other.txt", "/build/tool",
+		sourceFile, sourceFile, "assets",
+	},
+		dockerFile.BuildContextFiles())
+}
+
 func (s *ParseTestSuite) TestFindBaseImage() {
 	dockerfile := `FROM ubuntu:20.04`
 	d, err := Parse(dockerfile)
@@ -47,7 +77,10 @@ FROM ${BASE_IMAGE}:${BASE_VERSION}`
 	baseImage := d.FindBaseImage(map[string]string{}, "")
 	s.Equal("ubuntu:20.04", baseImage)
 
-	baseImage = d.FindBaseImage(map[string]string{"BASE_IMAGE": "debian", "BASE_VERSION": "11"}, "")
+	baseImage = d.FindBaseImage(
+		map[string]string{testBaseImageArg: "debian", baseVersion: "11"},
+		"",
+	)
 	s.Equal("debian:11", baseImage)
 }
 
@@ -59,7 +92,7 @@ FROM ${BASE_IMAGE}:${BASE_VERSION}`
 	s.NoError(err)
 
 	baseImage := d.FindBaseImage(
-		map[string]string{"BASE_IMAGE": "alpine", "BASE_VERSION": "3.18"},
+		map[string]string{testBaseImageArg: "alpine", baseVersion: "3.18"},
 		"",
 	)
 	s.Equal("alpine:3.18", baseImage)
@@ -97,7 +130,10 @@ COPY --from=builder /app /app`
 	baseImage = d.FindBaseImage(map[string]string{}, "builder")
 	s.Equal("golang:1.21", baseImage)
 
-	baseImage = d.FindBaseImage(map[string]string{"BASE_IMAGE": "node", "BASE_VERSION": "18"}, "")
+	baseImage = d.FindBaseImage(
+		map[string]string{testBaseImageArg: "node", baseVersion: "18"},
+		"",
+	)
 	s.Equal("node:18", baseImage)
 }
 

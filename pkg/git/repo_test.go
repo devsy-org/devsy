@@ -167,7 +167,7 @@ func TestRepoCheckoutPRAmbiguousSourceBranchLeftUntracked(t *testing.T) {
 
 	err := repo.CheckoutPR(context.Background(), testGitLabURL, "merge-requests/7/head")
 	assert.NilError(t, err)
-	assert.Equal(t, 3, len(fake.calls)) // fetch, switch, for-each-ref — no set-upstream
+	assert.Equal(t, 3, len(fake.calls)) // fetch, switch, for-each-ref - no set-upstream
 	assert.Equal(t, "for-each-ref", fake.calls[2].Args[0])
 }
 

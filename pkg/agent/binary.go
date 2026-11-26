@@ -313,44 +313,32 @@ func (s *HTTPDownloadSource) cacheAndReturn(
 			}
 		}()
 
-		if !s.prepareCacheDir(arch, body, pw, &streamErr) {
-			return
-		}
-
-		s.streamAndCache(arch, body, pw, &streamErr)
+		streamErr = s.streamAndCache(arch, body, pw)
 	}()
 
 	return pr, nil
-}
-
-func (s *HTTPDownloadSource) prepareCacheDir(
-	arch string,
-	body io.ReadCloser,
-	pw *io.PipeWriter,
-	streamErr *error,
-) bool {
-	cachePath := s.Cache.pathFor(arch)
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0o750); err != nil { // #nosec G301
-		// Cache directory creation failed; fall back to direct streaming
-		if _, copyErr := io.Copy(pw, body); copyErr != nil {
-			*streamErr = fmt.Errorf("mkdir failed (%v), fallback copy failed: %w", err, copyErr)
-		}
-		return false
-	}
-	return true
 }
 
 func (s *HTTPDownloadSource) streamAndCache(
 	arch string,
 	body io.ReadCloser,
 	pw *io.PipeWriter,
-	streamErr *error,
-) {
+) error {
 	cachePath := s.Cache.pathFor(arch)
-	file, tmpPath, err := s.createTempFile(cachePath, body, pw, streamErr)
-	if err != nil {
-		return
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o750); err != nil { // #nosec G301
+		// Cache directory creation failed; fall back to direct streaming
+		if _, copyErr := io.Copy(pw, body); copyErr != nil {
+			return fmt.Errorf("mkdir failed (%v), fallback copy failed: %w", err, copyErr)
+		}
+		return nil
 	}
+
+	file, err := os.CreateTemp(filepath.Dir(cachePath), config.BinaryName+"-agent-*.tmp")
+	if err != nil {
+		_, copyErr := io.Copy(pw, body)
+		return copyErr
+	}
+	tmpPath := file.Name()
 
 	success := false
 	closed := false
@@ -363,18 +351,18 @@ func (s *HTTPDownloadSource) streamAndCache(
 		}
 	}()
 
-	if !s.writeToFile(file, body, pw, streamErr) {
-		return
+	if err := s.writeToFile(file, body, pw); err != nil {
+		return err
 	}
 
 	closeErr := file.Close()
 	closed = true
 	if closeErr != nil {
-		*streamErr = closeErr
-		return
+		return closeErr
 	}
 
 	success = s.finalizeCache(arch, tmpPath, cachePath)
+	return nil
 }
 
 func (s *HTTPDownloadSource) finalizeCache(arch, tmpPath, cachePath string) bool {
@@ -387,43 +375,19 @@ func (s *HTTPDownloadSource) finalizeCache(arch, tmpPath, cachePath string) bool
 	return true
 }
 
-func (s *HTTPDownloadSource) createTempFile(
-	cachePath string,
-	body io.ReadCloser,
-	pw *io.PipeWriter,
-	streamErr *error,
-) (*os.File, string, error) {
-	file, err := os.CreateTemp(filepath.Dir(cachePath), config.BinaryName+"-agent-*.tmp")
-	if err != nil {
-		if _, copyErr := io.Copy(pw, body); copyErr != nil {
-			*streamErr = copyErr
-		}
-		return nil, "", err
-	}
-	return file, file.Name(), nil
-}
-
 func (s *HTTPDownloadSource) writeToFile(
 	file *os.File,
 	body io.ReadCloser,
 	pw *io.PipeWriter,
-	streamErr *error,
-) bool {
+) error {
 	mw := io.MultiWriter(file, pw)
 	if _, err := io.Copy(mw, body); err != nil {
-		*streamErr = err
-		return false
+		return err
 	}
 
 	if err := file.Chmod(0o755); err != nil {
-		*streamErr = err
-		return false
+		return err
 	}
 
-	if err := file.Sync(); err != nil {
-		*streamErr = err
-		return false
-	}
-
-	return true
+	return file.Sync()
 }

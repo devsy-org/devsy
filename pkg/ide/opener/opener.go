@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/credentials"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/codeserver"
@@ -28,6 +29,7 @@ import (
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	open2 "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/port"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 )
 
@@ -54,7 +56,7 @@ func IsBrowserIDE(ideName string) bool {
 }
 
 // Open dispatches to the correct IDE opener based on ideName. It returns the
-// IDE URL (when meaningful — see per-IDE openers) along with any error.
+// IDE URL (when meaningful - see per-IDE openers) along with any error.
 func Open(
 	ctx context.Context,
 	ideName string,
@@ -146,11 +148,11 @@ func openDesktopIDE(
 		return "", openJetBrains(ideName, ideOptions, params)
 
 	case string(config.IDEZed):
-		return "", zed.Open(
-			ctx, ideOptions, params.User,
-			params.Result.SubstitutionContext.ContainerWorkspaceFolder,
-			params.Client.Workspace(),
-		)
+		return "", zed.Open(ctx, ideOptions, zed.Target{
+			UserName:        params.User,
+			WorkspaceFolder: params.Result.SubstitutionContext.ContainerWorkspaceFolder,
+			SSHHost:         resolveSSHHost(params.Client),
+		})
 
 	default:
 		return "", nil
@@ -204,6 +206,23 @@ var vsCodeFlavorMap = map[string]vscode.Flavor{
 	string(config.IDEBob):            vscode.FlavorBob,
 }
 
+func resolveSSHHost(c client2.BaseWorkspaceClient) string {
+	ws := c.WorkspaceConfig()
+	if ws == nil {
+		return sshHostFor(nil, c.Workspace())
+	}
+
+	return ws.PreferredSSHHostCommitted()
+}
+
+func sshHostFor(ws *provider.Workspace, id string) string {
+	if ws == nil {
+		return id + config.SSHHostSuffix
+	}
+
+	return ws.PreferredSSHHost()
+}
+
 func openVSCodeFlavor(
 	ctx context.Context,
 	ideName string,
@@ -211,11 +230,15 @@ func openVSCodeFlavor(
 	params IDEParams,
 ) error {
 	return vscode.Open(ctx, vscode.OpenParams{
-		Workspace:  params.Client.Workspace(),
-		Folder:     params.Result.SubstitutionContext.ContainerWorkspaceFolder,
-		NewWindow:  vscode.Options.GetValue(ideOptions, vscode.OpenNewWindow) == config.BoolTrue,
-		Flavor:     vsCodeFlavorMap[ideName],
-		TunnelMode: params.TunnelMode,
+		SSHHost: resolveSSHHost(params.Client),
+		Folder:  params.Result.SubstitutionContext.ContainerWorkspaceFolder,
+		NewWindow: vscode.Options.GetValue(
+			ideOptions,
+			vscode.OpenNewWindow,
+		) == config.BoolTrue,
+		Flavor:            vsCodeFlavorMap[ideName],
+		TunnelMode:        params.TunnelMode,
+		SSHConnectTimeout: vscode.Options.GetValue(ideOptions, vscode.SSHConnectTimeout),
 	})
 }
 
@@ -225,45 +248,25 @@ func openJetBrains(
 	params IDEParams,
 ) error {
 	folder := params.Result.SubstitutionContext.ContainerWorkspaceFolder
-	workspace := params.Client.Workspace()
+	sshHost := resolveSSHHost(params.Client)
 	user := params.User
-	type jetbrainsFactory func() interface{ OpenGateway(string, string) error }
+	type jetbrainsFactory func(string, map[string]config.OptionValue) *jetbrains.GenericJetBrainsServer
 
 	jetbrainsMap := map[string]jetbrainsFactory{
-		string(config.IDERustRover): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRustRoverServer(user, ideOptions)
-		},
-		string(config.IDEGoland): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewGolandServer(user, ideOptions)
-		},
-		string(config.IDEPyCharm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewPyCharmServer(user, ideOptions)
-		},
-		string(config.IDEPhpStorm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewPhpStorm(user, ideOptions)
-		},
-		string(config.IDEIntellij): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewIntellij(user, ideOptions)
-		},
-		string(config.IDECLion): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewCLionServer(user, ideOptions)
-		},
-		string(config.IDERider): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRiderServer(user, ideOptions)
-		},
-		string(config.IDERubyMine): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewRubyMineServer(user, ideOptions)
-		},
-		string(config.IDEWebStorm): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewWebStormServer(user, ideOptions)
-		},
-		string(config.IDEDataSpell): func() interface{ OpenGateway(string, string) error } {
-			return jetbrains.NewDataSpellServer(user, ideOptions)
-		},
+		string(config.IDERustRover): jetbrains.NewRustRoverServer,
+		string(config.IDEGoland):    jetbrains.NewGolandServer,
+		string(config.IDEPyCharm):   jetbrains.NewPyCharmServer,
+		string(config.IDEPhpStorm):  jetbrains.NewPhpStorm,
+		string(config.IDEIntellij):  jetbrains.NewIntellij,
+		string(config.IDECLion):     jetbrains.NewCLionServer,
+		string(config.IDERider):     jetbrains.NewRiderServer,
+		string(config.IDERubyMine):  jetbrains.NewRubyMineServer,
+		string(config.IDEWebStorm):  jetbrains.NewWebStormServer,
+		string(config.IDEDataSpell): jetbrains.NewDataSpellServer,
 	}
 
 	if factory, ok := jetbrainsMap[ideName]; ok {
-		return factory().OpenGateway(folder, workspace)
+		return factory(user, ideOptions).OpenGateway(folder, sshHost)
 	}
 	return fmt.Errorf("unknown JetBrains IDE: %s", ideName)
 }
@@ -272,20 +275,20 @@ func makeDaemonStartFunc(
 	params IDEParams,
 	forwardPorts bool,
 	extraPorts []string,
-) func(ctx context.Context) error {
+) func(ctx context.Context, prepared func()) error {
 	daemonClient, ok := params.Client.(client2.DaemonClient)
 	if !ok {
 		return nil
 	}
 
-	return func(ctx context.Context) error {
+	return func(ctx context.Context, prepared func()) error {
 		toolClient, _, err := daemonClient.SSHClients(ctx, params.User)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = toolClient.Close() }()
 
-		err = clientimplementation.StartServicesDaemon(
+		return clientimplementation.RunPreparedServicesDaemon(
 			ctx,
 			clientimplementation.StartServicesDaemonOptions{
 				DevsyConfig:      params.DevsyConfig,
@@ -296,13 +299,11 @@ func makeDaemonStartFunc(
 				ExtraPorts:       extraPorts,
 				GitSSHSigningKey: params.GitSSHSigningKey,
 			},
+			func(status credentials.Readiness) {
+				pkglog.Debugw("browser credentials prepared", "status", status.GitHubState)
+				prepared()
+			},
 		)
-		if err != nil {
-			return err
-		}
-		<-ctx.Done()
-
-		return nil
 	}
 }
 

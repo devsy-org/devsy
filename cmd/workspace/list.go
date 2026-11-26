@@ -23,7 +23,7 @@ import (
 type ListCmd struct {
 	*flags.GlobalFlags
 
-	SkipPro bool
+	SkipPlatform bool
 }
 
 // NewListCmd creates a new destroy command.
@@ -42,8 +42,16 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cliflags.Add(listCmd,
-		cliflags.Bool(&cmd.SkipPro, names.SkipPro, false, "Don't list pro workspaces"),
+	cliflags.Add(
+		listCmd,
+		cliflags.Bool(
+			&cmd.SkipPlatform,
+			names.SkipPlatform,
+			false,
+			"Don't list platform workspaces",
+		),
+		cliflags.Bool(&cmd.SkipPlatform, names.SkipProAlias, false, "Don't list platform workspaces").
+			Hidden(),
 	)
 	return listCmd
 }
@@ -55,7 +63,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	workspaces, err := workspace.List(ctx, devsyConfig, cmd.SkipPro, cmd.Owner)
+	workspaces, err := workspace.List(ctx, devsyConfig, cmd.SkipPlatform, cmd.Owner)
 	if err != nil {
 		return err
 	}
@@ -84,7 +92,7 @@ func sortWorkspacesByLastUsed(workspaces []*provider.Workspace) {
 
 func printJSONWorkspaces(workspaces []*provider.Workspace) error {
 	sortWorkspacesByLastUsed(workspaces)
-	out, err := json.Marshal(workspaces)
+	out, err := json.Marshal(provider.NewWorkspaceListEntries(workspaces))
 	if err != nil {
 		return err
 	}
@@ -92,14 +100,19 @@ func printJSONWorkspaces(workspaces []*provider.Workspace) error {
 	return nil
 }
 
+func workspaceListName(ws *provider.Workspace) string {
+	label := ws.EffectiveDisplayName()
+	if label == ws.ID {
+		return ws.ID
+	}
+	return fmt.Sprintf("%s (%s)", label, ws.ID)
+}
+
 func printPlainWorkspaces(workspaces []*provider.Workspace) {
 	sortWorkspacesByLastUsed(workspaces)
 	tableEntries := [][]string{}
 	for _, entry := range workspaces {
-		name := entry.ID
-		if entry.IsPro() && entry.Pro.DisplayName != "" && entry.ID != entry.Pro.DisplayName {
-			name = fmt.Sprintf("%s (%s)", entry.Pro.DisplayName, entry.ID)
-		}
+		name := workspaceListName(entry)
 		tableEntries = append(tableEntries, []string{
 			name,
 			entry.Source.String(),
@@ -108,7 +121,7 @@ func printPlainWorkspaces(workspaces []*provider.Workspace) {
 			entry.IDE.Name,
 			time.Since(entry.LastUsedTimestamp.Time).Round(1 * time.Second).String(),
 			time.Since(entry.CreationTimestamp.Time).Round(1 * time.Second).String(),
-			fmt.Sprintf("%t", entry.IsPro()),
+			fmt.Sprintf("%t", entry.IsPlatform()),
 		})
 	}
 
@@ -120,6 +133,6 @@ func printPlainWorkspaces(workspaces []*provider.Workspace) {
 		"IDE",
 		"Last Used",
 		"Age",
-		"Pro",
+		"Platform",
 	}, tableEntries)
 }

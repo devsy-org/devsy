@@ -28,10 +28,11 @@ func NewUpgradeCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &UpgradeCmd{GlobalFlags: f}
 	upgradeCmd := &cobra.Command{
 		Use:   "upgrade [feature...]",
-		Short: "Upgrades devcontainer feature versions to the latest available",
-		Long: `Upgrades devcontainer feature versions in devcontainer.json to the latest
-available versions. If specific features are provided as arguments, only those
-features are upgraded. Otherwise, all outdated features are upgraded.`,
+		Short: "Upgrade devcontainer feature versions to the latest available",
+		Long: `Upgrade devcontainer feature versions to the latest available.
+
+Versions are updated in devcontainer.json. Pass feature names to upgrade only
+those features, or none to upgrade all outdated features.`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},

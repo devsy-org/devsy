@@ -2,7 +2,6 @@ package jetbrains
 
 import (
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/ide"
 )
 
 const (
@@ -11,21 +10,7 @@ const (
 	PhpStormDownloadArm64Template = "https://download.jetbrains.com/webide/PhpStorm-%s-aarch64.tar.gz"
 )
 
-var PhpStormOptions = ide.Options{
-	VersionOption: {
-		Name:        VersionOption,
-		Description: versionOptionDescription,
-		Default:     versionOptionDefault,
-	},
-	DownloadArm64Option: {
-		Name:        DownloadArm64Option,
-		Description: downloadArm64OptionDescription,
-	},
-	DownloadAmd64Option: {
-		Name:        DownloadAmd64Option,
-		Description: downloadAmd64OptionDescription,
-	},
-}
+var PhpStormOptions = newProductOptions()
 
 func NewPhpStorm(
 	userName string,
@@ -35,8 +20,10 @@ func NewPhpStorm(
 		PhpStormOptions,
 		values,
 		PhpStormProductCode,
-		PhpStormDownloadAmd64Template,
-		PhpStormDownloadArm64Template,
+		downloadTemplates{
+			amd64: PhpStormDownloadAmd64Template,
+			arm64: PhpStormDownloadArm64Template,
+		},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "phpstorm",

@@ -1,22 +1,22 @@
 <script lang="ts">
-	import { ToggleGroup as ToggleGroupPrimitive } from "bits-ui";
-	import { getContext } from "svelte";
-	import { toggleVariants } from "$lib/components/ui/toggle/index.js";
-	import {
-		type ToggleGroupContext,
-		TOGGLE_GROUP_CONTEXT,
-	} from "./toggle-group.svelte";
-	import { cn } from "$lib/utils.js";
+import { ToggleGroup as ToggleGroupPrimitive } from "bits-ui"
+import { getContext } from "svelte"
+import { toggleVariants } from "$lib/components/ui/toggle/index.js"
+import {
+  type ToggleGroupContext,
+  TOGGLE_GROUP_CONTEXT,
+} from "./toggle-group.svelte"
+import { cn } from "$lib/utils.js"
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		variant,
-		size,
-		...restProps
-	}: ToggleGroupPrimitive.ItemProps & ToggleGroupContext = $props();
+let {
+  ref = $bindable(null),
+  class: className,
+  variant,
+  size,
+  ...restProps
+}: ToggleGroupPrimitive.ItemProps & ToggleGroupContext = $props()
 
-	const ctx = getContext<ToggleGroupContext>(TOGGLE_GROUP_CONTEXT);
+const ctx = getContext<ToggleGroupContext>(TOGGLE_GROUP_CONTEXT)
 </script>
 
 <ToggleGroupPrimitive.Item

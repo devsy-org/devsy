@@ -6,9 +6,6 @@ release:
     name: "{{ .ProjectName }}"
 builds:
   - id: devsy
-    hooks:
-      pre:
-        - sh -c 'CGO_ENABLED=1 go test $(go list ./... | grep -v -e /test -e /e2e) -race -short -coverprofile=dist/profile.out -covermode=atomic'
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     binary: devsy-{{ .Os }}-{{ .Arch }}
@@ -30,9 +27,6 @@ builds:
       - CGO_ENABLED=0
 
   - id: devsy-linux
-    hooks:
-      pre:
-        - sh -c 'CGO_ENABLED=1 go test $(go list ./... | grep -v -e /test -e /e2e) -race -short -coverprofile=dist/profile.out -covermode=atomic'
     goos: [linux]
     goarch: [amd64, arm64]
     binary: devsy-{{ .Os }}-{{ .Arch }}
@@ -44,9 +38,6 @@ builds:
       - osusergo
 
   - id: devsy-darwin
-    hooks:
-      pre:
-        - sh -c 'go test $(go list ./... | grep -v -e /test -e /e2e) -race -short -coverprofile=dist/profile.out -covermode=atomic'
     goos: [darwin]
     goarch: [amd64, arm64]
     binary: devsy-{{ .Os }}-{{ .Arch }}

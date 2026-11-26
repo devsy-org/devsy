@@ -21,7 +21,7 @@ const (
 	testDevContainerPath  = ".devcontainer/devcontainer.json"
 )
 
-func TestValidateDesiredID(t *testing.T) {
+func TestValidateID(t *testing.T) {
 	cases := []struct {
 		name      string
 		desiredID string
@@ -45,7 +45,7 @@ func TestValidateDesiredID(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := validateDesiredID(c.desiredID)
+			err := ValidateID(c.desiredID)
 			if c.wantErr {
 				require.Error(t, err)
 			} else {
@@ -55,10 +55,10 @@ func TestValidateDesiredID(t *testing.T) {
 	}
 }
 
-func TestValidateDesiredID_InvalidCharsCheckedBeforeLength(t *testing.T) {
+func TestValidateID_InvalidCharsCheckedBeforeLength(t *testing.T) {
 	// An over-length id that also contains invalid characters should report the
 	// character rule first, matching the historical ordering.
-	err := validateDesiredID(strings.Repeat("A", maxWorkspaceIDLength+1))
+	err := ValidateID(strings.Repeat("A", maxWorkspaceIDLength+1))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "lowercase letters")
 }
@@ -202,6 +202,7 @@ func TestApplyDevContainerOverrides_NoOp(t *testing.T) {
 	require.NoError(t, applyDevContainerOverrides(ws, ResolveParams{}))
 	assert.Empty(t, ws.DevContainerImage)
 	assert.Empty(t, ws.DevContainerPath)
+	assert.Empty(t, ws.DevContainerID)
 }
 
 func TestApplyDevContainerOverrides_SetsImageAndPath(t *testing.T) {
@@ -238,4 +239,42 @@ func TestApplyDevContainerOverrides_PersistsSource(t *testing.T) {
 	loaded, err := providerpkg.LoadWorkspaceConfig(testDefaultContext, ws.ID)
 	require.NoError(t, err)
 	assert.Equal(t, source, loaded.DevContainerSource)
+}
+
+func TestApplyDevContainerOverrides_PersistsIDAndClearsOtherSelectors(t *testing.T) {
+	setupTestPathManager(t)
+
+	ws := &providerpkg.Workspace{
+		ID:                 "ws-id",
+		Context:            testDefaultContext,
+		DevContainerPath:   ".devcontainer/old/devcontainer.json",
+		DevContainerSource: "image:old",
+	}
+	require.NoError(t, applyDevContainerOverrides(ws, ResolveParams{DevContainerID: "max"}))
+
+	assert.Equal(t, "max", ws.DevContainerID)
+	assert.Empty(t, ws.DevContainerPath)
+	assert.Empty(t, ws.DevContainerSource)
+
+	loaded, err := providerpkg.LoadWorkspaceConfig(testDefaultContext, ws.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "max", loaded.DevContainerID)
+	assert.Empty(t, loaded.DevContainerPath)
+	assert.Empty(t, loaded.DevContainerSource)
+}
+
+func TestApplyDevContainerOverrides_SelectorReplacement(t *testing.T) {
+	ws := &providerpkg.Workspace{DevContainerID: "max"}
+
+	changed := applyDevContainerFields(ws, ResolveParams{DevContainerPath: testDevContainerPath})
+	assert.True(t, changed)
+	assert.Empty(t, ws.DevContainerID)
+	assert.Equal(t, testDevContainerPath, ws.DevContainerPath)
+	assert.Empty(t, ws.DevContainerSource)
+
+	changed = applyDevContainerFields(ws, ResolveParams{DevContainerSource: "image:python"})
+	assert.True(t, changed)
+	assert.Empty(t, ws.DevContainerID)
+	assert.Empty(t, ws.DevContainerPath)
+	assert.Equal(t, "image:python", ws.DevContainerSource)
 }

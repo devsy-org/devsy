@@ -15,6 +15,21 @@ import (
 )
 
 const (
+	value2300                           = "2.30.0"
+	workspaceValue                      = "workspace"
+	app                                 = "app"
+	ghcrIoExampleSharedBaseLatest       = "ghcr.io/example/shared-base:latest"
+	registryExampleComApp123            = "registry.example.com/app:1.2.3"
+	workspaceAppLatest                  = "workspace-app:latest"
+	dockerfileWithFeatures              = "Dockerfile-with-features"
+	tmpContext                          = "/tmp/context"
+	devContainersTargetStage            = "dev_containers_target_stage"
+	testService                         = "test-service"
+	workspaceDevcontainerFeaturesFolder = "/workspace/.devcontainer/features/folder"
+	workspaceValueValue                 = "/workspace"
+)
+
+const (
 	platformLinuxAMD64 = "linux/amd64"
 	platformLinuxARM64 = "linux/arm64"
 )
@@ -31,21 +46,25 @@ type composeBuildImageNameTestCase struct {
 var composeBuildImageNameTests = []composeBuildImageNameTestCase{
 	{
 		name:          "keeps original image without features",
-		composeHelper: &compose.ComposeHelper{Version: "2.30.0"},
-		projectName:   "workspace",
+		composeHelper: &compose.ComposeHelper{Version: value2300},
+		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  "app",
-			Image: "ghcr.io/example/shared-base:latest",
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
 		},
-		want: "ghcr.io/example/shared-base:latest",
+		want: ghcrIoExampleSharedBaseLatest,
 	},
 	{
 		name:          "uses workspace image for image backed features",
-		composeHelper: &compose.ComposeHelper{Version: "2.30.0"},
-		projectName:   "workspace",
+		composeHelper: &compose.ComposeHelper{Version: value2300},
+		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  "app",
-			Image: "ghcr.io/example/shared-base:latest",
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
 		},
 		hasFeatures: true,
 		want:        "workspace-app",
@@ -53,10 +72,12 @@ var composeBuildImageNameTests = []composeBuildImageNameTestCase{
 	{
 		name:          "uses compose version separator for image backed features",
 		composeHelper: &compose.ComposeHelper{Version: "2.7.0"},
-		projectName:   "workspace",
+		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  "app",
-			Image: "ghcr.io/example/shared-base:latest",
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
 		},
 		hasFeatures: true,
 		want:        "workspace_app",
@@ -66,34 +87,42 @@ var composeBuildImageNameTests = []composeBuildImageNameTestCase{
 		// declared image tag is used even with features, which could collide
 		// with the upstream registry tag. Changing this would be intentional.
 		name:          "preserves build backed services with features",
-		composeHelper: &compose.ComposeHelper{Version: "2.30.0"},
-		projectName:   "workspace",
+		composeHelper: &compose.ComposeHelper{Version: value2300},
+		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  "app",
-			Image: "ghcr.io/example/shared-base:latest",
-			Build: &composetypes.BuildConfig{Context: "."},
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: "."},
+			},
 		},
 		hasFeatures: true,
-		want:        "ghcr.io/example/shared-base:latest",
+		want:        ghcrIoExampleSharedBaseLatest,
 	},
 	{
 		name:          "preserves build backed services without features",
-		composeHelper: &compose.ComposeHelper{Version: "2.30.0"},
-		projectName:   "workspace",
+		composeHelper: &compose.ComposeHelper{Version: value2300},
+		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name:  "app",
-			Image: "ghcr.io/example/shared-base:latest",
-			Build: &composetypes.BuildConfig{Context: "."},
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: "."},
+			},
 		},
 		hasFeatures: false,
-		want:        "ghcr.io/example/shared-base:latest",
+		want:        ghcrIoExampleSharedBaseLatest,
 	},
 	{
 		name:          "uses default image when compose image is empty",
-		composeHelper: &compose.ComposeHelper{Version: "2.30.0"},
-		projectName:   "workspace",
+		composeHelper: &compose.ComposeHelper{Version: value2300},
+		projectName:   workspaceValue,
 		service: &composetypes.ServiceConfig{
-			Name: "app",
+			Name: app,
 		},
 		hasFeatures: true,
 		want:        "workspace-app",
@@ -113,12 +142,12 @@ func (s *ComposeSuite) TestStripDigestFromImageRef() {
 		{
 			name:  "digest reference",
 			input: "registry.example.com/app:1.2.3@sha256:abcdef",
-			want:  "registry.example.com/app:1.2.3",
+			want:  registryExampleComApp123,
 		},
 		{
 			name:  "no digest",
-			input: "registry.example.com/app:1.2.3",
-			want:  "registry.example.com/app:1.2.3",
+			input: registryExampleComApp123,
+			want:  registryExampleComApp123,
 		},
 		{
 			name:  "digest without tag",
@@ -154,26 +183,30 @@ func (s *ComposeSuite) TestCreateComposeServiceUsesBuildImageName() {
 	r := &runner{}
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
-			Name:  "app",
-			Image: "ghcr.io/example/shared-base:latest",
-			Build: &composetypes.BuildConfig{Target: "original-target"},
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Target: "original-target"},
+			},
 		},
-		buildImageName:          "workspace-app:latest",
-		dockerfilePathInContext: "Dockerfile-with-features",
-		buildContext:            "/tmp/context",
+		buildImageName:          workspaceAppLatest,
+		dockerfilePathInContext: dockerfileWithFeatures,
+		buildContext:            tmpContext,
 		featuresBuildInfo: &feature.BuildInfo{
-			OverrideTarget: "dev_containers_target_stage",
+			OverrideTarget: devContainersTargetStage,
 			BuildArgs: map[string]string{
 				"FEATURE_FLAG": "true",
 			},
 		},
 	})
 
-	s.Equal("workspace-app:latest", service.Image)
+	s.Equal(workspaceAppLatest, service.Image)
 	s.Require().NotNil(service.Build)
-	s.Equal("dev_containers_target_stage", service.Build.Target)
-	s.Equal("Dockerfile-with-features", service.Build.Dockerfile)
-	s.Equal("/tmp/context", service.Build.Context)
+	s.Equal(devContainersTargetStage, service.Build.Target)
+	s.Equal(dockerfileWithFeatures, service.Build.Dockerfile)
+	s.Equal(tmpContext, service.Build.Context)
 	s.Require().NotNil(service.Build.Args)
 	s.requireBuildArgValue(service.Build.Args, "FEATURE_FLAG", "true")
 	s.requireBuildArgValue(service.Build.Args, "BUILDKIT_INLINE_CACHE", "1")
@@ -183,15 +216,17 @@ func (s *ComposeSuite) TestCreateComposeServiceCarriesPlatform() {
 	r := &runner{}
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
-			Name:     "app",
-			Image:    "ghcr.io/example/shared-base:latest",
-			Platform: platformLinuxAMD64,
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image:    ghcrIoExampleSharedBaseLatest,
+				Platform: platformLinuxAMD64,
+			},
 		},
-		buildImageName:          "workspace-app:latest",
-		dockerfilePathInContext: "Dockerfile-with-features",
-		buildContext:            "/tmp/context",
+		buildImageName:          workspaceAppLatest,
+		dockerfilePathInContext: dockerfileWithFeatures,
+		buildContext:            tmpContext,
 		featuresBuildInfo: &feature.BuildInfo{
-			OverrideTarget: "dev_containers_target_stage",
+			OverrideTarget: devContainersTargetStage,
 		},
 	})
 
@@ -203,14 +238,16 @@ func (s *ComposeSuite) TestCreateComposeServiceOmitsPlatformWhenUnset() {
 	r := &runner{}
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
-			Name:  "app",
-			Image: "ghcr.io/example/shared-base:latest",
+			Name: app,
+			ContainerSpec: composetypes.ContainerSpec{
+				Image: ghcrIoExampleSharedBaseLatest,
+			},
 		},
-		buildImageName:          "workspace-app:latest",
-		dockerfilePathInContext: "Dockerfile-with-features",
-		buildContext:            "/tmp/context",
+		buildImageName:          workspaceAppLatest,
+		dockerfilePathInContext: dockerfileWithFeatures,
+		buildContext:            tmpContext,
 		featuresBuildInfo: &feature.BuildInfo{
-			OverrideTarget: "dev_containers_target_stage",
+			OverrideTarget: devContainersTargetStage,
 		},
 	})
 
@@ -222,13 +259,15 @@ func (s *ComposeSuite) TestCreateComposeServiceClonesBuildPlatforms() {
 	r := &runner{}
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
-			Name: "app",
-			Build: &composetypes.BuildConfig{
-				Platforms: composetypes.StringList{platformLinuxAMD64, platformLinuxARM64},
+			Name: app,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{
+					Platforms: composetypes.StringList{platformLinuxAMD64, platformLinuxARM64},
+				},
 			},
 		},
-		dockerfilePathInContext: "Dockerfile-with-features",
-		buildContext:            "/tmp/context",
+		dockerfilePathInContext: dockerfileWithFeatures,
+		buildContext:            tmpContext,
 		featuresBuildInfo:       &feature.BuildInfo{},
 	})
 
@@ -243,14 +282,16 @@ func (s *ComposeSuite) TestCreateComposeServiceClonesUnrelatedBuildFields() {
 	r := &runner{}
 	service := r.createComposeService(&composeServiceParams{
 		composeService: &composetypes.ServiceConfig{
-			Name: "app",
-			Build: &composetypes.BuildConfig{
-				ShmSize:   64 * 1024 * 1024,
-				CacheFrom: composetypes.StringList{"type=registry,ref=example.com/cache"},
+			Name: app,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{
+					ShmSize:   64 * 1024 * 1024,
+					CacheFrom: composetypes.StringList{"type=registry,ref=example.com/cache"},
+				},
 			},
 		},
-		dockerfilePathInContext: "Dockerfile-with-features",
-		buildContext:            "/tmp/context",
+		dockerfilePathInContext: dockerfileWithFeatures,
+		buildContext:            tmpContext,
 		featuresBuildInfo:       &feature.BuildInfo{},
 	})
 
@@ -287,7 +328,7 @@ func (s *PrepareBuildContextSuite) SetupTest() {
 
 func (s *PrepareBuildContextSuite) TestNoContextRelativePath() {
 	result, err := s.runner.prepareBuildContext(
-		&composetypes.ServiceConfig{Name: "test-service"},
+		&composetypes.ServiceConfig{Name: testService},
 		"/tmp/features/Dockerfile",
 		"FROM alpine",
 		&feature.BuildInfo{FeaturesFolder: "/tmp/features/folder"},
@@ -304,10 +345,13 @@ func (s *PrepareBuildContextSuite) TestNoContextRelativePath() {
 
 func (s *PrepareBuildContextSuite) TestNilBuildRelativePath() {
 	result, err := s.runner.prepareBuildContext(
-		&composetypes.ServiceConfig{Name: "test-service", Build: nil},
+		&composetypes.ServiceConfig{
+			Name:         testService,
+			WorkloadSpec: composetypes.WorkloadSpec{Build: nil},
+		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		"FROM alpine",
-		&feature.BuildInfo{FeaturesFolder: "/workspace/.devcontainer/features/folder"},
+		&feature.BuildInfo{FeaturesFolder: workspaceDevcontainerFeaturesFolder},
 	)
 
 	s.NoError(err)
@@ -324,14 +368,16 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContext() {
 
 	result, err := s.runner.prepareBuildContext(
 		&composetypes.ServiceConfig{
-			Name: "test-service",
-			Build: &composetypes.BuildConfig{
-				Context: "/workspace",
+			Name: testService,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{
+					Context: workspaceValueValue,
+				},
 			},
 		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		dockerfileContent,
-		&feature.BuildInfo{FeaturesFolder: "/workspace/.devcontainer/features/folder"},
+		&feature.BuildInfo{FeaturesFolder: workspaceDevcontainerFeaturesFolder},
 	)
 
 	s.NoError(err)
@@ -340,7 +386,7 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContext() {
 		"dockerfilePathInContext should be relative",
 	)
 	s.Equal(".devcontainer/features/Dockerfile", result.dockerfilePathInContext)
-	s.Equal("/workspace", result.context)
+	s.Equal(workspaceValueValue, result.context)
 	s.Contains(result.dockerfileContent, "COPY ./.devcontainer/features/folder/")
 	s.NotContains(result.dockerfileContent, "COPY ./"+config.DevsyContextFeatureFolder+"/")
 }
@@ -351,12 +397,14 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContextPreservesWhitespace() {
 
 	result, err := s.runner.prepareBuildContext(
 		&composetypes.ServiceConfig{
-			Name:  "test-service",
-			Build: &composetypes.BuildConfig{Context: "/workspace"},
+			Name: testService,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: workspaceValueValue},
+			},
 		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		dockerfileContent,
-		&feature.BuildInfo{FeaturesFolder: "/workspace/.devcontainer/features/folder"},
+		&feature.BuildInfo{FeaturesFolder: workspaceDevcontainerFeaturesFolder},
 	)
 
 	s.NoError(err)
@@ -369,12 +417,14 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContextNoReplacementNeeded() {
 
 	result, err := s.runner.prepareBuildContext(
 		&composetypes.ServiceConfig{
-			Name:  "test-service",
-			Build: &composetypes.BuildConfig{Context: "/workspace"},
+			Name: testService,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: workspaceValueValue},
+			},
 		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		dockerfileContent,
-		&feature.BuildInfo{FeaturesFolder: "/workspace/.devcontainer/features/folder"},
+		&feature.BuildInfo{FeaturesFolder: workspaceDevcontainerFeaturesFolder},
 	)
 
 	s.NoError(err)
@@ -384,12 +434,14 @@ func (s *PrepareBuildContextSuite) TestCustomBuildContextNoReplacementNeeded() {
 func (s *PrepareBuildContextSuite) TestCustomBuildContextEmptyContext() {
 	result, err := s.runner.prepareBuildContext(
 		&composetypes.ServiceConfig{
-			Name:  "test-service",
-			Build: &composetypes.BuildConfig{Context: ""},
+			Name: testService,
+			WorkloadSpec: composetypes.WorkloadSpec{
+				Build: &composetypes.BuildConfig{Context: ""},
+			},
 		},
 		"/workspace/.devcontainer/features/Dockerfile",
 		"FROM alpine",
-		&feature.BuildInfo{FeaturesFolder: "/workspace/.devcontainer/features/folder"},
+		&feature.BuildInfo{FeaturesFolder: workspaceDevcontainerFeaturesFolder},
 	)
 
 	s.NoError(err)
@@ -404,8 +456,8 @@ func TestPrepareBuildContextSuite(t *testing.T) {
 func TestValidateRunServices(t *testing.T) {
 	project := &composetypes.Project{
 		Services: map[string]composetypes.ServiceConfig{
-			"app": {Name: "app"},
-			"db":  {Name: "db"},
+			app:  {Name: app},
+			"db": {Name: "db"},
 		},
 	}
 	emptyProject := &composetypes.Project{Services: map[string]composetypes.ServiceConfig{}}
@@ -418,10 +470,10 @@ func TestValidateRunServices(t *testing.T) {
 		errContains string
 	}{
 		{"empty runServices returns nil", nil, project, false, ""},
-		{"valid services returns nil", []string{"app", "db"}, project, false, ""},
+		{"valid services returns nil", []string{app, "db"}, project, false, ""},
 		{"invalid service returns error", []string{"nonexistent"}, project, true, "nonexistent"},
-		{"mix of valid and invalid", []string{"app", "typo-svc", "bad"}, project, true, "typo-svc"},
-		{"project with no services", []string{"app"}, emptyProject, true, "app"},
+		{"mix of valid and invalid", []string{app, "typo-svc", "bad"}, project, true, "typo-svc"},
+		{"project with no services", []string{app}, emptyProject, true, app},
 	}
 
 	for _, tt := range tests {
@@ -590,7 +642,7 @@ func TestEscapeComposeLabelValue(t *testing.T) {
 		{name: "backslash preserved", in: `a\b`, want: `a\b`},
 		{name: "backtick preserved", in: "a`b", want: "a`b"},
 		{name: "newline preserved", in: "line1\nline2", want: "line1\nline2"},
-		{name: "unicode preserved", in: "café—naïve 🚀", want: "café—naïve 🚀"},
+		{name: "unicode preserved", in: "café-naïve 🚀", want: "café-naïve 🚀"},
 
 		// Realistic metadata: JSON containing an apostrophe must survive so it
 		// can be json.Unmarshal'd back on read. Only "$" is altered.
@@ -701,7 +753,12 @@ func TestResolveServiceEntrypoint(t *testing.T) {
 			&config.MergedDevContainerConfig{
 				DevContainerConfigBase: config.DevContainerConfigBase{OverrideCommand: &override},
 			},
-			&composetypes.ServiceConfig{Entrypoint: []string{"a"}, Command: []string{"b"}},
+			&composetypes.ServiceConfig{
+				ContainerSpec: composetypes.ContainerSpec{
+					Entrypoint: []string{"a"},
+					Command:    []string{"b"},
+				},
+			},
 			&config.ImageDetails{},
 		)
 		if len(entry) != 0 || len(cmd) != 0 {
@@ -838,7 +895,7 @@ func TestComposeBuildArgs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			args := composeBuildArgs(&composeBuildArgsParams{
 				projectName: "ws",
-				serviceName: "app",
+				serviceName: app,
 				pull:        tt.pull,
 				noCache:     tt.noCache,
 			})
@@ -855,11 +912,11 @@ func TestComposeBuildArgs(t *testing.T) {
 func TestComposeBuildArgsIncludesCoreArgs(t *testing.T) {
 	args := composeBuildArgs(&composeBuildArgsParams{
 		projectName:             "ws",
-		serviceName:             "app",
+		serviceName:             app,
 		overrideComposeFilePath: "/tmp/override.yml",
 	})
 
-	for _, want := range []string{composeProjectNameFlag, "ws", "build", "/tmp/override.yml"} {
+	for _, want := range []string{composeProjectNameFlag, "ws", overlayBuildField, "/tmp/override.yml"} {
 		if !slices.Contains(args, want) {
 			t.Errorf("expected %q in %v", want, args)
 		}
@@ -869,13 +926,13 @@ func TestComposeBuildArgsIncludesCoreArgs(t *testing.T) {
 func TestComposeBuildArgsRunServicesNoDuplicate(t *testing.T) {
 	args := composeBuildArgs(&composeBuildArgsParams{
 		projectName: "ws",
-		serviceName: "app",
-		runServices: []string{"app", "db"},
+		serviceName: app,
+		runServices: []string{app, "db"},
 	})
 
 	appCount := 0
 	for _, a := range args {
-		if a == "app" {
+		if a == app {
 			appCount++
 		}
 	}

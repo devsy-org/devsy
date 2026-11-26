@@ -38,6 +38,7 @@ func InstallAPKRequirements() {
 		dependencies = append(dependencies, "curl")
 	}
 
+	//nolint:gosec // dependencies holds only fixed package names
 	out, err := exec.Command("sh", "-c", "apk update && apk add "+strings.Join(dependencies, " ")).
 		CombinedOutput()
 	if err != nil {

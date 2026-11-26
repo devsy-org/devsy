@@ -1,6 +1,7 @@
 import type { ElectronApplication, Page } from "@playwright/test"
 import { expect, test } from "@playwright/test"
 import { launchApp, resetMockState } from "./electron-app.js"
+
 let app: ElectronApplication
 let page: Page
 const id = "lifecycleprobe"

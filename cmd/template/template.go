@@ -8,7 +8,7 @@ import (
 func NewTemplateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	templateCmd := &cobra.Command{
 		Use:           "template",
-		Short:         "Devcontainer template commands",
+		Short:         "Manage devcontainer templates",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,

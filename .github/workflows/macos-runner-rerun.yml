@@ -1,0 +1,45 @@
+name: macOS Runner Rerun
+
+# A run cannot rerun its own jobs before it completes, so this reacts to the
+# finished Pull Request run instead of living in pr-ci.yml. It also retries a
+# Windows job once when its log shows a Go runtime crash on an AMX host
+# (golang/go#81238); the workflow reads job logs, which actions: write covers.
+# A main push cancelled by a job time limit is retried when a Windows job sat in
+# a WSL2 setup step far past its step timeout: the host stopped responding and
+# a fresh runner is the only way out.
+on:
+  workflow_run:
+    workflows: [Pull Request]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  rerun-no-runner:
+    name: Rerun jobs that got no runner, hit an AMX host crash or hung a Windows host
+    if: >-
+      github.event.workflow_run.run_attempt == 1 &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+      (github.event.workflow_run.conclusion == 'cancelled' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: Rerun failed jobs once when only those failures happened
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          # Reading Windows job logs needs gh api --allow-escape-sequences.
+          gh --version
+          go run ./hack/ci rerun-no-runner --run-id "$RUN_ID" --ignore "CI Success"

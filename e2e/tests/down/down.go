@@ -35,9 +35,7 @@ var _ = ginkgo.Describe(
 			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir("tests/down/testdata/docker")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/down/testdata/docker", initialDir)
 
 			err = f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
@@ -107,9 +105,7 @@ var _ = ginkgo.Describe(
 			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
-			tempDir, err := framework.CopyToTempDir("tests/down/testdata/docker")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/down/testdata/docker", initialDir)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 			err = f.DevsyUp(ctx, tempDir)
@@ -147,9 +143,10 @@ var _ = ginkgo.Describe(
 				f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/down/testdata/docker-anon-volume")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata(
+					"tests/down/testdata/docker-anon-volume",
+					initialDir,
+				)
 
 				err = f.DevsyUp(ctx, tempDir)
 				framework.ExpectNoError(err)

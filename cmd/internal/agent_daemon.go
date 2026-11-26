@@ -29,7 +29,10 @@ const (
 	busyGracePeriod       = 20 * time.Minute
 )
 
-var daemonRuntimeLockPath = machinediagnostics.DefaultRuntimeLockPath
+var (
+	daemonRuntimeLockPath = machinediagnostics.DefaultRuntimeLockPath
+	daemonLocatorPath     = machinediagnostics.DefaultLocatorPath
+)
 
 type DaemonCmd struct {
 	*flags.GlobalFlags
@@ -101,41 +104,34 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runtimeLockPath := daemonRuntimeLockPath
-	if fallbackPath := os.Getenv(machinediagnostics.RuntimeLockPathEnv); fallbackPath != "" {
-		runtimeLockPath = fallbackPath
-	}
+	runtimeLockPath, locatorPath := daemonRuntimePaths()
 	runtimeLock, err := machinediagnostics.AcquireRuntimeLock(runtimeLockPath)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = runtimeLock.Close() }()
-	cmd.startedAt = time.Now().UTC()
-	recorder, err := machinediagnostics.NewRecorder(machinediagnostics.Options{
-		Dir:            machinediagnostics.DiagnosticsDir(location.Root),
-		Reader:         cmd.diagnosticsReader(),
-		PatrolInterval: cmd.pollInterval(),
-		ErrorReporter: func(err error) {
-			log.Warnf("write machine diagnostics: %v", err)
-		},
-	})
-	if err != nil {
-		log.Warnf("initialize machine diagnostics: %v", err)
-		cmd.recorder = machinediagnostics.Nop()
-	} else {
-		cmd.recorder = recorder
-		if err := machinediagnostics.WriteLocator(
-			machinediagnostics.DefaultLocatorPath,
-			machinediagnostics.Locator{
-				SessionID:      recorder.SessionID(),
-				DiagnosticsDir: machinediagnostics.DiagnosticsDir(location.Root),
-				StateLayout:    string(location.Layout),
-				StartedAt:      cmd.startedAt,
-			},
-		); err != nil {
-			log.Warnf("write machine diagnostics locator: %v", err)
-		}
+	cmd.startDiagnostics(location, locatorPath)
+	defer cmd.stopDiagnostics()
+
+	log.Infof("starting Devsy daemon patrol at %s", location.Root)
+	cmd.patrol(ctx)
+	return nil
+}
+
+func daemonRuntimePaths() (runtimeLockPath, locatorPath string) {
+	runtimeLockPath = daemonRuntimeLockPath
+	if fallbackPath := os.Getenv(machinediagnostics.RuntimeLockPathEnv); fallbackPath != "" {
+		runtimeLockPath = fallbackPath
 	}
+	locatorPath = daemonLocatorPath
+	if fallbackPath := os.Getenv(machinediagnostics.RuntimeLocatorPathEnv); fallbackPath != "" {
+		locatorPath = fallbackPath
+	}
+	return runtimeLockPath, locatorPath
+}
+
+func (cmd *DaemonCmd) startDiagnostics(location agentdaemon.StateLocation, locatorPath string) {
+	cmd.initDiagnostics(location, locatorPath)
 	cmd.recordEvent(
 		machinediagnostics.Event{
 			Type:    machinediagnostics.EventDaemonStarted,
@@ -149,26 +145,52 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 			health: machinediagnostics.DaemonHealthy,
 		},
 	)
-	defer func() {
-		cmd.recordEvent(
-			machinediagnostics.Event{
-				Type:    machinediagnostics.EventDaemonStopping,
-				Level:   machinediagnostics.LevelInfo,
-				Message: "Devsy machine daemon stopping.",
-			},
-		)
-		cmd.updateDiagnostics(
-			diagnosticsUpdate{
-				state:  machinediagnostics.DaemonStopping,
-				health: machinediagnostics.DaemonHealthy,
-			},
-		)
-		_ = cmd.recorder.Close()
-	}()
+}
 
-	log.Infof("starting Devsy daemon patrol at %s", location.Root)
-	cmd.patrol(ctx)
-	return nil
+func (cmd *DaemonCmd) stopDiagnostics() {
+	cmd.recordEvent(
+		machinediagnostics.Event{
+			Type:    machinediagnostics.EventDaemonStopping,
+			Level:   machinediagnostics.LevelInfo,
+			Message: "Devsy machine daemon stopping.",
+		},
+	)
+	cmd.updateDiagnostics(
+		diagnosticsUpdate{
+			state:  machinediagnostics.DaemonStopping,
+			health: machinediagnostics.DaemonHealthy,
+		},
+	)
+	_ = cmd.recorder.Close()
+}
+
+func (cmd *DaemonCmd) initDiagnostics(location agentdaemon.StateLocation, locatorPath string) {
+	cmd.startedAt = time.Now().UTC()
+	recorder, err := machinediagnostics.NewRecorder(machinediagnostics.Options{
+		Dir:            machinediagnostics.DiagnosticsDir(location.Root),
+		Reader:         cmd.diagnosticsReader(),
+		PatrolInterval: cmd.pollInterval(),
+		ErrorReporter: func(err error) {
+			log.Warnf("write machine diagnostics: %v", err)
+		},
+	})
+	if err != nil {
+		log.Warnf("initialize machine diagnostics: %v", err)
+		cmd.recorder = machinediagnostics.Nop()
+		return
+	}
+	cmd.recorder = recorder
+	if err := machinediagnostics.WriteLocator(
+		locatorPath,
+		machinediagnostics.Locator{
+			SessionID:      recorder.SessionID(),
+			DiagnosticsDir: machinediagnostics.DiagnosticsDir(location.Root),
+			StateLayout:    string(location.Layout),
+			StartedAt:      cmd.startedAt,
+		},
+	); err != nil {
+		log.Warnf("write machine diagnostics locator: %v", err)
+	}
 }
 
 func (cmd *DaemonCmd) stateLocation() (agentdaemon.StateLocation, error) {
@@ -477,13 +499,20 @@ func (cmd *DaemonCmd) shutdownWorkspace(
 func (cmd *DaemonCmd) effectiveShutdownAction(
 	workspace *provider2.AgentWorkspaceInfo,
 ) string {
+	if action, ok := workspaceShutdownAction(workspace); ok {
+		return action
+	}
+	return cmd.ShutdownAction
+}
+
+func workspaceShutdownAction(workspace *provider2.AgentWorkspaceInfo) (string, bool) {
 	if workspace != nil &&
 		workspace.LastDevContainerConfig != nil &&
 		workspace.LastDevContainerConfig.Config != nil &&
 		workspace.LastDevContainerConfig.Config.ShutdownAction != "" {
-		return workspace.LastDevContainerConfig.Config.ShutdownAction
+		return workspace.LastDevContainerConfig.Config.ShutdownAction, true
 	}
-	return cmd.ShutdownAction
+	return "", false
 }
 
 func (cmd *DaemonCmd) runShutdownCommand(
@@ -750,10 +779,9 @@ func blockedWorkspaceResult(
 }
 
 func shutdownActionEnabled(workspace *provider2.AgentWorkspaceInfo, fallback string) bool {
-	action := fallback
-	if workspace.LastDevContainerConfig != nil && workspace.LastDevContainerConfig.Config != nil &&
-		workspace.LastDevContainerConfig.Config.ShutdownAction != "" {
-		action = workspace.LastDevContainerConfig.Config.ShutdownAction
+	action, ok := workspaceShutdownAction(workspace)
+	if !ok {
+		action = fallback
 	}
 	return len(workspace.Agent.Exec.Shutdown) > 0 && action != config.ShutdownActionNone
 }

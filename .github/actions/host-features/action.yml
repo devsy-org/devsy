@@ -1,0 +1,18 @@
+name: host-features
+description: Print the runner image, Windows build, CPU and AMX state of a Windows runner. Does nothing elsewhere.
+
+# golang/go#81238 corrupts the Go heap only on hosts that enable AMX
+# (XTILEDATA). The CI rerun logic reads the XTILEDATA line from the job log.
+runs:
+  using: composite
+  steps:
+    - if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
+        $os = Get-CimInstance Win32_OperatingSystem
+        "Windows $($os.Caption) $($os.Version) build $($os.BuildNumber)"
+        Get-CimInstance Win32_Processor | ForEach-Object { "CPU $($_.Name)" }
+        Add-Type -Namespace Native -Name Kernel32 -MemberDefinition '[DllImport("kernel32.dll")] public static extern ulong GetEnabledXStateFeatures();'
+        $mask = [uint64][Native.Kernel32]::GetEnabledXStateFeatures()
+        "XSTATE features=0x{0:x} XTILECFG={1} XTILEDATA={2}" -f $mask, (($mask -band [uint64]0x20000) -ne 0), (($mask -band [uint64]0x40000) -ne 0)

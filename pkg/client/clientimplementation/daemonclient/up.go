@@ -67,7 +67,12 @@ func (c *client) Up(ctx context.Context, opt clientpkg.UpOptions) (*config.Resul
 		return nil, err
 	}
 
-	return waitTaskDone(ctx, managementClient, instance, taskID, reporterOrNop(opt.Reporter))
+	return waitTaskDone(ctx, taskWait{
+		managementClient: managementClient,
+		instance:         instance,
+		taskID:           taskID,
+		reporter:         reporterOrNop(opt.Reporter),
+	})
 }
 
 func migratedRebuildError(
@@ -105,9 +110,7 @@ func syncTemplateIfRequired(
 
 	log.Debug("Template update required")
 	oldInstance := instance.DeepCopy()
-	instance.Spec.TemplateRef.SyncOnce = true
-
-	updated, err := platform.UpdateInstance(ctx, baseClient, oldInstance, instance)
+	updated, err := platform.UpdateInstanceSyncTemplate(ctx, baseClient, oldInstance, instance)
 	if err != nil {
 		return nil, fmt.Errorf("update instance: %w", err)
 	}
@@ -179,7 +182,7 @@ func cancelActiveUpTask(
 	}
 
 	log.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
-	_, err := managementClient.Loft().
+	_, err := managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(instance.Namespace).
 		Cancel(ctx, instance.Name, &managementv1.DevsyWorkspaceInstanceCancel{
@@ -193,7 +196,7 @@ func cancelActiveUpTask(
 }
 
 func createUpTask(ctx context.Context, params createUpTaskParams) (string, error) {
-	task, err := params.managementClient.Loft().
+	task, err := params.managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(params.instance.Namespace).
 		Up(ctx, params.instance.Name, &managementv1.DevsyWorkspaceInstanceUp{
@@ -212,14 +215,18 @@ func createUpTask(ctx context.Context, params createUpTaskParams) (string, error
 	return task.Status.TaskID, nil
 }
 
-func waitTaskDone(
-	ctx context.Context,
-	managementClient kube.Interface,
-	instance *managementv1.DevsyWorkspaceInstance,
-	taskID string,
-	reporter status.Reporter,
-) (*config.Result, error) {
-	exitCode, err := observeTask(ctx, managementClient, instance, taskID, reporter)
+// taskWait identifies the instance task to wait on and where to report progress.
+type taskWait struct {
+	managementClient kube.Interface
+	instance         *managementv1.DevsyWorkspaceInstance
+	taskID           string
+	reporter         status.Reporter
+}
+
+func waitTaskDone(ctx context.Context, wait taskWait) (*config.Result, error) {
+	managementClient, instance := wait.managementClient, wait.instance
+	taskID := wait.taskID
+	exitCode, err := observeTask(ctx, wait)
 	if err != nil {
 		return nil, fmt.Errorf("up: %w", err)
 	} else if exitCode != 0 {
@@ -228,7 +235,7 @@ func waitTaskDone(
 
 	// get result
 	tasks := &managementv1.DevsyWorkspaceInstanceTasks{}
-	err = managementClient.Loft().ManagementV1().RESTClient().Get().
+	err = managementClient.Devsy().ManagementV1().RESTClient().Get().
 		Namespace(instance.Namespace).
 		Resource("devsyworkspaceinstances").
 		Name(instance.Name).
@@ -286,16 +293,12 @@ func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 		Template:   instance.Spec.TemplateRef,
 		Parameters: instance.Spec.Parameters,
 	})
-	log.Debug("Starting pro workspace with configuration", string(workspaceConfig))
+	log.Debug("Starting platform workspace with configuration", string(workspaceConfig))
 }
 
-func observeTask(
-	ctx context.Context,
-	managementClient kube.Interface,
-	instance *managementv1.DevsyWorkspaceInstance,
-	taskID string,
-	reporter status.Reporter,
-) (int, error) {
+func observeTask(ctx context.Context, wait taskWait) (int, error) {
+	managementClient, instance := wait.managementClient, wait.instance
+	taskID := wait.taskID
 	var (
 		exitCode int
 		err      error
@@ -309,11 +312,11 @@ func observeTask(
 		// cancel ongoing task if context is done
 		select {
 		case <-ctx.Done():
-			timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			timeoutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			defer cancelPrintCtx()
 
-			_, err := managementClient.Loft().
+			_, err := managementClient.Devsy().
 				ManagementV1().
 				DevsyWorkspaceInstances(instance.Namespace).
 				Cancel(timeoutCtx, instance.Name, &managementv1.DevsyWorkspaceInstanceCancel{
@@ -329,7 +332,7 @@ func observeTask(
 		}
 	}()
 	go func() {
-		exitCode, err = printLogs(printCtx, managementClient, instance, taskID, reporter)
+		exitCode, err = printLogs(printCtx, wait)
 		errChan <- err
 	}()
 
@@ -350,13 +353,9 @@ type Message struct {
 	Bytes    []byte      `json:"bytes,omitempty"`
 }
 
-func printLogs(
-	ctx context.Context,
-	managementClient kube.Interface,
-	workspace *managementv1.DevsyWorkspaceInstance,
-	taskID string,
-	reporter status.Reporter,
-) (int, error) {
+func printLogs(ctx context.Context, wait taskWait) (int, error) {
+	managementClient, workspace := wait.managementClient, wait.instance
+	taskID, reporter := wait.taskID, wait.reporter
 	logsReader, err := openTaskLogsStream(ctx, managementClient, workspace, taskID)
 	if err != nil {
 		return -1, err
@@ -389,7 +388,7 @@ func openTaskLogsStream(
 	taskID string,
 ) (io.ReadCloser, error) {
 	log.Debugf("printing logs of task: %s", taskID)
-	logsReader, err := managementClient.Loft().ManagementV1().RESTClient().Get().
+	logsReader, err := managementClient.Devsy().ManagementV1().RESTClient().Get().
 		Namespace(workspace.Namespace).
 		Resource("devsyworkspaceinstances").
 		Name(workspace.Name).
@@ -584,7 +583,7 @@ func findActiveUpTask(
 	instance *managementv1.DevsyWorkspaceInstance,
 ) (*managementv1.DevsyWorkspaceInstanceTask, error) {
 	tasks := &managementv1.DevsyWorkspaceInstanceTasks{}
-	err := managementClient.Loft().ManagementV1().RESTClient().Get().
+	err := managementClient.Devsy().ManagementV1().RESTClient().Get().
 		Namespace(instance.Namespace).
 		Resource("devsyworkspaceinstances").
 		Name(instance.Name).

@@ -80,6 +80,9 @@ func resolveOCIExtends(
 		return nil, fmt.Errorf("extends: unmarshal OCI %q: %w", bare, err)
 	}
 	devContainer.Origin = "oci://" + bare
+	if err := devContainer.captureSource(normalized); err != nil {
+		return nil, err
+	}
 
 	if !devContainer.Extends.IsEmpty() {
 		parent, err := resolveExtendsArray(ctx, devContainer.Extends, "", visited)
@@ -265,8 +268,7 @@ func isOCIExtendsTransientError(err error) bool {
 	if err == nil {
 		return false
 	}
-	var terr *transport.Error
-	if errors.As(err, &terr) {
+	if terr, ok := errors.AsType[*transport.Error](err); ok {
 		return terr.StatusCode >= http.StatusInternalServerError
 	}
 	return true

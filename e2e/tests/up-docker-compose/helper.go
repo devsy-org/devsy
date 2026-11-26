@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -35,10 +36,6 @@ type baseTestContext struct {
 	f            *framework.Framework
 	dockerHelper *docker.DockerHelper
 	initialDir   string
-}
-
-func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
-	return btc.f.DevsySSH(ctx, tempDir, command)
 }
 
 func (btc *baseTestContext) inspectContainer(
@@ -111,11 +108,23 @@ func (tc *testContext) getAppContainer(
 	ctx context.Context,
 	workspace *provider2.Workspace,
 ) (*container.InspectResponse, error) {
-	ids, err := findComposeContainer(ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app")
+	ids, err := tc.findComposeContainer(ctx, workspace.UID, "app")
 	if err != nil {
 		return nil, err
 	}
 	return tc.inspectContainer(ctx, ids)
+}
+
+func (tc *testContext) expectSingleAppContainer(
+	ctx context.Context,
+	workspace *provider2.Workspace,
+) []string {
+	ids, err := tc.findComposeContainer(ctx, workspace.UID,
+		"app",
+	)
+	framework.ExpectNoError(err)
+	gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+	return ids
 }
 
 func (tc *testContext) findAppAndSidecar(
@@ -123,15 +132,11 @@ func (tc *testContext) findAppAndSidecar(
 	workspaceUID string,
 ) (appIDs, sidecarIDs []string) {
 	var err error
-	appIDs, err = findComposeContainer(
-		ctx, tc.dockerHelper, tc.composeHelper, workspaceUID, "app",
-	)
+	appIDs, err = tc.findComposeContainer(ctx, workspaceUID, "app")
 	framework.ExpectNoError(err)
 	gomega.Expect(appIDs).To(gomega.HaveLen(1))
 
-	sidecarIDs, err = findComposeContainer(
-		ctx, tc.dockerHelper, tc.composeHelper, workspaceUID, "sidecar",
-	)
+	sidecarIDs, err = tc.findComposeContainer(ctx, workspaceUID, "sidecar")
 	framework.ExpectNoError(err)
 	gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
 	return appIDs, sidecarIDs
@@ -182,24 +187,20 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 	return tempDir, nil
 }
 
-func setupDockerProvider(binDir string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, "docker")
-}
-
 // findComposeContainer returns the compose container IDs for a workspace's
 // service, resolving devsy's actual project name first since it may not be
 // the sanitized workspace UID.
-func findComposeContainer(
+func (tc *testContext) findComposeContainer(
 	ctx context.Context,
-	dockerHelper *docker.DockerHelper,
-	composeHelper *compose.ComposeHelper,
 	workspaceUID, serviceName string,
 ) ([]string, error) {
-	projectName, err := composeProjectForWorkspace(ctx, dockerHelper, composeHelper, workspaceUID)
+	projectName, err := composeProjectForWorkspace(
+		ctx, tc.dockerHelper, tc.composeHelper, workspaceUID,
+	)
 	if err != nil {
 		return nil, err
 	}
-	return dockerHelper.FindContainer(ctx, []string{
+	return tc.dockerHelper.FindContainer(ctx, []string{
 		fmt.Sprintf("%s=%s", pkgconfig.ComposeProjectLabel, projectName),
 		fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, serviceName),
 	})
@@ -281,33 +282,58 @@ func verifyContainerUser(
 		To(gomega.Equal(expectedUser), fmt.Sprintf("remote container user should be %s", expectedUser))
 }
 
-func verifyUIDMapping(
-	containerUID, containerGID, hostUID, hostGID, defaultUID, defaultGID int,
-	username string,
-) {
-	ginkgo.By(
-		fmt.Sprintf("container UID mapping: %s=%d, expected=%d", username, containerUID, hostUID),
-	)
-	ginkgo.By(
-		fmt.Sprintf("container GID mapping: %s=%d, expected=%d", username, containerGID, hostGID),
-	)
+type userIDs struct {
+	uid, gid int
+}
 
-	if hostUID == 0 {
-		ginkgo.By("running as root user on host")
-		gomega.Expect(containerUID).
-			To(gomega.Equal(defaultUID), fmt.Sprintf("%s user UID should remain %d when host is root", username, defaultUID))
-		gomega.Expect(containerGID).
-			To(gomega.Equal(defaultGID), fmt.Sprintf("%s user GID should remain %d when host is root", username, defaultGID))
-	} else {
-		ginkgo.By("running as non-root user on host")
-		gomega.Expect(containerUID).
-			To(gomega.Equal(hostUID), fmt.Sprintf("%s user UID should match host user UID", username))
-		gomega.Expect(containerGID).
-			To(gomega.Equal(hostGID), fmt.Sprintf("%s user GID should match host user GID", username))
+func expectedUIDMapping(goos string, host, defaults userIDs) (int, int) {
+	if goos == "linux" && host.uid != 0 {
+		return host.uid, host.gid
 	}
+	return defaults.uid, defaults.gid
+}
+
+// uidMapping holds the IDs compared by verifyUIDMapping.
+type uidMapping struct {
+	ContainerUID, ContainerGID int
+	HostUID, HostGID           int
+	DefaultUID, DefaultGID     int
+	Username                   string
+}
+
+func verifyUIDMapping(m uidMapping) {
+	containerUID, containerGID, hostUID, hostGID := m.ContainerUID, m.ContainerGID, m.HostUID, m.HostGID
+	defaultUID, defaultGID, username := m.DefaultUID, m.DefaultGID, m.Username
+	expectedUID, expectedGID := expectedUIDMapping(
+		runtime.GOOS,
+		userIDs{uid: hostUID, gid: hostGID},
+		userIDs{uid: defaultUID, gid: defaultGID},
+	)
+	ginkgo.By(fmt.Sprintf(
+		"container UID/GID mapping: user=%s os=%s host=%d:%d default=%d:%d actual=%d:%d expected=%d:%d",
+		username,
+		runtime.GOOS,
+		hostUID,
+		hostGID,
+		defaultUID,
+		defaultGID,
+		containerUID,
+		containerGID,
+		expectedUID,
+		expectedGID,
+	))
+	gomega.Expect(containerUID).To(
+		gomega.Equal(expectedUID),
+		fmt.Sprintf("%s UID should match computed platform expectation", username),
+	)
+	gomega.Expect(containerGID).To(
+		gomega.Equal(expectedGID),
+		fmt.Sprintf("%s GID should match computed platform expectation", username),
+	)
 }
 
 func verifyHostFileAccess(filePath, expectedContent string) {
+	//nolint:gosec // filePath is a host path the test created
 	content, err := os.ReadFile(filePath)
 	framework.ExpectNoError(err)
 	gomega.Expect(string(content)).

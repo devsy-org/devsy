@@ -1,0 +1,468 @@
+//go:build linux
+
+package setup
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"os/exec"
+	"os/user"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/pty"
+	"github.com/devsy-org/devsy/pkg/ssh/server"
+	"github.com/devsy-org/devsy/pkg/subprocess"
+	"github.com/devsy-org/ssh"
+	"golang.org/x/sys/unix"
+)
+
+const (
+	interactiveDrainGrace = 2 * time.Second
+	interactiveDrainLimit = 5 * time.Second
+)
+
+type interactiveLaunch struct {
+	binary   string
+	args     []string
+	identity interactiveIdentity
+}
+
+type interactiveIdentity struct{ credentials server.ExecCredentials }
+
+func loginShell(ctx context.Context, name string) (string, error) {
+	lookup, _, _ := strings.Cut(name, ":")
+	path, err := exec.LookPath("getent")
+	if err == nil {
+		cmd := exec.CommandContext(ctx, "getent")
+		cmd.Path = path
+		cmd.Args = append(cmd.Args, "passwd", lookup)
+		if out, err := cmd.Output(); err == nil {
+			if shell := shellFromPasswd(string(out), lookup); shell != "" {
+				return shell, nil
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile("/etc/passwd")
+	if err == nil {
+		if shell := shellFromPasswd(string(data), lookup); shell != "" {
+			return shell, nil
+		}
+	}
+	return "", fmt.Errorf("cannot resolve login shell for %q", lookup)
+}
+
+func shellFromPasswd(data, name string) string {
+	for line := range strings.SplitSeq(data, "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) >= 7 && (fields[0] == name || fields[2] == name) {
+			return fields[6]
+		}
+	}
+	return ""
+}
+
+func prepareInteractiveLaunch(
+	ctx context.Context, command []string, user string,
+) (interactiveLaunch, error) {
+	shell, err := loginShell(ctx, user)
+	if err != nil {
+		return interactiveLaunch{}, err
+	}
+	credentials, err := server.ResolveExecCredentials(user)
+	if err != nil {
+		return interactiveLaunch{}, fmt.Errorf("resolve execution identity: %w", err)
+	}
+	args := command
+	if len(command) == 1 {
+		if credentials.MatchCurrent {
+			shell = "sh"
+		}
+		args = []string{shell, "-c", command[0]}
+	}
+	return interactiveLaunch{
+		binary:   args[0],
+		args:     args,
+		identity: interactiveIdentity{credentials: credentials},
+	}, nil
+}
+
+func runInteractiveProcess(
+	ctx context.Context,
+	p hookRunParams,
+	launch interactiveLaunch,
+	a tunnel.TerminalAttachment,
+) (subprocess.Result, error) {
+	result := subprocess.Result{ExitCode: -1}
+	input := a.Input()
+	terminal, process, err := startInteractive(p, launch, a)
+	if err != nil {
+		return result, err
+	}
+
+	inputDone := make(chan struct{})
+	outputDone := make(chan error, 1)
+	waitDone := make(chan error, 1)
+	resizeDone := make(chan struct{})
+	stopResize := make(chan struct{})
+	progress := make(chan struct{}, 1)
+	stopOutput := make(chan struct{})
+	reader, err := newInteractiveReader(terminal, stopOutput)
+	if err != nil {
+		_ = process.Kill()
+		_ = terminal.Close()
+		_ = process.Wait()
+		_ = input.Close()
+		return result, err
+	}
+	go func() { defer close(inputDone); _, _ = io.Copy(terminal.InputWriter(), input) }()
+	go func() {
+		_, copyErr := io.Copy(
+			&interactiveOutput{writer: a.Output(), progress: progress},
+			reader,
+		)
+		outputDone <- copyErr
+	}()
+	go func() { waitDone <- process.Wait() }()
+	go resizeInteractive(terminal, a, stopResize, resizeDone)
+	state := &interactiveWait{waitDone: waitDone, outputDone: outputDone}
+	state.wait(ctx, a, progress)
+	if state.sessionErr != nil {
+		state.stop(process)
+	}
+
+	finishInteractive(
+		terminal,
+		a,
+		state,
+		interactiveStops{stopResize, resizeDone, stopOutput, inputDone, input},
+	)
+	return interactiveResult(state.waitErr, state.sessionErr)
+}
+
+type interactiveStops struct {
+	resize, resized, output, input chan struct{}
+	reader                         io.ReadCloser
+}
+
+func finishInteractive(
+	terminal pty.PTYCmd,
+	a tunnel.TerminalAttachment,
+	state *interactiveWait,
+	stops interactiveStops,
+) {
+	close(stops.resize)
+	<-stops.resized
+	if !state.drained {
+		close(stops.output)
+		a.Abort()
+		<-state.outputDone
+	}
+	_ = terminal.Close()
+	if !state.waited {
+		state.waitErr = <-state.waitDone
+	}
+	_ = stops.reader.Close()
+	<-stops.input
+}
+
+func interactiveResult(waitErr, sessionErr error) (subprocess.Result, error) {
+	result := subprocess.Result{}
+	result.ExitCode = 0
+	if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
+		result.ExitCode = exitErr.ExitCode()
+		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+			result.Signal = status.Signal().String()
+		}
+	} else if waitErr != nil {
+		result.ExitCode = -1
+	}
+	if sessionErr != nil {
+		return result, sessionErr
+	}
+	return result, waitErr
+}
+
+type interactiveWait struct {
+	waitDone   <-chan error
+	outputDone <-chan error
+	waitErr    error
+	sessionErr error
+	waited     bool
+	drained    bool
+}
+
+func resizeInteractive(terminal pty.PTYCmd, a tunnel.TerminalAttachment, stop, done chan struct{}) {
+	defer close(done)
+	sizes := a.Resizes()
+	for {
+		select {
+		case size, ok := <-sizes:
+			if !ok {
+				return
+			}
+			if size.Rows > 0 && size.Columns > 0 {
+				_ = terminal.Resize(size.Rows, size.Columns)
+			}
+		case <-stop:
+			return
+		}
+	}
+}
+
+type interactiveReader struct {
+	fd   int32
+	stop <-chan struct{}
+}
+
+func newInteractiveReader(terminal pty.PTYCmd, stop <-chan struct{}) (*interactiveReader, error) {
+	master, ok := terminal.InputWriter().(*os.File)
+	if !ok {
+		return nil, errors.New("terminal master is not a file")
+	}
+	fd := master.Fd()
+	if fd > math.MaxInt32 {
+		return nil, errors.New("terminal master descriptor is too large")
+	}
+	return &interactiveReader{fd: int32(fd & math.MaxInt32), stop: stop}, nil
+}
+
+func (r *interactiveReader) Read(p []byte) (int, error) {
+	for {
+		ready, err := r.ready()
+		if err != nil {
+			return 0, err
+		}
+		if !ready {
+			continue
+		}
+		n, err := unix.Read(int(r.fd), p)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if errors.Is(err, unix.EIO) {
+			return 0, io.EOF
+		}
+		if err != nil {
+			return 0, err
+		}
+		return n, nil
+	}
+}
+
+func (r *interactiveReader) ready() (bool, error) {
+	select {
+	case <-r.stop:
+		return false, io.EOF
+	default:
+	}
+	fds := []unix.PollFd{{Fd: r.fd, Events: unix.POLLIN}}
+	n, err := unix.Poll(fds, 100)
+	if errors.Is(err, unix.EINTR) {
+		return false, nil
+	}
+	return n > 0, err
+}
+
+type interactiveOutput struct {
+	writer   io.Writer
+	progress chan<- struct{}
+}
+
+func (o *interactiveOutput) Write(p []byte) (int, error) {
+	n, err := o.writer.Write(p)
+	if n > 0 {
+		select {
+		case o.progress <- struct{}{}:
+		default:
+		}
+	}
+	return n, err
+}
+
+type interactiveDrain struct {
+	grace, limit   *time.Timer
+	graceC, limitC <-chan time.Time
+}
+
+func (d *interactiveDrain) start() {
+	d.grace = time.NewTimer(interactiveDrainGrace)
+	d.limit = time.NewTimer(interactiveDrainLimit)
+	d.graceC, d.limitC = d.grace.C, d.limit.C
+}
+
+func (d *interactiveDrain) reset() {
+	if d.grace == nil {
+		return
+	}
+	if !d.grace.Stop() {
+		select {
+		case <-d.grace.C:
+		default:
+		}
+	}
+	d.grace.Reset(interactiveDrainGrace)
+}
+
+func (d *interactiveDrain) stop() {
+	if d.grace != nil {
+		d.grace.Stop()
+		d.limit.Stop()
+	}
+}
+
+func (s *interactiveWait) wait(
+	ctx context.Context,
+	a tunnel.TerminalAttachment,
+	progress <-chan struct{},
+) {
+	d := &interactiveDrain{}
+	defer d.stop()
+	for !s.waited || !s.drained {
+		if s.waitStep(ctx, a, progress, d) {
+			return
+		}
+	}
+}
+
+func (s *interactiveWait) waitStep(
+	ctx context.Context,
+	a tunnel.TerminalAttachment,
+	progress <-chan struct{},
+	d *interactiveDrain,
+) bool {
+	select {
+	case s.waitErr = <-s.waitDone:
+		s.processExited(d)
+	case err := <-s.outputDone:
+		s.drained = true
+		s.outputDone = nil
+		s.sessionErr = err
+	case <-progress:
+		d.reset()
+	case <-d.graceC:
+		return warnTruncatedOutput()
+	case <-d.limitC:
+		return warnTruncatedOutput()
+	case <-ctx.Done():
+		s.sessionErr = ctx.Err()
+	case <-a.Canceled():
+		s.sessionErr = context.Canceled
+	}
+	return s.sessionErr != nil
+}
+
+func (s *interactiveWait) processExited(d *interactiveDrain) {
+	s.waited = true
+	s.waitDone = nil
+	if !s.drained {
+		d.start()
+	}
+}
+
+func warnTruncatedOutput() bool {
+	log.Warnf("lifecycle terminal output was truncated after drain timeout")
+	return true
+}
+
+func (s *interactiveWait) stop(process pty.Process) {
+	_ = syscall.Kill(-process.Pid(), syscall.SIGTERM)
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for !s.waited || !s.drained {
+		select {
+		case s.waitErr = <-s.waitDone:
+			s.waited = true
+			s.waitDone = nil
+		case <-s.outputDone:
+			s.drained = true
+			s.outputDone = nil
+		case <-timer.C:
+			_ = syscall.Kill(-process.Pid(), syscall.SIGKILL)
+			return
+		}
+	}
+}
+
+func startInteractive(
+	p hookRunParams,
+	launch interactiveLaunch,
+	a tunnel.TerminalAttachment,
+) (pty.PTYCmd, pty.Process, error) {
+	window := a.Window()
+	cred := launch.identity.credentials
+	env := os.Environ()
+	if !cred.MatchCurrent {
+		target, err := user.LookupId(strconv.FormatUint(uint64(cred.UID), 10))
+		if err != nil {
+			return nil, nil, fmt.Errorf("lookup execution user: %w", err)
+		}
+		shell, err := loginShell(p.ctx, target.Username)
+		if err != nil {
+			return nil, nil, err
+		}
+		env = append(env, "HOME="+target.HomeDir, "USER="+target.Username,
+			"LOGNAME="+target.Username, "SHELL="+shell)
+	}
+	path, err := interactiveLookPath(launch.binary, p.env.workspaceFolder, p.env.remoteEnv)
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd := pty.CommandContext(context.Background(), path, launch.args[1:]...)
+	cmd.Dir = p.env.workspaceFolder
+	cmd.Env = append(append(env, buildEnvArr(p.env.remoteEnv)...), "TERM="+window.Term)
+	opts := []pty.Option{
+		pty.WithSSHRequest(
+			ssh.Pty{
+				Term:   window.Term,
+				Window: ssh.Window{Width: int(window.Columns), Height: int(window.Rows)},
+			},
+		),
+	}
+	if !cred.MatchCurrent {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Credential: &syscall.Credential{Uid: cred.UID, Gid: cred.GID, Groups: cred.Groups},
+		}
+		opts = append(opts, pty.WithTTYOwner(int(cred.UID), int(cred.GID)))
+	}
+	terminal, process, err := pty.Start(cmd, pty.WithPTYOption(opts...))
+	if err != nil {
+		return nil, nil, fmt.Errorf("start terminal command: %w", err)
+	}
+	return terminal, process, nil
+}
+
+func interactiveLookPath(binary, dir string, env map[string]string) (string, error) {
+	if strings.Contains(binary, "/") {
+		if !filepath.IsAbs(binary) {
+			binary = filepath.Join(dir, binary)
+		}
+		return exec.LookPath(binary)
+	}
+	path, ok := env["PATH"]
+	if !ok {
+		path = os.Getenv("PATH")
+	}
+	for _, entry := range filepath.SplitList(path) {
+		if !filepath.IsAbs(entry) {
+			entry = filepath.Join(dir, entry)
+		}
+		candidate := filepath.Join(entry, binary)
+		if found, err := exec.LookPath(candidate); err == nil {
+			return found, nil
+		}
+	}
+	return "", &exec.Error{Name: binary, Err: exec.ErrNotFound}
+}

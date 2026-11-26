@@ -4,14 +4,14 @@ import "fmt"
 
 // IDELaunchMode controls how the openIDE phase runs.
 //
-//   - LaunchAuto: full launch — start tunnel (for browser IDEs) and open
+//   - LaunchAuto: full launch - start tunnel (for browser IDEs) and open
 //     the host browser/app.
 //   - LaunchHeadless: do not open the host browser/app. For browser IDEs
 //     (openvscode, jupyter, rstudio) the detached tunnel still spawns. For
 //     Fleet the workspace-side URL is logged so the user can open it
 //     manually. For other desktop IDEs (VSCode flavors, JetBrains, Zed) the
 //     openIDE phase only does the host launch, so headless is functionally
-//     equivalent to skip — backend install (where one exists) happens
+//     equivalent to skip - backend install (where one exists) happens
 //     during workspace setup, not here.
 //   - LaunchSkip: short-circuit the openIDE phase entirely.
 type IDELaunchMode string

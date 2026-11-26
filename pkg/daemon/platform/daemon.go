@@ -45,14 +45,13 @@ func Init(ctx context.Context, config InitConfig) (*Daemon, error) {
 	}
 
 	platformConfig := config.PlatformClient.Config()
-	tsServer, lc, err := newTSServer(
-		ctx,
-		platformConfig.Host,
-		platformConfig.AccessKey,
-		config.UserName,
-		config.RootDir,
-		platformConfig.Insecure,
-	)
+	tsServer, lc, err := newTSServer(ctx, tsServerConfig{
+		Host:      platformConfig.Host,
+		AccessKey: platformConfig.AccessKey,
+		UserName:  config.UserName,
+		RootDir:   config.RootDir,
+		Insecure:  platformConfig.Insecure,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create tailscale server: %w", err)
 	}

@@ -1,11 +1,25 @@
 import { writable } from "svelte/store"
-import { getAutoDownload, setAutoDownload } from "$lib/ipc/commands.js"
+import {
+  getAppSettings,
+  getAutoDownload,
+  setAppSettings,
+  setAutoDownload,
+} from "$lib/ipc/commands.js"
+import { onAppSettingsChanged } from "$lib/ipc/events.js"
+import type {
+  AppSettings,
+  AppSettingsState,
+  LogLevel,
+  StartupStatus,
+  TrayNotificationLevel,
+} from "$shared/app-settings.js"
 
 const browser = typeof window !== "undefined"
 
 // ── UI Settings (localStorage) ──────────────────────────────────────
 
 export type Theme = "light" | "dark" | "system"
+export type EffectiveTheme = "light" | "dark"
 export type ColorScheme = "default" | "emerald" | "purple"
 export type UIScale = "xs" | "sm" | "md" | "lg" | "xl"
 export type SidebarPosition = "left" | "right"
@@ -61,18 +75,29 @@ export const theme = writable<Theme>(
   getStored(STORAGE_KEY, ["light", "dark", "system"] as const, "dark"),
 )
 
+function resolveEffectiveTheme(value: Theme): EffectiveTheme {
+  if (value !== "system") return value
+  if (!browser) return "dark"
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light"
+}
+
+// The theme actually painted: an explicit override, or the OS preference when
+// the setting is "system". Written only by applyTheme so the media-query
+// listener in initSettings stays the single owner of OS theme changes.
+export const effectiveTheme = writable<EffectiveTheme>(
+  resolveEffectiveTheme(
+    getStored(STORAGE_KEY, ["light", "dark", "system"] as const, "dark"),
+  ),
+)
+
 export function applyTheme(value: Theme) {
   if (!browser) return
   localStorage.setItem(STORAGE_KEY, value)
-  const root = document.documentElement
-  if (value === "system") {
-    const prefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)",
-    ).matches
-    root.classList.toggle("dark", prefersDark)
-  } else {
-    root.classList.toggle("dark", value === "dark")
-  }
+  const resolved = resolveEffectiveTheme(value)
+  document.documentElement.classList.toggle("dark", resolved === "dark")
+  effectiveTheme.set(resolved)
 }
 
 export function cycleTheme() {
@@ -84,7 +109,7 @@ export function cycleTheme() {
   })
 }
 
-// Color scheme (accent) — picker is hidden in Settings; force purple for all
+// Color scheme (accent) - picker is hidden in Settings; force purple for all
 // users regardless of any previously persisted value.
 export const colorScheme = writable<ColorScheme>("purple")
 
@@ -133,7 +158,7 @@ export function setSidebarPosition(value: SidebarPosition) {
   sidebarPosition.set(value)
 }
 
-// Auto-update — main process owns the persistent value. localStorage
+// Auto-update - main process owns the persistent value. localStorage
 // is a cache for instant first paint; `syncAutoUpdateFromMain` reconciles
 // it with the main-process truth at app boot.
 export const autoUpdate = writable<boolean>(
@@ -152,7 +177,10 @@ export async function syncAutoUpdateFromMain(): Promise<void> {
     if (browser) localStorage.setItem(AUTO_UPDATE_KEY, String(value))
     autoUpdate.set(value)
   } catch (err) {
-    console.warn("[settings] getAutoDownload failed; keeping cached value:", err)
+    console.warn(
+      "[settings] getAutoDownload failed; keeping cached value:",
+      err,
+    )
   }
 }
 
@@ -199,6 +227,7 @@ export interface ContextOptions {
   dotfilesUrl: string
   dotfilesScript: string
   dockerCredentialForwarding: boolean
+  githubCliCredentialForwarding: boolean
   gitCredentialForwarding: boolean
   gitSshSignatureForwarding: boolean
   sshAgentForwarding: boolean
@@ -216,7 +245,6 @@ export interface ContextOptions {
 export type OnBuildFailure = "prompt" | "auto-recovery" | "nothing"
 
 export interface LocalOptions {
-  debugFlag: boolean
   sshKeyPath: string
   httpProxy: string
   httpsProxy: string
@@ -233,6 +261,7 @@ export const DEFAULT_CONTEXT_OPTIONS: ContextOptions = {
   dotfilesUrl: "",
   dotfilesScript: "",
   dockerCredentialForwarding: true,
+  githubCliCredentialForwarding: false,
   gitCredentialForwarding: true,
   gitSshSignatureForwarding: true,
   sshAgentForwarding: true,
@@ -248,7 +277,6 @@ export const DEFAULT_CONTEXT_OPTIONS: ContextOptions = {
 }
 
 export const DEFAULT_LOCAL_OPTIONS: LocalOptions = {
-  debugFlag: false,
   sshKeyPath: "",
   httpProxy: "",
   httpsProxy: "",
@@ -266,6 +294,7 @@ export const CONTEXT_OPTION_KEYS: Record<keyof ContextOptions, string> = {
   dotfilesUrl: "DOTFILES_URL",
   dotfilesScript: "DOTFILES_SCRIPT",
   dockerCredentialForwarding: "SSH_INJECT_DOCKER_CREDENTIALS",
+  githubCliCredentialForwarding: "SSH_INJECT_GITHUB_CREDENTIALS",
   gitCredentialForwarding: "SSH_INJECT_GIT_CREDENTIALS",
   gitSshSignatureForwarding: "GIT_SSH_SIGNATURE_FORWARDING",
   sshAgentForwarding: "SSH_AGENT_FORWARDING",
@@ -332,6 +361,8 @@ export function parseContextOptions(
     dotfilesUrl: str("DOTFILES_URL"),
     dotfilesScript: str("DOTFILES_SCRIPT"),
     dockerCredentialForwarding: bool("SSH_INJECT_DOCKER_CREDENTIALS", true),
+    githubCliCredentialForwarding:
+      str("SSH_INJECT_GITHUB_CREDENTIALS") === "true",
     gitCredentialForwarding: bool("SSH_INJECT_GIT_CREDENTIALS", true),
     gitSshSignatureForwarding: bool("GIT_SSH_SIGNATURE_FORWARDING", true),
     sshAgentForwarding: bool("SSH_AGENT_FORWARDING", true),
@@ -345,6 +376,78 @@ export function parseContextOptions(
     sshConfigPath: str("SSH_CONFIG_PATH"),
     sshConfigIncludePath: str("SSH_CONFIG_INCLUDE_PATH"),
   }
+}
+
+// Main owns these settings; a renderer write in flight wins over inbound updates.
+export const runAtStartup = writable<boolean>(false)
+export const openToTrayOnStartup = writable<boolean>(false)
+export const trayNotifications = writable<TrayNotificationLevel>("failures")
+export const desktopLogLevel = writable<LogLevel>("info")
+export const cliCaptureLogLevel = writable<LogLevel>("info")
+export const appImageIntegrationPromptDismissed = writable(false)
+export const startupStatus = writable<StartupStatus | null>(null)
+
+let desktopSettingsQueue: Promise<unknown> = Promise.resolve()
+let desktopSettingsRevision = 0
+
+function applyAppSettingsState(state: AppSettingsState): void {
+  runAtStartup.set(state.settings.runAtStartup)
+  openToTrayOnStartup.set(state.settings.openToTrayOnStartup)
+  trayNotifications.set(state.settings.trayNotifications)
+  desktopLogLevel.set(state.settings.desktopLogLevel)
+  cliCaptureLogLevel.set(state.settings.cliCaptureLogLevel)
+  appImageIntegrationPromptDismissed.set(
+    state.settings.appImageIntegrationPromptDismissed,
+  )
+  startupStatus.set(state.startup)
+}
+
+export async function syncDesktopSettingsFromMain(): Promise<void> {
+  const revision = desktopSettingsRevision
+  const sync = desktopSettingsQueue
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const state = await getAppSettings()
+        if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+      } catch (err) {
+        console.warn("[settings] getAppSettings failed:", err)
+      }
+    })
+  desktopSettingsQueue = sync.catch(() => {})
+  await sync
+}
+
+export async function updateDesktopSettings(
+  patch: Partial<AppSettings>,
+): Promise<void> {
+  const update = desktopSettingsQueue
+    .catch(() => {})
+    .then(async () => {
+      // A settings event that lands while the request is in flight is newer
+      // than its reply, so the reply must not overwrite it.
+      const revision = desktopSettingsRevision
+      try {
+        const state = await setAppSettings(patch)
+        if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+      } catch (err) {
+        console.warn("[settings] setAppSettings failed:", err)
+        try {
+          const state = await getAppSettings()
+          if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+        } catch {}
+      }
+    })
+  desktopSettingsQueue = update.catch(() => {})
+  await update
+}
+
+export async function initDesktopSettingsListener(): Promise<() => void> {
+  const unlisten = await onAppSettingsChanged((state) => {
+    desktopSettingsRevision++
+    applyAppSettingsState(state)
+  })
+  return unlisten
 }
 
 // ── Init ────────────────────────────────────────────────────────────
@@ -402,10 +505,7 @@ export function getWorkspaceFolder(workspaceId: string): string {
   return ""
 }
 
-export function setWorkspaceFolder(
-  workspaceId: string,
-  folder: string,
-): void {
+export function setWorkspaceFolder(workspaceId: string, folder: string): void {
   if (!browser) return
   try {
     const stored = localStorage.getItem(WORKSPACE_FOLDERS_KEY)

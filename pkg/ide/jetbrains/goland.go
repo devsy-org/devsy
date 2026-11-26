@@ -2,7 +2,6 @@ package jetbrains
 
 import (
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/ide"
 )
 
 const (
@@ -11,21 +10,7 @@ const (
 	GolandDownloadArm64Template = "https://download.jetbrains.com/go/goland-%s-aarch64.tar.gz"
 )
 
-var GolandOptions = ide.Options{
-	VersionOption: {
-		Name:        VersionOption,
-		Description: versionOptionDescription,
-		Default:     versionOptionDefault,
-	},
-	DownloadArm64Option: {
-		Name:        DownloadArm64Option,
-		Description: downloadArm64OptionDescription,
-	},
-	DownloadAmd64Option: {
-		Name:        DownloadAmd64Option,
-		Description: downloadAmd64OptionDescription,
-	},
-}
+var GolandOptions = newProductOptions()
 
 func NewGolandServer(
 	userName string,
@@ -35,8 +20,7 @@ func NewGolandServer(
 		GolandOptions,
 		values,
 		GolandProductCode,
-		GolandDownloadAmd64Template,
-		GolandDownloadArm64Template,
+		downloadTemplates{amd64: GolandDownloadAmd64Template, arm64: GolandDownloadArm64Template},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "goland",

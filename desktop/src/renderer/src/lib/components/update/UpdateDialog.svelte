@@ -50,7 +50,7 @@ async function onInstall() {
 		</Dialog.Header>
 
 		{#if s.state === "checking"}
-			<p class="text-sm text-muted-foreground">Checking for updates…</p>
+			<p class="text-sm text-muted-foreground">Checking for updates...</p>
 		{:else if s.state === "available"}
 			<div class="space-y-3">
 				<p class="text-sm">
@@ -62,14 +62,14 @@ async function onInstall() {
 					</div>
 				{/if}
 				{#if autoDownloadEnabled}
-					<p class="text-xs text-muted-foreground">Downloading in the background…</p>
+					<p class="text-xs text-muted-foreground">Downloading in the background...</p>
 				{:else}
 					<Button onclick={onDownload}>Download update</Button>
 				{/if}
 			</div>
 		{:else if s.state === "downloading"}
 			<div class="space-y-3">
-				<p class="text-sm font-medium">Downloading v{s.availableVersion}…</p>
+				<p class="text-sm font-medium">Downloading v{s.availableVersion}...</p>
 				<Progress value={s.progress.percent} max={100} />
 				<p class="text-xs text-muted-foreground">
 					{s.progress.percent.toFixed(0)}% · {fmtMBps(s.progress.bytesPerSecond)}

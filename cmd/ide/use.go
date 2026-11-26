@@ -2,7 +2,6 @@ package ide
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"strings"
 
@@ -31,10 +30,10 @@ func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	useCmd := &cobra.Command{
 		Use:   "use <ide>",
-		Short: "Configure the default IDE to use (list available IDEs with 'devsy ide list')",
-		Long: `Configure the default IDE to use
+		Short: "Set the default IDE",
+		Long: `Set the default IDE.
 
-Available IDEs can be listed with 'devsy ide list'`,
+List available IDEs with 'devsy ide list'.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: ideNameCompletion,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
@@ -52,29 +51,24 @@ Available IDEs can be listed with 'devsy ide list'`,
 
 // Run runs the command logic.
 func (cmd *UseCmd) Run(ctx context.Context, ide string) error {
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-	if err != nil {
-		return err
-	}
-
 	ide = strings.ToLower(ide)
 	ideOptions, err := ideparse.GetIDEOptions(ide)
 	if err != nil {
 		return err
 	}
 
-	// check if there are user options set
-	if len(cmd.Options) > 0 {
-		err = setOptions(devsyConfig, ide, cmd.Options, ideOptions)
-		if err != nil {
-			return err
+	err = config.UpdateConfig(cmd.Context, cmd.Provider, func(devsyConfig *config.Config) error {
+		if len(cmd.Options) > 0 {
+			if err := setOptions(devsyConfig, ide, cmd.Options, ideOptions); err != nil {
+				return err
+			}
 		}
-	}
 
-	devsyConfig.Current().DefaultIDE = ide
-	err = config.SaveConfig(devsyConfig)
+		devsyConfig.Current().DefaultIDE = ide
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("save config: %w", err)
+		return err
 	}
 
 	log.Infof("default IDE set to %q", ide)

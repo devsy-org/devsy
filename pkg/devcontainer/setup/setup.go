@@ -24,7 +24,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/envfile"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/sharedfile"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -38,19 +40,21 @@ type DotfilesConfig struct {
 }
 
 type ContainerSetupConfig struct {
-	SetupInfo         *config.Result
-	ExtraWorkspaceEnv []string
-	SecretsEnv        []string
-	SecretsMount      []string
-	ChownProjects     bool
-	Prebuild          bool
-	PlatformOptions   *devsy.PlatformOptions
-	TunnelClient      tunnel.TunnelClient
-	Dotfiles          DotfilesConfig
-	SkipPostCreate    bool
-	SkipPostStart     bool
-	SkipPostAttach    bool
-	WaitFor           LifecyclePhase
+	SetupInfo              *config.Result
+	ExtraWorkspaceEnv      []string
+	SecretsEnv             []string
+	TerminalSecretEnvNames []string
+	SecretsMount           []string
+	ChownProjects          bool
+	Prebuild               bool
+	PlatformOptions        *devsy.PlatformOptions
+	TunnelClient           tunnel.TunnelClient
+	Terminal               tunnel.TerminalSession
+	Dotfiles               DotfilesConfig
+	SkipPostCreate         bool
+	SkipPostStart          bool
+	SkipPostAttach         bool
+	WaitFor                LifecyclePhase
 }
 
 // SetupContainerPreAttach runs container setup up to and including the waitFor
@@ -62,6 +66,14 @@ func SetupContainerPreAttach(
 ) (DeferredHooks, error) {
 	if err := validateContainerSetupConfig(cfg); err != nil {
 		return DeferredHooks{}, err
+	}
+
+	if cfg.Terminal != nil {
+		if err := ValidateInteractivePostStart(
+			cfg.SetupInfo.MergedConfig.PostStartCommands,
+		); err != nil {
+			return DeferredHooks{}, err
+		}
 	}
 
 	if err := writeResultFileWithContext(ctx, cfg); err != nil {
@@ -80,7 +92,7 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, err
 	}
 
-	if err := writeSecretFiles(cfg); err != nil {
+	if err := writeSecrets(cfg); err != nil {
 		return DeferredHooks{}, err
 	}
 
@@ -97,7 +109,8 @@ func SetupContainerPreAttach(
 			PostStart:  cfg.SkipPostStart,
 			PostAttach: cfg.SkipPostAttach,
 		},
-		WaitFor: cfg.WaitFor,
+		WaitFor:  cfg.WaitFor,
+		Terminal: cfg.Terminal,
 	})
 	if err != nil {
 		return DeferredHooks{}, fmt.Errorf("lifecycle hooks pre-attach: %w", err)
@@ -111,13 +124,11 @@ func SetupContainerPreAttach(
 // Called after the IDE has been opened.
 func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) error {
 	log.Debugf("running post-attach lifecycle hooks")
-	if err := RunPostAttachHooks(
-		ctx,
-		cfg.SetupInfo,
-		cfg.SecretsEnv,
-		cfg.SecretsMount,
-		cfg.SkipPostAttach,
-	); err != nil {
+	if err := RunPostAttachHooks(ctx, cfg.SetupInfo, PostAttachOptions{
+		SecretsEnv:   cfg.SecretsEnv,
+		SecretsMount: cfg.SecretsMount,
+		Skip:         cfg.SkipPostAttach,
+	}); err != nil {
 		return fmt.Errorf("lifecycle hooks post-attach: %w", err)
 	}
 
@@ -143,6 +154,9 @@ func writeSecretFiles(cfg *ContainerSetupConfig) error {
 	if len(cfg.SecretsMount) == 0 {
 		return nil
 	}
+	if err := validateSecretFileRuntime(config.SecretsMountDir); err != nil {
+		return err
+	}
 
 	// #nosec G301 -- dir must be traversable by the non-root remote user; per-file 0600 enforces secrecy.
 	if err := os.MkdirAll(config.SecretsMountDir, 0o755); err != nil {
@@ -160,6 +174,163 @@ func writeSecretFiles(cfg *ContainerSetupConfig) error {
 		}
 	}
 
+	return nil
+}
+
+func writeSecretEnvironment(entries, names []string, user string) error {
+	if len(names) > 0 {
+		if err := validateSecretEnvironmentRuntime(config.SecretsEnvDir); err != nil {
+			return err
+		}
+	}
+	return writeSecretEnvironmentAt(config.SecretsEnvDir, entries, names, user)
+}
+
+var (
+	validateSecretEnvironmentRuntime = validateSecretEnvironmentMount
+	validateSecretFileRuntime        = validateSecretFileMount
+)
+
+func writeSecretEnvironmentAt(dir string, entries, names []string, user string) error {
+	if err := clearSecretEnvironmentDir(dir); err != nil {
+		return err
+	}
+	if len(names) == 0 {
+		return secureEmptySecretEnvironmentDir(dir, user)
+	}
+	if err := createSecretEnvironmentDir(dir); err != nil {
+		return err
+	}
+	if err := copy2.Chown(dir, user); err != nil {
+		return fmt.Errorf("set secret environment directory owner: %w", err)
+	}
+	if err := writeSecretEnvironmentEntries(dir, entries, names); err != nil {
+		if cleanupErr := clearSecretEnvironmentDir(dir); cleanupErr != nil {
+			return errors.Join(err, fmt.Errorf("clear partial secret environment: %w", cleanupErr))
+		}
+		return err
+	}
+	if err := chownSecretEnvironmentFiles(dir, names, user); err != nil {
+		return err
+	}
+	return nil
+}
+
+func secureEmptySecretEnvironmentDir(dir, user string) error {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect secret environment directory: %w", err)
+	}
+	if err := createSecretEnvironmentDir(dir); err != nil {
+		return err
+	}
+	if err := copy2.Chown(dir, user); err != nil {
+		return fmt.Errorf("set secret environment directory owner: %w", err)
+	}
+	return nil
+}
+
+func chownSecretEnvironmentFiles(dir string, names []string, user string) error {
+	for _, name := range names {
+		if err := copy2.Chown(filepath.Join(dir, name), user); err != nil {
+			return fmt.Errorf("set secret environment owner for %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func clearSecretEnvironmentDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read secret environment directory: %w", err)
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			return fmt.Errorf("clear secret environment entry: %w", err)
+		}
+	}
+	return nil
+}
+
+func writeSecretEnvironmentEntries(dir string, entries, names []string) error {
+	wanted := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		wanted[name] = struct{}{}
+	}
+	found, err := writeSelectedSecretEnvironmentEntries(dir, entries, wanted)
+	if err != nil {
+		return err
+	}
+	for name := range wanted {
+		if _, ok := found[name]; !ok {
+			return fmt.Errorf("terminal secret environment variable %s was not resolved", name)
+		}
+	}
+	return nil
+}
+
+func writeSelectedSecretEnvironmentEntries(
+	dir string,
+	entries []string,
+	wanted map[string]struct{},
+) (map[string]struct{}, error) {
+	found := make(map[string]struct{}, len(wanted))
+	for _, entry := range entries {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("invalid secret environment assignment")
+		}
+		if _, ok := wanted[name]; !ok {
+			continue
+		}
+		if err := secrets.ValidateName(name); err != nil {
+			return nil, err
+		}
+		if strings.ContainsRune(value, '\x00') {
+			return nil, fmt.Errorf("secret environment value for %s contains a NUL byte", name)
+		}
+		if err := writeSecretEnvironmentFile(dir, name, value); err != nil {
+			return nil, err
+		}
+		found[name] = struct{}{}
+	}
+	return found, nil
+}
+
+func createSecretEnvironmentDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create secret environment directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil { // #nosec G302 -- directory is owner-only.
+		return fmt.Errorf("secure secret environment directory: %w", err)
+	}
+	return nil
+}
+
+func writeSecretEnvironmentFile(dir, name, value string) error {
+	path := filepath.Join(dir, name)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("prepare secret environment variable %s: %w", name, err)
+	}
+	f, err := os.OpenFile(
+		path,
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		0o600,
+	) // #nosec G304 -- path uses a validated environment name in the fixed secret directory.
+	if err != nil {
+		return fmt.Errorf("write secret environment variable %s: %w", name, err)
+	}
+	if _, err := f.WriteString(value); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("write secret environment variable %s: %w", name, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write secret environment variable %s: %w", name, err)
+	}
 	return nil
 }
 
@@ -209,10 +380,6 @@ func secretMountPath(target string) (string, error) {
 	}
 
 	return filepath.Join(config.SecretsMountDir, target), nil
-}
-
-func writeResultFile(cfg *ContainerSetupConfig) error {
-	return writeResultFileWithContext(context.Background(), cfg)
 }
 
 func writeResultFileWithContext(ctx context.Context, cfg *ContainerSetupConfig) error {
@@ -302,6 +469,17 @@ func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {
 	return nil
 }
 
+func writeSecrets(cfg *ContainerSetupConfig) error {
+	if err := writeSecretFiles(cfg); err != nil {
+		return err
+	}
+	return writeSecretEnvironment(
+		cfg.SecretsEnv,
+		cfg.TerminalSecretEnvNames,
+		config.GetRemoteUser(cfg.SetupInfo),
+	)
+}
+
 func setupEnvironment(cfg *ContainerSetupConfig) error {
 	log.Debugf("patching etc environment")
 
@@ -371,68 +549,103 @@ func linkRootHome(setupInfo *config.Result) error {
 
 func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	workspaceFolder := setupInfo.SubstitutionContext.ContainerWorkspaceFolder
-	// Compose services are not guaranteed a workspaceMount
-	if _, err := os.Lstat(workspaceFolder); err != nil {
-		if os.IsNotExist(err) {
-			log.Debugf("skip chown: workspace folder does not exist: %s", workspaceFolder)
-			return nil
-		}
-		return fmt.Errorf("stat workspace %s: %w", workspaceFolder, err)
+	workspaceID := os.Getenv(pkgconfig.EnvWorkspaceID)
+	skip, err := skipWorkspaceChown(workspaceFolder, workspaceID)
+	if err != nil || skip {
+		return err
 	}
 
 	user := config.GetRemoteUser(setupInfo)
-	// Scope the marker to a workspace so a restored image does not suppress
-	// ownership setup for a different workspace; an unset workspace ID can't
-	// be scoped, so skip the marker gate entirely and chown every run.
-	workspaceID := os.Getenv(pkgconfig.EnvWorkspaceID)
-	if workspaceID != "" {
-		exists, err := markerExists("chownWorkspace", workspaceID)
-		if err != nil {
-			return err
-		} else if exists {
-			return nil
-		}
-	}
-
-	workspaceRoot := filepath.Dir(workspaceFolder)
-	if workspaceRoot != "/" {
-		log.Debugf("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
-		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.DeniedByFilesystem(err) {
-			return fmt.Errorf("chown %s: %w", workspaceRoot, err)
-		} else if err != nil {
-			// A non-root container (e.g. an OpenShift restricted-SCC pod) does
-			// not own workspaceRoot and cannot chown it; the workspace folder
-			// itself may still get a usable owner below.
-			log.Debugf("chown workspace: %s kept its owner: %v", workspaceRoot, err)
-		}
+	if err := chownWorkspaceRoot(user, workspaceFolder); err != nil {
+		return err
 	}
 
 	if recursive {
-		log.Debugf(
-			"chown workspace recursively: user=%s, workspaceFolder=%s",
-			user,
-			workspaceFolder,
-		)
-		err := copy2.ChownR(workspaceFolder, user)
-		var failures copy2.ChownFailures
-		switch {
-		case err == nil:
-		case errors.As(err, &failures) && failures.AllDenied():
-			// Read-only shared files, such as virtiofs pack files, can refuse chown.
-			// A future container for this workspace may not share the same read-only mount.
-			log.Warnf("chown workspace: %d entries kept their owner: %v", len(failures), err)
-			return nil
-		default:
-			return fmt.Errorf("chown %s recursively: %w", workspaceFolder, err)
-		}
-	}
-
-	if workspaceID != "" {
-		if err := writeMarker("chownWorkspace", workspaceID); err != nil {
+		persist, err := chownWorkspaceTree(user, workspaceFolder)
+		if err != nil || !persist {
 			return err
 		}
 	}
+
+	return recordWorkspaceChown(workspaceID)
+}
+
+func skipWorkspaceChown(workspaceFolder, workspaceID string) (bool, error) {
+	present, err := workspaceFolderPresent(workspaceFolder)
+	if err != nil || !present {
+		return true, err
+	}
+	return workspaceChownLatched(workspaceID)
+}
+
+// Compose services are not guaranteed a workspaceMount.
+func workspaceFolderPresent(workspaceFolder string) (bool, error) {
+	_, err := os.Lstat(workspaceFolder)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		log.Debugf("skip chown: workspace folder does not exist: %s", workspaceFolder)
+		return false, nil
+	}
+	return false, fmt.Errorf("stat workspace %s: %w", workspaceFolder, err)
+}
+
+// Scope the marker to a workspace so a restored image does not suppress
+// ownership setup for a different workspace; an unset workspace ID can't
+// be scoped, so skip the marker gate entirely and chown every run.
+func workspaceChownLatched(workspaceID string) (bool, error) {
+	if workspaceID == "" {
+		return false, nil
+	}
+	return markerExists("chownWorkspace", workspaceID)
+}
+
+func chownWorkspaceRoot(user, workspaceFolder string) error {
+	workspaceRoot := filepath.Dir(workspaceFolder)
+	if workspaceRoot == "/" {
+		return nil
+	}
+	log.Debugf("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
+	if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.DeniedByFilesystem(err) {
+		return fmt.Errorf("chown %s: %w", workspaceRoot, err)
+	} else if err != nil {
+		// A non-root container (e.g. an OpenShift restricted-SCC pod) does
+		// not own workspaceRoot and cannot chown it; the workspace folder
+		// itself may still get a usable owner below.
+		log.Debugf("chown workspace: %s kept its owner: %v", workspaceRoot, err)
+	}
 	return nil
+}
+
+// chownWorkspaceTree reports false when every entry kept its owner, so the
+// marker is not written and a future container for this workspace retries.
+func chownWorkspaceTree(user, workspaceFolder string) (bool, error) {
+	log.Debugf(
+		"chown workspace recursively: user=%s, workspaceFolder=%s",
+		user,
+		workspaceFolder,
+	)
+	err := copy2.ChownR(workspaceFolder, user)
+	var failures copy2.ChownFailures
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &failures) && failures.AllDenied():
+		// Read-only shared files, such as virtiofs pack files, can refuse chown.
+		// A future container for this workspace may not share the same read-only mount.
+		log.Warnf("chown workspace: %d entries kept their owner: %v", len(failures), err)
+		return false, nil
+	default:
+		return false, fmt.Errorf("chown %s recursively: %w", workspaceFolder, err)
+	}
+}
+
+func recordWorkspaceChown(workspaceID string) error {
+	if workspaceID == "" {
+		return nil
+	}
+	return writeMarker("chownWorkspace", workspaceID)
 }
 
 func patchEtcProfile() error {
@@ -457,20 +670,45 @@ func patchEtcEnvironmentFlags(workspaceEnv []string) error {
 		return nil
 	}
 
-	// make sure we sort the strings
-	sort.Strings(workspaceEnv)
+	environment, canonical, err := parseWorkspaceEnvironment(workspaceEnv)
+	if err != nil {
+		return err
+	}
 
-	// check if we need to update env
-	exists, err := markerFileExists("patchEtcEnvironmentFlags", strings.Join(workspaceEnv, "\n"))
+	exists, err := markerFileExists("patchEtcEnvironmentFlags", strings.Join(canonical, "\n"))
 	if err != nil {
 		return err
 	} else if exists {
 		return nil
 	}
 
-	// update env
-	envfile.MergeAndApply(config.ListToObject(workspaceEnv))
+	envfile.MergeAndApply(environment)
 	return nil
+}
+
+func parseWorkspaceEnvironment(assignments []string) (map[string]string, []string, error) {
+	environment := make(map[string]string, len(assignments))
+	keys := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		name, value, ok := strings.Cut(assignment, "=")
+		if !ok || name == "" {
+			return nil, nil, fmt.Errorf("invalid workspace environment assignment")
+		}
+		if _, exists := environment[name]; exists {
+			return nil, nil, fmt.Errorf(
+				"workspace environment variable %q is assigned more than once",
+				name,
+			)
+		}
+		environment[name] = value
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	canonical := make([]string, 0, len(keys))
+	for _, name := range keys {
+		canonical = append(canonical, name+"="+environment[name])
+	}
+	return environment, canonical, nil
 }
 
 func patchEtcEnvironment(mergedConfig *config.MergedDevContainerConfig) error {
@@ -529,16 +767,24 @@ func buildEnvMarker(
 }
 
 func chownAgentSock(setupInfo *config.Result) error {
-	user := config.GetRemoteUser(setupInfo)
 	agentSockFile := os.Getenv("SSH_AUTH_SOCK")
-	if agentSockFile != "" {
-		err := copy2.ChownR(filepath.Dir(agentSockFile), user)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
+	if agentSockFile == "" {
+		return nil
 	}
 
-	return nil
+	socketDir := filepath.Dir(agentSockFile)
+	err := copy2.ChownR(socketDir, config.GetRemoteUser(setupInfo))
+	if err == nil {
+		return nil
+	}
+
+	var failures copy2.ChownFailures
+	if errors.As(err, &failures) && failures.AllVanished() {
+		log.Debugf("skip chown ssh agent socket directory %s: path vanished", socketDir)
+		return nil
+	}
+
+	return err
 }
 
 // setupKubeConfig retrieves and stores a KubeConfig file in the default location `$HOME/.kube/config`.
@@ -757,6 +1003,18 @@ func dirIsWritable(dir string) bool {
 
 func containerDataDir() string {
 	return writableContainerDataDirOnce()
+}
+
+// WorkspaceLogsRoot returns the container-side spool for retained setup
+// history, inside the already selected secure data directory, or empty when no
+// secure directory is available. The caller opens it as a workspacelogs store.
+func WorkspaceLogsRoot() string {
+	dir := containerDataDir()
+	if dir == "" {
+		return ""
+	}
+
+	return filepath.Join(dir, workspacelogs.SpoolDirName)
 }
 
 func setupPlatformGitCredentials(

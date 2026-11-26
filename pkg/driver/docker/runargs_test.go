@@ -1,8 +1,17 @@
 package docker
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
+)
+
+const (
+	testBindMountType = "bind"
+	testReadonly      = "readonly"
 )
 
 func (s *DockerDriverTestSuite) TestAddCapabilityArgs_SingleSecurityOpt() {
@@ -146,4 +155,144 @@ func (s *DockerDriverTestSuite) TestAddRunPlatform_ExplicitInConfigNotDuplicated
 		}
 	}
 	s.Equal(0, count, "should not auto-add when config already sets --platform")
+}
+
+func (s *DockerDriverTestSuite) TestAddMountArgs_EngineOnlyBindSource() {
+	source := filepath.Join(s.T().TempDir(), "engine-only.sock")
+	opts := &driver.RunOptions{
+		Mounts: []*config.Mount{
+			{
+				Type:   testBindMountType,
+				Source: source,
+				Target: "/run/engine.sock",
+				Other:  []string{testReadonly},
+			},
+		},
+	}
+	args := s.driver.addMountArgs([]string{testRunArg}, opts)
+	s.Equal(
+		[]string{
+			testRunArg,
+			mountFlag,
+			"type=bind,src=" + source + ",dst=/run/engine.sock,readonly",
+		},
+		args,
+	)
+	_, err := os.Lstat(source)
+	s.True(os.IsNotExist(err))
+}
+
+func (s *DockerDriverTestSuite) TestAddMountArgs_PreservesAllMountTypesAndOrder() {
+	existing := s.T().TempDir()
+	absent := filepath.Join(existing, "absent")
+	opts := &driver.RunOptions{Mounts: []*config.Mount{
+		{
+			Type:   testBindMountType,
+			Source: existing,
+			Target: "/existing",
+			Other:  []string{testReadonly, "bind-propagation=rslave"},
+		},
+		{Type: testBindMountType, Source: absent, Target: "/absent"},
+		{Type: "volume", Source: "data", Target: "/data", Other: []string{"volume-nocopy"}},
+		{Type: "tmpfs", Target: "/tmp", Other: []string{"tmpfs-size=4096"}},
+	}}
+	args := s.driver.addMountArgs([]string{testRunArg}, opts)
+	s.Equal([]string{
+		testRunArg,
+		mountFlag, "type=bind,src=" + existing + ",dst=/existing,readonly,bind-propagation=rslave",
+		mountFlag, "type=bind,src=" + absent + ",dst=/absent",
+		mountFlag, "type=volume,src=data,dst=/data,volume-nocopy",
+		mountFlag, "type=tmpfs,dst=/tmp,tmpfs-size=4096",
+	}, args)
+}
+
+func (s *DockerDriverTestSuite) TestAddMountArgs_DoesNotModifySourceOrOptions() {
+	opts := &driver.RunOptions{Mounts: []*config.Mount{
+		{
+			Type:   testBindMountType,
+			Source: filepath.Join(s.T().TempDir(), "engine.sock"),
+			Target: "/socket",
+			Other:  []string{testReadonly, "consistency=cached", "bind-propagation=rprivate"},
+		},
+		{
+			Type:   testBindMountType,
+			Source: "./engine/../sock",
+			Target: "/relative",
+			Other:  []string{testReadonly},
+		},
+		{
+			Type:     "volume",
+			Source:   "data",
+			Target:   "/data",
+			External: true,
+			Other:    []string{"volume-nocopy"},
+		},
+		{Type: "tmpfs", Target: "/tmp", Other: []string{"tmpfs-size=4096"}},
+	}}
+	before := make([]config.Mount, len(opts.Mounts))
+	formatted := make([]string, len(opts.Mounts))
+	pointers := append([]*config.Mount(nil), opts.Mounts...)
+	expected := []string{testRunArg}
+	for i, mount := range opts.Mounts {
+		before[i] = *mount
+		before[i].Other = append([]string(nil), mount.Other...)
+		formatted[i] = mount.String()
+		expected = append(expected, mountFlag, formatted[i])
+	}
+	args := s.driver.addMountArgs([]string{testRunArg}, opts)
+	s.Equal(expected, args)
+	for i, mount := range opts.Mounts {
+		s.Equal(before[i], *mount)
+		s.Equal(formatted[i], mount.String())
+		s.Same(pointers[i], mount)
+	}
+}
+
+func (s *DockerDriverTestSuite) TestRunArgsBuilderPreservesRawMountFlags() {
+	const rawMount = "--volume=user-data:/opt/devsy"
+	rt, err := docker.RuntimeFromName(string(docker.RuntimeDocker))
+	s.Require().NoError(err)
+	helper := &docker.DockerHelper{DockerCommand: "docker", Runtime: rt}
+	s.driver.Docker = helper
+	args, err := s.driver.buildRunArgs(
+		&driver.RunImageDevContainerParams{
+			ParsedConfig: &config.DevContainerConfig{
+				NonComposeBase: config.NonComposeBase{RunArgs: []string{rawMount}},
+			},
+			Options: &driver.RunOptions{Image: "alpine"},
+		},
+		helper,
+	)
+	s.Require().NoError(err)
+	s.Contains(args, rawMount)
+}
+
+func (s *DockerDriverTestSuite) TestRunArgsBuilder_AdditionalMountReachesArgs() {
+	source := filepath.Join(s.T().TempDir(), "engine.sock")
+	b := &runArgsBuilder{
+		args:   []string{testRunArg, "--init"},
+		driver: s.driver,
+		params: &driver.RunImageDevContainerParams{
+			Options: &driver.RunOptions{
+				Mounts: []*config.Mount{
+					{
+						Type:   testBindMountType,
+						Source: source,
+						Target: "/socket",
+						Other:  []string{testReadonly},
+					},
+				},
+			},
+		},
+	}
+	s.Require().NoError(b.addMounts())
+	s.Equal(
+		[]string{
+			testRunArg,
+			"--init",
+			mountFlag,
+			"type=bind,src=" + source + ",dst=/socket,readonly",
+		},
+		b.args,
+	)
 }

@@ -9,5 +9,12 @@ func availableStorageBytes(path string) (uint64, error) {
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, err
 	}
-	return stat.Bavail * uint64(stat.Bsize), nil //nolint:gosec // Bsize type varies by platform
+	if stat.Bavail <= 0 || stat.Bsize <= 0 {
+		return 0, nil
+	}
+	return uint64(
+		stat.Bavail,
+	) * uint64(
+		stat.Bsize,
+	), nil //nolint:gosec // Statfs field types vary by platform
 }

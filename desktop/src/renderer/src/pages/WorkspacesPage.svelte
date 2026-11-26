@@ -1,6 +1,9 @@
 <script lang="ts">
 import WorkspaceOperation from "$lib/components/workspace/WorkspaceOperation.svelte"
-import { workspaceJobBusy, workspaceJobInterruptible } from "$shared/workspace-operation.js"
+import {
+  workspaceJobBusy,
+  workspaceJobInterruptible,
+} from "$shared/workspace-operation.js"
 import {
   ArrowDownAZ,
   Box,
@@ -35,6 +38,10 @@ import {
 } from "$lib/stores/workspaces.js"
 import type { Workspace } from "$lib/types/index.js"
 import { timeAgo } from "$lib/utils/time.js"
+import {
+  workspaceLabel,
+  workspaceMatchesQuery,
+} from "$lib/utils/workspaceLabel.js"
 
 let createSheetOpen = $state(false)
 let search = $state("")
@@ -49,6 +56,10 @@ let sortBy = $state<"recent" | "name">("recent")
 
 let actingOn = $state<string | null>(null)
 let confirmDeleteId = $state<string | null>(null)
+let confirmDeleteLabel = $derived.by(() => {
+  const target = $workspaces.find((ws) => ws.id === confirmDeleteId)
+  return target ? workspaceLabel(target) : (confirmDeleteId ?? "")
+})
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 
@@ -57,7 +68,7 @@ let filtered = $derived.by(() => {
   let list = $workspaces.filter((ws) => {
     if (!q) return true
     return (
-      ws.id.toLowerCase().includes(q) ||
+      workspaceMatchesQuery(ws, q) ||
       (ws.source?.gitRepository ?? "").toLowerCase().includes(q) ||
       (ws.source?.localFolder ?? "").toLowerCase().includes(q) ||
       (ws.source?.image ?? "").toLowerCase().includes(q) ||
@@ -67,7 +78,9 @@ let filtered = $derived.by(() => {
   })
 
   if (sortBy === "name") {
-    list = [...list].sort((a, b) => a.id.localeCompare(b.id))
+    list = [...list].sort((a, b) =>
+      workspaceLabel(a).localeCompare(workspaceLabel(b)),
+    )
   } else {
     list = [...list].sort((a, b) => {
       const ta = a.lastUsed ? new Date(a.lastUsed).getTime() : 0
@@ -200,7 +213,12 @@ async function handleDelete() {
               class="cursor-pointer"
               onclick={() => goto(`/workspaces/${ws.id}`)}
             >
-              <Table.Cell class="font-medium">{ws.id}</Table.Cell>
+              <Table.Cell class="font-medium">
+                {workspaceLabel(ws)}
+                {#if ws.displayName}
+                  <span class="block text-xs font-normal text-muted-foreground">{ws.id}</span>
+                {/if}
+              </Table.Cell>
               <Table.Cell>
                 {#if ws.provider?.name}
                   <span class={badgeVariants({ variant: "secondary" })}>{ws.provider.name}</span>
@@ -212,7 +230,7 @@ async function handleDelete() {
                 {/if}
               </Table.Cell>
               <Table.Cell>
-                <WorkspaceOperation id={ws.id} status={ws.status} />
+                <WorkspaceOperation id={ws.id} status={ws.status} density="compact" />
               </Table.Cell>
               <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsed)}</Table.Cell>
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -265,7 +283,7 @@ async function handleDelete() {
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
   title="Delete workspace"
-  description="This action permanently deletes workspace '{confirmDeleteId}' and all associated data. This action cannot be undone."
+  description="This action permanently deletes workspace '{confirmDeleteLabel}' and all associated data. This action cannot be undone."
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={handleDelete}

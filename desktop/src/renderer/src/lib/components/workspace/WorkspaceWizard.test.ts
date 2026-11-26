@@ -1,14 +1,20 @@
 import { fireEvent, render } from "@testing-library/svelte"
 import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { CommandProgress, Provider, WorkspaceStatus } from "$lib/types/index.js"
+import type {
+  CommandProgress,
+  Provider,
+  WorkspaceStatus,
+} from "$lib/types/index.js"
 
 const workspaceUp = vi.fn()
+const workspaceRefresh = vi.fn()
 const onCommandProgress = vi.fn()
 const onWorkspaceStatus = vi.fn()
 
 vi.mock("$lib/ipc/commands.js", () => ({
   workspaceUp: (...args: unknown[]) => workspaceUp(...args),
+  workspaceRefresh: (...args: unknown[]) => workspaceRefresh(...args),
   openDirectoryDialog: vi.fn(),
   getHostPlatform: vi.fn().mockResolvedValue("linux/arm64"),
   getImagePlatforms: vi.fn().mockResolvedValue(["linux/amd64", "linux/arm64"]),
@@ -43,7 +49,10 @@ vi.mock("$lib/stores/providers.js", async () => {
 
 vi.mock("$lib/stores/workspaces.js", async () => {
   const { writable } = await import("svelte/store")
-  return { workspaces: writable<{ id: string }[]>([]), workspaceJobs: writable({}) }
+  return {
+    workspaces: writable<{ id: string }[]>([]),
+    workspaceJobs: writable({}),
+  }
 })
 
 vi.mock("$lib/stores/toasts.js", () => ({
@@ -59,7 +68,7 @@ vi.mock("$lib/router.js", () => ({
 }))
 
 import { providers } from "$lib/stores/providers.js"
-import { workspaces } from "$lib/stores/workspaces.js"
+import { workspaceJobs, workspaces } from "$lib/stores/workspaces.js"
 import WorkspaceWizard from "./WorkspaceWizard.svelte"
 
 function makeProvider(name: string, initialized = true): Provider {
@@ -79,7 +88,7 @@ async function advanceToReview(getByText: (t: string) => HTMLElement) {
   // provider
   await fireEvent.click(getByText("docker"))
   await flushAsync()
-  await fireEvent.click(getAllContinue(getByText)[0])
+  await fireEvent.click(getAllContinue()[0])
   await flushAsync()
   // source: choose template (sets source)
   await fireEvent.click(getByText("Python"))
@@ -92,7 +101,7 @@ async function advanceToReview(getByText: (t: string) => HTMLElement) {
 }
 
 // Helpers
-function getAllContinue(getByText: (t: string) => HTMLElement): HTMLElement[] {
+function getAllContinue(): HTMLElement[] {
   // Multiple "Continue" buttons can exist (advanced toggle text differs);
   // return a list and pick the first enabled non-disabled one.
   const all = Array.from(document.querySelectorAll("button")).filter(
@@ -110,13 +119,21 @@ function getActiveContinue(_: (t: string) => HTMLElement): HTMLElement {
   return candidates[0]
 }
 
+function getLaunchButton(): HTMLButtonElement {
+  return Array.from(document.querySelectorAll("button")).find(
+    (button) => button.textContent?.trim() === "Launch",
+  ) as HTMLButtonElement
+}
+
 describe("WorkspaceWizard", () => {
   beforeEach(() => {
     workspaceUp.mockReset()
+    workspaceRefresh.mockReset().mockResolvedValue(undefined)
     onCommandProgress.mockReset()
     onWorkspaceStatus.mockReset()
     providers.set([])
     workspaces.set([])
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({})
     progressCallback = null
     statusCallback = null
 
@@ -150,11 +167,107 @@ describe("WorkspaceWizard", () => {
 
   it("renders the provider step by default", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, unmount } = render(WorkspaceWizard, {
+    const { getByText, getByRole, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
     expect(getByText("Choose a Provider")).toBeTruthy()
+    expect(getByRole("heading", { name: "Create Workspace" })).toBeTruthy()
+    expect(getByRole("list", { name: "Workspace creation steps" })).toBeTruthy()
+    expect(
+      getByRole("progressbar", { name: "Step 1 of 5: Provider" }),
+    ).toBeTruthy()
+    expect(
+      document.querySelector('[aria-current="step"]')?.textContent,
+    ).toContain("Provider")
+    expect(
+      getByRole("button", { name: "docker" }).getAttribute("aria-pressed"),
+    ).toBe("false")
+    unmount()
+  })
+
+  it("associates source inputs with labels and exposes the selected template", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, getByLabelText, getByRole, unmount } = render(
+      WorkspaceWizard,
+      { props: { open: true } },
+    )
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    expect(getByLabelText("Repository URL *")).toBeTruthy()
+    const pythonTemplate = getByText("Python").closest(
+      "button",
+    ) as HTMLButtonElement
+    expect(pythonTemplate).toBeTruthy()
+    await fireEvent.click(pythonTemplate)
+    await flushAsync()
+    expect(pythonTemplate.getAttribute("aria-pressed")).toBe("true")
+    expect(
+      (getByLabelText("Repository URL *") as HTMLInputElement).value,
+    ).toContain("vscode-remote-try-python")
+
+    await fireEvent.click(
+      getByRole("button", { name: "Show advanced options" }),
+    )
+    expect(getByLabelText("Dev container source")).toBeTruthy()
+    unmount()
+  })
+
+  it("lets the user edit reviewed provider and source without launching", async () => {
+    providers.set([makeProvider("docker"), makeProvider("ssh")])
+    const { getByText, getByLabelText, getByRole, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true },
+      },
+    )
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "docker" }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    const sourceInput = getByLabelText("Repository URL *") as HTMLInputElement
+    const longSource = `https://example.test/team/${"workspace-path-segment/".repeat(8)}application`
+    await fireEvent.input(sourceInput, {
+      target: { value: longSource },
+    })
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+
+    expect(getByText(longSource)).toBeTruthy()
+    expect(workspaceUp).not.toHaveBeenCalled()
+
+    await fireEvent.click(getByRole("button", { name: "Edit source" }))
+    await flushAsync()
+    expect((getByLabelText("Repository URL *") as HTMLInputElement).value).toBe(
+      longSource,
+    )
+
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "Edit provider" }))
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "ssh" }))
+    await flushAsync()
+    expect(
+      getByRole("button", { name: "ssh" }).getAttribute("aria-pressed"),
+    ).toBe("true")
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+
+    expect(getByText("ssh")).toBeTruthy()
+    expect(workspaceUp).not.toHaveBeenCalled()
     unmount()
   })
 
@@ -167,9 +280,9 @@ describe("WorkspaceWizard", () => {
     expect(
       getByText(/At least one initialized provider is required/i),
     ).toBeTruthy()
-    const continueBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Continue") as HTMLButtonElement
+    const continueBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Continue",
+    ) as HTMLButtonElement
     expect(continueBtn).toBeTruthy()
     expect(continueBtn.disabled).toBe(true)
     unmount()
@@ -240,7 +353,7 @@ describe("WorkspaceWizard", () => {
 
   it("defaults to git source type and accepts a repo url", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, unmount } = render(WorkspaceWizard, {
+    const { getByText, getByLabelText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
@@ -264,8 +377,45 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
 
     expect(getByText("Choose an IDE")).toBeTruthy()
+    expect(getByLabelText("IDE (optional)")).toBeTruthy()
+    expect(getByText(/select “None” to open the workspace later/i)).toBeTruthy()
     unmount()
   })
+
+  it.each([
+    ["Local Directory", "/var/home/dev/Projects/Backend", "Local Directory *"],
+    ["Git Repository", "https://example.com/Backend.git", "Repository URL *"],
+  ])(
+    "derives a valid ID from %s without changing the source",
+    async (tab, source, label) => {
+      providers.set([makeProvider("docker")])
+      const { getByText, getByLabelText, unmount } = render(WorkspaceWizard, {
+        props: { open: true },
+      })
+      await flushAsync()
+      await fireEvent.click(getByText("docker"))
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      if (tab === "Local Directory")
+        await fireEvent.click(getByText("Local Directory"))
+      await fireEvent.input(getByLabelText(label), {
+        target: { value: source },
+      })
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      expect(
+        (document.querySelector("#workspace-name") as HTMLInputElement).value,
+      ).toBe("backend")
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: "backend", source }),
+      )
+      unmount()
+    },
+  )
 
   it("shows the image picker when the Image tab is selected", async () => {
     providers.set([makeProvider("docker")])
@@ -310,12 +460,38 @@ describe("WorkspaceWizard", () => {
     expect(nameInput.value).not.toBe("")
     expect(nameInput.value).not.toBe("python")
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     expect(launchBtn.disabled).toBe(false)
     unmount()
   })
+
+  it.each(["Backend", "back_end", "back.end", "back end", "a".repeat(49)])(
+    "blocks invalid explicit ID %s with an accessible rule",
+    async (id) => {
+      providers.set([makeProvider("docker")])
+      const { getByText, unmount } = render(WorkspaceWizard, {
+        props: { open: true },
+      })
+      await flushAsync()
+      await advanceToReview(getByText)
+      const input = document.querySelector(
+        "#workspace-name",
+      ) as HTMLInputElement
+      await fireEvent.input(input, { target: { value: id } })
+      await flushAsync()
+      expect(input.value).toBe(id)
+      expect(input.getAttribute("aria-invalid")).toBe("true")
+      expect(input.getAttribute("aria-describedby")).toBe(
+        "workspace-name-invalid",
+      )
+      expect(getByText(/1-48 lowercase letters/)).toBeTruthy()
+      expect(getLaunchButton().disabled).toBe(true)
+      expect(workspaceUp).not.toHaveBeenCalled()
+      unmount()
+    },
+  )
 
   it("blocks Launch when the user edits the name into a conflict", async () => {
     providers.set([makeProvider("docker")])
@@ -333,11 +509,156 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
 
     expect(getByText(/already exists/i)).toBeTruthy()
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     expect(launchBtn.disabled).toBe(true)
     unmount()
+  })
+
+  describe("display label and SSH alias", () => {
+    const field = (id: string) =>
+      document.querySelector(`#${id}`) as HTMLInputElement
+
+    async function reviewStep() {
+      providers.set([makeProvider("docker")])
+      const view = render(WorkspaceWizard, { props: { open: true } })
+      await flushAsync()
+      await advanceToReview(view.getByText)
+      return view
+    }
+
+    it("prefills label and alias from the proposed ID without sending them", async () => {
+      const { unmount } = await reviewStep()
+      expect(field("workspace-display-label").value).toBe("python")
+      expect(field("workspace-ssh-alias").value).toBe("python")
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledOnce()
+      const args = workspaceUp.mock.calls[0][0]
+      expect(args.workspaceId).toBe("python")
+      expect(args.displayName).toBeUndefined()
+      expect(args.sshHostAlias).toBeUndefined()
+      unmount()
+    })
+
+    it("follows the proposed ID until the user edits the field", async () => {
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "renamed" },
+      })
+      await flushAsync()
+      expect(field("workspace-display-label").value).toBe("renamed")
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "My Python Box" },
+      })
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "again" },
+      })
+      await flushAsync()
+      expect(field("workspace-display-label").value).toBe("My Python Box")
+      unmount()
+    })
+
+    it("sends explicit values verbatim, independent of the internal ID", async () => {
+      workspaces.set([{ id: "python" }])
+      const { unmount } = await reviewStep()
+      const generatedId = field("workspace-name").value
+      expect(generatedId).not.toBe("python")
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "  Python Box  " },
+      })
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "pybox" },
+      })
+      await flushAsync()
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: generatedId,
+          displayName: "Python Box",
+          sshHostAlias: "pybox",
+        }),
+      )
+      unmount()
+    })
+
+    it("shows label conflicts before launch and blocks Launch", async () => {
+      workspaces.set([{ id: "other", displayName: "Taken" } as never])
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "taken" },
+      })
+      await flushAsync()
+      const input = field("workspace-display-label")
+      expect(input.getAttribute("aria-invalid")).toBe("true")
+      expect(input.getAttribute("aria-describedby")).toContain(
+        "workspace-display-label-error",
+      )
+      expect(
+        document.querySelector("#workspace-display-label-error")?.textContent,
+      ).toContain("other")
+      expect(getLaunchButton().disabled).toBe(true)
+      unmount()
+    })
+
+    it("shows alias conflicts and validation errors before launch", async () => {
+      workspaces.set([{ id: "other", sshHostAlias: "dev" } as never])
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "dev" },
+      })
+      await flushAsync()
+      expect(
+        document.querySelector("#workspace-ssh-alias-error")?.textContent,
+      ).toContain("already used")
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "Bad.Alias" },
+      })
+      await flushAsync()
+      expect(field("workspace-ssh-alias").getAttribute("aria-invalid")).toBe(
+        "true",
+      )
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "fresh" },
+      })
+      await flushAsync()
+      expect(getLaunchButton().disabled).toBe(false)
+      unmount()
+    })
+
+    it("blocks Launch when the resolved ID is another workspace's SSH alias", async () => {
+      workspaces.set([{ id: "other", sshHostAlias: "python" } as never])
+      const { unmount } = await reviewStep()
+      expect(field("workspace-name").value).toBe("python")
+      expect(
+        document.querySelector("#workspace-name-host-conflict")?.textContent,
+      ).toContain('already used by workspace "other"')
+      expect(field("workspace-name").getAttribute("aria-invalid")).toBe("true")
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "fresh-id" },
+      })
+      await flushAsync()
+      expect(document.querySelector("#workspace-name-host-conflict")).toBeNull()
+      expect(getLaunchButton().disabled).toBe(false)
+      unmount()
+    })
+
+    it("blocks Launch when the resolved ID is another workspace's preferred host", async () => {
+      workspaces.set([
+        { id: "other", preferredSSHHost: "python.devsy" } as never,
+      ])
+      const { unmount } = await reviewStep()
+      expect(
+        document.querySelector("#workspace-name-host-conflict"),
+      ).not.toBeNull()
+      expect(getLaunchButton().disabled).toBe(true)
+      unmount()
+    })
   })
 
   it("registers the progress listener before awaiting workspaceUp", async () => {
@@ -357,9 +678,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -376,9 +697,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -389,13 +710,69 @@ describe("WorkspaceWizard", () => {
     } as CommandProgress)
     await flushAsync()
 
+    await fireEvent.click(getByText("View logs"))
+    await flushAsync()
     expect(queryByText(/Building workspace/)).not.toBeNull()
     unmount()
   })
 
-  it("shows the current structured operation status while launching", async () => {
+  it("retains structured lifecycle history while launching", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, queryByTestId, unmount } = render(WorkspaceWizard, {
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "resolving_config",
+      operationId: "op-1",
+      state: "started",
+    })
+    await flushAsync()
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "resolving_config",
+      operationId: "op-1",
+      state: "succeeded",
+      durationMs: 200,
+    })
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "preparing_devcontainer",
+      operationId: "op-2",
+      state: "started",
+    })
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "building_image",
+      operationId: "op-3",
+      parentOperationId: "op-2",
+      state: "started",
+    })
+    await flushAsync()
+
+    expect(document.body.textContent).toContain("Resolving configuration")
+    expect(document.body.textContent).toContain("Preparing dev container")
+    expect(document.body.textContent).toContain("Building image")
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull()
+    unmount()
+  })
+
+  it("shows exactly one failure surface when the job journal reports failure", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
@@ -414,10 +791,235 @@ describe("WorkspaceWizard", () => {
       state: "started",
     })
     await flushAsync()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "failed",
+        phase: "building_image",
+        error: "provider exploded",
+      },
+    })
+    await flushAsync()
 
-    expect(queryByTestId("operation-status")?.textContent).toContain(
-      "building image",
+    expect(queryByText(/provider exploded/)).not.toBeNull()
+    expect(document.querySelector('[role="status"]')).toBeNull()
+    unmount()
+  })
+
+  it("does not report readiness from command success before reconciliation", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, getByRole, queryByText, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true },
+      },
     )
+    await flushAsync()
+    await advanceToReview(getByText)
+
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    progressCallback?.({
+      commandId: "cmd-1",
+      done: true,
+      success: true,
+    })
+    await flushAsync()
+
+    expect(
+      getByRole("heading", { name: "Confirming workspace status" }),
+    ).toBeTruthy()
+    expect(queryByText("Workspace ready")).toBeNull()
+    expect(queryByText("Open Workspace")).toBeNull()
+    unmount()
+  })
+
+  it("ignores a terminal job from a different launch command", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "previous-command",
+        activity: "creating",
+        state: "succeeded",
+      },
+    })
+    await flushAsync()
+
+    expect(queryByText("Workspace ready")).toBeNull()
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull()
+    unmount()
+  })
+
+  it("shows confirmation while the matching job is reconciling", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, getByRole, queryByText, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true },
+      },
+    )
+    await flushAsync()
+    await advanceToReview(getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "reconciling",
+        phase: "Refreshing status",
+      },
+    })
+    await flushAsync()
+
+    expect(
+      getByRole("heading", { name: "Confirming workspace status" }),
+    ).toBeTruthy()
+    expect(queryByText("Workspace ready")).toBeNull()
+    unmount()
+  })
+
+  it("keeps a log failure unconfirmed without a status spinner or completion", async () => {
+    providers.set([makeProvider("docker")])
+    const oncomplete = vi.fn()
+    const ui = render(WorkspaceWizard, { props: { open: true, oncomplete } })
+    await flushAsync()
+    await advanceToReview(ui.getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "reconciling",
+        phase: "",
+        logError: "Workspace log could not be saved: disk unavailable",
+      },
+    })
+    await flushAsync()
+    expect(ui.getByText(/Workspace log could not be saved/)).toBeTruthy()
+    expect(ui.queryByText("Workspace ready")).toBeNull()
+    expect(ui.queryByText("Confirming workspace status")).toBeNull()
+    expect(ui.queryByRole("button", { name: "Retry status" })).toBeNull()
+    expect(ui.getByRole("button", { name: /^Retry$/ })).toBeTruthy()
+    expect(oncomplete).not.toHaveBeenCalled()
+    ui.unmount()
+  })
+
+  it("keeps a refresh-only failure stale until Retry status confirms the workspace", async () => {
+    providers.set([makeProvider("docker")])
+    const oncomplete = vi.fn()
+    const { getByText, queryByText, getByRole, getAllByText, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true, oncomplete },
+      },
+    )
+    await flushAsync()
+    await advanceToReview(getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+
+    progressCallback?.({
+      commandId: "cmd-1",
+      done: true,
+      success: true,
+    })
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "reconciling",
+        phase: "Refreshing status",
+        refreshError: "provider temporarily unavailable",
+      },
+    })
+    await flushAsync()
+
+    expect(queryByText("Workspace ready")).toBeNull()
+    expect(getByText("Workspace created")).toBeTruthy()
+    expect(getByText("Status may be out of date")).toBeTruthy()
+    expect(getAllByText("Status may be out of date")).toHaveLength(1)
+    expect(getByRole("button", { name: "Retry status" })).toBeTruthy()
+    expect(queryByText("Retry", { exact: true })).toBeNull()
+    expect(getByText("Open Workspace")).toBeTruthy()
+    expect(oncomplete).not.toHaveBeenCalled()
+
+    let resolveRefresh: (() => void) | undefined
+    workspaceRefresh.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve
+        }),
+    )
+    await fireEvent.click(getByRole("button", { name: "Retry status" }))
+    await flushAsync()
+    expect(workspaceRefresh).toHaveBeenCalledTimes(1)
+    expect(workspaceRefresh).toHaveBeenCalledWith("python")
+    expect(
+      getByRole("heading", { name: "Confirming workspace status" }),
+    ).toBeTruthy()
+    expect(queryByText("Status may be out of date")).toBeNull()
+
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "succeeded",
+        phase: "",
+      },
+    })
+    await flushAsync()
+    resolveRefresh?.()
+    await flushAsync()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "succeeded",
+        phase: "",
+      },
+    })
+    await flushAsync()
+
+    expect(getByText("Workspace ready")).toBeTruthy()
+    expect(oncomplete).toHaveBeenCalledTimes(1)
+    expect(oncomplete).toHaveBeenCalledWith("python")
+    unmount()
+  })
+
+  it("shows exactly one success headline when the matching job reports success", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: { commandId: "cmd-1", activity: "creating", state: "succeeded" },
+    })
+    await flushAsync()
+
+    expect(queryByText("Workspace ready")).not.toBeNull()
+    expect(queryByText("Checking")).toBeNull()
+    expect(document.querySelector('[role="status"]')).toBeNull()
     unmount()
   })
 
@@ -429,9 +1031,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -441,6 +1043,12 @@ describe("WorkspaceWizard", () => {
       done: true,
       success: true,
     } as CommandProgress)
+    await flushAsync()
+
+    expect(queryByText("Workspace ready")).toBeNull()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: { commandId: "cmd-1", activity: "creating", state: "succeeded" },
+    })
     await flushAsync()
 
     expect(queryByText("Open Workspace")).not.toBeNull()
@@ -455,9 +1063,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -480,9 +1088,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -524,9 +1132,9 @@ describe("WorkspaceWizard", () => {
     })
     await flushAsync()
 
-    const advancedToggle = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => /advanced options/i.test(b.textContent ?? "")) as HTMLElement
+    const advancedToggle = Array.from(document.querySelectorAll("button")).find(
+      (b) => /advanced options/i.test(b.textContent ?? ""),
+    ) as HTMLElement
     await fireEvent.click(advancedToggle)
     await flushAsync()
 
@@ -537,7 +1145,9 @@ describe("WorkspaceWizard", () => {
     const wsFolderInput = document.querySelector(
       'input[placeholder="/workspaces/app"]',
     ) as HTMLInputElement
-    await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
+    await fireEvent.input(wsFolderInput, {
+      target: { value: "/workspaces/app" },
+    })
     const prebuildInput = document.querySelector(
       'input[placeholder*="ghcr.io/org/prebuilds"]',
     ) as HTMLInputElement
@@ -551,9 +1161,9 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(getActiveContinue(getByText))
     await flushAsync()
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -581,15 +1191,17 @@ describe("WorkspaceWizard", () => {
 
     // Set a workspace folder via the git tab's advanced section; this state
     // persists when we switch source types.
-    const advancedToggle = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => /advanced options/i.test(b.textContent ?? "")) as HTMLElement
+    const advancedToggle = Array.from(document.querySelectorAll("button")).find(
+      (b) => /advanced options/i.test(b.textContent ?? ""),
+    ) as HTMLElement
     await fireEvent.click(advancedToggle)
     await flushAsync()
     const wsFolderInput = document.querySelector(
       'input[placeholder="/workspaces/app"]',
     ) as HTMLInputElement
-    await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
+    await fireEvent.input(wsFolderInput, {
+      target: { value: "/workspaces/app" },
+    })
     await flushAsync()
 
     // Switch to the Image tab and enter a custom image ref.
@@ -598,7 +1210,9 @@ describe("WorkspaceWizard", () => {
     const customImageInput = document.querySelector(
       'input[placeholder*="registry/image:tag"]',
     ) as HTMLInputElement
-    await fireEvent.input(customImageInput, { target: { value: "ubuntu:22.04" } })
+    await fireEvent.input(customImageInput, {
+      target: { value: "ubuntu:22.04" },
+    })
     await flushAsync()
 
     await fireEvent.click(getActiveContinue(getByText))
@@ -606,9 +1220,9 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(getActiveContinue(getByText))
     await flushAsync()
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -639,7 +1253,9 @@ describe("WorkspaceWizard", () => {
     const customImageInput = document.querySelector(
       'input[placeholder*="registry/image:tag"]',
     ) as HTMLInputElement
-    await fireEvent.input(customImageInput, { target: { value: "ubuntu:22.04" } })
+    await fireEvent.input(customImageInput, {
+      target: { value: "ubuntu:22.04" },
+    })
     await flushAsync()
 
     await fireEvent.click(getActiveContinue(getByText))
@@ -652,11 +1268,11 @@ describe("WorkspaceWizard", () => {
     const nameInput = document.querySelector(
       'input[placeholder*="derived from source"]',
     ) as HTMLInputElement
-    expect(nameInput.value).toBe("ubuntu-22.04")
+    expect(nameInput.value).toBe("ubuntu-22-04")
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     expect(launchBtn.disabled).toBe(false)
     unmount()
   })
@@ -678,9 +1294,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -689,7 +1305,7 @@ describe("WorkspaceWizard", () => {
     await fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" })
     await flushAsync()
 
-    expect(queryByText(/Cancel workspace creation/i)).not.toBeNull()
+    expect(queryByText(/Close workspace creation/i)).not.toBeNull()
 
     // Tidy up: resolve the pending promise so the component finishes.
     resolveUp?.("cmd-1")
@@ -704,6 +1320,7 @@ describe("launch watchdog", () => {
     onCommandProgress.mockReset()
     providers.set([])
     workspaces.set([])
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({})
     progressCallback = null
 
     onCommandProgress.mockImplementation(
@@ -734,9 +1351,9 @@ describe("launch watchdog", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -758,9 +1375,9 @@ describe("launch watchdog", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 

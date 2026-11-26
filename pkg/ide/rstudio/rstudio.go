@@ -215,7 +215,8 @@ func downloadRStudioDeb(ubuntuCodename string) (string, error) {
 }
 
 func getDownloadURL(version, ubuntuCodename, architecture string) string {
-	return "https://rstudio.org/download/latest/" + version + "/server/" + ubuntuCodename + "/rstudio-server-latest-" + architecture + ".deb"
+	return "https://rstudio.org/download/latest/" + version + "/server/" + ubuntuCodename +
+		"/rstudio-server-latest-" + architecture + ".deb"
 }
 
 func download(targetFolder, downloadURL string) (string, error) {
@@ -242,6 +243,7 @@ func download(targetFolder, downloadURL string) (string, error) {
 func installDeb(debPath string) error {
 	log.Info("Installing deb")
 
+	//nolint:gosec // debPath is the file this process just downloaded into its own install folder
 	out, err := exec.Command("gdebi", "--non-interactive", debPath).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("install deb: %w: %s", err, string(out))
@@ -270,7 +272,7 @@ func installDeb(debPath string) error {
 }
 
 func ensureConfigFolder(userName string) error {
-	err := os.MkdirAll(dataFolder, os.ModePerm)
+	err := os.MkdirAll(dataFolder, 0o750)
 	if err != nil {
 		return err
 	}
@@ -288,7 +290,8 @@ func setupSingleUserMode(configFolder, userName string) error {
 	dbConf := fmt.Sprintf(`provider=sqlite
 directory=%s`, configFolder)
 	dbConfPath := filepath.Join(configFolder, "dbconf.conf")
-	err := os.WriteFile(dbConfPath, []byte(dbConf), os.ModePerm)
+	//nolint:gosec // the server reads this config after dropping privileges to server-user
+	err := os.WriteFile(dbConfPath, []byte(dbConf), 0o644)
 	if err != nil {
 		return fmt.Errorf("save db conf: %w", err)
 	}
@@ -309,7 +312,8 @@ database-config-file=%s/dbconf.conf
 	serverConfPath := filepath.Join(rstudioConfigFolder, "rserver.conf")
 	// The RStudio installer automatically creates an empty file at destConfPath, let's try to remove that first
 	_ = os.Remove(serverConfPath)
-	err = os.WriteFile(serverConfPath, []byte(rServerConf), os.ModePerm)
+	//nolint:gosec // the server reads this config after dropping privileges to server-user
+	err = os.WriteFile(serverConfPath, []byte(rServerConf), 0o644)
 	if err != nil {
 		return fmt.Errorf("save rserver conf: %w", err)
 	}
@@ -335,7 +339,7 @@ func setupPreferences(workspaceFolder, userName string) error {
 	}
 
 	prefsPath := filepath.Join(prefsDir, preferencesFile)
-	err = os.WriteFile(prefsPath, outPrefs, os.ModePerm)
+	err = os.WriteFile(prefsPath, outPrefs, 0o600)
 	if err != nil {
 		return fmt.Errorf("save preferences: %w", err)
 	}

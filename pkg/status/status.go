@@ -4,6 +4,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
@@ -55,25 +56,27 @@ type Phase string
 
 // Workspace up phases.
 const (
-	PhaseCloningRepository    Phase = "cloning_repository"
-	PhaseResolvingConfig      Phase = "resolving_config"
-	PhaseInitializeCommand    Phase = "initialize_command"
-	PhaseBuildingImage        Phase = "building_image"
-	PhaseStartingContainer    Phase = "starting_container"
-	PhaseInjectingAgent       Phase = "injecting_agent"
-	PhaseRunningLifecycleHook Phase = "running_lifecycle_hook"
-	PhaseWaitingFor           Phase = "waiting_for"
-	PhaseRunningCommand       Phase = "running_command"
-	PhaseConfiguringWorkspace Phase = "configuring_workspace"
-	PhaseConfiguringSSH       Phase = "configuring_ssh"
-	PhaseStartingSSHTunnel    Phase = "starting_ssh_tunnel"
-	PhaseLaunchingIDE         Phase = "launching_ide"
-	PhaseStoppingWorkspace    Phase = "stopping_workspace"
-	PhaseDeletingWorkspace    Phase = "deleting_workspace"
-	PhaseRebuildingWorkspace  Phase = "rebuilding_workspace"
-	PhaseResettingWorkspace   Phase = "resetting_workspace"
-	PhaseReady                Phase = "ready"
-	PhaseFailed               Phase = "failed"
+	PhaseCloningRepository     Phase = "cloning_repository"
+	PhaseResolvingConfig       Phase = "resolving_config"
+	PhaseInitializeCommand     Phase = "initialize_command"
+	PhasePreparingDevContainer Phase = "preparing_devcontainer"
+	PhaseBuildingImage         Phase = "building_image"
+	PhaseStartingContainer     Phase = "starting_container"
+	PhaseInjectingAgent        Phase = "injecting_agent"
+	PhaseRunningLifecycleHook  Phase = "running_lifecycle_hook"
+	PhaseWaitingFor            Phase = "waiting_for"
+	PhaseRunningCommand        Phase = "running_command"
+	PhaseConfiguringWorkspace  Phase = "configuring_workspace"
+	PhaseConfiguringSSH        Phase = "configuring_ssh"
+	PhaseStartingSSHTunnel     Phase = "starting_ssh_tunnel"
+	PhaseLaunchingIDE          Phase = "launching_ide"
+	PhaseStoppingWorkspace     Phase = "stopping_workspace"
+	PhaseDeletingWorkspace     Phase = "deleting_workspace"
+	PhaseRebuildingWorkspace   Phase = "rebuilding_workspace"
+	PhaseResettingWorkspace    Phase = "resetting_workspace"
+	PhaseImportingWorkspace    Phase = "importing_workspace"
+	PhaseReady                 Phase = "ready"
+	PhaseFailed                Phase = "failed"
 )
 
 // Provider phases.
@@ -158,6 +161,11 @@ type Operation struct {
 	Step     string
 }
 
+type skipFinalStatus interface {
+	error
+	SkipFinalStatus() bool
+}
+
 // Run reports an operation lifecycle and returns the callback error.
 func Run(
 	ctx context.Context,
@@ -196,6 +204,9 @@ func Run(
 		}
 	}()
 	err := fn(childCtx)
+	if skip, ok := errors.AsType[skipFinalStatus](err); ok && skip.SkipFinalStatus() {
+		return err
+	}
 	done := Event{
 		Pipeline:          operation.Pipeline,
 		OperationID:       id,

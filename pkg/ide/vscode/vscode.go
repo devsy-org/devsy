@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	OpenNewWindow = "OPEN_NEW_WINDOW"
+	OpenNewWindow     = "OPEN_NEW_WINDOW"
+	SSHConnectTimeout = "SSH_CONNECT_TIMEOUT"
 )
 
 type Flavor string
@@ -61,7 +62,7 @@ var flavorConfigs = map[Flavor]flavorConfig{
 	FlavorStable:      {"VS Code", ".vscode-server", "code-server"},
 	FlavorInsiders:    {"VS Code Insiders", ".vscode-server-insiders", "code-server-insiders"},
 	FlavorCursor:      {"Cursor", ".cursor-server", "cursor-server"},
-	FlavorPositron:    {"positron", ".positron-server", "positron-server"},
+	FlavorPositron:    {string(FlavorPositron), ".positron-server", "positron-server"},
 	FlavorCodium:      {"VSCodium", ".vscodium-server", "codium-server"},
 	FlavorWindsurf:    {"Windsurf", ".windsurf-server", "windsurf-server"},
 	FlavorAntigravity: {"Antigravity", ".antigravity-server", "antigravity-server"},
@@ -100,6 +101,13 @@ var Options = ide.Options{
 			"false",
 			"true",
 		},
+	},
+	SSHConnectTimeout: {
+		Name: SSHConnectTimeout,
+		Description: "Remote SSH connection timeout in positive seconds; " +
+			"applies globally to this editor flavor's host settings",
+		ValidationPattern: `^[1-9][0-9]{0,8}$`,
+		ValidationMessage: "SSH_CONNECT_TIMEOUT must be a positive whole number of seconds (at most 999999999)",
 	},
 }
 
@@ -208,8 +216,10 @@ func (o *VsCodeServer) buildExtensionCommand(binPath, extension string) *exec.Cm
 
 	if o.userName != "" {
 		cmd := shellescape.QuoteCommand(append([]string{binPath}, args...))
+		//nolint:gosec // cmd is shell-quoted above
 		return exec.Command("su", o.userName, "-c", cmd)
 	}
+	//nolint:gosec // binPath is resolved from the server install location
 	return exec.Command(binPath, args...)
 }
 

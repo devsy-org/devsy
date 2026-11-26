@@ -35,7 +35,7 @@ func TestPlatformsFromManifests_FiltersUnknownAndDedupes(t *testing.T) {
 // pkg/snapshot's local test-fixture needs (see pkg/snapshot/reference.go),
 // not to general image operations (devcontainer image/feature pulls,
 // `devsy build` push checks, etc.). A host.docker.internal reference parsed
-// by this package must behave identically to any other registry host —
+// by this package must behave identically to any other registry host -
 // i.e. name.ParseReference without name.Insecure, which rejects an HTTP-only
 // scheme override and defaults to HTTPS.
 func TestParseReference_DoesNotSpecialCaseDockerInternalHost(t *testing.T) {

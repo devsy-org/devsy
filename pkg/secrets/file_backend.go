@@ -3,6 +3,7 @@ package secrets
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +23,7 @@ func newFileBackend(path string, key *fileKey) *fileBackend {
 }
 
 func (f *fileBackend) load() (map[string]string, error) {
+	//nolint:gosec // path is inside the internal secrets store
 	raw, err := os.ReadFile(f.path) // #nosec G304 -- path derived from config dir.
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -33,17 +35,20 @@ func (f *fileBackend) load() (map[string]string, error) {
 
 	reader, err := age.Decrypt(bytes.NewReader(raw), f.key.identity)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt secrets file: %w", err)
+		if _, ok := errors.AsType[*age.NoIdentityMatchError](err); ok {
+			return nil, &UnlockFailedError{Backend: BackendFile, Cause: err}
+		}
+		return nil, &StoreCorruptError{Cause: err}
 	}
 
 	plaintext, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("read decrypted secrets: %w", err)
+		return nil, &StoreCorruptError{Cause: err}
 	}
 
 	values := map[string]string{}
 	if err := json.Unmarshal(plaintext, &values); err != nil {
-		return nil, fmt.Errorf("parse secrets file: %w", err)
+		return nil, &StoreCorruptError{Cause: err}
 	}
 
 	return values, nil
@@ -67,7 +72,7 @@ func (f *fileBackend) store(values map[string]string) error {
 		return fmt.Errorf("finalize encrypted secrets: %w", err)
 	}
 
-	return atomicWriteFile(f.path, buf.Bytes(), 0o600)
+	return atomicWriteFile(f.path, buf.Bytes())
 }
 
 func (f *fileBackend) set(key, value string) error {

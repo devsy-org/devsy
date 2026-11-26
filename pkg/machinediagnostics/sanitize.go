@@ -31,5 +31,5 @@ func (s *Sanitizer) Message(value string) string {
 	for cut > 0 && !utf8.RuneStart(value[cut]) {
 		cut--
 	}
-	return value[:cut] + "…"
+	return value[:cut] + "..."
 }

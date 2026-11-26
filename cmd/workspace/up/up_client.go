@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -65,6 +66,9 @@ func (cmd *UpCmd) prepareClient(
 	devsyConfig *config.Config,
 	args []string,
 ) (client2.BaseWorkspaceClient, error) {
+	if err := cmd.validateInteractiveRoute(nil); err != nil {
+		return nil, err
+	}
 	if err := cmd.prepareClientEnvironment(devsyConfig, args, ctx); err != nil {
 		return nil, err
 	}
@@ -81,6 +85,10 @@ func (cmd *UpCmd) prepareClient(
 	args = cmd.ensureArgs(args)
 
 	existed := cmd.checkWorkspaceExisted(ctx, devsyConfig, args)
+	presentationID := cmd.targetWorkspaceID(args)
+	if err := cmd.validateTarget(devsyConfig, presentationID, existed); err != nil {
+		return nil, err
+	}
 
 	log.Debugf("resolving workspace with ide=%q launch=%q", cmd.IDE, cmd.IDELaunch)
 	resolver := cmd.resolveWorkspace
@@ -96,10 +104,25 @@ func (cmd *UpCmd) prepareClient(
 		return nil, err
 	}
 
+	if err := cmd.validateInteractiveRoute(client); err != nil {
+		return nil, err
+	}
 	if err := cmd.postResolveWorkspace(ctx, devsyConfig, client, existed); err != nil {
 		return nil, err
 	}
 	return client, nil
+}
+
+func (cmd *UpCmd) targetWorkspaceID(args []string) string {
+	switch {
+	case cmd.ID != "":
+		return cmd.ID
+	case len(args) > 0:
+		_, name := file.IsLocalDir(args[0])
+		return workspace2.ToID(name)
+	default:
+		return ""
+	}
 }
 
 func (cmd *UpCmd) checkWorkspaceExisted(
@@ -107,15 +130,116 @@ func (cmd *UpCmd) checkWorkspaceExisted(
 	devsyConfig *config.Config,
 	args []string,
 ) bool {
-	switch {
-	case cmd.ID != "":
-		return workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
-	case len(args) > 0:
-		_, name := file.IsLocalDir(args[0])
-		return workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
-	default:
+	id := cmd.targetWorkspaceID(args)
+	if id == "" {
 		return true
 	}
+	return workspace2.Exists(
+		ctx,
+		devsyConfig,
+		workspace2.LookupOptions{ID: id, Owner: cmd.Owner},
+	) != ""
+}
+
+func (cmd *UpCmd) hasPresentation() bool {
+	return cmd.DisplayName != "" || cmd.SSHHostAlias != ""
+}
+
+func (cmd *UpCmd) validateTarget(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if err := cmd.checkNewWorkspaceID(devsyConfig, id, existed); err != nil {
+		return err
+	}
+	return cmd.checkPresentation(devsyConfig, id, existed)
+}
+
+func (cmd *UpCmd) checkNewWorkspaceID(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if existed || id == "" {
+		return nil
+	}
+	return workspace2.ValidateNewWorkspaceID(devsyConfig, id, cmd.sshConfigLocation(devsyConfig))
+}
+
+func (cmd *UpCmd) checkPresentation(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if !cmd.hasPresentation() {
+		return nil
+	}
+	if existed || id == "" {
+		log.Warnf(
+			"ignoring --%s and --%s: the workspace already exists, use 'devsy workspace edit'",
+			names.DisplayName,
+			names.SSHHostAlias,
+		)
+		return nil
+	}
+	return workspace2.ValidatePresentation(
+		devsyConfig,
+		workspace2.PresentationCandidate{
+			ID:           id,
+			DisplayName:  cmd.DisplayName,
+			SSHHostAlias: cmd.SSHHostAlias,
+		},
+		cmd.sshConfigLocation(devsyConfig),
+	)
+}
+
+func (cmd *UpCmd) sshConfigLocation(devsyConfig *config.Config) workspace2.SSHConfigLocation {
+	return workspace2.SSHConfigLocation{
+		ConfigPath:  cmd.SSHConfigPath,
+		IncludePath: devsyConfig.ContextOption(config.ContextOptionSSHConfigIncludePath),
+	}
+}
+
+func (cmd *UpCmd) persistPresentation(
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	if !cmd.hasPresentation() {
+		return nil
+	}
+	ws := client.WorkspaceConfig()
+	if ws == nil {
+		return nil
+	}
+	if ws.IsPlatform() {
+		log.Warnf(
+			"ignoring --%s and --%s: platform workspaces are managed by the platform",
+			names.DisplayName,
+			names.SSHHostAlias,
+		)
+		return nil
+	}
+
+	req := workspace2.PresentationRequest{
+		DevsyConfig: devsyConfig,
+		ID:          ws.ID,
+		ExpectedUID: ws.UID,
+	}
+	if cmd.DisplayName != "" {
+		req.DisplayName = &cmd.DisplayName
+	}
+	if cmd.SSHHostAlias != "" {
+		req.SSHHostAlias = &cmd.SSHHostAlias
+	}
+	result, err := workspace2.EditPresentation(req)
+	if err != nil {
+		return err
+	}
+
+	ws.DisplayName = result.DisplayName
+	ws.SSHHostAlias = result.SSHHostAlias
+	return nil
 }
 
 func (cmd *UpCmd) postResolveWorkspace(
@@ -130,13 +254,35 @@ func (cmd *UpCmd) postResolveWorkspace(
 		}
 		return err
 	}
+	if err := cmd.preflightWSLgClient(devsyConfig, client); err != nil {
+		return cleanupOnFailure(err)
+	}
 	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
 		return cleanupOnFailure(err)
 	}
 	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
 		return cleanupOnFailure(err)
 	}
+	if !existed {
+		if err := cmd.validateResolvedID(devsyConfig, client); err != nil {
+			return cleanupOnFailure(err)
+		}
+		if err := cmd.persistPresentation(devsyConfig, client); err != nil {
+			return cleanupOnFailure(err)
+		}
+	}
 	return nil
+}
+
+func (cmd *UpCmd) validateResolvedID(
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	ws := client.WorkspaceConfig()
+	if ws == nil || ws.IsPlatform() {
+		return nil
+	}
+	return cmd.checkNewWorkspaceID(devsyConfig, ws.ID, false)
 }
 
 func (cmd *UpCmd) prepareClientEnvironment(
@@ -147,9 +293,23 @@ func (cmd *UpCmd) prepareClientEnvironment(
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
 		return err
 	}
+	if cmd.InteractivePostStart {
+		if err := cmd.validateInteractiveFlagConflicts(); err != nil {
+			return err
+		}
+	}
+	if err := cmd.validateInteractiveRoute(nil); err != nil {
+		return err
+	}
+	if err := workspace2.ValidateID(cmd.ID); err != nil {
+		return err
+	}
 	if cmd.Platform.Enabled {
 		log.Debug("running in platform mode")
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
+	}
+	if err := cmd.preflightLocalValues(devsyConfig); err != nil {
+		return err
 	}
 	return cmd.validateFromSnapshot(ctx, args)
 }
@@ -182,8 +342,8 @@ func (cmd *UpCmd) checkProviderUpdate(
 	if cmd.Platform.Enabled {
 		return nil
 	}
-	proInstance := workspace2.GetProInstance(devsyConfig, client.Provider())
-	return workspace2.CheckProviderUpdate(ctx, devsyConfig, proInstance)
+	platformInstance := workspace2.GetPlatformInstance(devsyConfig, client.Provider())
+	return workspace2.CheckProviderUpdate(ctx, devsyConfig, platformInstance)
 }
 
 // ensureArgs returns args unchanged unless either --from-snapshot or --source is
@@ -217,6 +377,7 @@ func (cmd *UpCmd) resolveParams(
 		ReconfigureProvider: cmd.Reconfigure,
 		DevContainerImage:   cmd.DevContainerImage,
 		DevContainerPath:    cmd.DevContainerPath,
+		DevContainerID:      cmd.DevContainerID,
 		DevContainerSource:  cmd.DevContainerSource,
 		SSHConfigPath:       cmd.SSHConfigPath,
 		SSHConfigIncludePath: devsyConfig.ContextOption(
@@ -237,27 +398,19 @@ func (cmd *UpCmd) prepareSecretsWithProject(
 	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
 		return err
 	}
+	if _, err := indexWorkspaceEnv(cmd.WorkspaceEnv); err != nil {
+		return err
+	}
 
-	if cmd.SecretsFile != "" {
-		parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
-		if err != nil {
-			return err
-		}
-		for k, v := range parsed {
-			cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
-		}
+	if err := cmd.appendSecretsFile(); err != nil {
+		return err
 	}
 
 	if err := cmd.resolveStoredSecrets(ctx, devsyConfig, project); err != nil {
 		return err
 	}
 
-	if cmd.FeatureSecretsFile == "" {
-		cmd.FeatureSecretsFile = os.Getenv("DEVCONTAINER_SECRETS_FILE")
-	}
-	if cmd.FeatureSecretsFile != "" {
-		cmd.CLIOptions.FeatureSecretsFile = cmd.FeatureSecretsFile
-	}
+	cmd.resolveFeatureSecretsFile()
 
 	cmd.WorkspaceEnv = options2.InheritFromEnvironment(
 		cmd.WorkspaceEnv,
@@ -268,6 +421,29 @@ func (cmd *UpCmd) prepareSecretsWithProject(
 	return nil
 }
 
+func (cmd *UpCmd) appendSecretsFile() error {
+	if cmd.SecretsFile == "" {
+		return nil
+	}
+	parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
+	if err != nil {
+		return err
+	}
+	for k, v := range parsed {
+		cmd.SecretsEnv = append(cmd.SecretsEnv, k+"="+v)
+	}
+	return nil
+}
+
+func (cmd *UpCmd) resolveFeatureSecretsFile() {
+	if cmd.FeatureSecretsFile == "" {
+		cmd.FeatureSecretsFile = os.Getenv("DEVCONTAINER_SECRETS_FILE")
+	}
+	if cmd.FeatureSecretsFile != "" {
+		cmd.CLIOptions.FeatureSecretsFile = cmd.FeatureSecretsFile
+	}
+}
+
 func (cmd *UpCmd) prepareBootstrapGitToken(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -276,7 +452,7 @@ func (cmd *UpCmd) prepareBootstrapGitToken(
 	if cmd.GitTokenSecret == "" {
 		return nil
 	}
-	resolver, err := secrets.NewResolverForConfig(devsyConfig)
+	resolver, err := secrets.NewResolverForConfig(devsyConfig, cmd.unlockOptions())
 	if err != nil {
 		return err
 	}
@@ -301,11 +477,27 @@ func (cmd *UpCmd) resolveStoredSecrets(
 	if err != nil {
 		return err
 	}
-	if !cmd.hasStoredValues(requests) {
+	if !cmd.hasStoredValues(requests, devsyConfig) {
 		return nil
 	}
 
-	resolver, err := secrets.NewResolverForConfig(devsyConfig)
+	if len(requests) == 0 && len(cmd.BuildSecretNames) == 0 {
+		resolver, err := secrets.NewEnvironmentResolverForConfig(devsyConfig)
+		if err != nil {
+			return err
+		}
+		return cmd.applyEnvVars(ctx, devsyConfig, resolver)
+	}
+	return cmd.resolveWithStore(ctx, devsyConfig, project, requests)
+}
+
+func (cmd *UpCmd) resolveWithStore(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	project *projectSecretContext,
+	requests []secretRequest,
+) error {
+	resolver, err := secrets.NewResolverForConfig(devsyConfig, cmd.unlockOptions())
 	if err != nil {
 		return err
 	}
@@ -316,14 +508,19 @@ func (cmd *UpCmd) resolveStoredSecrets(
 	if err := cmd.applyLifecycleSecrets(ctx, requests, resolver); err != nil {
 		return err
 	}
-	if err := cmd.applyEnvVars(ctx, resolver); err != nil {
+	if err := cmd.applyEnvVars(ctx, devsyConfig, resolver); err != nil {
 		return err
 	}
 	return cmd.applyBuildSecrets(ctx, resolver)
 }
 
-func (cmd *UpCmd) hasStoredValues(requests []secretRequest) bool {
-	return len(requests) > 0 || len(cmd.EnvVars) > 0 || len(cmd.BuildSecretNames) > 0
+func (cmd *UpCmd) hasStoredValues(requests []secretRequest, devsyConfig *config.Config) bool {
+	attachedEnvCount := 0
+	if current := devsyConfig.Current(); current != nil {
+		attachedEnvCount = len(current.EnvVars)
+	}
+	return len(requests) > 0 || len(cmd.EnvVars) > 0 || attachedEnvCount > 0 ||
+		len(cmd.BuildSecretNames) > 0
 }
 
 func (cmd *UpCmd) applyLifecycleSecrets(
@@ -340,60 +537,201 @@ func (cmd *UpCmd) applyLifecycleSecrets(
 			cmd.SecretsMount = append(cmd.SecretsMount, req.target+"="+resolved.Value)
 		} else {
 			cmd.SecretsEnv = append(cmd.SecretsEnv, req.target+"="+resolved.Value)
+			if req.session {
+				cmd.TerminalSecretEnvNames = append(cmd.TerminalSecretEnvNames, req.target)
+			}
 		}
 	}
 	return nil
 }
 
-// applyEnvVars resolves --env entries from the local store. External
-// sensitive sources intentionally use --secret instead: WorkspaceEnv rides in
-// the setup argv and is process-list visible.
-func (cmd *UpCmd) applyEnvVars(ctx context.Context, resolver *secrets.Resolver) error {
-	for _, entry := range cmd.EnvVars {
-		envVar, err := resolveEnvVarEntry(ctx, resolver, entry)
+type envVarRequest struct {
+	ref    secrets.SecretRef
+	target string
+	origin envVarRequestOrigin
+}
+
+type envVarRequestOrigin uint8
+
+const (
+	envVarAttached envVarRequestOrigin = iota
+	envVarExplicit
+)
+
+func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVarRequest, error) {
+	explicit := make([]envVarRequest, 0, len(flags))
+	explicitRefs := map[string]struct{}{}
+	for _, entry := range flags {
+		req, err := parseEnvVarRequest(entry)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		cmd.WorkspaceEnv = append(cmd.WorkspaceEnv, envVar)
+		req.origin = envVarExplicit
+		explicit = append(explicit, req)
+		explicitRefs[req.ref.String()] = struct{}{}
+	}
+	implicit, err := attachedEnvVarRequests(devsyConfig, explicitRefs)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(
+		implicit,
+		func(i, j int) bool { return implicit[i].ref.String() < implicit[j].ref.String() },
+	)
+	return append(implicit, explicit...), nil
+}
+
+func attachedEnvVarRequests(
+	devsyConfig *config.Config,
+	explicitRefs map[string]struct{},
+) ([]envVarRequest, error) {
+	implicit := make([]envVarRequest, 0)
+	current := devsyConfig.Current()
+	if current == nil {
+		return implicit, nil
+	}
+	for _, name := range current.EnvVars {
+		ref, err := secrets.ParseRef(name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid attached environment variable %q: %w", name, err)
+		}
+		if !isLocalStoreRef(ref) {
+			return nil, fmt.Errorf(
+				"attached environment variable %q must use the local Devsy store",
+				name,
+			)
+		}
+		if _, overridden := explicitRefs[ref.String()]; overridden {
+			continue
+		}
+		implicit = append(implicit, envVarRequest{
+			ref: ref, target: ref.Name, origin: envVarAttached,
+		})
+	}
+	return implicit, nil
+}
+
+func isLocalStoreRef(ref secrets.SecretRef) bool {
+	return ref.Source == secrets.LocalSourceName &&
+		(ref.Type == "" || ref.Type == secrets.LocalSourceName)
+}
+
+func validateEnvTarget(entry, name, target string, hasTarget bool) error {
+	if hasTarget && target == "" {
+		return fmt.Errorf(
+			"invalid --env %q: target after %q= must not be empty",
+			entry,
+			name,
+		)
+	}
+	if hasTarget && strings.Contains(target, "=") {
+		return fmt.Errorf(
+			"invalid --env %q: target %q must not contain =",
+			entry,
+			target,
+		)
 	}
 	return nil
 }
 
-func resolveEnvVarEntry(
-	ctx context.Context,
-	resolver *secrets.Resolver,
-	entry string,
-) (string, error) {
-	name, explicitTarget, hasTarget := strings.Cut(entry, "=")
-	if hasTarget && explicitTarget == "" {
-		return "", fmt.Errorf("invalid --env %q: target after %q= must not be empty", entry, name)
+func parseEnvVarRequest(entry string) (envVarRequest, error) {
+	name, target, hasTarget := strings.Cut(entry, "=")
+	if err := validateEnvTarget(entry, name, target, hasTarget); err != nil {
+		return envVarRequest{}, err
 	}
 	ref, err := secrets.ParseRef(name)
 	if err != nil {
-		return "", err
+		return envVarRequest{}, err
 	}
-	target := ref.Name
-	if hasTarget {
-		target = explicitTarget
-	}
-	if ref.Source != secrets.LocalSourceName {
-		return "", fmt.Errorf(
+	if !isLocalStoreRef(ref) {
+		return envVarRequest{}, fmt.Errorf(
 			"--env only accepts Devsy-managed values; use --secret %s instead",
 			name,
 		)
 	}
-	resolved, err := resolver.Resolve(ctx, ref)
+	if !hasTarget {
+		target = ref.Name
+	}
+	return envVarRequest{ref: ref, target: target}, nil
+}
+
+func checkDuplicateEnvTargets(requests []envVarRequest) error {
+	targets := map[string]secrets.SecretRef{}
+	for _, req := range requests {
+		if previous, ok := targets[req.target]; ok {
+			if previous.String() != req.ref.String() {
+				return fmt.Errorf(
+					"environment variables %q and %q both target %q",
+					previous.Name,
+					req.ref.Name,
+					req.target,
+				)
+			}
+			return fmt.Errorf(
+				"workspace environment variable %q is assigned more than once",
+				req.target,
+			)
+		}
+		targets[req.target] = req.ref
+	}
+	return nil
+}
+
+// applyEnvVars resolves attached and explicit entries from the local store. External
+// sensitive sources intentionally use --secret instead: WorkspaceEnv rides in
+// the setup argv and is process-list visible.
+func (cmd *UpCmd) applyEnvVars(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	resolver *secrets.Resolver,
+) error {
+	requests, err := collectEnvVarRequests(cmd.EnvVars, devsyConfig)
+	if err != nil {
+		return err
+	}
+	base, err := indexWorkspaceEnv(cmd.WorkspaceEnv)
+	if err != nil {
+		return err
+	}
+	requests, err = filterWorkspaceEnvRequests(base, requests)
+	if err != nil {
+		return err
+	}
+	if err := checkDuplicateEnvTargets(requests); err != nil {
+		return err
+	}
+	resolvedEnv := make([]resolvedEnvVar, 0, len(requests))
+	for _, req := range requests {
+		envVar, err := resolveEnvVarRequest(ctx, resolver, req)
+		if err != nil {
+			return err
+		}
+		resolvedEnv = append(resolvedEnv, resolvedEnvVar{assignment: envVar})
+	}
+	cmd.WorkspaceEnv, err = composeWorkspaceEnv(base, resolvedEnv)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func resolveEnvVarRequest(
+	ctx context.Context,
+	resolver *secrets.Resolver,
+	req envVarRequest,
+) (string, error) {
+	resolved, err := resolver.ResolveEnvironment(ctx, req.ref)
 	if err != nil {
 		return "", err
 	}
 	if resolved.Sensitive {
 		return "", fmt.Errorf(
 			"%q is a secret and cannot be passed with --env (it would be visible in the process list); use --secret %s instead",
-			name,
-			name,
+			req.ref.Name,
+			req.ref.Name,
 		)
 	}
-	return target + "=" + resolved.Value, nil
+	return req.target + "=" + resolved.Value, nil
 }
 
 func (cmd *UpCmd) applyBuildSecrets(ctx context.Context, resolver *secrets.Resolver) error {
@@ -477,9 +815,10 @@ func gitTokenUsernameForHost(host string) string {
 }
 
 type secretRequest struct {
-	ref    secrets.SecretRef
-	target string
-	mount  bool
+	ref     secrets.SecretRef
+	target  string
+	mount   bool
+	session bool
 }
 
 // collectSecretRequests merges context/project bindings with secret flags;
@@ -522,7 +861,11 @@ func addSecretBindings(
 		if err != nil {
 			return fmt.Errorf("invalid %s secret %q: %w", kind, value, err)
 		}
-		byName[ref.String()] = secretRequest{ref: ref, target: ref.Name}
+		existing := byName[ref.String()]
+		byName[ref.String()] = secretRequest{
+			ref: ref, target: ref.Name,
+			session: kind == "attached" || existing.session,
+		}
 	}
 	return nil
 }
@@ -532,6 +875,9 @@ func addSecretFlags(byName map[string]secretRequest, values []string) error {
 		req, err := parseSecretFlag(value)
 		if err != nil {
 			return err
+		}
+		if attached, ok := byName[req.ref.String()]; ok && !req.mount {
+			req.session = attached.session
 		}
 		byName[req.ref.String()] = req
 	}

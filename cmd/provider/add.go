@@ -1,9 +1,11 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -17,6 +19,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
+
+const currentMicrosandboxSource = "github.com/devsy-org/devsy-provider-microsandbox"
 
 // AddCmd holds the cmd flags.
 type AddCmd struct {
@@ -37,7 +41,7 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 	}
 	addCmd := &cobra.Command{
 		Use:   "add [name, GitHub link, URL or path]",
-		Short: "Adds a new provider to Devsy",
+		Short: "Add a provider",
 		Args:  cobra.MaximumNArgs(1),
 		PreRunE: func(cobraCommand *cobra.Command, args []string) error {
 			if cmd.FromExisting != "" {
@@ -48,6 +52,7 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
+
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
@@ -87,28 +92,32 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return err
 	}
 
-	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
+	reporter, err := newStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.verbose(),
+		cmd.NoStatus,
+	)
+	if err != nil {
+		return err
+	}
+	resolved, err := cmd.resolveAddSource(ctx, args, providerName)
+	if err != nil {
+		return err
+	}
+	providerName = resolved.name
+
+	unlockProviders, err := cmd.lockProviders(devsyConfig, providerName)
+	if err != nil {
+		return err
+	}
+	defer unlockProviders()
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err
 	}
 
-	var providerConfig *provider.ProviderConfig
-	var options []string
-	err = status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseInstallingProvider, Step: providerName},
-		func(ctx context.Context) error {
-			var resolveErr error
-			providerConfig, options, resolveErr = cmd.resolveProviderConfig(
-				ctx,
-				devsyConfig,
-				providerName,
-				args,
-			)
-			return resolveErr
-		},
-	)
+	providerConfig, options, err := cmd.install(ctx, reporter, devsyConfig, resolved)
 	if err != nil {
 		return err
 	}
@@ -125,9 +134,80 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		reporter,
 		status.Operation{Phase: status.PhaseReady, Step: providerConfig.Name},
 		func(ctx context.Context) error {
-			return cmd.useProvider(ctx, devsyConfig, providerConfig, options, reporter)
+			return cmd.useProvider(
+				ctx,
+				devsyConfig,
+				installedProvider{config: providerConfig, options: options},
+				reporter,
+			)
 		},
 	)
+}
+
+func (cmd *AddCmd) install(
+	ctx context.Context,
+	reporter status.Reporter,
+	devsyConfig *config.Config,
+	resolved resolvedAddSource,
+) (*provider.ProviderConfig, []string, error) {
+	var providerConfig *provider.ProviderConfig
+	var options []string
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseInstallingProvider, Step: resolved.name},
+		func(ctx context.Context) error {
+			var resolveErr error
+			providerConfig, options, resolveErr = cmd.resolveProviderConfig(
+				ctx,
+				devsyConfig,
+				resolved,
+			)
+			return resolveErr
+		},
+	)
+
+	return providerConfig, options, err
+}
+
+func (cmd *AddCmd) verbose() bool {
+	return cmd.Verbosity > 0 || cmd.Debug
+}
+
+type resolvedAddSource struct {
+	raw    []byte
+	source *provider.ProviderSource
+	name   string
+}
+
+func (cmd *AddCmd) resolveAddSource(
+	ctx context.Context,
+	args []string,
+	providerName string,
+) (resolvedAddSource, error) {
+	if cmd.FromExisting != "" {
+		return resolvedAddSource{name: providerName}, nil
+	}
+	if len(args) != 1 {
+		return resolvedAddSource{}, fmt.Errorf("specify either a URL or path, " +
+			"e.g. devsy provider add https://path/to/my/provider.yaml")
+	}
+	sourceInput := args[0]
+	if sourceInput == provider.MicrosandboxDriver {
+		sourceInput = currentMicrosandboxSource
+	}
+	raw, source, err := provider.ResolveProvider(ctx, sourceInput)
+	if err != nil {
+		return resolvedAddSource{}, err
+	}
+	if providerName != "" {
+		return resolvedAddSource{raw: raw, source: source, name: providerName}, nil
+	}
+	parsed, err := provider.ParseAuthorProvider(bytes.NewReader(raw))
+	if err != nil {
+		return resolvedAddSource{}, err
+	}
+	return resolvedAddSource{raw: raw, source: source, name: parsed.Name}, nil
 }
 
 func validateOptionalProviderName(providerName string) error {
@@ -148,9 +228,9 @@ func validateOptionalProviderName(providerName string) error {
 func (cmd *AddCmd) resolveProviderConfig(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	providerName string,
-	args []string,
+	resolved resolvedAddSource,
 ) (*provider.ProviderConfig, []string, error) {
+	providerName, raw, source := resolved.name, resolved.raw, resolved.source
 	if cmd.FromExisting != "" {
 		if devsyConfig.Current() == nil ||
 			devsyConfig.Current().Providers[cmd.FromExisting] == nil {
@@ -173,27 +253,31 @@ func (cmd *AddCmd) resolveProviderConfig(
 		), nil
 	}
 
-	if len(args) != 1 {
-		return nil, nil, fmt.Errorf("specify either a URL or path, " +
-			"e.g. devsy provider add https://path/to/my/provider.yaml")
-	}
-	c, err := workspace.AddProvider(ctx, devsyConfig, providerName, args[0])
+	c, err := workspace.AddProviderRaw(ctx, workspace.ProviderParams{
+		DevsyConfig:  devsyConfig,
+		ProviderName: providerName,
+		Raw:          raw,
+		Source:       source,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 	return c, cmd.Options, nil
 }
 
+// installedProvider is a provider that was installed, with the options it used.
+type installedProvider struct {
+	config  *provider.ProviderConfig
+	options []string
+}
+
 func (cmd *AddCmd) useProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	providerConfig *provider.ProviderConfig,
-	options []string,
+	installed installedProvider,
 	reporter status.Reporter,
 ) error {
-	// First add: there are no prior user values to merge, so
-	// DiscardPriorValues is moot. Set it explicitly so future readers
-	// don't wonder whether merging matters here.
+	providerConfig, options := installed.config, installed.options
 	configureErr := ConfigureProvider(ctx, ProviderOptionsConfig{
 		Provider:           providerConfig,
 		ContextName:        devsyConfig.DefaultContext,
@@ -203,12 +287,17 @@ func (cmd *AddCmd) useProvider(
 		Reporter:           reporter,
 	})
 	if configureErr != nil {
-		devsyConfig, err := config.LoadConfig(cmd.Context, "")
+		devsyConfig, err := config.LoadConfig(devsyConfig.DefaultContext, "")
 		if err != nil {
 			return err
 		}
 
-		err = DeleteProvider(ctx, devsyConfig, providerConfig.Name, true, true)
+		err = DeleteProvider(
+			ctx,
+			devsyConfig,
+			providerConfig.Name,
+			DeleteOptions{IgnoreNotFound: true, Force: true},
+		)
 		if err != nil {
 			return fmt.Errorf("delete provider: %w", err)
 		}
@@ -216,7 +305,7 @@ func (cmd *AddCmd) useProvider(
 		return fmt.Errorf("configure provider: %w", configureErr)
 	}
 
-	return writeDefaultProvider(cmd.Context, providerConfig.Name)
+	return writeDefaultProvider(devsyConfig.DefaultContext, providerConfig.Name)
 }
 
 // mergeOptions combines user options with existing options, user provided options take precedence.
@@ -259,4 +348,29 @@ func getUserOption(allOptions []string, optionKey string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// lockProviders locks the new provider and the one it copies from, in name
+// order. The returned function releases every lock acquired so far.
+func (cmd *AddCmd) lockProviders(devsyConfig *config.Config, providerName string) (func(), error) {
+	names := []string{providerName}
+	if cmd.FromExisting != "" && cmd.FromExisting != providerName {
+		names = append(names, cmd.FromExisting)
+		sort.Strings(names)
+	}
+	var unlocks []func()
+	release := func() {
+		for _, unlock := range unlocks {
+			unlock()
+		}
+	}
+	for _, name := range names {
+		unlock, err := provider.LockProviderNamed(devsyConfig.DefaultContext, name)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	return release, nil
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/apple"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/driver/runargs"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -22,7 +23,11 @@ func (d *appleDriver) CommandDevContainer(
 		return fmt.Errorf("container not found")
 	}
 
-	if err := d.ensureContainerRunning(ctx, container); err != nil {
+	if params.RequireRunning {
+		if container.State.Status != config.ContainerStatusRunning {
+			return fmt.Errorf("%w: container is %q", driver.ErrNotRunning, container.State.Status)
+		}
+	} else if err := d.ensureContainerRunning(ctx, container); err != nil {
 		return err
 	}
 
@@ -39,6 +44,9 @@ func (d *appleDriver) CommandDevContainer(
 	})
 }
 
+// SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
+func (d *appleDriver) SupportsRequireRunning() bool { return true }
+
 func (d *appleDriver) ensureContainerRunning(
 	ctx context.Context,
 	container *config.ContainerDetails,
@@ -52,22 +60,31 @@ func (d *appleDriver) ensureContainerRunning(
 	return d.Apple.WaitContainerRunning(ctx, container.ID)
 }
 
-func (d *appleDriver) StartDevContainer(ctx context.Context, workspaceID string) error {
+func (d *appleDriver) requireDevContainer(
+	ctx context.Context,
+	workspaceID string,
+) (*config.ContainerDetails, error) {
 	container, err := d.FindDevContainer(ctx, workspaceID)
 	if err != nil {
-		return err
+		return nil, err
 	} else if container == nil {
-		return fmt.Errorf("container not found")
+		return nil, fmt.Errorf("container not found")
+	}
+	return container, nil
+}
+
+func (d *appleDriver) StartDevContainer(ctx context.Context, workspaceID string) error {
+	container, err := d.requireDevContainer(ctx, workspaceID)
+	if err != nil {
+		return err
 	}
 	return d.Apple.StartContainer(ctx, container.ID)
 }
 
 func (d *appleDriver) StopDevContainer(ctx context.Context, workspaceID string) error {
-	container, err := d.FindDevContainer(ctx, workspaceID)
+	container, err := d.requireDevContainer(ctx, workspaceID)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 	return d.Apple.Stop(ctx, container.ID)
 }
@@ -96,11 +113,9 @@ func (d *appleDriver) GetDevContainerLogs(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	container, err := d.FindDevContainer(ctx, workspaceID)
+	container, err := d.requireDevContainer(ctx, workspaceID)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 	return d.Apple.GetContainerLogs(ctx, container.ID, stdout, stderr)
 }
@@ -132,10 +147,24 @@ func (d *appleDriver) TagDevContainer(ctx context.Context, image, tag string) er
 	return nil
 }
 
+func (d *appleDriver) ValidateRunImageDevContainer(
+	params *driver.RunImageDevContainerParams,
+) error {
+	return runargs.Validate(
+		runargs.AppleContainer,
+		params.ParsedConfig.RunArgs,
+		params.LocalWorkspaceFolder,
+	)
+}
+
 func (d *appleDriver) RunImageDevContainer(
 	ctx context.Context,
 	params *driver.RunImageDevContainerParams,
 ) error {
+	if err := d.ValidateRunImageDevContainer(params); err != nil {
+		return err
+	}
+
 	if err := d.EnsureImage(ctx, params.Options); err != nil {
 		return err
 	}

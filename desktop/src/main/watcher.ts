@@ -5,11 +5,16 @@ import { watch } from "chokidar"
 import type { BrowserWindow } from "electron"
 import type { CliRunner } from "./cli.js"
 import type { DaemonClient } from "./daemon-client.js"
+import { mainLog } from "./logging.js"
 import type { ProviderJobs } from "./provider-jobs.js"
-import type { DaemonState } from "./state.js"
+import { sendRendererEvent } from "./renderer-events.js"
+import type { DaemonState, Machine, Workspace } from "./state.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
+const WORKSPACE_POLL_INTERVAL_MS = 3000
+const WORKSPACE_STATUS_INTERVAL_MS = 10_000
+const STATUS_BACKOFF_MAX_MS = 300_000
 interface WatcherDeps {
   cli: CliRunner
   daemon?: DaemonClient
@@ -29,6 +34,8 @@ export interface ProviderEntry {
     name?: string
     version?: string
     icon?: string
+    iconDark?: string
+    iconRevision?: string
     description?: string
     source?: Record<string, unknown>
     options?: Record<string, unknown>
@@ -37,6 +44,7 @@ export interface ProviderEntry {
   state?: { initialized?: boolean; singleMachine?: boolean }
   status?: string
   default?: boolean
+  deprecated?: boolean
 }
 
 export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
@@ -44,11 +52,14 @@ export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
     name: entry.config.name ?? "",
     version: entry.config.version ?? "",
     icon: entry.config.icon ?? "",
+    iconDark: entry.config.iconDark ?? "",
+    iconRevision: entry.config.iconRevision ?? "",
     description: entry.config.description ?? "",
     source: entry.config.source ?? {},
     options: entry.config.options ?? {},
     optionGroups: entry.config.optionGroups ?? [],
     isDefault: entry.default ?? false,
+    deprecated: entry.deprecated ?? false,
     status: entry.status ?? "not_initialized",
     state: {
       initialized: entry.state?.initialized ?? false,
@@ -73,15 +84,18 @@ export class Watcher {
   private workspacePollChain: Promise<void> = Promise.resolve()
   private workspaceStatusChain: Promise<void> = Promise.resolve()
   private workspaceStatusPolling = false
-  private workspaceStatusQueued = false
+  private statusFailures = new Map<string, { count: number; retryAt: number }>()
 
   constructor(private deps: WatcherDeps) {}
 
   start(): Promise<void> {
-    this.pollTimer = setInterval(() => this.schedulePoll(), 3000)
+    this.pollTimer = setInterval(() => {
+      if (this.windowActive()) this.schedulePoll()
+      else this.retryReconcilingJobs()
+    }, WORKSPACE_POLL_INTERVAL_MS)
     this.workspaceStatusTimer = setInterval(
       () => this.scheduleWorkspaceStatusPoll(),
-      10_000,
+      WORKSPACE_STATUS_INTERVAL_MS,
     )
 
     const devsyDir = join(homedir(), ".devsy")
@@ -108,7 +122,6 @@ export class Watcher {
       clearInterval(this.workspaceStatusTimer)
       this.workspaceStatusTimer = null
     }
-    this.workspaceStatusQueued = false
     if (this.fsWatcher) {
       this.fsWatcher.close()
       this.fsWatcher = null
@@ -132,18 +145,22 @@ export class Watcher {
         this.pollMachines(),
         this.pollContexts(),
       ])
-      for (const [id, job] of Object.entries(
-        this.deps.workspaceJobs.snapshot(),
-      )) {
-        if (job.state === "reconciling" && job.refreshError)
-          void this.deps.workspaceJobs.retryRefresh(id)
-      }
+      this.retryReconcilingJobs()
     } finally {
       this.polling = false
       if (this.pollQueued) {
         this.pollQueued = false
         this.schedulePoll()
       }
+    }
+  }
+
+  private retryReconcilingJobs(): void {
+    for (const [id, job] of Object.entries(
+      this.deps.workspaceJobs.snapshot(),
+    )) {
+      if (job.state === "reconciling" && job.refreshError)
+        void this.deps.workspaceJobs.retryRefresh(id)
     }
   }
 
@@ -174,34 +191,61 @@ export class Watcher {
     await this.queueWorkspaceStatusPoll()
   }
 
+  private windowActive(): boolean {
+    const win = this.deps.getMainWindow()
+    return (
+      win !== null &&
+      !win.isDestroyed() &&
+      win.isVisible() &&
+      !win.isMinimized()
+    )
+  }
+
   private scheduleWorkspaceStatusPoll(): void {
-    if (this.workspaceStatusPolling) {
-      this.workspaceStatusQueued = true
-      return
-    }
-    void this.refreshWorkspaceStatuses()
+    if (this.workspaceStatusPolling || !this.windowActive()) return
+    this.workspaceStatusPolling = true
+    void this.queueWorkspaceStatusPoll(undefined, false, true)
   }
 
   private queueWorkspaceStatusPoll(
     workspaceIds?: string[],
     strict = false,
+    scheduled = false,
   ): Promise<void> {
     const run = this.workspaceStatusChain.then(() =>
-      this.pollWorkspaceStatuses(workspaceIds, strict),
+      this.pollWorkspaceStatuses(workspaceIds, strict, scheduled),
     )
     this.workspaceStatusChain = run.catch(() => {})
     return run
   }
 
+  private statusBackoffElapsed(id: string): boolean {
+    const failure = this.statusFailures.get(id)
+    return !failure || Date.now() >= failure.retryAt
+  }
+
+  private recordStatusFailure(id: string): void {
+    const count = (this.statusFailures.get(id)?.count ?? 0) + 1
+    const delay = Math.min(
+      STATUS_BACKOFF_MAX_MS,
+      WORKSPACE_STATUS_INTERVAL_MS * 2 ** count,
+    )
+    this.statusFailures.set(id, { count, retryAt: Date.now() + delay })
+  }
+
   private async pollWorkspaceStatuses(
     workspaceIds?: string[],
     strict = false,
+    scheduled = false,
   ): Promise<void> {
     this.workspaceStatusPolling = true
     let changed = false
     try {
-      const ids =
+      const requested =
         workspaceIds ?? this.deps.state.workspaceList().map((ws) => ws.id)
+      const ids = scheduled
+        ? requested.filter((id) => this.statusBackoffElapsed(id))
+        : requested
       const concurrency = 6
       let next = 0
       const worker = async (): Promise<void> => {
@@ -226,12 +270,13 @@ export class Watcher {
             const status = normalizeWorkspaceStatus(raw)
             if (!status && strict)
               throw new Error("Workspace status unavailable")
+            if (status) this.statusFailures.delete(id)
             if (status && this.deps.state.updateWorkspaceStatus(id, status)) {
               changed = true
             }
           } catch (error) {
             if (strict) throw error
-            // Preserve the last known status and retry on the next sweep.
+            this.recordStatusFailure(id)
           }
         }
       }
@@ -241,10 +286,6 @@ export class Watcher {
       if (changed) this.broadcastWorkspaces()
     } finally {
       this.workspaceStatusPolling = false
-      if (this.workspaceStatusQueued) {
-        this.workspaceStatusQueued = false
-        void this.refreshWorkspaceStatuses()
-      }
     }
   }
 
@@ -256,27 +297,41 @@ export class Watcher {
 
   private async pollWorkspaces(strict = false): Promise<void> {
     const generation = this.deps.workspaceJobs.epoch
+    const daemon = this.deps.daemon
     try {
       const workspaces = await this.queryWithFallback(
-        this.deps.daemon
-          ? () => this.deps.daemon!.listWorkspaces<unknown[]>()
+        daemon
+          ? () => daemon.listWorkspaces<Workspace[]>({ fresh: strict })
           : undefined,
-        () => this.deps.cli.run<unknown[]>(["workspace", "list", "--skip-pro"]),
+        () =>
+          this.deps.cli.run<Workspace[]>([
+            "workspace",
+            "list",
+            "--skip-platform",
+          ]),
       )
       if (generation !== this.deps.workspaceJobs.epoch) {
         if (strict)
           throw new Error("Workspace operation changed during refresh")
         return
       }
-      const changed = this.deps.state.updateWorkspaces(workspaces as any[])
+      this.pruneStatusFailures(workspaces)
+      const changed = this.deps.state.updateWorkspaces(workspaces)
       if (changed) {
         this.broadcastWorkspaces()
       }
     } catch (error) {
       // Polling is best-effort, but retain diagnostics so a broken CLI or
       // daemon cannot make the desktop appear empty without explanation.
-      console.warn("[watcher] workspace poll failed", error)
+      mainLog.warn("[watcher] workspace poll failed", error)
       if (strict) throw error
+    }
+  }
+
+  private pruneStatusFailures(workspaces: Workspace[]): void {
+    const listed = new Set(workspaces.map((ws) => ws.id))
+    for (const id of this.statusFailures.keys()) {
+      if (!listed.has(id)) this.statusFailures.delete(id)
     }
   }
 
@@ -309,25 +364,21 @@ export class Watcher {
   }
 
   private async pollProviders(): Promise<void> {
+    const readRevision = this.deps.state.providerReadRevision()
     try {
-      const raw = await this.queryWithFallback(
-        this.deps.daemon
-          ? () =>
-              this.deps.daemon!.listProviders<Record<string, ProviderEntry>>()
-          : undefined,
-        () =>
-          this.deps.cli.run<Record<string, ProviderEntry>>([
-            "provider",
-            "list",
-          ]),
-      )
+      // Provider settings are written through the CLI; the daemon's provider
+      // list cache may lag that successful write.
+      const raw = await this.deps.cli.run<Record<string, ProviderEntry>>([
+        "provider",
+        "list",
+      ])
       const providers = parseProviderEntries(raw)
-      const changed = this.deps.state.updateProviders(providers as any[])
+      const changed = this.deps.state.updateProviders(providers, readRevision)
       if (changed) {
         this.broadcastProviders()
       }
     } catch (error) {
-      console.warn("[watcher] provider poll failed", error)
+      mainLog.warn("[watcher] provider poll failed", error)
     }
   }
 
@@ -344,14 +395,13 @@ export class Watcher {
   }
 
   private async pollMachines(): Promise<void> {
+    const daemon = this.deps.daemon
     try {
       const machines = await this.queryWithFallback(
-        this.deps.daemon
-          ? () => this.deps.daemon!.listMachines<unknown[]>()
-          : undefined,
-        () => this.deps.cli.run<unknown[]>(["machine", "list"]),
+        daemon ? () => daemon.listMachines<Machine[]>() : undefined,
+        () => this.deps.cli.run<Machine[]>(["machine", "list"]),
       )
-      const changed = this.deps.state.updateMachines(machines as any[])
+      const changed = this.deps.state.updateMachines(machines)
       if (changed) {
         this.send("machines-changed", {
           machines: this.deps.state.machineList(),
@@ -363,11 +413,10 @@ export class Watcher {
   }
 
   private async pollContexts(): Promise<void> {
+    const daemon = this.deps.daemon
     try {
       const entries = await this.queryWithFallback(
-        this.deps.daemon
-          ? () => this.deps.daemon!.listContexts<ContextEntry[]>()
-          : undefined,
+        daemon ? () => daemon.listContexts<ContextEntry[]>() : undefined,
         () => this.deps.cli.run<ContextEntry[]>(["context", "list"]),
       )
       const active = entries.find((e) => e.default)?.name ?? ""
@@ -384,9 +433,6 @@ export class Watcher {
   }
 
   private send(channel: string, payload: unknown): void {
-    const win = this.deps.getMainWindow()
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(channel, payload)
-    }
+    sendRendererEvent(this.deps.getMainWindow, channel, payload)
   }
 }

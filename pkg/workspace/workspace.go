@@ -54,6 +54,7 @@ type ResolveParams struct {
 	ReconfigureProvider  bool
 	DevContainerImage    string
 	DevContainerPath     string
+	DevContainerID       string
 	DevContainerSource   string
 	SSHConfigPath        string
 	SSHConfigIncludePath string
@@ -70,7 +71,7 @@ func Resolve(
 	devsyConfig *config.Config,
 	params ResolveParams,
 ) (client.BaseWorkspaceClient, error) {
-	if err := validateDesiredID(params.DesiredID); err != nil {
+	if err := ValidateID(params.DesiredID); err != nil {
 		return nil, err
 	}
 
@@ -114,7 +115,8 @@ func Resolve(
 	return workspaceClient, nil
 }
 
-func validateDesiredID(desiredID string) error {
+// ValidateID checks an explicit workspace ID; empty leaves ID derivation to the source.
+func ValidateID(desiredID string) error {
 	if desiredID == "" {
 		return nil
 	}
@@ -142,20 +144,37 @@ func applyDevContainerOverrides(workspace *providerpkg.Workspace, params Resolve
 }
 
 func applyDevContainerFields(workspace *providerpkg.Workspace, params ResolveParams) bool {
-	changed := false
+	changed := applyDevContainerSelection(workspace, params)
 	if params.DevContainerImage != "" && workspace.DevContainerImage != params.DevContainerImage {
 		workspace.DevContainerImage = params.DevContainerImage
 		changed = true
 	}
-	if params.DevContainerPath != "" && workspace.DevContainerPath != params.DevContainerPath {
-		workspace.DevContainerPath = params.DevContainerPath
-		changed = true
+	return changed
+}
+
+func applyDevContainerSelection(workspace *providerpkg.Workspace, params ResolveParams) bool {
+	switch {
+	case params.DevContainerSource != "":
+		return setDevContainerSelection(workspace, params.DevContainerSource, "", "")
+	case params.DevContainerPath != "":
+		return setDevContainerSelection(workspace, "", params.DevContainerPath, "")
+	case params.DevContainerID != "":
+		return setDevContainerSelection(workspace, "", "", params.DevContainerID)
+	default:
+		return false
 	}
-	if params.DevContainerSource != "" &&
-		workspace.DevContainerSource != params.DevContainerSource {
-		workspace.DevContainerSource = params.DevContainerSource
-		changed = true
-	}
+}
+
+func setDevContainerSelection(
+	workspace *providerpkg.Workspace,
+	source, path, id string,
+) bool {
+	changed := workspace.DevContainerSource != source ||
+		workspace.DevContainerPath != path ||
+		workspace.DevContainerID != id
+	workspace.DevContainerSource = source
+	workspace.DevContainerPath = path
+	workspace.DevContainerID = id
 	return changed
 }
 
@@ -238,19 +257,20 @@ func findWorkspaceByArgs(ctx context.Context, opts GetOptions) (*providerpkg.Wor
 	if opts.LocalOnly {
 		return findLocalWorkspace(opts.DevsyConfig, opts.Args, ""), nil
 	}
-	return findWorkspace(ctx, opts.DevsyConfig, opts.Args, "", opts.Owner)
+	return findWorkspace(ctx, opts.DevsyConfig, LookupOptions{Args: opts.Args, Owner: opts.Owner})
 }
 
 // Exists returns the ID of a matching workspace, or an empty string if none
 // exists.
-func Exists(
-	ctx context.Context,
-	devsyConfig *config.Config,
-	args []string,
-	workspaceID string,
-	owner platform.OwnerFilter,
-) string {
-	workspace, _ := findWorkspace(ctx, devsyConfig, args, workspaceID, owner)
+// LookupOptions selects a workspace by its arguments, an explicit ID or the owner filter.
+type LookupOptions struct {
+	Args  []string
+	ID    string
+	Owner platform.OwnerFilter
+}
+
+func Exists(ctx context.Context, devsyConfig *config.Config, opts LookupOptions) string {
+	workspace, _ := findWorkspace(ctx, devsyConfig, opts)
 	if workspace == nil {
 		return ""
 	}
@@ -273,12 +293,16 @@ func resolveWorkspace(
 	workspaceID := ToID(name)
 
 	if params.DesiredID != "" {
-		if Exists(ctx, devsyConfig, nil, params.DesiredID, params.Owner) != "" {
+		if Exists(
+			ctx,
+			devsyConfig,
+			LookupOptions{ID: params.DesiredID, Owner: params.Owner},
+		) != "" {
 			log.Debugf("workspace id already exists: desiredID=%s", params.DesiredID)
 			return loadExistingWorkspace(devsyConfig, params.DesiredID, params.ChangeLastUsed)
 		}
 		workspaceID = params.DesiredID
-	} else if Exists(ctx, devsyConfig, nil, workspaceID, params.Owner) != "" {
+	} else if Exists(ctx, devsyConfig, LookupOptions{ID: workspaceID, Owner: params.Owner}) != "" {
 		log.Debugf("workspace already exists: workspaceID=%s", workspaceID)
 		return loadExistingWorkspace(devsyConfig, workspaceID, params.ChangeLastUsed)
 	}
@@ -321,7 +345,11 @@ func resolveWorkspaceWithoutArgs(
 	params ResolveParams,
 ) (resolvedWorkspace, error) {
 	if params.DesiredID != "" {
-		workspace, err := findWorkspace(ctx, devsyConfig, nil, params.DesiredID, params.Owner)
+		workspace, err := findWorkspace(
+			ctx,
+			devsyConfig,
+			LookupOptions{ID: params.DesiredID, Owner: params.Owner},
+		)
 		if err != nil {
 			return resolvedWorkspace{}, fmt.Errorf("find workspace: %w", err)
 		}
@@ -403,7 +431,7 @@ func provisionWorkspaceBacking(
 		machineConfig, err := provisionManagedMachine(ctx, p)
 		return p.workspace, machineConfig, err
 	case p.provider.Config.IsProxyProvider() || p.provider.Config.IsDaemonProvider():
-		updated, err := resolveProWorkspace(ctx, p.devsyConfig, p.provider, p.workspace)
+		updated, err := resolvePlatformWorkspace(ctx, p.devsyConfig, p.provider, p.workspace)
 		return updated, nil, err
 	default:
 		machineConfig, err := saveAndLoadExistingMachine(p.provider, p.workspace)
@@ -522,11 +550,11 @@ func cleanupMachineFolder(machineConfig *providerpkg.Machine, cause error) error
 	return cause
 }
 
-// resolveProWorkspace saves the workspace, hands provisioning to the remote pro
-// process, and reloads the config it wrote back. The pro process renders its
+// resolvePlatformWorkspace saves the workspace, hands provisioning to the remote platform
+// process, and reloads the config it wrote back. The platform process renders its
 // form over os i/o and cannot call back into this process, so state is exchanged
 // through the workspace config file.
-func resolveProWorkspace(
+func resolvePlatformWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	provider *ProviderWithOptions,
@@ -536,7 +564,7 @@ func resolveProWorkspace(
 		return nil, fmt.Errorf("save config: %w", err)
 	}
 
-	err := resolveProInstance(proInstanceParams{
+	err := resolvePlatformInstance(platformInstanceParams{
 		ctx:          ctx,
 		devsyConfig:  devsyConfig,
 		providerName: provider.Config.Name,
@@ -697,20 +725,18 @@ func findLocalWorkspace(
 }
 
 // findWorkspace looks up a workspace among all known ones, marking a matching
-// pro workspace as imported and persisting it locally.
+// platform workspace as imported and persisting it locally.
 func findWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	args []string,
-	workspaceID string,
-	owner platform.OwnerFilter,
+	opts LookupOptions,
 ) (*providerpkg.Workspace, error) {
-	workspaceID = ensureWorkspaceID(args, workspaceID)
+	workspaceID := ensureWorkspaceID(opts.Args, opts.ID)
 	if workspaceID == "" {
 		return nil, nil
 	}
 
-	allWorkspaces, err := List(ctx, devsyConfig, false, owner)
+	allWorkspaces, err := List(ctx, devsyConfig, false, opts.Owner)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
@@ -720,7 +746,7 @@ func findWorkspace(
 			continue
 		}
 
-		if workspace.IsPro() {
+		if workspace.IsPlatform() {
 			workspace.Imported = true
 			if err := providerpkg.SaveWorkspaceConfig(workspace); err != nil {
 				return nil, fmt.Errorf("save workspace config: %w", err)
@@ -763,7 +789,7 @@ func selectWorkspace(
 		return resolvedWorkspace{}, err
 	}
 
-	sel, err := selectProWorkspace(
+	sel, err := selectPlatformWorkspace(
 		devsyConfig, workspaces, selectedWorkspace, params,
 	)
 	if err != nil {
@@ -776,34 +802,34 @@ func selectWorkspace(
 	return loadExistingWorkspace(devsyConfig, selectedWorkspace.ID, params.changeLastUsed)
 }
 
-type proWorkspaceSelection struct {
+type platformWorkspaceSelection struct {
 	provider  *providerpkg.ProviderConfig
 	workspace *providerpkg.Workspace
 	handled   bool
 }
 
-func selectProWorkspace(
+func selectPlatformWorkspace(
 	devsyConfig *config.Config,
 	workspaces []*providerpkg.Workspace,
 	selectedWorkspace *providerpkg.Workspace,
 	params selectWorkspaceParams,
-) (proWorkspaceSelection, error) {
+) (platformWorkspaceSelection, error) {
 	for _, workspace := range workspaces {
-		if workspace.ID != selectedWorkspace.ID || !workspace.IsPro() {
+		if workspace.ID != selectedWorkspace.ID || !workspace.IsPlatform() {
 			continue
 		}
-		providerConfig, err := importSelectedProWorkspace(devsyConfig, workspace, params)
+		providerConfig, err := importSelectedPlatformWorkspace(devsyConfig, workspace, params)
 		if err != nil {
-			return proWorkspaceSelection{}, err
+			return platformWorkspaceSelection{}, err
 		}
-		return proWorkspaceSelection{
+		return platformWorkspaceSelection{
 			provider:  providerConfig,
 			workspace: workspace,
 			handled:   true,
 		}, nil
 	}
 
-	return proWorkspaceSelection{}, nil
+	return platformWorkspaceSelection{}, nil
 }
 
 // listSelectableWorkspaces lists the candidate workspaces, most recently used
@@ -837,8 +863,8 @@ func promptWorkspaceSelection(workspaces []*providerpkg.Workspace) (*providerpkg
 	options := make([]huh.Option[*providerpkg.Workspace], 0, len(workspaces))
 	for _, workspace := range workspaces {
 		key := workspace.ID
-		if workspace.IsPro() && workspace.Pro.DisplayName != "" {
-			key = fmt.Sprintf("%s (%s)", workspace.Pro.DisplayName, workspace.ID)
+		if workspace.IsPlatform() && workspace.Platform.DisplayName != "" {
+			key = fmt.Sprintf("%s (%s)", workspace.Platform.DisplayName, workspace.ID)
 		}
 		options = append(options, huh.NewOption(key, workspace))
 	}
@@ -862,7 +888,7 @@ func promptWorkspaceSelection(workspaces []*providerpkg.Workspace) (*providerpkg
 	return selectedWorkspace, nil
 }
 
-func importSelectedProWorkspace(
+func importSelectedPlatformWorkspace(
 	devsyConfig *config.Config,
 	workspace *providerpkg.Workspace,
 	params selectWorkspaceParams,
@@ -929,7 +955,7 @@ func loadExistingWorkspace(
 	}, nil
 }
 
-type proInstanceParams struct {
+type platformInstanceParams struct {
 	ctx          context.Context
 	devsyConfig  *config.Config
 	providerName string
@@ -939,7 +965,7 @@ type proInstanceParams struct {
 	stderr       io.Writer
 }
 
-func resolveProInstance(params proInstanceParams) error {
+func resolvePlatformInstance(params platformInstanceParams) error {
 	foundProvider, err := FindProvider(params.devsyConfig, params.providerName)
 	if err != nil {
 		return err

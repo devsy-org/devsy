@@ -21,6 +21,7 @@ type Redactor struct {
 	replacer  *strings.Replacer
 	values    []string
 	maxLength int
+	matcher   *secretNode
 }
 
 // NewRedactor masks the values (not keys) of KEY=VALUE entries; empty values are ignored.
@@ -49,6 +50,7 @@ func NewRedactor(secretsEnv []string) *Redactor {
 		replacer:  strings.NewReplacer(pairs...),
 		values:    values,
 		maxLength: len(values[0]),
+		matcher:   newSecretMatcher(values),
 	}
 }
 
@@ -73,12 +75,23 @@ func Combine(redactors ...*Redactor) *Redactor {
 func NewEnvironmentRedactor(env []string) *Redactor {
 	var sensitive []string
 	for _, entry := range env {
-		key, _, ok := strings.Cut(entry, "=")
-		if ok && isSensitiveEnvironmentKey(key) {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && isSensitiveEnvironmentKey(key) && !isFlagValue(value) {
 			sensitive = append(sensitive, entry)
 		}
 	}
 	return NewRedactor(sensitive)
+}
+
+// isFlagValue reports on/off style values. A switch such as
+// NATIVE_CREDENTIAL_TESTS=true carries no secret, and masking "true" or "1"
+// would corrupt unrelated command output such as `git config --get`.
+func isFlagValue(value string) bool {
+	switch strings.ToLower(value) {
+	case "true", "false", "yes", "no", "on", "off", "0", "1":
+		return true
+	}
+	return false
 }
 
 func isSensitiveEnvironmentKey(key string) bool {
@@ -104,9 +117,8 @@ func (r *Redactor) Redact(s string) string {
 	return authorizationPattern.ReplaceAllString(s, "$1***")
 }
 
-// StreamingRedactor preserves a short suffix between writes so secrets split
-// across subprocess or logger chunks are still masked before they are
-// forwarded. Call Flush when the stream ends to release the final suffix.
+// StreamingRedactor masks secrets split across text writes, buffering a short
+// suffix until the next write or Flush.
 type StreamingRedactor struct {
 	mu      sync.Mutex
 	base    *Redactor
@@ -145,8 +157,39 @@ func (r *StreamingRedactor) RedactChunk(chunk string) string {
 	if formatStart := incompleteCredentialURLStart(combined); formatStart >= 0 {
 		cut = min(cut, formatStart)
 	}
+	cut = r.base.completeSecretBoundary(combined, cut)
 	r.pending = combined[cut:]
 	return r.base.Redact(combined[:cut])
+}
+
+// Follow the replacer's leftmost, longest-first matches. A complete secret
+// straddling cut must stay whole; overlapping matches must not make buffering
+// grow across an arbitrarily long repeated value.
+func (r *Redactor) completeSecretBoundary(value string, cut int) int {
+	if cut == len(value) || r.matcher == nil {
+		return cut
+	}
+	for offset := 0; offset < cut; {
+		length := r.secretMatchLength(value[offset:])
+		if offset+length > cut {
+			return offset
+		}
+		offset += max(length, 1)
+	}
+	return cut
+}
+
+func (r *Redactor) secretMatchLength(value string) int {
+	node := r.matcher
+	length := 0
+	for index := range len(value) {
+		node = node.children[value[index]]
+		if node == nil {
+			break
+		}
+		length = max(length, node.length)
+	}
+	return length
 }
 
 // incompleteCredentialURLStart returns the start of a URL suffix that may

@@ -55,7 +55,7 @@ func NewContainerServer(addr string, workdir string) (Server, error) {
 			},
 			SubsystemHandlers: map[string]ssh.SubsystemHandler{
 				"sftp": func(s ssh.Session) {
-					sftpHandler(s, "")
+					sftpHandler(s)
 				},
 			},
 		},
@@ -143,9 +143,11 @@ func (s *containerServer) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, e
 	}
 
 	if len(sess.RawCommand()) == 0 {
+		//nolint:gosec // command is built from fixed arguments by design
 		cmd = exec.Command(shell[0], args...)
 	} else {
 		args = append(args, "-c", sess.RawCommand())
+		//nolint:gosec // command is built from fixed arguments by design
 		cmd = exec.Command(shell[0], args...)
 	}
 
@@ -154,7 +156,12 @@ func (s *containerServer) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, e
 		return cmd, fmt.Errorf("prepare cmd env: %w", err)
 	}
 	cmd.Dir = findWorkdir(s.workdir, user)
-	cmd.Env = append(cmd.Env, sess.Environ()...)
+	baseEnv := cmd.Env
+	attachedSecretEnv, err := readSessionSecretEnvironment(config.SecretsEnvDir)
+	if err != nil {
+		return cmd, fmt.Errorf("prepare session secret environment: %w", err)
+	}
+	cmd.Env = mergeSessionEnvironment(baseEnv, attachedSecretEnv, sess.Environ())
 	return cmd, nil
 }
 

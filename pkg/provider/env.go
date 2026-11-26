@@ -24,7 +24,7 @@ func combineOptions(
 
 // ToEnvironment builds the full environment for provider subprocess execution.
 // The provider name is available to subprocesses as PROVIDER_ID (set by GetBaseEnvironment).
-// Do NOT add DEVSY_PROVIDER to the subprocess env — it is reserved by the --provider
+// Do NOT add DEVSY_PROVIDER to the subprocess env - it is reserved by the --provider
 // CLI flag via inheritFlagsFromEnvironment in cmd/root.go, and setting it would override
 // the global provider selection for any child devsy process.
 func ToEnvironment(
@@ -73,8 +73,8 @@ func ToOptionsWorkspace(workspace *Workspace) map[string]string {
 
 	addWorkspaceIdentityEnv(retVars, workspace)
 	addWorkspaceMachineEnv(retVars, workspace)
-	if workspace.Pro != nil && workspace.Pro.Project != "" {
-		retVars[config.EnvLoftProject] = workspace.Pro.Project
+	if workspace.Platform != nil && workspace.Platform.Project != "" {
+		retVars[config.EnvProject] = workspace.Platform.Project
 	}
 	maps.Copy(retVars, GetBaseEnvironment(workspace.Context, workspace.Provider.Name))
 	return retVars
@@ -201,6 +201,7 @@ func CloneAgentWorkspaceInfo(agentWorkspaceInfo *AgentWorkspaceInfo) *AgentWorks
 	ret := &AgentWorkspaceInfo{}
 	_ = json.Unmarshal(out, ret)
 	ret.Origin = agentWorkspaceInfo.Origin
+	ret.WorkspaceWasExisting = agentWorkspaceInfo.WorkspaceWasExisting
 	ret.Workspace = CloneWorkspace(agentWorkspaceInfo.Workspace)
 	ret.Machine = CloneMachine(agentWorkspaceInfo.Machine)
 	return ret

@@ -11,8 +11,8 @@ import (
 // Tunnel defines the function to create an "outer" tunnel.
 type Tunnel func(ctx context.Context, stdin io.Reader, stdout io.Writer) error
 
-// NewTunnel creates a managed SSH tunnel using generic transport callbacks.
-func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
+// NewManagedSSHTunnel creates an SSH tunnel whose callback may bootstrap its peer.
+func NewManagedSSHTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
 	conn, err := transport.OpenCallbackConn(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
@@ -34,7 +34,7 @@ func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
 		TransportSide: transport.SideProvider,
 		Metadata:      transport.LogMetadata{TransportImpl: "callback"},
 		Handler: func(ctx context.Context) error {
-			sshClient, err := devssh.ClientFromConn(conn, "", nil)
+			sshClient, err := devssh.ClientFromManagedConn(ctx, conn, devssh.ManagedClientOptions{})
 			if err != nil {
 				return err
 			}

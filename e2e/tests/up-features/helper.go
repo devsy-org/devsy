@@ -7,11 +7,10 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 func createTarGzArchive(outputFilePath string, filePaths []string) error {
+	//nolint:gosec // test helper reads files it created in its own temp directory
 	outputFile, err := os.Create(outputFilePath)
 	if err != nil {
 		return err
@@ -33,6 +32,7 @@ func createTarGzArchive(outputFilePath string, filePaths []string) error {
 }
 
 func addFileToTar(tarWriter *tar.Writer, filePath string) error {
+	//nolint:gosec // test helper reads files it created in its own temp directory
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -72,9 +72,4 @@ func addFileToTar(tarWriter *tar.Writer, filePath string) error {
 
 	_, err = io.Copy(tarWriter, file)
 	return err
-}
-
-//nolint:unparam // dockerPath is "podman" for the windows-only caller in wsl.go
-func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, dockerPath)
 }

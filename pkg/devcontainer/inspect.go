@@ -5,14 +5,12 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
-	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/image"
 )
 
 func (r *runner) inspectImage(ctx context.Context, imageName string) (*config.ImageDetails, error) {
-	dockerDriver, ok := r.driver.(driver.ImageDriver)
-	if ok {
-		return dockerDriver.InspectImage(ctx, imageName)
+	if r.imageBackend != nil {
+		return r.imageBackend.InspectImage(ctx, imageName)
 	}
 
 	// Get target architecture from the driver
@@ -44,9 +42,8 @@ func (r *runner) inspectImage(ctx context.Context, imageName string) (*config.Im
 }
 
 func (r *runner) getImageTag(ctx context.Context, imageID string) (string, error) {
-	dockerDriver, ok := r.driver.(driver.ImageDriver)
-	if ok {
-		return dockerDriver.GetImageTag(ctx, imageID)
+	if r.imageBackend != nil {
+		return r.imageBackend.GetImageTag(ctx, imageID)
 	}
 
 	return "", nil

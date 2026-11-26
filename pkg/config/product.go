@@ -4,8 +4,8 @@ const (
 	// ProductName is the display name for the product.
 	ProductName = "Devsy"
 
-	// ProductNamePro is the display name for the Pro product.
-	ProductNamePro = ProductName + " Pro"
+	// ProductNamePlatform is the display name for the Platform product.
+	ProductNamePlatform = ProductName + " Platform"
 
 	// DaemonServiceDescription is the system daemon service description.
 	DaemonServiceDescription = ProductName + " Agent Service"

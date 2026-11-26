@@ -19,7 +19,7 @@ const defaultContainerCommand = "container"
 func NewContainerRuntime(
 	workspace *provider2.Workspace,
 	override string,
-) (ContainerRuntime, error) {
+) (CommandRuntime, error) {
 	isApple, err := isAppleDriver(workspace)
 	if err != nil {
 		return nil, err

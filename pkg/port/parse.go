@@ -86,7 +86,7 @@ func splitParts(rawPort string) (parsedParts, error) {
 	case 2:
 		return parsedParts{hostPort: parts[0], containerPort: containerPort}, nil
 	case 3:
-		// a:b:c — if middle token is non-numeric, it's a host/IP for the
+		// a:b:c - if middle token is non-numeric, it's a host/IP for the
 		// container side: hostPort:containerHost:containerPort.
 		// Otherwise it's hostHost:hostPort:containerPort.
 		if _, err := strconv.Atoi(parts[1]); err != nil {

@@ -21,8 +21,7 @@ func NewGetCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Print a secret's value",
 		Long: `Print a secret's value to standard output.
 
-Intended for scripting. The value is written without a trailing newline
-alteration beyond a single terminating newline.`,
+Use it in scripts. The value is followed by a single newline.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args[0])

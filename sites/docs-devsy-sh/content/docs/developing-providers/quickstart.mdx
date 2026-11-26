@@ -1,210 +1,187 @@
 ---
-title: Quickstart Guide
+title: Build a provider
 sidebar_label: Quickstart
 ---
 
-On this page we will cover all the basics to develop a functional provider for Devsy.
+A provider is a program described by a `provider.yaml` file. Devsy reads the manifest and calls the commands it defines to create and reach an environment.
 
-<Callout title="Recommended Reading">
-Before starting, it's best if you have already taken a look at [What are providers](../managing-providers/what-are-providers.mdx)
-and [How to manage them](../managing-providers/manage-providers.mdx).
+<Callout title="Recommended reading">
+Read [What are providers](../managing-providers/what-are-providers.mdx) and [Manage providers](../managing-providers/manage-providers.mdx) first.
 </Callout>
 
-<Callout title="Provider Examples">
-Another good starting point are the official Devsy providers specified at [Add Provider](../managing-providers/manage-providers.mdx)
-</Callout>
+## A minimal provider
 
-A very basic provider that reuses local Docker to spin up workspaces would look like this:
+This provider runs workspaces through Docker on your machine. Install Docker and start its daemon before trying it.
+
 ```yaml
-name: my-first-provider  # Required name of the provider
-version: v0.0.1          # Required version of the provider
-agent:                   # Devsy Agent options
-  path: ${DEVSY}        # Path to the current Devsy binary
+name: my-first-provider
+version: v0.0.1
+agent:
+  local: true
+  driver: docker
 exec:
-  # Command specifies how to run a command in the environment.
-  # In this case we want to reuse the local environment, so we just execute the command in a local shell.
   command: |-
-    sh -c "${COMMAND}"
+    "${DEVSY}" internal sh -c "${COMMAND}"
 ```
 
-You can save this provider to a file called `provider.yaml` and then add it via:
-```
-devsy provider add ./path/to/provider.yaml
-```
+Save it as `provider.yaml`. Run these commands in your host terminal:
 
-Then try to start a new workspace with:
-```
+```sh
+devsy provider add ./provider.yaml
 devsy workspace up github.com/microsoft/vscode-remote-try-go
 ```
 
-## Developing a Devsy provider
+Adding the provider makes it the default for new workspaces. The second command clones the sample repository and starts its devcontainer. Existing workspaces keep their provider.
 
-Devsy providers are small CLI programs defined through a `provider.yaml` that Devsy interacts with, in order to bring up the workspace.
+## Sections of provider.yaml
 
-Providers are standalone programs that Devsy will call, parsing a **manifest**
-called `provider.yaml` that will instruct Devsy on how to interact with the program. The most important sections of a `provider.yaml` are:
-* [exec](#how-devsy-interacts-with-a-provider): Defines what commands Devsy should execute to interact with the environment
-* [options](./options.mdx): Defines what Options the user can configure in the provider
-* [binaries](./binaries.mdx): Defines what additional helper binaries are required to run the provider
-* [agent](./agent.mdx): Defines configuration options for the provider such as drivers, auto-inactivity timeout and credentials injection
+- `name`: required, at most 32 lowercase letters, numbers, or hyphens. `version` is optional; when set, use a semantic version such as `v0.0.1`. `description` is optional and shown in the Desktop app.
+- [`exec`](#exec): the commands Devsy runs to reach and manage the environment.
+- [`options`](./options.mdx): settings the user can configure. Devsy passes them to commands as environment variables.
+- [`binaries`](./binaries.mdx): helper binaries Devsy downloads for the provider.
+- [`agent`](./agent.mdx): how the agent runs in the environment: the driver, inactivity timeout, and credentials.
+- [`icon` and `iconDark`](#icons): optional images the Desktop app shows for the provider.
 
-## Provider.yaml
+## exec
 
-With the `provider.yaml`, Devsy will know how to call the provider's binary, in order
-to perform all the required actions to bring up or down an environment for a workspace.
+The `command`, `init`, `create`, `delete`, `start`, `stop`, `status` and `describe` entries are POSIX shell scripts or command arrays. For standard providers, only `command` is required. Proxy and daemon providers use their own exec fields instead. `cancellation` is an execution policy, not a script.
 
-Following is a minimal example manifest for a provider:
+An array with one element is parsed as a shell script, not as an executable path. For example, `["/opt/provider tool"]` runs `/opt/provider` with the argument `tool`. Quote the path inside that script or provide a multi-element array to run a path that contains spaces.
 
-```yaml
-name:  name-of-provider
-version: version-number
-description: quick description # Optional
-icon: https://url-to-icon.com  # Shown in the Desktop App
-options:
-  # Options for the provider, Devsy will pass these as
-  # ENV Variables when calling the provider
-  OPTION_NAME:
-    description: "option description"
-    default: "value"
-    required: true # or false
-  AGENT_PATH:
-    description: The path where to inject the Devsy agent to.
-    default: /opt/devsy/agent
-agent:
-  path: ${AGENT_PATH}
-exec:
-  command: # Required: a command to execute on the remote machine or container
-  init:    # Optional: a command to init the provider, login to an account or similar
-  create:  # Optional: a command to create the machine
-  delete:  # Optional: a command to delete the machine
-  start:   # Optional: a command to start the machine
-  stop:    # Optional: a command to stop the machine
-  status:  # Optional: a command to get the machine's status
-binaries:  # Optional binaries Devsy should download for this provider
-  MY_BINARY: # Will be available as MY_BINARY environment variable in the exec section
-    ...
-```
+- **command**: runs a command in the environment. Devsy uses it to inject itself, and sends all traffic through its standard input and output. Devsy fills in the `${COMMAND}` placeholder.
+- **init**: checks that the options are valid and the provider is ready. Devsy runs it when options change.
+- **create**, **delete**: create and delete a machine. Define both or neither. Defining `create` makes this a machine provider.
+- **start**, **stop**: start and stop a machine. Define both or neither. These require `create` and `status`.
+- **status**: prints one of `Running`, `Busy` (wait and check again), `Stopped` or `NotFound`.
+- **describe**: prints a text description of the machine.
+- **cancellation**: omit it to use the default cancellation behavior, or set `file` to give provider commands a cooperative cleanup window.
 
-### How Devsy interacts with a provider
+A standard provider without `create` is a non-machine provider and uses only `command` and `init`. The cancellation policy applies to both machine and non-machine providers.
 
-Devsy uses the `exec` section within the `provider.yaml` to know what commands it needs to execute to interact with the provider environments.
-These "commands" are regular POSIX shell scripts that call a helper program or directly interact with the underlying system of the user to manage the environment.
+### Handle cancellation
 
-In the `exec` section of the `provider.yaml`, the following commands are allowed:
+With `exec.cancellation: file`, Devsy sets `DEVSY_PROVIDER_CANCEL_FILE` to a private marker path that does not exist yet. Do not set or override this reserved variable.
 
-- **command**: The only command that is required for a provider to work, which defines how to run a command in the environment. Devsy will use this command to inject itself into the environment and route all communication through the commands standard output and input. An example for a local development provider would be: `sh -c "${COMMAND}"`.
-- **init**: Optional command to check if options are defined correctly and the provider is ready to create environments. For example for the Docker provider, this command checks if Docker is installed and reachable locally.
-- **create**: Optional command how to create a machine. If this command is defined, the provider will automatically be treated as a machine provider and Devsy will also expect **delete** to be defined.
-- **delete**: Optional command how to delete a machine. Counter command to **create**.
-- **start**: Optional command how to start a stopped machine. Only usable for machine providers.
-- **stop**: Optional command how to stop a machine. Only usable for machine providers.
-- **status**: Optional command how to retrieve the status of a machine. Expects one of the following statuses on standard output:
-  - Running: Machine is running and ready
-  - Busy: Machine is doing something and Devsy should wait (e.g. terminating, starting, stopping etc.)
-  - Stopped: Machine is currently stopped
-  - NotFound: Machine is not found
+When the caller cancels, Devsy creates the marker. Your command has up to 10 seconds to stop accepting work, cancel its owned processes, clean up, and exit.
 
-<Callout title="Windows Compatibility">
-Devsy will execute these commands on Unix systems directly in a POSIX shell, while on Windows in an [emulated shell](https://github.com/mvdan/sh) to provide compatibility. However, not all commands, such as `grep`, `sed` etc. are available there and if needed, such functionality should be transferred to a small helper binary Devsy can download and install through the binaries section.
-</Callout>
+If a single-string shell command is still blocked, Devsy asks its shell supervisor to stop and reap direct children. It allows up to another 5 seconds for an authenticated acknowledgement, then kills an unresponsive helper. A missing or forged acknowledgement, including after an abrupt helper exit, is reported as an unclean shutdown. A provider-written acknowledgement file does not prove cleanup finished.
 
-For example, taking the [SSH Provider](https://github.com/devsy-org/devsy-provider-ssh):
+Devsy waits for the invocation to finish and returns the caller's cancellation error even if cleanup succeeds. It does not kill the provider's process group or unrelated daemons.
+
+The supervisor also stops and reaps direct children when the script finishes normally. A job started with `&` cannot outlive that invocation. A detached descendant can, so your provider must manage it. Use the backend's detached operation for durable services.
+
+### Handle command streams
+
+Cancellation cannot interrupt an arbitrary blocked reader or writer. File cancellation mode works with finite or nonblocking streams, direct file input handles, or blocking streams that their owner unblocks when the original calling context is cancelled.
+
+- Drain or unblock stdout and stderr on cancellation, including file-backed pipes. Devsy may wrap a direct `*os.File` output for redaction, so it can still block after the child exits.
+- Devsy does not close caller-owned input or global standard input. Machine command transports close their own pipe endpoints when the original context is cancelled.
+- Keep draining output after standard input reaches EOF. Input and output can close independently.
+
+### Windows compatibility
+
+On Windows, Devsy runs these scripts in an [emulated shell](https://github.com/mvdan/sh). It does not provide `grep` or `sed`. Put that logic in a helper binary or require the user to install those tools.
+
+Example from the [SSH provider](https://github.com/devsy-org/devsy-provider-ssh):
 
 ```yaml
 exec:
   init: |-
-    OUTPUT=$(ssh -oStrictHostKeyChecking=no \
-                 -p ${PORT} \
-                 ${EXTRA_FLAGS} \
-                 "${HOST}" \
-                 'sh -c "echo DevsyTest"')
-
+    OUTPUT=$(ssh -oStrictHostKeyChecking=no -p ${PORT} ${EXTRA_FLAGS} "${HOST}" 'sh -c "echo DevsyTest"')
     if [ "$OUTPUT" != "DevsyTest" ]; then
-      >&2 echo "Unexpected ssh output."
-      >&2 echo "Please make sure you have configured the correct SSH host"
-      >&2 echo "and the following command can be executed on your system:"
-      >&2 echo ssh -oStrictHostKeyChecking=no -p "${PORT}" "${HOST}" 'sh -c "echo DevsyTest"'
+      >&2 echo "Unexpected ssh output. Check the SSH host and options."
       exit 1
     fi
-
   command: |-
-    ssh -oStrictHostKeyChecking=no \
-        -p ${PORT} \
-        "${EXTRA_FLAGS}" \
-        "${HOST}" \
-        "${COMMAND}"
+    ssh -oStrictHostKeyChecking=no -p ${PORT} ${EXTRA_FLAGS} "${HOST}" "${COMMAND}"
 ```
 
-The **init** is used to perform actions in order to verify and validate the options
-passed (in this case try a dummy command on the selected host)
+## Icons
 
-The **command** is used to access the remote environment. `${COMMAND}` will be supplied by Devsy and is a placeholder for the command Devsy will execute.
-In case of [Machines providers](../managing-providers/what-are-providers.mdx) this will
-usually have to SSH on the VMs created.
+A provider can ship its own logo. Set `icon` and, optionally, `iconDark` in `provider.yaml`:
 
-### Non-Machine provider
-
-For Non-Machine providers that don't want to manage any machine lifecycle, the available commands that can be used are:
-- command
-- init (optional)
-
-### Machine provider
-
-For Machine Providers, you can use all of the commands in order to guarantee a full VMs lifecycle management.
-
-### Options
-
-The Options section is a set of OPTION_NAME and values that Devsy will inject in
-the environment when calling the provider's commands.
-
-Head over to the [Options Page](./options.mdx) to know more about how to set them up
-
-### Agent
-
-One important part of the lifecycle management of the Devsy's provider's resources is the **Agent**.
-The agent is a helper that Devsy will inject into the workspace in order to perform utilities like:
-
-- auto-shutdown the VM after inactivity
-- inject git credentials
-- inject docker credentials
-
-Head over to the [Agent page](./agent.mdx) to know more about the agent setup.
-
-### Binaries
-
-Devsy allows you to install additional binaries that help you to create cloud resources or access these. For example, the Google Cloud provider installs its own binary via:
 ```yaml
-...
-binaries:
-  GCLOUD_PROVIDER:
-    - os: linux
-      arch: amd64
-      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-linux-amd64
-      checksum: 38f92457507563ee56ea40a2ec40196d12ac2bbd50a924d76f55827e96e5f831
-    - os: linux
-      arch: arm64
-      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-linux-arm64
-      checksum: 48e8dfa20962f1c3eb1e3da17d57842a0e26155df2b94377bcdf5b8070d7b17e
-    - os: darwin
-      arch: amd64
-      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-darwin-amd64
-      checksum: 43ee6ecb7855d282a0512ccf6055cce029895f173beb95a8c442f77560d26678
-    - os: darwin
-      arch: arm64
-      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-darwin-arm64
-      checksum: c2c2d57c5d48f22814f2393f61fd6a78bdc2cde7eabc3faffd8f35eaceec4422
-    - os: windows
-      arch: amd64
-      path: https://github.com/devsy-org/devsy-provider-gcloud/releases/download/v0.0.1-alpha.10/devsy-provider-gcloud-windows-amd64.exe
-      checksum: 9b81ec48c849f222aaf30f0cb85057d4e6619d1c0f787b27925c8b8adb431a58
-exec:
-  init: ${GCLOUD_PROVIDER} init
-  command: ${GCLOUD_PROVIDER} command
-  create: ${GCLOUD_PROVIDER} create
-  delete: ${GCLOUD_PROVIDER} delete
-  start: ${GCLOUD_PROVIDER} start
-  stop: ${GCLOUD_PROVIDER} stop
-  status: ${GCLOUD_PROVIDER} status
+name: my-first-provider
+version: v0.0.1
+icon: assets/logo.svg
+iconDark: assets/logo-dark.svg
 ```
 
-You can find more information on the [Provider binaries](./binaries.mdx) page.
+Devsy downloads the images when the provider is added or updated and stores them in a `provider-assets/` directory next to the provider's configuration. The Desktop app reads them from disk, so cached logos work offline. Cloning copies the cached files into the new installation. If the source cache is missing or corrupt, the clone uses the bundled logo or a placeholder.
+
+Devsy does not look for `logo.svg` or read the repository homepage. Only the two fields above count.
+
+### Where a relative path points
+
+Devsy resolves a relative path against the source the provider was installed from, not the provider's install directory.
+
+| Installed from | `assets/logo.svg` means |
+| --- | --- |
+| `github.com/owner/repo` (no tag) | The file in the repository root at the release Devsy selected for this install (the latest stable release when you add it). Never `main`. |
+| `github.com/owner/repo@v1.2.3` | The file in the repository root at tag `v1.2.3`. |
+| Direct URL, such as `https://host/path/provider.yaml` | `https://host/path/assets/logo.svg`. A release-download URL therefore points at a sibling release asset. |
+| Raw GitHub URL | Normal URL resolution, so the ref and directory in that URL are kept. |
+| Local `provider.yaml` | The file next to the manifest. Symlinks and `..` may not leave the manifest directory. |
+| Built-in provider | No repository lookup. Absolute icon URLs or the bundled logo. |
+
+Devsy also accepts absolute `http://` and `https://` URLs and downloads them with the other images, so the Desktop app needs no network access to show them.
+
+A relative path must not contain a backslash, a NUL byte, a leading `/`, a `//` authority, or a `..` segment that leaves the manifest root. Devsy also rejects encoded forms such as `%2e%2e`. Subdirectories and Unicode file names work. Devsy rejects `javascript:`, `file:`, and `data:` references.
+
+<Callout title="GitHub release manifests">
+For a GitHub source, Devsy installs the `provider.yaml` attached to the release and treats the release as the repository root at its tag. Commit the image files before you tag the release, so the tag contains both the manifest and the images.
+</Callout>
+
+### Formats and limits
+
+- PNG, JPEG, WebP, and SVG. Devsy checks the file content, not only the extension. It rejects HTML error and login pages.
+- Local images must be regular files, not directories, FIFOs, or device files.
+- At most 1 MiB per image.
+- Raster images may be at most 4096 pixels on each side.
+- SVG files must be well formed. Devsy rejects DTDs, entities, scripts, `foreignObject`, embedded documents, and external references. Shapes, paths, gradients, and references to elements in the same file are allowed.
+- Each download gets five seconds and at most five redirects. Devsy sends credentials only to the origin that issued them.
+
+### Icons are optional
+
+A missing, invalid, or unreachable image never blocks installing or updating a provider. Devsy records that variant as missing and the Desktop app falls back. Devsy logs at most one short warning per failed asset revision, without the query string or credentials.
+
+If an update cannot fetch the new icon, the Desktop app stops showing the previous logo for that variant. Run `devsy provider set-source <name>` later to fetch it again.
+
+Providers installed before icon caching have no cached icon until you update them or run `devsy provider set-source <name>`.
+
+### Fallback order
+
+The Desktop app uses the first image that loads:
+
+| App theme | Order |
+| --- | --- |
+| Light | Provider `icon`, bundled logo for a known provider name, generic placeholder |
+| Dark | Provider `iconDark`, provider `icon`, bundled logo, placeholder |
+
+"App theme" is the theme the app shows: the system setting when the app theme is System, otherwise the chosen theme. A provider image wins over a bundled logo, even when the provider name matches a built-in name such as `docker`. If an image fails to load, the app moves to the next entry without retrying.
+
+### Test icons across versions
+
+Use a provider repository with two tags and different logos to test the full path.
+
+1. Create a repository with `provider.yaml` that sets `icon: assets/logo.svg`. Commit a red logo as `assets/logo.svg` and tag it `v0.0.1`. Publish a release for that tag with `provider.yaml` attached.
+2. Replace `assets/logo.svg` with a blue logo, change `version` to `v0.0.2`, commit, tag `v0.0.2` and publish that release.
+3. Install version A and note the red logo in the Desktop app:
+
+   ```sh
+   devsy provider add github.com/<owner>/<repo>@v0.0.1
+   ```
+
+4. Update to version B. The logo turns blue:
+
+   ```sh
+   devsy provider set-source <name> --version v0.0.2
+   ```
+
+5. Revert to version A. The logo turns red again:
+
+   ```sh
+   devsy provider set-source <name> --version v0.0.1
+   ```
+
+Each step shows the logo for the selected tag, never a mix of one version's provider with the other version's image.

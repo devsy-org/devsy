@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: desktop-ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: desktop-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -26,6 +26,7 @@ jobs:
           filters: |
             desktop:
               - 'desktop/**'
+              - 'logging/desktop/**'
               - '.github/workflows/desktop-ci.yml'
 
   lint-and-test:
@@ -36,10 +37,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: needs.changes.outputs.desktop == 'true'
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         if: needs.changes.outputs.desktop == 'true'
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
@@ -53,10 +54,24 @@ jobs:
         working-directory: desktop
         run: npm run check
 
+      - name: Check formatting
+        if: needs.changes.outputs.desktop == 'true'
+        working-directory: desktop
+        run: npm run format:check
+
+      - name: Check lint
+        if: needs.changes.outputs.desktop == 'true'
+        working-directory: desktop
+        run: npm run lint:check
+
       - name: Unit tests
         if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
         run: npm run test
+
+      - name: Shared scanner tests
+        if: needs.changes.outputs.desktop == 'true'
+        run: node --test logging/desktop/*.test.ts
 
   build-desktop:
     needs: [changes, lint-and-test]
@@ -83,14 +98,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/host-features
+
+      - uses: ./.github/actions/relocate-tmp
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
@@ -128,7 +146,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: Install setuptools
         run: pip install setuptools
@@ -163,7 +181,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-${{ matrix.os }}
           path: |
@@ -174,6 +192,37 @@ jobs:
             desktop/release/*.deb
             desktop/release/*.rpm
           if-no-files-found: warn
+
+  tray-smoke-xfce:
+    needs: [changes, lint-and-test]
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Xfce panel and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xfce4-panel dbus-x11 x11-utils
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build desktop app
+        working-directory: desktop
+        run: npm run electron:build
+
+      - name: Assert tray icon registers with the Xfce panel
+        working-directory: desktop
+        run: bash scripts/tray-smoke-xfce.sh
 
   build-flatpak:
     needs: [changes, build-desktop]
@@ -188,7 +237,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Download Linux .deb artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: desktop-ubuntu-latest
           path: desktop/flatpak/
@@ -205,14 +254,14 @@ jobs:
           fi
 
       - name: Build Flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6
+        uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
           manifest-path: desktop/flatpak/sh.devsy.app.yml
           bundle: Devsy.flatpak
           cache-key: flatpak-builder-${{ github.sha }}
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-flatpak
           path: Devsy.flatpak

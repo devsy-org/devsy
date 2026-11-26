@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -48,10 +49,11 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, unlock, err := cmd.lockAndReload(oldName, newName)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 
 	if err := validateProviderRename(devsyConfig, oldName); err != nil {
 		return err
@@ -62,6 +64,39 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	return renameProvider(ctx, devsyConfig, oldName, newName)
+}
+
+// lockAndReload locks both providers in a stable order and reloads the config
+// under the locks. The returned func releases both locks.
+func (cmd *RenameCmd) lockAndReload(oldName, newName string) (*config.Config, func(), error) {
+	names := []string{oldName, newName}
+	sort.Strings(names)
+
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	unlock1, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[0])
+	if err != nil {
+		return nil, nil, err
+	}
+	unlock2, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[1])
+	if err != nil {
+		unlock1()
+		return nil, nil, err
+	}
+	unlock := func() {
+		unlock2()
+		unlock1()
+	}
+
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+	if err != nil {
+		unlock()
+		return nil, nil, err
+	}
+	return devsyConfig, unlock, nil
 }
 
 // validateProviderName checks that the given name is non-empty, matches the
@@ -157,18 +192,21 @@ func switchMachines(machines []*provider.Machine, newName string) ([]*provider.M
 	return switched, nil
 }
 
-// setDefaultProvider updates the default provider setting if it currently
-// points to oldName. Returns true if the default was changed.
+// setDefaultProvider points the default provider at newName when it currently
+// equals oldName.
 func setDefaultProvider(devsyConfig *config.Config, oldName, newName string) (bool, error) {
 	if devsyConfig.Current().DefaultProvider != oldName {
 		return false, nil
 	}
-	devsyConfig.Current().DefaultProvider = newName
-	if err := config.SaveConfig(devsyConfig); err != nil {
-		devsyConfig.Current().DefaultProvider = oldName
-		return false, err
-	}
-	return true, nil
+	var changed bool
+	err := config.UpdateConfig(devsyConfig.DefaultContext, "", func(c *config.Config) error {
+		if c.Current().DefaultProvider == oldName {
+			c.Current().DefaultProvider = newName
+			changed = true
+		}
+		return nil
+	})
+	return changed, err
 }
 
 // renameState tracks the mutations performed during a rename so they can be
@@ -186,10 +224,14 @@ type renameState struct {
 func (r *renameState) restoreProviderState(ctx context.Context) error {
 	log.Info("rolling back changes")
 	var errs error
-
 	if r.defaultChanged {
-		r.devsyConfig.Current().DefaultProvider = r.oldName
-		if err := config.SaveConfig(r.devsyConfig); err != nil {
+		err := config.UpdateConfig(r.devsyConfig.DefaultContext, "", func(c *config.Config) error {
+			if c.Current().DefaultProvider == r.newName {
+				c.Current().DefaultProvider = r.oldName
+			}
+			return nil
+		})
+		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("rollback default provider: %w", err))
 		}
 	}
@@ -207,8 +249,8 @@ func (r *renameState) restoreProviderState(ctx context.Context) error {
 	return errs
 }
 
-// validateProviderRename verifies that the provider exists, is not a pro
-// provider, is not backing a pro instance, and has configuration state.
+// validateProviderRename verifies that the provider exists, is not a platform
+// provider, is not backing a platform instance, and has configuration state.
 func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 	providerWithOptions, err := workspace.FindProvider(devsyConfig, oldName)
 	if err != nil {
@@ -217,17 +259,19 @@ func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 
 	if providerWithOptions.Config.IsProxyProvider() ||
 		providerWithOptions.Config.IsDaemonProvider() {
-		return fmt.Errorf("cannot rename a pro provider; pro providers are managed by the platform")
+		return fmt.Errorf(
+			"cannot rename a platform provider; platform providers are managed by the platform",
+		)
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
-		return fmt.Errorf("listing pro instances: %w", err)
+		return fmt.Errorf("listing platform instances: %w", err)
 	}
-	for _, inst := range proInstances {
+	for _, inst := range platformInstances {
 		if inst.Provider == oldName {
 			return fmt.Errorf(
-				"cannot rename provider %s: it is used by pro instance %s",
+				"cannot rename provider %s: it is used by platform instance %s",
 				oldName,
 				inst.Host,
 			)
@@ -261,6 +305,12 @@ func renameProvider(
 
 	if err := provider.MoveProvider(devsyConfig, oldName, newName); err != nil {
 		return fmt.Errorf("moving provider: %w", err)
+	}
+
+	// reload config so switchWorkspaces sees the newly mapped provider name
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, "")
+	if err != nil {
+		return fmt.Errorf("reload config after move: %w", err)
 	}
 
 	rb := &renameState{devsyConfig: devsyConfig, oldName: oldName, newName: newName}

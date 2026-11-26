@@ -8,6 +8,7 @@ import type {
   WorkspaceJob,
   WorkspaceStatus,
 } from "$lib/types/index.js"
+import type { AppNavigationRequest } from "$shared/app-route.js"
 import { listen } from "./bridge.js"
 import type { UnlistenFn } from "./types.js"
 
@@ -84,7 +85,7 @@ export type UpdateStatus =
     }
 
 export const EVENT_NAMES = {
-  NAVIGATE: "navigate",
+  APP_NAVIGATION_REQUEST: "app-navigation-request",
   WORKSPACES_CHANGED: "workspaces-changed",
   PROVIDERS_CHANGED: "providers-changed",
   MACHINES_CHANGED: "machines-changed",
@@ -92,6 +93,7 @@ export const EVENT_NAMES = {
   COMMAND_PROGRESS: "command-progress",
   WORKSPACE_STATUS: "workspace-status",
   UPDATE_STATUS: "update-status",
+  APP_SETTINGS_CHANGED: "app-settings-changed",
 } as const
 
 interface WorkspacesPayload {
@@ -159,12 +161,13 @@ export function onCommandProgress(
   })
 }
 
-export function onNavigate(
-  callback: (route: string) => void,
+export function onAppNavigationRequest(
+  callback: (request: AppNavigationRequest) => void,
 ): Promise<UnlistenFn> {
-  return listen<string>(EVENT_NAMES.NAVIGATE, (event) => {
-    callback(event.payload)
-  })
+  return listen<AppNavigationRequest>(
+    EVENT_NAMES.APP_NAVIGATION_REQUEST,
+    (event) => callback(event.payload),
+  )
 }
 
 export function onWorkspaceStatus(
@@ -181,4 +184,15 @@ export function onUpdateStatus(
   return listen<UpdateStatus>(EVENT_NAMES.UPDATE_STATUS, (event) => {
     callback(event.payload)
   })
+}
+
+export function onAppSettingsChanged(
+  callback: (state: import("$shared/app-settings.js").AppSettingsState) => void,
+): Promise<UnlistenFn> {
+  return listen<import("$shared/app-settings.js").AppSettingsState>(
+    EVENT_NAMES.APP_SETTINGS_CHANGED,
+    (event) => {
+      callback(event.payload)
+    },
+  )
 }

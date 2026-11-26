@@ -1,5 +1,5 @@
-// release_artifacts: subcommands for inspecting CLI binaries staged by the
-// release pipeline.
+// release_artifacts: subcommands for inspecting CLI binaries and Linux desktop
+// packages staged by the release pipeline.
 package main
 
 import (
@@ -21,6 +21,7 @@ func main() {
 		populateDistCmd(),
 		stageCmd(),
 		verifyCmd(),
+		verifyLinuxDesktopCmd(),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

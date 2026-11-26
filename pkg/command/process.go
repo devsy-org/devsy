@@ -1,9 +1,77 @@
 package command
 
+import "context"
+
+// ProcessTreeKind identifies the platform primitive that owns a worker tree.
+type ProcessTreeKind string
+
+const (
+	ProcessTreeLegacyPID  ProcessTreeKind = "legacy-pid"
+	ProcessTreeUnixGroup  ProcessTreeKind = "unix-group-v1"
+	ProcessTreeWindowsJob ProcessTreeKind = "windows-job-v1"
+)
+
+// ProcessRef is the persisted reference used to supervise a detached worker.
+// TreeID and Identity are opaque outside this package.
+type ProcessRef struct {
+	PID      int             `json:"pid,omitempty"`
+	TreeKind ProcessTreeKind `json:"treeKind,omitempty"`
+	TreeID   string          `json:"treeId,omitempty"`
+	Identity string          `json:"identity,omitempty"`
+}
+
+// ProcessController provides the two operations needed by task cancellation.
+type ProcessController interface {
+	Terminate(ProcessRef) error
+	CleanupAfterExit(context.Context, ProcessRef) error
+}
+
+type processController struct{}
+
+func DefaultProcessController() ProcessController { return processController{} }
+
+func (processController) Terminate(ref ProcessRef) error {
+	return terminateProcessRef(ref)
+}
+
+func (processController) CleanupAfterExit(ctx context.Context, ref ProcessRef) error {
+	return cleanupExitedProcessRef(ctx, ref)
+}
+
 func IsRunning(pid string) (bool, error) {
 	return isRunning(pid)
 }
 
 func Kill(pid string) error {
-	return kill(pid)
+	return killTree(pid, "")
+}
+
+// KillTree terminates the process and everything it spawned: the job or
+// process group treeName identifies when set, otherwise the process alone.
+func KillTree(pid, treeName string) error {
+	return killTree(pid, treeName)
+}
+
+// KillTreeWithIdentity terminates a worker tree using its saved platform identity.
+func KillTreeWithIdentity(pid, treeName, identity string) error {
+	return killTreeWithIdentity(pid, treeName, identity)
+}
+
+// KillTreeAfterWorkerExit terminates descendants using the worker's saved session identity.
+func KillTreeAfterWorkerExit(pid, treeName, identity string) error {
+	return killTreeAfterWorkerExit(pid, treeName, identity)
+}
+
+// ProcessTreeIdentity returns the kernel identity used to distinguish a reused process ID.
+func ProcessTreeIdentity(pid int) (string, error) {
+	return processTreeIdentity(pid)
+}
+
+// ProcessExited reports positive evidence that the saved worker has exited.
+// Identityless records cannot distinguish a worker from a reused PID.
+func ProcessExited(ref ProcessRef) (bool, error) {
+	if ref.PID <= 0 || ref.Identity == "" || !strongProcessIdentitySupported {
+		return false, nil
+	}
+	return processRefExited(ref)
 }

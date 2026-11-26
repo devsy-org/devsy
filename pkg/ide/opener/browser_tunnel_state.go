@@ -1,12 +1,14 @@
 package opener
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"time"
 
 	pkglog "github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -45,10 +47,91 @@ const LabelVSCodeWeb = "vscode-web"
 // has a different CreateTime than the recorded value, the helper is gone
 // and a foreign process now occupies that PID.
 type TunnelState struct {
-	PID        int    `json:"pid"`
-	CreateTime int64  `json:"createTime"`
-	TargetURL  string `json:"targetUrl"`
-	Label      string `json:"label,omitempty"`
+	PID                int    `json:"pid"`
+	CreateTime         int64  `json:"createTime"`
+	TargetURL          string `json:"targetUrl"`
+	Label              string `json:"label,omitempty"`
+	PreparationVersion int    `json:"preparationVersion,omitempty"`
+}
+
+type BrowserPreparation struct{ path string }
+
+func NewBrowserPreparation(contextName, workspaceID string) (*BrowserPreparation, error) {
+	created, err := helperCreateTime(os.Getpid())
+	if err != nil {
+		return nil, err
+	}
+	return browserPreparation(
+		contextName,
+		workspaceID,
+		&TunnelState{PID: os.Getpid(), CreateTime: created},
+	)
+}
+
+func browserPreparation(
+	contextName, workspaceID string,
+	state *TunnelState,
+) (*BrowserPreparation, error) {
+	path, err := TunnelStateFilePath(contextName, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return &BrowserPreparation{
+		path: filepath.Join(
+			filepath.Dir(path),
+			fmt.Sprintf("tunnel-prepared-%d-%d", state.PID, state.CreateTime),
+		),
+	}, nil
+}
+
+func (p *BrowserPreparation) Mark() error { return os.WriteFile(p.path, nil, 0o600) }
+
+func (p *BrowserPreparation) Close() { _ = os.Remove(p.path) }
+
+func waitBrowserPreparation(
+	ctx context.Context,
+	contextName, workspaceID string,
+	expected *TunnelState,
+) bool {
+	ctx, cancel := context.WithTimeout(ctx, browserProbeBudget)
+	defer cancel()
+	marker, err := browserPreparation(contextName, workspaceID, expected)
+	if err != nil || expected.PreparationVersion != 1 {
+		return false
+	}
+	ticker := time.NewTicker(browserProbeInterval)
+	defer ticker.Stop()
+	for ctx.Err() == nil {
+		prepared, changed := marker.status(contextName, workspaceID, expected)
+		if changed {
+			return false
+		}
+		if prepared {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+		}
+	}
+	return false
+}
+
+func (p *BrowserPreparation) status(
+	contextName, workspaceID string,
+	expected *TunnelState,
+) (bool, bool) {
+	current, err := ReadTunnelState(contextName, workspaceID)
+	if err != nil {
+		return false, false
+	}
+	if current == nil || current.PID != expected.PID || current.CreateTime != expected.CreateTime ||
+		current.PreparationVersion != expected.PreparationVersion {
+		return false, true
+	}
+	_, err = os.Stat(p.path)
+	return err == nil && helperMatchesState(current), false
 }
 
 // TunnelStateFilePath returns the path used to store the browser tunnel state

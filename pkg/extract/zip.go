@@ -43,16 +43,17 @@ func unzipFile(f *zip.File, destination string) error {
 	}
 
 	if f.FileInfo().IsDir() {
-		if err := os.MkdirAll(filePath, os.ModePerm); err != nil {
+		if err := os.MkdirAll(filePath, 0o750); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o750); err != nil {
 		return err
 	}
 
+	//nolint:gosec // filePath is confined to destination by the prefix check above
 	destinationFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 	if err != nil {
 		return err

@@ -54,6 +54,7 @@ func GetImageForArch(ctx context.Context, image, arch string) (v1.Image, error) 
 	}
 
 	remoteOptions := []remote.Option{
+		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(keychain),
 		remote.WithPlatform(v1.Platform{Architecture: arch, OS: osLinux}),
 	}
@@ -175,7 +176,7 @@ func GetImagePlatforms(ctx context.Context, image string) ([]string, error) {
 		return platforms, nil
 	}
 
-	// Not an index — fall back to single-image config OS/Arch.
+	// Not an index - fall back to single-image config OS/Arch.
 	log.Debugf("Image %q is not an index (%v); falling back to single-image config", image, err)
 	configFile, _, cErr := GetImageConfig(ctx, image)
 	if cErr != nil {

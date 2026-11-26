@@ -2,6 +2,8 @@
 import "./app.css"
 import Router, { push } from "svelte-spa-router"
 import { onMount, onDestroy } from "svelte"
+import AppImageIntegrationPrompt from "$lib/components/layout/AppImageIntegrationPrompt.svelte"
+import SecretUnlockDialog from "$lib/components/layout/SecretUnlockDialog.svelte"
 import Sidebar from "$lib/components/layout/Sidebar.svelte"
 import ThemeSwitcher from "$lib/components/layout/ThemeSwitcher.svelte"
 import NotificationHistory from "$lib/components/layout/NotificationHistory.svelte"
@@ -9,21 +11,25 @@ import { Toaster } from "$lib/components/ui/sonner/index.js"
 import CommandPalette from "$lib/components/layout/CommandPalette.svelte"
 import Breadcrumbs from "$lib/components/layout/Breadcrumbs.svelte"
 import * as SidebarUI from "$lib/components/ui/sidebar/index.js"
-import { initWorkspaces, destroyWorkspaces } from "$lib/stores/workspaces.js"
+import { destroyWorkspaces, initWorkspaces } from "$lib/stores/workspaces.js"
 import { initProviders, destroyProviders } from "$lib/stores/providers.js"
 import { initMachines, destroyMachines } from "$lib/stores/machines.js"
 import { initContexts, destroyContexts } from "$lib/stores/contexts.js"
 import { initSecrets } from "$lib/stores/secrets.js"
 import { initEnv } from "$lib/stores/env.js"
 import {
+  initDesktopSettingsListener,
   initSettings,
+  syncDesktopSettingsFromMain,
   syncAutoUpdateFromMain,
   autoUpdate,
 } from "$lib/stores/settings.js"
 import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
 import { appReady, analyticsTrack } from "$lib/ipc/commands.js"
-import { onNavigate } from "$lib/ipc/events.js"
+import { onAppNavigationRequest } from "$lib/ipc/events.js"
+import { applyAppNavigationRequest } from "$lib/app-navigation.js"
+import { newWorkspaceRoute } from "$shared/app-route.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { initSessionTracking } from "$lib/analytics.js"
 import { location } from "$lib/router.js"
@@ -48,6 +54,7 @@ import MachineDetailPage from "./pages/MachineDetailPage.svelte"
 import ContextsPage from "./pages/ContextsPage.svelte"
 import SecretsPage from "./pages/SecretsPage.svelte"
 import EnvPage from "./pages/EnvPage.svelte"
+import VariablesPage from "./pages/VariablesPage.svelte"
 import SettingsPage from "./pages/SettingsPage.svelte"
 import SshKeysPage from "./pages/SshKeysPage.svelte"
 import TerminalsPage from "./pages/TerminalsPage.svelte"
@@ -56,7 +63,7 @@ import NotFoundPage from "./pages/NotFoundPage.svelte"
 const routes = {
   "/": DashboardPage,
   "/workspaces": WorkspacesPage,
-  "/workspaces/new": WorkspacesPage,
+  "/workspace/new": WorkspacesPage,
   "/workspaces/:id": WorkspaceDetailPage,
   "/providers": ProvidersPage,
   "/providers/add": ProviderAddPage,
@@ -64,6 +71,7 @@ const routes = {
   "/machines": MachinesPage,
   "/machines/:id": MachineDetailPage,
   "/contexts": ContextsPage,
+  "/variables": VariablesPage,
   "/secrets": SecretsPage,
   "/env": EnvPage,
   "/settings": SettingsPage,
@@ -73,6 +81,7 @@ const routes = {
 }
 
 let destroySettings: (() => void) | undefined
+let unsubDesktopSettings: (() => void) | undefined
 
 let updateDialogOpen = $state(false)
 let unsubscribeToasts: (() => void) | null = null
@@ -83,8 +92,8 @@ const NAV_KEYS: Record<string, string> = {
   3: "/providers",
   4: "/machines",
   5: "/contexts",
-  6: "/secrets",
-  7: "/env",
+  6: "/variables?tab=secrets",
+  7: "/variables?tab=env",
   8: "/terminals",
   9: "/ssh-keys",
   0: "/settings",
@@ -98,7 +107,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "n") {
     e.preventDefault()
-    push("/workspaces/new")
+    push(newWorkspaceRoute())
     return
   }
   if ((e.metaKey || e.ctrlKey) && NAV_KEYS[e.key]) {
@@ -113,9 +122,7 @@ let stopSessionTracking: (() => void) | undefined
 let destroyed = false
 
 function normalizeAnalyticsPath(path: string): string {
-  // Match id segments but not the static sub-routes that share the prefix.
-  if (path !== "/workspaces/new" && /^\/workspaces\/[^/]+$/.test(path))
-    return "/workspaces/:id"
+  if (/^\/workspaces\/[^/]+$/.test(path)) return "/workspaces/:id"
   if (path !== "/providers/add" && /^\/providers\/[^/]+$/.test(path))
     return "/providers/:id"
   if (/^\/machines\/[^/]+$/.test(path)) return "/machines/:id"
@@ -126,7 +133,7 @@ function screenName(path: string): string {
   const names: Record<string, string> = {
     "/": "dashboard",
     "/workspaces": "workspaces",
-    "/workspaces/new": "workspace_new",
+    "/workspace/new": "workspace_new",
     "/workspaces/:id": "workspace_detail",
     "/providers": "providers",
     "/providers/add": "provider_add",
@@ -134,6 +141,7 @@ function screenName(path: string): string {
     "/machines": "machines",
     "/machines/:id": "machine_detail",
     "/contexts": "contexts",
+    "/variables": "workspace_variables",
     "/secrets": "secrets",
     "/env": "env",
     "/settings": "settings",
@@ -162,9 +170,9 @@ onMount(async () => {
     })
   })
 
-  const navigateUnlisten = await onNavigate((route) => {
-    if (typeof route === "string" && route.startsWith("/")) push(route)
-  })
+  const navigateUnlisten = await onAppNavigationRequest(
+    applyAppNavigationRequest,
+  )
   if (destroyed) navigateUnlisten()
   else unsubNavigate = navigateUnlisten
 
@@ -175,6 +183,10 @@ onMount(async () => {
 
   await initUpdateStore()
   await syncAutoUpdateFromMain()
+  const desktopSettingsUnlisten = await initDesktopSettingsListener()
+  await syncDesktopSettingsFromMain()
+  if (destroyed) desktopSettingsUnlisten()
+  else unsubDesktopSettings = desktopSettingsUnlisten
   unsubscribeToasts = initUpdateToasts(() => {
     let value = true
     autoUpdate.subscribe((v) => (value = v))()
@@ -185,6 +197,7 @@ onMount(async () => {
 
 onDestroy(() => {
   destroyed = true
+  unsubDesktopSettings?.()
   unsubscribeToasts?.()
   disposeUpdateStore()
   stopSessionTracking?.()
@@ -224,4 +237,6 @@ onDestroy(() => {
   <Toaster richColors closeButton position="bottom-right" />
   <UpdateDialog bind:open={updateDialogOpen} autoDownloadEnabled={$autoUpdate} />
   <CommandPalette />
+  <SecretUnlockDialog />
+  <AppImageIntegrationPrompt />
 </SidebarUI.Provider>

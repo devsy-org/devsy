@@ -90,6 +90,27 @@ describe("WorkspaceJobs", () => {
     expect(() => jobs.start("ws")).not.toThrow()
   })
 
+  it("records a failed command even when refresh also fails", async () => {
+    const jobs = new WorkspaceJobs()
+    const refresh = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined)
+    jobs.setRefresh(refresh)
+    const generation = jobs.start("ws", "stopping", "stop")
+    await jobs.finish("ws", generation, "command denied")
+    expect(jobs.get("ws")).toMatchObject({
+      state: "failed",
+      error: "command denied",
+      refreshError: "offline",
+    })
+    await jobs.retryRefresh("ws")
+    expect(jobs.get("ws")).toMatchObject({
+      state: "failed",
+      error: "command denied",
+    })
+  })
+
   it("invalidates polls on acceptance and completion", async () => {
     const jobs = new WorkspaceJobs()
     const before = jobs.generation("ws")
@@ -97,5 +118,22 @@ describe("WorkspaceJobs", () => {
     expect(generation).not.toBe(before)
     await jobs.finish("ws", generation)
     expect(jobs.generation("ws")).not.toBe(generation)
+  })
+
+  it("associates a run with the owning command only", async () => {
+    const jobs = new WorkspaceJobs()
+    const run = "11111111-1111-4111-8111-111111111111"
+    const other = "22222222-2222-4222-8222-222222222222"
+    const generation = jobs.start("ws", "rebuilding", "cmd")
+    jobs.setRun("ws", "stale", { runId: other })
+    expect(jobs.get("ws")?.runId).toBeUndefined()
+    jobs.setRun("ws", "cmd", { runId: run })
+    jobs.setRun("ws", "cmd", { runId: other })
+    jobs.setRun("ws", "cmd", { runId: run, failedInvocationId: other })
+    await jobs.finish("ws", generation, "failed")
+    expect(jobs.get("ws")).toMatchObject({
+      runId: run,
+      failedInvocationId: other,
+    })
   })
 })

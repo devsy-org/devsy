@@ -62,6 +62,7 @@ func NewInstallDotfilesCmd(flags *flags.GlobalFlags) *cobra.Command {
 func (cmd *InstallDotfilesCmd) Run(ctx context.Context) error {
 	targetDir := filepath.Join(os.Getenv("HOME"), "dotfiles")
 
+	//nolint:gosec // path is the user dotfiles location
 	_, err := os.Stat(targetDir)
 	if err != nil {
 		log.Infof("Cloning dotfiles %s", cmd.Repository)

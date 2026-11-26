@@ -52,7 +52,7 @@ jobs:
             echo "$BODY"
             exit 1
           fi
-          echo "Restore API returned HTTP $HTTP_CODE — success"
+          echo "Restore API returned HTTP $HTTP_CODE - success"
 
           echo ""
           echo "Verifying..."
@@ -63,5 +63,5 @@ jobs:
           if [ "$STATUS" = "200" ]; then
             echo "SUCCESS: devsy.sh is back online"
           else
-            echo "WARNING: devsy.sh returned $STATUS — may need a few more seconds to propagate"
+            echo "WARNING: devsy.sh returned $STATUS - may need a few more seconds to propagate"
           fi

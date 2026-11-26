@@ -3,8 +3,10 @@ package devcontainer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/compress"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/crane"
 	"github.com/devsy-org/devsy/pkg/devcontainer/sshtunnel"
@@ -27,6 +30,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/version"
 )
 
 const (
@@ -60,6 +64,8 @@ type setupContainerParams struct {
 	substitutionContext *config.SubstitutionContext
 	timeout             time.Duration
 	hostWarnings        []string
+	secretsEnv          []string
+	secretsMount        []string
 }
 
 type setupInfo struct {
@@ -99,7 +105,12 @@ func (r *runner) setupContainer(
 		status.Operation{Phase: status.PhaseRunningLifecycleHook},
 		func(ctx context.Context) error {
 			var executeErr error
-			result, executeErr = r.executeSetup(ctx, info.result, setupCommand)
+			result, executeErr = r.executeSetup(
+				ctx,
+				info.result,
+				setupCommand,
+				setupSecrets{env: params.secretsEnv, mount: params.secretsMount},
+			)
 			return executeErr
 		},
 	)
@@ -110,25 +121,29 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 	strategy := r.newAgentDelivery()
 
 	if strategy.Phase() == delivery.PhasePostStart {
-		if err := r.deliverPostStart(ctx, strategy); err != nil {
-			log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", err)
-			return r.legacyInject(ctx, timeout)
-		}
-		return nil
+		return fallbackAgentDelivery(
+			func() error { return r.deliverPostStart(ctx, strategy) },
+			func() error { return r.legacyInject(ctx, timeout) },
+		)
 	}
 
 	return r.legacyInject(ctx, timeout)
 }
 
-// podExecCapableDriver is implemented by the kubernetes driver, decoupling
-// delivery wiring from the driver package.
-type podExecCapableDriver interface {
-	CommandContainerArgv(
-		ctx context.Context,
-		workspaceID string,
-		argv []string,
-		streams driver.Streams,
-	) error
+func fallbackAgentDelivery(native, legacy func() error) error {
+	nativeErr := native()
+	if nativeErr == nil {
+		return nil
+	}
+	log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", nativeErr)
+	legacyErr := legacy()
+	if legacyErr == nil {
+		return nil
+	}
+	return errors.Join(
+		fmt.Errorf("platform-native agent delivery failed: %w", nativeErr),
+		fmt.Errorf("legacy agent injection failed: %w", legacyErr),
+	)
 }
 
 func (r *runner) newAgentDelivery() delivery.AgentDelivery {
@@ -137,15 +152,21 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 	if r.workspaceConfig.Agent.Docker.Path != "" {
 		dockerCmd = r.workspaceConfig.Agent.Docker.Path
 	}
+	runtimeName := docker.DetectRuntime(dockerCmd).Name()
+	if configured := r.workspaceConfig.Agent.Docker.Runtime; configured != "" {
+		if runtime, err := docker.RuntimeFromName(configured); err == nil {
+			runtimeName = runtime.Name()
+		}
+	}
 	for k, v := range r.workspaceConfig.Agent.Docker.Env {
 		dockerEnv = append(dockerEnv, k+"="+v)
 	}
 
 	execFn := delivery.CommandFunc(r.driver.CommandDevContainer, r.id)
 
-	var podExec delivery.PodExecFunc
-	if d, ok := r.driver.(podExecCapableDriver); ok {
-		podExec = func(ctx context.Context, argv []string, streams driver.Streams) error {
+	var argvExec delivery.ArgvExecFunc
+	if d, ok := r.driver.(driver.ArgvExecDriver); ok {
+		argvExec = func(ctx context.Context, argv []string, streams driver.Streams) error {
 			return d.CommandContainerArgv(ctx, r.id, argv, streams)
 		}
 	}
@@ -154,54 +175,52 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		WorkspaceConfig:            r.workspaceConfig,
 		WorkspaceID:                r.id,
 		DockerCommand:              dockerCmd,
+		Runtime:                    runtimeName,
 		DockerEnv:                  dockerEnv,
 		IsRemoteDocker:             docker.RemoteDockerHost(dockerEnv),
 		HelperImage:                r.workspaceConfig.Agent.Docker.HelperImage,
 		ContainerID:                r.id,
 		DownloadURL:                r.resolvedAgentDownloadURL(),
 		ExecFunc:                   execFn,
-		PodExec:                    podExec,
+		ArgvExec:                   argvExec,
 		KubernetesAgentInstallPath: r.workspaceConfig.Agent.Kubernetes.AgentInstallPath,
 	})
 }
 
-// deliveryArch returns the target arch for the agent binary. For kubernetes the
-// cluster arch can differ from the host, so a lookup failure is surfaced rather
-// than guessing the host arch: streaming a wrong-arch binary would succeed here
-// but fail when the agent starts, after the legacy fallback can no longer run.
 func (r *runner) deliveryArch(ctx context.Context) (string, error) {
-	if r.workspaceConfig.Agent.Driver != provider2.KubernetesDriver {
-		return runtime.GOARCH, nil
-	}
 	arch, err := r.driver.TargetArchitecture(ctx, r.id)
 	if err != nil {
-		return "", fmt.Errorf("resolve cluster architecture: %w", err)
+		return "", fmt.Errorf("resolve target architecture: %w", err)
 	}
 	if arch == "" {
-		return "", fmt.Errorf("cluster architecture is empty")
+		return "", fmt.Errorf("target architecture is empty")
 	}
 	return arch, nil
 }
 
 func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDelivery) error {
-	mgr, err := agent.NewBinaryManager(r.resolvedAgentDownloadURL())
-	if err != nil {
-		return fmt.Errorf("create binary source: %w", err)
+	opts := delivery.PostStartOptions{
+		WorkspaceID: r.id,
+		DownloadURL: r.resolvedAgentDownloadURL(),
 	}
-
-	arch, err := r.deliveryArch(ctx)
-	if err != nil {
-		return err
+	if delivery.UsesBinarySource(strategy) {
+		mgr, err := agent.NewBinaryManager(opts.DownloadURL)
+		if err != nil {
+			return fmt.Errorf("create binary source: %w", err)
+		}
+		arch, err := r.deliveryArch(ctx)
+		if err != nil {
+			return err
+		}
+		opts.BinarySource = mgr.AcquireBinary
+		opts.Arch = arch
+		opts.PreferInContainerDownload = !mgr.HasLocalOverride(arch)
+		opts.SkipVersionCheck = strings.TrimSpace(os.Getenv(pkgconfig.EnvAgentBinary)) != "" ||
+			os.Getenv(pkgconfig.EnvAgentURL) != "" ||
+			opts.DownloadURL != pkgconfig.DefaultAgentDownloadURL() ||
+			version.GetVersion() == version.DevVersion
 	}
-
-	err = strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
-		WorkspaceID:               r.id,
-		BinarySource:              mgr.AcquireBinary,
-		Arch:                      arch,
-		DownloadURL:               r.resolvedAgentDownloadURL(),
-		PreferInContainerDownload: !mgr.HasLocalOverride(arch),
-	})
-	if err != nil {
+	if err := strategy.DeliverPostStart(ctx, opts); err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)
 	}
 	return nil
@@ -209,6 +228,9 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 
 // prefetchAgentBinary warms the binary cache while the container builds.
 func (r *runner) prefetchAgentBinary(ctx context.Context) {
+	if !delivery.UsesBinarySource(r.newAgentDelivery()) {
+		return
+	}
 	arch, err := r.deliveryArch(ctx)
 	if err != nil {
 		return
@@ -251,6 +273,16 @@ func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
 }
 
 func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error {
+	var runtimeHealthCheck func(context.Context) error
+	if helperProvider, ok := r.driver.(driver.DockerHelperProvider); ok {
+		runtimeHealthCheck = func(ctx context.Context) error {
+			helper, err := helperProvider.DockerHelper()
+			if err != nil {
+				return err
+			}
+			return helper.CheckRuntimeHealth(ctx)
+		}
+	}
 	err := agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
@@ -260,6 +292,7 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 				Stdin:       stdin,
 				Stdout:      stdout,
 				Stderr:      stderr,
+				RawStdout:   true,
 			})
 		},
 		IsLocal:                     false,
@@ -267,6 +300,7 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 		DownloadURL:                 r.resolvedAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     timeout,
+		RuntimeHealthCheck:          runtimeHealthCheck,
 	})
 	if err != nil {
 		return fmt.Errorf("inject agent: %w", err)
@@ -275,6 +309,12 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 }
 
 func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, error) {
+	if params.containerDetails.LifecycleTopologyError != "" {
+		return nil, fmt.Errorf(
+			"workspace lifecycle topology: %s",
+			params.containerDetails.LifecycleTopologyError,
+		)
+	}
 	result := r.buildResult(params)
 
 	compressed, err := r.compressResult(result)
@@ -282,7 +322,11 @@ func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, err
 		return nil, err
 	}
 
-	workspaceConfigCompressed, err := r.compressWorkspaceConfig()
+	workspaceConfigCompressed, err := r.compressWorkspaceConfig(
+		result.MergedConfig,
+		params.containerDetails.Dockerless,
+		params.containerDetails.ImageEntrypoint,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +340,8 @@ func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, err
 
 func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 	result := &config.Result{
+		GeneratedBuildArtifacts: r.generatedBuildArtifacts,
+		GeneratedBuildContext:   r.generatedBuildContext,
 		DevContainerConfigWithPath: &config.DevContainerConfigWithPath{
 			Config: params.rawConfig,
 			Path:   getRelativeDevContainerJson(params.rawConfig.Origin, r.localWorkspaceFolder),
@@ -339,7 +385,10 @@ func (r *runner) compressResult(result *config.Result) (string, error) {
 	return compressed, nil
 }
 
-func (r *runner) compressWorkspaceConfig() (string, error) {
+func (r *runner) compressWorkspaceConfig(
+	mergedConfig *config.MergedDevContainerConfig,
+	dockerless, imageEntrypoint bool,
+) (string, error) {
 	cliOptions := r.workspaceConfig.CLIOptions
 	cliOptions.SecretsEnv = nil
 	cliOptions.SecretsMount = nil
@@ -359,6 +408,18 @@ func (r *runner) compressWorkspaceConfig() (string, error) {
 		Source:           r.workspaceConfig.Workspace.Source,
 		Agent:            r.workspaceConfig.Agent,
 		ContentFolder:    r.workspaceConfig.ContentFolder,
+		SetupRun:         r.setupRunRef(cliOptions),
+	}
+	workspaceConfig.Agent.Kubernetes.ImageConfigFile = ""
+	lifecycle, err := r.lifecycleOptions(mergedConfig, dockerless, imageEntrypoint)
+	if err != nil {
+		return "", err
+	}
+	if r.managedLifecycle() {
+		workspaceConfig.ContainerTimeout = agentd.FormatTimeout(lifecycle.Timeout)
+	}
+	if lifecycle.Managed {
+		workspaceConfig.LifecycleOwner = provider2.ContainerLifecycleOwnerManagedDaemon
 	}
 	workspaceConfig.PullFromInsideContainer = resolvePullFromInsideContainer(
 		r.workspaceConfig.CLIOptions,
@@ -392,25 +453,25 @@ func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string)
 		shellescape.Quote(workspaceConfigCompressed),
 	}
 
+	if r.workspaceConfig.CLIOptions.LifecycleTerminal != nil {
+		args = append(args, "--lifecycle-terminal-protocol=1")
+	}
 	r.addSetupFlags(&args)
 	return strings.Join(args, " ")
 }
 
 func (r *runner) addSetupFlags(args *[]string) {
-	_, isDockerDriver := r.driver.(driver.ImageDriver)
-
-	r.addChownFlag(args, isDockerDriver)
-	r.addDriverFlags(args, isDockerDriver)
+	r.addChownFlag(args)
+	r.addDriverFlags(args)
 	r.addPlatformFlags(args)
 	r.addDotfilesFlags(args)
 	r.addPrebuildFlag(args)
 	r.addDebugFlag(args)
 }
 
-func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
+func (r *runner) addChownFlag(args *[]string) {
 	if shouldChownWorkspace(
 		runtime.GOOS,
-		isDockerDriver,
 		r.isPodmanRuntime(),
 		r.driverRequiresWorkspaceChown(),
 	) {
@@ -422,13 +483,12 @@ func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
 // folder to the remote user during setup. Podman and drivers reporting
 // driverNeedsChown expose bind mounts as root-owned in the guest, so a non-root
 // remote user can't enter the workspace folder otherwise.
-func shouldChownWorkspace(goos string, isDockerDriver, isPodman, driverNeedsChown bool) bool {
-	return goos == goosLinux || !isDockerDriver || isPodman || driverNeedsChown
+func shouldChownWorkspace(goos string, isPodman, driverNeedsChown bool) bool {
+	return goos == goosLinux || isPodman || driverNeedsChown
 }
 
 func (r *runner) driverRequiresWorkspaceChown() bool {
-	c, ok := r.driver.(driver.WorkspaceChowner)
-	return ok && c.RequiresWorkspaceChown()
+	return driver.DriverRequiresWorkspaceChown(r.driver)
 }
 
 // isPodmanRuntime reports whether the docker driver is backed by the Podman
@@ -437,8 +497,8 @@ func (r *runner) isPodmanRuntime() bool {
 	return strings.EqualFold(r.workspaceConfig.Agent.Docker.Runtime, string(docker.RuntimePodman))
 }
 
-func (r *runner) addDriverFlags(args *[]string, isDockerDriver bool) {
-	if !isDockerDriver {
+func (r *runner) addDriverFlags(args *[]string) {
+	if driver.DriverRequiresMountStreaming(r.driver) {
 		*args = append(*args, names.Flag(names.StreamMounts))
 	}
 	if r.workspaceConfig.Agent.InjectGitCredentials != stringFalse {
@@ -505,30 +565,47 @@ func (r *runner) isDebugMode() bool {
 	return log.DebugEnabled()
 }
 
+// setupSecrets are the secret env vars and mount paths passed to lifecycle commands.
+type setupSecrets struct {
+	env, mount []string
+}
+
 func (r *runner) executeSetup(
 	ctx context.Context,
 	result *config.Result,
 	setupCommand string,
+	secretOpts setupSecrets,
 ) (*config.Result, error) {
+	secretsEnv, secretsMount := secretOpts.env, secretOpts.mount
+	setupLogOptions := tunnelserver.SetupLogOptionsFrom(ctx)
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
-		return tunnelserver.RunSetupServer(
-			ctx,
-			stdout,
-			stdin,
-			r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
-			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
-			config.GetMounts(result),
-			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
-			tunnelserver.WithSecrets(
-				r.workspaceConfig.CLIOptions.SecretsEnv,
-				r.workspaceConfig.CLIOptions.SecretsMount,
-			),
-			tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
-			tunnelserver.WithStatusReporter(r.reporter),
-		)
+		options := setupLogOptions
+		if req := r.workspaceConfig.CLIOptions.LifecycleTerminal; req != nil {
+			options = append(
+				options,
+				tunnelserver.WithLifecycleTerminalUpstream(r.lifecycleTerminalClient, *req),
+			)
+		}
+		return tunnelserver.RunSetupServer(ctx, tunnelserver.SetupSpec{
+			Reader:                 stdout,
+			Writer:                 stdin,
+			AllowGitCredentials:    r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
+			AllowDockerCredentials: r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
+			SetupInfo:              result,
+			Options: append([]tunnelserver.Option{
+				tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
+				tunnelserver.WithSecrets(
+					secretsEnv,
+					secretsMount,
+				),
+				tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
+				tunnelserver.WithStatusReporter(r.reporter),
+			}, options...),
+		})
 	}
 
-	sshTunnelCmd := r.buildSSHTunnelCommand()
+	sshTunnelArgv := r.buildSSHTunnelArgv()
+	sshTunnelCmd := shellescape.QuoteCommand(sshTunnelArgv)
 
 	agentInjectFunc := func(
 		cancelCtx context.Context,
@@ -536,14 +613,17 @@ func (r *runner) executeSetup(
 		sshTunnelStdinReader io.Reader, sshTunnelStdoutWriter io.Writer,
 		writer io.WriteCloser,
 	) error {
-		return r.driver.CommandDevContainer(cancelCtx, &driver.CommandParams{
-			WorkspaceID: r.id,
-			User:        containerRootUser,
-			Command:     sshCmd,
-			Stdin:       sshTunnelStdinReader,
-			Stdout:      sshTunnelStdoutWriter,
-			Stderr:      writer,
-		})
+		return r.execSetupSSHServer(
+			cancelCtx,
+			agent.ExecRequest{
+				Command: sshCmd,
+				Stdin:   sshTunnelStdinReader,
+				Stdout:  sshTunnelStdoutWriter,
+				Stderr:  writer,
+			},
+			agent.ExecStartupWatchdogOptions{},
+			sshTunnelArgv...,
+		)
 	}
 
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
@@ -556,9 +636,47 @@ func (r *runner) executeSetup(
 	})
 }
 
-func (r *runner) buildSSHTunnelCommand() string {
+func (r *runner) execSetupSSHServer(
+	ctx context.Context,
+	req agent.ExecRequest,
+	watchdogOpts agent.ExecStartupWatchdogOptions,
+	argv ...string,
+) error {
+	onStartupSilence := watchdogOpts.OnStartupSilence
+	watchdogOpts.OnStartupSilence = func() {
+		if stdin, ok := req.Stdin.(io.Closer); ok {
+			_ = stdin.Close()
+		}
+		if onStartupSilence != nil {
+			onStartupSilence()
+		}
+	}
+	return agent.ExecWithStartupWatchdog(
+		ctx,
+		func(ctx context.Context, req agent.ExecRequest) error {
+			if execDriver, ok := r.driver.(driver.ArgvExecDriver); ok && len(argv) > 0 {
+				return execDriver.CommandContainerArgv(ctx, r.id, argv, driver.Streams{
+					Stdin: req.Stdin, Stdout: req.Stdout, Stderr: req.Stderr,
+				})
+			}
+			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
+				WorkspaceID: r.id,
+				User:        containerRootUser,
+				Command:     req.Command,
+				Stdin:       req.Stdin,
+				Stdout:      req.Stdout,
+				Stderr:      req.Stderr,
+				RawStdout:   true,
+			})
+		},
+		req,
+		watchdogOpts,
+	)
+}
+
+func (r *runner) buildSSHTunnelArgv() []string {
 	args := []string{
-		shellescape.Quote(r.agentContainerPath()),
+		r.agentContainerPath(),
 		"internal", "ssh-server", names.Flag(names.Stdio),
 	}
 
@@ -566,13 +684,13 @@ func (r *runner) buildSSHTunnelCommand() string {
 		args = append(
 			args,
 			names.Flag(names.ReuseSSHAuthSock),
-			shellescape.Quote(r.workspaceConfig.CLIOptions.SSHAuthSockID),
+			r.workspaceConfig.CLIOptions.SSHAuthSockID,
 		)
 	}
 	if r.isDebugMode() {
 		args = append(args, names.Flag(names.Debug))
 	}
-	return strings.Join(args, " ")
+	return args
 }
 
 func getRelativeDevContainerJson(origin, localWorkspaceFolder string) string {
@@ -602,4 +720,21 @@ func filterWorkspaceMounts(
 	}
 
 	return retMounts
+}
+
+// setupRunRef describes the run this setup records into, or nil when the CLI
+// options name none.
+func (r *runner) setupRunRef(cliOptions provider2.CLIOptions) *provider2.SetupRunRef {
+	ws := r.workspaceConfig.Workspace
+	if cliOptions.SetupRunID == "" || ws == nil {
+		return nil
+	}
+
+	return &provider2.SetupRunRef{
+		RunID:            cliOptions.SetupRunID,
+		ParentProducerID: cliOptions.SetupParentProducerID,
+		Context:          ws.Context,
+		WorkspaceUID:     ws.UID,
+		WorkspaceID:      ws.ID,
+	}
 }

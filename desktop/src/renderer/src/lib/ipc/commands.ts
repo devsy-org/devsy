@@ -11,15 +11,47 @@ import type {
   ProviderVersion,
   ProviderVersionCheckResult,
   Secret,
+  SecretProtectionActionInput,
+  SecretProtectionActionResult,
+  SecretProtectionStatus,
   SshKeyInfo,
   Workspace,
 } from "$lib/types/index.js"
-import { invoke } from "./bridge.js"
+import type { AppNavigationAcknowledgment } from "$shared/app-route.js"
+import type {
+  LinuxDesktopIntegrationResult,
+  LinuxDesktopIntegrationStatus,
+} from "$shared/linux-desktop-integration.js"
 import type { MachineDiagnosticsCache } from "$shared/machine-diagnostics-types.js"
+import type {
+  ProviderIconReply,
+  ProviderIconRequest,
+} from "$shared/provider-icon.js"
+import type {
+  LogIndexResponse,
+  LogReadResponse,
+  LogRunExportRequest,
+  LogRunExportResult,
+  LogRunReadRequest,
+  LogRunsRequest,
+} from "$shared/workspace-logs.js"
+import type {
+  WorkspacePresentationErrorCode,
+  WorkspacePresentationFailure,
+  WorkspacePresentationField,
+  WorkspacePresentationReply,
+  WorkspacePresentationRequest,
+  WorkspacePresentationResult,
+} from "$shared/workspace-presentation.js"
+import { invoke } from "./bridge.js"
 
 type CommandEnvelope =
   | { ok: true }
-  | { ok: false; message: string; cliError?: import("$shared/cli-error.js").CLIError }
+  | {
+      ok: false
+      message: string
+      cliError?: import("$shared/cli-error.js").CLIError
+    }
 
 /** Unwrap a structured command envelope, rethrowing failures as an Error with .cliError attached. */
 function unwrapEnvelope(result: CommandEnvelope): void {
@@ -51,10 +83,11 @@ export function workspaceRefresh(workspaceId: string): Promise<void> {
 export async function workspaceUp(params: {
   source: string
   workspaceId?: string
+  displayName?: string
+  sshHostAlias?: string
   provider?: string
   ide?: string
   ideLaunch?: "auto" | "headless" | "skip"
-  debug?: boolean
   workspaceFolder?: string
   devcontainer?: string
   prebuildRepository?: string
@@ -67,34 +100,30 @@ export async function workspaceUp(params: {
 
 export async function workspaceStop(
   workspaceId: string,
-  debug?: boolean,
   commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_stop", { workspaceId, debug, commandId })
+  return invoke<string>("workspace_stop", { workspaceId, commandId })
 }
 
 export async function workspaceDelete(
   workspaceId: string,
-  debug?: boolean,
   commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_delete", { workspaceId, debug, commandId })
+  return invoke<string>("workspace_delete", { workspaceId, commandId })
 }
 
 export async function workspaceRebuild(
   workspaceId: string,
-  debug?: boolean,
   commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_rebuild", { workspaceId, debug, commandId })
+  return invoke<string>("workspace_rebuild", { workspaceId, commandId })
 }
 
 export async function workspaceReset(
   workspaceId: string,
-  debug?: boolean,
   commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_reset", { workspaceId, debug, commandId })
+  return invoke<string>("workspace_reset", { workspaceId, commandId })
 }
 
 export async function workspaceStatus(
@@ -111,6 +140,30 @@ export async function workspaceRename(
   return invoke("workspace_rename", { workspaceId, newWorkspaceId })
 }
 
+export class WorkspaceEditError extends Error {
+  readonly field: WorkspacePresentationField
+  readonly code: WorkspacePresentationErrorCode
+  readonly conflict?: string
+
+  constructor(failure: WorkspacePresentationFailure) {
+    super(failure.message)
+    this.name = "WorkspaceEditError"
+    this.field = failure.field
+    this.code = failure.code
+    this.conflict = failure.conflict
+  }
+}
+
+export async function workspaceEdit(
+  request: WorkspacePresentationRequest,
+): Promise<WorkspacePresentationResult> {
+  const reply = await invoke<WorkspacePresentationReply>("workspace_edit", {
+    ...request,
+  })
+  if (!reply.ok) throw new WorkspaceEditError(reply)
+  return reply.result
+}
+
 export async function workspaceSetIde(
   workspaceId: string,
   ide: string,
@@ -125,6 +178,12 @@ export async function openDirectoryDialog(): Promise<string | null> {
 // Provider commands
 export async function providerList(): Promise<Provider[]> {
   return invoke<Provider[]>("provider_list")
+}
+
+export async function providerIcon(
+  request: ProviderIconRequest,
+): Promise<ProviderIconReply> {
+  return invoke<ProviderIconReply>("provider_icon", { ...request })
 }
 
 export async function providerAdd(
@@ -166,8 +225,17 @@ export async function providerReleaseJob(name: string): Promise<void> {
   return invoke<void>("provider_release_job", { name })
 }
 
-export async function providerUpdate(name: string): Promise<void> {
-  return invoke("provider_update", { name })
+export async function providerUpdateStreaming(
+  name: string,
+  tag?: string,
+): Promise<string> {
+  return invoke<string>("provider_update_streaming", { name, tag })
+}
+
+export async function providerRefreshState(name: string): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("provider_refresh_state", { name }),
+  )
 }
 
 export async function providerOptions(
@@ -176,14 +244,23 @@ export async function providerOptions(
   return invoke<Record<string, ProviderOption>>("provider_options", { name })
 }
 
+export async function providerAvailable(): Promise<string[]> {
+  return invoke<string[]>("provider_available")
+}
+
 export async function providerSetOptions(
   name: string,
   options: Record<string, OptionValue>,
+  singleMachine?: boolean,
 ): Promise<void> {
   const optionArgs = Object.entries(options).map(
     ([key, val]) => `${key}=${val}`,
   )
-  return invoke("provider_set_options", { name, options: optionArgs })
+  return invoke("provider_set_options", {
+    name,
+    options: optionArgs,
+    ...(singleMachine === undefined ? {} : { singleMachine }),
+  })
 }
 
 export async function providerRename(
@@ -194,18 +271,31 @@ export async function providerRename(
 }
 
 export async function providerListVersions(name: string, noCache?: boolean) {
-  return invoke<{ versions: ProviderVersion[]; unsupported: boolean; error?: string }>(
-    "provider_list_versions",
-    { name, noCache },
-  )
+  return invoke<{
+    versions: ProviderVersion[]
+    unsupported: boolean
+    error?: string
+  }>("provider_list_versions", { name, noCache })
 }
 
-export async function providerSetVersion(name: string, tag: string): Promise<void> {
+export async function providerSetVersion(
+  name: string,
+  tag: string,
+): Promise<void> {
   return invoke("provider_set_version", { name, tag })
 }
 
 export async function providerCheckUpdates() {
-  return invoke<Record<string, ProviderVersionCheckResult>>("provider_check_updates")
+  return invoke<Record<string, ProviderVersionCheckResult>>(
+    "provider_check_updates",
+  )
+}
+
+export async function providerGetUpdateCache() {
+  return invoke<{
+    updates: Record<string, ProviderVersionCheckResult>
+    lastCheckedAt: string | null
+  }>("provider_get_update_cache")
 }
 
 // Image catalog commands
@@ -265,11 +355,17 @@ export async function machineStatus(id: string): Promise<string> {
   }
 }
 
-export async function machineDiagnosticsGet(id: string): Promise<MachineDiagnosticsCache | null> {
-  return invoke<MachineDiagnosticsCache | null>("machine_diagnostics_get", { id })
+export async function machineDiagnosticsGet(
+  id: string,
+): Promise<MachineDiagnosticsCache | null> {
+  return invoke<MachineDiagnosticsCache | null>("machine_diagnostics_get", {
+    id,
+  })
 }
 
-export async function machineDiagnosticsRefresh(id: string): Promise<MachineDiagnosticsCache> {
+export async function machineDiagnosticsRefresh(
+  id: string,
+): Promise<MachineDiagnosticsCache> {
   return invoke<MachineDiagnosticsCache>("machine_diagnostics_refresh", { id })
 }
 
@@ -306,28 +402,114 @@ export async function contextDelete(name: string): Promise<void> {
   return invoke("context_delete", { name })
 }
 
+export async function secretProtectionStatus(): Promise<SecretProtectionStatus> {
+  const result = await invoke<SecretProtectionStatus | CommandEnvelope>(
+    "secret_protection_status",
+  )
+  if ("ok" in result) {
+    unwrapEnvelope(result)
+    throw new Error("Unable to load secret security status.")
+  }
+  return result
+}
+
+export function secretProtectionAction(
+  input: SecretProtectionActionInput,
+): Promise<SecretProtectionActionResult> {
+  return invoke<SecretProtectionActionResult>("secret_protection_action", {
+    ...input,
+  })
+}
+
+export function secretUnlockRequest(): Promise<SecretProtectionActionResult> {
+  return invoke<SecretProtectionActionResult>("secret_unlock_request")
+}
+
+export async function secretSessionClear(): Promise<void> {
+  const result = await invoke<undefined | CommandEnvelope>(
+    "secret_session_clear",
+  )
+  if (result) unwrapEnvelope(result)
+}
+
 export async function secretList(): Promise<Secret[]> {
   return invoke<Secret[]>("secret_list")
 }
 
-export async function secretSet(name: string, value: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("secret_set", { name, value }))
+export async function secretSet(
+  name: string,
+  value: string,
+  context?: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("secret_set", {
+      name,
+      value,
+      ...(context === undefined ? {} : { context }),
+    }),
+  )
 }
 
-export async function secretDelete(name: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("secret_delete", { name }))
+export async function secretDelete(
+  name: string,
+  context?: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("secret_delete", {
+      name,
+      ...(context === undefined ? {} : { context }),
+    }),
+  )
 }
 
-export async function envList(): Promise<EnvVar[]> {
-  return invoke<EnvVar[]>("env_list")
+export async function secretAttach(
+  name: string,
+  context: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("secret_attach", { name, context }),
+  )
 }
 
-export async function envSet(name: string, value: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("env_set", { name, value }))
+export async function secretDetach(
+  name: string,
+  context: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("secret_detach", { name, context }),
+  )
 }
 
-export async function envDelete(name: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("env_delete", { name }))
+export async function envList(context?: string): Promise<EnvVar[]> {
+  return context === undefined
+    ? invoke<EnvVar[]>("env_list")
+    : invoke<EnvVar[]>("env_list", { context })
+}
+
+export async function envSet(
+  name: string,
+  value: string,
+  context?: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("env_set", {
+      name,
+      value,
+      ...(context === undefined ? {} : { context }),
+    }),
+  )
+}
+
+export async function envDelete(name: string, context: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_delete", { name, context }))
+}
+
+export async function envAttach(name: string, context: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_attach", { name, context }))
+}
+
+export async function envDetach(name: string, context: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_detach", { name, context }))
 }
 
 // Audit commands
@@ -350,6 +532,12 @@ export async function auditByResource(
 // App lifecycle
 export async function appReady(): Promise<void> {
   return invoke<void>("app_ready")
+}
+
+export function appNavigationApplied(
+  request: AppNavigationAcknowledgment,
+): Promise<void> {
+  return invoke<void>("app_navigation_applied", { ...request })
 }
 
 // System commands
@@ -386,6 +574,35 @@ export async function workspaceLogDelete(
   return invoke<void>("workspace_log_delete", { workspaceId, filename })
 }
 
+// Retained build and lifecycle history. A null result means the request was
+// superseded or cancelled and must be ignored.
+export async function workspaceLogRuns(
+  request: LogRunsRequest,
+): Promise<LogIndexResponse | null> {
+  return invoke<LogIndexResponse | null>("workspace_log_runs", { ...request })
+}
+
+export async function workspaceLogRunRead(
+  request: LogRunReadRequest,
+): Promise<LogReadResponse | null> {
+  return invoke<LogReadResponse | null>("workspace_log_run_read", {
+    ...request,
+  })
+}
+
+/** Cancels only history readers, never the workspace task follower. */
+export async function workspaceLogRunCancel(): Promise<void> {
+  return invoke<void>("workspace_log_run_cancel")
+}
+
+export async function workspaceLogRunExport(
+  request: LogRunExportRequest,
+): Promise<LogRunExportResult> {
+  return invoke<LogRunExportResult>("workspace_log_run_export", {
+    ...request,
+  })
+}
+
 // SSH key commands
 export async function sshKeyList(): Promise<SshKeyInfo[]> {
   return invoke<SshKeyInfo[]>("ssh_key_list")
@@ -406,7 +623,9 @@ export async function getReleaseChannel(): Promise<ReleaseChannel> {
   return invoke<ReleaseChannel>("get_release_channel")
 }
 
-export async function setReleaseChannel(channel: ReleaseChannel): Promise<void> {
+export async function setReleaseChannel(
+  channel: ReleaseChannel,
+): Promise<void> {
   return invoke("set_release_channel", { channel })
 }
 
@@ -440,4 +659,37 @@ export function analyticsTrack(
   properties?: Record<string, unknown>,
 ): void {
   invoke("analytics_track", { name, properties }).catch(() => {})
+}
+
+export async function getAppSettings(): Promise<
+  import("$shared/app-settings.js").AppSettingsState
+> {
+  return invoke<import("$shared/app-settings.js").AppSettingsState>(
+    "get_app_settings",
+  )
+}
+
+export async function setAppSettings(
+  patch: Partial<import("$shared/app-settings.js").AppSettings>,
+): Promise<import("$shared/app-settings.js").AppSettingsState> {
+  return invoke<import("$shared/app-settings.js").AppSettingsState>(
+    "set_app_settings",
+    { patch },
+  )
+}
+
+export async function getLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationStatus> {
+  return invoke<LinuxDesktopIntegrationStatus>("get_linux_desktop_integration")
+}
+
+export async function installLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationResult> {
+  return invoke<LinuxDesktopIntegrationResult>(
+    "install_linux_desktop_integration",
+  )
+}
+
+export async function removeLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationResult> {
+  return invoke<LinuxDesktopIntegrationResult>(
+    "remove_linux_desktop_integration",
+  )
 }

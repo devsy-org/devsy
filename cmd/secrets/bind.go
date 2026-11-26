@@ -20,7 +20,7 @@ func NewAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 	cmd := &AttachCmd{GlobalFlags: flags}
 	attachCmd := &cobra.Command{
 		Use:   "attach NAME",
-		Short: "Bind a secret reference to the active context so it is injected automatically on up",
+		Short: "Bind a secret reference to the active context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args[0])
@@ -31,7 +31,7 @@ func NewAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func verifyLocalSensitive(devsyConfig *config.Config, contextName, name string) error {
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	store, err := secrets.NewSecretStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -68,6 +68,24 @@ func verifySecretReference(
 	return nil
 }
 
+func rejectEnvVarConflict(
+	devsyConfig *config.Config,
+	contextName string,
+	ref secrets.SecretRef,
+) error {
+	if ref.Source != secrets.LocalSourceName {
+		return nil
+	}
+	current := devsyConfig.Contexts[contextName]
+	if current != nil && slices.Contains(current.EnvVars, ref.Name) {
+		return fmt.Errorf(
+			"%q is attached as an environment variable; detach it before attaching it as a secret",
+			ref.Name,
+		)
+	}
+	return nil
+}
+
 func (cmd *AttachCmd) Run(ctx context.Context, name string) error {
 	ref, err := secrets.ParseRef(name)
 	if err != nil {
@@ -75,16 +93,29 @@ func (cmd *AttachCmd) Run(ctx context.Context, name string) error {
 	}
 	canonical := ref.String()
 
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
 	contextName := devsyConfig.DefaultContext
 
+	if err := rejectEnvVarConflict(devsyConfig, contextName, ref); err != nil {
+		return err
+	}
 	if err := verifySecretReference(ctx, devsyConfig, ref); err != nil {
 		return err
 	}
+	return attachToContext(devsyConfig, contextName, canonical)
+}
 
+// attachToContext adds the canonical secret reference to the context and saves
+// the config. Attaching a secret that is already attached is a no-op.
+func attachToContext(devsyConfig *config.Config, contextName, canonical string) error {
 	ctxConfig := devsyConfig.Contexts[contextName]
 	if ctxConfig == nil {
 		return fmt.Errorf("context %q doesn't exist", contextName)
@@ -127,7 +158,12 @@ func (cmd *DetachCmd) Run(_ context.Context, name string) error {
 		return err
 	}
 	canonical := ref.String()
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}

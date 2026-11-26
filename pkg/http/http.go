@@ -13,6 +13,7 @@ import (
 )
 
 var (
+	baseTransportMu   sync.Mutex
 	baseTransportOnce sync.Once
 	baseTransportInst *http.Transport
 
@@ -29,8 +30,12 @@ func baseRoundTripper() *http.Transport {
 			t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 			log.Warnf("TLS certificate verification is disabled (%s)", config.EnvInsecureTLS)
 		}
+		baseTransportMu.Lock()
 		baseTransportInst = t
+		baseTransportMu.Unlock()
 	})
+	baseTransportMu.Lock()
+	defer baseTransportMu.Unlock()
 	return baseTransportInst
 }
 
@@ -45,6 +50,15 @@ func GetHTTPClient() *http.Client {
 		httpClientInst = &http.Client{Transport: rt}
 	})
 	return httpClientInst
+}
+
+func CloseIdleConnections() {
+	baseTransportMu.Lock()
+	tr := baseTransportInst
+	baseTransportMu.Unlock()
+	if tr != nil {
+		tr.CloseIdleConnections()
+	}
 }
 
 // UserAgent is the value sent on requests made through the package's clients.

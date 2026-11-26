@@ -13,9 +13,14 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
+)
+
+const (
+	contextValue = "context"
 )
 
 var (
@@ -32,6 +37,7 @@ const (
 	cmdList      = "list"
 	cmdGet       = "get"
 	cmdDelete    = "delete"
+	cmdCancel    = "cancel"
 	cmdSSH       = "ssh"
 	cmdProvider  = "provider"
 	cmdWorkspace = "workspace"
@@ -228,29 +234,35 @@ func (f *Framework) DevsySSHOnce(
 	workspace string,
 	command string,
 ) (string, error) {
-	out, _, err := f.ExecCommandCapture(ctx, []string{
+	out, stderr, err := f.ExecCommandDiagnosticCapture(ctx, []string{
 		cmdWorkspace, cmdSSH, workspace, flagCommand, command, flagDebug,
 	})
 	if err != nil {
+		diagnostic := externalCommandDiagnostic(stderr)
+		if strings.Contains(stderr, "AGENT_INJECTION_RUNTIME_UNAVAILABLE") ||
+			strings.Contains(stderr, "PODMAN_ROOTFUL_RUNTIME_POISONED") {
+			return "", fmt.Errorf(
+				"SSH_RUNTIME_UNAVAILABLE: %w (stderr: %s)",
+				errors.Join(docker.ErrRuntimeUnavailable, err),
+				diagnostic,
+			)
+		}
+		if stderr != "" {
+			return "", fmt.Errorf("devsy ssh failed: %w (stderr: %s)", err, diagnostic)
+		}
 		return "", fmt.Errorf("devsy ssh failed: %w", err)
 	}
 	return out, nil
 }
 
 func (f *Framework) DevsySSHEchoTestString(ctx context.Context, workspace string) error {
-	err := f.ExecCommand(
-		ctx,
-		true,
-		true,
-		"mYtEsTsTrInG",
-		[]string{
-			cmdWorkspace,
-			cmdSSH,
-			flagCommand,
-			"echo 'bVl0RXNUc1RySW5H' | base64 -d",
-			workspace,
-		},
-	)
+	err := f.ExecCommandContaining(ctx, "mYtEsTsTrInG", []string{
+		cmdWorkspace,
+		cmdSSH,
+		flagCommand,
+		"echo 'bVl0RXNUc1RySW5H' | base64 -d",
+		workspace,
+	})
 	if err != nil {
 		return fmt.Errorf("devsy ssh failed: %s", err.Error())
 	}
@@ -261,7 +273,7 @@ func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 	ctx context.Context,
 	provider, searchStr string,
 ) error {
-	err := f.ExecCommand(ctx, true, true, searchStr, []string{cmdProvider, cmdGet, provider})
+	err := f.ExecCommandContaining(ctx, searchStr, []string{cmdProvider, cmdGet, provider})
 	if err != nil {
 		return fmt.Errorf(
 			"did not found value %s in devsy provider options output. error: %s",
@@ -274,7 +286,7 @@ func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 
 func (f *Framework) DevsyProviderList(ctx context.Context, extraArgs ...string) error {
 	baseArgs := []string{cmdProvider, cmdList}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider list failed: %s", err.Error())
 	}
@@ -288,18 +300,12 @@ func (f *Framework) DevsyProviderUse(
 ) error {
 	if len(extraArgs) > 0 {
 		configureArgs := []string{cmdProvider, "init", provider}
-		if err := f.ExecCommand(
-			ctx,
-			false,
-			true,
-			"",
-			append(configureArgs, extraArgs...),
-		); err != nil {
+		if err := f.ExecCommandStdout(ctx, append(configureArgs, extraArgs...)); err != nil {
 			return fmt.Errorf("devsy provider init failed: %s", err.Error())
 		}
 	}
 	useArgs := []string{cmdProvider, cmdUse, provider}
-	if err := f.ExecCommand(ctx, false, true, "", useArgs); err != nil {
+	if err := f.ExecCommandStdout(ctx, useArgs); err != nil {
 		return fmt.Errorf("devsy provider use failed: %s", err.Error())
 	}
 	return nil
@@ -328,7 +334,7 @@ func (f *Framework) DevsyStatus(
 func (f *Framework) DevsyStop(ctx context.Context, workspace string) error {
 	baseArgs := []string{cmdWorkspace, "stop"}
 	baseArgs = append(baseArgs, workspace)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy stop failed: %s", err.Error())
 	}
@@ -338,7 +344,13 @@ func (f *Framework) DevsyStop(ctx context.Context, workspace string) error {
 func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, "add"}
 	baseArgs = append(baseArgs, args...)
-	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
+	if err := seedProviderDownloadCache(); err != nil {
+		return fmt.Errorf("devsy provider add failed: %w", err)
+	}
+	capture := func(ctx context.Context) (string, string, error) {
+		return f.ExecCommandDiagnosticCapture(ctx, baseArgs)
+	}
+	stderr, err := execWithProviderAddRetry(ctx, capture)
 	if err != nil {
 		if strings.Contains(stderr, "already exists") {
 			providerName := providerNameFromAddArgs(args)
@@ -350,13 +362,26 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 				)
 			}
 
-			_, stderr, err = f.ExecCommandCapture(ctx, baseArgs)
+			stderr, err = execWithProviderAddRetry(ctx, capture)
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("devsy provider add failed: %s", stderr)
+		return fmt.Errorf(
+			"devsy provider add failed: %w: %s",
+			err,
+			externalCommandDiagnostic(stderr),
+		)
 	}
 	return nil
+}
+
+// DevsyProviderAddDocker adds a docker provider called name, using podman as
+// DOCKER_PATH when DOCKER_HOST points at a podman socket.
+func (f *Framework) DevsyProviderAddDocker(ctx context.Context, name string) error {
+	if strings.Contains(os.Getenv("DOCKER_HOST"), "podman") {
+		return f.DevsyProviderAdd(ctx, "docker", "--name", name, "--option=DOCKER_PATH=podman")
+	}
+	return f.DevsyProviderAdd(ctx, "docker", "--name", name)
 }
 
 func providerNameFromAddArgs(args []string) string {
@@ -386,10 +411,10 @@ func providerNameFromAddArgs(args []string) string {
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, cmdDelete}
 	baseArgs = append(baseArgs, args...)
-	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
+	_, stderr, err := f.ExecCommandDiagnosticCapture(ctx, baseArgs)
 	if err != nil {
 		if strings.Contains(stderr, "because workspace") {
-			return fmt.Errorf("%w: %s", errProviderInUse, stderr)
+			return fmt.Errorf("%w: %s", errProviderInUse, externalCommandDiagnostic(stderr))
 		}
 		return err
 	}
@@ -405,7 +430,7 @@ func (f *Framework) DevsyProviderRename(
 ) error {
 	baseArgs := []string{cmdProvider, "rename", oldName, newName}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy provider rename failed: %s", err.Error())
 	}
@@ -421,9 +446,24 @@ func (f *Framework) DevsyRename(
 ) error {
 	baseArgs := []string{cmdWorkspace, "rename", oldName, newName}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy rename failed: %s", err.Error())
+	}
+
+	return nil
+}
+
+func (f *Framework) DevsyWorkspaceEdit(
+	ctx context.Context,
+	id string,
+	args ...string,
+) error {
+	baseArgs := []string{cmdWorkspace, "edit", id}
+	baseArgs = append(baseArgs, args...)
+	err := f.ExecCommandStdout(ctx, baseArgs)
+	if err != nil {
+		return fmt.Errorf("devsy workspace edit failed: %s", err.Error())
 	}
 
 	return nil
@@ -445,7 +485,7 @@ func (f *Framework) DevsyProviderOptionsJSON(
 func (f *Framework) DevsyProviderSetSource(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, "set-source"}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy provider set-source failed: %s", err.Error())
 	}
@@ -455,7 +495,7 @@ func (f *Framework) DevsyProviderSetSource(ctx context.Context, args ...string) 
 func (f *Framework) DevsyMachineCreate(ctx context.Context, args []string) error {
 	baseArgs := []string{"machine", "create"}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy machine create failed: %s", err.Error())
 	}
@@ -465,7 +505,7 @@ func (f *Framework) DevsyMachineCreate(ctx context.Context, args []string) error
 func (f *Framework) DevsyMachineDelete(ctx context.Context, args []string) error {
 	baseArgs := []string{"machine", cmdDelete}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy machine delete failed: %s", err.Error())
 	}
@@ -476,6 +516,17 @@ func (f *Framework) DevsyWorkspaceStop(ctx context.Context, extraArgs ...string)
 	baseArgs := []string{cmdWorkspace, "stop"}
 	baseArgs = append(baseArgs, extraArgs...)
 	return f.ExecCommandStdout(ctx, baseArgs)
+}
+
+// DevsyWorkspaceTaskCancel cancels a detached workspace task.
+func (f *Framework) DevsyWorkspaceTaskCancel(ctx context.Context, taskID string) error {
+	return f.ExecCommandStdout(ctx, []string{cmdWorkspace, "task", cmdCancel, taskID})
+}
+
+// DevsyWorkspaceTaskList returns the raw `workspace task list` JSON states.
+func (f *Framework) DevsyWorkspaceTaskList(ctx context.Context) (string, error) {
+	return f.ExecCommandOutput(ctx,
+		[]string{cmdWorkspace, "task", cmdList, flagResultFormat, formatJSON})
 }
 
 func (f *Framework) DevsyWorkspaceDelete(
@@ -491,14 +542,22 @@ func (f *Framework) DevsyWorkspaceDelete(
 	}
 	baseArgs = append(baseArgs, extraArgs...)
 
-	return f.ExecCommand(ctx, false, true, fmt.Sprintf("deleted workspace %s", workspace), baseArgs)
+	return f.ExecCommandStdout(ctx, baseArgs)
 }
 
-// CleanupWorkspace gives cleanup a fresh, bounded context. Ginkgo cleanup may
-// run after the spec context has expired, so inheriting its cancellation can
-// silently skip the workspace deletion.
+// DetachedCleanupContext bounds cleanup work to timeout without inheriting
+// parent's cancellation. Ginkgo cleanup may run after the spec context has
+// expired, and inheriting that cancellation silently skips the cleanup.
+func DetachedCleanupContext(
+	parent context.Context,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), timeout)
+}
+
+// CleanupWorkspace deletes workspace under a DetachedCleanupContext.
 func (f *Framework) CleanupWorkspace(ctx context.Context, workspace string) error {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	cleanupCtx, cancel := DetachedCleanupContext(ctx, time.Minute)
 	defer cancel()
 	err := f.DevsyWorkspaceDelete(cleanupCtx, workspace)
 	if err != nil {
@@ -549,10 +608,14 @@ func ImportGpgKey(privateKeyPath string) error {
 	// #nosec G204 -- test imports a controlled key path
 	out, err := exec.Command("gpg", "--batch", "--import", privateKeyPath).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("import gpg private key: %s: %w", out, err)
+		return fmt.Errorf(
+			"import gpg private key: %s: %w",
+			externalCommandDiagnostic(string(out)),
+			err,
+		)
 	}
 	if out, err := exec.Command("gpg-connect-agent", "/bye").CombinedOutput(); err != nil {
-		return fmt.Errorf("start gpg-agent: %s: %w", out, err)
+		return fmt.Errorf("start gpg-agent: %s: %w", externalCommandDiagnostic(string(out)), err)
 	}
 	return nil
 }
@@ -561,7 +624,7 @@ func (f *Framework) DevsySSHGpgSecretKeyForwarded(
 	ctx context.Context,
 	workspace, expectedFingerprint string,
 ) error {
-	stdout, _, err := f.ExecCommandCapture(ctx, []string{
+	stdout, _, err := f.ExecCommandDiagnosticCapture(ctx, []string{
 		cmdWorkspace,
 		cmdSSH,
 		names.Flag(names.AgentForwarding),
@@ -577,7 +640,7 @@ func (f *Framework) DevsySSHGpgSecretKeyForwarded(
 		return fmt.Errorf(
 			"gpg agent forwarding failed: secret key %s not reachable in container, got: %q",
 			expectedFingerprint,
-			stdout,
+			externalCommandDiagnostic(stdout),
 		)
 	}
 	return nil
@@ -600,7 +663,7 @@ func (f *Framework) DevsyProviderFindOption(
 	extraArgs ...string,
 ) error {
 	baseArgs := []string{cmdProvider, cmdGet, provider}
-	err := f.ExecCommand(ctx, false, true, searchStr, append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider get failed: %s", err.Error())
 	}
@@ -612,8 +675,8 @@ func (f *Framework) DevsyContextCreate(
 	name string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"context", "create", name}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	baseArgs := []string{contextValue, "create", name}
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context create failed: %s", err.Error())
 	}
@@ -621,8 +684,8 @@ func (f *Framework) DevsyContextCreate(
 }
 
 func (f *Framework) DevsyContextUse(ctx context.Context, name string, extraArgs ...string) error {
-	baseArgs := []string{"context", cmdUse, name}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	baseArgs := []string{contextValue, cmdUse, name}
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context use failed: %s", err.Error())
 	}
@@ -634,8 +697,8 @@ func (f *Framework) DevsyContextDelete(
 	name string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"context", cmdDelete, name}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	baseArgs := []string{contextValue, cmdDelete, name}
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context delete failed: %s", err.Error())
 	}
@@ -644,7 +707,7 @@ func (f *Framework) DevsyContextDelete(
 
 func (f *Framework) DevsyIDEUse(ctx context.Context, ide string, extraArgs ...string) error {
 	baseArgs := []string{"ide", cmdUse, ide}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy ide use failed %s", err.Error())
 	}

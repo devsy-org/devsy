@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +42,13 @@ type RunUserCommandsCmd struct {
 	SkipOnCreate            bool
 	SkipUpdateContent       bool
 	statusReporter          status.Reporter
+	// identity is the resolved Devsy workspace, set only on the
+	// workspace-resolved path.
+	identity *workspaceIdentity
+}
+
+type workspaceIdentity struct {
+	context, uid, id string
 }
 
 // NewRunUserCommandsCmd creates a new run-user-commands command.
@@ -77,13 +85,15 @@ func newLifecycleStatusReporter(
 	resultFormat string,
 	out *os.File,
 	verbose bool,
+	noStatus bool,
 ) (status.Reporter, error) {
-	reporter, err := status.NewReporter(status.ReporterOptions{
-		Format:                 resultFormat,
-		Out:                    out,
-		Prefix:                 "lifecycle",
-		Verbose:                verbose,
-		SuppressFailureDetails: true,
+	return status.NewCLIReporter(status.CLIOptions{
+		Format:   resultFormat,
+		Out:      out,
+		Prefix:   "lifecycle",
+		Verbose:  verbose,
+		NoStatus: noStatus,
+		Pipeline: status.PipelineWorkspaceUp,
 		Labels: map[status.Phase]string{
 			status.PhaseRunningLifecycleHook: "running lifecycle hooks",
 			status.PhaseReady:                "ready",
@@ -92,10 +102,6 @@ func newLifecycleStatusReporter(
 			return devcconfig.WriteStatusJSON(out, e)
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
-	return status.ForPipeline(reporter, status.PipelineWorkspaceUp), nil
 }
 
 // Run executes the run-user-commands logic.
@@ -107,6 +113,7 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 		cmd.ResultFormat,
 		os.Stderr,
 		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
 	)
 	if err != nil {
 		return err
@@ -122,7 +129,10 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := cmd.runLifecycleHooks(params, result); err != nil {
+	recording := cmd.beginRunRecording(params)
+	err = cmd.runLifecycleHooks(params, result)
+	recording.end(ctx, err)
+	if err != nil {
 		return err
 	}
 
@@ -296,6 +306,7 @@ func (cmd *RunUserCommandsCmd) runWithContainerID(ctx context.Context) error {
 		EnvArgs:     envArgs,
 		Workdir:     workdir,
 		User:        devcconfig.GetRemoteUser(result),
+		Recorder:    workspacelogs.RecorderFrom(ctx),
 	}
 
 	if err := cmd.runLifecycleHooks(params, result); err != nil {
@@ -423,6 +434,9 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
+	cmd.identity = &workspaceIdentity{
+		context: workspaceConfig.Context, uid: workspaceConfig.UID, id: workspaceConfig.ID,
+	}
 	runtime, err := workspace2.NewContainerRuntime(workspaceConfig, cmd.DockerPath)
 	if err != nil {
 		return nil, nil, err
@@ -473,15 +487,17 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 	})
 }
 
+type lifecycleHook struct {
+	name string
+	cmds []types.LifecycleHook
+	skip bool
+}
+
 func (cmd *RunUserCommandsCmd) runLifecycleHooksUnscoped(
 	params *workspace.LifecycleExecParams,
 	result *devcconfig.Result,
 ) error {
-	hooks := []struct {
-		name string
-		cmds []types.LifecycleHook
-		skip bool
-	}{
+	hooks := []lifecycleHook{
 		{"onCreateCommand", result.MergedConfig.OnCreateCommands, cmd.SkipOnCreate},
 		{updateContentCommand, result.MergedConfig.UpdateContentCommands, cmd.SkipUpdateContent},
 		{"postCreateCommand", result.MergedConfig.PostCreateCommands, cmd.SkipPostCreate},
@@ -489,11 +505,15 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooksUnscoped(
 		{"postAttachCommand", result.MergedConfig.PostAttachCommands, cmd.SkipPostAttach},
 	}
 
-	waitForBoundary := resolveWaitForBoundary(result)
+	waitForBoundary := resolveWaitForBoundary(hooks, result)
+	prebuildBoundary := 0
+	if cmd.Prebuild {
+		prebuildBoundary = resolveWaitForBoundary(hooks, nil)
+	}
 	boundaryName := hooks[waitForBoundary].name
 
 	for i, hook := range hooks {
-		if cmd.shouldStopLifecycle(i, waitForBoundary, boundaryName) {
+		if cmd.shouldStopLifecycle(i, prebuildBoundary, waitForBoundary, boundaryName) {
 			return nil
 		}
 		if hook.skip {
@@ -508,10 +528,10 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooksUnscoped(
 }
 
 func (cmd *RunUserCommandsCmd) shouldStopLifecycle(
-	i, waitForBoundary int,
+	i, prebuildBoundary, waitForBoundary int,
 	boundaryName string,
 ) bool {
-	if cmd.Prebuild && i >= 2 {
+	if cmd.Prebuild && i > prebuildBoundary {
 		log.Debugf(
 			"stopping lifecycle execution (%s: after %s)",
 			names.Flag(names.Prebuild),
@@ -534,33 +554,98 @@ func execLifecycleHooks(
 	name string,
 	cmds []types.LifecycleHook,
 ) error {
-	for _, h := range cmds {
-		if err := workspace.ExecLifecycleHook(params, name, h); err != nil {
+	for i, h := range cmds {
+		indexed := *params
+		indexed.HookIndex = i
+		if err := workspace.ExecLifecycleHook(&indexed, name, h); err != nil {
 			return fmt.Errorf("lifecycle hooks: %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-func resolveWaitForBoundary(result *devcconfig.Result) int {
-	if result == nil || result.MergedConfig == nil {
-		return 1
+func resolveWaitForBoundary(hooks []lifecycleHook, result *devcconfig.Result) int {
+	waitFor := updateContentCommand
+	if result != nil && result.MergedConfig != nil && result.MergedConfig.WaitFor != "" {
+		waitFor = result.MergedConfig.WaitFor
 	}
-	hookNames := []string{
-		"onCreateCommand",
-		updateContentCommand,
-		"postCreateCommand",
-		"postStartCommand",
-		"postAttachCommand",
-	}
-	waitFor := result.MergedConfig.WaitFor
-	if waitFor == "" {
-		waitFor = updateContentCommand
-	}
-	for i, name := range hookNames {
-		if name == waitFor {
+	fallback := 0
+	for i, hook := range hooks {
+		if hook.name == updateContentCommand {
+			fallback = i
+		}
+		if hook.name == waitFor {
 			return i
 		}
 	}
-	return 1
+	return fallback
+}
+
+// runRecording is the fresh run opened for one run-user-commands invocation.
+// A nil value records nothing.
+type runRecording struct {
+	store *workspacelogs.Store
+	rec   *workspacelogs.Recorder
+	runID string
+}
+
+// beginRunRecording opens a new run for the resolved workspace and installs a
+// recorder on params. It never fails the command: any store error is logged
+// at debug level and recording is skipped. A container without a Devsy
+// workspace identity is not recorded.
+func (cmd *RunUserCommandsCmd) beginRunRecording(
+	params *workspace.LifecycleExecParams,
+) *runRecording {
+	id := cmd.identity
+	if id == nil || id.uid == "" {
+		return nil
+	}
+	store, err := workspacelogs.OpenDefault()
+	if err != nil {
+		log.Debugf("workspace history unavailable: %v", err)
+		return nil
+	}
+	m, err := store.CreateRun(workspacelogs.RunSpec{
+		Context: id.context, WorkspaceIDAtStart: id.id, Command: "run-user-commands",
+	})
+	if err == nil {
+		err = store.BindWorkspace(m.RunID, id.uid, id.id)
+	}
+	if err != nil {
+		log.Debugf("workspace history unavailable: %v", err)
+		return nil
+	}
+	rec, err := workspacelogs.NewRecorder(workspacelogs.RecorderOptions{
+		Backend:  store,
+		RunID:    m.RunID,
+		Location: workspacelogs.LocationContainer,
+		Redactor: workspace.EnvArgsRedactor(params.EnvArgs),
+	})
+	if err != nil {
+		log.Debugf("workspace history recorder unavailable: %v", err)
+	}
+	_ = store.SetCommandState(m.RunID, workspacelogs.CommandRunning)
+	params.Recorder = rec
+	params.Ctx = workspacelogs.WithRecorder(params.Ctx, rec)
+
+	return &runRecording{store: store, rec: rec, runID: m.RunID}
+}
+
+// end closes the recorder and records the command outcome.
+func (r *runRecording) end(ctx context.Context, runErr error) {
+	if r == nil {
+		return
+	}
+	r.rec.Close(workspacelogs.ProducerTerminal, true)
+	state := workspacelogs.CommandSucceeded
+	switch {
+	case runErr == nil:
+	case ctx.Err() != nil:
+		state = workspacelogs.CommandCanceled
+	default:
+		state = workspacelogs.CommandFailed
+	}
+	if err := r.store.SetCommandState(r.runID, state); err != nil {
+		log.Debugf("record run command state: %v", err)
+	}
 }

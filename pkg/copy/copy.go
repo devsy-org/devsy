@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -62,6 +63,20 @@ func (fs ChownFailures) AllDenied() bool {
 		}
 	}
 	return len(fs) > 0
+}
+
+// AllVanished reports whether every recorded failure is for a missing entry.
+// Empty lists and mixed failures must not be suppressed as transient cleanup.
+func (failures ChownFailures) AllVanished() bool {
+	if len(failures) == 0 {
+		return false
+	}
+	for _, failure := range failures {
+		if !errors.Is(failure.Err, fs.ErrNotExist) {
+			return false
+		}
+	}
+	return true
 }
 
 func ChownR(path string, userName string) error {
@@ -195,13 +210,17 @@ func copyByType(fileInfo os.FileInfo, sourcePath, destPath string) error {
 }
 
 func File(srcFile, dstFile string, perm os.FileMode) error {
-	out, err := os.OpenFile(dstFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, perm)
+	out, err := os.OpenFile( //nolint:gosec // destination path comes from the caller by design
+		dstFile,
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+		perm,
+	) //nolint:gosec // caller-chosen path
 	if err != nil {
 		return err
 	}
 	defer func() { _ = out.Close() }()
 
-	in, err := os.Open(srcFile)
+	in, err := os.Open(srcFile) //nolint:gosec // caller-chosen path
 	if err != nil {
 		return err
 	}

@@ -2,16 +2,48 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/inject"
 	"github.com/stretchr/testify/suite"
 )
 
 type InjectTestSuite struct {
 	suite.Suite
 	ctx context.Context
+}
+
+func (s *InjectTestSuite) TestInjectionRuntimeGuard() {
+	timeoutErr := context.DeadlineExceeded
+	checks := 0
+	guard := injectionRuntimeGuard{check: func(context.Context) error {
+		checks++
+		return docker.ErrRuntimeUnavailable
+	}}
+	s.ErrorIs(guard.handle(s.ctx, timeoutErr), context.DeadlineExceeded)
+	s.Zero(checks)
+	s.ErrorIs(guard.handle(s.ctx, timeoutErr), docker.ErrRuntimeUnavailable)
+	s.Equal(1, checks)
+
+	guard = injectionRuntimeGuard{check: func(context.Context) error { checks++; return nil }}
+	s.ErrorIs(guard.handle(s.ctx, timeoutErr), context.DeadlineExceeded)
+	s.ErrorIs(guard.handle(s.ctx, timeoutErr), context.DeadlineExceeded)
+	s.Equal(2, checks)
+	s.Equal(2, guard.consecutiveTimeouts)
+
+	commandErr := errors.New("command exited 1")
+	s.ErrorIs(guard.handle(s.ctx, commandErr), commandErr)
+	s.Zero(guard.consecutiveTimeouts)
+	s.Equal(2, checks)
+
+	canceled, cancel := context.WithCancel(s.ctx)
+	cancel()
+	s.ErrorIs(guard.handle(canceled, timeoutErr), context.Canceled)
+	s.Equal(2, checks)
 }
 
 func TestInjectTestSuite(t *testing.T) {
@@ -24,7 +56,7 @@ func (s *InjectTestSuite) SetupTest() {
 
 func (s *InjectTestSuite) TestLocalInjection() {
 	opts := &InjectOptions{
-		Exec:    (&MockExecFunc{}).Exec,
+		Exec:    stubExec(""),
 		IsLocal: true,
 		Command: "echo hello",
 	}
@@ -49,9 +81,9 @@ func (s *InjectTestSuite) TestVersionChecker() {
 			remoteVersion: "v1.0.0",
 			skipCheck:     false,
 		}
-		mockExec := &MockExecFunc{Output: "v1.0.0\n"}
+		exec := stubExec("v1.0.0\n")
 
-		detected, err := vc.detectRemoteAgentVersion(s.ctx, mockExec.Exec, "/path")
+		detected, err := vc.detectRemoteAgentVersion(s.ctx, exec, "/path")
 		s.NoError(err)
 		s.Equal("v1.0.0", detected)
 	})
@@ -61,9 +93,9 @@ func (s *InjectTestSuite) TestVersionChecker() {
 			remoteVersion: "v1.0.0",
 			skipCheck:     true,
 		}
-		mockExec := &MockExecFunc{Output: "v0.9.0\n"}
+		exec := stubExec("v0.9.0\n")
 
-		detected, err := vc.detectRemoteAgentVersion(s.ctx, mockExec.Exec, "/path")
+		detected, err := vc.detectRemoteAgentVersion(s.ctx, exec, "/path")
 		s.NoError(err)
 		s.Equal("v0.9.0", detected)
 	})
@@ -99,23 +131,17 @@ func (s *InjectTestSuite) TestVersionChecker_BoundedByVersionCheckTimeout() {
 	s.ErrorContains(err, "timed out")
 }
 
-// MockExecFunc is a helper for testing.
-type MockExecFunc struct {
-	CapturedCmd string
-	Output      string
-	Err         error
-}
-
-func (m *MockExecFunc) Exec(
-	ctx context.Context,
-	cmd string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-) error {
-	m.CapturedCmd = cmd
-	if stdout != nil {
-		_, _ = stdout.Write([]byte(m.Output))
+func stubExec(output string) inject.ExecFunc {
+	return func(
+		_ context.Context,
+		_ string,
+		_ io.Reader,
+		stdout io.Writer,
+		_ io.Writer,
+	) error {
+		if stdout != nil {
+			_, _ = stdout.Write([]byte(output))
+		}
+		return nil
 	}
-	return m.Err
 }

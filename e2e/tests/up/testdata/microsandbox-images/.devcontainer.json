@@ -1,0 +1,11 @@
+{
+  "name": "MicroSandbox image parity",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "containerUser": "root",
+  "remoteUser": "root",
+  "features": {
+    "./features/parity": {}
+  }
+}
