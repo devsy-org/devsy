@@ -11,7 +11,8 @@ import (
 // Sweep gives every reclaiming and orphaned session one reclaim attempt if it
 // is due. It returns the earliest time another attempt falls due, or the zero
 // time when none waits. An incomplete attempt or one not yet due is normal; an
-// audit, store or context error stops the pass.
+// audit, store or context error stops the pass, and a context canceled during
+// the pass is returned even when every attempt looked normal.
 func (e *Engine) Sweep(ctx context.Context) (time.Time, error) {
 	sessions, err := e.store.List()
 	if err != nil {
@@ -31,7 +32,7 @@ func (e *Engine) Sweep(ctx context.Context) (time.Time, error) {
 			return next, err
 		}
 	}
-	return next, nil
+	return next, ctx.Err()
 }
 
 func waiting(err error) bool {

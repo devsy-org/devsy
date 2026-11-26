@@ -50,7 +50,7 @@ func (e *Engine) Reconcile(ctx context.Context) (Report, error) {
 	if err := e.audit(envelope.AuditPoolStart, "", poolStartData(plan.report)); err != nil {
 		return Report{}, err
 	}
-	if err := e.endForRestart(plan); err != nil {
+	if err := e.endForRestart(ctx, plan); err != nil {
 		return plan.report, err
 	}
 	return plan.report, e.reclaimOrphans(ctx, plan)
@@ -104,18 +104,31 @@ func poolStartData(r Report) map[string]any {
 	}
 }
 
-// endForRestart skips a session that changed state since the listing.
-func (e *Engine) endForRestart(plan restartPlan) error {
+// endForRestart skips a session that changed state since the listing. It
+// checks the context before each session, so a canceled start stops after the
+// transition in flight.
+func (e *Engine) endForRestart(ctx context.Context, plan restartPlan) error {
 	for _, id := range plan.failFirst {
-		if _, err := e.Fail(id, EndPoolRestart); err != nil && !errors.Is(err, ErrNotEndable) {
+		step := func() error { _, err := e.Fail(id, EndPoolRestart); return err }
+		if err := e.restartStep(ctx, step); err != nil {
 			return err
 		}
 	}
 	for _, id := range slices.Concat(plan.failFirst, plan.reclaim) {
-		if _, err := e.BeginReclaim(id, EndPoolRestart); err != nil &&
-			!errors.Is(err, ErrNotEndable) {
+		step := func() error { _, err := e.BeginReclaim(id, EndPoolRestart); return err }
+		if err := e.restartStep(ctx, step); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (e *Engine) restartStep(ctx context.Context, step func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := step(); err != nil && !errors.Is(err, ErrNotEndable) {
+		return err
 	}
 	return nil
 }
@@ -129,18 +142,32 @@ func (e *Engine) reclaimOrphans(ctx context.Context, plan restartPlan) error {
 		}
 		incomplete = incomplete || !done
 	}
-	for _, o := range plan.orphanResources {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := e.provider.Delete(ctx, e.pool, o.Resource); err != nil {
-			incomplete = true
-		}
+	failed, err := e.deleteStrays(ctx, plan.orphanResources)
+	if err != nil {
+		return err
 	}
-	if incomplete {
+	if incomplete || failed {
 		return ErrReclaimIncomplete
 	}
 	return nil
+}
+
+// deleteStrays deletes each listed object by UID. The provider ignores an
+// object whose session label changed since the listing.
+func (e *Engine) deleteStrays(ctx context.Context, strays []provider.Orphan) (bool, error) {
+	var failed bool
+	for _, o := range strays {
+		if err := ctx.Err(); err != nil {
+			return failed, err
+		}
+		if err := e.provider.Delete(ctx, e.pool, o.Resource); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return failed, ctxErr
+			}
+			failed = true
+		}
+	}
+	return failed, nil
 }
 
 // reclaimOrphanSession reclaims by exact session ID. A session without a

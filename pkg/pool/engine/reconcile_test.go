@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/pool/provider"
@@ -135,6 +136,7 @@ func (s *EngineSuite) TestReconcileReclaimsResourcesWithoutALiveRecord() {
 	report, err := s.eng.Reconcile(context.Background())
 	s.Require().NoError(err)
 	s.Equal(6, report.Orphans, "two resources each for two sessions and two stray objects")
+	s.InDelta(6, s.events()[0].Data["devsy.pool.orphans_found"], 0)
 	var left []string
 	for _, r := range s.fake.Snapshot() {
 		left = append(left, r.Name)
@@ -279,4 +281,142 @@ func (s *EngineSuite) TestAnInterruptedPoolEndsWithNoSessionLeftBehind() {
 		owner := want[r.Labels[provider.LabelSession]]
 		s.Equal(session.StateQueued, owner, "only a queued session may hold resources")
 	}
+}
+
+// nthTransitionFails fails the nth Transition call and delegates the rest.
+type nthTransitionFails struct {
+	*session.Store
+	n, calls int
+}
+
+func (f *nthTransitionFails) Transition(
+	id string, from, to session.State, reason string,
+) (session.Session, error) {
+	f.calls++
+	if f.calls == f.n {
+		return session.Session{}, errBoom
+	}
+	return f.Store.Transition(id, from, to, reason)
+}
+
+func (s *EngineSuite) TestReconcileStopsAtAHardErrorInEitherPhase() {
+	// Both sessions are failed first, then both begin reclaiming.
+	for n, wantFailed := range map[int]int{1: 0, 2: 1, 3: 2} {
+		s.SetupTest()
+		s.sessionIn(session.StateBusy)
+		s.sessionIn(session.StateBusy)
+		store := &nthTransitionFails{Store: s.store, n: n}
+		_, err := s.build(store).Reconcile(context.Background())
+		s.Require().ErrorIs(err, errBoom, "transition %d", n)
+		counts := map[session.State]int{}
+		for _, state := range s.states() {
+			counts[state]++
+		}
+		s.Equal(wantFailed, counts[session.StateFailed], "transition %d", n)
+		s.Equal(2-wantFailed, counts[session.StateBusy], "transition %d", n)
+		s.Zero(counts[session.StateReclaiming], "later work is untouched")
+	}
+}
+
+func (s *EngineSuite) TestAFailedPoolStartAuditChangesNothingAndDeletesNothing() {
+	s.seedRestart()
+	s.fake.Add(s.workspace("no-session", s.poolLabels("")))
+	before := s.states()
+	writes := 0
+	s.spy.onWrite = func() {
+		writes++
+		s.spy.err = nil
+		if writes == 1 {
+			s.spy.err = errBoom
+		}
+	}
+	_, err := s.eng.Reconcile(context.Background())
+	s.Require().ErrorIs(err, ErrAuditFailed)
+	s.Equal(1, writes, "nothing is written after the failed pool.start")
+	s.Equal(before, s.states())
+	s.Len(s.fake.Snapshot(), 1)
+}
+
+func (s *EngineSuite) TestReconcileStopsWhenTheContextIsCanceledDuringPoolStart() {
+	first := s.sessionIn(session.StateBusy)
+	ctx, cancel := context.WithCancel(context.Background())
+	s.spy.onWrite = cancel
+	_, err := s.eng.Reconcile(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+	s.Equal(session.StateBusy, s.load(first.ID).State)
+}
+
+func (s *EngineSuite) TestReconcileReturnsCancellationFromAnOrphanDelete() {
+	s.fake.Add(s.workspace("no-session", s.poolLabels("")))
+	ctx, cancel := context.WithCancel(context.Background())
+	s.fake.SetHook(func(_ context.Context, c providertest.Call) {
+		if c.Method == providertest.MethodDelete {
+			cancel()
+		}
+	})
+	_, err := s.eng.Reconcile(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+	s.NotErrorIs(err, ErrReclaimIncomplete)
+	s.Len(s.fake.Snapshot(), 1)
+}
+
+func (s *EngineSuite) TestAStrayThatWasRelabelledToALiveSessionIsKept() {
+	live := s.sessionIn(session.StateQueued)
+	s.fake.Add(s.workspace("stray", s.poolLabels("")))
+	s.fake.SetHook(func(_ context.Context, c providertest.Call) {
+		if c.Method != providertest.MethodDelete {
+			return
+		}
+		relabelled := c.Resource
+		relabelled.Labels = s.poolLabels(live.ID)
+		s.fake.Add(relabelled)
+	})
+	_, err := s.eng.Reconcile(context.Background())
+	s.Require().NoError(err)
+	left := s.fake.Snapshot()
+	s.Require().Len(left, 1)
+	s.Equal(live.ID, left[0].Labels[provider.LabelSession])
+}
+
+func (s *EngineSuite) TestSweepReturnsCancellationWhenOnlyABackedOffSessionWaits() {
+	cur := s.sessionIn(session.StateOrphaned)
+	s.spawn(cur.ID)
+	s.now = cur.Updated
+	s.fake.SetError(providertest.MethodReclaim, errBoom)
+	_, err := s.eng.Reclaim(context.Background(), cur.ID)
+	s.Require().ErrorIs(err, ErrReclaimIncomplete)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = s.eng.Sweep(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+}
+
+func (s *EngineSuite) TestSweepReturnsACancellationThatArrivedDuringTheLastAttempt() {
+	cur := s.sessionIn(session.StateReclaiming)
+	s.spawn(cur.ID)
+	s.now = cur.Updated
+	ctx, cancel := context.WithCancel(context.Background())
+	s.spy.onWrite = cancel
+	_, err := s.eng.Sweep(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+	s.Equal(session.StateDeleted, s.load(cur.ID).State, "the attempt in flight finished")
+}
+
+func (s *EngineSuite) TestSweepContinuesPastAnIncompleteAttemptAndReportsTheEarliestRetry() {
+	a := s.sessionIn(session.StateReclaiming)
+	b := s.sessionIn(session.StateReclaiming)
+	s.spawn(a.ID)
+	s.spawn(b.ID)
+	s.now = b.Updated.Add(time.Hour)
+	s.fake.SetError(providertest.MethodReclaim, errBoom)
+	next, err := s.eng.Sweep(context.Background())
+	s.Require().NoError(err)
+	s.Equal(1, s.load(a.ID).Attempts)
+	s.Equal(1, s.load(b.ID).Attempts, "the pass went on after the first failure")
+	earliest := Due(s.load(a.ID))
+	if d := Due(s.load(b.ID)); d.Before(earliest) {
+		earliest = d
+	}
+	s.True(next.Equal(earliest), "next=%v want=%v", next, earliest)
+	s.False(errors.Is(err, ErrReclaimIncomplete))
 }
