@@ -319,6 +319,48 @@ func TestGetHTTPPath_ErrorOnInvalidRepositoryURL(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse workspace repository")
 }
 
+func TestGetHTTPPath_InvalidRepositoryURLOmitsCredentials(t *testing.T) {
+	const canary = "canary-token-7f3a91"
+	httpPathTestEnv(t, `[credential "https://github.com"]
+	useHttpPath = true
+`)
+
+	for name, repository := range map[string]string{
+		"invalid port":      "https://user:" + canary + "@github.com:bad/org/repo.git",
+		"control character": "https://user:" + canary + "@github.com/org/\x7frepo.git",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+				Host:       httpPathTestHost,
+				Protocol:   httpPathTestProtocol,
+				Repository: repository,
+			})
+
+			require.Error(t, err)
+			assert.Empty(t, got)
+			assert.NotContains(t, err.Error(), canary)
+			assert.NotContains(t, err.Error(), "github.com:bad")
+			assert.ErrorIs(t, err, errInvalidRepositoryURL)
+		})
+	}
+}
+
+func TestGetHTTPPath_ReturnsGitFailure(t *testing.T) {
+	httpPathTestEnv(t, `[credential "https://github.com"]
+	useHttpPath = true
+`)
+	t.Setenv("PATH", t.TempDir())
+
+	got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:       httpPathTestHost,
+		Protocol:   httpPathTestProtocol,
+		Repository: httpPathTestRepository,
+	})
+
+	require.ErrorContains(t, err, "read credential.https://github.com.useHttpPath")
+	assert.Empty(t, got)
+}
+
 func TestGetHTTPPath_PerHostScopedConfigOnly(t *testing.T) {
 	httpPathTestEnv(t, `[credential "https://gitlab.com"]
 	useHttpPath = true
