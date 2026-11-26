@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 )
@@ -17,6 +18,7 @@ const (
 	tempPattern  = tempPrefix + "*"
 	maxFileBytes = 64 << 10
 	goosWindows  = "windows"
+	staleTempAge = time.Minute
 )
 
 func configDir() (string, error) {
@@ -143,26 +145,30 @@ func checkPrivate(path string, f *os.File, link os.FileInfo) error {
 	return nil
 }
 
-// removeFile deletes the credential file and any temporary file a crashed
-// write left behind. It reports whether the credential file existed.
-func (s *Store) removeFile() (bool, error) {
+// removeFile deletes the credential file and any stale temporary file a crashed
+// write left behind. A missing file is not an error.
+func (s *Store) removeFile() error {
 	path, err := s.filePath()
 	if err != nil {
-		return false, err
+		return err
 	}
-	dir := filepath.Dir(path)
+	removeStaleTemps(filepath.Dir(path))
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.New("remove credential file")
+	}
+	return nil
+}
+
+// removeStaleTemps keeps recent temporary files, because a Save in another
+// process may still be about to rename one.
+func removeStaleTemps(dir string) {
 	entries, _ := os.ReadDir(dir)
 	for _, entry := range entries {
-		if entry.Type().IsRegular() && strings.HasPrefix(entry.Name(), tempPrefix) {
+		if !entry.Type().IsRegular() || !strings.HasPrefix(entry.Name(), tempPrefix) {
+			continue
+		}
+		if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > staleTempAge {
 			_ = os.Remove(filepath.Join(dir, entry.Name()))
 		}
 	}
-	err = os.Remove(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, errors.New("remove credential file")
-	}
-	return true, nil
 }

@@ -2,6 +2,7 @@ package credstore
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -166,14 +167,105 @@ func (s *StoreSuite) TestDeleteWithNothingStoredIsNotAnError() {
 	s.Require().NoError(s.store().Delete())
 }
 
-func (s *StoreSuite) TestDeleteWithUnavailableKeychainRemovesFile() {
+func (s *StoreSuite) TestDeleteWithUnavailableKeychainRemovesFileAndReportsIt() {
 	s.fake.getErr = errors.New("no secret service")
 	s.fake.delErr = errors.New("no secret service")
 	s.Require().NoError(os.WriteFile(s.file(), []byte("x"), 0o600))
 
-	s.Require().NoError(s.store().Delete())
+	err := s.store().Delete()
 
+	s.Require().ErrorIs(err, ErrUnconfirmed)
 	s.NoFileExists(s.file())
+}
+
+func (s *StoreSuite) TestLockedKeychainDoesNotLetLogoutHideTheOldLogin() {
+	oldLogin := s.cred
+	oldLogin.Token = "token-a"
+	_, err := s.store().Save(oldLogin)
+	s.Require().NoError(err)
+	locked := errors.New("keychain locked")
+	s.fake.setErr, s.fake.getErr, s.fake.delErr = locked, locked, locked
+
+	warning, err := s.store().Save(s.cred)
+	s.Require().NoError(err)
+	s.Contains(warning, s.file())
+	err = s.store().Delete()
+
+	s.Require().ErrorIs(err, ErrUnconfirmed)
+	s.NoFileExists(s.file())
+	s.fake.setErr, s.fake.getErr, s.fake.delErr = nil, nil, nil
+	got, err := s.store().Load()
+	s.Require().NoError(err)
+	s.Equal("token-a", got.Token, "the keychain still holds the first login")
+}
+
+func (s *StoreSuite) TestLoadReportsUnreadableKeychainWhenNothingElseIsStored() {
+	s.fake.getErr = errors.New("locked " + canary)
+
+	_, err := s.store().Load()
+
+	s.Require().ErrorIs(err, ErrKeychainUnreadable)
+	s.NotErrorIs(err, ErrNotLoggedIn)
+	s.NotContains(err.Error(), canary)
+}
+
+func (s *StoreSuite) TestLoadUsesFileWhenKeychainIsUnreadable() {
+	s.fake.getErr = errors.New("no secret service")
+	s.writeCredentialFile(0o600)
+
+	got, err := s.store().Load()
+
+	s.Require().NoError(err)
+	s.Equal(canary, got.Token)
+}
+
+func (s *StoreSuite) TestSaveToKeychainWarnsWhenOldFileCannotBeRemoved() {
+	s.Require().NoError(os.MkdirAll(filepath.Join(s.file(), "child"), 0o700))
+
+	warning, err := s.store().Save(s.cred)
+
+	s.Require().NoError(err)
+	s.Contains(warning, s.file())
+	s.NotContains(warning, canary)
+	s.True(s.fake.has)
+}
+
+func (s *StoreSuite) TestKeychainIdentityIsPinned() {
+	s.Equal("sh.devsy.gateway", Service)
+	s.Equal("session", account)
+	s.Equal("gateway-credentials.json", fileName)
+}
+
+func (s *StoreSuite) TestKeychainValueLimitIs2400Bytes() {
+	atLimit := s.credOfEncodedSize(2400)
+	_, err := s.store().Save(atLimit)
+	s.Require().NoError(err)
+	s.True(s.fake.has)
+	s.NoFileExists(s.file())
+
+	_, err = s.store().Save(s.credOfEncodedSize(2401))
+	s.Require().NoError(err)
+	s.False(s.fake.has)
+	s.FileExists(s.file())
+}
+
+func (s *StoreSuite) TestFileReadLimitIs64KiB() {
+	for _, test := range []struct {
+		size   int
+		loaded bool
+	}{{65536, true}, {65537, false}} {
+		data, err := json.Marshal(s.credOfEncodedSize(test.size))
+		s.Require().NoError(err)
+		s.Require().NoError(os.WriteFile(s.file(), data, 0o600))
+
+		_, err = s.store().Load()
+
+		if test.loaded {
+			s.Require().NoError(err, test.size)
+		} else {
+			s.Require().ErrorIs(err, errUnreadable, test.size)
+		}
+	}
 }
 
 func (s *StoreSuite) TestDeleteReportsKeychainFailureAndStillRemovesFile() {
@@ -316,13 +408,20 @@ func (s *StoreSuite) TestSaveFallsBackWhenValueIsTooLargeForKeychain() {
 	s.Equal(s.cred.Token, got.Token)
 }
 
-func (s *StoreSuite) TestDeleteRemovesLeftoverTemporaryFiles() {
-	leftover := filepath.Join(s.dir, ".gateway-credentials-123")
-	s.Require().NoError(os.WriteFile(leftover, []byte(canary), 0o600))
+func (s *StoreSuite) TestDeleteRemovesStaleTemporaryFiles() {
+	leftover := s.writeTemp(s.dir, time.Hour)
 
 	s.Require().NoError(s.store().Delete())
 
 	s.NoFileExists(leftover)
+}
+
+func (s *StoreSuite) TestDeleteKeepsRecentTemporaryFiles() {
+	recent := s.writeTemp(s.dir, time.Second)
+
+	s.Require().NoError(s.store().Delete())
+
+	s.FileExists(recent)
 }
 
 func (s *StoreSuite) TestLoadPrefersNewerFileOverStaleKeychainEntry() {
@@ -353,8 +452,7 @@ func (s *StoreSuite) TestLoadKeepsKeychainEntryWhenFileIsNotNewer() {
 func (s *StoreSuite) TestDeleteRemovesLeftoversInDirectoryWithGlobCharacters() {
 	s.dir = filepath.Join(s.dir, "a[b*")
 	s.Require().NoError(os.MkdirAll(s.dir, 0o700))
-	leftover := filepath.Join(s.dir, ".gateway-credentials-123")
-	s.Require().NoError(os.WriteFile(leftover, []byte(canary), 0o600))
+	leftover := s.writeTemp(s.dir, time.Hour)
 
 	s.Require().NoError(s.store().Delete())
 
@@ -451,7 +549,7 @@ func (s *StoreSuite) TestSystemKeychainFailureFallsBackToFile() {
 	got, err := store.Load()
 	s.Require().NoError(err)
 	s.Equal(canary, got.Token)
-	s.Require().NoError(store.Delete())
+	s.Require().ErrorIs(store.Delete(), ErrUnconfirmed)
 	s.NoFileExists(s.file())
 }
 
@@ -460,6 +558,26 @@ func (s *StoreSuite) store() *Store {
 }
 
 func (s *StoreSuite) file() string { return filepath.Join(s.dir, fileName) }
+
+func (s *StoreSuite) writeTemp(dir string, age time.Duration) string {
+	path := filepath.Join(dir, ".gateway-credentials-123")
+	s.Require().NoError(os.WriteFile(path, []byte(canary), 0o600))
+	when := time.Now().Add(-age)
+	s.Require().NoError(os.Chtimes(path, when, when))
+	return path
+}
+
+// credOfEncodedSize returns a credential whose JSON form is exactly size bytes.
+func (s *StoreSuite) credOfEncodedSize(size int) Credential {
+	cred := s.cred
+	base, err := json.Marshal(cred)
+	s.Require().NoError(err)
+	cred.Token += strings.Repeat("a", size-len(base))
+	data, err := json.Marshal(cred)
+	s.Require().NoError(err)
+	s.Require().Len(data, size)
+	return cred
+}
 
 func (s *StoreSuite) entry(token, expires string) string {
 	return `{"gatewayUrl":"https://gw.example.test","token":"` + token +

@@ -30,6 +30,13 @@ const maxKeychainBytes = 2400
 // Callers can print it as a warning, because the local file is already gone.
 var ErrUnconfirmed = errors.New("could not confirm removal from the OS keychain")
 
+// ErrKeychainUnreadable means no login was found and the OS keychain could not
+// be read, so a login may still be stored there. Unlock the keychain or log in
+// again.
+var ErrKeychainUnreadable = errors.New(
+	"could not read the OS keychain; unlock it or log in again",
+)
+
 var (
 	errUnreadable  = errors.New("stored gateway credential is unreadable")
 	errStale       = errors.New("could not replace the session token held in the OS keychain")
@@ -99,8 +106,7 @@ func (s *Store) Save(cred Credential) (warning string, err error) {
 		return "", errors.New("encode gateway credential")
 	}
 	if len(data) <= maxKeychainBytes && s.keychain.Set(string(data)) == nil {
-		_, err := s.removeFile()
-		return "", err
+		return s.removeOldFile(), nil
 	}
 	return s.saveToFile(data)
 }
@@ -108,11 +114,13 @@ func (s *Store) Save(cred Credential) (warning string, err error) {
 // Load returns the stored credential, or ErrNotLoggedIn. It does not check the
 // expiry. When both the keychain and the file hold a login, the later expiry
 // wins, so a keychain entry that could not be removed while the keychain was
-// locked never hides a newer login.
+// locked never hides a newer login. When the keychain cannot be read, Load uses
+// the file if there is one. With no file it returns ErrKeychainUnreadable, not
+// ErrNotLoggedIn, because a login may be stored where Load cannot see it.
 func (s *Store) Load() (Credential, error) {
 	value, err := s.keychain.Get()
 	if err != nil {
-		return s.loadFile()
+		return s.loadWithoutKeychain(err)
 	}
 	cred, err := decode([]byte(value))
 	if err != nil {
@@ -125,16 +133,32 @@ func (s *Store) Load() (Credential, error) {
 	return cred, nil
 }
 
-// Delete removes the credential from the keychain and the file. It reports an
-// error when it cannot tell that the keychain is clear, unless a fallback file
-// was in use, because Save only writes that file after the keychain entry is gone.
+// Delete removes the credential from the keychain and the file. It always
+// removes the file. It returns ErrUnconfirmed when it cannot tell that the
+// keychain is clear, even if a file existed, because an entry saved before the
+// keychain locked may remain. Once the keychain is readable again, Load returns
+// that entry, so the caller should show the error as a warning and offer a
+// retry.
 func (s *Store) Delete() error {
-	keychainErr := s.clearKeychain()
-	hadFile, fileErr := s.removeFile()
-	if hadFile && errors.Is(keychainErr, ErrUnconfirmed) {
-		keychainErr = nil
+	return errors.Join(s.clearKeychain(), s.removeFile())
+}
+
+// removeOldFile drops a fallback file that the keychain write replaced. A
+// failure is only a warning, because the keychain already holds the login.
+func (s *Store) removeOldFile() string {
+	if s.removeFile() == nil {
+		return ""
 	}
-	return errors.Join(keychainErr, fileErr)
+	path, _ := s.filePath()
+	return fmt.Sprintf("could not remove the old credential file %s; delete it by hand", path)
+}
+
+func (s *Store) loadWithoutKeychain(keychainErr error) (Credential, error) {
+	cred, err := s.loadFile()
+	if errors.Is(err, ErrNotLoggedIn) && !errors.Is(keychainErr, errKeychainNotFound) {
+		return Credential{}, ErrKeychainUnreadable
+	}
+	return cred, err
 }
 
 func (s *Store) clearKeychain() error {
@@ -166,7 +190,7 @@ func (s *Store) saveToFile(data []byte) (string, error) {
 	}
 	// Load prefers the keychain, so an older entry there would shadow the new file.
 	if err := s.dropKeychainEntry(); err != nil {
-		_, _ = s.removeFile()
+		_ = s.removeFile()
 		return "", err
 	}
 	return fmt.Sprintf(
