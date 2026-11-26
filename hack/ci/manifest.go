@@ -362,8 +362,18 @@ func (m *Manifest) validate() error {
 	if err := m.Selection.validate(); err != nil {
 		return err
 	}
+	if err := validateSuites(m.E2E.Suites); err != nil {
+		return err
+	}
+	if err := validateRunners(m.Unit.Runners); err != nil {
+		return err
+	}
+	return validateSteps(m.Unit.Steps)
+}
+
+func validateSuites(suites []Suite) error {
 	seen := map[string]bool{}
-	for _, s := range m.E2E.Suites {
+	for _, s := range suites {
 		key := s.Runner + "/" + s.Label
 		if seen[key] {
 			return fmt.Errorf("%w: %s", errDuplicateSuite, key)
@@ -373,12 +383,20 @@ func (m *Manifest) validate() error {
 			return err
 		}
 	}
-	for _, runner := range m.Unit.Runners {
+	return nil
+}
+
+func validateRunners(runners []UnitRunner) error {
+	for _, runner := range runners {
 		if err := runner.validate(); err != nil {
 			return err
 		}
 	}
-	for _, step := range m.Unit.Steps {
+	return nil
+}
+
+func validateSteps(steps []UnitStep) error {
+	for _, step := range steps {
 		if err := step.validate(); err != nil {
 			return err
 		}

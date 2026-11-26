@@ -36,18 +36,27 @@ type pushRange struct {
 	Before, SHA string
 }
 
-// pushedFiles returns the files changed by a push that is exactly one commit on
-// top of the previous main commit. A non-empty reason means the diff is unknown.
-func pushedFiles(ctx context.Context, history pushHistory, push pushRange) ([]string, string) {
+// pushParentReason says why the pushed commit is not one commit on top of the
+// previous main commit, or returns an empty string when it is.
+func pushParentReason(ctx context.Context, history pushHistory, push pushRange) string {
 	if push.Before == "" || push.Before == scopeZeroSHA || push.SHA == "" {
-		return nil, "no previous commit to compare with"
+		return "no previous commit to compare with"
 	}
 	parents, err := history.Parents(ctx, push.SHA)
 	if err != nil {
-		return nil, "cannot read the pushed commit"
+		return "cannot read the pushed commit"
 	}
 	if len(parents) != 1 || parents[0] != push.Before {
-		return nil, "push is not one commit on top of the previous main commit"
+		return "push is not one commit on top of the previous main commit"
+	}
+	return ""
+}
+
+// pushedFiles returns the files changed by a push that is exactly one commit on
+// top of the previous main commit. A non-empty reason means the diff is unknown.
+func pushedFiles(ctx context.Context, history pushHistory, push pushRange) ([]string, string) {
+	if reason := pushParentReason(ctx, history, push); reason != "" {
+		return nil, reason
 	}
 	if err := history.Fetch(ctx, push.Before); err != nil {
 		return nil, "cannot fetch the previous main commit"
@@ -94,14 +103,6 @@ type gitHistory struct {
 	dir    string
 }
 
-func (g gitHistory) git(ctx context.Context, args ...string) (string, error) {
-	var stdout bytes.Buffer
-	err := g.runner.Run(ctx, commandSpec{
-		Name: "git", Args: args, Dir: g.dir, Stdout: &stdout, Stderr: io.Discard,
-	})
-	return stdout.String(), err
-}
-
 func (g gitHistory) Parents(ctx context.Context, sha string) ([]string, error) {
 	out, err := g.git(ctx, "cat-file", "-p", sha)
 	if err != nil {
@@ -136,6 +137,14 @@ func (g gitHistory) ChangedFiles(ctx context.Context, base, head string) ([]stri
 		}
 	}
 	return files, nil
+}
+
+func (g gitHistory) git(ctx context.Context, args ...string) (string, error) {
+	var stdout bytes.Buffer
+	err := g.runner.Run(ctx, commandSpec{
+		Name: "git", Args: args, Dir: g.dir, Stdout: &stdout, Stderr: io.Discard,
+	})
+	return stdout.String(), err
 }
 
 func scopeCLI(args []string, stdout, stderr io.Writer) int {

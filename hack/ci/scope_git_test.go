@@ -50,9 +50,9 @@ func TestClassifyPushOnShallowCheckout(t *testing.T) {
 		file  string
 		light bool
 	}{
-		{"docs change", "sites/docs-devsy-sh/content/docs/index.mdx", true},
+		{"docs change", docsIndexPage, true},
 		{"go change", "pkg/shell/shell.go", false},
-		{"install script", "sites/docs-devsy-sh/public/install.sh", false},
+		{"install script", installScript, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

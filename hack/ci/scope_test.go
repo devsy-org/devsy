@@ -17,6 +17,12 @@ const (
 	scopeTestSHA    = "2222222222222222222222222222222222222222"
 )
 
+const (
+	docsIndexPage = "sites/docs-devsy-sh/content/docs/index.mdx"
+	installScript = "sites/docs-devsy-sh/public/install.sh"
+	readmeFile    = "README.md"
+)
+
 var errScopeTest = errors.New("scope test failure")
 
 type fakeHistory struct {
@@ -52,10 +58,6 @@ func (s *scopeSuite) SetupSuite() {
 	s.selection = manifest.Selection
 }
 
-func (s *scopeSuite) classify(before string, history fakeHistory) scopeDecision {
-	return classifyPush(context.Background(), history, s.selection, pushRange{before, scopeTestSHA})
-}
-
 func singleCommit(files ...string) fakeHistory {
 	return fakeHistory{parents: []string{scopeTestBefore}, files: files}
 }
@@ -66,9 +68,9 @@ func (s *scopeSuite) TestChangedFiles() {
 		files []string
 		light bool
 	}{
-		{"docs site only", []string{"sites/docs-devsy-sh/content/docs/index.mdx"}, true},
+		{"docs site only", []string{docsIndexPage}, true},
 		{"design only", []string{"design/tokens/tokens.css"}, true},
-		{"markdown only", []string{"README.md", "CONTRIBUTING.md"}, true},
+		{"markdown only", []string{readmeFile, "CONTRIBUTING.md"}, true},
 		{"renovate config", []string{"renovate.json"}, true},
 		{
 			"docs mix",
@@ -78,11 +80,11 @@ func (s *scopeSuite) TestChangedFiles() {
 		{"go file", []string{"pkg/shell/shell.go"}, false},
 		{"go test under docs", []string{"docs/example/example_test.go"}, false},
 		{"go file under sites", []string{"sites/tools/gen.go"}, false},
-		{"docs and go", []string{"README.md", "cmd/root.go"}, false},
-		{"install script", []string{"sites/docs-devsy-sh/public/install.sh"}, false},
+		{"docs and go", []string{readmeFile, "cmd/root.go"}, false},
+		{"install script", []string{installScript}, false},
 		{
 			"install script with docs",
-			[]string{"README.md", "sites/docs-devsy-sh/public/install.sh"},
+			[]string{readmeFile, installScript},
 			false,
 		},
 		{
@@ -104,7 +106,7 @@ func (s *scopeSuite) TestChangedFiles() {
 		{"unknown root file", []string{"Taskfile.yml"}, false},
 		{
 			"moved install script",
-			[]string{"sites/docs-devsy-sh/public/install.sh", "sites/docs-devsy-sh/public/get.sh"},
+			[]string{installScript, "sites/docs-devsy-sh/public/get.sh"},
 			false,
 		},
 	}
@@ -119,7 +121,7 @@ func (s *scopeSuite) TestChangedFiles() {
 }
 
 func (s *scopeSuite) TestUncertainDiffRunsInFull() {
-	docs := []string{"README.md"}
+	docs := []string{readmeFile}
 	tests := []struct {
 		name    string
 		before  string
@@ -164,7 +166,7 @@ func (s *scopeSuite) TestUncertainDiffRunsInFull() {
 func (s *scopeSuite) TestMissingShaRunsInFull() {
 	decision := classifyPush(
 		context.Background(),
-		singleCommit("README.md"),
+		singleCommit(readmeFile),
 		s.selection,
 		pushRange{scopeTestBefore, ""},
 	)
@@ -174,7 +176,7 @@ func (s *scopeSuite) TestMissingShaRunsInFull() {
 
 func (s *scopeSuite) TestEveryFileReadByGoTestsIsAFullRunTrigger() {
 	for _, file := range []string{
-		"sites/docs-devsy-sh/public/install.sh",
+		installScript,
 		"sites/docs-devsy-sh/content/docs/managing-providers/microsandbox.mdx",
 		"AGENTS.md",
 		".github/workflows/pr-ci.yml",
@@ -218,7 +220,7 @@ func (s *scopeSuite) TestGitHistoryParsesPushedCommit() {
 
 	files, err := history.ChangedFiles(context.Background(), scopeTestBefore, scopeTestSHA)
 	s.Require().NoError(err)
-	s.Equal([]string{"README.md", "sites/a.mdx"}, files)
+	s.Equal([]string{readmeFile, "sites/a.mdx"}, files)
 	s.Contains(runner.calls[1], "--no-renames")
 
 	s.Require().NoError(history.Fetch(context.Background(), scopeTestBefore))
@@ -245,7 +247,7 @@ func (r *scriptedRunner) Run(_ context.Context, spec commandSpec) error {
 func (s *scopeSuite) TestWorkflowWiresScopeAndSchedule() {
 	raw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "pr-ci.yml"))
 	s.Require().NoError(err)
-	workflow := string(raw)
+	workflow := strings.ReplaceAll(string(raw), "\r\n", "\n")
 
 	s.Equal(6, strings.Count(workflow, "steps.scope.outputs.light != 'true'"))
 	s.Contains(workflow, "go run ./hack/ci scope")
@@ -260,4 +262,8 @@ func (s *scopeSuite) TestWorkflowWiresScopeAndSchedule() {
 			"        continue-on-error: true",
 	)
 	s.Contains(workflow, "schedule:\n    - cron:")
+}
+
+func (s *scopeSuite) classify(before string, history fakeHistory) scopeDecision {
+	return classifyPush(context.Background(), history, s.selection, pushRange{before, scopeTestSHA})
 }
