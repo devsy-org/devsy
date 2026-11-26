@@ -12,9 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// runPairWith holds the agent side until the pair context is cancelled. RunPair
+// cancels it only after the handler side returned, so the agent always finishes
+// after RunPair recorded the handler outcome.
 func runPairWith(
 	t *testing.T,
-	agentFn func(handlerDone <-chan struct{}) error,
+	agentFn func() error,
 	serverFn func() (*config2.Result, error),
 ) (*config2.Result, error) {
 	t.Helper()
@@ -22,13 +25,12 @@ func runPairWith(
 	require.NoError(t, err)
 	defer bridge.Close()
 
-	handlerDone := make(chan struct{})
 	return runTunnelPair(context.Background(), bridge, tunnelPairFuncs{
-		agent: func(context.Context, *os.File, *os.File) error {
-			return agentFn(handlerDone)
+		agent: func(ctx context.Context, _ *os.File, _ *os.File) error {
+			<-ctx.Done()
+			return agentFn()
 		},
 		server: func(context.Context, io.WriteCloser, io.Reader) (*config2.Result, error) {
-			defer close(handlerDone)
 			return serverFn()
 		},
 	})
@@ -38,7 +40,7 @@ func TestRunTunnelPairNamesAgentExitAfterCleanHandler(t *testing.T) {
 	agentErr := errors.New("run agent command failed: Process exited with status 128")
 
 	result, err := runPairWith(t,
-		func(handlerDone <-chan struct{}) error { <-handlerDone; return agentErr },
+		func() error { return agentErr },
 		func() (*config2.Result, error) { return &config2.Result{}, nil },
 	)
 
@@ -60,7 +62,7 @@ func TestRunTunnelPairLeavesAgentExitEmptyForCleanShutdown(t *testing.T) {
 	for name, agentErr := range tests {
 		t.Run(name, func(t *testing.T) {
 			result, err := runPairWith(t,
-				func(handlerDone <-chan struct{}) error { <-handlerDone; return agentErr },
+				func() error { return agentErr },
 				func() (*config2.Result, error) { return &config2.Result{}, nil },
 			)
 
@@ -76,11 +78,23 @@ func TestRunTunnelPairKeepsHandlerFailureAsError(t *testing.T) {
 	agentErr := errors.New("exit status 1")
 
 	result, err := runPairWith(t,
-		func(handlerDone <-chan struct{}) error { <-handlerDone; return agentErr },
+		func() error { return agentErr },
 		func() (*config2.Result, error) { return &config2.Result{}, handlerErr },
 	)
 
 	require.ErrorIs(t, err, handlerErr)
 	require.NotNil(t, result)
 	require.Empty(t, result.AgentExit)
+}
+
+func TestRunTunnelPairKeepsNilResult(t *testing.T) {
+	agentErr := errors.New("exit status 1")
+
+	result, err := runPairWith(t,
+		func() error { return agentErr },
+		func() (*config2.Result, error) { return nil, nil },
+	)
+
+	require.NoError(t, err)
+	require.Nil(t, result)
 }
