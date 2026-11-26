@@ -346,6 +346,25 @@ func (s *EngineSuite) TestReconcileStopsWhenTheContextIsCanceledDuringPoolStart(
 	s.Equal(session.StateBusy, s.load(first.ID).State)
 }
 
+func (s *EngineSuite) TestReconcileStartsNoDeleteAfterACancelDuringPoolStart() {
+	s.fake.Add(s.workspace("no-session", s.poolLabels("")))
+	ctx, cancel := context.WithCancel(context.Background())
+	s.spy.onWrite = cancel
+	_, err := s.eng.Reconcile(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+	for _, c := range s.fake.Calls() {
+		s.NotEqual(providertest.MethodDelete, c.Method)
+	}
+	s.Len(s.fake.Snapshot(), 1)
+}
+
+func (s *EngineSuite) TestReconcileReportsACancelOnAPoolWithNothingToDo() {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.spy.onWrite = cancel
+	_, err := s.eng.Reconcile(ctx)
+	s.Require().ErrorIs(err, context.Canceled)
+}
+
 func (s *EngineSuite) TestReconcileReturnsCancellationFromAnOrphanDelete() {
 	s.fake.Add(s.workspace("no-session", s.poolLabels("")))
 	ctx, cancel := context.WithCancel(context.Background())

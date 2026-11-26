@@ -157,9 +157,6 @@ func (e *Engine) reclaimOrphans(ctx context.Context, plan restartPlan) error {
 func (e *Engine) deleteStrays(ctx context.Context, strays []provider.Orphan) (bool, error) {
 	var failed bool
 	for _, o := range strays {
-		if err := ctx.Err(); err != nil {
-			return failed, err
-		}
 		if err := e.provider.Delete(ctx, e.pool, o.Resource); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return failed, ctxErr
@@ -167,7 +164,7 @@ func (e *Engine) deleteStrays(ctx context.Context, strays []provider.Orphan) (bo
 			failed = true
 		}
 	}
-	return failed, nil
+	return failed, ctx.Err()
 }
 
 // reclaimOrphanSession reclaims by exact session ID. A session without a

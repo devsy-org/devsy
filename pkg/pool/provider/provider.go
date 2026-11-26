@@ -66,7 +66,9 @@ type Provider interface {
 	// LabelPool equal to pool, Delete does nothing and returns nil. It also
 	// does nothing when the live object's LabelSession (present or absent)
 	// differs from the one on resource, so an object relabelled after it was
-	// listed is never deleted on a stale decision.
+	// listed is never deleted on a stale decision. A backend must guard
+	// against a change to either label between that comparison and the
+	// deletion; a UID precondition alone cannot detect a relabel.
 	// Where the backend supports a delete precondition (such as Kubernetes
 	// UID preconditions), the implementation must use it. If pool labels can
 	// change, the delete must also guard against a change after the label check
