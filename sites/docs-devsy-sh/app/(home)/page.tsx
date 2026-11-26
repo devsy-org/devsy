@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
 import './home.css';
 import { ProductWalkthrough } from './product-walkthrough';
+import { PoolsSection, Roadmap } from './pools/pools-section';
+import { InterestForm } from './pools/interest-form';
 
 function useMobileNavigation() {
   const [navOpen, setNavOpen] = useState(false);
@@ -79,6 +81,9 @@ function HomeHeader() {
             </a>
             <a href="#agents" onClick={closeMenu}>
               Agents
+            </a>
+            <a href="#pools" onClick={closeMenu}>
+              Devsy Pools
             </a>
             <a href="#anywhere" onClick={closeMenu}>
               Deploy anywhere
@@ -164,6 +169,11 @@ function Hero() {
               Read the docs
             </a>
           </div>
+          <p className="hero-next">
+            <a className="text-link" href="#pools">
+              Coming next: Devsy Pools
+            </a>
+          </p>
         </div>
         <ProductWalkthrough />
       </div>
@@ -554,6 +564,11 @@ export default function HomePage() {
 
         {/* AGENTS */}
         <Agents />
+
+        {/* DEVSY POOLS */}
+        <PoolsSection />
+        <Roadmap />
+        <InterestForm />
 
         {/* DEPLOY ANYWHERE */}
         <Providers />

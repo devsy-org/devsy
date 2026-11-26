@@ -1,0 +1,234 @@
+.home-page .section-head p.pools-sub {
+  margin: 0 0 14px;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1.4;
+}
+.home-page .section-head p.pools-badge {
+  display: inline-block;
+  margin: 24px 0 0;
+  padding: 6px 12px;
+  border: 1px solid var(--input-line);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.home-page .pools-benefits,
+.home-page .pools-steps {
+  display: grid;
+  gap: 0 40px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-page .pools-benefits {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.home-page .pools-benefits li,
+.home-page .pools-steps li {
+  border-top: 1px solid var(--line);
+  padding-block: 24px;
+}
+.home-page .pools-benefits p,
+.home-page .pools-steps p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+}
+.home-page .pools-subhead {
+  margin: 40px 0 0;
+  font-size: 24px;
+}
+.home-page .pools-steps {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  counter-reset: pool-step;
+  margin-top: 16px;
+}
+.home-page .pools-steps li {
+  counter-increment: pool-step;
+}
+.home-page .pools-steps h4 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.home-page .pools-steps h4::before {
+  content: counter(pool-step) ". ";
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.home-page .pools-facts {
+  display: grid;
+  gap: 8px;
+  max-width: 70ch;
+  margin-top: 28px;
+}
+.home-page .pools-facts p {
+  margin: 0;
+  color: var(--muted);
+}
+.home-page .pools-facts strong {
+  color: var(--ink);
+}
+.home-page #pools {
+  padding-bottom: 48px;
+}
+.home-page .pools-roadmap {
+  padding-top: 40px;
+}
+.home-page .roadmap-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+}
+.home-page .roadmap-col {
+  min-width: 0;
+  padding: 20px 24px 8px;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--input-line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.home-page .roadmap-col[data-column="now"] {
+  border-top-color: var(--accent);
+}
+.home-page .roadmap-col h3 {
+  margin-bottom: 14px;
+}
+.home-page .roadmap-col ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-page .roadmap-col li {
+  padding-block: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.home-page .roadmap-note {
+  margin: 28px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+.home-page .pools-interest {
+  background: var(--soft);
+}
+.home-page .pools-interest .wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 72px;
+}
+.home-page .pools-interest .section-head {
+  margin-bottom: 0;
+}
+.home-page .pools-form,
+.home-page .pools-closed {
+  min-width: 0;
+}
+.home-page .field select {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--input-line);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+}
+.home-page .pools-consent label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.home-page .pools-consent input {
+  flex: none;
+  width: 24px;
+  min-height: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.home-page .pools-error {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.home-page .pools-error:not([hidden])::before {
+  content: "Error: ";
+}
+.home-page .field [aria-invalid="true"] {
+  border-color: var(--ink);
+  border-width: 2px;
+}
+.home-page .pools-status {
+  min-height: 24px;
+  margin-top: 16px;
+  font-weight: 600;
+}
+.home-page .pools-status:empty {
+  min-height: 0;
+  margin: 0;
+}
+.home-page .pools-note {
+  margin: 16px 0 0;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 14px;
+}
+.home-page .pools-inline-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.home-page .pools-closed {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.home-page .pools-closed p {
+  margin: 0;
+}
+.home-page .hero-next {
+  margin: 8px 0 0;
+}
+.home-page .hero-next .text-link {
+  margin-top: 0;
+}
+.home-page button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+@media (max-width: 1199px) {
+  .home-page .pools-benefits {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 991px) {
+  .home-page .roadmap-grid,
+  .home-page .pools-steps,
+  .home-page .pools-interest .wrap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home-page .pools-interest .wrap {
+    gap: 36px;
+  }
+  .home-page .roadmap-grid {
+    gap: 20px;
+  }
+}
+@media (max-width: 767px) {
+  .home-page .pools-benefits {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
