@@ -70,12 +70,24 @@ func (s *scopeSuite) TestChangedFiles() {
 		{"design only", []string{"design/tokens/tokens.css"}, true},
 		{"markdown only", []string{"README.md", "CONTRIBUTING.md"}, true},
 		{"renovate config", []string{"renovate.json"}, true},
-		{"docs mix", []string{"sites/dl-devsy-sh/index.html", "SECURITY.md", "renovate.json"}, true},
+		{
+			"docs mix",
+			[]string{"sites/dl-devsy-sh/index.html", "SECURITY.md", "renovate.json"},
+			true,
+		},
 		{"go file", []string{"pkg/shell/shell.go"}, false},
 		{"docs and go", []string{"README.md", "cmd/root.go"}, false},
 		{"install script", []string{"sites/docs-devsy-sh/public/install.sh"}, false},
-		{"install script with docs", []string{"README.md", "sites/docs-devsy-sh/public/install.sh"}, false},
-		{"page a Go test reads", []string{"sites/docs-devsy-sh/content/docs/managing-providers/microsandbox.mdx"}, false},
+		{
+			"install script with docs",
+			[]string{"README.md", "sites/docs-devsy-sh/public/install.sh"},
+			false,
+		},
+		{
+			"page a Go test reads",
+			[]string{"sites/docs-devsy-sh/content/docs/managing-providers/microsandbox.mdx"},
+			false,
+		},
 		{"agents guide a Go test reads", []string{"AGENTS.md"}, false},
 		{"licenses file", []string{"THIRD_PARTY_LICENSES.md"}, false},
 		{"markdown inside a Go tree", []string{"pkg/docker/README.md"}, false},
@@ -88,7 +100,11 @@ func (s *scopeSuite) TestChangedFiles() {
 		{"go mod", []string{"go.mod"}, false},
 		{"desktop code", []string{"desktop/src/main/index.ts"}, false},
 		{"unknown root file", []string{"Taskfile.yml"}, false},
-		{"moved install script", []string{"sites/docs-devsy-sh/public/install.sh", "sites/docs-devsy-sh/public/get.sh"}, false},
+		{
+			"moved install script",
+			[]string{"sites/docs-devsy-sh/public/install.sh", "sites/docs-devsy-sh/public/get.sh"},
+			false,
+		},
 	}
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -109,12 +125,28 @@ func (s *scopeSuite) TestUncertainDiffRunsInFull() {
 	}{
 		{"missing previous sha", "", singleCommit(docs...)},
 		{"new branch sha", scopeZeroSHA, singleCommit(docs...)},
-		{"force push or several commits", scopeTestBefore, fakeHistory{parents: []string{"3333"}, files: docs}},
-		{"merge commit", scopeTestBefore, fakeHistory{parents: []string{scopeTestBefore, "3333"}, files: docs}},
+		{
+			"force push or several commits",
+			scopeTestBefore,
+			fakeHistory{parents: []string{"3333"}, files: docs},
+		},
+		{
+			"merge commit",
+			scopeTestBefore,
+			fakeHistory{parents: []string{scopeTestBefore, "3333"}, files: docs},
+		},
 		{"root commit", scopeTestBefore, fakeHistory{files: docs}},
 		{"cannot read commit", scopeTestBefore, fakeHistory{parentEr: errScopeTest, files: docs}},
-		{"cannot fetch previous", scopeTestBefore, fakeHistory{parents: []string{scopeTestBefore}, fetchEr: errScopeTest, files: docs}},
-		{"cannot diff", scopeTestBefore, fakeHistory{parents: []string{scopeTestBefore}, filesEr: errScopeTest, files: docs}},
+		{
+			"cannot fetch previous",
+			scopeTestBefore,
+			fakeHistory{parents: []string{scopeTestBefore}, fetchEr: errScopeTest, files: docs},
+		},
+		{
+			"cannot diff",
+			scopeTestBefore,
+			fakeHistory{parents: []string{scopeTestBefore}, filesEr: errScopeTest, files: docs},
+		},
 		{"empty diff", scopeTestBefore, singleCommit()},
 	}
 	for _, tt := range tests {
@@ -212,6 +244,9 @@ func (s *scopeSuite) TestWorkflowWiresScopeAndSchedule() {
 
 	s.Equal(6, strings.Count(workflow, "steps.scope.outputs.light != 'true'"))
 	s.Contains(workflow, "go run ./hack/ci scope")
-	s.Contains(workflow, "id: scope\n        if: github.event_name == 'push'\n        continue-on-error: true")
+	s.Contains(
+		workflow,
+		"id: scope\n        if: github.event_name == 'push'\n        continue-on-error: true",
+	)
 	s.Contains(workflow, "schedule:\n    - cron:")
 }

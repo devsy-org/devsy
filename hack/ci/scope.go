@@ -63,7 +63,10 @@ func classifyPush(
 			return fullScope(strconv.Quote(file) + " can affect Go tests")
 		}
 	}
-	return scopeDecision{Light: true, Reason: fmt.Sprintf("%d changed files are documentation only", len(files))}
+	return scopeDecision{
+		Light:  true,
+		Reason: fmt.Sprintf("%d changed files are documentation only", len(files)),
+	}
 }
 
 func isLightFile(selection SelectionConfig, file string) bool {
