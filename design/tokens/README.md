@@ -5,7 +5,11 @@
 ## Files
 
 - `tokens.css`: `:root` and `.dark` variables, the `dark` variant and the Tailwind `@theme inline` mapping. Import it after `@import "tailwindcss"`.
-- `contrast.mjs`: reads `tokens.css` and checks each text pair at 4.5:1 and each control or indicator pair at 3:1, in light and dark. It exits 1 on any failure.
+- `contrast.mjs`: reads `tokens.css` and checks each text pair at 4.5:1 and each control or indicator pair at 3:1, in light and dark. Status dots are checked on the card and on their tinted background. It also checks that the two motion durations exist. It exits 1 on any failure, on an `oklch()` value with alpha, and on a `.dark` value that is not `oklch()`.
+
+## Motion
+
+`--duration-fast` (150 ms) is for hover and press. `--duration-panel` (200 ms) is for panels and sheets. In Tailwind, use `duration-(--duration-fast)`. Consumers stop all motion under `prefers-reduced-motion`.
 
 ## Change a token
 

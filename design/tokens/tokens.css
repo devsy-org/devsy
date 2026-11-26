@@ -11,6 +11,8 @@
 
 :root {
   --radius: 0.375rem;
+  --duration-fast: 150ms;
+  --duration-panel: 200ms;
   --brand: #7c5cff;
 
   --background: oklch(0.985 0.003 275);
@@ -46,11 +48,11 @@
   --success: oklch(0.47 0.12 150);
   --success-bg: oklch(0.96 0.035 150);
   --success-border: oklch(0.84 0.07 150);
-  --success-dot: oklch(0.62 0.15 150);
+  --success-dot: oklch(0.6 0.15 150);
   --warning: oklch(0.5 0.11 65);
   --warning-bg: oklch(0.965 0.045 85);
   --warning-border: oklch(0.84 0.09 80);
-  --warning-dot: oklch(0.66 0.15 62);
+  --warning-dot: oklch(0.62 0.15 62);
   --danger: oklch(0.52 0.19 27);
   --danger-bg: oklch(0.965 0.022 25);
   --danger-border: oklch(0.85 0.07 25);
@@ -62,7 +64,7 @@
   --neutral: oklch(0.47 0.018 278);
   --neutral-bg: oklch(0.955 0.005 275);
   --neutral-border: oklch(0.88 0.008 275);
-  --neutral-dot: oklch(0.66 0.012 278);
+  --neutral-dot: oklch(0.6 0.012 278);
 
   --chart-1: oklch(0.5 0.2 287);
   --chart-2: oklch(0.6 0.21 27);
