@@ -12,11 +12,11 @@ html > body[data-scroll-locked] {
 }
 
 :root {
-  --color-fd-primary: hsl(252, 100%, 68%);
+  --color-fd-primary: hsl(252, 100%, 62%);
   --color-fd-primary-foreground: hsl(0, 0%, 100%);
 }
 
 .dark {
-  --color-fd-primary: hsl(252, 100%, 68%);
-  --color-fd-primary-foreground: hsl(0, 0%, 100%);
+  --color-fd-primary: hsl(252, 100%, 76%);
+  --color-fd-primary-foreground: hsl(252, 40%, 8%);
 }
