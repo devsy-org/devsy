@@ -40,6 +40,24 @@ test.describe("Contexts Page", () => {
     await expect(main).toContainText("active", { timeout: 10000 })
   })
 
+  test("opens the sheet when clicking beside Set Active on a card", async () => {
+    const card = page
+      .locator('[data-slot="sidebar-inset"] main div.relative.rounded-xl')
+      .filter({ hasText: "staging" })
+    const setActive = card.getByRole("button", { name: "Set Active" })
+    await setActive.click({ trial: true })
+    const row = setActive.locator("..")
+    const box = await row.boundingBox()
+    if (!box) throw new Error("Set Active row has no box")
+
+    await page.mouse.click(box.x + box.width - 20, box.y + box.height / 2)
+
+    const sheet = page.locator('[role="dialog"]')
+    await expect(sheet).toBeVisible({ timeout: 5000 })
+    await page.keyboard.press("Escape")
+    await expect(sheet).toBeHidden()
+  })
+
   test("should open context settings sheet with loaded options", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
     // Click on the default context to open settings
