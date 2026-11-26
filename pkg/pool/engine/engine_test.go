@@ -400,26 +400,28 @@ func (s *EngineSuite) TestACanceledAttemptCountsTowardTheOrphanThreshold() {
 	s.spawn(cur.ID)
 	s.fake.SetError(providertest.MethodReclaim, errBoom)
 	s.now = cur.Updated
-	for range orphanAfter - 1 {
-		_, err := s.eng.Reclaim(context.Background(), cur.ID)
+	fail := func() session.Session {
+		got, err := s.eng.Reclaim(context.Background(), cur.ID)
 		s.Require().ErrorIs(err, ErrReclaimIncomplete)
-		s.now = Due(s.load(cur.ID))
+		s.now = Due(got)
+		return got
 	}
-	s.Require().Equal(session.StateReclaiming, s.load(cur.ID).State)
+	fail()
+	fail()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.fake.SetHook(func(context.Context, providertest.Call) { cancel() })
 	_, err := s.eng.Reclaim(ctx, cur.ID)
 	s.Require().ErrorIs(err, context.Canceled)
-	s.Equal(orphanAfter, s.load(cur.ID).Attempts, "the canceled attempt was counted")
+	s.Equal(3, s.load(cur.ID).Attempts, "the canceled attempt was counted")
 	s.Equal(session.StateReclaiming, s.load(cur.ID).State, "but it decides nothing")
 	s.fake.SetHook(nil)
-
 	s.now = Due(s.load(cur.ID))
-	got, err := s.eng.Reclaim(context.Background(), cur.ID)
-	s.Require().ErrorIs(err, ErrReclaimIncomplete)
-	s.Equal(orphanAfter+1, got.Attempts)
-	s.Equal(session.StateOrphaned, got.State)
+
+	s.Equal(session.StateReclaiming, fail().State)
+	got := fail()
+	s.Equal(orphanAfter, got.Attempts)
+	s.Equal(session.StateOrphaned, got.State, "four failures and one cancel orphan the session")
 }
 
 func (s *EngineSuite) TestWaitsFollowTheBackoffScheduleExactly() {
@@ -440,6 +442,9 @@ func (s *EngineSuite) TestWaitsFollowTheBackoffScheduleExactly() {
 		s.Require().ErrorIs(err, ErrNotDue, "attempt %d, just before %s", attempt+1, wait)
 		s.now = stored.Updated.Add(wait)
 	}
+	got, err := s.eng.Reclaim(context.Background(), cur.ID)
+	s.Require().ErrorIs(err, ErrReclaimIncomplete, "the 8s wait ends exactly at 8s")
+	s.Equal(5, got.Attempts)
 }
 
 func (s *EngineSuite) TestReclaimRemovesOnlyTheExactSessionID() {

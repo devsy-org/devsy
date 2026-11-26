@@ -7,10 +7,12 @@
 // Engines on one store both write the audit event for the same change. The
 // pool lock keeps a second process out of the store.
 //
-// The log is at least once. A crash after an event and before its state change
-// leaves an event that the retry writes again, possibly with another reason.
-// A reader takes the last session.end of a session: it matches the reason the
-// store kept. Only session.end can repeat this way for a given change.
+// The store holds the committed state and reason. An audit event is written
+// before its transition, so it records intent: a failed or interrupted
+// transition leaves an event for a change that did not commit, and a retry can
+// log the same intended change again, as session.end possibly with another
+// reason, or as session.reclaim for the next attempt. Read state and reason
+// from the store, and treat repeated events for one session as retries.
 package engine
 
 import (
