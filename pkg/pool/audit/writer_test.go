@@ -240,6 +240,25 @@ func (s *WriterSuite) TestRefusesAValueOutsideItsCharacterSet() {
 	s.Empty(s.lines())
 }
 
+func (s *WriterSuite) TestRefusesTextTheServerRefuses() {
+	w := s.writer()
+	cases := []struct {
+		field  string
+		mutate func(*Event)
+	}{
+		{"workspace", func(e *Event) { e.Workspace = strings.Repeat("w", 257) }},
+		{"workspace", func(e *Event) { e.Workspace = "ws\u202e" }},
+		{"actor id", func(e *Event) { e.Actor.ID = strings.Repeat("a", 129) }},
+		{"actor id", func(e *Event) { e.Actor.ID = "a\u200bb" }},
+	}
+	for _, c := range cases {
+		event := writerTestEvent(envelope.AuditSessionRequest)
+		c.mutate(&event)
+		s.Require().ErrorContains(w.Write(event), c.field)
+	}
+	s.Empty(s.lines())
+}
+
 func (s *WriterSuite) TestRefusesAnEmptyActorID() {
 	event := writerTestEvent(envelope.AuditSessionRequest)
 	event.Actor.ID = ""
