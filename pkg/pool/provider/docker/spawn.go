@@ -12,11 +12,16 @@ import (
 )
 
 const (
-	verbCreate      = "create"
-	resourcePrefix  = "devsy-pool-"
-	rollbackTimeout = 30 * time.Second
-	createTimeout   = 30 * time.Second
-	settleDelay     = 250 * time.Millisecond
+	verbCreate       = "create"
+	resourcePrefix   = "devsy-pool-"
+	rollbackTimeout  = 30 * time.Second
+	createTimeout    = 30 * time.Second
+	pullTimeout      = 5 * time.Minute
+	verbPull         = "pull"
+	nounImage        = "image"
+	verbImageInspect = "inspect"
+	flagPullNever    = "--pull=never"
+	settleDelay      = 250 * time.Millisecond
 )
 
 // ErrReclaimIncomplete reports that a rollback could not confirm the
@@ -49,6 +54,17 @@ func (p *Provider) Spawn(ctx context.Context, spec provider.Spec) error {
 		return err
 	}
 	defer unlock()
+	if err := p.prepare(ctx, spec); err != nil {
+		return err
+	}
+	if err := p.create(ctx, spec); err != nil {
+		return errors.Join(err, p.rollback(ctx, spec))
+	}
+	return nil
+}
+
+// prepare refuses an existing session and makes sure the image is local.
+func (p *Provider) prepare(ctx context.Context, spec provider.Spec) error {
 	existing, err := p.find(ctx, kinds, scope{pool: spec.Pool, session: spec.Session})
 	if err != nil {
 		return err
@@ -56,8 +72,23 @@ func (p *Provider) Spawn(ctx context.Context, spec provider.Spec) error {
 	if len(existing) > 0 {
 		return provider.ErrExists
 	}
-	if err := p.create(ctx, spec); err != nil {
-		return errors.Join(err, p.rollback(ctx, spec))
+	return p.ensureImage(ctx, spec.Image)
+}
+
+// ensureImage pulls the image when the daemon does not have it, so a cold pull
+// does not run inside the create bound. A pull creates no pool object, so
+// unlike a create it stops at once when ctx ends.
+func (p *Provider) ensureImage(ctx context.Context, image string) error {
+	if _, err := p.docker.Run(ctx, nounImage, verbImageInspect, "--", image); err == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, p.pullBound)
+	defer cancel()
+	if _, err := p.docker.Run(ctx, verbPull, "--quiet", "--", image); err != nil {
+		return fmt.Errorf("pull image: %w", err)
 	}
 	return nil
 }
@@ -148,7 +179,7 @@ func containerCreateArgs(spec provider.Spec, networkID string) []string {
 		resourcePrefix + spec.Session + "-workspace",
 	}
 	args = append(args, labelArgs(spec)...)
-	args = append(args, "--network", networkID)
+	args = append(args, "--network", networkID, flagPullNever)
 	return append(args, "--", spec.Image)
 }
 

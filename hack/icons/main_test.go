@@ -145,53 +145,57 @@ func TestPackICO(t *testing.T) {
 	}
 }
 
-const svgRoot = `<svg xmlns="` + svgNamespace + `" viewBox="0 0 1 1"></svg>`
+const (
+	svgRoot    = `<svg xmlns="` + svgNamespace + `" viewBox="0 0 1 1"></svg>`
+	svgOpen    = `<svg xmlns="` + svgNamespace + `"`
+	errParse   = "parse SVG"
+	errNoRoot  = "missing root element"
+	errOutside = "text outside the root element"
+	errNS      = "missing xmlns"
+	errCanvas  = "viewBox"
+)
 
-func TestValidateSVG(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	validSVG := filepath.Join(tmpDir, "valid.svg")
-	validContent := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"></svg>`)
-	if err := os.WriteFile(validSVG, validContent, 0o644); err != nil {
+func TestValidateSVGAcceptsValidDocument(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "valid.svg")
+	if err := os.WriteFile(path, []byte(svgRoot), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSVG(validSVG); err != nil {
+	if err := validateSVG(path); err != nil {
 		t.Errorf("expected valid SVG to pass, got: %v", err)
 	}
+}
 
-	invalidSVG := filepath.Join(tmpDir, "invalid.svg")
-	if err := os.WriteFile(
-		invalidSVG,
-		[]byte(`<html><body>not svg</body></html>`),
-		0o644,
-	); err != nil {
-		t.Fatal(err)
+// Each case carries a valid namespace unless the namespace is what it tests, so
+// the error names the check under test and not the first check that fails.
+func TestValidateSVGRejectsEachDefect(t *testing.T) {
+	cases := map[string]struct{ content, want string }{
+		"missing-viewbox": {svgOpen + `></svg>`, errCanvas},
+		"empty-viewbox":   {svgOpen + ` viewBox=" "></svg>`, errCanvas},
+		"wrong-root": {
+			`<html xmlns="` + svgNamespace + `" viewBox="0 0 1 1"><body/></html>`,
+			"expected svg",
+		},
+		"malformed":    {svgOpen + ` viewBox="0 0 1 1">`, errParse},
+		"comment-only": {`<!-- ` + svgRoot + ` -->`, errNoRoot},
+		"text-only":    {"not an svg at all", errOutside},
+		"empty-file":   {"", errNoRoot},
+		"text-before":  {"junk" + svgRoot, errOutside},
+		"text-after":   {svgRoot + "junk", errOutside},
+		"second-root":  {svgRoot + svgRoot, "more than one root"},
+		"no-xmlns":     {`<svg viewBox="0 0 1 1"></svg>`, errNS},
+		"wrong-xmlns":  {`<svg xmlns="http://example.com/svg" viewBox="0 0 1 1"></svg>`, errNS},
 	}
-	if err := validateSVG(invalidSVG); err == nil {
-		t.Error("expected invalid SVG to fail")
-	}
-
-	for name, content := range map[string]string{
-		"missing-viewbox": `<svg xmlns="http://www.w3.org/2000/svg"></svg>`,
-		"empty-viewbox":   `<svg viewBox=" "></svg>`,
-		"wrong-root":      `<html viewBox="0 0 1 1"></html>`,
-		"malformed":       `<svg viewBox="0 0 1 1">`,
-		"comment-only":    `<!-- <svg viewBox="0 0 1 1"></svg> -->`,
-		"text-only":       `<svg viewBox="0 0 1 1"> not a document`,
-		"no-xmlns":        `<svg viewBox="0 0 1 1"></svg>`,
-		"wrong-xmlns":     `<svg xmlns="http://example.com/svg" viewBox="0 0 1 1"></svg>`,
-		"text-before":     `junk<svg xmlns="` + svgNamespace + `" viewBox="0 0 1 1"></svg>`,
-		"text-after":      `<svg xmlns="` + svgNamespace + `" viewBox="0 0 1 1"></svg>junk`,
-		"second-root":     svgRoot + svgRoot,
-		"empty-file":      "",
-	} {
-		path := filepath.Join(tmpDir, name+".svg")
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := validateSVG(path); err == nil {
-			t.Errorf("expected %s SVG to fail", name)
-		}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "case.svg")
+			if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := validateSVG(path)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("validateSVG error = %v, want one containing %q", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -299,6 +303,51 @@ func TestRenderSVGPNGRejectsBadScreenshots(t *testing.T) {
 			}
 		})
 	}
+}
+
+// prepareRunDir makes a repository root holding the given desktop/resources
+// files and a stand-in Chrome that never writes a screenshot, so a run that
+// reaches rendering fails with a render error instead of an SVG error.
+func prepareRunDir(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	resources := filepath.Join(dir, "desktop", "resources")
+	if err := os.MkdirAll(resources, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(resources, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(dir)
+	useFakeChrome(t, filepath.Join(dir, "no-screenshot.png"))
+	return resources
+}
+
+func assertRunFailsWith(t *testing.T, resources, want string, fileCount int) {
+	t.Helper()
+	err := run()
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("run error = %v, want one containing %q", err, want)
+	}
+	entries, readErr := os.ReadDir(resources)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != fileCount {
+		t.Errorf("run left %d files in %s, want %d", len(entries), resources, fileCount)
+	}
+}
+
+func TestRunValidatesSVGBeforeRendering(t *testing.T) {
+	resources := prepareRunDir(t, map[string]string{"icon.svg": `<svg viewBox="0 0 1 1"></svg>`})
+	assertRunFailsWith(t, resources, "invalid SVG root", 1)
+}
+
+func TestRunFailsWithoutIconSVG(t *testing.T) {
+	resources := prepareRunDir(t, map[string]string{"box-icon-app.svg": svgRoot})
+	assertRunFailsWith(t, resources, "read svg", 1)
 }
 
 func TestValidateRenderingDependencies(t *testing.T) {
