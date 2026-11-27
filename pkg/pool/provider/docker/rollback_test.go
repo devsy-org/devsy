@@ -78,6 +78,18 @@ func (s *ProviderSuite) TestRollbackSweepsTwiceCleanAfterTheLastRemoval() {
 	s.GreaterOrEqual(lists, 4, "two clean sweeps of two kinds each")
 }
 
+func (s *ProviderSuite) TestRollbackPausesBetweenSweeps() {
+	spec := s.spec()
+	d := &daemon{failAt: 4}
+	p := New(d)
+	p.settle = 80 * time.Millisecond
+	start := time.Now()
+	s.Require().ErrorIs(p.Spawn(s.T().Context(), spec), errInjected)
+	// Sweeps: one removes the network, two more find nothing, so two pauses.
+	s.GreaterOrEqual(time.Since(start), 150*time.Millisecond)
+	s.noneFor(d, spec)
+}
+
 func (s *ProviderSuite) TestSpawnSaysSoWhenLeftoversCannotBeConfirmedGone() {
 	spec := s.spec()
 	d := &daemon{failAt: 4}

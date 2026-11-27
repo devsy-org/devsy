@@ -52,6 +52,11 @@ type Spec struct {
 // its context is canceled, including from a blocked network call: the engine's
 // Reclaim holds a lock across its provider calls, so a call that ignores the
 // context stalls every other session operation on that Engine.
+//
+// Spawn is the one exception. A create command that has started runs to its
+// end, up to 30 seconds, because a killed command can still finish in the
+// daemon unseen. The rollback after a failure or cancel can take up to 30
+// seconds more. A canceled Spawn can therefore return up to 60 seconds late.
 type Provider interface {
 	// Spawn creates all resources for a session and labels each with LabelPool
 	// and LabelSession. If the session already exists, it returns ErrExists
