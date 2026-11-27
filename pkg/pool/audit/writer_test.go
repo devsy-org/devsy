@@ -84,7 +84,7 @@ func (s *WriterSuite) TestEveryAuditTypeMatchesGoldenJSON() {
 		event.Workspace = "test-workspace"
 		var session string
 		if typ != envelope.AuditPolicyApply && typ != envelope.AuditPoolStart {
-			session = `,"session":"test-session"`
+			session = `,"session":"p-test-pool-k3x7m2q4ab"`
 		} else {
 			event.Session = ""
 		}
@@ -135,6 +135,20 @@ func (s *WriterSuite) TestMissingSession() {
 		}
 	}
 	s.Len(s.lines(), 2)
+}
+
+func (s *WriterSuite) TestRefusesASessionOfAnotherPool() {
+	w := s.writer()
+	for _, id := range []string{
+		legacySession, "p-other-pool-" + sessionSuffix, "p-test-pool-b-" + sessionSuffix,
+	} {
+		event := writerTestEvent(envelope.AuditSessionRequest)
+		event.Session = id
+		err := w.Write(event)
+		s.Require().ErrorContains(err, "session is not a session ID of this pool", id)
+		s.NotContains(err.Error(), id)
+	}
+	s.Empty(s.lines())
 }
 
 func (s *WriterSuite) TestRefusesUnregisteredTypeWithoutLeakingValues() {
@@ -347,7 +361,7 @@ func goldenAuditLine(typ, session, data string) string {
 func writerTestEvent(typ string) Event {
 	return Event{
 		Type:    typ,
-		Session: "test-session",
+		Session: "p-test-pool-k3x7m2q4ab",
 		Actor:   envelope.Actor{Kind: envelope.ActorAgent, ID: "test-agent"},
 		Data:    validAuditDataForTest(typ),
 	}

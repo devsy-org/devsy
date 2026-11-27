@@ -66,6 +66,9 @@ func (w *Writer) Write(e Event) error {
 	if err := checkCharsets(e); err != nil {
 		return err
 	}
+	if err := checkSession(e, w.cfg.Pool); err != nil {
+		return err
+	}
 	id := w.cfg.NewID()
 	if id == "" {
 		return fmt.Errorf("write audit event %s: id is empty", e.Type)
