@@ -17,10 +17,14 @@ on:
     - cron: '23 3 * * *'
   pull_request:
 
-# Reruns get their own group so a retried attempt never cancels a newer push.
-# The pr- and run- prefixes keep a numeric branch name from matching a run ID.
+# Pull requests cancel superseded runs of the same PR. Pushes to main share one
+# group without cancelling: a run that has started always finishes, and a newer
+# push replaces an older run that is still waiting (the `changes` job then runs
+# the replaced commit's checks in full). Reruns, scheduled and manual runs get
+# their own group so they are never replaced. The pr-, main- and run- prefixes
+# keep a numeric branch name from matching a run ID.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.run_attempt == 1 && format('pr-{0}', github.head_ref) || format('run-{0}', github.run_id) }}
+  group: ${{ github.workflow }}-${{ github.run_attempt == 1 && github.event_name == 'pull_request' && format('pr-{0}', github.head_ref) || github.run_attempt == 1 && github.event_name == 'push' && format('main-{0}', github.ref_name) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The pipe makes the go command fall back to a direct fetch on any proxy error.
@@ -33,6 +37,7 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       pull-requests: read
     outputs:
@@ -47,8 +52,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # Only a push to main can skip the heavy jobs. Scheduled and manual runs
-      # never skip, and a failed or missing result here means a full run.
+      # Only a push to main can skip the heavy jobs, and only when the previous
+      # main commit had a finished run. Scheduled and manual runs never skip,
+      # and a failed or missing result here means a full run.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         id: scope_go
         if: github.event_name == 'push' && !github.event.forced
@@ -63,6 +69,7 @@ jobs:
         env:
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: go run ./hack/ci scope --before "$BEFORE_SHA" --sha "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4

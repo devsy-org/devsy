@@ -29,8 +29,11 @@ A push to main can skip the Go, e2e, and microsandbox jobs. `ci scope` compares
 the pushed commit with the previous main commit. When that diff is one commit
 and every changed file matches `selection.light_run_paths` and none matches
 `selection.light_run_excludes`, the `changes` job reports every path output
-as false. Anything else, including a force push, a push of several commits, a
-missing previous SHA, or a git error, runs in full. The excludes list files a Go
+as false. The previous main commit must also have a finished, uncancelled run
+(`success` or `failure`), because pushes to main share one concurrency group
+and a newer push replaces an older run that is still waiting. Anything else,
+including a force push, a push of several commits, a missing previous SHA, a
+cancelled previous run, a git or API error, runs in full. The excludes list files a Go
 test or a CI job reads (`install.sh`, the microsandbox docs page, `AGENTS.md`,
 the licenses file) and Markdown inside the Go trees. Scheduled runs (nightly)
 and manual runs always run in full. Pre-commit still runs on every push.

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -153,6 +154,7 @@ func scopeCLI(args []string, stdout, stderr io.Writer) int {
 	before := fs.String("before", "", "commit main pointed at before the push")
 	sha := fs.String("sha", "", "commit main points at after the push")
 	dir := fs.String("repo-dir", ".", "git checkout to inspect")
+	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/name whose runs to read")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -161,11 +163,13 @@ func scopeCLI(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "load manifest: %v\n", err)
 		return 2
 	}
+	ctx := context.Background()
+	push := pushRange{Before: *before, SHA: *sha}
 	decision := classifyPush(
-		context.Background(),
-		gitHistory{runner: execRunner{}, dir: *dir},
-		manifest.Selection,
-		pushRange{Before: *before, SHA: *sha},
+		ctx, gitHistory{runner: execRunner{}, dir: *dir}, manifest.Selection, push,
+	)
+	decision = requirePreviousRun(
+		ctx, ghRunHistory{runner: execRunner{}, repo: *repo}, push, decision,
 	)
 	_, _ = fmt.Fprintf(stdout, "light=%t\nreason=%s\n", decision.Light, decision.Reason)
 	_, _ = fmt.Fprintf(
