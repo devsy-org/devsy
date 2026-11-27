@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"encoding/xml"
 	"errors"
@@ -12,16 +13,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 )
 
-const caseTrailingBytes = "trailing bytes"
+const (
+	caseTrailingBytes = "trailing bytes"
+	chunkIHDR         = "IHDR"
+	chunkIDAT         = "IDAT"
+	chunkIEND         = "IEND"
+)
 
 var (
 	pngSignature     = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
-	allowedPNGChunks = []string{"IHDR", "IDAT", "IEND"}
+	allowedPNGChunks = []string{chunkIHDR, chunkIDAT, chunkIEND}
 	allowedSVGTags   = []string{"svg", "title", "path", "g"}
 	allowedSVGAttrs  = []string{
 		"xmlns",
@@ -42,47 +49,130 @@ var (
 	icnsChunkOverhead = 8
 )
 
-func readPNGChunk(rest []byte) (kind string, size int, err error) {
+type pngPart struct {
+	kind string
+	data []byte
+}
+
+func readPNGChunk(rest []byte) (part pngPart, size int, err error) {
 	if len(rest) < pngChunkOverhead {
-		return "", 0, errors.New("truncated chunk header")
+		return pngPart{}, 0, errors.New("truncated chunk header")
 	}
 	length := uint64(binary.BigEndian.Uint32(rest[:4]))
 	total := length + uint64(pngChunkOverhead)
 	if uint64(len(rest)) < total {
-		return "", 0, errors.New("truncated chunk")
+		return pngPart{}, 0, errors.New("truncated chunk")
 	}
-	kind = string(rest[4:8])
+	kind := string(rest[4:8])
 	want := binary.BigEndian.Uint32(rest[8+length : total])
 	if crc32.ChecksumIEEE(rest[4:8+length]) != want {
-		return "", 0, fmt.Errorf("chunk %q has a bad checksum", kind)
+		return pngPart{}, 0, fmt.Errorf("chunk %q has a bad checksum", kind)
 	}
-	return kind, int(total), nil
+	return pngPart{kind: kind, data: rest[8 : 8+length]}, int(total), nil
+}
+
+// splitPNG returns the chunks of a PNG that uses only allowed chunk types and
+// has no bytes after IEND.
+func splitPNG(data []byte) ([]pngPart, error) {
+	if !bytes.HasPrefix(data, pngSignature) {
+		return nil, errors.New("missing PNG signature")
+	}
+	rest := data[len(pngSignature):]
+	var parts []pngPart
+	for {
+		part, size, err := readPNGChunk(rest)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(allowedPNGChunks, part.kind) {
+			return nil, fmt.Errorf("chunk %q is not allowed", part.kind)
+		}
+		parts = append(parts, part)
+		rest = rest[size:]
+		if part.kind == chunkIEND {
+			break
+		}
+	}
+	if len(rest) != 0 {
+		return nil, fmt.Errorf("%d trailing bytes after IEND", len(rest))
+	}
+	return parts, nil
+}
+
+func checkPNGOrder(parts []pngPart) error {
+	last := len(parts) - 1
+	if last < 2 || parts[0].kind != chunkIHDR || parts[last].kind != chunkIEND {
+		return errors.New("chunks must run IHDR, IDAT..., IEND")
+	}
+	for _, part := range parts[1:last] {
+		if part.kind != chunkIDAT {
+			return fmt.Errorf("chunk %q is out of order", part.kind)
+		}
+		if len(part.data) == 0 {
+			return errors.New("empty IDAT chunk")
+		}
+	}
+	return nil
+}
+
+var pngChannels = map[byte]uint64{0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+
+// rawPNGSize is the size of the filtered scanlines an IHDR describes.
+func rawPNGSize(ihdr []byte) (uint64, error) {
+	const ihdrSize = 13
+	if len(ihdr) != ihdrSize {
+		return 0, errors.New("IHDR has the wrong size")
+	}
+	channels, ok := pngChannels[ihdr[9]]
+	if !ok || ihdr[10] != 0 || ihdr[11] != 0 || ihdr[12] != 0 {
+		return 0, errors.New("IHDR uses an unsupported colour type, method or interlace")
+	}
+	width := uint64(binary.BigEndian.Uint32(ihdr[0:4]))
+	height := uint64(binary.BigEndian.Uint32(ihdr[4:8]))
+	rowBytes := (width*channels*uint64(ihdr[8]) + 7) / 8
+	return height * (1 + rowBytes), nil
+}
+
+// checkPNGPixels requires the IDAT data to be one zlib stream that inflates to
+// exactly the size the IHDR implies, so a junk IDAT chunk cannot ride along.
+func checkPNGPixels(parts []pngPart) error {
+	want, err := rawPNGSize(parts[0].data)
+	if err != nil {
+		return err
+	}
+	var idat []byte
+	for _, part := range parts[1 : len(parts)-1] {
+		idat = append(idat, part.data...)
+	}
+	reader := bytes.NewReader(idat)
+	inflater, err := zlib.NewReader(reader)
+	if err != nil {
+		return fmt.Errorf("IDAT is not a zlib stream: %w", err)
+	}
+	raw, err := io.ReadAll(inflater)
+	if err != nil {
+		return fmt.Errorf("IDAT does not inflate: %w", err)
+	}
+	if reader.Len() != 0 {
+		return fmt.Errorf("%d bytes of IDAT data after the zlib stream", reader.Len())
+	}
+	if uint64(len(raw)) != want {
+		return fmt.Errorf("IDAT inflates to %d bytes, IHDR implies %d", len(raw), want)
+	}
+	return nil
 }
 
 // checkPNG allows only the chunks a plain render needs and no bytes after IEND,
 // so metadata such as content credentials, XMP or EXIF cannot ride along.
 func checkPNG(data []byte) error {
-	if !bytes.HasPrefix(data, pngSignature) {
-		return errors.New("missing PNG signature")
+	parts, err := splitPNG(data)
+	if err != nil {
+		return err
 	}
-	rest := data[len(pngSignature):]
-	for {
-		kind, size, err := readPNGChunk(rest)
-		if err != nil {
-			return err
-		}
-		if !slices.Contains(allowedPNGChunks, kind) {
-			return fmt.Errorf("chunk %q is not allowed", kind)
-		}
-		rest = rest[size:]
-		if kind == "IEND" {
-			break
-		}
+	if err := checkPNGOrder(parts); err != nil {
+		return err
 	}
-	if len(rest) != 0 {
-		return fmt.Errorf("%d trailing bytes after IEND", len(rest))
-	}
-	return nil
+	return checkPNGPixels(parts)
 }
 
 func checkFrames(frames [][]byte) error {
@@ -158,18 +248,44 @@ func checkICNS(data []byte) error {
 	return checkFrames(frames)
 }
 
+var svgURLRef = regexp.MustCompile(`(?i)url\(([^)]*)`)
+
+// checkSVGValue allows url() only as a reference to an id in the same document.
+func checkSVGValue(value string) error {
+	if strings.Contains(value, "\\") {
+		return errors.New("escapes are not allowed")
+	}
+	for _, match := range svgURLRef.FindAllStringSubmatch(value, -1) {
+		ref := strings.Trim(strings.TrimSpace(match[1]), "'\"")
+		if !strings.HasPrefix(ref, "#") || len(ref) < 2 {
+			return fmt.Errorf("url(%s) is not a same-document reference", match[1])
+		}
+	}
+	return nil
+}
+
 type svgChecker struct{ inTitle bool }
+
+func checkSVGAttr(attr xml.Attr) error {
+	if attr.Name.Space != "" || !slices.Contains(allowedSVGAttrs, attr.Name.Local) {
+		return fmt.Errorf("attribute %q is not allowed", attr.Name.Local)
+	}
+	if attr.Name.Local == "xmlns" && attr.Value != svgNamespace {
+		return fmt.Errorf("unexpected namespace %q", attr.Value)
+	}
+	if err := checkSVGValue(attr.Value); err != nil {
+		return fmt.Errorf("attribute %q: %w", attr.Name.Local, err)
+	}
+	return nil
+}
 
 func (c *svgChecker) element(start xml.StartElement) error {
 	if start.Name.Space != svgNamespace || !slices.Contains(allowedSVGTags, start.Name.Local) {
 		return fmt.Errorf("element <%s> is not allowed", start.Name.Local)
 	}
 	for _, attr := range start.Attr {
-		if attr.Name.Space != "" || !slices.Contains(allowedSVGAttrs, attr.Name.Local) {
-			return fmt.Errorf("attribute %q is not allowed", attr.Name.Local)
-		}
-		if attr.Name.Local == "xmlns" && attr.Value != svgNamespace {
-			return fmt.Errorf("unexpected namespace %q", attr.Value)
+		if err := checkSVGAttr(attr); err != nil {
+			return err
 		}
 	}
 	c.inTitle = start.Name.Local == "title"
@@ -310,6 +426,88 @@ func TestPNGAllowlistRejectsMetadata(t *testing.T) {
 	for name, data := range cases {
 		if err := checkPNG(data); err == nil {
 			t.Errorf("%s: expected PNG to be rejected", name)
+		}
+	}
+}
+
+func buildPNG(parts []pngPart) []byte {
+	out := slices.Clone(pngSignature)
+	for _, part := range parts {
+		out = append(out, pngChunk(part.kind, part.data)...)
+	}
+	return out
+}
+
+func zlibBytes(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := zlib.NewWriter(&buf)
+	if _, err := writer.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestPNGAllowlistRejectsPixelTricks(t *testing.T) {
+	parts, err := splitPNG(tinyPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ihdr, idat, iend := parts[0], parts[1], parts[len(parts)-1]
+	if err := checkPNG(buildPNG(parts)); err != nil {
+		t.Fatalf("rebuilt PNG rejected: %v", err)
+	}
+	junk := pngPart{kind: chunkIDAT, data: []byte("not pixels, just a payload")}
+	exact := pngPart{kind: chunkIDAT, data: zlibBytes(t, make([]byte, 18))}
+	taller := pngPart{kind: chunkIHDR, data: slices.Clone(ihdr.data)}
+	binary.BigEndian.PutUint32(taller.data[4:8], 3)
+	interlaced := pngPart{kind: chunkIHDR, data: slices.Clone(ihdr.data)}
+	interlaced.data[12] = 1
+	expectRejected(t, checkPNG, map[string][]byte{
+		"junk IDAT after the pixels":  buildPNG([]pngPart{ihdr, idat, junk, iend}),
+		"junk IDAT before the pixels": buildPNG([]pngPart{ihdr, junk, idat, iend}),
+		"second zlib stream":          buildPNG([]pngPart{ihdr, idat, exact, iend}),
+		"pixels too short": buildPNG(
+			[]pngPart{ihdr, {kind: chunkIDAT, data: zlibBytes(t, make([]byte, 17))}, iend},
+		),
+		"pixels too long": buildPNG(
+			[]pngPart{ihdr, {kind: chunkIDAT, data: zlibBytes(t, make([]byte, 19))}, iend},
+		),
+		"IHDR claims a taller image": buildPNG([]pngPart{taller, idat, iend}),
+		"interlaced":                 buildPNG([]pngPart{interlaced, idat, iend}),
+		"IDAT before IHDR":           buildPNG([]pngPart{idat, ihdr, iend}),
+		"empty IDAT":                 buildPNG([]pngPart{ihdr, idat, {kind: chunkIDAT}, iend}),
+		"no IDAT":                    buildPNG([]pngPart{ihdr, iend}),
+		"second IHDR":                buildPNG([]pngPart{ihdr, ihdr, idat, iend}),
+	})
+}
+
+func TestSVGAllowlistRejectsExternalURLs(t *testing.T) {
+	const open = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8">`
+	for _, fill := range []string{"url(#a)", "url('#a')", `url( '#a' )`} {
+		src := open + `<path fill="` + fill + `" d="M0 0"/></svg>`
+		if err := checkSVG([]byte(src)); err != nil {
+			t.Errorf("%s: same-document reference rejected: %v", fill, err)
+		}
+	}
+	for _, fill := range []string{
+		"url(https://example.com/a.svg#x)",
+		"url('https://example.com/a.svg')",
+		"url(//example.com/a.svg#x)",
+		"url(data:image/svg+xml;base64,AAAA)",
+		"url(a.svg#x)",
+		"URL(https://example.com/a.svg)",
+		"url(#)",
+		"url()",
+		`u\72l(https://example.com/a.svg)`,
+		"#fff url(https://example.com/a.svg)",
+	} {
+		src := open + `<path fill="` + fill + `" d="M0 0"/></svg>`
+		if err := checkSVG([]byte(src)); err == nil {
+			t.Errorf("%s: expected the fill to be rejected", fill)
 		}
 	}
 }
