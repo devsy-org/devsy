@@ -229,24 +229,33 @@ func (s *catalogSuite) TestBindingPlatformsMatchTheirSources() {
 	s.Equal(want, got)
 }
 
+type bindingContract struct {
+	source              ProviderSource
+	execution, guidance string
+	schema              int
+	requirements        []string
+}
+
+func internalSource(id string) ProviderSource {
+	return ProviderSource{Kind: SourceInternal, InternalID: id}
+}
+
 // The validator checks shape only, so the per-provider facts live here. A
 // requirement reads as key|operations|executable option|configuration option|
 // probe|image backend condition.
-func (s *catalogSuite) TestBindingContractsMatchTheirProviders() {
-	type contract struct {
-		execution, guidance string
-		schema              int
-		requirements        []string
-	}
+func expectedContracts() map[string]bindingContract {
 	const operations = "create,exec,stop,delete"
-	want := map[string]contract{
-		"docker": {"internal_docker", "docker_setup", 0, []string{
-			"docker:container_runtime|" + operations + "|DOCKER_PATH||docker_version|",
-		}},
-		"podman": {"internal_podman", "podman_setup", 0, []string{
-			"podman:container_runtime|" + operations + "|PODMAN_PATH||podman_version|",
-		}},
+	return map[string]bindingContract{
+		"docker": {
+			internalSource("docker"), "internal_docker", "docker_setup", 0,
+			[]string{"docker:container_runtime|" + operations + "|DOCKER_PATH||docker_version|"},
+		},
+		"podman": {
+			internalSource("podman"), "internal_podman", "podman_setup", 0,
+			[]string{"podman:container_runtime|" + operations + "|PODMAN_PATH||podman_version|"},
+		},
 		"apple": {
+			internalSource("apple"),
 			"internal_apple",
 			"apple_container_setup",
 			0,
@@ -254,30 +263,42 @@ func (s *catalogSuite) TestBindingContractsMatchTheirProviders() {
 				"apple-container:container_runtime|" + operations + "|CONTAINER_PATH||container_version|",
 			},
 		},
-		"kubernetes": {"internal_kubernetes", "kubernetes_configuration", 0, []string{
-			"kubernetes-config:cluster_configuration|" + operations + "||KUBERNETES_CONFIG||",
-		}},
-		"microsandbox": {executionMicrosandbox, "microsandbox_setup", 1, []string{
-			"microsandbox:microvm_runtime|" + operations + "|||microsandbox_version|",
-			"docker:image_backend|create,image-build|||docker_version|docker",
-		}},
-		"lima": {"lima_exec_v1", "lima_setup", 0, []string{
-			"lima:vm_runtime|" + operations + "|LIMA_PATH||limactl_version|",
-		}},
-		"orbstack": {"orbstack_exec_v1", "orbstack_setup", 0, []string{
-			"orbstack:vm_runtime|" + operations + "|ORBSTACK_PATH||orbctl_version|",
-		}},
+		"kubernetes": {
+			internalSource("kubernetes"),
+			"internal_kubernetes",
+			"kubernetes_configuration",
+			0,
+			[]string{
+				"kubernetes-config:cluster_configuration|" + operations + "||KUBERNETES_CONFIG||",
+			},
+		},
+		"microsandbox": {
+			externalSource(toolMicrosandbox), executionMicrosandbox, "microsandbox_setup", 1,
+			[]string{
+				"microsandbox:microvm_runtime|" + operations + "|||microsandbox_version|",
+				"docker:image_backend|create,image-build|||docker_version|docker",
+			},
+		},
+		"lima": {
+			externalSource(toolLima), "lima_exec_v1", "lima_setup", 0,
+			[]string{"lima:vm_runtime|" + operations + "|LIMA_PATH||limactl_version|"},
+		},
+		"orbstack": {
+			externalSource(toolOrbStack), "orbstack_exec_v1", "orbstack_setup", 0,
+			[]string{"orbstack:vm_runtime|" + operations + "|ORBSTACK_PATH||orbctl_version|"},
+		},
 	}
+}
+
+func (s *catalogSuite) TestBindingContractsMatchTheirProviders() {
 	catalog, err := LoadCatalog()
 	s.Require().NoError(err)
 
-	got := map[string]contract{}
+	got := map[string]bindingContract{}
 	for _, binding := range catalog.Bindings() {
-		entry := contract{
-			binding.ExecutionContract,
-			binding.GuidanceID,
-			binding.RequiredRuntimeCheckSchema,
-			nil,
+		entry := bindingContract{
+			binding.Source, binding.ExecutionContract, binding.GuidanceID,
+			binding.RequiredRuntimeCheckSchema, nil,
 		}
 		for _, r := range binding.Requirements {
 			entry.requirements = append(entry.requirements, strings.Join([]string{
@@ -288,7 +309,7 @@ func (s *catalogSuite) TestBindingContractsMatchTheirProviders() {
 		got[binding.ID] = entry
 	}
 
-	s.Equal(want, got)
+	s.Equal(expectedContracts(), got)
 }
 
 func (s *catalogSuite) TestKubernetesHasNoExecutableProbeOrKubectlDependency() {
