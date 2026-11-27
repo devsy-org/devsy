@@ -6,6 +6,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/selfupdate"
+	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +43,9 @@ func NewUpdateCmd() *cobra.Command {
 			}
 		},
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			if err := checkPackageManager(version.GetPackageManager()); err != nil {
+				return err
+			}
 			ctx := cobraCmd.Context()
 			opts := selfupdate.Options{
 				Version:           cmd.Version,
@@ -77,4 +81,17 @@ func NewUpdateCmd() *cobra.Command {
 		),
 	)
 	return updateCmd
+}
+
+func checkPackageManager(packageManager string) error {
+	switch packageManager {
+	case "", "direct":
+		return nil
+	case "homebrew":
+		return fmt.Errorf(
+			"this Devsy installation is managed by Homebrew; run `brew upgrade devsy` to update",
+		)
+	default:
+		return fmt.Errorf("unsupported package manager %q", packageManager)
+	}
 }
