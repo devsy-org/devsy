@@ -47,7 +47,10 @@ const (
 	docsWordmarkHeight = 329
 )
 
-const chromeEnv = "DEVSY_ICONS_CHROME"
+const (
+	chromeEnv    = "DEVSY_ICONS_CHROME"
+	svgNamespace = "http://www.w3.org/2000/svg"
+)
 
 func playwrightChromium(home string) []string {
 	var found []string
@@ -116,44 +119,69 @@ func validateSVG(svgPath string) error {
 	return validateSVGDocument(data)
 }
 
+type svgDocument struct {
+	roots int
+	depth int
+}
+
+func (d *svgDocument) token(token xml.Token) error {
+	switch tok := token.(type) {
+	case xml.StartElement:
+		return d.start(tok)
+	case xml.EndElement:
+		d.depth--
+	case xml.CharData:
+		if d.depth == 0 && len(bytes.TrimSpace(tok)) > 0 {
+			return errors.New("invalid SVG: text outside the root element")
+		}
+	}
+	return nil
+}
+
+func (d *svgDocument) start(tok xml.StartElement) error {
+	if d.depth == 0 {
+		d.roots++
+		if d.roots > 1 {
+			return errors.New("invalid SVG: more than one root element")
+		}
+		if err := validateSVGRoot(tok); err != nil {
+			return err
+		}
+	}
+	d.depth++
+	return nil
+}
+
+// validateSVGDocument rejects input that Chrome cannot load as an SVG image.
+// Chrome draws a broken-image placeholder for those, which looks like art
+// to any check on the rendered PNG.
 func validateSVGDocument(data []byte) error {
-	decoder := xml.NewDecoder(bytes.NewReader(data))
-	start, err := firstSVGStartElement(decoder)
-	if err != nil {
-		return err
-	}
-	if err := validateSVGRoot(start); err != nil {
-		return err
-	}
+	decoder := xml.NewDecoder(bytes.NewReader(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))))
+	var doc svgDocument
 	for {
-		_, err := decoder.Token()
+		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
-			return nil
+			break
 		}
 		if err != nil {
 			return fmt.Errorf("parse SVG: %w", err)
 		}
-	}
-}
-
-func firstSVGStartElement(decoder *xml.Decoder) (xml.StartElement, error) {
-	for {
-		token, err := decoder.Token()
-		if errors.Is(err, io.EOF) {
-			return xml.StartElement{}, errors.New("invalid SVG: missing root element")
-		}
-		if err != nil {
-			return xml.StartElement{}, fmt.Errorf("parse SVG: %w", err)
-		}
-		if start, ok := token.(xml.StartElement); ok {
-			return start, nil
+		if err := doc.token(token); err != nil {
+			return err
 		}
 	}
+	if doc.roots == 0 {
+		return errors.New("invalid SVG: missing root element")
+	}
+	return nil
 }
 
 func validateSVGRoot(start xml.StartElement) error {
 	if start.Name.Local != "svg" {
 		return fmt.Errorf("invalid SVG root: expected svg, got %s", start.Name.Local)
+	}
+	if start.Name.Space != svgNamespace {
+		return fmt.Errorf("invalid SVG root: missing xmlns=%q", svgNamespace)
 	}
 	for _, attribute := range start.Attr {
 		if attribute.Name.Local == "viewBox" && strings.TrimSpace(attribute.Value) != "" {
@@ -212,8 +240,9 @@ func renderSVGPNG(svgPath, outPNG string, width, height int) error {
 	return nil
 }
 
-// verifyRenderedPNG rejects a screenshot that is missing, has the wrong size
-// or has no visible pixel, which is what Chrome writes when the SVG fails to load.
+// verifyRenderedPNG checks that the screenshot decodes, has the requested size
+// and has a visible pixel. It cannot tell a broken-image placeholder from art,
+// so validateSVG has to reject SVGs that Chrome cannot load first.
 func verifyRenderedPNG(path string, width, height int) error {
 	file, err := os.Open(path)
 	if err != nil {

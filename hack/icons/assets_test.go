@@ -41,7 +41,6 @@ var (
 		"x",
 		"y",
 	}
-	svgNamespace      = "http://www.w3.org/2000/svg"
 	pngChunkOverhead  = 12
 	icoHeaderSize     = 6
 	icoEntrySize      = 16

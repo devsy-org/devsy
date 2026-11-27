@@ -14,6 +14,43 @@ import (
 	"testing"
 )
 
+const fakeChromeEnv = "DEVSY_ICONS_FAKE_CHROME_PNG"
+
+// TestMain lets the test binary stand in for Chrome: it copies the PNG named by
+// fakeChromeEnv to the --screenshot path.
+func TestMain(m *testing.M) {
+	if source := os.Getenv(fakeChromeEnv); source != "" {
+		os.Exit(runFakeChrome(source, os.Args[1:]))
+	}
+	os.Exit(m.Run())
+}
+
+func runFakeChrome(source string, args []string) int {
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return 1
+	}
+	for _, arg := range args {
+		if out, ok := strings.CutPrefix(arg, "--screenshot="); ok {
+			if err := os.WriteFile(out, data, 0o644); err != nil {
+				return 1
+			}
+			return 0
+		}
+	}
+	return 1
+}
+
+func useFakeChrome(t *testing.T, screenshot string) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(chromeEnv, exe)
+	t.Setenv(fakeChromeEnv, screenshot)
+}
+
 func dummyPNG() []byte {
 	return []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02, 0x03}
 }
@@ -108,6 +145,8 @@ func TestPackICO(t *testing.T) {
 	}
 }
 
+const svgRoot = `<svg xmlns="` + svgNamespace + `" viewBox="0 0 1 1"></svg>`
+
 func TestValidateSVG(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -139,6 +178,12 @@ func TestValidateSVG(t *testing.T) {
 		"malformed":       `<svg viewBox="0 0 1 1">`,
 		"comment-only":    `<!-- <svg viewBox="0 0 1 1"></svg> -->`,
 		"text-only":       `<svg viewBox="0 0 1 1"> not a document`,
+		"no-xmlns":        `<svg viewBox="0 0 1 1"></svg>`,
+		"wrong-xmlns":     `<svg xmlns="http://example.com/svg" viewBox="0 0 1 1"></svg>`,
+		"text-before":     `junk<svg xmlns="` + svgNamespace + `" viewBox="0 0 1 1"></svg>`,
+		"text-after":      `<svg xmlns="` + svgNamespace + `" viewBox="0 0 1 1"></svg>junk`,
+		"second-root":     svgRoot + svgRoot,
+		"empty-file":      "",
 	} {
 		path := filepath.Join(tmpDir, name+".svg")
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -147,6 +192,38 @@ func TestValidateSVG(t *testing.T) {
 		if err := validateSVG(path); err == nil {
 			t.Errorf("expected %s SVG to fail", name)
 		}
+	}
+}
+
+func TestValidateSVGDocumentAcceptsPlainDocuments(t *testing.T) {
+	root := `<svg xmlns="` + svgNamespace + `" viewBox="0 0 1 1"><g><path d="M0 0"/></g></svg>`
+	for name, content := range map[string]string{
+		"plain":           root,
+		"prolog":          "<?xml version=\"1.0\"?>\n" + root + "\n",
+		"comment-before":  "<!-- note -->\n" + root,
+		"byte-order-mark": "\xef\xbb\xbf" + root,
+		"whitespace":      "\n\t " + root + " \n",
+	} {
+		if err := validateSVGDocument([]byte(content)); err != nil {
+			t.Errorf("%s: expected the document to pass, got: %v", name, err)
+		}
+	}
+}
+
+func TestValidateSVGRejectsShippedIconWithoutNamespace(t *testing.T) {
+	data, err := os.ReadFile(repoFile("desktop", "resources", "icon.svg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSVGDocument(data); err != nil {
+		t.Fatalf("shipped icon rejected: %v", err)
+	}
+	stripped := strings.Replace(string(data), `xmlns="`+svgNamespace+`" `, "", 1)
+	if stripped == string(data) {
+		t.Fatal("shipped icon has no xmlns attribute to strip")
+	}
+	if err := validateSVGDocument([]byte(stripped)); err == nil {
+		t.Error("expected the icon without xmlns to be rejected before rendering")
 	}
 }
 
@@ -169,13 +246,23 @@ func TestVerifyRenderedPNG(t *testing.T) {
 	if err := verifyRenderedPNG(writeTestPNG(t, visible), 4, 2); err != nil {
 		t.Errorf("expected a visible render to pass, got: %v", err)
 	}
-	if err := verifyRenderedPNG(writeTestPNG(t, visible), 8, 4); err == nil {
-		t.Error("expected a wrong-size render to fail")
+	for name, size := range map[string][2]int{"both": {8, 4}, "width": {8, 2}, "height": {4, 4}} {
+		if err := verifyRenderedPNG(writeTestPNG(t, visible), size[0], size[1]); err == nil {
+			t.Errorf("expected a render with the wrong %s to fail", name)
+		}
+	}
+	faint := image.NewNRGBA(image.Rect(0, 0, 4, 2))
+	faint.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 1})
+	if err := verifyRenderedPNG(writeTestPNG(t, faint), 4, 2); err != nil {
+		t.Errorf("expected a partly transparent render to pass, got: %v", err)
 	}
 	blank := image.NewNRGBA(image.Rect(0, 0, 4, 2))
 	if err := verifyRenderedPNG(writeTestPNG(t, blank), 4, 2); err == nil {
 		t.Error("expected a fully transparent render to fail")
 	}
+}
+
+func TestVerifyRenderedPNGRejectsUnreadableFiles(t *testing.T) {
 	notPNG := filepath.Join(t.TempDir(), "bad.png")
 	if err := os.WriteFile(notPNG, []byte("not a png"), 0o644); err != nil {
 		t.Fatal(err)
@@ -185,6 +272,32 @@ func TestVerifyRenderedPNG(t *testing.T) {
 	}
 	if err := verifyRenderedPNG(filepath.Join(t.TempDir(), "missing.png"), 4, 2); err == nil {
 		t.Error("expected a missing render to fail")
+	}
+}
+
+func TestRenderSVGPNGRejectsBadScreenshots(t *testing.T) {
+	visible := image.NewNRGBA(image.Rect(0, 0, 4, 2))
+	visible.SetNRGBA(1, 1, color.NRGBA{R: 124, G: 92, B: 255, A: 255})
+	blank := image.NewNRGBA(image.Rect(0, 0, 4, 2))
+	cases := []struct {
+		name    string
+		shot    string
+		wantErr bool
+	}{
+		{"visible", writeTestPNG(t, visible), false},
+		{"blank", writeTestPNG(t, blank), true},
+		{"wrong size", writeTestPNG(t, image.NewNRGBA(image.Rect(0, 0, 8, 8))), true},
+		{"not a png", filepath.Join(t.TempDir(), "missing.png"), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			useFakeChrome(t, tc.shot)
+			out := filepath.Join(t.TempDir(), "out.png")
+			err := renderSVGPNG(filepath.Join(t.TempDir(), "in.svg"), out, 4, 2)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("renderSVGPNG error = %v, want error: %v", err, tc.wantErr)
+			}
+		})
 	}
 }
 
