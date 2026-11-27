@@ -89,6 +89,29 @@ var addrCases = []addrCase{
 	{"64:ff9a:ffff::1", false, false},
 	{"2001:0:4136:e378:8000:63bf:3fff:fdd2", true, false},
 	{"2001:1::1", false, false},
+	{"2001:1::2", false, false},
+	{"2001:1::3", false, false},
+	{"2001:1::", true, false},
+	{"2001:1::4", true, false},
+	{"2001:1::ffff", true, false},
+	{"2001:2:1::", true, false},
+	{"2001:3::", false, false},
+	{"2001:3:ffff:ffff:ffff:ffff:ffff:ffff", false, false},
+	{"2001:4::", true, false},
+	{"2001:4:111:ffff:ffff:ffff:ffff:ffff", true, false},
+	{"2001:4:112::", false, false},
+	{"2001:4:112:ffff:ffff:ffff:ffff:ffff", false, false},
+	{"2001:4:113::", true, false},
+	{"2001:5::1", true, false},
+	{"2001:10::", true, false},
+	{"2001:1f:ffff:ffff:ffff:ffff:ffff:ffff", true, false},
+	{"2001:20::", false, false},
+	{"2001:2f:ffff:ffff:ffff:ffff:ffff:ffff", false, false},
+	{"2001:30::", false, false},
+	{"2001:3f:ffff:ffff:ffff:ffff:ffff:ffff", false, false},
+	{"2001:40::", true, false},
+	{"2001:1ff:ffff:ffff:ffff:ffff:ffff:ffff", true, false},
+	{"2001:200::", false, false},
 	{"2001:4860:4860::8888", false, false},
 	{"2001:db8::1", false, true},
 	{"2002:808:808::1", true, false},
@@ -185,7 +208,18 @@ func TestOverlapsNeverAllowed(t *testing.T) {
 		"128.0.0.0/1":         linkLocal4,
 		"127.0.0.1/8":         loopback,
 		"100::/65":            "100::/64",
-		"2001:0:0:1::/64":     "2001::/32",
+		"2001:1::/32":         ietfProtocol,
+		"2001:1::/126":        ietfProtocol,
+		"2001:1::4/128":       ietfProtocol,
+		"2001:1::/64":         ietfProtocol,
+		"2001:20::/27":        ietfProtocol,
+		"2001:4::/32":         ietfProtocol,
+		"2001:4:112::/47":     ietfProtocol,
+		"2001:10::/28":        ietfProtocol,
+		"2001::/22":           teredo6,
+		"2001:3::/31":         bench6,
+		"2001:3::/16":         teredo6,
+		"2001:0:0:1::/64":     teredo6,
 		"ff00::/7":            "ff00::/8",
 	}
 	for in, want := range cases {
@@ -198,7 +232,9 @@ func TestOverlapsNeverAllowed(t *testing.T) {
 		private10, "172.16.0.0/12", "192.168.0.0/16", "8.8.8.0/24",
 		"2001:db8::/32", "2606:4700::/32", "192.0.1.0/24", "192.88.100.0/24",
 		"126.0.0.0/8", "169.253.0.0/16", "169.255.0.0/16", "223.0.0.0/8",
-		"2001:1::/32", "100:0:0:2::/64", "fd20:cf::/32", "3fff::/20",
+		"100:0:0:2::/64", "fd20:cf::/32", "3fff::/20", "2001:200::/23", "2001:1::1/128",
+		"2001:3::/32", "2001:3:1::/48", "2001:4:112:1::/64", "2001:20::/28", "2001:2f::/32",
+		"2001:30:1::/48", "2001:3f::/32",
 	} {
 		if got, overlaps := OverlapsNeverAllowed(netip.MustParsePrefix(in)); overlaps {
 			t.Errorf("OverlapsNeverAllowed(%s) reports %s", in, got)
@@ -215,9 +251,15 @@ var (
 	referenceNever = referenceNets(
 		thisNetwork, "127.0.0.0/8", linkLocal4, "100.100.100.200/32",
 		"168.63.129.16/32", "192.0.0.0/24", "192.88.99.0/24", "224.0.0.0/4", "240.0.0.0/4",
-		"::/96", "::ffff:0:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "2001::/32",
+		"::/96", "::ffff:0:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", teredo6,
 		"2002::/16", "ff00::/8", "fe80::/10", "fec0::/10", "100::/64", "fd00:ec2::/32",
-		gceMetadata, dummy6, bench6, "5f00::/16",
+		gceMetadata, dummy6, bench6, "5f00::/16", ietfProtocol,
+	)
+	// referenceOpen lists the registry children of 2001::/23 that are globally
+	// reachable. None lies inside another never-allowed entry.
+	referenceOpen = referenceNets(
+		"2001:1::1/128", "2001:1::2/128", "2001:1::3/128", "2001:3::/32", "2001:4:112::/48",
+		"2001:20::/28", "2001:30::/28",
 	)
 	referencePrivate = referenceNets(
 		private10, "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
@@ -250,6 +292,10 @@ func referenceHas(nets []*net.IPNet, ip net.IP) bool {
 	return false
 }
 
+func referenceBlocked(ip net.IP) bool {
+	return referenceHas(referenceNever, ip) && !referenceHas(referenceOpen, ip)
+}
+
 func FuzzAgainstReference(f *testing.F) {
 	for _, c := range addrCases {
 		f.Add(netip.MustParseAddr(c.addr).AsSlice())
@@ -260,7 +306,7 @@ func FuzzAgainstReference(f *testing.F) {
 			t.Skip()
 		}
 		ip := net.IP(raw)
-		if got, want := NeverAllowed(addr), referenceHas(referenceNever, ip); got != want {
+		if got, want := NeverAllowed(addr), referenceBlocked(ip); got != want {
 			t.Fatalf("NeverAllowed(%s) = %v, reference %v", addr, got, want)
 		}
 		if got, want := Private(addr), referenceHas(referencePrivate, ip); got != want {

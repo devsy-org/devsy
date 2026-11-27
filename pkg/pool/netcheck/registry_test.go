@@ -30,6 +30,7 @@ const (
 	private10   = "10.0.0.0/8"
 	dummy6      = "100:0:0:1::/64"
 	bench6      = "2001:2::/48"
+	teredo6     = "2001::/32"
 	namePrivate = "Private-Use"
 
 	noteParent    = "inside a blocked parent block"
@@ -70,13 +71,15 @@ var registry = []registryEntry{
 	{"64:ff9b:1::/48", "IPv4-IPv6 Translat.", tierNever, ""},
 	{"100::/64", "Discard-Only Address Block", tierNever, ""},
 	{dummy6, "Dummy IPv6 Prefix", tierNever, ""},
-	{"2001::/32", "TEREDO", tierNever, ""},
+	{"2001::/23", "IETF Protocol Assignments", tierNever, ""},
+	{teredo6, "TEREDO", tierNever, ""},
 	{"2001:1::1/128", "Port Control Protocol Anycast", tierOpen, ""},
 	{"2001:1::2/128", "TURN Anycast", tierOpen, ""},
 	{"2001:1::3/128", "DNS-SD Service Registration Protocol Anycast", tierOpen, ""},
 	{bench6, "Benchmarking", tierNever, ""},
 	{"2001:3::/32", "AMT", tierOpen, ""},
 	{"2001:4:112::/48", "AS112-v6", tierOpen, ""},
+	{"2001:10::/28", "Deprecated (previously ORCHID)", tierNever, ""},
 	{"2001:20::/28", "ORCHIDv2", tierOpen, ""},
 	{"2001:30::/28", "Drone Remote ID Protocol Entity Tags", tierOpen, ""},
 	{"2001:db8::/32", "Documentation", tierPrivate, ""},

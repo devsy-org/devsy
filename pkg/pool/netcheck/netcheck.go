@@ -3,7 +3,10 @@
 // cannot disagree.
 package netcheck
 
-import "net/netip"
+import (
+	"net/netip"
+	"slices"
+)
 
 // The tables follow the IANA IPv4 and IPv6 special-purpose address registries
 // (both last modified 2026-10-13, checked 2026-11-27). Every entry marked
@@ -11,7 +14,12 @@ import "net/netip"
 // when a cidr rule may allow it. Entries marked True stay open, except three
 // that sit inside a blocked parent or are transition forms denied whole:
 // 192.0.0.9/32 and 192.0.0.10/32 inside 192.0.0.0/24, and 64:ff9b::/96.
-// The deprecated ORCHID block 2001:10::/28 has no value and stays open.
+//
+// 2001::/23 is the IETF protocol assignments block and is marked False, so
+// all of it is blocked except the globally reachable children the registry
+// lists (ietfOpen). Space nobody has assigned yet, and the deprecated ORCHID
+// block 2001:10::/28, stay blocked. Teredo 2001::/32 is a child marked N/A
+// and stays blocked.
 //
 // neverAllowed holds addresses no allow rule can reach: loopback, link-local,
 // cloud metadata, multicast, reserved space, and every IPv6 form that carries
@@ -48,6 +56,24 @@ var neverAllowed = mustPrefixes(
 	"100:0:0:1::/64",
 	"2001:2::/48",
 	"5f00::/16",
+	ietfProtocol,
+)
+
+const ietfProtocol = "2001::/23"
+
+var ietfPrefix = netip.MustParsePrefix(ietfProtocol)
+
+// ietfOpen holds the children of 2001::/23 the registry marks globally
+// reachable: PCP, TURN and SRP anycast, AMT, AS112, ORCHIDv2 and the drone ID
+// tags.
+var ietfOpen = mustPrefixes(
+	"2001:1::1/128",
+	"2001:1::2/128",
+	"2001:1::3/128",
+	"2001:3::/32",
+	"2001:4:112::/48",
+	"2001:20::/28",
+	"2001:30::/28",
 )
 
 // private holds addresses an allow rule may reach only through a cidr rule
@@ -81,7 +107,16 @@ func mustPrefixes(values ...string) []netip.Prefix {
 // unmapped form.
 func NeverAllowed(addr netip.Addr) bool {
 	addr, ok := normalize(addr)
-	return !ok || contains(neverAllowed, addr)
+	return !ok || blocked(addr)
+}
+
+func blocked(addr netip.Addr) bool {
+	for _, r := range neverAllowed {
+		if r.Contains(addr) && !openChild(r, addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // Private reports whether addr is in a private range that needs a covering
@@ -99,11 +134,24 @@ func OverlapsNeverAllowed(prefix netip.Prefix) (netip.Prefix, bool) {
 		return netip.Prefix{}, true
 	}
 	for _, r := range neverAllowed {
-		if prefix.Overlaps(r) {
+		if prefix.Overlaps(r) && !openPrefix(r, prefix) {
 			return r, true
 		}
 	}
 	return netip.Prefix{}, false
+}
+
+// openChild reports whether addr is in an open child of blocked range r.
+func openChild(r netip.Prefix, addr netip.Addr) bool {
+	return r == ietfPrefix && contains(ietfOpen, addr)
+}
+
+// openPrefix reports whether prefix lies wholly inside one open child of
+// blocked range r. A prefix wider than every child holds blocked space too.
+func openPrefix(r, prefix netip.Prefix) bool {
+	return r == ietfPrefix && slices.ContainsFunc(ietfOpen, func(o netip.Prefix) bool {
+		return o.Bits() <= prefix.Bits() && o.Contains(prefix.Addr())
+	})
 }
 
 func normalize(addr netip.Addr) (netip.Addr, bool) {
