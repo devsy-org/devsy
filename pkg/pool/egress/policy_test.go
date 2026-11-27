@@ -92,6 +92,10 @@ func (s *PolicySuite) TestNewRefusesMalformedRules() {
 		{Allow: []poolconfig.AllowRule{cidr("10.0.0.0")}},
 		{Allow: []poolconfig.AllowRule{cidr("not-a-cidr")}},
 		{Allow: []poolconfig.AllowRule{cidr("::ffff:10.0.0.0/104")}},
+		{Allow: []poolconfig.AllowRule{cidr("0.0.0.0/0")}},
+		{Allow: []poolconfig.AllowRule{cidr("::/0")}},
+		{Allow: []poolconfig.AllowRule{cidr("8.0.0.0/7")}},
+		{Allow: []poolconfig.AllowRule{cidr("2000::/16")}},
 	}
 	for i, cfg := range bad {
 		_, err := New(cfg, nil)
@@ -108,6 +112,13 @@ func (s *PolicySuite) TestNewRefusesMalformedRules() {
 func (s *PolicySuite) TestNewKeepsACidrThatOverlapsAReservedRange() {
 	_, err := New(poolconfig.Egress{Allow: []poolconfig.AllowRule{cidr("169.254.0.0/16")}}, nil)
 	s.NoError(err)
+}
+
+func (s *PolicySuite) TestNewKeepsTheNarrowestWideCidr() {
+	for _, c := range []string{"8.0.0.0/8", "2000::/32"} {
+		_, err := New(poolconfig.Egress{Allow: []poolconfig.AllowRule{cidr(c)}}, nil)
+		s.NoError(err, c)
+	}
 }
 
 func (s *PolicySuite) TestEmptyPolicyDeniesEverything() {
@@ -235,8 +246,8 @@ func (s *PolicySuite) TestACidrAloneNeverAllowsAName() {
 
 func (s *PolicySuite) TestNoRuleReachesAReservedRange() {
 	p := newPolicy(s.T(), []poolconfig.AllowRule{
-		host(hostWild), cidr("169.254.0.0/16"), cidr("127.0.0.0/8"), cidr("::/0"),
-		cidr("0.0.0.0/0"), cidr("64:ff9b::/96"), cidr("fe80::/10"), cidr("100.100.100.200/32"),
+		host(hostWild), cidr("169.254.0.0/16"), cidr("127.0.0.0/8"), cidr("::/32"),
+		cidr("0.0.0.0/8"), cidr("64:ff9b::/96"), cidr("fe80::/32"), cidr("100.100.100.200/32"),
 	})
 	for _, a := range []string{
 		metadataIP, "127.0.0.1", loopback6, "64:ff9b::808:808", "fe80::1", "100.100.100.200",

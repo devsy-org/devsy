@@ -1,6 +1,7 @@
 package egress
 
 import (
+	"fmt"
 	"net/netip"
 	"strings"
 	"testing"
@@ -101,7 +102,7 @@ func FuzzCheckAddr(f *testing.F) {
 	} {
 		f.Add(seed, uint8(0))
 	}
-	all := fuzzPolicy(f, host(hostWild), cidr("0.0.0.0/0"), cidr("::/0"))
+	all := fuzzPolicy(f, widestRules()...)
 	f.Fuzz(func(t *testing.T, raw []byte, zone uint8) {
 		addr, ok := netip.AddrFromSlice(raw)
 		if !ok {
@@ -119,6 +120,22 @@ func FuzzCheckAddr(f *testing.F) {
 			}
 		}
 	})
+}
+
+// widestRules allows every IPv4 /8 and the IPv6 /32s the checks care about,
+// the widest cidr rules New accepts.
+func widestRules() []poolconfig.AllowRule {
+	rules := []poolconfig.AllowRule{host(hostWild)}
+	for i := range 256 {
+		rules = append(rules, cidr(fmt.Sprintf("%d.0.0.0/8", i)))
+	}
+	for _, c := range []string{
+		"::/32", "2001::/32", "2002::/32", "64:ff9b::/32", "fc00::/32", "fd00::/32",
+		"fe80::/32", "ff00::/32", "3fff::/32", "2606::/32",
+	} {
+		rules = append(rules, cidr(c))
+	}
+	return rules
 }
 
 func forbidden(addr netip.Addr) bool {

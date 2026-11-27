@@ -200,6 +200,14 @@ func checkLabels(labels []string) string {
 	return ""
 }
 
+// PrefixTooWide reports whether a cidr rule is wider than config accepts.
+func PrefixTooWide(prefix netip.Prefix) bool {
+	if prefix.Addr().Is4() {
+		return prefix.Bits() < minIPv4PrefixBits
+	}
+	return prefix.Bits() < minIPv6PrefixBits
+}
+
 func checkCIDR(value string) string {
 	prefix, err := netip.ParsePrefix(value)
 	if err != nil {
@@ -208,11 +216,7 @@ func checkCIDR(value string) string {
 	if prefix != prefix.Masked() {
 		return "must be canonical, with no address bits set past the prefix length"
 	}
-	minBits := minIPv6PrefixBits
-	if prefix.Addr().Is4() {
-		minBits = minIPv4PrefixBits
-	}
-	if prefix.Bits() < minBits {
+	if PrefixTooWide(prefix) {
 		return fmt.Sprintf("must be /%d or narrower for IPv4 and /%d or narrower for IPv6",
 			minIPv4PrefixBits, minIPv6PrefixBits)
 	}
