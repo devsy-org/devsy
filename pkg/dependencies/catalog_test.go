@@ -16,6 +16,13 @@ type catalogSuite struct {
 const (
 	testCustom = "custom"
 	testShell  = "shell"
+
+	platLinuxAMD   = "linux/amd64"
+	platLinuxARM   = "linux/arm64"
+	platDarwinAMD  = "darwin/amd64"
+	platDarwinARM  = "darwin/arm64"
+	platWindowsAMD = "windows/amd64"
+	platWindowsARM = "windows/arm64"
 )
 
 func TestCatalog(t *testing.T) {
@@ -192,22 +199,34 @@ func (s *catalogSuite) TestMicroSandboxImageBackendIsConditional() {
 	}
 }
 
-// Provider releases contain binaries for Linux amd64 and arm64, macOS arm64
-// and Windows amd64 (see the MicroSandbox provider page in the docs).
-func (s *catalogSuite) TestMicroSandboxPlatformsMatchPublishedBinaries() {
+// Each list comes from a release or host check, not from a guess. The internal
+// Docker, Podman and Kubernetes providers ship with the Devsy CLI, which builds
+// linux, darwin and windows for amd64 and arm64. The Apple driver refuses any
+// host except darwin/arm64. The external providers publish what their release
+// builds produce: Lima linux and darwin on both architectures, OrbStack darwin
+// on both, and MicroSandbox linux on both, darwin/arm64 and windows/amd64.
+func (s *catalogSuite) TestBindingPlatformsMatchTheirSources() {
+	allDesktop := []string{
+		platLinuxAMD, platLinuxARM, platDarwinAMD, platDarwinARM, platWindowsAMD, platWindowsARM,
+	}
+	want := map[string][]string{
+		"docker":       allDesktop,
+		"podman":       allDesktop,
+		"kubernetes":   allDesktop,
+		"apple":        {platDarwinARM},
+		"lima":         {platLinuxAMD, platLinuxARM, platDarwinAMD, platDarwinARM},
+		"orbstack":     {platDarwinAMD, platDarwinARM},
+		"microsandbox": {platLinuxAMD, platLinuxARM, platDarwinARM, platWindowsAMD},
+	}
 	catalog, err := LoadCatalog()
 	s.Require().NoError(err)
 
+	got := map[string][]string{}
 	for _, binding := range catalog.Bindings() {
-		if binding.ID == "microsandbox" {
-			s.Equal(
-				[]string{"linux/amd64", "linux/arm64", "darwin/arm64", "windows/amd64"},
-				binding.Platforms,
-			)
-			return
-		}
+		got[binding.ID] = binding.Platforms
 	}
-	s.Fail("microsandbox binding is missing")
+
+	s.Equal(want, got)
 }
 
 func (s *catalogSuite) TestKubernetesHasNoExecutableProbeOrKubectlDependency() {
