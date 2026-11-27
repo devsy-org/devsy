@@ -23,6 +23,11 @@ const (
 	formulaGlobPattern = `Dir\["([^"]+)"\]`
 )
 
+var (
+	buildIDPattern       = regexp.MustCompile(`--id\s+(\S+)`)
+	verifiedAssetPattern = regexp.MustCompile(`devsy-bin/([^"\s]+)"?\s+update`)
+)
+
 type goreleaserBuild struct {
 	ID     string   `yaml:"id"`
 	Goos   []string `yaml:"goos"`
@@ -136,7 +141,7 @@ func TestReleaseWorkflowBuildsStagesAndUploadsTheFormulaAssets(t *testing.T) {
 	build := findStep(t, steps, func(s releaseStep) bool {
 		return strings.Contains(fmt.Sprint(s.With["args"]), "build")
 	})
-	require.Contains(t, fmt.Sprint(build.With["args"]), "--id "+homebrewBuildID)
+	require.Equal(t, homebrewBuildID, capture(t, buildIDPattern, fmt.Sprint(build.With["args"])))
 
 	stage := findStep(
 		t,
@@ -156,8 +161,18 @@ func TestReleaseWorkflowChecksAnAssetTheFormulaServes(t *testing.T) {
 		return strings.Contains(s.Run, "brew upgrade devsy")
 	})
 
-	served := slices.ContainsFunc(formulaBinaries(), func(name string) bool {
-		return strings.Contains(verify.Run, "/"+name)
-	})
-	require.True(t, served, "verify step runs an asset the formula does not serve:\n%s", verify.Run)
+	asset := capture(t, verifiedAssetPattern, verify.Run)
+	require.Contains(
+		t,
+		formulaBinaries(),
+		asset,
+		"verify step runs an asset the formula does not serve",
+	)
+}
+
+func capture(t *testing.T, pattern *regexp.Regexp, text string) string {
+	t.Helper()
+	match := pattern.FindStringSubmatch(text)
+	require.Len(t, match, 2, "%s not found in:\n%s", pattern, text)
+	return match[1]
 }
