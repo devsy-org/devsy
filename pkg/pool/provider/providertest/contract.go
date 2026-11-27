@@ -1,6 +1,7 @@
 package providertest
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -13,9 +14,14 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// testImage is the image reference contract specs carry. A real provider must
+// Image is the image reference contract specs carry. A real provider must
 // be able to create a workspace from it.
-const testImage = "busybox:1.37"
+const Image = "busybox:1.37"
+
+const testImage = Image
+
+// defaultSeeded is how many extra objects the list-everything spec seeds.
+const defaultSeeded = 1000
 
 const (
 	unlabelledName  = "unlabelled"
@@ -28,8 +34,11 @@ const (
 // name with a new object that has a fresh UID. OnNextCall runs fn once inside the next operation,
 // after it starts and before it changes resources. Inventory returns every
 // object in the backend, labelled or not, so the suite can check that objects
-// outside a pool are never touched. Every field is required.
+// outside a pool are never touched. MaxSeeded caps the objects the list spec
+// seeds, for backends where an object is costly, and 0 keeps the default of
+// 1000. The other fields are required.
 type Harness struct {
+	MaxSeeded  int
 	New        func(t *testing.T) provider.Provider
 	Seed       func(t *testing.T, p provider.Provider, r provider.Resource)
 	OnNextCall func(t *testing.T, p provider.Provider, fn func())
@@ -73,7 +82,7 @@ func (s *contractSuite) TestSpawnAndList() {
 }
 
 func (s *contractSuite) TestListReturnsEveryResourceInPool() {
-	const seedCount = 1000
+	seedCount := cmp.Or(s.harness.MaxSeeded, defaultSeeded)
 	specs := []provider.Spec{s.spec("a"), s.spec("a-b")}
 	want := make(map[string][]provider.Resource)
 	for _, spec := range specs {
