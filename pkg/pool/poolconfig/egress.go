@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/devsy-org/devsy/pkg/pool/netcheck"
 )
 
 const (
@@ -43,30 +45,6 @@ var (
 	internalSuffixes = []string{".internal", ".local", ".localdomain", ".svc", ".home.arpa"}
 	metadataNames    = []string{"metadata.goog"}
 )
-
-// reservedPrefixes are never reachable through an allow rule: loopback,
-// link-local, cloud metadata, multicast, reserved space, and IPv6 forms that
-// embed an IPv4 address and would otherwise slip past the IPv4 entries.
-var reservedPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("127.0.0.0/8"),
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("100.100.100.200/32"),
-	netip.MustParsePrefix("168.63.129.16/32"),
-	netip.MustParsePrefix("192.0.0.192/32"),
-	netip.MustParsePrefix("224.0.0.0/4"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("::/96"),
-	netip.MustParsePrefix("::ffff:0:0/96"),
-	netip.MustParsePrefix("::ffff:0:0:0/96"),
-	netip.MustParsePrefix("64:ff9b::/96"),
-	netip.MustParsePrefix("64:ff9b:1::/48"),
-	netip.MustParsePrefix("2001::/32"),
-	netip.MustParsePrefix("2002::/16"),
-	netip.MustParsePrefix("ff00::/8"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("fd00:ec2::/32"),
-}
 
 // HostMatches reports whether host matches an allow rule host pattern.
 // Patterns are lowercase and must be valid allow patterns. A leading "*."
@@ -219,11 +197,9 @@ func checkCIDR(value string) string {
 		return fmt.Sprintf("must be /%d or narrower for IPv4 and /%d or narrower for IPv6",
 			minIPv4PrefixBits, minIPv6PrefixBits)
 	}
-	for _, reserved := range reservedPrefixes {
-		if prefix.Overlaps(reserved) {
-			return "overlaps reserved range " + reserved.String() +
-				" (loopback, link-local, metadata, multicast, reserved or IPv4 embedded in IPv6)"
-		}
+	if reserved, overlaps := netcheck.OverlapsNeverAllowed(prefix); overlaps {
+		return "overlaps reserved range " + reserved.String() +
+			" (loopback, link-local, metadata, multicast, reserved or IPv4 embedded in IPv6)"
 	}
 	return ""
 }
