@@ -107,6 +107,10 @@ func (s *scopeSuite) TestWorkflowEnsuresMainsTipHasARun() {
 	s.Contains(raw, "    permissions:\n      actions: write\n      contents: read\n")
 	s.Contains(raw, "GH_TOKEN: ${{ github.token }}\n          HEAD_SHA: ${{ github.sha }}\n")
 	s.Contains(raw, "run: go run ./hack/ci ensure-tip --sha \"$HEAD_SHA\"")
+	s.Contains(
+		raw,
+		"replaced it\n        continue-on-error: true\n        env:\n          GH_TOKEN:",
+	)
 	s.Equal(1, strings.Count(raw, "actions: write"))
 }
 
