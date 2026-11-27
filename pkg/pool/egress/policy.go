@@ -172,7 +172,7 @@ func (p *Policy) add(rule poolconfig.AllowRule) error {
 		return errors.New("cidr is not a valid IPv4 or IPv6 range")
 	}
 	if poolconfig.PrefixTooWide(prefix) {
-		return errors.New("cidr is wider than the allowed minimum prefix")
+		return errors.New("cidr is wider than /8 for IPv4 or /32 for IPv6")
 	}
 	p.cidrs = append(p.cidrs, cidrRule{prefix: prefix.Masked(), ports: ports})
 	return nil

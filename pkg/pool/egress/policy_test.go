@@ -96,6 +96,7 @@ func (s *PolicySuite) TestNewRefusesMalformedRules() {
 		{Allow: []poolconfig.AllowRule{cidr("::/0")}},
 		{Allow: []poolconfig.AllowRule{cidr("8.0.0.0/7")}},
 		{Allow: []poolconfig.AllowRule{cidr("2000::/16")}},
+		{Allow: []poolconfig.AllowRule{cidr("2000::/31")}},
 	}
 	for i, cfg := range bad {
 		_, err := New(cfg, nil)
@@ -112,6 +113,34 @@ func (s *PolicySuite) TestNewRefusesMalformedRules() {
 func (s *PolicySuite) TestNewKeepsACidrThatOverlapsAReservedRange() {
 	_, err := New(poolconfig.Egress{Allow: []poolconfig.AllowRule{cidr("169.254.0.0/16")}}, nil)
 	s.NoError(err)
+}
+
+func (s *PolicySuite) TestWideCidrErrorNamesTheLimits() {
+	for _, c := range []string{"0.0.0.0/0", "8.0.0.0/7", "2000::/31"} {
+		_, err := New(poolconfig.Egress{Allow: []poolconfig.AllowRule{cidr(c)}}, nil)
+		s.Require().Error(err, c)
+		s.Contains(err.Error(), "/8 for IPv4")
+		s.Contains(err.Error(), "/32 for IPv6")
+	}
+}
+
+func (s *PolicySuite) TestAZonedMappedAddressIsRefused() {
+	p := newPolicy(s.T(), []poolconfig.AllowRule{host(hostSub), cidr(cidrPrivate)})
+	for _, a := range []string{"::ffff:10.0.0.1%eth0", "::ffff:8.8.8.8%eth0"} {
+		addr := netip.MustParseAddr(a)
+		s.Equal(deny(ReservedRange), p.CheckAddr(addr, 443), a)
+		s.Equal(deny(ReservedRange), p.CheckResolved(hostSub, 443, []netip.Addr{addr}), a)
+	}
+	s.Equal(allowed, p.CheckAddr(netip.MustParseAddr("::ffff:10.0.0.1"), 443))
+}
+
+func (s *PolicySuite) TestAlwaysDenyIsCopiedByNew() {
+	deny := prefixes("172.17.0.0/16")
+	p, err := New(poolconfig.Egress{Allow: []poolconfig.AllowRule{host(hostSub)}}, deny)
+	s.Require().NoError(err)
+	deny[0] = netip.MustParsePrefix(publicIP + "/32")
+	s.Equal(PoolNetwork, p.CheckResolved(hostSub, 443, addrs("172.17.0.5")).Reason)
+	s.Equal(allowed, p.CheckResolved(hostSub, 443, addrs(publicIP)))
 }
 
 func (s *PolicySuite) TestNewKeepsTheNarrowestWideCidr() {
