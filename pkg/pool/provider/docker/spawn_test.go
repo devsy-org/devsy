@@ -159,6 +159,18 @@ func (s *ProviderSuite) TestSpawnDoesNotPullAnImageTheDaemonHolds() {
 	}
 }
 
+func (s *ProviderSuite) TestSpawnOfAnExistingSessionNeverTouchesTheImage() {
+	spec := s.spec()
+	s.d.absent = map[string]bool{spec.Image: true}
+	s.d.add(kindWorkspace, "leftover", labelsFor("a", spec.Session))
+	s.Require().ErrorIs(s.p.Spawn(s.T().Context(), spec), provider.ErrExists)
+	for _, c := range s.d.commands() {
+		s.NotEqual(nounImage, c[0], "%v", c)
+		s.NotEqual(verbPull, c[0], "%v", c)
+	}
+	s.True(s.d.absent[spec.Image])
+}
+
 func (s *ProviderSuite) TestAFailedPullCreatesNothing() {
 	spec := s.spec()
 	boom := errors.New("registry unreachable")
