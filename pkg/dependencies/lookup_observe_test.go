@@ -261,7 +261,7 @@ func (s *lookupModelSuite) TestObserveRefusesPathsBeforeInspection() {
 	}
 	for _, path := range []string{
 		"", `tool.exe`, `\\host\share\a.exe`, `\\.\pipe\a`, `C:a.exe`,
-		`C:\w\CON.exe`, `C:\w\a.exe:s`, "C:\\w\\a\x00.exe",
+		deviceName, `C:\w\a.exe:s`, "C:\\w\\a\x00.exe",
 	} {
 		candidate, err := environment.observe(context.Background(), path, LookupExplicit)
 

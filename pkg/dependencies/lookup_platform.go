@@ -321,8 +321,15 @@ func (e LookupEnvironment) hasLauncherSuffix(directory string) bool {
 // lexicalKey is the comparison form of a complete path: a normalized directory
 // and a base name folded when the platform ignores case. A path with a dot
 // component keeps its exact text, because ".." can cross a symlink and name a
-// different file than its cleaned form.
+// different file than its cleaned form. A Windows verbatim path also keeps its
+// exact text apart from case, because Win32 does not normalize it: it can name a
+// different file than the ordinary spelling, so the two never share a key. A
+// repeated key may list one file twice, which is harmless, but a shared key
+// could hide a distinct file.
 func (e LookupEnvironment) lexicalKey(path string) string {
+	if e.windows && strings.HasPrefix(path, `\\?\`) {
+		return strings.ToLower(path)
+	}
 	if slices.ContainsFunc(
 		slices.Collect(strings.FieldsFuncSeq(path, e.separatorRune)), dotComponent,
 	) {
