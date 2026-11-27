@@ -638,7 +638,7 @@ func (s *EngineSuite) load(id string) session.Session {
 
 func (s *EngineSuite) spawn(id string) {
 	s.T().Helper()
-	spec := provider.Spec{Pool: testPool, Session: id}
+	spec := provider.Spec{Pool: testPool, Session: id, Image: "busybox"}
 	s.Require().NoError(s.fake.Spawn(context.Background(), spec))
 }
 

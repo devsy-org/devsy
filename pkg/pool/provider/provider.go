@@ -17,6 +17,10 @@ var ErrExists = errors.New("session resources already exist")
 // ErrInvalidPool reports that a pool name fails poolconfig.ValidPoolName.
 var ErrInvalidPool = errors.New("pool name is not valid")
 
+// ErrInvalidImage reports that Spec.Image is empty, starts with "-" or holds
+// whitespace or control characters. Spawn returns it without changing anything.
+var ErrInvalidImage = errors.New("image reference is not valid")
+
 // ErrInvalidSession reports that a session ID is not owned by the pool.
 var ErrInvalidSession = errors.New("session ID does not belong to pool")
 
@@ -33,11 +37,13 @@ type Resource struct {
 	Labels map[string]string
 }
 
-// Spec requests a session spawn. Enforcement inputs will be added when an
-// enforcer exists.
+// Spec requests a session spawn. Image is the workspace image reference;
+// CheckImage defines what a provider accepts. Enforcement inputs will be added
+// when an enforcer exists.
 type Spec struct {
 	Pool    string
 	Session string
+	Image   string
 }
 
 // Provider manages session resources. Every method honors context cancellation
@@ -46,11 +52,21 @@ type Spec struct {
 // its context is canceled, including from a blocked network call: the engine's
 // Reclaim holds a lock across its provider calls, so a call that ignores the
 // context stalls every other session operation on that Engine.
+//
+// Spawn is the one exception. A create command that has started runs to its
+// end, up to 30 seconds, because a killed command can still finish in the
+// daemon unseen. The rollback after a failure or cancel can take up to 30
+// seconds more. A canceled Spawn can therefore return up to 60 seconds late.
 type Provider interface {
 	// Spawn creates all resources for a session and labels each with LabelPool
 	// and LabelSession. If the session already exists, it returns ErrExists
 	// without changing anything. If session.OwnsID rejects the session ID,
-	// Spawn returns ErrInvalidSession without changing anything.
+	// Spawn returns ErrInvalidSession, and if CheckImage rejects Spec.Image it
+	// returns ErrInvalidImage, in both cases without changing anything. When
+	// Spawn fails or is canceled after creating some resources, it removes them
+	// again before it returns. A cancel does not kill a create command that
+	// has started, because a killed docker CLI can still finish in the daemon
+	// unseen, so Spawn may return up to a create timeout after the cancel.
 	Spawn(ctx context.Context, spec Spec) error
 
 	// Reclaim removes every resource with both LabelPool and LabelSession

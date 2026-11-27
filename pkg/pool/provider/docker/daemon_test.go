@@ -23,13 +23,19 @@ const (
 	shellBait   = "$(id)"
 )
 
-var errNoSuchObject = errors.New("no such object")
+var (
+	errNoSuchObject = errors.New("no such object")
+	errInjected     = errors.New("injected failure")
+)
 
 type object struct {
-	kind   string
-	id     string
-	name   string
-	labels map[string]string
+	kind     string
+	id       string
+	name     string
+	labels   map[string]string
+	internal bool
+	network  string
+	image    string
 }
 
 // daemon is an in-memory Docker that rejects any command or flag the
@@ -41,22 +47,104 @@ type daemon struct {
 	seq    int
 	loose  bool
 	before func(args []string)
+	once   func()
 	rmErr  error
+	// failAt makes the call with that 1-based number return errInjected. With
+	// failApplied the command has already taken effect, as when a CLI is killed
+	// after the daemon did the work.
+	failAt      int
+	failApplied bool
+	// lateAfter makes a create that arrives with a finished context still
+	// happen in the daemon, just before that many later calls, as when a
+	// killed CLI leaves its work running.
+	lateAfter int
+	late      *lateCreate
+	// createOut replaces what a network create prints.
+	createOut string
+}
+
+type lateCreate struct {
+	args  []string
+	after int
 }
 
 func (d *daemon) Run(ctx context.Context, args ...string) ([]byte, error) {
-	d.mu.Lock()
-	d.calls = append(d.calls, slices.Clone(args))
-	before := d.before
-	d.mu.Unlock()
+	n, before, once := d.enter(args)
 	if before != nil {
 		before(args)
 	}
+	if once != nil {
+		once()
+	}
 	if err := ctx.Err(); err != nil {
+		d.delayCreate(args)
 		return nil, err
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.apply(n, args)
+}
+
+func (d *daemon) enter(args []string) (int, func([]string), func()) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.calls = append(d.calls, slices.Clone(args))
+	d.landLate()
+	before, once := d.before, d.once
+	d.once = nil
+	return len(d.calls), before, once
+}
+
+func (d *daemon) apply(n int, args []string) ([]byte, error) {
+	if n == d.failAt && !d.failApplied {
+		return nil, errInjected
+	}
+	out, err := d.dispatch(args)
+	if n == d.failAt && d.failApplied {
+		return nil, errInjected
+	}
+	return d.printed(out, args), err
+}
+
+func (d *daemon) printed(out []byte, args []string) []byte {
+	if d.createOut != "" && args[0] == kindNetwork && args[1] == verbCreate && out != nil {
+		return []byte(d.createOut)
+	}
+	return out
+}
+
+// landLate runs with d.mu held.
+func (d *daemon) landLate() {
+	if d.late == nil {
+		return
+	}
+	if d.late.after--; d.late.after == 0 {
+		args := d.late.args
+		d.late = nil
+		_, _ = d.dispatch(args)
+	}
+}
+
+// flushLate lands a create that no later call reached, as when the daemon
+// finishes after the provider stopped looking.
+func (d *daemon) flushLate() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.late != nil {
+		d.late.after = 1
+		d.landLate()
+	}
+}
+
+func (d *daemon) delayCreate(args []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.lateAfter > 0 && d.late == nil && len(args) > 1 && args[1] == verbCreate {
+		d.late = &lateCreate{args: slices.Clone(args), after: d.lateAfter}
+	}
+}
+
+func (d *daemon) dispatch(args []string) ([]byte, error) {
 	kind, ok := map[string]string{nounContainer: kindWorkspace, kindNetwork: kindNetwork}[args[0]]
 	if !ok || len(args) < 2 {
 		return nil, fmt.Errorf("unexpected command %v", args)
@@ -68,6 +156,8 @@ func (d *daemon) Run(ctx context.Context, args ...string) ([]byte, error) {
 		return d.inspect(kind, args[2:])
 	case "rm":
 		return d.rm(kind, args[2:])
+	case verbCreate:
+		return d.create(kind, args[2:])
 	}
 	return nil, fmt.Errorf("unexpected verb %v", args)
 }
@@ -250,4 +340,127 @@ func (d *daemon) commands() [][]string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return slices.Clone(d.calls)
+}
+
+func (d *daemon) seed(kind, name string, labels map[string]string) {
+	d.mu.Lock()
+	d.objs = slices.DeleteFunc(
+		d.objs,
+		func(o object) bool { return o.kind == kind && o.name == name },
+	)
+	d.mu.Unlock()
+	d.add(kind, name, labels)
+}
+
+func (d *daemon) inventory() []provider.Resource {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]provider.Resource, 0, len(d.objs))
+	for _, o := range d.objs {
+		out = append(out, provider.Resource{
+			Kind: o.kind, Name: o.name, UID: o.id, Labels: maps.Clone(o.labels),
+		})
+	}
+	return out
+}
+
+func (d *daemon) named(kind, name string) (object, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, o := range d.objs {
+		if o.kind == kind && o.name == name {
+			return o, true
+		}
+	}
+	return object{}, false
+}
+
+type createArgs struct {
+	labels   map[string]string
+	name     string
+	network  string
+	operand  string
+	internal bool
+}
+
+func (d *daemon) create(kind string, args []string) ([]byte, error) {
+	c, err := parseCreate(kind, args)
+	if err != nil {
+		return nil, err
+	}
+	o := object{kind: kind, name: c.name, labels: c.labels, internal: c.internal}
+	if kind == kindWorkspace {
+		if _, ok := d.find(kindNetwork, c.network); !ok {
+			return nil, errNoSuchObject
+		}
+		o.network, o.image = c.network, c.operand
+	}
+	if slices.ContainsFunc(
+		d.objs,
+		func(x object) bool { return x.kind == kind && x.name == c.name },
+	) {
+		return nil, fmt.Errorf("name %q is already in use", c.name)
+	}
+	d.seq++
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s/%d", c.name, d.seq))
+	o.id = hex.EncodeToString(sum[:])
+	d.objs = append(d.objs, o)
+	return []byte(o.id + "\n"), nil
+}
+
+func parseCreate(kind string, args []string) (createArgs, error) {
+	c := createArgs{labels: map[string]string{}}
+	i := 0
+	for ; i < len(args) && args[i] != "--"; i++ {
+		var err error
+		if i, err = c.flag(kind, args, i); err != nil {
+			return c, err
+		}
+	}
+	if i != len(args)-2 {
+		return c, fmt.Errorf("create needs one operand after --, got %v", args)
+	}
+	c.operand = args[len(args)-1]
+	return c, c.validate(kind, args)
+}
+
+func (c *createArgs) validate(kind string, args []string) error {
+	if kind == kindNetwork {
+		c.name = c.operand
+		if !c.internal {
+			return fmt.Errorf("a pool network must be internal: %v", args)
+		}
+		return nil
+	}
+	if c.name == "" || c.network == "" {
+		return fmt.Errorf("container create needs --name and --network: %v", args)
+	}
+	return nil
+}
+
+func (c *createArgs) flag(kind string, args []string, i int) (int, error) {
+	if args[i] == "--internal" && kind == kindNetwork {
+		c.internal = true
+		return i, nil
+	}
+	set := c.setters(kind)[args[i]]
+	if set == nil || i+1 >= len(args) {
+		return i, fmt.Errorf("unexpected create argument %q", args[i])
+	}
+	set(args[i+1])
+	return i + 1, nil
+}
+
+func (c *createArgs) setters(kind string) map[string]func(string) {
+	setters := map[string]func(string){
+		"--label": func(v string) {
+			key, value, _ := strings.Cut(v, "=")
+			c.labels[key] = value
+		},
+	}
+	if kind == kindWorkspace {
+		setters["--name"] = func(v string) { c.name = v }
+		setters["--network"] = func(v string) { c.network = v }
+	}
+	return setters
 }
