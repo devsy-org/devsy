@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"strings"
 
@@ -69,7 +70,7 @@ func (s *scopeSuite) TestGitHubRunHistoryReadsPushRunsOfTheCommit() {
 	call := runner.calls[0]
 	prefix := "api repos/devsy-org/devsy/actions/workflows/pr-ci.yml/runs?"
 	s.True(strings.HasPrefix(call, prefix), call)
-	for _, want := range []string{"event=push", "branch=main", "head_sha=" + scopeTestBefore} {
+	for _, want := range []string{"branch=main", "head_sha=" + scopeTestBefore} {
 		s.Contains(call, want)
 	}
 }
@@ -96,4 +97,48 @@ func (s *scopeSuite) TestWorkflowSharesOneNonCancellingMainGroup() {
 		"    permissions:\n      actions: read\n      contents: read\n      pull-requests: read",
 	)
 	require.NotContains(s.T(), raw, "cancel-in-progress: true")
+}
+
+func (s *scopeSuite) TestWorkflowEnsuresMainsTipHasARun() {
+	raw, err := readWorkflow()
+	s.Require().NoError(err)
+
+	s.Contains(raw, "  ensure-tip:\n    name: Main Tip Run\n    if: github.event_name == 'push'")
+	s.Contains(raw, "    permissions:\n      actions: write\n      contents: read\n")
+	s.Contains(raw, "GH_TOKEN: ${{ github.token }}\n          HEAD_SHA: ${{ github.sha }}\n")
+	s.Contains(raw, "run: go run ./hack/ci ensure-tip --sha \"$HEAD_SHA\"")
+	s.Equal(1, strings.Count(raw, "actions: write"))
+}
+
+// The scope command must consult the previous run, or a replaced run's commit
+// could be skipped as documentation only.
+func (s *scopeSuite) TestScopeCommandRequiresTheVerdictOnThePreviousRun() {
+	tests := []struct {
+		name       string
+		conclusion string
+		light      string
+	}{
+		{"previous run passed", resultSuccess, "light=true\n"},
+		{"previous run replaced", cancelledState, "light=false\n"},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			runner := routeRunner{
+				"cat-file": "tree abc\nparent " + scopeTestBefore + "\n",
+				"diff":     readmeFile + "\x00",
+				"api":      tt.conclusion + "\n",
+			}
+			var stdout, stderr bytes.Buffer
+
+			code := scopeWith(
+				runner,
+				[]string{"--before", scopeTestBefore, "--sha", scopeTestSHA, "--repo", "o/r"},
+				&stdout,
+				&stderr,
+			)
+
+			s.Equal(0, code)
+			s.Contains(stdout.String(), tt.light)
+		})
+	}
 }

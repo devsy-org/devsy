@@ -149,6 +149,10 @@ func (g gitHistory) git(ctx context.Context, args ...string) (string, error) {
 }
 
 func scopeCLI(args []string, stdout, stderr io.Writer) int {
+	return scopeWith(execRunner{}, args, stdout, stderr)
+}
+
+func scopeWith(runner commandRunner, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("scope", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	before := fs.String("before", "", "commit main pointed at before the push")
@@ -166,10 +170,10 @@ func scopeCLI(args []string, stdout, stderr io.Writer) int {
 	ctx := context.Background()
 	push := pushRange{Before: *before, SHA: *sha}
 	decision := classifyPush(
-		ctx, gitHistory{runner: execRunner{}, dir: *dir}, manifest.Selection, push,
+		ctx, gitHistory{runner: runner, dir: *dir}, manifest.Selection, push,
 	)
 	decision = requirePreviousRun(
-		ctx, ghRunHistory{runner: execRunner{}, repo: *repo}, push, decision,
+		ctx, ghRunHistory{runner: runner, repo: *repo}, push, decision,
 	)
 	_, _ = fmt.Fprintf(stdout, "light=%t\nreason=%s\n", decision.Light, decision.Reason)
 	_, _ = fmt.Fprintf(

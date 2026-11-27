@@ -12,13 +12,14 @@ import (
 
 const (
 	scopeWorkflowFile = "pr-ci.yml"
+	mainBranch        = "main"
 	resultFailure     = "failure"
 )
 
 var errNoRepository = errors.New("no repository to read runs from")
 
-// runHistory lists how the main runs of a commit ended. A run that has not
-// finished reports "none".
+// runHistory lists how the runs of a commit on main ended, whatever started
+// them. A run that has not finished reports "none".
 type runHistory interface {
 	Conclusions(ctx context.Context, sha string) ([]string, error)
 }
@@ -69,8 +70,7 @@ func (g ghRunHistory) Conclusions(ctx context.Context, sha string) ([]string, er
 		return nil, errNoRepository
 	}
 	query := url.Values{
-		"event":    {"push"},
-		"branch":   {"main"},
+		"branch":   {mainBranch},
 		"head_sha": {sha},
 		"per_page": {"100"},
 	}

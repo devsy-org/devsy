@@ -33,10 +33,17 @@ as false. The previous main commit must also have a finished, uncancelled run
 (`success` or `failure`), because pushes to main share one concurrency group
 and a newer push replaces an older run that is still waiting. Anything else,
 including a force push, a push of several commits, a missing previous SHA, a
-cancelled previous run, a git or API error, runs in full. The excludes list files a Go
-test or a CI job reads (`install.sh`, the microsandbox docs page, `AGENTS.md`,
+cancelled previous run, a git or API error, runs in full. The excludes list
+files a Go test or a CI job reads (`install.sh`, the microsandbox docs page, `AGENTS.md`,
 the licenses file) and Markdown inside the Go trees. Scheduled runs (nightly)
 and manual runs always run in full. Pre-commit still runs on every push.
+
+GitHub does not promise that a waiting main run is replaced in push order, so
+an older push's run can replace the run of the newest commit. `ci ensure-tip
+--sha SHA` runs in the `Main Tip Run` job of every push run. When SHA is not
+main's tip and the tip has no run that was not cancelled, it starts a manual
+run for the tip, which always runs in full. Any run that does start repeats the
+check, so the tip is covered whatever the order was.
 
 Pull requests use `--mode=pr --changed-files FILE`. The file contains one
 repository-relative path per line. Paths in `selection.full_run_paths` select

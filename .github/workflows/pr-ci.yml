@@ -19,10 +19,11 @@ on:
 
 # Pull requests cancel superseded runs of the same PR. Pushes to main share one
 # group without cancelling: a run that has started always finishes, and a newer
-# push replaces an older run that is still waiting (the `changes` job then runs
-# the replaced commit's checks in full). Reruns, scheduled and manual runs get
-# their own group so they are never replaced. The pr-, main- and run- prefixes
-# keep a numeric branch name from matching a run ID.
+# push replaces a run that is still waiting. The next run after a replaced one
+# tests in full (`changes`), and `ensure-tip` covers a replaced newest commit.
+# Reruns, scheduled and manual runs get their own group so they are never
+# replaced. The pr-, main- and run- prefixes keep a numeric branch name from
+# matching a run ID.
 concurrency:
   group: ${{ github.workflow }}-${{ github.run_attempt == 1 && github.event_name == 'pull_request' && format('pr-{0}', github.head_ref) || github.run_attempt == 1 && github.event_name == 'push' && format('main-{0}', github.ref_name) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -147,6 +148,33 @@ jobs:
               - 'hack/provider_update_ci/**'
             all:
               - '**'
+
+  # GitHub does not promise that a waiting main run is replaced in push order,
+  # so an older push can replace the newest commit's run. Every main run that
+  # starts makes sure the tip has one. A failure here leaves things as they were.
+  ensure-tip:
+    name: Main Tip Run
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: start a run for main's tip when this push's run replaced it
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+        run: go run ./hack/ci ensure-tip --sha "$HEAD_SHA"
 
   plan:
     name: Plan
