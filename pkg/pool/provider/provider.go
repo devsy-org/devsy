@@ -55,7 +55,8 @@ type Spec struct {
 //
 // Spawn is the one exception. A create command that has started runs to its
 // end, up to 30 seconds, because a killed command can still finish in the
-// daemon unseen. The rollback after a failure or cancel can take up to 30
+// daemon unseen. An image the daemon lacks is pulled first, up to 5 minutes;
+// a pull creates nothing, so a cancel stops it at once. The rollback after a failure or cancel can take up to 30
 // seconds more. A canceled Spawn can therefore return up to 60 seconds late.
 type Provider interface {
 	// Spawn creates all resources for a session and labels each with LabelPool

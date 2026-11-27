@@ -19,6 +19,7 @@ const (
 	verbInspect = "inspect"
 	flagAll     = "--all"
 	flagForce   = "--force"
+	flagQuiet   = "--quiet"
 	spaced      = "a b"
 	shellBait   = "$(id)"
 )
@@ -61,6 +62,10 @@ type daemon struct {
 	late      *lateCreate
 	// createOut replaces what a network create prints.
 	createOut string
+	// absent lists images the daemon does not hold. A pull adds them, unless
+	// pullErr is set.
+	absent  map[string]bool
+	pullErr error
 }
 
 type lateCreate struct {
@@ -145,6 +150,9 @@ func (d *daemon) delayCreate(args []string) {
 }
 
 func (d *daemon) dispatch(args []string) ([]byte, error) {
+	if out, err, ok := d.imageCommand(args); ok {
+		return out, err
+	}
 	kind, ok := map[string]string{nounContainer: kindWorkspace, kindNetwork: kindNetwork}[args[0]]
 	if !ok || len(args) < 2 {
 		return nil, fmt.Errorf("unexpected command %v", args)
@@ -160,6 +168,35 @@ func (d *daemon) dispatch(args []string) ([]byte, error) {
 		return d.create(kind, args[2:])
 	}
 	return nil, fmt.Errorf("unexpected verb %v", args)
+}
+
+func (d *daemon) imageCommand(args []string) ([]byte, error, bool) {
+	if len(args) != 4 || args[2] != "--" {
+		return nil, nil, false
+	}
+	switch {
+	case args[0] == nounImage && args[1] == verbInspect:
+		out, err := d.imageInspect(args[3])
+		return out, err, true
+	case args[0] == verbPull && args[1] == flagQuiet:
+		return nil, d.pull(args[3]), true
+	}
+	return nil, nil, false
+}
+
+func (d *daemon) imageInspect(ref string) ([]byte, error) {
+	if d.absent[ref] {
+		return nil, errNoSuchObject
+	}
+	return []byte("[]\n"), nil
+}
+
+func (d *daemon) pull(ref string) error {
+	if d.pullErr != nil {
+		return d.pullErr
+	}
+	delete(d.absent, ref)
+	return nil
 }
 
 func (d *daemon) ls(kind string, args []string) ([]byte, error) {
@@ -190,14 +227,14 @@ func lsFilters(kind string, args []string) (map[string]string, error) {
 		}
 		seen[args[i]] = true
 	}
-	if !seen["--quiet"] || !seen["--no-trunc"] {
+	if !seen[flagQuiet] || !seen["--no-trunc"] {
 		return nil, fmt.Errorf("ls needs --quiet and --no-trunc, got %v", args)
 	}
 	return filters, nil
 }
 
 func lsFlag(kind, arg string) bool {
-	return arg == "--quiet" || arg == "--no-trunc" || (kind == kindWorkspace && arg == flagAll)
+	return arg == flagQuiet || arg == "--no-trunc" || (kind == kindWorkspace && arg == flagAll)
 }
 
 func addFilter(filters map[string]string, filter string) {
@@ -381,6 +418,7 @@ type createArgs struct {
 	network  string
 	operand  string
 	internal bool
+	noPull   bool
 }
 
 func (d *daemon) create(kind string, args []string) ([]byte, error) {
@@ -435,12 +473,19 @@ func (c *createArgs) validate(kind string, args []string) error {
 	if c.name == "" || c.network == "" {
 		return fmt.Errorf("container create needs --name and --network: %v", args)
 	}
+	if !c.noPull {
+		return fmt.Errorf("container create must not pull, got %v", args)
+	}
 	return nil
 }
 
 func (c *createArgs) flag(kind string, args []string, i int) (int, error) {
 	if args[i] == "--internal" && kind == kindNetwork {
 		c.internal = true
+		return i, nil
+	}
+	if args[i] == flagPullNever && kind == kindWorkspace {
+		c.noPull = true
 		return i, nil
 	}
 	set := c.setters(kind)[args[i]]
