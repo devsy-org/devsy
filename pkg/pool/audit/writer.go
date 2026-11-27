@@ -60,13 +60,7 @@ func NewWriter(store *Store, cfg WriterConfig) (*Writer, error) {
 // values unchanged until Write returns, and the configured callbacks must be
 // safe for concurrent use.
 func (w *Writer) Write(e Event) error {
-	if err := checkEvent(e); err != nil {
-		return err
-	}
-	if err := checkCharsets(e); err != nil {
-		return err
-	}
-	if err := checkSession(e, w.cfg.Pool); err != nil {
+	if err := w.checkFields(e); err != nil {
 		return err
 	}
 	id := w.cfg.NewID()
@@ -97,6 +91,19 @@ func appendFailure(typ string, err error) error {
 		return fmt.Errorf("append audit event %s: %w", typ, errno)
 	}
 	return fmt.Errorf("append audit event %s failed", typ)
+}
+
+// checkFields refuses an event whose caller-supplied fields the control plane
+// would refuse. Errors name a field or type, never a value.
+func (w *Writer) checkFields(e Event) error {
+	for _, err := range []error{
+		checkEvent(e), checkText(e), checkCharsets(e), checkSession(e, w.cfg.Pool),
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func checkEvent(e Event) error {
