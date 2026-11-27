@@ -395,14 +395,6 @@ func packICO(frames map[int][]byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func resolveSVGPath(resourcesDir string) string {
-	svgPath := filepath.Join(resourcesDir, "icon.svg")
-	if _, err := os.Stat(svgPath); err != nil {
-		return filepath.Join(resourcesDir, "box-icon-app.svg")
-	}
-	return svgPath
-}
-
 func renderAllFrames(svgPath, tmpDir string) (map[int][]byte, error) {
 	masterPNG := filepath.Join(tmpDir, "master-1024.png")
 	log.Println("Rendering 1024x1024 master PNG using headless browser...")
@@ -631,7 +623,7 @@ func run() error {
 		return err
 	}
 	resourcesDir := filepath.Join(repoRoot, "desktop", "resources")
-	svgPath := resolveSVGPath(resourcesDir)
+	svgPath := filepath.Join(resourcesDir, "icon.svg")
 
 	log.Printf("Validating source SVG: %s", svgPath)
 	if err := validateSVG(svgPath); err != nil {
