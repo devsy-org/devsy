@@ -229,6 +229,68 @@ func (s *catalogSuite) TestBindingPlatformsMatchTheirSources() {
 	s.Equal(want, got)
 }
 
+// The validator checks shape only, so the per-provider facts live here. A
+// requirement reads as key|operations|executable option|configuration option|
+// probe|image backend condition.
+func (s *catalogSuite) TestBindingContractsMatchTheirProviders() {
+	type contract struct {
+		execution, guidance string
+		schema              int
+		requirements        []string
+	}
+	const operations = "create,exec,stop,delete"
+	want := map[string]contract{
+		"docker": {"internal_docker", "docker_setup", 0, []string{
+			"docker:container_runtime|" + operations + "|DOCKER_PATH||docker_version|",
+		}},
+		"podman": {"internal_podman", "podman_setup", 0, []string{
+			"podman:container_runtime|" + operations + "|PODMAN_PATH||podman_version|",
+		}},
+		"apple": {
+			"internal_apple",
+			"apple_container_setup",
+			0,
+			[]string{
+				"apple-container:container_runtime|" + operations + "|CONTAINER_PATH||container_version|",
+			},
+		},
+		"kubernetes": {"internal_kubernetes", "kubernetes_configuration", 0, []string{
+			"kubernetes-config:cluster_configuration|" + operations + "||KUBERNETES_CONFIG||",
+		}},
+		"microsandbox": {executionMicrosandbox, "microsandbox_setup", 1, []string{
+			"microsandbox:microvm_runtime|" + operations + "|||microsandbox_version|",
+			"docker:image_backend|create,image-build|||docker_version|docker",
+		}},
+		"lima": {"lima_exec_v1", "lima_setup", 0, []string{
+			"lima:vm_runtime|" + operations + "|LIMA_PATH||limactl_version|",
+		}},
+		"orbstack": {"orbstack_exec_v1", "orbstack_setup", 0, []string{
+			"orbstack:vm_runtime|" + operations + "|ORBSTACK_PATH||orbctl_version|",
+		}},
+	}
+	catalog, err := LoadCatalog()
+	s.Require().NoError(err)
+
+	got := map[string]contract{}
+	for _, binding := range catalog.Bindings() {
+		entry := contract{
+			binding.ExecutionContract,
+			binding.GuidanceID,
+			binding.RequiredRuntimeCheckSchema,
+			nil,
+		}
+		for _, r := range binding.Requirements {
+			entry.requirements = append(entry.requirements, strings.Join([]string{
+				r.ToolID + ":" + r.Purpose, strings.Join(r.RequiredFor, ","), r.ExecutableOption,
+				r.ConfigurationOption, r.ProbeID, r.WhenImageBackend,
+			}, "|"))
+		}
+		got[binding.ID] = entry
+	}
+
+	s.Equal(want, got)
+}
+
 func (s *catalogSuite) TestKubernetesHasNoExecutableProbeOrKubectlDependency() {
 	catalog, err := LoadCatalog()
 	s.Require().NoError(err)
