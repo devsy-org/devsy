@@ -44,10 +44,20 @@ func (cmd *UpCmd) devsyUp(
 
 	err = provider2.SaveWorkspaceResult(client.WorkspaceConfig(), result)
 	if err != nil {
-		return nil, fmt.Errorf("save workspace result: %w", err)
+		return nil, saveResultError(result, err)
 	}
 
 	return result, nil
+}
+
+// saveResultError names the agent failure when one preceded the save error.
+// The agent cleans up the workspace directory when it fails, and the save then
+// reports a missing workspace that hides the real cause.
+func saveResultError(result *config2.Result, err error) error {
+	if result != nil && result.AgentExit != "" {
+		return fmt.Errorf("%s; save workspace result: %w", result.AgentExit, err)
+	}
+	return fmt.Errorf("save workspace result: %w", err)
 }
 
 func (cmd *UpCmd) validateInteractiveRoute(client client2.BaseWorkspaceClient) error {

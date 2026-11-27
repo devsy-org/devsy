@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
@@ -151,24 +152,66 @@ func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, erro
 
 	setupSSHAgentForwarding(sshClient, sess)
 
-	var result *config2.Result
-
-	err = p.grpcBridge.RunPair(ctx,
-		func(ctx context.Context, stdin, stdout *os.File) error {
+	return runTunnelPair(ctx, p.grpcBridge, tunnelPairFuncs{
+		agent: func(ctx context.Context, stdin, stdout *os.File) error {
 			return runCommandInSSHTunnel(ctx, sshCommandParams{
 				session: sess,
 				command: p.opts.Command,
 				envVars: p.opts.EnvVars,
 			}, stdin, stdout)
 		},
+		server: p.opts.TunnelServerFunc,
+	})
+}
+
+type tunnelPairFuncs struct {
+	agent  tunnel.TunnelFunc
+	server TunnelServerFunc
+}
+
+// runTunnelPair keeps the RunPair classification, which ignores a tunnel
+// failure once the handler completed cleanly, and records that failure on the
+// result so a later step can name the real cause if it breaks.
+func runTunnelPair(
+	ctx context.Context,
+	bridge *tunnel.PipeBridge,
+	funcs tunnelPairFuncs,
+) (*config2.Result, error) {
+	var (
+		mu       sync.Mutex
+		result   *config2.Result
+		agentErr error
+	)
+	err := bridge.RunPair(ctx,
+		func(ctx context.Context, stdin, stdout *os.File) error {
+			runErr := funcs.agent(ctx, stdin, stdout)
+			mu.Lock()
+			agentErr = runErr
+			mu.Unlock()
+			return runErr
+		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
-			var serverErr error
-			result, serverErr = p.opts.TunnelServerFunc(ctx, stdin, stdout)
+			res, serverErr := funcs.server(ctx, stdin, stdout)
+			mu.Lock()
+			result = res
+			mu.Unlock()
 			return serverErr
 		},
 	)
 
+	mu.Lock()
+	defer mu.Unlock()
+	if err == nil && result != nil {
+		result.AgentExit = agentExitMessage(agentErr)
+	}
 	return result, err
+}
+
+func agentExitMessage(err error) string {
+	if tunnel.ClassifyError(err) != tunnel.ErrorPermanent {
+		return ""
+	}
+	return fmt.Sprintf("agent command exited: %v", err)
 }
 
 func establishSSHSession(
