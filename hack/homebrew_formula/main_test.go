@@ -44,7 +44,7 @@ func TestRender(t *testing.T) {
 
 	for _, p := range platforms {
 		want := fmt.Sprintf(
-			`url "%s" using: :nounzip`,
+			`url "%s", using: :nounzip`,
 			assetURL("devsy-org/devsy", "v1.2.3", p.Binary),
 		)
 		if !strings.Contains(out, want) {
