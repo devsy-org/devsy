@@ -155,7 +155,7 @@ func (s *selectionSuite) TestEmbeddedLeafAndDocumentationSelection() {
 			}
 			docs := selectionOptions{
 				secretAvailable: true, mode: selectionModePR,
-				changedFiles: []string{"sites/docs-devsy-sh/content/docs/index.mdx"},
+				changedFiles: []string{docsIndexPage},
 			}
 			s.Equal(want, selectionLabels(selectSuites(m, group, leaf)))
 			s.Equal([]string{}, selectionLabels(selectSuites(m, group, docs)))

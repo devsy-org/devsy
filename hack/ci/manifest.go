@@ -50,8 +50,10 @@ type Manifest struct {
 }
 
 type SelectionConfig struct {
-	FullRunPaths []string `yaml:"full_run_paths"`
-	CorePaths    []string `yaml:"core_paths"`
+	FullRunPaths     []string `yaml:"full_run_paths"`
+	CorePaths        []string `yaml:"core_paths"`
+	LightRunPaths    []string `yaml:"light_run_paths"`
+	LightRunExcludes []string `yaml:"light_run_excludes"`
 }
 
 // UnitTier describes how Go unit tests run.
@@ -338,15 +340,40 @@ func (m *Manifest) resolve() error {
 	return nil
 }
 
+func (s SelectionConfig) validate() error {
+	lists := []struct {
+		name  string
+		globs []string
+	}{
+		{"full_run_paths", s.FullRunPaths},
+		{"core_paths", s.CorePaths},
+		{"light_run_paths", s.LightRunPaths},
+		{"light_run_excludes", s.LightRunExcludes},
+	}
+	for _, list := range lists {
+		if err := validateGlobs(list.globs); err != nil {
+			return fmt.Errorf("%s: %w", list.name, err)
+		}
+	}
+	return nil
+}
+
 func (m *Manifest) validate() error {
-	if err := validateGlobs(m.Selection.FullRunPaths); err != nil {
-		return fmt.Errorf("full_run_paths: %w", err)
+	if err := m.Selection.validate(); err != nil {
+		return err
 	}
-	if err := validateGlobs(m.Selection.CorePaths); err != nil {
-		return fmt.Errorf("core_paths: %w", err)
+	if err := validateSuites(m.E2E.Suites); err != nil {
+		return err
 	}
+	if err := validateRunners(m.Unit.Runners); err != nil {
+		return err
+	}
+	return validateSteps(m.Unit.Steps)
+}
+
+func validateSuites(suites []Suite) error {
 	seen := map[string]bool{}
-	for _, s := range m.E2E.Suites {
+	for _, s := range suites {
 		key := s.Runner + "/" + s.Label
 		if seen[key] {
 			return fmt.Errorf("%w: %s", errDuplicateSuite, key)
@@ -356,12 +383,20 @@ func (m *Manifest) validate() error {
 			return err
 		}
 	}
-	for _, runner := range m.Unit.Runners {
+	return nil
+}
+
+func validateRunners(runners []UnitRunner) error {
+	for _, runner := range runners {
 		if err := runner.validate(); err != nil {
 			return err
 		}
 	}
-	for _, step := range m.Unit.Steps {
+	return nil
+}
+
+func validateSteps(steps []UnitStep) error {
+	for _, step := range steps {
 		if err := step.validate(); err != nil {
 			return err
 		}

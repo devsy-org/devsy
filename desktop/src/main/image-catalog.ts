@@ -10,6 +10,14 @@ import { mainLog } from "./logging.js"
 
 const FETCH_TIMEOUT_MS = 10_000
 
+export const DEFAULT_IMAGE_CATALOG_URL = "https://images.devsy.sh/catalog.json"
+
+export function resolveCatalogUrl(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return env.DEVSY_IMAGE_CATALOG_URL ?? DEFAULT_IMAGE_CATALOG_URL
+}
+
 export interface CatalogCacheFile {
   fetchedAt: number
   catalog: ImageCatalog

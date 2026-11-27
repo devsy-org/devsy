@@ -20,16 +20,18 @@ import (
 )
 
 const (
-	writerTestID      = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	writerTestCanary  = "private-test-canary"
-	writerTestVersion = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
-	writerTestTime    = "2026-11-22T10:15:03.123Z"
-	writerTestAgent   = "devsy.agent.name"
-	writerTestHost    = "example.com"
-	writerTestGrant   = "devsy.credential.grant"
-	writerTestAddrKey = "server.address"
-	writerTestPortKey = "server.port"
-	writerTestGrantID = "grant"
+	writerTestID       = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	writerTestCanary   = "private-test-canary"
+	writerTestVersion  = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+	writerTestTime     = "2026-11-22T10:15:03.123Z"
+	writerTestAgent    = "devsy.agent.name"
+	writerTestRefKey   = "vcs.ref.head.name"
+	writerTestRouteKey = "devsy.route.name"
+	writerTestHost     = "example.com"
+	writerTestGrant    = "devsy.credential.grant"
+	writerTestAddrKey  = "server.address"
+	writerTestPortKey  = "server.port"
+	writerTestGrantID  = "grant"
 )
 
 type WriterSuite struct {
@@ -202,17 +204,26 @@ func (s *WriterSuite) TestRefusesNilData() {
 
 func (s *WriterSuite) TestStoresHTMLCharactersUnescaped() {
 	const text = "<a href=\"x\">&</a> \\u003c"
-	event := writerTestEvent(envelope.AuditSessionRequest)
-	event.Data[writerTestAgent] = text
+	event := writerTestEvent(envelope.AuditCredentialUse)
+	event.Data[writerTestRouteKey] = text
 	s.Require().NoError(s.writer().Write(event))
 	lines := s.lines()
 	s.Require().Len(lines, 1)
-	s.Contains(lines[0], `"devsy.agent.name":"<a href=\"x\">&</a> \\u003c"`)
+	s.Contains(lines[0], `"devsy.route.name":"<a href=\"x\">&</a> \\u003c"`)
 	s.NotContains(lines[0], `\u003c<`)
 	s.NotContains(lines[0], "\\u0026")
 	got, err := envelope.DecodeStrict([]byte(lines[0]))
 	s.Require().NoError(err)
-	s.Equal(text, got.Data[writerTestAgent])
+	s.Equal(text, got.Data[writerTestRouteKey])
+}
+
+func (s *WriterSuite) TestRefusesAValueOutsideItsCharacterSet() {
+	event := writerTestEvent(envelope.AuditSessionRequest)
+	event.Data[writerTestAgent] = writerTestCanary + " Bearer x"
+	err := s.writer().Write(event)
+	s.Require().ErrorContains(err, writerTestAgent)
+	s.NotContains(err.Error(), writerTestCanary)
+	s.Empty(s.lines())
 }
 
 func (s *WriterSuite) TestRefusesAnEmptyActorID() {
@@ -250,7 +261,7 @@ func (s *WriterSuite) TestRefusesIncompleteConfig() {
 
 func (s *WriterSuite) TestRefusesOversizedEnvelopeWithoutLeakingValues() {
 	event := writerTestEvent(envelope.AuditSessionRequest)
-	event.Data[writerTestAgent] = writerTestCanary + strings.Repeat("x", MaxLineBytes)
+	event.Data[writerTestRefKey] = writerTestCanary + strings.Repeat("x", MaxLineBytes)
 	err := s.writer().Write(event)
 	s.Require().ErrorContains(err, "validation failed")
 	s.NotContains(err.Error(), writerTestCanary)
@@ -280,7 +291,7 @@ func (s *WriterSuite) TestConcurrentWritesDoNotInterleave() {
 	s.cfg.NewID = nil
 	w := s.writer()
 	event := writerTestEvent(envelope.AuditSessionRequest)
-	event.Data[writerTestAgent] = strings.Repeat("p", 200)
+	event.Data[writerTestRefKey] = strings.Repeat("p", 200)
 	results := make(chan error, writers*perWriter)
 	var wg sync.WaitGroup
 	for range writers {
@@ -302,7 +313,7 @@ func (s *WriterSuite) TestConcurrentWritesDoNotInterleave() {
 		got, err := envelope.DecodeStrict([]byte(line))
 		s.Require().NoError(err)
 		s.Require().NoError(got.Validate())
-		s.Equal(event.Data[writerTestAgent], got.Data[writerTestAgent])
+		s.Equal(event.Data[writerTestRefKey], got.Data[writerTestRefKey])
 		s.Len(got.ID, 26)
 		seen[got.ID] = struct{}{}
 	}

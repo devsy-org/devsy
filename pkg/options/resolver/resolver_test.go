@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/internal/dependencytest"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/graph"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -30,6 +31,8 @@ func TestResolverSuite(t *testing.T) {
 }
 
 func (suite *ResolverTestSuite) TestBasicFunctionality() {
+	suite.T().Setenv("DEVSY_GUARD_SENTINEL", "static-resolution")
+	dependencytest.Preserve(suite.T(), suite.T().TempDir())
 	optionDefs := map[string]*types.Option{
 		option1Value: {
 			Description: "Test option 1",

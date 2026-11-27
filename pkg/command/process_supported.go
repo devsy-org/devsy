@@ -3,6 +3,7 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -114,7 +115,7 @@ func waitForUnidentifiedGroupExit(pid int, identity string) error {
 	}
 }
 
-func cleanupExitedProcessRef(ref ProcessRef) error {
+func cleanupExitedProcessRef(_ context.Context, ref ProcessRef) error {
 	if ref.TreeKind == ProcessTreeLegacyPID {
 		if ref.Identity == "" {
 			return terminateUnidentifiedExitedGroup(ref.PID)

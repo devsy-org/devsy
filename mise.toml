@@ -275,6 +275,20 @@ run = [
   "npm run lint:check",
 ]
 
+[tasks."desktop:icons"]
+description = "generate application icon assets from the canonical SVG source (needs Chrome or Chromium)"
+run = [
+  "go run ./hack/icons --check-dependencies",
+  "go run ./hack/icons",
+]
+
+[tasks."design:tokens:check"]
+description = "check the contrast of the shared design tokens"
+run = [
+  "node design/tokens/contrast.mjs",
+  "node --test design/tokens/*.test.mjs",
+]
+
 [tasks."desktop:test"]
 description = "run desktop unit tests"
 dir = "desktop"

@@ -76,10 +76,7 @@ func detectRelease(
 		return nil, nil, fmt.Errorf("initialize release source: %w", err)
 	}
 
-	updater, err := selfupdate.NewUpdater(selfupdate.Config{
-		Source:     source,
-		Prerelease: opts.IncludePrerelease,
-	})
+	updater, err := selfupdate.NewUpdater(updaterConfig(source, opts.IncludePrerelease))
 	if err != nil {
 		return nil, nil, fmt.Errorf("initialize updater: %w", err)
 	}
@@ -93,6 +90,13 @@ func detectRelease(
 
 	release, err := detectLatestVersion(ctx, updater, repo)
 	return release, updater, err
+}
+
+func updaterConfig(source selfupdate.Source, includePrerelease bool) selfupdate.Config {
+	return selfupdate.Config{
+		Source:     source,
+		Prerelease: includePrerelease,
+	}
 }
 
 func detectSpecificVersion(

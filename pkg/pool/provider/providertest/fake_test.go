@@ -9,7 +9,9 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-var exampleSpec = provider.Spec{Pool: "a", Session: "p-a-xxxxxxxxxx"}
+const exampleImage = "busybox"
+
+var exampleSpec = provider.Spec{Pool: "a", Session: "p-a-xxxxxxxxxx", Image: exampleImage}
 
 type FakeSuite struct{ suite.Suite }
 
@@ -78,7 +80,7 @@ func (s *FakeSuite) TestPartialSpawnCanBeReclaimed() {
 
 func (s *FakeSuite) TestInvalidSpawnCreatesNothing() {
 	f := new(Fake)
-	wrong := provider.Spec{Pool: exampleSpec.Pool, Session: "p-a-b-xxxxxxxxxx"}
+	wrong := provider.Spec{Pool: exampleSpec.Pool, Session: "p-a-b-xxxxxxxxxx", Image: exampleImage}
 	s.Require().Error(f.Spawn(s.T().Context(), wrong))
 	s.Empty(f.Snapshot())
 }
@@ -157,7 +159,7 @@ func (s *FakeSuite) TestInvalidPoolIsRejectedBeforeHookAndCallLog() {
 	f.SetHook(func(context.Context, Call) { hooked = true })
 	for _, pool := range []string{"", "a_b"} {
 		resource := provider.Resource{Kind: workspaceKind, Name: "x", UID: "u"}
-		spec := provider.Spec{Pool: pool, Session: "p-a-xxxxxxxxxx"}
+		spec := provider.Spec{Pool: pool, Session: "p-a-xxxxxxxxxx", Image: exampleImage}
 		s.ErrorIs(f.Spawn(ctx, spec), provider.ErrInvalidPool)
 		s.ErrorIs(f.Reclaim(ctx, pool, "p-a-xxxxxxxxxx"), provider.ErrInvalidPool)
 		_, err := f.List(ctx, pool)
@@ -180,7 +182,8 @@ func (s *FakeSuite) TestCancelInsideHookStopsEveryMethod() {
 		}},
 	} {
 		f := new(Fake)
-		s.Require().NoError(f.Spawn(ctx, provider.Spec{Pool: "a", Session: "p-a-yyyyyyyyyy"}))
+		s.Require().
+			NoError(f.Spawn(ctx, provider.Spec{Pool: "a", Session: "p-a-yyyyyyyyyy", Image: exampleImage}))
 		before := f.Snapshot()
 		canceled, cancel := context.WithCancel(ctx)
 		f.SetHook(func(context.Context, Call) { cancel() })

@@ -9,7 +9,9 @@
     "enabled": true
   },
   "minimumReleaseAge": "30 days",
-  "dependencyDashboard": false,
+  "dependencyDashboard": {
+    "enabled": false
+  },
   "prConcurrentLimit": 1,
   "platformAutomerge": true,
   "postUpdateOptions": ["gomodTidy"],
@@ -110,10 +112,6 @@
     {
       "matchPackageNames": ["gopkg.in/yaml.v2"],
       "allowedVersions": "v2.4.0"
-    },
-    {
-      "matchPackageNames": ["@devsy/client"],
-      "allowedVersions": "<=4.4.1"
     },
     {
       "matchPackageNames": [

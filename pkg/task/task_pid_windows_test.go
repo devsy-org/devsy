@@ -3,6 +3,7 @@
 package task
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strconv"
@@ -32,7 +33,9 @@ func TestCancelSignalsALiveWorkersPID(t *testing.T) {
 		terminate: func(ref command.ProcessRef) error {
 			return errors.Join(controller.Terminate(ref), tk.ReleaseWorkerLock())
 		},
-		cleanup: controller.CleanupAfterExit,
+		cleanup: func(ref command.ProcessRef) error {
+			return controller.CleanupAfterExit(context.Background(), ref)
+		},
 	}
 	worker := sleepWorker()
 	workerName := WorkerProcessName(tk.ID())

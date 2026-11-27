@@ -11,12 +11,21 @@ html > body[data-scroll-locked] {
   --removed-body-scroll-bar-size: 0px !important;
 }
 
+:where(:focus-visible) {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 2px;
+}
+
 :root {
-  --color-fd-primary: hsl(252, 100%, 68%);
+  --color-fd-primary: hsl(252, 100%, 58%);
   --color-fd-primary-foreground: hsl(0, 0%, 100%);
+  --color-fd-muted-foreground: hsl(0, 0%, 40%);
+  --color-fd-ring: hsl(252, 100%, 58%);
 }
 
 .dark {
-  --color-fd-primary: hsl(252, 100%, 68%);
-  --color-fd-primary-foreground: hsl(0, 0%, 100%);
+  --color-fd-primary: hsl(252, 100%, 76%);
+  --color-fd-primary-foreground: hsl(252, 40%, 8%);
+  --color-fd-muted-foreground: hsla(0, 0%, 70%, 0.8);
+  --color-fd-ring: hsl(252, 100%, 76%);
 }

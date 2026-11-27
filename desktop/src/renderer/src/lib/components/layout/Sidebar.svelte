@@ -147,7 +147,7 @@ function isActive(href: string): boolean {
                       <span data-sidebar="menu-badge" class="ml-auto rounded-md bg-sidebar-accent px-1.5 text-xs font-medium tabular-nums text-sidebar-accent-foreground group-data-[collapsible=icon]:hidden">{item.badge}</span>
                     {/if}
                     {#if item.shortcut}
-                      <kbd class="{item.badge ? '' : 'ml-auto '}text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}{item.shortcut}</kbd>
+                      <kbd class="{item.badge ? '' : 'ml-auto '}text-[10px] text-muted-foreground font-mono group-data-[collapsible=icon]:hidden">{modKey}{item.shortcut}</kbd>
                     {/if}
                   </a>
                 {/snippet}
@@ -167,7 +167,7 @@ function isActive(href: string): boolean {
             <a href="#/settings" {...props}>
               <Settings />
               <span>Settings</span>
-              <kbd class="ml-auto text-[10px] text-muted-foreground/60 font-mono group-data-[collapsible=icon]:hidden">{modKey}{SHORTCUT_BY_HREF["/settings"]}</kbd>
+              <kbd class="ml-auto text-[10px] text-muted-foreground font-mono group-data-[collapsible=icon]:hidden">{modKey}{SHORTCUT_BY_HREF["/settings"]}</kbd>
             </a>
           {/snippet}
         </Sidebar.MenuButton>

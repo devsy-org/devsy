@@ -8,6 +8,7 @@
 //	unit     run the unit-test tier on this machine
 //	e2e      prepare and run Ginkgo suites
 //	setup    host setup for suites (Docker, Podman)
+//	scope    decide whether a push to main needs the Go, e2e and microsandbox jobs
 //	success  fold the needed job results into the required status check
 //	rerun-no-runner  rerun a run's failed jobs once when GitHub never assigned their macOS runner
 //	cache-prune      delete caches of closed pull requests and main's go-unit caches from older weeks
@@ -29,6 +30,7 @@ var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
 	"e2e":             e2eCLI,
 	"setup":           setupCLI,
 	"success":         successCLI,
+	"scope":           scopeCLI,
 	"lint-patch":      lintPatchCLI,
 	"rerun-no-runner": rerunCLI,
 	"cache-prune":     cachePruneCLI,
@@ -38,7 +40,7 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(
 			stderr,
-			"usage: ci <matrix|unit|e2e|setup|success|lint-patch|rerun-no-runner|cache-prune> [args]",
+			"usage: ci <matrix|unit|e2e|setup|scope|success|lint-patch|rerun-no-runner|cache-prune> [args]",
 		)
 		return 2
 	}

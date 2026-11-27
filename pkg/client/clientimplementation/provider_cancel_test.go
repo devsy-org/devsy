@@ -28,11 +28,29 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
+const providerExecutableHelperEnv = "DEVSY_CLIENT_TEST_HELPER_PROCESS"
+
 func TestMain(m *testing.M) {
-	if len(os.Args) == 11 && os.Args[1] == "internal" && os.Args[2] == "provider-shell" {
+	if len(os.Args) >= 11 && os.Args[1] == "internal" && os.Args[2] == "provider-shell" {
 		os.Exit(runProviderShellTestHelper(os.Args))
 	}
+	if os.Getenv(providerExecutableHelperEnv) == "1" {
+		_, _ = os.Stdout.WriteString("helper ran with " + os.Args[len(os.Args)-1])
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
+}
+
+func providerShellTestExecutablePaths(extra []string) map[string]string {
+	paths := map[string]string{}
+	for i := 0; i+1 < len(extra); i += 2 {
+		if extra[i] != providerShellExecutablePathFlag {
+			return nil
+		}
+		name, path, _ := strings.Cut(extra[i+1], "=")
+		paths[name] = path
+	}
+	return paths
 }
 
 func runProviderShellTestHelper(args []string) int {
@@ -50,6 +68,7 @@ func runProviderShellTestHelper(args []string) int {
 	defer cleanup()
 	err = shell.RunProviderShell(context.Background(), shell.ProviderShellInvocation{
 		ScriptPath: args[4], ForcePath: args[6], AckPath: args[8], ParentPID: parentPID,
+		ExecutablePaths: providerShellTestExecutablePaths(args[11:]),
 	})
 	if err == nil {
 		return 0

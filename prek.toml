@@ -12,7 +12,7 @@ hooks = [
   },
   {
     id = "check-added-large-files",
-    exclude = "^(sites/docs-devsy-sh/)"
+    exclude = "^(sites/docs-devsy-sh/|desktop/resources/)"
   },
   { id = "check-merge-conflict" }
 ]
@@ -133,5 +133,13 @@ hooks = [
     types = ["go"],
     pass_filenames = false,
     stages = ["pre-push"]
+  },
+  {
+    id = "design-tokens-contrast",
+    name = "design tokens contrast",
+    entry = "mise run design:tokens:check",
+    language = "system",
+    files = "^design/tokens/",
+    pass_filenames = false
   }
 ]
