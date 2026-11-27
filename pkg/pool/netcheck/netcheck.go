@@ -5,6 +5,14 @@ package netcheck
 
 import "net/netip"
 
+// The tables follow the IANA IPv4 and IPv6 special-purpose address registries
+// (both last modified 2026-10-13, checked 2026-11-27). Every entry marked
+// Globally Reachable False or N/A is blocked: in neverAllowed, or in private
+// when a cidr rule may allow it. Entries marked True stay open, except three
+// that sit inside a blocked parent or are transition forms denied whole:
+// 192.0.0.9/32 and 192.0.0.10/32 inside 192.0.0.0/24, and 64:ff9b::/96.
+// The deprecated ORCHID block 2001:10::/28 has no value and stays open.
+//
 // neverAllowed holds addresses no allow rule can reach: loopback, link-local,
 // cloud metadata, multicast, reserved space, and every IPv6 form that carries
 // an IPv4 address through a gateway or relay (NAT64, 6to4, Teredo, SIIT and
@@ -37,6 +45,9 @@ var neverAllowed = mustPrefixes(
 	"192.88.99.0/24",
 	"fec0::/10",
 	"100::/64",
+	"100:0:0:1::/64",
+	"2001:2::/48",
+	"5f00::/16",
 )
 
 // private holds addresses an allow rule may reach only through a cidr rule

@@ -98,7 +98,8 @@ var addrCases = []addrCase{
 	{"febf:ffff::1", true, false},
 	{"fec0::1", true, false},
 	{"100::1", true, false},
-	{"100:0:0:1::1", false, false},
+	{"100:0:0:1::1", true, false},
+	{"100:0:0:2::", false, false},
 	{"fd00:ec2::254", true, true},
 	{"fc00::1", false, true},
 	{"fdff:ffff::1", false, true},
@@ -166,8 +167,8 @@ func TestOverlapsNeverAllowed(t *testing.T) {
 	cases := map[string]string{
 		loopback:              loopback,
 		"127.1.0.0/16":        loopback,
-		"0.0.0.0/7":           "0.0.0.0/8",
-		"169.254.169.254/32":  "169.254.0.0/16",
+		"0.0.0.0/7":           thisNetwork,
+		"169.254.169.254/32":  linkLocal4,
 		ianaMetadata:          ianaMetadata,
 		"192.0.0.0/24":        ianaMetadata,
 		"::ffff:10.0.0.0/104": "::ffff:0.0.0.0/96",
@@ -176,9 +177,12 @@ func TestOverlapsNeverAllowed(t *testing.T) {
 		"fd00:ec2::254/128":   "fd00:ec2::/32",
 		gceMetadata:           gceMetadata,
 		"fd20:ce::/32":        gceMetadata,
-		"0.0.0.0/0":           "0.0.0.0/8",
+		dummy6:                dummy6,
+		"2001:2::/47":         bench6,
+		"5f00::/15":           "5f00::/16",
+		"0.0.0.0/0":           thisNetwork,
 		"::/0":                "::/96",
-		"128.0.0.0/1":         "169.254.0.0/16",
+		"128.0.0.0/1":         linkLocal4,
 		"127.0.0.1/8":         loopback,
 		"100::/65":            "100::/64",
 		"2001:0:0:1::/64":     "2001::/32",
@@ -191,10 +195,10 @@ func TestOverlapsNeverAllowed(t *testing.T) {
 		}
 	}
 	for _, in := range []string{
-		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "8.8.8.0/24",
+		private10, "172.16.0.0/12", "192.168.0.0/16", "8.8.8.0/24",
 		"2001:db8::/32", "2606:4700::/32", "192.0.1.0/24", "192.88.100.0/24",
 		"126.0.0.0/8", "169.253.0.0/16", "169.255.0.0/16", "223.0.0.0/8",
-		"2001:1::/32", "100:0:0:1::/64", "fd20:cf::/32", "3fff::/20",
+		"2001:1::/32", "100:0:0:2::/64", "fd20:cf::/32", "3fff::/20",
 	} {
 		if got, overlaps := OverlapsNeverAllowed(netip.MustParsePrefix(in)); overlaps {
 			t.Errorf("OverlapsNeverAllowed(%s) reports %s", in, got)
@@ -209,14 +213,14 @@ func TestOverlapsNeverAllowed(t *testing.T) {
 // mistake in the netip tables or in the unmap step shows up as a difference.
 var (
 	referenceNever = referenceNets(
-		"0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "100.100.100.200/32",
+		thisNetwork, "127.0.0.0/8", linkLocal4, "100.100.100.200/32",
 		"168.63.129.16/32", "192.0.0.0/24", "192.88.99.0/24", "224.0.0.0/4", "240.0.0.0/4",
 		"::/96", "::ffff:0:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "2001::/32",
 		"2002::/16", "ff00::/8", "fe80::/10", "fec0::/10", "100::/64", "fd00:ec2::/32",
-		gceMetadata,
+		gceMetadata, dummy6, bench6, "5f00::/16",
 	)
 	referencePrivate = referenceNets(
-		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
+		private10, "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
 		"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "198.18.0.0/15",
 		"fc00::/7", "2001:db8::/32", "3fff::/20",
 	)
