@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -250,13 +252,14 @@ func (s *workspaceClient) Command(ctx context.Context, opt client.CommandOptions
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command:      s.providerConfig.Exec.Command,
-		Environ:      environ,
-		Stdin:        opt.Stdin,
-		Stdout:       opt.Stdout,
-		Stderr:       opt.Stderr,
-		RawStdout:    opt.RawStdout,
-		Cancellation: s.providerConfig.Exec.Cancellation,
+		Command:          s.providerConfig.Exec.Command,
+		Environ:          environ,
+		ProviderBinaries: s.providerConfig.Binaries,
+		Stdin:            opt.Stdin,
+		Stdout:           opt.Stdout,
+		Stderr:           opt.Stderr,
+		RawStdout:        opt.RawStdout,
+		Cancellation:     s.providerConfig.Exec.Cancellation,
 	})
 }
 
@@ -274,6 +277,7 @@ func (s *workspaceClient) OpenCommandTransport(
 			return RunCommand(ctx, RunCommandOptions{
 				Command:          s.providerConfig.Exec.Command,
 				Environ:          environ,
+				ProviderBinaries: s.providerConfig.Binaries,
 				Stdin:            stdin,
 				Stdout:           stdout,
 				Stderr:           opt.Stderr,
@@ -833,6 +837,7 @@ func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) err
 	return RunCommand(ctx, RunCommandOptions{
 		Command:          cfg.Command,
 		Environ:          environ,
+		ProviderBinaries: cfg.Config.Binaries,
 		Stdin:            cfg.Stdin,
 		Stdout:           cfg.Stdout,
 		Stderr:           cfg.Stderr,
@@ -845,6 +850,7 @@ func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) err
 type RunCommandOptions struct {
 	Command          types.StrArray
 	Environ          []string
+	ProviderBinaries map[string][]*provider.ProviderBinary
 	Stdin            io.Reader
 	Stdout           io.Writer
 	Stderr           io.Writer
@@ -853,6 +859,23 @@ type RunCommandOptions struct {
 	providerShell    *providerShellInvocation
 	cancelTiming     providerCancelTiming
 	closeInputOnExit io.Closer
+}
+
+func providerBinaryPaths(
+	environ []string,
+	binaries map[string][]*provider.ProviderBinary,
+) map[string]string {
+	if len(binaries) == 0 {
+		return nil
+	}
+	paths := make(map[string]string, len(binaries))
+	for _, entry := range environ {
+		name, value, ok := strings.Cut(entry, "=")
+		if _, exists := binaries[name]; ok && exists {
+			paths[name] = value
+		}
+	}
+	return paths
 }
 
 func RunCommand(ctx context.Context, opts RunCommandOptions) error {
@@ -904,14 +927,15 @@ func runProviderShellCommand(
 		return runSupervisedProviderShell(ctx, opts, stdout, stderr)
 	}
 	runner := &shell.CommandRunner{
-		Command: opts.Command[0],
-		Stdin:   opts.Stdin,
-		Stdout:  stdout,
-		Stderr:  stderr,
-		Environ: opts.Environ,
+		Command:         opts.Command[0],
+		Stdin:           opts.Stdin,
+		Stdout:          stdout,
+		Stderr:          stderr,
+		Environ:         opts.Environ,
+		ExecutablePaths: providerBinaryPaths(opts.Environ, opts.ProviderBinaries),
 	}
 	if err := shell.RunEmulatedShell(ctx, runner); err != nil {
-		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
+		return providerLaunchError(providerAction(opts.Environ), err)
 	}
 	return nil
 }
@@ -927,20 +951,8 @@ func runSupervisedProviderShell(
 	}
 	files := opts.providerShell
 	cmd := &exec.Cmd{
-		Path: binary,
-		Args: []string{
-			binary,
-			"internal",
-			"provider-shell",
-			"--script-file",
-			files.script,
-			"--force-file",
-			files.force,
-			"--ack-file",
-			files.ack,
-			"--parent-pid",
-			strconv.Itoa(os.Getpid()),
-		},
+		Path:      binary,
+		Args:      providerShellArgs(binary, files, opts),
 		Env:       opts.Environ,
 		Stdin:     opts.Stdin,
 		Stdout:    stdout,
@@ -956,6 +968,33 @@ func runSupervisedProviderShell(
 		)
 	}
 	return waitSupervisedProviderShell(ctx, cmd, providerAction(opts.Environ))
+}
+
+const providerShellExecutablePathFlag = "--executable-path"
+
+func providerShellArgs(
+	binary string,
+	files *providerShellInvocation,
+	opts RunCommandOptions,
+) []string {
+	args := []string{
+		binary,
+		"internal",
+		"provider-shell",
+		"--script-file",
+		files.script,
+		"--force-file",
+		files.force,
+		"--ack-file",
+		files.ack,
+		"--parent-pid",
+		strconv.Itoa(os.Getpid()),
+	}
+	paths := providerBinaryPaths(opts.Environ, opts.ProviderBinaries)
+	for _, name := range slices.Sorted(maps.Keys(paths)) {
+		args = append(args, providerShellExecutablePathFlag, name+"="+paths[name])
+	}
+	return args
 }
 
 type providerShellPipes struct {
@@ -1352,7 +1391,7 @@ func runProviderArgvCommand(
 		}
 	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run provider %s: %w", providerAction(opts.Environ), err)
+		return providerLaunchError(providerAction(opts.Environ), err)
 	}
 	return nil
 }
@@ -1378,7 +1417,7 @@ func runProviderArgvWithOwnedInput(
 	cmd.Stdin = stdinRead
 	if err := cmd.Start(); err != nil {
 		return errors.Join(
-			fmt.Errorf("run provider %s: %w", action, err),
+			providerLaunchError(action, err),
 			providerShellCloseError(action, "input", input.Close()),
 		)
 	}
@@ -1419,6 +1458,10 @@ func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) err
 		stderrErr = fmt.Errorf("flush provider stderr: %w", err)
 	}
 	return errors.Join(stdoutErr, stderrErr)
+}
+
+func providerLaunchError(action string, err error) error {
+	return fmt.Errorf("run provider %s: %w", action, shell.WithLaunchHint(err))
 }
 
 const providerCommandAction = "command"

@@ -30,8 +30,8 @@ func TestProviderShellCommandRegistration(t *testing.T) {
 	parent.AddCommand(command)
 	parent.SetArgs([]string{
 		"provider-shell",
-		"--script-file", script, "--force-file", filepath.Join(dir, "force"),
-		"--ack-file", filepath.Join(dir, "ack"), "--parent-pid", strconv.Itoa(os.Getppid()),
+		flagScriptFile, script, flagForceFile, filepath.Join(dir, "force"),
+		flagAckFile, filepath.Join(dir, "ack"), flagParentPID, strconv.Itoa(os.Getppid()),
 	})
 	require.NoError(t, parent.Execute())
 	_, err := os.Lstat(filepath.Join(dir, "ack-key"))
@@ -53,8 +53,8 @@ func TestProviderShellCommandRejectsMissingToken(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 	command := NewProviderShellCmd()
 	command.SetArgs([]string{
-		"--script-file", script, "--force-file", filepath.Join(dir, "force"),
-		"--ack-file", filepath.Join(dir, "ack"), "--parent-pid", strconv.Itoa(os.Getppid()),
+		flagScriptFile, script, flagForceFile, filepath.Join(dir, "force"),
+		flagAckFile, filepath.Join(dir, "ack"), flagParentPID, strconv.Itoa(os.Getppid()),
 	})
 	require.ErrorContains(t, command.Execute(), "invalid provider shell acknowledgement token")
 	_, err = os.Lstat(filepath.Join(dir, "ack"))
