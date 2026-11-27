@@ -18,7 +18,7 @@ import (
 
 const (
 	readerFutureDay   = "2026-11-24"
-	readerSession     = "keep"
+	readerSession     = "p-test-pool-keepkeepke"
 	readerFragment    = `{"torn":`
 	readerFirstRecord = `{"n":1}`
 	readerSource      = "pool"
@@ -40,10 +40,10 @@ func (s *ReaderSuite) SetupTest() {
 }
 
 func (s *ReaderSuite) TestDayAndFileOrder() {
-	future := s.appendEvent(readerFutureDay, "future", s.now.AddDate(0, 0, 1))
-	first := s.appendEvent(dayOne, "first", s.now.AddDate(0, 0, -1))
-	today := s.appendEvent(dayTwo, "today", s.now)
-	second := s.appendEvent(dayOne, "second", s.now.AddDate(0, 0, -1))
+	future := s.appendEvent(readerFutureDay, "p-test-pool-futurefutu", s.now.AddDate(0, 0, 1))
+	first := s.appendEvent(dayOne, "p-test-pool-firstfirst", s.now.AddDate(0, 0, -1))
+	today := s.appendEvent(dayTwo, "p-test-pool-todaytoday", s.now)
+	second := s.appendEvent(dayOne, "p-test-pool-secondseco", s.now.AddDate(0, 0, -1))
 	s.Require().
 		NoError(os.WriteFile(filepath.Join(s.dir, "notes.jsonl"), []byte("ignore"), fileMode))
 	got, err := s.scan(ReaderFilter{})
@@ -53,7 +53,7 @@ func (s *ReaderSuite) TestDayAndFileOrder() {
 
 func (s *ReaderSuite) TestSessionFilter() {
 	first := s.appendEvent(dayTwo, readerSession, s.now)
-	s.appendEvent(dayTwo, "ignore", s.now)
+	s.appendEvent(dayTwo, "p-test-pool-ignoreigno", s.now)
 	last := s.appendEvent(readerFutureDay, readerSession, s.now.AddDate(0, 0, 1))
 	got, err := s.scan(ReaderFilter{Session: readerSession})
 	s.Require().NoError(err)
@@ -63,7 +63,7 @@ func (s *ReaderSuite) TestSessionFilter() {
 func (s *ReaderSuite) TestSinceKeepsMatchingTimestampInEarlierDayFile() {
 	earlierFile := s.appendEvent(dayOne, readerSession, s.now.Add(time.Second))
 	s.appendEvent(dayTwo, readerSession, s.now.Add(-time.Second))
-	s.appendEvent(dayTwo, "ignore-session", s.now)
+	s.appendEvent(dayTwo, "p-test-pool-ignoresess", s.now)
 	want := s.appendEvent(dayTwo, readerSession, s.now)
 	got, err := s.scan(ReaderFilter{Session: readerSession, Since: &s.now})
 	s.Require().NoError(err)
@@ -275,7 +275,7 @@ func (s *ReaderSuite) TestDayRemovedAfterListingIsSkipped() {
 }
 
 func (s *ReaderSuite) TestReadsWhileWriterHoldsLock() {
-	want := s.appendEvent(dayTwo, "active", s.now)
+	want := s.appendEvent(dayTwo, "p-test-pool-activeacti", s.now)
 	lock, err := newFlock(filepath.Join(s.dir, lockName))
 	s.Require().NoError(err)
 	s.Require().NoError(lock.Lock())
