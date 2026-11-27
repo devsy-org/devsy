@@ -78,6 +78,13 @@ var addrCases = []addrCase{
 	{"::ffff:8.8.8.8", false, false},
 	{"::ffff:0:808:808", true, false},
 	{"64:ff9b::808:808", true, false},
+	{"fd20:ce::254", true, true},
+	{"fd20:ce::253", false, true},
+	{"fd20:ce::255", false, true},
+	{"3ffe:ffff:ffff:ffff:ffff:ffff:ffff:ffff", false, false},
+	{"3fff::", false, true},
+	{"3fff:fff:ffff:ffff:ffff:ffff:ffff:ffff", false, true},
+	{"3fff:1000::", false, false},
 	{"64:ff9b:1::1", true, false},
 	{"64:ff9a:ffff::1", false, false},
 	{"2001:0:4136:e378:8000:63bf:3fff:fdd2", true, false},
@@ -152,6 +159,7 @@ func TestInvalidAndZonedAddressesFailClosed(t *testing.T) {
 const (
 	loopback     = "127.0.0.0/8"
 	ianaMetadata = "192.0.0.192/32"
+	gceMetadata  = "fd20:ce::254/128"
 )
 
 func TestOverlapsNeverAllowed(t *testing.T) {
@@ -166,6 +174,15 @@ func TestOverlapsNeverAllowed(t *testing.T) {
 		"2002:1::/32":         "2002::/16",
 		"fec0::/16":           "fec0::/10",
 		"fd00:ec2::254/128":   "fd00:ec2::/32",
+		gceMetadata:           gceMetadata,
+		"fd20:ce::/32":        gceMetadata,
+		"0.0.0.0/0":           "0.0.0.0/8",
+		"::/0":                "::/96",
+		"128.0.0.0/1":         "169.254.0.0/16",
+		"127.0.0.1/8":         loopback,
+		"100::/65":            "100::/64",
+		"2001:0:0:1::/64":     "2001::/32",
+		"ff00::/7":            "ff00::/8",
 	}
 	for in, want := range cases {
 		got, overlaps := OverlapsNeverAllowed(netip.MustParsePrefix(in))
@@ -176,6 +193,8 @@ func TestOverlapsNeverAllowed(t *testing.T) {
 	for _, in := range []string{
 		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "8.8.8.0/24",
 		"2001:db8::/32", "2606:4700::/32", "192.0.1.0/24", "192.88.100.0/24",
+		"126.0.0.0/8", "169.253.0.0/16", "169.255.0.0/16", "223.0.0.0/8",
+		"2001:1::/32", "100:0:0:1::/64", "fd20:cf::/32", "3fff::/20",
 	} {
 		if got, overlaps := OverlapsNeverAllowed(netip.MustParsePrefix(in)); overlaps {
 			t.Errorf("OverlapsNeverAllowed(%s) reports %s", in, got)
@@ -194,11 +213,12 @@ var (
 		"168.63.129.16/32", "192.0.0.0/24", "192.88.99.0/24", "224.0.0.0/4", "240.0.0.0/4",
 		"::/96", "::ffff:0:0:0/96", "64:ff9b::/96", "64:ff9b:1::/48", "2001::/32",
 		"2002::/16", "ff00::/8", "fe80::/10", "fec0::/10", "100::/64", "fd00:ec2::/32",
+		gceMetadata,
 	)
 	referencePrivate = referenceNets(
 		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
 		"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "198.18.0.0/15",
-		"fc00::/7", "2001:db8::/32",
+		"fc00::/7", "2001:db8::/32", "3fff::/20",
 	)
 )
 

@@ -32,6 +32,7 @@ var neverAllowed = mustPrefixes(
 	"ff00::/8",
 	"fe80::/10",
 	"fd00:ec2::/32",
+	"fd20:ce::254/128",
 	"192.0.0.0/24",
 	"192.88.99.0/24",
 	"fec0::/10",
@@ -52,6 +53,7 @@ var private = mustPrefixes(
 	"198.18.0.0/15",
 	"fc00::/7",
 	"2001:db8::/32",
+	"3fff::/20",
 )
 
 func mustPrefixes(values ...string) []netip.Prefix {
@@ -72,7 +74,8 @@ func NeverAllowed(addr netip.Addr) bool {
 }
 
 // Private reports whether addr is in a private range that needs a covering
-// cidr rule. It fails closed: an invalid or zoned address counts as private.
+// cidr rule. It fails closed: an invalid or zoned address counts as private,
+// so callers check NeverAllowed first and never allow on Private alone.
 func Private(addr netip.Addr) bool {
 	addr, ok := normalize(addr)
 	return !ok || contains(private, addr)
