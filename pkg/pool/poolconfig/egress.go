@@ -51,18 +51,37 @@ var (
 // matches subdomains at any depth, but not the bare domain. Hosts that are not
 // valid DNS names never match.
 func HostMatches(pattern, host string) bool {
-	// Unicode lowercasing maps some non-ASCII runes, such as U+0130, to ASCII.
-	if checkHostPattern(pattern) != "" || !isASCII(host) {
+	if !ValidHostPattern(pattern) {
 		return false
 	}
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	if checkHostName(host) != "" {
+	host, ok := NormalizeHost(host)
+	if !ok {
 		return false
 	}
 	if base, ok := strings.CutPrefix(pattern, "*."); ok {
 		return strings.HasSuffix(host, "."+base)
 	}
 	return host == pattern
+}
+
+// ValidHostPattern reports whether pattern is a valid allow rule host.
+func ValidHostPattern(pattern string) bool {
+	return checkHostPattern(pattern) == ""
+}
+
+// NormalizeHost returns host in lowercase with at most one trailing dot
+// removed. It refuses anything that is not an ASCII DNS name an allow rule
+// could name: IP addresses, empty labels, internal and metadata names.
+func NormalizeHost(host string) (string, bool) {
+	// Unicode lowercasing maps some non-ASCII runes, such as U+0130, to ASCII.
+	if !isASCII(host) {
+		return "", false
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if checkHostName(host) != "" {
+		return "", false
+	}
+	return host, true
 }
 
 func isASCII(s string) bool {
