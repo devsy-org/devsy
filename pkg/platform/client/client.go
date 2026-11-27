@@ -35,6 +35,9 @@ var CacheFolder string
 
 var DefaultCacheConfig string
 
+// defaultCacheRoot is the category root resolved at startup, without creating it.
+var defaultCacheRoot string
+
 // Copied from platform `pkg/authentication/registry.go`.
 var ErrAccessKeyNotFound = fmt.Errorf("platform access key not found. Login again")
 
@@ -47,9 +50,13 @@ const (
 )
 
 func init() {
-	platformCache, err := pkgconfig.DefaultPathManager().PlatformCacheDir()
+	// Resolve defaults without creating an ambient cache before command dispatch.
+	var err error
+	defaultCacheRoot, err = pkgconfig.NewReadOnlyPathManager().CacheDir()
+	platformCache := filepath.Join(defaultCacheRoot, "platform")
 	if err != nil {
-		// Fallback to temp dir if PathManager fails
+		// Fallback to temp dir if PathManager fails.
+		defaultCacheRoot = ""
 		platformCache = filepath.Join(os.TempDir(), "devsy-platform")
 	}
 	CacheFolder = platformCache
@@ -194,6 +201,10 @@ func (c *client) Save() error {
 		c.config.APIVersion = "storage.devsy.sh/v1"
 	}
 
+	if err := ensureDefaultCacheRoot(c.configPath); err != nil {
+		return err
+	}
+
 	err := os.MkdirAll(filepath.Dir(c.configPath), 0o750)
 	if err != nil {
 		return err
@@ -208,6 +219,38 @@ func (c *client) Save() error {
 	}
 
 	return os.WriteFile(c.configPath, out, 0o600)
+}
+
+// ensureDefaultCacheRoot creates the private category root before any Save below it, so a
+// config path under an absent root never makes that root with a looser mode. Existing
+// directories keep their mode. Paths outside the root are untouched.
+func ensureDefaultCacheRoot(configPath string) error {
+	if !underDefaultCacheRoot(configPath) {
+		return nil
+	}
+	if err := os.MkdirAll(defaultCacheRoot, 0o700); err != nil {
+		return fmt.Errorf(
+			"platform cache directory %q is not usable (%w); remove it or replace it with "+
+				"a directory, or set %s to another location",
+			defaultCacheRoot, err, pkgconfig.EnvHome,
+		)
+	}
+	return nil
+}
+
+// underDefaultCacheRoot compares cleaned absolute paths, so extra separators, dot
+// components and ".." spellings of a path below the root still count as below it.
+func underDefaultCacheRoot(configPath string) bool {
+	if defaultCacheRoot == "" {
+		return false
+	}
+	absolute, err := filepath.Abs(configPath)
+	if err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(defaultCacheRoot, absolute)
+	return err == nil && relative != ".." &&
+		!strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func (c *client) ManagementConfig() (*rest.Config, error) {
