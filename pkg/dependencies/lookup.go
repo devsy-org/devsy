@@ -36,24 +36,30 @@ type LookupResult struct {
 	Candidates []ExecutableCandidate `json:"candidates"`
 	ReasonCode string                `json:"reasonCode,omitempty"`
 	Executed   bool                  `json:"executed"`
+	// keys holds each appended candidate's comparison key while a result is built.
+	keys map[string]struct{}
 }
 
 // append drops missing candidates and repeats of one path. Repeats are judged
 // the way the platform compares names, so C:\Tools\a.exe and c:\tools\A.EXE match.
+// Each key is computed once, so the cost grows linearly with the candidate count.
 func (r *LookupResult) append(environment LookupEnvironment, candidate ExecutableCandidate) {
 	if candidate.State == FileMissing {
 		return
 	}
 	key := environment.lexicalKey(candidate.LexicalPath)
-	for _, existing := range r.Candidates {
-		if environment.lexicalKey(existing.LexicalPath) == key {
-			return
-		}
+	if _, repeated := r.keys[key]; repeated {
+		return
 	}
+	if r.keys == nil {
+		r.keys = make(map[string]struct{})
+	}
+	r.keys[key] = struct{}{}
 	r.Candidates = append(r.Candidates, candidate)
 }
 
 func (r *LookupResult) finish(explicit bool) {
+	r.keys = nil
 	r.ReasonCode = LookupMissing
 	if explicit {
 		r.ReasonCode = LookupInvalidPath
