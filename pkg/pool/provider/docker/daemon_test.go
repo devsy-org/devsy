@@ -165,19 +165,18 @@ func (d *daemon) dispatch(args []string) ([]byte, error) {
 	if !ok || len(args) < 2 {
 		return nil, fmt.Errorf("unexpected command %v", args)
 	}
-	switch args[1] {
-	case "ls":
-		return d.ls(kind, args[2:])
-	case verbInspect:
-		return d.inspect(kind, args[2:])
-	case "rm":
-		return d.rm(kind, args[2:])
-	case verbCreate:
-		return d.create(kind, args[2:])
-	case verbStart:
-		return d.start(kind, args[2:])
+	verbs := map[string]func(string, []string) ([]byte, error){
+		"ls":        d.ls,
+		verbInspect: d.inspect,
+		"rm":        d.rm,
+		verbCreate:  d.create,
+		verbStart:   d.start,
 	}
-	return nil, fmt.Errorf("unexpected verb %v", args)
+	handle, ok := verbs[args[1]]
+	if !ok {
+		return nil, fmt.Errorf("unexpected verb %v", args)
+	}
+	return handle(kind, args[2:])
 }
 
 func (d *daemon) imageCommand(args []string) ([]byte, error, bool) {
