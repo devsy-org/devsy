@@ -40,6 +40,7 @@ type object struct {
 	internal bool
 	network  string
 	image    string
+	starts   int
 }
 
 // daemon is an in-memory Docker that rejects any command or flag the
@@ -162,6 +163,8 @@ func (d *daemon) dispatch(args []string) ([]byte, error) {
 		return d.rm(kind, args[2:])
 	case verbCreate:
 		return d.create(kind, args[2:])
+	case verbStart:
+		return d.start(kind, args[2:])
 	}
 	return nil, fmt.Errorf("unexpected verb %v", args)
 }
@@ -263,6 +266,26 @@ func (d *daemon) rm(kind string, args []string) ([]byte, error) {
 		}
 	}
 	return nil, errNoSuchObject
+}
+
+// start counts starts, because Docker accepts a start of a running container.
+func (d *daemon) start(kind string, args []string) ([]byte, error) {
+	if kind != kindWorkspace || len(args) != 2 || args[0] != "--" {
+		return nil, fmt.Errorf("unexpected start arguments %v", args)
+	}
+	for i, o := range d.objs {
+		if o.kind == kind && o.id == args[1] {
+			d.objs[i].starts++
+			return []byte(o.name + "\n"), nil
+		}
+	}
+	return nil, errNoSuchObject
+}
+
+func (d *daemon) snapshot() []object {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.objs)
 }
 
 func rmOperand(kind string, args []string) (string, error) {

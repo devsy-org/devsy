@@ -161,6 +161,47 @@ func (s *contractSuite) TestSpawnRejectsInvalidSessionIDs() {
 	}
 }
 
+func (s *contractSuite) TestStartIsIdempotentAndCreatesNothing() {
+	ctx := s.T().Context()
+	spec, other := s.spec("a"), s.spec("a")
+	s.Require().NoError(s.p.Spawn(ctx, spec))
+	s.Require().NoError(s.p.Spawn(ctx, other))
+	before := s.list(spec.Pool)
+	s.Require().NotEmpty(before)
+	s.Require().NoError(s.p.Start(ctx, spec.Pool, spec.Session))
+	s.Require().NoError(s.p.Start(ctx, spec.Pool, spec.Session))
+	s.ElementsMatch(before, s.list(spec.Pool))
+}
+
+func (s *contractSuite) TestStartNeedsAWorkspace() {
+	ctx := s.T().Context()
+	spec := s.spec("a")
+	s.ErrorIs(s.p.Start(ctx, spec.Pool, spec.Session), provider.ErrNotFound)
+	s.Require().NoError(s.p.Spawn(ctx, spec))
+	s.Require().NoError(s.p.Reclaim(ctx, spec.Pool, spec.Session))
+	s.ErrorIs(s.p.Start(ctx, spec.Pool, spec.Session), provider.ErrNotFound)
+	s.Empty(s.list(spec.Pool))
+}
+
+func (s *contractSuite) TestStartRejectsInvalidSessionIDs() {
+	for _, id := range s.invalidSessionIDs() {
+		s.Run(id, func() {
+			const pool = "a"
+			s.seed(provider.Resource{
+				Kind: networkKind,
+				Name: id,
+				Labels: map[string]string{
+					provider.LabelPool:    pool,
+					provider.LabelSession: id,
+				},
+			})
+			before := s.list(pool)
+			s.ErrorIs(s.p.Start(s.T().Context(), pool, id), provider.ErrInvalidSession)
+			s.ElementsMatch(before, s.list(pool))
+		})
+	}
+}
+
 func (s *contractSuite) TestSpawnRejectsInvalidImages() {
 	ctx := s.T().Context()
 	for _, image := range []string{"", "-x", "--privileged", "a b", "a\tb", "a\nb", "a\x00b"} {
@@ -339,6 +380,7 @@ func (s *contractSuite) TestCanceledOperationsDoNotChangeResources() {
 	before := s.list(spec.Pool)
 	s.Require().NotEmpty(before)
 	s.Require().ErrorIs(s.p.Reclaim(ctx, spec.Pool, spec.Session), context.Canceled)
+	s.Require().ErrorIs(s.p.Start(ctx, spec.Pool, spec.Session), context.Canceled)
 	_, err := s.p.List(ctx, spec.Pool)
 	s.Require().ErrorIs(err, context.Canceled)
 	s.Require().ErrorIs(s.p.Delete(ctx, spec.Pool, before[0]), context.Canceled)
@@ -356,6 +398,7 @@ func (s *contractSuite) TestCancellationInsideOperationsLeavesResourcesUnchanged
 	}{
 		{"Spawn", func(ctx context.Context) error { return s.p.Spawn(ctx, pending) }},
 		{"Reclaim", func(ctx context.Context) error { return s.p.Reclaim(ctx, spec.Pool, spec.Session) }},
+		{"Start", func(ctx context.Context) error { return s.p.Start(ctx, spec.Pool, spec.Session) }},
 		{"Delete", func(ctx context.Context) error { return s.p.Delete(ctx, spec.Pool, before[0]) }},
 		{"List", func(ctx context.Context) error {
 			_, err := s.p.List(ctx, spec.Pool)
@@ -391,6 +434,7 @@ func (s *contractSuite) TestRejectsInvalidPoolNames() {
 				"Spawn",
 			)
 			s.ErrorIs(s.p.Reclaim(ctx, pool, spec.Session), provider.ErrInvalidPool, "Reclaim")
+			s.ErrorIs(s.p.Start(ctx, pool, spec.Session), provider.ErrInvalidPool, "Start")
 			resources, err := s.p.List(ctx, pool)
 			s.ErrorIs(err, provider.ErrInvalidPool, "List")
 			s.Empty(resources)

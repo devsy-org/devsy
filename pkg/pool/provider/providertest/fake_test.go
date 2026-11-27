@@ -55,6 +55,38 @@ func (s *FakeSuite) TestErrorsAreScopedToEachMethod() {
 	s.Len(listed, 2)
 }
 
+func (s *FakeSuite) TestStartMarksOnlyAnExistingWorkspace() {
+	f := new(Fake)
+	ctx := s.T().Context()
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Spawn(ctx, exampleSpec))
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Start(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Start(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.True(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Equal([]Call{
+		{Method: MethodSpawn, Pool: exampleSpec.Pool, Session: exampleSpec.Session},
+		{Method: MethodStart, Pool: exampleSpec.Pool, Session: exampleSpec.Session},
+		{Method: MethodStart, Pool: exampleSpec.Pool, Session: exampleSpec.Session},
+	}, f.Calls())
+	s.Require().NoError(f.Reclaim(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Spawn(ctx, exampleSpec))
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+}
+
+func (s *FakeSuite) TestStartFailureLeavesTheWorkspaceNotStarted() {
+	f := new(Fake)
+	ctx := s.T().Context()
+	injected := errors.New("injected")
+	s.Require().NoError(f.Spawn(ctx, exampleSpec))
+	f.FailNext(MethodStart, injected)
+	s.Require().ErrorIs(f.Start(ctx, exampleSpec.Pool, exampleSpec.Session), injected)
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Start(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.True(f.Started(exampleSpec.Pool, exampleSpec.Session))
+}
+
 func (s *FakeSuite) TestPartialSpawnCanBeReclaimed() {
 	f := new(Fake)
 	ctx := s.T().Context()
