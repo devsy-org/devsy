@@ -5,13 +5,27 @@ import (
 	"strings"
 )
 
+const (
+	schemaOne    = `"schemaVersion": 1`
+	kindInternal = `"kind": "internal"`
+)
+
 func (s *catalogSuite) TestStrictCatalogJSON() {
 	cases := map[string][2]string{
-		"unknown top level":    {`"schemaVersion": 1`, `"schemaVersion": 1, "postinstall": "sh"`},
-		"unknown nested":       {`"kind": "internal"`, `"kind": "internal", "shell": "curl"`},
-		"duplicate key":        {`"schemaVersion": 1`, `"schemaVersion": 2, "schemaVersion": 1`},
-		"duplicate nested key": {`"kind": "internal"`, `"kind": "file", "kind": "internal"`},
+		"unknown top level":    {schemaOne, `"schemaVersion": 1, "postinstall": "sh"`},
+		"unknown nested":       {kindInternal, `"kind": "internal", "shell": "curl"`},
+		"duplicate key":        {schemaOne, `"schemaVersion": 2, "schemaVersion": 1`},
+		"duplicate nested key": {kindInternal, `"kind": "file", "kind": "internal"`},
 		"null metadata":        {`"adapterSemverRange": ""`, `"adapterSemverRange": null`},
+		"case duplicate":       {schemaOne, `"schemaVersion": 2, "SCHEMAVERSION": 1`},
+		"case duplicate nested": {
+			kindInternal, `"kind": "file", "Kind": "internal"`,
+		},
+		"wrong case top level": {schemaOne, `"SchemaVersion": 1`},
+		"wrong case nested":    {kindInternal, `"KIND": "internal"`},
+		"wrong case in list":   {`"toolId": "docker"`, `"toolID": "docker"`},
+		"folded letter":        {schemaOne, `"\u017fchemaVersion": 1`},
+		"kelvin sign":          {kindInternal, `"\u212aind": "internal"`},
 	}
 	for name, fields := range cases {
 		s.Run(name, func() {

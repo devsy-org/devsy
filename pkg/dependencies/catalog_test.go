@@ -192,6 +192,24 @@ func (s *catalogSuite) TestMicroSandboxImageBackendIsConditional() {
 	}
 }
 
+// Provider releases contain binaries for Linux amd64 and arm64, macOS arm64
+// and Windows amd64 (see the MicroSandbox provider page in the docs).
+func (s *catalogSuite) TestMicroSandboxPlatformsMatchPublishedBinaries() {
+	catalog, err := LoadCatalog()
+	s.Require().NoError(err)
+
+	for _, binding := range catalog.Bindings() {
+		if binding.ID == "microsandbox" {
+			s.Equal(
+				[]string{"linux/amd64", "linux/arm64", "darwin/arm64", "windows/amd64"},
+				binding.Platforms,
+			)
+			return
+		}
+	}
+	s.Fail("microsandbox binding is missing")
+}
+
 func (s *catalogSuite) TestKubernetesHasNoExecutableProbeOrKubectlDependency() {
 	catalog, err := LoadCatalog()
 	s.Require().NoError(err)

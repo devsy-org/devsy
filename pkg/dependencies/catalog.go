@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -35,7 +36,8 @@ func LoadCatalog() (*Catalog, error) {
 }
 
 func decodeCatalog(data []byte) (*Catalog, error) {
-	if err := checkJSONValue(json.NewDecoder(bytes.NewReader(data))); err != nil {
+	schema := reflect.TypeFor[catalogDocument]()
+	if err := checkJSONValue(json.NewDecoder(bytes.NewReader(data)), schema); err != nil {
 		return nil, fmt.Errorf("invalid dependency catalog JSON: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -58,7 +60,9 @@ func decodeCatalog(data []byte) (*Catalog, error) {
 	return &Catalog{document: document, hash: hex.EncodeToString(digest[:])}, nil
 }
 
-func checkJSONValue(decoder *json.Decoder) error {
+// checkJSONValue rejects null and duplicate keys. Keys must also match the
+// schema field names exactly, because encoding/json matches names without case.
+func checkJSONValue(decoder *json.Decoder, schema reflect.Type) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -67,21 +71,26 @@ func checkJSONValue(decoder *json.Decoder) error {
 	case nil:
 		return errors.New("null catalog metadata is forbidden")
 	case json.Delim('{'):
-		return checkJSONObject(decoder)
+		return checkJSONObject(decoder, schema)
 	case json.Delim('['):
-		for decoder.More() {
-			if err := checkJSONValue(decoder); err != nil {
-				return err
-			}
-		}
-		_, err = decoder.Token()
-		return err
+		return checkJSONArray(decoder, schema)
 	default:
 		return nil
 	}
 }
 
-func checkJSONObject(decoder *json.Decoder) error {
+func checkJSONArray(decoder *json.Decoder, schema reflect.Type) error {
+	for decoder.More() {
+		if err := checkJSONValue(decoder, elementSchema(schema)); err != nil {
+			return err
+		}
+	}
+	_, err := decoder.Token()
+	return err
+}
+
+func checkJSONObject(decoder *json.Decoder, schema reflect.Type) error {
+	fields := schemaFields(schema)
 	seen := make(map[string]bool)
 	for decoder.More() {
 		token, err := decoder.Token()
@@ -93,12 +102,50 @@ func checkJSONObject(decoder *json.Decoder) error {
 			return errors.New("duplicate or invalid JSON object key")
 		}
 		seen[key] = true
-		if err := checkJSONValue(decoder); err != nil {
+		field, known := fields[key]
+		if fields != nil && !known {
+			return fmt.Errorf("unknown or wrongly cased JSON object key %q", key)
+		}
+		if err := checkJSONValue(decoder, field); err != nil {
 			return err
 		}
 	}
 	_, err := decoder.Token()
 	return err
+}
+
+func elementSchema(schema reflect.Type) reflect.Type {
+	if schema = indirectSchema(schema); schema != nil && schema.Kind() == reflect.Slice {
+		return schema.Elem()
+	}
+	return nil
+}
+
+func indirectSchema(schema reflect.Type) reflect.Type {
+	for schema != nil && schema.Kind() == reflect.Pointer {
+		schema = schema.Elem()
+	}
+	return schema
+}
+
+// schemaFields maps each JSON key of a struct to its field type. Other types
+// return nil, which accepts any key.
+func schemaFields(schema reflect.Type) map[string]reflect.Type {
+	if schema = indirectSchema(schema); schema == nil || schema.Kind() != reflect.Struct {
+		return nil
+	}
+	fields := make(map[string]reflect.Type, schema.NumField())
+	for field := range schema.Fields() {
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if !field.IsExported() || name == "-" {
+			continue
+		}
+		if name == "" {
+			name = field.Name
+		}
+		fields[name] = field.Type
+	}
+	return fields
 }
 
 func (c *Catalog) ID() string { return c.document.ID }

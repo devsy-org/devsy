@@ -124,7 +124,7 @@
       "executionContract": "external_microsandbox_v1",
       "adapterSemverRange": "",
       "requiredRuntimeCheckSchema": 1,
-      "platforms": ["linux/amd64", "linux/arm64", "darwin/arm64"],
+      "platforms": ["linux/amd64", "linux/arm64", "darwin/arm64", "windows/amd64"],
       "guidanceId": "microsandbox_setup",
       "requirements": [
         {
