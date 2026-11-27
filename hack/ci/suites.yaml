@@ -9,6 +9,32 @@ selection:
     - e2e/framework/**
     - e2e/cmd/**
     - e2e/*.go
+  # A push to main whose changed files all match light_run_paths, and none match
+  # light_run_excludes, skips the Go, e2e and microsandbox jobs. Everything else
+  # runs in full, so a path missing here fails open. The excludes are files a Go
+  # test or a CI job reads, and Markdown that lives inside the Go trees.
+  light_run_paths:
+    - sites/**
+    - design/**
+    - docs/**
+    - '**/*.md'
+    - '**/*.mdx'
+    - renovate.json
+  light_run_excludes:
+    - '**/*.go'
+    - sites/docs-devsy-sh/public/install.sh
+    - sites/docs-devsy-sh/content/docs/managing-providers/microsandbox.mdx
+    - AGENTS.md
+    - THIRD_PARTY_LICENSES.md
+    - .agents/**
+    - .github/**
+    - cmd/**
+    - e2e/**
+    - hack/**
+    - internal/**
+    - logging/**
+    - pkg/**
+    - providers/**
   core_paths:
     - main.go
     - cmd/root.go
