@@ -299,20 +299,23 @@ func (r stderrRunner) Run(_ context.Context, spec commandSpec) error {
 	return errors.New("exit status 1")
 }
 
-func (s *rerunSuite) TestRetriesDoNotShareThePullRequestGroup() {
+func (s *rerunSuite) TestRetriesDoNotShareAPullRequestOrMainGroup() {
 	workflow, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "pr-ci.yml"))
 	s.Require().NoError(err)
 
 	s.Contains(
 		strings.ReplaceAll(string(workflow), "\r\n", "\n"),
-		"group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && "+
-			"github.run_attempt == 1 && format('pr-{0}', github.head_ref) || "+
+		"group: ${{ github.workflow }}-${{ "+
+			"github.run_attempt == 1 && github.event_name == 'pull_request' && "+
+			"format('pr-{0}', github.head_ref) || "+
+			"github.run_attempt == 1 && github.event_name == 'push' && "+
+			"format('main-{0}', github.ref_name) || "+
 			"format('run-{0}', github.run_id) }}\n",
 	)
 }
 
 func (s *rerunSuite) runRerun(fake *rerunFakeRunner, args ...string) (string, error) {
-	base := []string{"--repo", testRepo, runIDFlag, "7"}
+	base := []string{repoFlag, testRepo, runIDFlag, "7"}
 	opts, err := parseRerunArgs(
 		append(base, args...),
 		io.Discard,

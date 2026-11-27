@@ -190,7 +190,7 @@ func (s *scopeSuite) TestCLIPrintsOutputsAndFailsOpenOutsideARepository() {
 	var stdout, stderr bytes.Buffer
 
 	code := scopeCLI(
-		[]string{"--before", scopeTestBefore, "--sha", scopeTestSHA, "--repo-dir", s.T().TempDir()},
+		[]string{"--before", scopeTestBefore, shaFlag, scopeTestSHA, "--repo-dir", s.T().TempDir()},
 		&stdout, &stderr,
 	)
 
@@ -245,9 +245,8 @@ func (r *scriptedRunner) Run(_ context.Context, spec commandSpec) error {
 // The six path outputs must all honour the scope step, and that step must fail
 // open: if it errors, its light output is empty and every job still runs.
 func (s *scopeSuite) TestWorkflowWiresScopeAndSchedule() {
-	raw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "pr-ci.yml"))
+	workflow, err := readWorkflow()
 	s.Require().NoError(err)
-	workflow := strings.ReplaceAll(string(raw), "\r\n", "\n")
 
 	s.Equal(6, strings.Count(workflow, "steps.scope.outputs.light != 'true'"))
 	s.Contains(workflow, "go run ./hack/ci scope")
@@ -262,6 +261,11 @@ func (s *scopeSuite) TestWorkflowWiresScopeAndSchedule() {
 			"        continue-on-error: true",
 	)
 	s.Contains(workflow, "schedule:\n    - cron:")
+}
+
+func readWorkflow() (string, error) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "pr-ci.yml"))
+	return strings.ReplaceAll(string(raw), "\r\n", "\n"), err
 }
 
 func (s *scopeSuite) classify(before string, history fakeHistory) scopeDecision {
