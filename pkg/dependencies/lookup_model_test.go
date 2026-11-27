@@ -431,12 +431,15 @@ func (s *lookupModelSuite) TestWindowsDefaultLauncherLocations() {
 }
 
 func (s *lookupModelSuite) TestWindowsLauncherRootsFromTheEnvironment() {
+	const shimExe, binExe = `D:\L\shims\x.exe`, `D:\L\bin\x.exe`
 	for key, paths := range map[string][]string{
-		"LOCALAPPDATA": {`D:\L\mise\shims\x.exe`, `D:\L\aquaproj-aqua\bin\x.exe`, `D:\L\Volta\bin\x.exe`},
-		"VOLTA_HOME":   {`D:\L\bin\x.exe`},
-		"PROTO_HOME":   {`D:\L\shims\x.exe`, `D:\L\bin\x.exe`},
-		"SCOOP":        {`D:\L\shims\x.exe`},
-		"SCOOP_GLOBAL": {`D:\L\shims\x.exe`},
+		localAppData: {
+			`D:\L\mise\shims\x.exe`, `D:\L\aquaproj-aqua\bin\x.exe`, `D:\L\Volta\bin\x.exe`,
+		},
+		"VOLTA_HOME":   {binExe},
+		"PROTO_HOME":   {shimExe, binExe},
+		"SCOOP":        {shimExe},
+		"SCOOP_GLOBAL": {shimExe},
 	} {
 		environment := s.windowsEnvironment(map[string]string{key: `D:\L`})
 		for _, path := range paths {

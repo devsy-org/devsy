@@ -244,20 +244,26 @@ func (e LookupEnvironment) directory(path string) string {
 	return "."
 }
 
+const (
+	shimsDir     = "shims"
+	binDir       = "bin"
+	localAppData = "LOCALAPPDATA"
+)
+
 // launcherRoots lists environment variables that name a version manager root and
 // the shim directory below it, as documented by each tool.
 var launcherRoots = []struct{ key, child string }{
-	{"MISE_DATA_DIR", "shims"},
-	{"ASDF_DATA_DIR", "shims"},
-	{"AQUA_ROOT_DIR", "bin"},
-	{"VOLTA_HOME", "bin"},
-	{"PROTO_HOME", "shims"},
-	{"PROTO_HOME", "bin"},
-	{"SCOOP", "shims"},
-	{"SCOOP_GLOBAL", "shims"},
-	{"LOCALAPPDATA", "mise/shims"},
-	{"LOCALAPPDATA", "aquaproj-aqua/bin"},
-	{"LOCALAPPDATA", "Volta/bin"},
+	{"MISE_DATA_DIR", shimsDir},
+	{"ASDF_DATA_DIR", shimsDir},
+	{"AQUA_ROOT_DIR", binDir},
+	{"VOLTA_HOME", binDir},
+	{"PROTO_HOME", shimsDir},
+	{"PROTO_HOME", binDir},
+	{"SCOOP", shimsDir},
+	{"SCOOP_GLOBAL", shimsDir},
+	{localAppData, "mise/shims"},
+	{localAppData, "aquaproj-aqua/bin"},
+	{localAppData, "Volta/bin"},
 }
 
 // Default shim locations below a home directory. Only these reviewed structural
