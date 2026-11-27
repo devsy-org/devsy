@@ -26,6 +26,9 @@ func TestFakeContract(t *testing.T) {
 		Inventory: func(_ *testing.T, p provider.Provider) []provider.Resource {
 			return p.(*Fake).Snapshot()
 		},
+		Workspace: func(_ *testing.T, p provider.Provider, pool, id string) WorkspaceState {
+			return p.(*Fake).State(pool, id)
+		},
 		OnNextCall: func(_ *testing.T, p provider.Provider, fn func()) {
 			f := p.(*Fake)
 			f.SetHook(func(context.Context, Call) {

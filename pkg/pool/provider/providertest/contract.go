@@ -27,6 +27,7 @@ const (
 	unlabelledName  = "unlabelled"
 	otherPoolName   = "other-pool"
 	sessionOnlyName = "session-only"
+	siblingPool     = "a-b"
 )
 
 // Harness supplies a fresh, empty provider per test and direct backend seeding
@@ -36,13 +37,24 @@ const (
 // object in the backend, labelled or not, so the suite can check that objects
 // outside a pool are never touched. MaxSeeded caps the objects the list spec
 // seeds, for backends where an object is costly, and 0 keeps the default of
-// 1000. The other fields are required.
+// 1000. Workspace reports the state of a session's workspace straight from
+// the backend. The other fields are required.
 type Harness struct {
 	MaxSeeded  int
 	New        func(t *testing.T) provider.Provider
 	Seed       func(t *testing.T, p provider.Provider, r provider.Resource)
 	OnNextCall func(t *testing.T, p provider.Provider, fn func())
 	Inventory  func(t *testing.T, p provider.Provider) []provider.Resource
+	Workspace  func(t *testing.T, p provider.Provider, pool, session string) WorkspaceState
+}
+
+// WorkspaceState is what a backend says about one session's workspace. Began
+// is an opaque token that changes each time the workspace goes from stopped
+// to running, and stays the same while it runs. A workspace that exits at
+// once, as a bare image does, reports Running false.
+type WorkspaceState struct {
+	Running bool
+	Began   string
 }
 
 type contractSuite struct {
@@ -55,8 +67,8 @@ type contractSuite struct {
 func RunContract(t *testing.T, harness Harness) {
 	t.Helper()
 	if harness.New == nil || harness.Seed == nil ||
-		harness.OnNextCall == nil || harness.Inventory == nil {
-		t.Fatal("providertest: Harness needs New, Seed, OnNextCall and Inventory")
+		harness.OnNextCall == nil || harness.Inventory == nil || harness.Workspace == nil {
+		t.Fatal("providertest: Harness needs New, Seed, OnNextCall, Inventory and Workspace")
 	}
 	suite.Run(t, &contractSuite{harness: harness})
 }
@@ -154,7 +166,7 @@ func (s *contractSuite) TestSpawnRejectsInvalidSessionIDs() {
 		s.Run(id, func() {
 			spec := provider.Spec{Pool: "a", Session: id, Image: testImage}
 			s.ErrorIs(s.p.Spawn(ctx, spec), provider.ErrInvalidSession)
-			for _, pool := range []string{spec.Pool, "a-b", "b"} {
+			for _, pool := range []string{spec.Pool, siblingPool, "b"} {
 				s.Empty(s.list(pool))
 			}
 		})
@@ -168,9 +180,46 @@ func (s *contractSuite) TestStartIsIdempotentAndCreatesNothing() {
 	s.Require().NoError(s.p.Spawn(ctx, other))
 	before := s.list(spec.Pool)
 	s.Require().NotEmpty(before)
+	untouched := s.workspace(other)
+	s.False(s.workspace(spec).Running, "Spawn must leave the workspace stopped")
 	s.Require().NoError(s.p.Start(ctx, spec.Pool, spec.Session))
 	s.Require().NoError(s.p.Start(ctx, spec.Pool, spec.Session))
 	s.ElementsMatch(before, s.list(spec.Pool))
+	s.Equal(untouched, s.workspace(other), "Start must not touch another session")
+}
+
+func (s *contractSuite) TestStartLeavesARunningWorkspaceAlone() {
+	ctx := s.T().Context()
+	spec := s.spec("a")
+	s.Require().NoError(s.p.Spawn(ctx, spec))
+	s.Require().NoError(s.p.Start(ctx, spec.Pool, spec.Session))
+	first := s.workspace(spec)
+	if !first.Running {
+		s.T().Skip("the backend's workspace exits at once, so a repeat start is not observable")
+	}
+	for range 2 {
+		s.Require().NoError(s.p.Start(ctx, spec.Pool, spec.Session))
+		s.Equal(first, s.workspace(spec), "a repeat Start must not restart a running workspace")
+	}
+}
+
+func (s *contractSuite) TestStartStaysInItsOwnPoolAndSession() {
+	ctx := s.T().Context()
+	spec, stray := s.spec("a"), s.spec("a")
+	s.Require().NoError(s.p.Spawn(ctx, spec))
+	before := s.workspace(spec)
+	for _, pool := range []string{"b", siblingPool} {
+		s.ErrorIs(s.p.Start(ctx, pool, spec.Session), provider.ErrInvalidSession, pool)
+	}
+	s.seed(provider.Resource{Kind: workspaceKind, Name: "wrong-pool", Labels: map[string]string{
+		provider.LabelPool: "b", provider.LabelSession: stray.Session,
+	}})
+	s.ErrorIs(s.p.Start(ctx, "a", stray.Session), provider.ErrNotFound)
+	s.seed(provider.Resource{Kind: workspaceKind, Name: "wrong-session", Labels: map[string]string{
+		provider.LabelPool: "a", provider.LabelSession: s.spec("a").Session,
+	}})
+	s.ErrorIs(s.p.Start(ctx, "a", stray.Session), provider.ErrNotFound)
+	s.Equal(before, s.workspace(spec))
 }
 
 func (s *contractSuite) TestStartNeedsAWorkspace() {
@@ -336,7 +385,7 @@ func (s *contractSuite) TestUnlabelledAndForeignObjectsAreNeverTouched() {
 		Kind: networkKind,
 		Name: otherPoolName,
 		Labels: map[string]string{
-			provider.LabelPool:    "a-b",
+			provider.LabelPool:    siblingPool,
 			provider.LabelSession: spec.Session,
 		},
 	})
@@ -453,6 +502,11 @@ func (s *contractSuite) untouchedInventory() []provider.Resource {
 		}
 	}
 	return out
+}
+
+func (s *contractSuite) workspace(spec provider.Spec) WorkspaceState {
+	s.T().Helper()
+	return s.harness.Workspace(s.T(), s.p, spec.Pool, spec.Session)
 }
 
 func (s *contractSuite) seed(r provider.Resource) {

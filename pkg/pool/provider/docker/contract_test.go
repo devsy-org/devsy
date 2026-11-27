@@ -32,5 +32,8 @@ func TestContractAgainstTheSimulatedDaemon(t *testing.T) {
 		Inventory: func(_ *testing.T, p provider.Provider) []provider.Resource {
 			return p.(*simProvider).d.inventory()
 		},
+		Workspace: func(_ *testing.T, p provider.Provider, pool, id string) providertest.WorkspaceState {
+			return p.(*simProvider).d.workspaceState(pool, id)
+		},
 	})
 }

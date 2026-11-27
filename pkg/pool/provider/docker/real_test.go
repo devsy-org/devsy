@@ -43,7 +43,38 @@ func TestContractAgainstRealDocker(t *testing.T) {
 		Inventory: func(t *testing.T, _ provider.Provider) []provider.Resource {
 			return h.inventory(t)
 		},
+		Workspace: func(t *testing.T, _ provider.Provider, _, id string) providertest.WorkspaceState {
+			return h.workspaceState(t, id)
+		},
 	})
+}
+
+// TestRepeatStartLeavesARunningContainerAloneOnRealDocker covers what the
+// contract cannot, because a bare image exits at once: Docker's start of a
+// container that already runs keeps the same start time.
+func TestRepeatStartLeavesARunningContainerAloneOnRealDocker(t *testing.T) {
+	h := newRealDocker(t)
+	id, err := session.NewID("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.must(t, nounContainer, verbCreate, "--name", resourcePrefix+id+"-workspace",
+		"--label", provider.LabelPool+"=a", "--label", provider.LabelSession+"="+id,
+		"--", providertest.Image, "sleep", "300")
+	p := New(CLI{})
+	if err := p.Start(t.Context(), "a", id); err != nil {
+		t.Fatal(err)
+	}
+	first := h.workspaceState(t, id)
+	if !first.Running {
+		t.Fatal("container is not running after Start")
+	}
+	if err := p.Start(t.Context(), "a", id); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.workspaceState(t, id); got != first {
+		t.Fatalf("a repeat Start changed the container: %+v then %+v", first, got)
+	}
 }
 
 // TestStartRunsTheWorkspaceOnRealDocker checks what the contract cannot see:
@@ -96,6 +127,14 @@ func newRealDocker(t *testing.T) *realDocker {
 func (h *realDocker) startedAt(t *testing.T, name string) string {
 	t.Helper()
 	return h.must(t, nounContainer, verbInspect, flagFormat, "{{.State.StartedAt}}", "--", name)
+}
+
+func (h *realDocker) workspaceState(t *testing.T, id string) providertest.WorkspaceState {
+	t.Helper()
+	out := h.must(t, nounContainer, verbInspect, flagFormat,
+		"{{.State.Running}} {{.State.StartedAt}}", "--", resourcePrefix+id+"-workspace")
+	running, began, _ := strings.Cut(out, " ")
+	return providertest.WorkspaceState{Running: running == "true", Began: began}
 }
 
 type realProvider struct {

@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/pool/provider"
+	"github.com/devsy-org/devsy/pkg/pool/provider/providertest"
 )
 
 const (
@@ -41,6 +43,7 @@ type object struct {
 	network  string
 	image    string
 	starts   int
+	began    int
 }
 
 // daemon is an in-memory Docker that rejects any command or flag the
@@ -66,6 +69,7 @@ type daemon struct {
 	late      *lateCreate
 	// createOut replaces what a network create prints.
 	createOut string
+	beganSeq  int
 }
 
 type lateCreate struct {
@@ -269,6 +273,7 @@ func (d *daemon) rm(kind string, args []string) ([]byte, error) {
 }
 
 // start counts starts, because Docker accepts a start of a running container.
+// A started workspace keeps running, and a repeat start leaves it alone.
 func (d *daemon) start(kind string, args []string) ([]byte, error) {
 	if kind != kindWorkspace || len(args) != 2 || args[0] != "--" {
 		return nil, fmt.Errorf("unexpected start arguments %v", args)
@@ -276,6 +281,10 @@ func (d *daemon) start(kind string, args []string) ([]byte, error) {
 	for i, o := range d.objs {
 		if o.kind == kind && o.id == args[1] {
 			d.objs[i].starts++
+			if o.began == 0 {
+				d.beganSeq++
+				d.objs[i].began = d.beganSeq
+			}
 			return []byte(o.name + "\n"), nil
 		}
 	}
@@ -389,6 +398,18 @@ func (d *daemon) inventory() []provider.Resource {
 		})
 	}
 	return out
+}
+
+func (d *daemon) workspaceState(pool, id string) providertest.WorkspaceState {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, o := range d.objs {
+		if o.kind == kindWorkspace && o.labels[provider.LabelPool] == pool &&
+			o.labels[provider.LabelSession] == id {
+			return providertest.WorkspaceState{Running: o.began != 0, Began: strconv.Itoa(o.began)}
+		}
+	}
+	return providertest.WorkspaceState{}
 }
 
 func (d *daemon) named(kind, name string) (object, bool) {

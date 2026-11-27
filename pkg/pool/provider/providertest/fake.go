@@ -7,6 +7,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strconv"
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
@@ -46,7 +47,8 @@ type Fake struct {
 	always    map[Method]error
 	partial   error
 	hook      func(context.Context, Call)
-	started   map[string]struct{}
+	started   map[string]int
+	starts    int
 }
 
 type resourceKey struct{ kind, name string }
@@ -136,9 +138,12 @@ func (f *Fake) Start(ctx context.Context, pool, id string) error {
 			return provider.ErrNotFound
 		}
 		if f.started == nil {
-			f.started = make(map[string]struct{})
+			f.started = make(map[string]int)
 		}
-		f.started[id] = struct{}{}
+		if f.started[id] == 0 {
+			f.starts++
+			f.started[id] = f.starts
+		}
 		return nil
 	})
 }
@@ -148,8 +153,18 @@ func (f *Fake) Start(ctx context.Context, pool, id string) error {
 func (f *Fake) Started(pool, id string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	_, ok := f.started[id]
-	return ok && f.hasWorkspace(pool, id)
+	return f.started[id] != 0 && f.hasWorkspace(pool, id)
+}
+
+// State reports a session's workspace as the contract harness sees it. The
+// token changes only when Start takes a stopped workspace to running.
+func (f *Fake) State(pool, id string) WorkspaceState {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.started[id] == 0 || !f.hasWorkspace(pool, id) {
+		return WorkspaceState{}
+	}
+	return WorkspaceState{Running: true, Began: strconv.Itoa(f.started[id])}
 }
 
 // Reclaim implements provider.Provider.
