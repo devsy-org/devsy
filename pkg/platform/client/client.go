@@ -221,14 +221,36 @@ func (c *client) Save() error {
 	return os.WriteFile(c.configPath, out, 0o600)
 }
 
-// ensureDefaultCacheRoot defers the category root's former privacy until an explicit default Save.
-// Custom paths and existing directory modes retain their original behavior.
+// ensureDefaultCacheRoot creates the private category root before any Save below it, so a
+// config path under an absent root never makes that root with a looser mode. Existing
+// directories keep their mode. Paths outside the root are untouched.
 func ensureDefaultCacheRoot(configPath string) error {
-	if defaultCacheRoot == "" ||
-		configPath != filepath.Join(defaultCacheRoot, "platform", "config.json") {
+	if !underDefaultCacheRoot(configPath) {
 		return nil
 	}
-	return os.MkdirAll(defaultCacheRoot, 0o700)
+	if err := os.MkdirAll(defaultCacheRoot, 0o700); err != nil {
+		return fmt.Errorf(
+			"platform cache directory %q is not usable (%w); remove it or replace it with "+
+				"a directory, or set %s to another location",
+			defaultCacheRoot, err, pkgconfig.EnvHome,
+		)
+	}
+	return nil
+}
+
+// underDefaultCacheRoot compares cleaned absolute paths, so extra separators, dot
+// components and ".." spellings of a path below the root still count as below it.
+func underDefaultCacheRoot(configPath string) bool {
+	if defaultCacheRoot == "" {
+		return false
+	}
+	absolute, err := filepath.Abs(configPath)
+	if err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(defaultCacheRoot, absolute)
+	return err == nil && relative != ".." &&
+		!strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func (c *client) ManagementConfig() (*rest.Config, error) {

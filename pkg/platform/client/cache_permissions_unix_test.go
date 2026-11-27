@@ -27,6 +27,9 @@ const (
 	cachePermissionUnresolved       = "unresolved"
 	cachePermissionBlocked          = "blocked"
 	cachePermissionUnwritable       = "unwritable"
+	cachePermissionDangling         = "dangling"
+	cachePermissionSibling          = "custom-below-root"
+	cachePermissionSpelled          = "default-spelled"
 )
 
 type cachePermissionFixture struct {
@@ -41,7 +44,8 @@ func TestPlatformCacheSavePermissions(t *testing.T) {
 		for _, mode := range []string{
 			cachePermissionNative, cachePermissionOverride, cachePermissionExisting, cachePermissionOverrideExisting,
 			cachePermissionCustom, cachePermissionPrefix, cachePermissionNested, cachePermissionUnresolved,
-			cachePermissionBlocked, cachePermissionUnwritable,
+			cachePermissionBlocked, cachePermissionUnwritable, cachePermissionDangling,
+			cachePermissionSibling, cachePermissionSpelled,
 		} {
 			t.Run(fmt.Sprintf("%s/umask-%03o", mode, mask), func(t *testing.T) {
 				fixture := newCachePermissionFixture(t, mode, mask)
@@ -101,6 +105,8 @@ func (f cachePermissionFixture) prepareExisting(t *testing.T) {
 		)
 	case cachePermissionBlocked:
 		require.NoError(t, os.WriteFile(category, []byte("blocked"), 0o600))
+	case cachePermissionDangling:
+		require.NoError(t, os.Symlink(filepath.Join(f.root, "missing-target"), category))
 	case cachePermissionUnwritable:
 		f.makeDirectory(t, category, 0o500)
 		t.Cleanup(func() { f.makeDirectory(t, category, 0o700) })
@@ -119,7 +125,7 @@ func (f cachePermissionFixture) runChild(t *testing.T, binary string) {
 	)
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "%s", output)
-	if f.mode == cachePermissionBlocked || f.mode == cachePermissionUnwritable {
+	if f.unusable() {
 		after, err := dependencytest.Tree(f.root)
 		require.NoError(t, err)
 		require.Equal(t, before, after)
@@ -146,18 +152,45 @@ func TestPlatformCacheSavePermissionsChild(t *testing.T) {
 	require.Equal(t, os.Getenv("DEVSY_CLIENT_CACHE_EXPECTED"), CacheFolder)
 	f.assertFresh(t)
 	path := f.configPath()
-	if mode == cachePermissionBlocked || mode == cachePermissionUnwritable {
+	if f.unusable() {
 		c := &client{config: NewConfig(), configPath: path}
-		require.Error(t, c.Save(), "explicit Save must surface an unusable default root")
+		err := c.Save()
+		require.Error(t, err, "explicit Save must surface an unusable default root")
 		require.Equal(t, path, c.configPath)
+		f.assertUnusableMessage(t, err)
 		return
 	}
 	f.saveAndReload(t, path)
 	f.assertSavedModes(t, path)
 }
 
+func (f cachePermissionFixture) unusable() bool {
+	switch f.mode {
+	case cachePermissionBlocked, cachePermissionUnwritable, cachePermissionDangling:
+		return true
+	}
+	return false
+}
+
+// assertUnusableMessage requires the error to name the root path and say how to fix it.
+func (f cachePermissionFixture) assertUnusableMessage(t *testing.T, err error) {
+	t.Helper()
+	if f.mode == cachePermissionUnwritable {
+		require.ErrorContains(t, err, f.platform)
+		return
+	}
+	category := filepath.Dir(f.platform)
+	require.ErrorContains(t, err, category)
+	require.ErrorContains(t, err, "remove it or replace it with a directory")
+	require.ErrorContains(t, err, "DEVSY_HOME")
+}
+
 func (f cachePermissionFixture) configPath() string {
 	switch f.mode {
+	case cachePermissionSibling:
+		return filepath.Join(filepath.Dir(f.platform), "other", "config.json")
+	case cachePermissionSpelled:
+		return filepath.Join(f.platform, "..", "platform") + "//config.json"
 	case cachePermissionCustom:
 		return filepath.Join(f.root, "custom", "config.json")
 	case cachePermissionPrefix:
@@ -172,10 +205,10 @@ func (f cachePermissionFixture) configPath() string {
 func (f cachePermissionFixture) assertFresh(t *testing.T) {
 	t.Helper()
 	switch f.mode {
-	case cachePermissionExisting,
-		cachePermissionOverrideExisting,
-		cachePermissionBlocked,
-		cachePermissionUnwritable:
+	case cachePermissionExisting, cachePermissionOverrideExisting:
+		return
+	}
+	if f.unusable() {
 		return
 	}
 	require.NoFileExists(t, DefaultCacheConfig)
@@ -214,12 +247,16 @@ func (f cachePermissionFixture) assertSavedModes(t *testing.T, path string) {
 	case cachePermissionExisting, cachePermissionOverrideExisting:
 		assertCachePermissionMode(t, category, 0o751)
 		assertCachePermissionMode(t, f.platform, 0o750)
-	case cachePermissionNative, cachePermissionOverride:
+	case cachePermissionNative, cachePermissionOverride, cachePermissionSpelled:
 		assertCachePermissionMode(t, category, 0o700)
 		assertCachePermissionMode(t, f.platform, 0o750&^f.mask)
 	case cachePermissionNested:
-		assertCachePermissionMode(t, category, 0o750&^f.mask)
+		assertCachePermissionMode(t, category, 0o700)
 		assertCachePermissionMode(t, filepath.Dir(path), 0o750&^f.mask)
+	case cachePermissionSibling:
+		assertCachePermissionMode(t, category, 0o700)
+		assertCachePermissionMode(t, filepath.Dir(path), 0o750&^f.mask)
+		require.NoDirExists(t, f.platform)
 	case cachePermissionCustom, cachePermissionPrefix:
 		require.NoDirExists(t, category, "custom Save must not create the default category")
 		assertCachePermissionMode(t, filepath.Dir(path), 0o750&^f.mask)
