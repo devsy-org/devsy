@@ -12,7 +12,7 @@ hooks = [
   },
   {
     id = "check-added-large-files",
-    exclude = "^(sites/docs-devsy-sh/)"
+    exclude = "^(sites/docs-devsy-sh/|desktop/resources/)"
   },
   { id = "check-merge-conflict" }
 ]

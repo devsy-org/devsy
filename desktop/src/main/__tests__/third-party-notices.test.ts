@@ -24,4 +24,15 @@ describe("third-party notices", () => {
       /from: resources\/THIRD_PARTY_NOTICES\.txt\n\s+to: THIRD_PARTY_NOTICES\.txt/,
     )
   })
+
+  it("is kept out of app.asar", () => {
+    const builder = read("electron-builder.yml")
+    expect(builder).toMatch(/^ {2}- "!resources\/THIRD_PARTY_NOTICES\.txt"$/m)
+  })
+
+  it("does not ship the Inter package at runtime", () => {
+    const pkg = JSON.parse(read("package.json"))
+    expect(pkg.dependencies).not.toHaveProperty("@fontsource-variable/inter")
+    expect(pkg.devDependencies).toHaveProperty("@fontsource-variable/inter")
+  })
 })

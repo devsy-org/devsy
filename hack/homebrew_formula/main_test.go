@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,26 +26,52 @@ func TestRender(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 
-	// sha256("content-devsy-darwin-arm64")
-	const wantARM = "9bc996e636ac5321e2aae6bd3fb421c5ea82b34a5b20e2c9fd65cc81b2f3753e"
+	// sha256("content-devsy-darwin-arm64-homebrew")
+	const wantARM = "8e5144bd62aa3a04fc0db2a9ed1e29f55e8b4248fae304586f9e0a99eb3a28de"
 
 	for _, want := range []string{
 		`version "1.2.3"`, // leading v stripped
 		`license "MPL-2.0"`,
-		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-darwin-arm64",
-		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-linux-amd64",
+		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-darwin-arm64-homebrew",
+		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-linux-amd64-homebrew",
 		`sha256 "` + wantARM + `"`,
-		`bin.install Dir["devsy-*"].first => "devsy"`,
+		`bin.install Dir["devsy-*-homebrew"].first => "devsy"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("formula missing %q\n---\n%s", want, out)
+		}
+	}
+
+	for _, p := range platforms {
+		want := fmt.Sprintf(
+			`url "%s", using: :nounzip`,
+			assetURL("devsy-org/devsy", "v1.2.3", p.Binary),
+		)
+		if !strings.Contains(out, want) {
+			t.Errorf(
+				"formula missing raw binary URL option for %s/%s: %q\n---\n%s",
+				p.OS,
+				p.Arch,
+				want,
+				out,
+			)
+		}
+	}
+}
+
+// The CLI self-updater picks the first release asset whose name ends in
+// <os>-<arch>, so managed assets must not end that way.
+func TestManagedAssetNamesAvoidSelfUpdateSuffix(t *testing.T) {
+	for _, p := range platforms {
+		if !strings.HasPrefix(p.Binary, "devsy-") || !strings.HasSuffix(p.Binary, "-homebrew") {
+			t.Errorf("asset %q must be named devsy-<os>-<arch>-homebrew", p.Binary)
 		}
 	}
 }
 
 func TestRenderMissingBinary(t *testing.T) {
 	dir := writeBinaries(t)
-	if err := os.Remove(filepath.Join(dir, "devsy-linux-arm64")); err != nil {
+	if err := os.Remove(filepath.Join(dir, "devsy-linux-arm64-homebrew")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := render(dir, "devsy-org/devsy", "v1.2.3"); err == nil {
