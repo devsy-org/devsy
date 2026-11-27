@@ -2,6 +2,7 @@ package dependencies
 
 import (
 	"io/fs"
+	pathpkg "path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -243,10 +244,41 @@ func (e LookupEnvironment) directory(path string) string {
 	return "."
 }
 
+// launcherRoots lists environment variables that name a version manager root and
+// the shim directory below it, as documented by each tool.
+var launcherRoots = []struct{ key, child string }{
+	{"MISE_DATA_DIR", "shims"},
+	{"ASDF_DATA_DIR", "shims"},
+	{"AQUA_ROOT_DIR", "bin"},
+	{"VOLTA_HOME", "bin"},
+	{"PROTO_HOME", "shims"},
+	{"PROTO_HOME", "bin"},
+	{"SCOOP", "shims"},
+	{"SCOOP_GLOBAL", "shims"},
+	{"LOCALAPPDATA", "mise/shims"},
+	{"LOCALAPPDATA", "aquaproj-aqua/bin"},
+	{"LOCALAPPDATA", "Volta/bin"},
+}
+
+// Default shim locations below a home directory. Only these reviewed structural
+// suffixes are used; there is no home discovery or directory scanning.
+var (
+	launcherSuffixes = []string{
+		"/.local/share/mise/shims", "/.asdf/shims", "/.local/share/aquaproj-aqua/bin",
+		"/.volta/bin", "/.proto/shims", "/.proto/bin",
+	}
+	windowsLauncherSuffixes = []string{
+		"/AppData/Local/mise/shims", "/AppData/Local/aquaproj-aqua/bin",
+		"/AppData/Local/Volta/bin", "/scoop/shims", "/Program Files/Volta",
+	}
+)
+
 // indirectLauncher reports whether path may be a version-manager shim. Dot
-// components and symlinks hide the real location, so a path containing a dot
-// component counts as a launcher, and callers resolve symlinks before asking.
-// Case-insensitive matching on darwin can only add matches, which fails closed.
+// components hide the real location, so a path containing one counts as a
+// launcher. The match is textual: callers must resolve symlinks and expand
+// Windows 8.3 short names such as PROGRA~1 before asking, or a shim can look
+// direct. Case-insensitive matching on darwin can only add matches, which fails
+// closed.
 func (e LookupEnvironment) indirectLauncher(path string) bool {
 	if slices.ContainsFunc(
 		slices.Collect(strings.FieldsFuncSeq(path, e.separatorRune)), dotComponent,
@@ -254,29 +286,52 @@ func (e LookupEnvironment) indirectLauncher(path string) bool {
 		return true
 	}
 	directory := e.directory(path)
-	for key, child := range map[string]string{
-		"MISE_DATA_DIR": "shims", "ASDF_DATA_DIR": "shims", "AQUA_ROOT_DIR": "bin",
-	} {
-		root, _ := e.Value(key)
+	return e.underLauncherRoot(directory) || e.hasLauncherSuffix(directory)
+}
+
+func (e LookupEnvironment) underLauncherRoot(directory string) bool {
+	for _, launcher := range launcherRoots {
+		root, _ := e.Value(launcher.key)
 		root = strings.TrimRight(root, e.separators())
-		if e.localAbsolute(root) && e.sameDirectory(directory, root+e.separator()+child) {
-			return true
-		}
-	}
-	// Only reviewed structural locations; no home discovery or directory scanning.
-	normalized := e.normalizeDirectory(directory)
-	for _, suffix := range []string{
-		`/.local/share/mise/shims`, `/.asdf/shims`, `/.local/share/aquaproj-aqua/bin`,
-	} {
-		if strings.HasSuffix(normalized, e.normalizeDirectory(suffix)) {
+		if e.localAbsolute(root) &&
+			e.sameDirectory(directory, root+e.separator()+launcher.child) {
 			return true
 		}
 	}
 	return false
 }
 
+func (e LookupEnvironment) hasLauncherSuffix(directory string) bool {
+	suffixes := launcherSuffixes
+	if e.windows {
+		suffixes = slices.Concat(suffixes, windowsLauncherSuffixes)
+	}
+	normalized := e.normalizeDirectory(directory)
+	return slices.ContainsFunc(suffixes, func(suffix string) bool {
+		return strings.HasSuffix(normalized, e.normalizeDirectory(suffix))
+	})
+}
+
 func (e LookupEnvironment) sameDirectory(left, right string) bool {
 	return e.normalizeDirectory(left) == e.normalizeDirectory(right)
+}
+
+// lexicalClean resolves "." and ".." in an environment root so that a root such as
+// C:\d\..\e compares as the directory it names. It never touches the filesystem.
+func (e LookupEnvironment) lexicalClean(path string) string {
+	if path == "" {
+		return path
+	}
+	separator := e.separator()
+	drive := ""
+	if e.windows && len(path) >= 2 && path[1] == ':' {
+		drive, path = path[:2], path[2:]
+	}
+	cleaned := pathpkg.Clean(strings.ReplaceAll(path, separator, "/"))
+	if cleaned == "." {
+		cleaned = ""
+	}
+	return drive + strings.ReplaceAll(cleaned, "/", separator)
 }
 
 func (e LookupEnvironment) normalizeDirectory(path string) string {
@@ -287,6 +342,7 @@ func (e LookupEnvironment) normalizeDirectory(path string) string {
 	for strings.Contains(path, separator+separator) {
 		path = strings.ReplaceAll(path, separator+separator, separator)
 	}
+	path = e.lexicalClean(path)
 	path = strings.TrimRight(path, separator)
 	if e.caseInsensitive() {
 		path = strings.ToLower(path)

@@ -403,6 +403,81 @@ func (s *lookupModelSuite) TestWindowsIndirectLaunchers() {
 	s.False(environment.indirectLauncher(`C:\relative\bin\docker.exe`))
 }
 
+func (s *lookupModelSuite) TestWindowsDefaultLauncherLocations() {
+	environment := s.windowsEnvironment(nil)
+	for _, path := range []string{
+		`C:\Users\u\AppData\Local\mise\shims\node.exe`,
+		`c:\users\U\appdata\local\MISE\Shims\node.cmd`,
+		`C:\Users\u\AppData\Local\aquaproj-aqua\bin\aqua.exe`,
+		`C:\Users\u\AppData\Local\Volta\bin\node.exe`,
+		`C:\Program Files\Volta\node.exe`,
+		`C:\Users\u\scoop\shims\git.exe`,
+		`C:\ProgramData\scoop\shims\git.exe`,
+		`C:\Users\u\.proto\shims\node.exe`,
+		`C:\Users\u\.proto\bin\node.exe`,
+		`C:\Users\u\.volta\bin\node.exe`,
+	} {
+		s.True(environment.indirectLauncher(path), path)
+	}
+	for _, path := range []string{
+		`C:\Users\u\AppData\Local\mise\node.exe`,
+		`C:\Users\u\AppData\Local\Programs\tool\tool.exe`,
+		`C:\Users\u\scoop\apps\git\current\git.exe`,
+		`C:\Program Files\Volta2\node.exe`,
+		`C:\Users\u\AppData\Roaming\mise\shims2\node.exe`,
+	} {
+		s.False(environment.indirectLauncher(path), path)
+	}
+}
+
+func (s *lookupModelSuite) TestWindowsLauncherRootsFromTheEnvironment() {
+	for key, paths := range map[string][]string{
+		"LOCALAPPDATA": {`D:\L\mise\shims\x.exe`, `D:\L\aquaproj-aqua\bin\x.exe`, `D:\L\Volta\bin\x.exe`},
+		"VOLTA_HOME":   {`D:\L\bin\x.exe`},
+		"PROTO_HOME":   {`D:\L\shims\x.exe`, `D:\L\bin\x.exe`},
+		"SCOOP":        {`D:\L\shims\x.exe`},
+		"SCOOP_GLOBAL": {`D:\L\shims\x.exe`},
+	} {
+		environment := s.windowsEnvironment(map[string]string{key: `D:\L`})
+		for _, path := range paths {
+			s.True(environment.indirectLauncher(path), key+" "+path)
+		}
+		s.False(environment.indirectLauncher(`D:\L\x.exe`), key)
+	}
+}
+
+func (s *lookupModelSuite) TestPosixDefaultLauncherLocations() {
+	if runtime.GOOS == lookupWindows {
+		s.T().Skip("covered by the Windows rules")
+	}
+	environment := s.environment(nil)
+	for _, path := range []string{
+		"/home/u/.volta/bin/node", "/home/u/.proto/shims/node", "/home/u/.proto/bin/node",
+	} {
+		s.True(environment.indirectLauncher(path), path)
+	}
+	for _, path := range []string{
+		"/home/u/AppData/Local/mise/shims/node", "/home/u/scoop/shims/git", "/opt/Volta/node",
+	} {
+		s.False(environment.indirectLauncher(path), path)
+	}
+}
+
+func (s *lookupModelSuite) TestLauncherRootsAreCleanedLexically() {
+	windows := s.windowsEnvironment(map[string]string{testMiseDir: `C:\d\..\e`})
+	s.True(windows.indirectLauncher(`C:\e\shims\x.exe`))
+	s.False(windows.indirectLauncher(`C:\d\shims\x.exe`))
+	rooted := s.windowsEnvironment(map[string]string{testMiseDir: `C:\..\e`})
+	s.True(rooted.indirectLauncher(`C:\e\shims\x.exe`))
+	if runtime.GOOS == lookupWindows {
+		return
+	}
+	tools := filepath.Join(s.root, "tools")
+	native := s.environment(map[string]string{testMiseDir: tools + "/x/../y"})
+	s.True(native.indirectLauncher(tools + "/y/shims/docker"))
+	s.False(native.indirectLauncher(tools + "/x/shims/docker"))
+}
+
 func (s *lookupModelSuite) environment(values map[string]string) LookupEnvironment {
 	environment, err := NewLookupEnvironment(values, s.root)
 	s.Require().NoError(err)
