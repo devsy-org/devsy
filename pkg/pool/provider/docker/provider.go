@@ -59,6 +59,7 @@ type Provider struct {
 	settle      time.Duration
 	bound       time.Duration
 	createBound time.Duration
+	pullBound   time.Duration
 }
 
 var _ provider.Provider = (*Provider)(nil)
@@ -70,6 +71,7 @@ func New(r Runner) *Provider {
 		settle:      settleDelay,
 		bound:       rollbackTimeout,
 		createBound: createTimeout,
+		pullBound:   pullTimeout,
 	}
 }
 
