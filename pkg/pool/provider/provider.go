@@ -24,6 +24,9 @@ var ErrInvalidImage = errors.New("image reference is not valid")
 // ErrInvalidSession reports that a session ID is not owned by the pool.
 var ErrInvalidSession = errors.New("session ID does not belong to pool")
 
+// ErrNotFound reports that Start found no workspace for the session.
+var ErrNotFound = errors.New("session has no workspace")
+
 // ErrUIDRequired reports that Delete was called without a resource UID.
 var ErrUIDRequired = errors.New("resource UID is required")
 
@@ -69,6 +72,15 @@ type Provider interface {
 	// has started, because a killed docker CLI can still finish in the daemon
 	// unseen, so Spawn may return up to a create timeout after the cancel.
 	Spawn(ctx context.Context, spec Spec) error
+
+	// Start starts the session's workspace. It is idempotent: a workspace
+	// that is already started stays started and Start returns nil. If
+	// session.OwnsID rejects the session ID, Start returns ErrInvalidSession,
+	// and if the session has no workspace it returns ErrNotFound, in both
+	// cases without changing anything. Start creates and removes no resource.
+	// A canceled Start may leave the workspace started or not; the caller
+	// decides by listing or by Reclaim.
+	Start(ctx context.Context, pool, session string) error
 
 	// Reclaim removes every resource with both LabelPool and LabelSession
 	// exactly matching the pool and session ID. No resources is success.
