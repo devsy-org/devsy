@@ -31,7 +31,7 @@ func (s *scopeSuite) TestPreviousRunDecidesWhetherALightPushStaysLight() {
 			true,
 		},
 		{"replaced in the queue", fakeRuns{conclusions: []string{cancelledState}}, false},
-		{"still running", fakeRuns{conclusions: []string{"none"}}, false},
+		{"still running", fakeRuns{conclusions: []string{noConclusion}}, false},
 		{"timed out", fakeRuns{conclusions: []string{"timed_out"}}, false},
 		{"no run found", fakeRuns{}, false},
 		{"cannot list runs", fakeRuns{err: errScopeTest}, false},
@@ -60,13 +60,13 @@ func (s *scopeSuite) TestPreviousRunIsNotReadForAFullPush() {
 }
 
 func (s *scopeSuite) TestGitHubRunHistoryReadsPushRunsOfTheCommit() {
-	runner := &scriptedRunner{outputs: map[string]string{"api": "cancelled\nnone\nsuccess\n"}}
+	runner := &scriptedRunner{outputs: map[string]string{apiCommand: "cancelled\nnone\nsuccess\n"}}
 	history := ghRunHistory{runner: runner, repo: "devsy-org/devsy"}
 
 	conclusions, err := history.Conclusions(context.Background(), scopeTestBefore)
 
 	s.Require().NoError(err)
-	s.Equal([]string{cancelledState, "none", resultSuccess}, conclusions)
+	s.Equal([]string{cancelledState, noConclusion, resultSuccess}, conclusions)
 	call := runner.calls[0]
 	prefix := "api repos/devsy-org/devsy/actions/workflows/pr-ci.yml/runs?"
 	s.True(strings.HasPrefix(call, prefix), call)
@@ -126,13 +126,13 @@ func (s *scopeSuite) TestScopeCommandRequiresTheVerdictOnThePreviousRun() {
 			runner := routeRunner{
 				"cat-file": "tree abc\nparent " + scopeTestBefore + "\n",
 				"diff":     readmeFile + "\x00",
-				"api":      tt.conclusion + "\n",
+				apiCommand: tt.conclusion + "\n",
 			}
 			var stdout, stderr bytes.Buffer
 
 			code := scopeWith(
 				runner,
-				[]string{"--before", scopeTestBefore, "--sha", scopeTestSHA, "--repo", "o/r"},
+				[]string{"--before", scopeTestBefore, shaFlag, scopeTestSHA, repoFlag, "o/r"},
 				&stdout,
 				&stderr,
 			)

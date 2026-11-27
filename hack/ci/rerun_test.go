@@ -315,7 +315,7 @@ func (s *rerunSuite) TestRetriesDoNotShareAPullRequestOrMainGroup() {
 }
 
 func (s *rerunSuite) runRerun(fake *rerunFakeRunner, args ...string) (string, error) {
-	base := []string{"--repo", testRepo, runIDFlag, "7"}
+	base := []string{repoFlag, testRepo, runIDFlag, "7"}
 	opts, err := parseRerunArgs(
 		append(base, args...),
 		io.Discard,

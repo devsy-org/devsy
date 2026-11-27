@@ -5,6 +5,13 @@ import (
 	"context"
 )
 
+const (
+	repoFlag     = "--repo"
+	shaFlag      = "--sha"
+	noConclusion = "none"
+	apiCommand   = "api"
+)
+
 // routeRunner answers a command with the output stored under its first argument.
 type routeRunner map[string]string
 
@@ -48,7 +55,11 @@ func (s *scopeSuite) TestTipRunIsStartedOnlyWhenMissing() {
 			1,
 		},
 		{"tip has no run", &fakeTip{tip: scopeTestBefore}, 1},
-		{"tip run is waiting", &fakeTip{tip: scopeTestBefore, conclusions: []string{"none"}}, 0},
+		{
+			"tip run is waiting",
+			&fakeTip{tip: scopeTestBefore, conclusions: []string{noConclusion}},
+			0,
+		},
 		{
 			"tip run passed",
 			&fakeTip{tip: scopeTestBefore, conclusions: []string{cancelledState, resultSuccess}},
@@ -86,7 +97,7 @@ func (s *scopeSuite) TestTipRunReportsLookupAndDispatchErrors() {
 }
 
 func (s *scopeSuite) TestGitHubTipAndDispatch() {
-	runner := &scriptedRunner{outputs: map[string]string{"api": scopeTestBefore + "\n"}}
+	runner := &scriptedRunner{outputs: map[string]string{apiCommand: scopeTestBefore + "\n"}}
 	history := ghRunHistory{runner: runner, repo: "devsy-org/devsy"}
 
 	tip, err := history.Tip(context.Background())
@@ -106,15 +117,15 @@ func (s *scopeSuite) TestGitHubTipAndDispatch() {
 
 func (s *scopeSuite) TestEnsureTipCommand() {
 	var stdout, stderr bytes.Buffer
-	args := []string{"--sha", scopeTestSHA, "--repo", "o/r"}
+	args := []string{shaFlag, scopeTestSHA, repoFlag, "o/r"}
 
-	code := ensureTipWith(routeRunner{"api": scopeTestSHA + "\n"}, args, &stdout, &stderr)
+	code := ensureTipWith(routeRunner{apiCommand: scopeTestSHA + "\n"}, args, &stdout, &stderr)
 
 	s.Equal(0, code)
 	s.Contains(stdout.String(), "tip")
 
 	stdout.Reset()
-	code = ensureTipWith(routeRunner{"api": scopeTestBefore + "\n"}, args, &stdout, &stderr)
+	code = ensureTipWith(routeRunner{apiCommand: scopeTestBefore + "\n"}, args, &stdout, &stderr)
 	s.Equal(0, code)
 	s.Contains(stdout.String(), "already has a run")
 
@@ -124,7 +135,7 @@ func (s *scopeSuite) TestEnsureTipCommand() {
 		1,
 		ensureTipWith(
 			routeRunner{},
-			[]string{"--sha", scopeTestSHA, "--repo", ""},
+			[]string{shaFlag, scopeTestSHA, repoFlag, ""},
 			&stdout,
 			&stderr,
 		),

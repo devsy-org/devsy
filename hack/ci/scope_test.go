@@ -190,7 +190,7 @@ func (s *scopeSuite) TestCLIPrintsOutputsAndFailsOpenOutsideARepository() {
 	var stdout, stderr bytes.Buffer
 
 	code := scopeCLI(
-		[]string{"--before", scopeTestBefore, "--sha", scopeTestSHA, "--repo-dir", s.T().TempDir()},
+		[]string{"--before", scopeTestBefore, shaFlag, scopeTestSHA, "--repo-dir", s.T().TempDir()},
 		&stdout, &stderr,
 	)
 
