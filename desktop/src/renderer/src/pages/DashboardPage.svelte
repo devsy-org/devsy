@@ -100,7 +100,7 @@ async function quickStop(wsId: string) {
           onclick={() => goto(stat.href)}
         >
           <div class="flex items-center justify-between">
-            <div class="text-3xl font-bold">{stat.count}</div>
+            <div class="text-3xl font-bold tabular-nums">{stat.count}</div>
             <Icon class="h-5 w-5 text-muted-foreground" />
           </div>
           <div class="mt-1 text-sm text-muted-foreground">{stat.label}</div>

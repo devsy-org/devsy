@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ const (
 const orphanAfter = 5
 
 const (
+	otherPool     = "other"
 	kindWorkspace = "workspace"
 	kindNetwork   = "network"
 )
@@ -393,6 +395,94 @@ func (s *EngineSuite) TestACanceledContextRecordsNothing() {
 	s.Empty(s.events(), "an interrupted attempt writes no audit event")
 }
 
+func (s *EngineSuite) TestACanceledAttemptCountsTowardTheOrphanThreshold() {
+	cur := s.sessionIn(session.StateReclaiming)
+	s.spawn(cur.ID)
+	s.fake.SetError(providertest.MethodReclaim, errBoom)
+	s.now = cur.Updated
+	fail := func() session.Session {
+		got, err := s.eng.Reclaim(context.Background(), cur.ID)
+		s.Require().ErrorIs(err, ErrReclaimIncomplete)
+		s.now = Due(got)
+		return got
+	}
+	fail()
+	fail()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.fake.SetHook(func(context.Context, providertest.Call) { cancel() })
+	_, err := s.eng.Reclaim(ctx, cur.ID)
+	s.Require().ErrorIs(err, context.Canceled)
+	s.Equal(3, s.load(cur.ID).Attempts, "the canceled attempt was counted")
+	s.Equal(session.StateReclaiming, s.load(cur.ID).State, "but it decides nothing")
+	s.fake.SetHook(nil)
+	s.now = Due(s.load(cur.ID))
+
+	s.Equal(session.StateReclaiming, fail().State)
+	got := fail()
+	s.Equal(orphanAfter, got.Attempts)
+	s.Equal(session.StateOrphaned, got.State, "four failures and one cancel orphan the session")
+}
+
+func (s *EngineSuite) TestWaitsFollowTheBackoffScheduleExactly() {
+	cur := s.sessionIn(session.StateReclaiming)
+	s.spawn(cur.ID)
+	s.fake.SetError(providertest.MethodReclaim, errBoom)
+	s.now = cur.Updated
+	for attempt, wait := range []time.Duration{
+		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
+	} {
+		_, err := s.eng.Reclaim(context.Background(), cur.ID)
+		s.Require().ErrorIs(err, ErrReclaimIncomplete, "attempt %d", attempt+1)
+		stored := s.load(cur.ID)
+		s.Require().Equal(attempt+1, stored.Attempts)
+
+		s.now = stored.Updated.Add(wait - time.Nanosecond)
+		_, err = s.eng.Reclaim(context.Background(), cur.ID)
+		s.Require().ErrorIs(err, ErrNotDue, "attempt %d, just before %s", attempt+1, wait)
+		s.now = stored.Updated.Add(wait)
+	}
+	got, err := s.eng.Reclaim(context.Background(), cur.ID)
+	s.Require().ErrorIs(err, ErrReclaimIncomplete, "the 8s wait ends exactly at 8s")
+	s.Equal(5, got.Attempts)
+}
+
+func (s *EngineSuite) TestReclaimRemovesOnlyTheExactSessionID() {
+	cur := s.sessionIn(session.StateReclaiming)
+	s.spawn(cur.ID)
+	lookalikes := []string{cur.ID[:len(cur.ID)-1], cur.ID + "x", strings.ToUpper(cur.ID)}
+	for i, label := range lookalikes {
+		s.fake.Add(s.workspace(fmt.Sprintf("lookalike-%d", i), s.poolLabels(label)))
+	}
+	s.now = cur.Updated
+	got, err := s.eng.Reclaim(context.Background(), cur.ID)
+	s.Require().NoError(err)
+	s.Equal(session.StateDeleted, got.State)
+	s.Len(s.fake.Snapshot(), len(lookalikes), "only the lookalikes stay")
+	for _, ev := range s.events() {
+		s.NotContains(ev.Data, "devsy.reclaim.remaining")
+	}
+}
+
+func (s *EngineSuite) TestARetryAfterACrashWritesASecondEndAndTheLastOneMatchesTheStore() {
+	cur := s.sessionIn(session.StateBusy)
+	crashing := s.build(failingStore{Store: s.store, err: errBoom})
+	_, err := crashing.Fail(cur.ID, EndInterrupted)
+	s.Require().ErrorIs(err, errBoom)
+	s.Equal(session.StateBusy, s.load(cur.ID).State)
+
+	got, err := s.eng.Fail(cur.ID, EndFailed)
+	s.Require().NoError(err)
+	var reasons []any
+	for _, ev := range s.events() {
+		if ev.Type == "session.end" {
+			reasons = append(reasons, ev.Data["devsy.session.end_reason"])
+		}
+	}
+	s.Equal([]any{"interrupted", "failed"}, reasons)
+	s.Equal(string(EndFailed), got.Reason, "the last session.end is the one the store kept")
+}
+
 func (s *EngineSuite) TestAClockThatSteppedBackDoesNotStallReclaim() {
 	cur := s.sessionIn(session.StateReclaiming)
 	s.spawn(cur.ID)
@@ -411,7 +501,7 @@ func (s *EngineSuite) TestAnEngineRefusesASessionFromAnotherPool() {
 	reclaiming := s.sessionIn(session.StateReclaiming)
 	s.spawn(reclaiming.ID)
 	eng, err := New(Config{
-		Pool: "other", Store: s.store, Audit: s.spy, Provider: s.fake,
+		Pool: otherPool, Store: s.store, Audit: s.spy, Provider: s.fake,
 		Now: func() time.Time { return s.now },
 	})
 	s.Require().NoError(err)

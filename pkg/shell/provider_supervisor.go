@@ -262,6 +262,8 @@ type ProviderShellInvocation struct {
 	ForcePath  string
 	AckPath    string
 	ParentPID  int
+
+	ExecutablePaths map[string]string
 }
 
 func RunProviderShell(ctx context.Context, invocation ProviderShellInvocation) error {
@@ -305,6 +307,7 @@ func RunProviderShell(ctx context.Context, invocation ProviderShellInvocation) e
 		result <- RunEmulatedShell(executionCtx, &CommandRunner{
 			Command: string(content), Environ: os.Environ(), Stdin: os.Stdin,
 			Stdout: os.Stdout, Stderr: os.Stderr, ExecHandler: providerExecHandler(supervisor),
+			ExecutablePaths: invocation.ExecutablePaths,
 		})
 	}()
 	execution := providerShellExecution{

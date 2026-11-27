@@ -55,4 +55,24 @@ test.describe("App Launch", () => {
     )
     await expect(providerBadge).toContainText("2", { timeout: 10000 })
   })
+
+  test("should load the bundled Inter font without CSP errors", async () => {
+    const violations: string[] = []
+    page.on("console", (msg) => {
+      if (/Content Security Policy|Refused to/i.test(msg.text())) {
+        violations.push(msg.text())
+      }
+    })
+    await page.reload()
+    await page.locator('[data-sidebar="sidebar"]').waitFor({ timeout: 10000 })
+
+    const loaded = await page.evaluate(async () => {
+      await document.fonts.ready
+      return [...document.fonts]
+        .filter((face) => face.family.includes("Inter Variable"))
+        .filter((face) => face.status === "loaded").length
+    })
+    expect(loaded).toBeGreaterThan(0)
+    expect(violations).toEqual([])
+  })
 })

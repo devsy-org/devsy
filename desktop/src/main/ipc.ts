@@ -31,7 +31,7 @@ import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
 import type { CliInvocationOptions, CliRunner, StreamLine } from "./cli.js"
-import { loadCatalog } from "./image-catalog.js"
+import { loadCatalog, resolveCatalogUrl } from "./image-catalog.js"
 import type { LinuxDesktopIntegration } from "./linux-desktop-integration.js"
 import type { LogStore } from "./log-store.js"
 import { mainLog, registeredSecretValues } from "./logging.js"
@@ -191,9 +191,7 @@ type UpdateInfo = {
 let providerUpdateCache: Record<string, UpdateInfo> = {}
 let providerUpdateCacheCheckedAt: string | null = null
 
-const IMAGE_CATALOG_URL =
-  process.env.DEVSY_IMAGE_CATALOG_URL ??
-  "https://raw.githubusercontent.com/devsy-org/devsy/main/desktop/resources/image-catalog-seed.json"
+const IMAGE_CATALOG_URL = resolveCatalogUrl()
 const IMAGE_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
 
 function imageCatalogPaths(): { cachePath: string; seedPath: string } {

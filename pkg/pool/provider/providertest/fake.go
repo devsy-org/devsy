@@ -162,7 +162,8 @@ func (f *Fake) Delete(ctx context.Context, pool string, resource provider.Resour
 			return provider.ErrUIDRequired
 		}
 		key := keyFor(resource)
-		if live, ok := f.resources[key]; ok && live.UID == resource.UID && inPool(live, pool) {
+		if live, ok := f.resources[key]; ok && live.UID == resource.UID &&
+			inPool(live, pool) && sameSession(live, resource) {
 			delete(f.resources, key)
 		}
 		return nil
@@ -269,6 +270,12 @@ func (f *Fake) collect(keep func(provider.Resource) bool) []provider.Resource {
 func inPool(r provider.Resource, pool string) bool {
 	label, ok := r.Labels[provider.LabelPool]
 	return ok && label == pool
+}
+
+func sameSession(a, b provider.Resource) bool {
+	left, leftOK := a.Labels[provider.LabelSession]
+	right, rightOK := b.Labels[provider.LabelSession]
+	return leftOK == rightOK && left == right
 }
 
 func belongsTo(r provider.Resource, pool, id string) bool {

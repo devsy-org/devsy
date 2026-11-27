@@ -32,6 +32,10 @@ type Result struct {
 	GeneratedBuildContext   string                   `json:"-"`
 	GeneratedBuildArtifacts []GeneratedBuildArtifact `json:"-"`
 
+	// AgentExit names an agent command failure that happened after the result
+	// was delivered. It is local only and never part of the saved result.
+	AgentExit string `json:"-"`
+
 	DevContainerConfigWithPath *DevContainerConfigWithPath `json:"DevContainerConfigWithPath"`
 	MergedConfig               *MergedDevContainerConfig   `json:"MergedConfig"`
 	SubstitutionContext        *SubstitutionContext        `json:"SubstitutionContext"`

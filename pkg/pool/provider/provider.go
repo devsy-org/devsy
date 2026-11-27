@@ -42,7 +42,10 @@ type Spec struct {
 
 // Provider manages session resources. Every method honors context cancellation
 // and rejects pool names that fail poolconfig.ValidPoolName with ErrInvalidPool
-// without changing resources.
+// without changing resources. A real provider must also return promptly once
+// its context is canceled, including from a blocked network call: the engine's
+// Reclaim holds a lock across its provider calls, so a call that ignores the
+// context stalls every other session operation on that Engine.
 type Provider interface {
 	// Spawn creates all resources for a session and labels each with LabelPool
 	// and LabelSession. If the session already exists, it returns ErrExists
@@ -63,7 +66,12 @@ type Provider interface {
 	// Delete removes exactly one listed resource. An empty UID returns
 	// ErrUIDRequired without changing anything. The caller's labels are not
 	// trusted. If the live object is absent, has a different UID, or lacks
-	// LabelPool equal to pool, Delete does nothing and returns nil.
+	// LabelPool equal to pool, Delete does nothing and returns nil. It also
+	// does nothing when the live object's LabelSession (present or absent)
+	// differs from the one on resource, so an object relabelled after it was
+	// listed is never deleted on a stale decision. A backend must guard
+	// against a change to either label between that comparison and the
+	// deletion; a UID precondition alone cannot detect a relabel.
 	// Where the backend supports a delete precondition (such as Kubernetes
 	// UID preconditions), the implementation must use it. If pool labels can
 	// change, the delete must also guard against a change after the label check

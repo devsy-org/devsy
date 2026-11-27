@@ -9,6 +9,7 @@ files:
   - dist/**/*
   - resources/**/*
   - "!resources/bin/.gitkeep"
+  - "!resources/THIRD_PARTY_NOTICES.txt"
 
 extraResources:
   - from: resources/bin/
@@ -17,6 +18,8 @@ extraResources:
       - "**/*"
   - from: resources/image-catalog-seed.json
     to: image-catalog-seed.json
+  - from: resources/THIRD_PARTY_NOTICES.txt
+    to: THIRD_PARTY_NOTICES.txt
   # Linux windows read this at runtime; the builder icon directory only feeds
   # the desktop entry and package icon theme.
   - from: resources/icon.png

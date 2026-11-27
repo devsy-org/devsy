@@ -207,6 +207,24 @@ func (s *contractSuite) TestDeleteIgnoresForgedPoolLabels() {
 	s.ElementsMatch(before, s.list(victim.Pool))
 }
 
+func (s *contractSuite) TestDeleteIgnoresAChangedSessionLabel() {
+	ctx := s.T().Context()
+	spec := s.spec("a")
+	s.Require().NoError(s.p.Spawn(ctx, spec))
+	before := s.list(spec.Pool)
+	s.Require().NotEmpty(before)
+	for _, r := range before {
+		stale := provider.Resource{
+			Kind: r.Kind, Name: r.Name, UID: r.UID, Labels: maps.Clone(r.Labels),
+		}
+		stale.Labels[provider.LabelSession] = s.spec("a").Session
+		s.Require().NoError(s.p.Delete(ctx, spec.Pool, stale))
+		delete(stale.Labels, provider.LabelSession)
+		s.Require().NoError(s.p.Delete(ctx, spec.Pool, stale))
+	}
+	s.ElementsMatch(before, s.list(spec.Pool))
+}
+
 func (s *contractSuite) TestDeleteIgnoresStaleUID() {
 	ctx := s.T().Context()
 	spec := s.spec("a")
