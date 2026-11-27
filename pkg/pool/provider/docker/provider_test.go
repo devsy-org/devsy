@@ -334,8 +334,8 @@ func (s *ProviderSuite) TestEveryArgumentIsAFlagAFilterOrAnIDAfterTheTerminator(
 	}
 	_ = s.p.Reclaim(ctx, "a", id+" --all")
 	flags := []string{
-		"container", "network", "ls", "inspect", "rm", "--all", "--quiet", "--no-trunc",
-		"--force", "--volumes", "--format", "--filter", "--",
+		"container", "network", "ls", "inspect", "rm", "--all", flagQuiet, flagNoTrunc,
+		flagForce, flagVolumes, flagFormat, "--filter", "--",
 	}
 	for _, c := range s.d.commands() {
 		s.checkArgv(c, flags)

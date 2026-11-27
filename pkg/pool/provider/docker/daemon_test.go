@@ -19,6 +19,10 @@ const (
 	verbInspect = "inspect"
 	flagAll     = "--all"
 	flagForce   = "--force"
+	flagNoTrunc = "--no-trunc"
+	flagQuiet   = "--quiet"
+	flagFormat  = "--format"
+	flagVolumes = "--volumes"
 	spaced      = "a b"
 	shellBait   = "$(id)"
 )
@@ -190,14 +194,14 @@ func lsFilters(kind string, args []string) (map[string]string, error) {
 		}
 		seen[args[i]] = true
 	}
-	if !seen["--quiet"] || !seen["--no-trunc"] {
+	if !seen[flagQuiet] || !seen[flagNoTrunc] {
 		return nil, fmt.Errorf("ls needs --quiet and --no-trunc, got %v", args)
 	}
 	return filters, nil
 }
 
 func lsFlag(kind, arg string) bool {
-	return arg == "--quiet" || arg == "--no-trunc" || (kind == kindWorkspace && arg == flagAll)
+	return arg == flagQuiet || arg == flagNoTrunc || (kind == kindWorkspace && arg == flagAll)
 }
 
 func addFilter(filters map[string]string, filter string) {
@@ -222,7 +226,7 @@ func (o object) matches(filters map[string]string) bool {
 }
 
 func (d *daemon) inspect(kind string, args []string) ([]byte, error) {
-	if len(args) < 4 || args[0] != "--format" || args[1] != "{{json .}}" || args[2] != "--" {
+	if len(args) < 4 || args[0] != flagFormat || args[1] != "{{json .}}" || args[2] != "--" {
 		return nil, fmt.Errorf("unexpected inspect arguments %v", args)
 	}
 	var out strings.Builder
@@ -262,7 +266,7 @@ func (d *daemon) rm(kind string, args []string) ([]byte, error) {
 }
 
 func rmOperand(kind string, args []string) (string, error) {
-	flags := []string{flagForce, "--volumes"}
+	flags := []string{flagForce, flagVolumes}
 	if kind == kindNetwork {
 		flags = nil
 	}
