@@ -3,6 +3,7 @@ package audit
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -15,6 +16,9 @@ const (
 
 	requesterLocalUser = "local_user"
 	maxLocalUserBytes  = 64
+
+	sessionIDPrefix    = "p-"
+	sessionIDSuffixLen = 10
 )
 
 type charsetRule struct {
@@ -30,6 +34,10 @@ var charsetRules = []charsetRule{
 	{keyRepository, regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}$`)},
 	{keyExecutable, regexp.MustCompile(`^[A-Za-z0-9._+-]{1,128}$`)},
 }
+
+// sessionPattern is the shape session.NewID returns: p-<pool>-<10 base32
+// characters>, with a pool name of at most 32 characters.
+var sessionPattern = regexp.MustCompile(`^p-[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?-[a-z2-7]{10}$`)
 
 // localUserPattern is an OS login name with an optional Windows domain.
 // It has no @, so an email cannot pass.
@@ -52,6 +60,21 @@ func checkCharsets(e Event) error {
 		return charsetError(e.Type, keyUserID)
 	}
 	return nil
+}
+
+// checkSession accepts an empty session or an ID that belongs to pool. The
+// exact length keeps pool a from accepting an ID of pool a-b.
+func checkSession(e Event, pool string) error {
+	if e.Session == "" {
+		return nil
+	}
+	prefix := sessionIDPrefix + pool + "-"
+	if sessionPattern.MatchString(e.Session) &&
+		strings.HasPrefix(e.Session, prefix) &&
+		len(e.Session) == len(prefix)+sessionIDSuffixLen {
+		return nil
+	}
+	return fmt.Errorf("write audit event %s: session is not a session ID of this pool", e.Type)
 }
 
 func validLocalUser(v string) bool {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strconv"
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
@@ -20,6 +21,7 @@ type Method string
 
 const (
 	MethodSpawn   Method = "Spawn"
+	MethodStart   Method = "Start"
 	MethodReclaim Method = "Reclaim"
 	MethodList    Method = "List"
 	MethodDelete  Method = "Delete"
@@ -45,6 +47,8 @@ type Fake struct {
 	always    map[Method]error
 	partial   error
 	hook      func(context.Context, Call)
+	started   map[string]int
+	starts    int
 }
 
 type resourceKey struct{ kind, name string }
@@ -123,6 +127,46 @@ func (f *Fake) Spawn(ctx context.Context, spec provider.Spec) error {
 	return f.run(ctx, call, func() error { return f.spawnLocked(spec) })
 }
 
+// Start implements provider.Provider.
+func (f *Fake) Start(ctx context.Context, pool, id string) error {
+	call := Call{Method: MethodStart, Pool: pool, Session: id}
+	return f.run(ctx, call, func() error {
+		if !session.OwnsID(pool, id) {
+			return provider.ErrInvalidSession
+		}
+		if !f.hasWorkspace(pool, id) {
+			return provider.ErrNotFound
+		}
+		if f.started == nil {
+			f.started = make(map[string]int)
+		}
+		if f.started[id] == 0 {
+			f.starts++
+			f.started[id] = f.starts
+		}
+		return nil
+	})
+}
+
+// Started reports whether Start succeeded for the session and its workspace
+// has not been removed or replaced since.
+func (f *Fake) Started(pool, id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.started[id] != 0 && f.hasWorkspace(pool, id)
+}
+
+// State reports a session's workspace as the contract harness sees it. The
+// token changes only when Start takes a stopped workspace to running.
+func (f *Fake) State(pool, id string) WorkspaceState {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.started[id] == 0 || !f.hasWorkspace(pool, id) {
+		return WorkspaceState{}
+	}
+	return WorkspaceState{Running: true, Began: strconv.Itoa(f.started[id])}
+}
+
 // Reclaim implements provider.Provider.
 func (f *Fake) Reclaim(ctx context.Context, pool, id string) error {
 	call := Call{Method: MethodReclaim, Pool: pool, Session: id}
@@ -168,6 +212,15 @@ func (f *Fake) Delete(ctx context.Context, pool string, resource provider.Resour
 		}
 		return nil
 	})
+}
+
+func (f *Fake) hasWorkspace(pool, id string) bool {
+	for _, r := range f.resources {
+		if r.Kind == workspaceKind && belongsTo(r, pool, id) {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *Fake) run(ctx context.Context, call Call, act func() error) error {
@@ -233,6 +286,7 @@ func (f *Fake) spawnLocked(spec provider.Spec) error {
 	if f.nameTaken(workspace) || f.nameTaken(network) {
 		return errNameUnavailable
 	}
+	delete(f.started, spec.Session)
 	f.addLocked(workspace)
 	if err := f.partial; err != nil {
 		f.partial = nil

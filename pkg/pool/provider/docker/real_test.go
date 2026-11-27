@@ -12,9 +12,11 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/pool/provider"
 	"github.com/devsy-org/devsy/pkg/pool/provider/providertest"
+	"github.com/devsy-org/devsy/pkg/pool/session"
 )
 
 const (
+	neverStarted  = "0001-01-01T00:00:00Z"
 	realDockerEnv = "DEVSY_POOL_DOCKER"
 	// Docker hands out a few dozen network subnets, so the list spec seeds
 	// fewer objects than it does against a simulated backend.
@@ -26,19 +28,7 @@ const (
 // so it refuses to start when any pool-labelled object already exists and
 // fails when any is left behind.
 func TestContractAgainstRealDocker(t *testing.T) {
-	if os.Getenv(realDockerEnv) != "1" {
-		t.Skip("set " + realDockerEnv + "=1 to run against a Docker daemon")
-	}
-	h := &realDocker{}
-	h.pull(t)
-	h.requireClean(t)
-	t.Cleanup(func() {
-		h.purge(t)
-		h.requireClean(t)
-		if h.removed == 0 {
-			t.Error("the suite created no object, so it proved nothing")
-		}
-	})
+	h := newRealDocker(t)
 	providertest.RunContract(t, providertest.Harness{
 		MaxSeeded: realSeeded,
 		New: func(t *testing.T) provider.Provider {
@@ -53,7 +43,98 @@ func TestContractAgainstRealDocker(t *testing.T) {
 		Inventory: func(t *testing.T, _ provider.Provider) []provider.Resource {
 			return h.inventory(t)
 		},
+		Workspace: func(t *testing.T, _ provider.Provider, _, id string) providertest.WorkspaceState {
+			return h.workspaceState(t, id)
+		},
 	})
+}
+
+// TestRepeatStartLeavesARunningContainerAloneOnRealDocker covers what the
+// contract cannot, because a bare image exits at once: Docker's start of a
+// container that already runs keeps the same start time.
+func TestRepeatStartLeavesARunningContainerAloneOnRealDocker(t *testing.T) {
+	h := newRealDocker(t)
+	id, err := session.NewID("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.must(t, nounContainer, verbCreate, "--name", resourcePrefix+id+"-workspace",
+		"--label", provider.LabelPool+"=a", "--label", provider.LabelSession+"="+id,
+		"--", providertest.Image, "sleep", "300")
+	p := New(CLI{})
+	if err := p.Start(t.Context(), "a", id); err != nil {
+		t.Fatal(err)
+	}
+	first := h.workspaceState(t, id)
+	if !first.Running {
+		t.Fatal("container is not running after Start")
+	}
+	if err := p.Start(t.Context(), "a", id); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.workspaceState(t, id); got != first {
+		t.Fatalf("a repeat Start changed the container: %+v then %+v", first, got)
+	}
+}
+
+// TestStartRunsTheWorkspaceOnRealDocker checks what the contract cannot see:
+// the container has run after Start, and not before.
+func TestStartRunsTheWorkspaceOnRealDocker(t *testing.T) {
+	h := newRealDocker(t)
+	p := New(CLI{})
+	id, err := session.NewID("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := provider.Spec{Pool: "a", Session: id, Image: providertest.Image}
+	if err := p.Spawn(t.Context(), spec); err != nil {
+		t.Fatal(err)
+	}
+	name := resourcePrefix + id + "-workspace"
+	if got := h.startedAt(t, name); got != neverStarted {
+		t.Fatalf("container started by Spawn: %s", got)
+	}
+	for range 2 {
+		if err := p.Start(t.Context(), "a", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := h.startedAt(t, name); got == neverStarted {
+		t.Fatal("container did not start")
+	}
+}
+
+// newRealDocker prepares the daemon and registers the check that the suite
+// left nothing behind.
+func newRealDocker(t *testing.T) *realDocker {
+	t.Helper()
+	if os.Getenv(realDockerEnv) != "1" {
+		t.Skip("set " + realDockerEnv + "=1 to run against a Docker daemon")
+	}
+	h := &realDocker{}
+	h.pull(t)
+	h.requireClean(t)
+	t.Cleanup(func() {
+		h.purge(t)
+		h.requireClean(t)
+		if h.removed == 0 {
+			t.Error("the suite created no object, so it proved nothing")
+		}
+	})
+	return h
+}
+
+func (h *realDocker) startedAt(t *testing.T, name string) string {
+	t.Helper()
+	return h.must(t, nounContainer, verbInspect, flagFormat, "{{.State.StartedAt}}", "--", name)
+}
+
+func (h *realDocker) workspaceState(t *testing.T, id string) providertest.WorkspaceState {
+	t.Helper()
+	out := h.must(t, nounContainer, verbInspect, flagFormat,
+		"{{.State.Running}} {{.State.StartedAt}}", "--", resourcePrefix+id+"-workspace")
+	running, began, _ := strings.Cut(out, " ")
+	return providertest.WorkspaceState{Running: running == "true", Began: began}
 }
 
 type realProvider struct {

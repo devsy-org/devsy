@@ -44,7 +44,7 @@ func slowAt(d *daemon, n int) *Provider {
 
 func (s *ProviderSuite) TestSpawnRemovesAnObjectThatLandsAfterTheCreateWasKilled() {
 	spec := s.spec()
-	for _, create := range []int{3, 4} {
+	for _, create := range []int{4, 5} {
 		for late := 1; late <= 4; late++ {
 			s.Run(fmt.Sprintf("create %d lands before call %d", create, late), func() {
 				d := &daemon{lateAfter: late}
@@ -60,7 +60,7 @@ func (s *ProviderSuite) TestSpawnRemovesAnObjectThatLandsAfterTheCreateWasKilled
 func (s *ProviderSuite) TestRollbackSweepsTwiceCleanAfterTheLastRemoval() {
 	spec := s.spec()
 	d := &daemon{lateAfter: 3}
-	s.Require().ErrorIs(slowAt(d, 3).Spawn(s.T().Context(), spec), context.DeadlineExceeded)
+	s.Require().ErrorIs(slowAt(d, 4).Spawn(s.T().Context(), spec), context.DeadlineExceeded)
 	cmds := d.commands()
 	lastRm := -1
 	for i, c := range cmds {
@@ -80,7 +80,7 @@ func (s *ProviderSuite) TestRollbackSweepsTwiceCleanAfterTheLastRemoval() {
 
 func (s *ProviderSuite) TestRollbackPausesBetweenSweeps() {
 	spec := s.spec()
-	d := &daemon{failAt: 4}
+	d := &daemon{failAt: 5}
 	p := New(d)
 	p.settle = 80 * time.Millisecond
 	start := time.Now()
@@ -92,7 +92,7 @@ func (s *ProviderSuite) TestRollbackPausesBetweenSweeps() {
 
 func (s *ProviderSuite) TestSpawnSaysSoWhenLeftoversCannotBeConfirmedGone() {
 	spec := s.spec()
-	d := &daemon{failAt: 4}
+	d := &daemon{failAt: 5}
 	var armed bool
 	d.before = func(args []string) {
 		if args[0] == kindNetwork && args[1] == verbCreate {
@@ -140,7 +140,7 @@ func (c *ctxSpy) Run(ctx context.Context, args ...string) ([]byte, error) {
 func (s *ProviderSuite) spawnCanceledAtTheNetworkCreate() (*daemon, *ctxSpy, time.Time) {
 	d := &daemon{}
 	spy := &ctxSpy{Runner: d}
-	ctx := s.cancelAt(d, 3)
+	ctx := s.cancelAt(d, 4)
 	start := time.Now()
 	s.Require().ErrorIs(fast(spy).Spawn(ctx, s.spec()), context.Canceled)
 	return d, spy, start
@@ -148,7 +148,7 @@ func (s *ProviderSuite) spawnCanceledAtTheNetworkCreate() (*daemon, *ctxSpy, tim
 
 func (s *ProviderSuite) TestACreateInFlightFinishesWhenTheContextEndsAndNothingFollowsIt() {
 	d, spy, start := s.spawnCanceledAtTheNetworkCreate()
-	create := spy.seen[2]
+	create := spy.seen[3]
 	s.NoError(create.after, "the network create was killed")
 	s.True(create.has)
 	s.False(create.deadline.After(time.Now().Add(30 * time.Second)))
@@ -160,7 +160,7 @@ func (s *ProviderSuite) TestACreateInFlightFinishesWhenTheContextEndsAndNothingF
 
 func (s *ProviderSuite) TestRollbackIgnoresTheCancelButEndsWithinThirtySeconds() {
 	_, spy, start := s.spawnCanceledAtTheNetworkCreate()
-	rollback := spy.seen[3:]
+	rollback := spy.seen[4:]
 	s.Require().NotEmpty(rollback)
 	for _, c := range rollback {
 		s.True(c.has, "a rollback command ran without a deadline")

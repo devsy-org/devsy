@@ -26,6 +26,9 @@ func TestFakeContract(t *testing.T) {
 		Inventory: func(_ *testing.T, p provider.Provider) []provider.Resource {
 			return p.(*Fake).Snapshot()
 		},
+		Workspace: func(_ *testing.T, p provider.Provider, pool, id string) WorkspaceState {
+			return p.(*Fake).State(pool, id)
+		},
 		OnNextCall: func(_ *testing.T, p provider.Provider, fn func()) {
 			f := p.(*Fake)
 			f.SetHook(func(context.Context, Call) {
@@ -53,6 +56,38 @@ func (s *FakeSuite) TestErrorsAreScopedToEachMethod() {
 	listed, err := f.List(ctx, exampleSpec.Pool)
 	s.Require().NoError(err)
 	s.Len(listed, 2)
+}
+
+func (s *FakeSuite) TestStartMarksOnlyAnExistingWorkspace() {
+	f := new(Fake)
+	ctx := s.T().Context()
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Spawn(ctx, exampleSpec))
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Start(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Start(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.True(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Equal([]Call{
+		{Method: MethodSpawn, Pool: exampleSpec.Pool, Session: exampleSpec.Session},
+		{Method: MethodStart, Pool: exampleSpec.Pool, Session: exampleSpec.Session},
+		{Method: MethodStart, Pool: exampleSpec.Pool, Session: exampleSpec.Session},
+	}, f.Calls())
+	s.Require().NoError(f.Reclaim(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Spawn(ctx, exampleSpec))
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+}
+
+func (s *FakeSuite) TestStartFailureLeavesTheWorkspaceNotStarted() {
+	f := new(Fake)
+	ctx := s.T().Context()
+	injected := errors.New("injected")
+	s.Require().NoError(f.Spawn(ctx, exampleSpec))
+	f.FailNext(MethodStart, injected)
+	s.Require().ErrorIs(f.Start(ctx, exampleSpec.Pool, exampleSpec.Session), injected)
+	s.False(f.Started(exampleSpec.Pool, exampleSpec.Session))
+	s.Require().NoError(f.Start(ctx, exampleSpec.Pool, exampleSpec.Session))
+	s.True(f.Started(exampleSpec.Pool, exampleSpec.Session))
 }
 
 func (s *FakeSuite) TestPartialSpawnCanBeReclaimed() {

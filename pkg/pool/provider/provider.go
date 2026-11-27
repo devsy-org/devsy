@@ -24,6 +24,9 @@ var ErrInvalidImage = errors.New("image reference is not valid")
 // ErrInvalidSession reports that a session ID is not owned by the pool.
 var ErrInvalidSession = errors.New("session ID does not belong to pool")
 
+// ErrNotFound reports that Start found no workspace for the session.
+var ErrNotFound = errors.New("session has no workspace")
+
 // ErrUIDRequired reports that Delete was called without a resource UID.
 var ErrUIDRequired = errors.New("resource UID is required")
 
@@ -55,7 +58,8 @@ type Spec struct {
 //
 // Spawn is the one exception. A create command that has started runs to its
 // end, up to 30 seconds, because a killed command can still finish in the
-// daemon unseen. The rollback after a failure or cancel can take up to 30
+// daemon unseen. An image the daemon lacks is pulled first, up to 5 minutes;
+// a pull creates nothing, so a cancel stops it at once. The rollback after a failure or cancel can take up to 30
 // seconds more. A canceled Spawn can therefore return up to 60 seconds late.
 type Provider interface {
 	// Spawn creates all resources for a session and labels each with LabelPool
@@ -68,6 +72,15 @@ type Provider interface {
 	// has started, because a killed docker CLI can still finish in the daemon
 	// unseen, so Spawn may return up to a create timeout after the cancel.
 	Spawn(ctx context.Context, spec Spec) error
+
+	// Start starts the session's workspace. It is idempotent: a workspace
+	// that is already started stays started and Start returns nil. If
+	// session.OwnsID rejects the session ID, Start returns ErrInvalidSession,
+	// and if the session has no workspace it returns ErrNotFound, in both
+	// cases without changing anything. Start creates and removes no resource.
+	// A canceled Start may leave the workspace started or not; the caller
+	// decides by listing or by Reclaim.
+	Start(ctx context.Context, pool, session string) error
 
 	// Reclaim removes every resource with both LabelPool and LabelSession
 	// exactly matching the pool and session ID. No resources is success.

@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/devsy-org/devsy/pkg/pool/provider"
+	"github.com/devsy-org/devsy/pkg/pool/provider/providertest"
 )
 
 const (
@@ -40,6 +42,8 @@ type object struct {
 	internal bool
 	network  string
 	image    string
+	starts   int
+	began    int
 }
 
 // daemon is an in-memory Docker that rejects any command or flag the
@@ -65,6 +69,11 @@ type daemon struct {
 	late      *lateCreate
 	// createOut replaces what a network create prints.
 	createOut string
+	beganSeq  int
+	// absent lists images the daemon does not hold. A pull adds them, unless
+	// pullErr is set.
+	absent  map[string]bool
+	pullErr error
 }
 
 type lateCreate struct {
@@ -149,21 +158,54 @@ func (d *daemon) delayCreate(args []string) {
 }
 
 func (d *daemon) dispatch(args []string) ([]byte, error) {
+	if out, err, ok := d.imageCommand(args); ok {
+		return out, err
+	}
 	kind, ok := map[string]string{nounContainer: kindWorkspace, kindNetwork: kindNetwork}[args[0]]
 	if !ok || len(args) < 2 {
 		return nil, fmt.Errorf("unexpected command %v", args)
 	}
-	switch args[1] {
-	case "ls":
-		return d.ls(kind, args[2:])
-	case verbInspect:
-		return d.inspect(kind, args[2:])
-	case "rm":
-		return d.rm(kind, args[2:])
-	case verbCreate:
-		return d.create(kind, args[2:])
+	verbs := map[string]func(string, []string) ([]byte, error){
+		"ls":        d.ls,
+		verbInspect: d.inspect,
+		"rm":        d.rm,
+		verbCreate:  d.create,
+		verbStart:   d.start,
 	}
-	return nil, fmt.Errorf("unexpected verb %v", args)
+	handle, ok := verbs[args[1]]
+	if !ok {
+		return nil, fmt.Errorf("unexpected verb %v", args)
+	}
+	return handle(kind, args[2:])
+}
+
+func (d *daemon) imageCommand(args []string) ([]byte, error, bool) {
+	if len(args) != 4 || args[2] != "--" {
+		return nil, nil, false
+	}
+	switch {
+	case args[0] == nounImage && args[1] == verbInspect:
+		out, err := d.imageInspect(args[3])
+		return out, err, true
+	case args[0] == verbPull && args[1] == flagQuiet:
+		return nil, d.pull(args[3]), true
+	}
+	return nil, nil, false
+}
+
+func (d *daemon) imageInspect(ref string) ([]byte, error) {
+	if d.absent[ref] {
+		return nil, errNoSuchObject
+	}
+	return []byte("[]\n"), nil
+}
+
+func (d *daemon) pull(ref string) error {
+	if d.pullErr != nil {
+		return d.pullErr
+	}
+	delete(d.absent, ref)
+	return nil
 }
 
 func (d *daemon) ls(kind string, args []string) ([]byte, error) {
@@ -263,6 +305,31 @@ func (d *daemon) rm(kind string, args []string) ([]byte, error) {
 		}
 	}
 	return nil, errNoSuchObject
+}
+
+// start counts starts, because Docker accepts a start of a running container.
+// A started workspace keeps running, and a repeat start leaves it alone.
+func (d *daemon) start(kind string, args []string) ([]byte, error) {
+	if kind != kindWorkspace || len(args) != 2 || args[0] != "--" {
+		return nil, fmt.Errorf("unexpected start arguments %v", args)
+	}
+	for i, o := range d.objs {
+		if o.kind == kind && o.id == args[1] {
+			d.objs[i].starts++
+			if o.began == 0 {
+				d.beganSeq++
+				d.objs[i].began = d.beganSeq
+			}
+			return []byte(o.name + "\n"), nil
+		}
+	}
+	return nil, errNoSuchObject
+}
+
+func (d *daemon) snapshot() []object {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.objs)
 }
 
 func rmOperand(kind string, args []string) (string, error) {
@@ -368,6 +435,18 @@ func (d *daemon) inventory() []provider.Resource {
 	return out
 }
 
+func (d *daemon) workspaceState(pool, id string) providertest.WorkspaceState {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, o := range d.objs {
+		if o.kind == kindWorkspace && o.labels[provider.LabelPool] == pool &&
+			o.labels[provider.LabelSession] == id {
+			return providertest.WorkspaceState{Running: o.began != 0, Began: strconv.Itoa(o.began)}
+		}
+	}
+	return providertest.WorkspaceState{}
+}
+
 func (d *daemon) named(kind, name string) (object, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -385,6 +464,7 @@ type createArgs struct {
 	network  string
 	operand  string
 	internal bool
+	noPull   bool
 }
 
 func (d *daemon) create(kind string, args []string) ([]byte, error) {
@@ -439,12 +519,19 @@ func (c *createArgs) validate(kind string, args []string) error {
 	if c.name == "" || c.network == "" {
 		return fmt.Errorf("container create needs --name and --network: %v", args)
 	}
+	if !c.noPull {
+		return fmt.Errorf("container create must not pull, got %v", args)
+	}
 	return nil
 }
 
 func (c *createArgs) flag(kind string, args []string, i int) (int, error) {
 	if args[i] == "--internal" && kind == kindNetwork {
 		c.internal = true
+		return i, nil
+	}
+	if args[i] == flagPullNever && kind == kindWorkspace {
+		c.noPull = true
 		return i, nil
 	}
 	set := c.setters(kind)[args[i]]
