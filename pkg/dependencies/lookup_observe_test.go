@@ -231,6 +231,16 @@ func (s *lookupModelSuite) TestResultDeduplicatesByPlatformNameRules() {
 	s.Len(result.Candidates, 3)
 }
 
+func (s *lookupModelSuite) TestResultKeepsDotComponentPathsDistinct() {
+	environment := s.environment(nil)
+	var result LookupResult
+	for _, path := range []string{"/a/../b/tool", "/b/tool", "/a/./b/tool"} {
+		result.append(environment, ExecutableCandidate{LexicalPath: path, State: FileExecutable})
+	}
+
+	s.Len(result.Candidates, 3)
+}
+
 func (s *lookupModelSuite) TestResultKeepsCaseVariantsOnCaseSensitivePlatform() {
 	environment := s.environment(nil)
 	if environment.caseInsensitive() {

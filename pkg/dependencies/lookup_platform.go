@@ -319,8 +319,15 @@ func (e LookupEnvironment) hasLauncherSuffix(directory string) bool {
 }
 
 // lexicalKey is the comparison form of a complete path: a normalized directory
-// and a base name folded when the platform ignores case.
+// and a base name folded when the platform ignores case. A path with a dot
+// component keeps its exact text, because ".." can cross a symlink and name a
+// different file than its cleaned form.
 func (e LookupEnvironment) lexicalKey(path string) string {
+	if slices.ContainsFunc(
+		slices.Collect(strings.FieldsFuncSeq(path, e.separatorRune)), dotComponent,
+	) {
+		return path
+	}
 	base := path
 	if cut := strings.LastIndexAny(path, e.separators()); cut >= 0 {
 		base = path[cut+1:]
