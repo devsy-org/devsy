@@ -26,16 +26,16 @@ func TestRender(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 
-	// sha256("content-devsy-homebrew-darwin-arm64")
-	const wantARM = "8d309b67abfc5861b1bfb39ea9ed2eda8622eb3aa1f82131cbbefce2bb6ffad7"
+	// sha256("content-devsy-darwin-arm64-homebrew")
+	const wantARM = "8e5144bd62aa3a04fc0db2a9ed1e29f55e8b4248fae304586f9e0a99eb3a28de"
 
 	for _, want := range []string{
 		`version "1.2.3"`, // leading v stripped
 		`license "MPL-2.0"`,
-		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-homebrew-darwin-arm64",
-		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-homebrew-linux-amd64",
+		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-darwin-arm64-homebrew",
+		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-linux-amd64-homebrew",
 		`sha256 "` + wantARM + `"`,
-		`bin.install Dir["devsy-homebrew-*"].first => "devsy"`,
+		`bin.install Dir["devsy-*-homebrew"].first => "devsy"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("formula missing %q\n---\n%s", want, out)
@@ -59,9 +59,19 @@ func TestRender(t *testing.T) {
 	}
 }
 
+// The CLI self-updater picks the first release asset whose name ends in
+// <os>-<arch>, so managed assets must not end that way.
+func TestManagedAssetNamesAvoidSelfUpdateSuffix(t *testing.T) {
+	for _, p := range platforms {
+		if !strings.HasPrefix(p.Binary, "devsy-") || !strings.HasSuffix(p.Binary, "-homebrew") {
+			t.Errorf("asset %q must be named devsy-<os>-<arch>-homebrew", p.Binary)
+		}
+	}
+}
+
 func TestRenderMissingBinary(t *testing.T) {
 	dir := writeBinaries(t)
-	if err := os.Remove(filepath.Join(dir, "devsy-homebrew-linux-arm64")); err != nil {
+	if err := os.Remove(filepath.Join(dir, "devsy-linux-arm64-homebrew")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := render(dir, "devsy-org/devsy", "v1.2.3"); err == nil {

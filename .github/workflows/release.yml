@@ -474,6 +474,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -492,12 +494,12 @@ jobs:
       - name: stage Homebrew-managed CLI artifacts
         run: |
           mkdir -p "${{ runner.temp }}/devsy-bin"
-          find dist -type f -name 'devsy-homebrew-*' -exec cp {} "${{ runner.temp }}/devsy-bin/" \;
+          find dist -type f -name 'devsy-*-homebrew' -exec cp {} "${{ runner.temp }}/devsy-bin/" \;
 
       - name: verify Homebrew-managed update guidance
         run: |
           set +e
-          output=$("${{ runner.temp }}/devsy-bin/devsy-homebrew-linux-amd64" update 2>&1)
+          output=$("${{ runner.temp }}/devsy-bin/devsy-linux-amd64-homebrew" update 2>&1)
           status=$?
           set -e
           test "$status" -ne 0
@@ -507,7 +509,8 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          files: ${{ runner.temp }}/devsy-bin/devsy-homebrew-*
+          draft: true
+          files: ${{ runner.temp }}/devsy-bin/devsy-*-homebrew
 
       - name: download macOS dmg artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
