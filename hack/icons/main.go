@@ -201,10 +201,54 @@ func renderSVGPNG(svgPath, outPNG string, width, height int) error {
 	_ = os.Remove(outPNG)
 	out, runErr := cmd.CombinedOutput()
 	// Chrome can exit non-zero from its teardown watchdog after it wrote the screenshot.
-	if info, err := os.Stat(outPNG); err != nil || info.Size() == 0 {
-		return fmt.Errorf("render svg with chrome: %v, output: %s", runErr, string(out))
+	if err := verifyRenderedPNG(outPNG, width, height); err != nil {
+		return fmt.Errorf(
+			"render svg with chrome: %w (exit: %v, output: %s)",
+			err,
+			runErr,
+			string(out),
+		)
 	}
 	return nil
+}
+
+// verifyRenderedPNG rejects a screenshot that is missing, has the wrong size
+// or has no visible pixel, which is what Chrome writes when the SVG fails to load.
+func verifyRenderedPNG(path string, width, height int) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	img, err := png.Decode(file)
+	if err != nil {
+		return fmt.Errorf("decode rendered PNG: %w", err)
+	}
+	if bounds := img.Bounds(); bounds.Dx() != width || bounds.Dy() != height {
+		return fmt.Errorf(
+			"rendered PNG is %dx%d, want %dx%d",
+			bounds.Dx(),
+			bounds.Dy(),
+			width,
+			height,
+		)
+	}
+	if !hasVisiblePixel(img) {
+		return errors.New("rendered PNG is fully transparent")
+	}
+	return nil
+}
+
+func hasVisiblePixel(img image.Image) bool {
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if _, _, _, alpha := img.At(x, y).RGBA(); alpha != 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func renderMasterPNG(svgPath, outPNG string) error {

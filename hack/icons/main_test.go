@@ -137,6 +137,8 @@ func TestValidateSVG(t *testing.T) {
 		"empty-viewbox":   `<svg viewBox=" "></svg>`,
 		"wrong-root":      `<html viewBox="0 0 1 1"></html>`,
 		"malformed":       `<svg viewBox="0 0 1 1">`,
+		"comment-only":    `<!-- <svg viewBox="0 0 1 1"></svg> -->`,
+		"text-only":       `<svg viewBox="0 0 1 1"> not a document`,
 	} {
 		path := filepath.Join(tmpDir, name+".svg")
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -145,6 +147,44 @@ func TestValidateSVG(t *testing.T) {
 		if err := validateSVG(path); err == nil {
 			t.Errorf("expected %s SVG to fail", name)
 		}
+	}
+}
+
+func writeTestPNG(t *testing.T, img image.Image) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "render.png")
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestVerifyRenderedPNG(t *testing.T) {
+	visible := image.NewNRGBA(image.Rect(0, 0, 4, 2))
+	visible.SetNRGBA(1, 1, color.NRGBA{R: 124, G: 92, B: 255, A: 255})
+	if err := verifyRenderedPNG(writeTestPNG(t, visible), 4, 2); err != nil {
+		t.Errorf("expected a visible render to pass, got: %v", err)
+	}
+	if err := verifyRenderedPNG(writeTestPNG(t, visible), 8, 4); err == nil {
+		t.Error("expected a wrong-size render to fail")
+	}
+	blank := image.NewNRGBA(image.Rect(0, 0, 4, 2))
+	if err := verifyRenderedPNG(writeTestPNG(t, blank), 4, 2); err == nil {
+		t.Error("expected a fully transparent render to fail")
+	}
+	notPNG := filepath.Join(t.TempDir(), "bad.png")
+	if err := os.WriteFile(notPNG, []byte("not a png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyRenderedPNG(notPNG, 4, 2); err == nil {
+		t.Error("expected a corrupt render to fail")
+	}
+	if err := verifyRenderedPNG(filepath.Join(t.TempDir(), "missing.png"), 4, 2); err == nil {
+		t.Error("expected a missing render to fail")
 	}
 }
 
