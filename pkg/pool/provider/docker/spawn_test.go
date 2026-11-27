@@ -81,6 +81,9 @@ func (s *ProviderSuite) TestSpawnLeavesNothingBehindWhenAnyCommandFails() {
 	s.Require().NoError(fast(clean).Spawn(s.T().Context(), spec))
 	total := len(clean.commands())
 	for n := 1; n <= total; n++ {
+		if clean.commands()[n-1][0] == nounImage {
+			continue
+		}
 		for _, applied := range []bool{false, true} {
 			s.Run(fmt.Sprintf("call %d applied %v", n, applied), func() {
 				d := &daemon{failAt: n, failApplied: applied}
@@ -118,7 +121,7 @@ func (s *ProviderSuite) TestSpawnCleansUpWhenCanceledAtAnyCommand() {
 func (s *ProviderSuite) TestSpawnReportsAFailedRollbackAndAReclaimFinishesIt() {
 	spec := s.spec()
 	boom := errors.New("daemon refused")
-	d := &daemon{failAt: 4, rmErr: boom}
+	d := &daemon{failAt: 5, rmErr: boom}
 	p := fast(d)
 	err := p.Spawn(s.T().Context(), spec)
 	s.Require().ErrorIs(err, errInjected)
@@ -129,6 +132,75 @@ func (s *ProviderSuite) TestSpawnReportsAFailedRollbackAndAReclaimFinishesIt() {
 	d.rmErr = nil
 	s.Require().NoError(p.Reclaim(s.T().Context(), "a", spec.Session))
 	s.noneFor(d, spec)
+}
+
+func (s *ProviderSuite) TestSpawnPullsAMissingImageBeforeAnythingIsCreated() {
+	spec := s.spec()
+	s.d.absent = map[string]bool{spec.Image: true}
+	s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
+	var verbs []string
+	for _, c := range s.d.commands() {
+		if c[0] == nounImage || c[0] == verbPull || c[1] == verbCreate {
+			verbs = append(verbs, c[0]+" "+c[1])
+		}
+	}
+	s.Equal([]string{"image inspect", "pull --quiet", "network create", "container create"}, verbs)
+	for _, c := range s.d.commands() {
+		if c[0] == verbPull {
+			s.Equal([]string{verbPull, flagQuiet, "--", spec.Image}, c)
+		}
+	}
+}
+
+func (s *ProviderSuite) TestSpawnDoesNotPullAnImageTheDaemonHolds() {
+	s.Require().NoError(s.p.Spawn(s.T().Context(), s.spec()))
+	for _, c := range s.d.commands() {
+		s.NotEqual(verbPull, c[0])
+	}
+}
+
+func (s *ProviderSuite) TestAFailedPullCreatesNothing() {
+	spec := s.spec()
+	boom := errors.New("registry unreachable")
+	s.d.absent = map[string]bool{spec.Image: true}
+	s.d.pullErr = boom
+	err := s.p.Spawn(s.T().Context(), spec)
+	s.Require().ErrorIs(err, boom)
+	s.Equal(0, s.d.count())
+	for _, c := range s.d.commands() {
+		s.NotEqual(verbCreate, c[1])
+	}
+}
+
+func (s *ProviderSuite) TestAPullStopsWhenTheContextEndsAndHasItsOwnBound() {
+	spec := s.spec()
+	s.d.absent = map[string]bool{spec.Image: true}
+	spy := &ctxSpy{Runner: s.d}
+	p := fast(spy)
+	s.Require().NoError(p.Spawn(s.T().Context(), spec))
+	for i, c := range s.d.commands() {
+		if c[0] != verbPull {
+			continue
+		}
+		seen := spy.seen[i]
+		s.True(seen.has)
+		s.True(seen.deadline.After(time.Now().Add(4 * time.Minute)))
+		s.False(seen.deadline.After(time.Now().Add(5 * time.Minute)))
+	}
+	ctx, cancel := context.WithCancel(s.T().Context())
+	s.d.absent = map[string]bool{spec.Image: true}
+	s.d.before = func(args []string) {
+		if args[0] == verbPull {
+			cancel()
+		}
+	}
+	other := s.spec()
+	before := len(s.d.commands())
+	s.Require().ErrorIs(p.Spawn(ctx, other), context.Canceled)
+	s.noneFor(s.d, other)
+	for _, c := range s.d.commands()[before:] {
+		s.NotEqual(verbCreate, c[1], "a create ran after the pull was canceled: %v", c)
+	}
 }
 
 func (s *ProviderSuite) TestSpawnNeverRemovesAnObjectItDidNotCreate() {
