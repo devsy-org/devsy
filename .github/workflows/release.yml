@@ -471,25 +471,46 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
-      - name: download darwin CLI artifacts
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      - name: build Homebrew-managed CLI artifacts
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
-          name: devsy-darwin
-          path: ${{ runner.temp }}/devsy-bin/
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --id devsy-homebrew --snapshot
+        env:
+          DEVSY_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
+          DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
 
-      - name: download linux CLI artifacts
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      - name: stage Homebrew-managed CLI artifacts
+        run: |
+          mkdir -p "${{ runner.temp }}/devsy-bin"
+          find dist -type f -name 'devsy-*-homebrew' -exec cp {} "${{ runner.temp }}/devsy-bin/" \;
+
+      - name: verify Homebrew-managed update guidance
+        run: |
+          set +e
+          output=$("${{ runner.temp }}/devsy-bin/devsy-linux-amd64-homebrew" update 2>&1)
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -F "brew upgrade devsy" <<<"$output"
+
+      - name: upload Homebrew-managed CLI release assets
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
-          name: devsy-linux
-          path: ${{ runner.temp }}/devsy-bin/
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: true
+          files: ${{ runner.temp }}/devsy-bin/devsy-*-homebrew
 
       - name: download macOS dmg artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8

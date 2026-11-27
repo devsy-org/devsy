@@ -60,3 +60,25 @@ func TestNewUpdateCmd_AcceptsValidChannels(t *testing.T) {
 		assert.NoError(t, preRunE(cmd, nil))
 	}
 }
+
+func TestCheckPackageManager(t *testing.T) {
+	tests := map[string]struct {
+		manager string
+		wantErr string
+	}{
+		"empty":    {manager: ""},
+		"direct":   {manager: "direct"},
+		"homebrew": {manager: "homebrew", wantErr: "brew upgrade devsy"},
+		"unknown":  {manager: "apt", wantErr: "unsupported package manager"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := checkPackageManager(tt.manager)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
