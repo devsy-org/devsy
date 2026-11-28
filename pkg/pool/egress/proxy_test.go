@@ -884,7 +884,7 @@ func (s *ProxySuite) TestAnUnhealthyProxyRefusesEveryNewRequestWithAFixed503() {
 	expectDenials(s, env, NotAllowed)
 }
 
-func (s *ProxySuite) TestATunnelOpenBeforeTheProxyTurnsUnhealthyKeepsRunning() {
+func (s *ProxySuite) TestATunnelWhoseAllowCannotBeRecordedCarriesNoBytes() {
 	server, pool := tlsUpstream(s)
 	var healthy atomic.Bool
 	healthy.Store(true)
@@ -898,7 +898,25 @@ func (s *ProxySuite) TestATunnelOpenBeforeTheProxyTurnsUnhealthyKeepsRunning() {
 		c.conn,
 		&tls.Config{ServerName: tunnelHost, RootCAs: pool, MinVersion: tls.VersionTLS12},
 	)
+	s.Error(conn.Handshake(), "no upstream byte reaches a client whose allow went unrecorded")
+	c.closed(s)
+}
+
+func (s *ProxySuite) TestATunnelOpenBeforeTheProxyTurnsUnhealthyKeepsRunning() {
+	server, pool := tlsUpstream(s)
+	var healthy atomic.Bool
+	healthy.Store(true)
+	env := startProxy(s, envCfg{
+		upstream: server.Listener.Addr().String(),
+		healthy:  healthy.Load,
+	})
+	c := openTunnel(s, env, tunnelAuth)
+	conn := tls.Client(
+		c.conn,
+		&tls.Config{ServerName: tunnelHost, RootCAs: pool, MinVersion: tls.VersionTLS12},
+	)
 	s.Require().NoError(conn.Handshake())
+	healthy.Store(false)
 	_, err := io.WriteString(
 		conn, "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
 	s.Require().NoError(err)

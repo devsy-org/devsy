@@ -16,7 +16,6 @@ const (
 	dialWait     = 2 * time.Second
 	writeWait    = 2 * time.Second
 	retryEvery   = time.Second
-	maxFailures  = 2
 	defaultRetry = retryEvery
 )
 
@@ -39,10 +38,11 @@ type SenderConfig struct {
 }
 
 // Sender is the sidecar's egress.Recorder. It writes each decision to the
-// pool and tracks whether the pool can be reached. Healthy turns false after
-// two sends in a row fail, and the proxy then refuses new requests, because
-// a decision the pool cannot record must not be acted on. Run brings it back
-// when the socket answers again.
+// pool and tracks whether the pool can be reached. Healthy turns false on the
+// first decision it cannot deliver, and the proxy then refuses new requests and
+// closes a tunnel whose allow it could not record, because a decision the pool
+// cannot record must not be acted on. Run brings it back when the socket
+// answers again.
 type Sender struct {
 	cfg SenderConfig
 
@@ -50,10 +50,12 @@ type Sender struct {
 	// is held across a dial or a write.
 	healthy atomic.Bool
 
-	mu       sync.Mutex
-	conn     net.Conn
-	failures int
-	stats    SenderStats
+	// dialer replaces the socket dial in tests.
+	dialer func(context.Context) (net.Conn, error)
+
+	mu    sync.Mutex
+	conn  net.Conn
+	stats SenderStats
 }
 
 var _ egress.Recorder = (*Sender)(nil)
@@ -129,13 +131,15 @@ func (s *Sender) reconnect(ctx context.Context) {
 		s.cfg.Logger.Warn("egress channel ready line failed", "error", err.Error())
 		return
 	}
-	s.failures = 0
 	s.healthy.Store(true)
 }
 
 func (s *Sender) dial(ctx context.Context) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, dialWait)
 	defer cancel()
+	if s.dialer != nil {
+		return s.dialer(ctx)
+	}
 	return (&net.Dialer{}).DialContext(ctx, "unix", s.cfg.Path)
 }
 
@@ -148,14 +152,13 @@ func (s *Sender) send(line []byte, encodeErr error) {
 	}
 	if err := s.writeLocked(line); err != nil {
 		s.stats.Dropped++
-		s.failures++
-		if s.failures >= maxFailures {
-			s.healthy.Store(false)
-		}
+		// writeLocked has already retried once on a new connection, so a
+		// failure here is a decision the pool did not get. The proxy must
+		// stop at once; Run brings it back when the pool answers.
+		s.healthy.Store(false)
 		s.cfg.Logger.Warn("egress channel send failed", "error", err.Error())
 		return
 	}
-	s.failures = 0
 	s.stats.Sent++
 }
 

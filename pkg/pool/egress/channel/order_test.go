@@ -113,6 +113,10 @@ func (s *ServerSuite) TestStoppingTheRecorderBeforeTheServerCountsWhatItMissed()
 	env := startServerFor(s.T(), filepath.Join(s.dir, "a.sock"), run.rec)
 	run.stop(s.T())
 	sendAllows(s.T(), env.path)
+	// The server must have read the lines before it stops, or a slow
+	// scheduler leaves them in a connection nobody accepted.
+	s.Eventually(func() bool { return env.server.Stats().Events == orderEvents },
+		waitFor, waitTick)
 	env.stop()
 
 	s.Zero(run.audit.count())
