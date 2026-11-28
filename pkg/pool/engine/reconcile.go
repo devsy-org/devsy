@@ -62,7 +62,13 @@ func (e *Engine) Reconcile(ctx context.Context) (Report, error) {
 	if err := e.endForRestart(ctx, plan); err != nil {
 		return plan.report, err
 	}
-	return plan.report, e.reclaimOrphans(ctx, plan)
+	if err := e.reclaimOrphans(ctx, plan); err != nil {
+		return plan.report, err
+	}
+	if err := e.provider.ReleaseShared(ctx, e.pool); err != nil {
+		return plan.report, errors.Join(ErrReclaimIncomplete, err)
+	}
+	return plan.report, nil
 }
 
 func (e *Engine) planRestart(ctx context.Context, sessions []session.Session) (restartPlan, error) {
@@ -165,9 +171,11 @@ func (e *Engine) reclaimOrphans(ctx context.Context, plan restartPlan) error {
 	return nil
 }
 
-// deleteStrays deletes each listed object by UID. The provider ignores an
-// object whose session label changed since the listing.
+// deleteStrays deletes by UID, leaving networks until attached containers are gone.
 func (e *Engine) deleteStrays(ctx context.Context, strays []provider.Orphan) (bool, error) {
+	slices.SortStableFunc(strays, func(a, b provider.Orphan) int {
+		return deleteOrder(a.Resource) - deleteOrder(b.Resource)
+	})
 	var failed bool
 	for _, o := range strays {
 		if err := e.provider.Delete(ctx, e.pool, o.Resource); err != nil {
@@ -178,6 +186,13 @@ func (e *Engine) deleteStrays(ctx context.Context, strays []provider.Orphan) (bo
 		}
 	}
 	return failed, ctx.Err()
+}
+
+func deleteOrder(r provider.Resource) int {
+	if r.Kind == provider.RoleWorkspace || r.Kind == provider.RoleSidecar {
+		return 0
+	}
+	return 1
 }
 
 // reclaimOrphanSession reclaims by exact session ID. A session without a

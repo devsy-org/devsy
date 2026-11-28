@@ -7,8 +7,12 @@ import (
 )
 
 const (
-	LabelPool    = "devsy.sh/pool"
-	LabelSession = "devsy.sh/pool-session"
+	LabelPool     = "devsy.sh/pool"
+	LabelSession  = "devsy.sh/pool-session"
+	LabelShared   = "devsy.sh/pool-shared"
+	LabelRole     = "devsy.sh/pool-role"
+	RoleWorkspace = "workspace"
+	RoleSidecar   = "sidecar"
 )
 
 // ErrExists reports that a session already has resources.
@@ -87,6 +91,10 @@ type Provider interface {
 	// If session.OwnsID rejects the session ID, Reclaim returns
 	// ErrInvalidSession without changing anything.
 	Reclaim(ctx context.Context, pool, session string) error
+
+	// ReleaseShared removes the pool's shared resources when no session
+	// container of the pool remains. It is idempotent; no resources is success.
+	ReleaseShared(ctx context.Context, pool string) error
 
 	// List returns all and only resources with a LabelPool value exactly
 	// equal to pool, each with its live UID and a copy of its labels.

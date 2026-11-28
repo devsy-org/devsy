@@ -3,12 +3,18 @@ package docker
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/devsy-org/devsy/pkg/pool/provider"
 	"github.com/devsy-org/devsy/pkg/pool/session"
 )
 
 const verbStart = "start"
+
+func notWorkspace(r provider.Resource) bool {
+	role, labelled := r.Labels[provider.LabelRole]
+	return labelled && role != provider.RoleWorkspace
+}
 
 // Start starts the session's workspace container. Docker accepts a start of a
 // container that already runs, which is what makes Start idempotent. It takes
@@ -30,6 +36,7 @@ func (p *Provider) Start(ctx context.Context, pool, sessionID string) error {
 	if err != nil {
 		return err
 	}
+	found = slices.DeleteFunc(found, notWorkspace)
 	if len(found) == 0 {
 		return provider.ErrNotFound
 	}

@@ -190,6 +190,41 @@ func (s *EngineSuite) TestReconcileReportsAnOrphanThatCannotBeRemoved() {
 	_, err := s.eng.Reconcile(context.Background())
 	s.Require().ErrorIs(err, ErrReclaimIncomplete)
 	s.Equal(session.StateReclaiming, s.load(cur.ID).State, "the sessions are still ended")
+	for _, call := range s.fake.Calls() {
+		s.NotEqual(providertest.MethodReleaseShared, call.Method)
+	}
+}
+
+func (s *EngineSuite) TestReconcileReleasesSharedOnceAfterRemovingOrphans() {
+	s.fake.Add(s.workspace("stray", s.poolLabels("")))
+	s.fake.Add(
+		provider.Resource{
+			Kind:   provider.RoleSidecar,
+			Name:   "stray-sidecar",
+			Labels: s.poolLabels(""),
+		},
+	)
+	s.fake.Add(
+		provider.Resource{Kind: kindNetwork, Name: "stray-network", Labels: s.poolLabels("")},
+	)
+	report, err := s.eng.Reconcile(s.T().Context())
+	s.Require().NoError(err)
+	s.Equal(Report{Orphans: 3}, report)
+	calls := s.fake.Calls()
+	s.Require().Len(calls, 5)
+	s.Equal(providertest.MethodList, calls[0].Method)
+	for _, call := range calls[1:4] {
+		s.Equal(providertest.MethodDelete, call.Method)
+	}
+	s.Equal(kindNetwork, calls[3].Resource.Kind)
+	s.Equal(providertest.Call{Method: providertest.MethodReleaseShared, Pool: testPool}, calls[4])
+}
+
+func (s *EngineSuite) TestReconcileReturnsSharedReleaseErrorAsIncomplete() {
+	s.fake.FailNext(providertest.MethodReleaseShared, errBoom)
+	_, err := s.eng.Reconcile(s.T().Context())
+	s.Require().ErrorIs(err, ErrReclaimIncomplete)
+	s.ErrorIs(err, errBoom)
 }
 
 func (s *EngineSuite) TestReconcileChangesNothingWhenTheListingFails() {

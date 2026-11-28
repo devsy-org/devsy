@@ -98,7 +98,7 @@ func (p *Provider) create(ctx context.Context, spec provider.Spec) error {
 	defer cancel()
 	out, err := p.step(ctx, run, networkCreateArgs(spec))
 	if err != nil {
-		return err
+		return mapCreateError(err)
 	}
 	networkID, err := parseID(out)
 	if err != nil {
@@ -179,6 +179,7 @@ func containerCreateArgs(spec provider.Spec, networkID string) []string {
 		resourcePrefix + spec.Session + "-workspace",
 	}
 	args = append(args, labelArgs(spec)...)
+	args = append(args, "--label", provider.LabelRole+"="+provider.RoleWorkspace)
 	args = append(args, "--network", networkID, flagPullNever)
 	return append(args, "--", spec.Image)
 }

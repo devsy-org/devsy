@@ -24,7 +24,9 @@ func (s *ProviderSuite) TestSpawnCreatesAnInternalNetworkAndALabelledContainer()
 	s.Require().True(ok)
 	s.Equal(network.id, ws.network)
 	s.Equal(testImage, ws.image)
-	s.Equal(labelsFor("a", spec.Session), ws.labels)
+	want := labelsFor("a", spec.Session)
+	want[provider.LabelRole] = provider.RoleWorkspace
+	s.Equal(want, ws.labels)
 	s.Len(s.list(), 2)
 }
 

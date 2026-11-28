@@ -13,6 +13,7 @@ func (s *ProviderSuite) TestStartStartsOnlyTheSessionsWorkspace() {
 	s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
 	s.Require().NoError(s.p.Spawn(s.T().Context(), other))
 	s.d.seed(kindWorkspace, "foreign", labelsFor("a-b", spec.Session))
+	s.d.seed(kindSidecar, "sidecar", labelsFor("a", spec.Session))
 	s.Require().NoError(s.p.Start(s.T().Context(), "a", spec.Session))
 	started := 0
 	for _, o := range s.d.snapshot() {

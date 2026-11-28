@@ -20,14 +20,16 @@ import (
 type Method string
 
 const (
-	MethodSpawn   Method = "Spawn"
-	MethodStart   Method = "Start"
-	MethodReclaim Method = "Reclaim"
-	MethodList    Method = "List"
-	MethodDelete  Method = "Delete"
+	MethodSpawn         Method = "Spawn"
+	MethodStart         Method = "Start"
+	MethodReclaim       Method = "Reclaim"
+	MethodReleaseShared Method = "ReleaseShared"
+	MethodList          Method = "List"
+	MethodDelete        Method = "Delete"
 
 	networkKind   = "network"
-	workspaceKind = "workspace"
+	workspaceKind = provider.RoleWorkspace
+	sidecarKind   = provider.RoleSidecar
 )
 
 // Call records one invocation. Delete records the resource and its label values.
@@ -183,6 +185,11 @@ func (f *Fake) Reclaim(ctx context.Context, pool, id string) error {
 	})
 }
 
+// ReleaseShared implements provider.Provider.
+func (f *Fake) ReleaseShared(ctx context.Context, pool string) error {
+	return f.run(ctx, Call{Method: MethodReleaseShared, Pool: pool}, func() error { return nil })
+}
+
 // List implements provider.Provider.
 func (f *Fake) List(ctx context.Context, pool string) ([]provider.Resource, error) {
 	var resources []provider.Resource
@@ -216,7 +223,9 @@ func (f *Fake) Delete(ctx context.Context, pool string, resource provider.Resour
 
 func (f *Fake) hasWorkspace(pool, id string) bool {
 	for _, r := range f.resources {
-		if r.Kind == workspaceKind && belongsTo(r, pool, id) {
+		role, labelled := r.Labels[provider.LabelRole]
+		if r.Kind == workspaceKind && (!labelled || role == provider.RoleWorkspace) &&
+			belongsTo(r, pool, id) {
 			return true
 		}
 	}
@@ -281,8 +290,9 @@ func (f *Fake) spawnLocked(spec provider.Spec) error {
 			provider.LabelSession: spec.Session,
 		},
 	}
-	network := workspace
+	network := copyResource(workspace)
 	network.Kind = networkKind
+	workspace.Labels[provider.LabelRole] = provider.RoleWorkspace
 	if f.nameTaken(workspace) || f.nameTaken(network) {
 		return errNameUnavailable
 	}
@@ -302,6 +312,9 @@ func (f *Fake) nameTaken(r provider.Resource) bool {
 }
 
 func (f *Fake) addLocked(r provider.Resource) {
+	if r.Kind == workspaceKind && r.Labels[provider.LabelRole] == provider.RoleSidecar {
+		r.Kind = sidecarKind
+	}
 	if f.resources == nil {
 		f.resources = make(map[resourceKey]provider.Resource)
 	}

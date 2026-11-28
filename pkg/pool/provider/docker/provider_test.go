@@ -226,6 +226,7 @@ func (s *ProviderSuite) TestDeleteReportsTheRemoveErrorWhenTheLookupAfterItFails
 func (s *ProviderSuite) TestReclaimRemovesOneSessionContainersFirst() {
 	id := s.sessionID("a")
 	s.spawnLike("a", id)
+	s.d.add(kindSidecar, "sidecar", labelsFor("a", id))
 	keepA, keepB := s.spawnLike("a", s.sessionID("a"))
 	foreign := s.d.add(kindNetwork, "foreign", labelsFor("a-b", id))
 	s.Require().NoError(s.p.Reclaim(s.T().Context(), "a", id))
@@ -239,7 +240,7 @@ func (s *ProviderSuite) TestReclaimRemovesOneSessionContainersFirst() {
 			removed = append(removed, c[0])
 		}
 	}
-	s.Equal([]string{"container", "network"}, removed)
+	s.Equal([]string{nounContainer, nounContainer, kindNetwork}, removed)
 	s.Require().NoError(s.p.Reclaim(s.T().Context(), "a", id))
 }
 
@@ -315,7 +316,8 @@ func (s *ProviderSuite) TestCancelInsideACommandStopsTheOperation() {
 }
 
 var safeValue = regexp.MustCompile(
-	`^(label=devsy\.sh/pool(-session)?=[a-z0-9-]+|id=[0-9a-f]{64}|\{\{json \.\}\})$`,
+	`^(label=devsy\.sh/pool(-session|-shared)?=[a-z0-9-]+|name=\^devsy-pool-[a-z0-9-]+-out\$` +
+		`|id=[0-9a-f]{64}|\{\{json \.\}\})$`,
 )
 
 // TestEveryArgumentIsAFlagAFilterOrAnIDAfterTheTerminator checks the shape of

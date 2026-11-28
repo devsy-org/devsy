@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	kindWorkspace = "workspace"
+	kindWorkspace = provider.RoleWorkspace
+	kindSidecar   = provider.RoleSidecar
 	kindNetwork   = "network"
 	nounContainer = "container"
 	idLength      = 64
@@ -53,7 +54,8 @@ type Provider struct {
 	docker Runner
 	// locks orders Spawn and Reclaim of one session, so a rollback never
 	// removes what a concurrent Spawn of that session just created.
-	locks sessionLocks
+	locks       sessionLocks
+	bridgeLocks sessionLocks
 	// settle is the pause between rollback sweeps, bound is how long a
 	// rollback may take in all, createBound how long one create may run.
 	settle      time.Duration
@@ -125,8 +127,15 @@ func (p *Provider) Reclaim(ctx context.Context, pool, sessionID string) error {
 		return err
 	}
 	defer unlock()
-	_, err = p.reclaim(ctx, pool, sessionID)
-	return err
+	if _, err := p.reclaim(ctx, pool, sessionID); err != nil {
+		return err
+	}
+	// A refused or busy shared network must not keep the session from being
+	// reclaimed: Reconcile reports it through ReleaseShared.
+	if err := p.ReleaseShared(ctx, pool); err != nil {
+		return ctx.Err()
+	}
+	return nil
 }
 
 // Delete removes one listed object when its live pool and session labels match.
@@ -182,6 +191,9 @@ func checkPool(ctx context.Context, pool string) error {
 }
 
 func kindFor(name string) (kind, bool) {
+	if name == kindSidecar {
+		return kinds[0], true
+	}
 	i := slices.IndexFunc(kinds, func(k kind) bool { return k.name == name })
 	if i < 0 {
 		return kind{}, false
@@ -229,7 +241,11 @@ func (p *Provider) find(ctx context.Context, ks []kind, s scope) ([]provider.Res
 }
 
 func (p *Provider) listIDs(ctx context.Context, k kind, s scope) ([]string, error) {
-	raw, err := p.docker.Run(ctx, append(slices.Clone(k.list), s.filters()...)...)
+	return p.filteredIDs(ctx, k, s.filters())
+}
+
+func (p *Provider) filteredIDs(ctx context.Context, k kind, filters []string) ([]string, error) {
+	raw, err := p.docker.Run(ctx, append(slices.Clone(k.list), filters...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -285,21 +301,29 @@ func decode(k kind, raw []byte) ([]provider.Resource, error) {
 		if !validID(in.ID) {
 			return nil, fmt.Errorf("docker %s inspect returned an unexpected ID", k.noun)
 		}
-		labels := in.Labels
-		if k.name == kindWorkspace {
-			labels = in.Config.Labels
-		}
+		name, labels := in.resourceKindAndLabels(k)
 		if labels == nil {
 			labels = map[string]string{}
 		}
 		out = append(out, provider.Resource{
-			Kind:   k.name,
+			Kind:   name,
 			Name:   strings.TrimPrefix(in.Name, "/"),
 			UID:    in.ID,
 			Labels: labels,
 		})
 	}
 	return out, nil
+}
+
+func (in inspected) resourceKindAndLabels(k kind) (string, map[string]string) {
+	if k.noun != nounContainer {
+		return k.name, in.Labels
+	}
+	labels := in.Config.Labels
+	if labels[provider.LabelRole] == provider.RoleSidecar {
+		return kindSidecar, labels
+	}
+	return kindWorkspace, labels
 }
 
 func validID(id string) bool {

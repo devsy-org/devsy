@@ -24,10 +24,13 @@ const testImage = Image
 const defaultSeeded = 1000
 
 const (
-	unlabelledName  = "unlabelled"
-	otherPoolName   = "other-pool"
-	sessionOnlyName = "session-only"
-	siblingPool     = "a-b"
+	unlabelledName  = "p5a-test-unlabelled"
+	otherPoolName   = "p5a-test-other-pool"
+	sessionOnlyName = "p5a-test-session-only"
+	contractPool    = "p5a-test-contract-a"
+	siblingPool     = "p5a-test-contract-a-b"
+	prefixPool      = "p5a-test-contract-ab"
+	foreignPool     = "p5a-test-contract-b"
 )
 
 // Harness supplies a fresh, empty provider per test and direct backend seeding
@@ -78,7 +81,7 @@ func (s *contractSuite) SetupTest() {
 }
 
 func (s *contractSuite) TestSpawnAndList() {
-	specs := []provider.Spec{s.spec("a"), s.spec("a-b"), s.spec("ab")}
+	specs := []provider.Spec{s.spec(contractPool), s.spec(siblingPool), s.spec(prefixPool)}
 	for _, spec := range specs {
 		s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
 	}
@@ -89,13 +92,16 @@ func (s *contractSuite) TestSpawnAndList() {
 			s.Equal(spec.Pool, r.Labels[provider.LabelPool])
 			s.Equal(spec.Session, r.Labels[provider.LabelSession])
 			s.NotEmpty(r.UID)
+			if r.Kind == workspaceKind {
+				s.Equal(provider.RoleWorkspace, r.Labels[provider.LabelRole])
+			}
 		}
 	}
 }
 
 func (s *contractSuite) TestListReturnsEveryResourceInPool() {
 	seedCount := cmp.Or(s.harness.MaxSeeded, defaultSeeded)
-	specs := []provider.Spec{s.spec("a"), s.spec("a-b")}
+	specs := []provider.Spec{s.spec(contractPool), s.spec(siblingPool)}
 	want := make(map[string][]provider.Resource)
 	for _, spec := range specs {
 		s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
@@ -107,7 +113,7 @@ func (s *contractSuite) TestListReturnsEveryResourceInPool() {
 		pool := specs[i%len(specs)].Pool
 		r := provider.Resource{
 			Kind: kinds[i/len(specs)%len(kinds)],
-			Name: fmt.Sprintf("seed-%04d", i),
+			Name: fmt.Sprintf("p5a-test-seed-%04d", i),
 			Labels: map[string]string{
 				provider.LabelPool:    pool,
 				provider.LabelSession: "invalid",
@@ -116,14 +122,14 @@ func (s *contractSuite) TestListReturnsEveryResourceInPool() {
 		s.seed(r)
 		want[pool] = append(want[pool], r)
 	}
-	s.seed(provider.Resource{Kind: networkKind, Name: "unlabelled"})
+	s.seed(provider.Resource{Kind: networkKind, Name: "p5a-test-unlabelled"})
 	for _, spec := range specs {
 		s.ElementsMatch(want[spec.Pool], s.withoutUIDs(s.list(spec.Pool)))
 	}
 }
 
 func (s *contractSuite) TestDuplicateSpawnChangesNothing() {
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	ctx := s.T().Context()
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	before := s.list(spec.Pool)
@@ -134,15 +140,15 @@ func (s *contractSuite) TestDuplicateSpawnChangesNothing() {
 
 func (s *contractSuite) TestReclaimIsScopedAndIdempotent() {
 	ctx := s.T().Context()
-	first, second := s.spec("a"), s.spec("a")
-	other := s.spec("a-b")
+	first, second := s.spec(contractPool), s.spec(contractPool)
+	other := s.spec(siblingPool)
 	s.Require().NoError(s.p.Spawn(ctx, second))
 	keep := s.list(second.Pool)
 	s.Require().NotEmpty(keep)
 	s.Require().NoError(s.p.Spawn(ctx, other))
 	s.seed(provider.Resource{
 		Kind: networkKind,
-		Name: "foreign-session",
+		Name: "p5a-test-foreign-session",
 		Labels: map[string]string{
 			provider.LabelPool:    other.Pool,
 			provider.LabelSession: first.Session,
@@ -150,7 +156,8 @@ func (s *contractSuite) TestReclaimIsScopedAndIdempotent() {
 	})
 	otherResources := s.list(other.Pool)
 	s.Require().True(slices.ContainsFunc(otherResources, func(r provider.Resource) bool {
-		return r.Name == "foreign-session" && r.Labels[provider.LabelSession] == first.Session
+		return r.Name == "p5a-test-foreign-session" &&
+			r.Labels[provider.LabelSession] == first.Session
 	}))
 	s.Require().NoError(s.p.Spawn(ctx, first))
 	s.Require().NoError(s.p.Reclaim(ctx, first.Pool, first.Session))
@@ -164,9 +171,9 @@ func (s *contractSuite) TestSpawnRejectsInvalidSessionIDs() {
 	ctx := s.T().Context()
 	for _, id := range s.invalidSessionIDs() {
 		s.Run(id, func() {
-			spec := provider.Spec{Pool: "a", Session: id, Image: testImage}
+			spec := provider.Spec{Pool: contractPool, Session: id, Image: testImage}
 			s.ErrorIs(s.p.Spawn(ctx, spec), provider.ErrInvalidSession)
-			for _, pool := range []string{spec.Pool, siblingPool, "b"} {
+			for _, pool := range []string{spec.Pool, siblingPool, foreignPool} {
 				s.Empty(s.list(pool))
 			}
 		})
@@ -175,7 +182,7 @@ func (s *contractSuite) TestSpawnRejectsInvalidSessionIDs() {
 
 func (s *contractSuite) TestStartIsIdempotentAndCreatesNothing() {
 	ctx := s.T().Context()
-	spec, other := s.spec("a"), s.spec("a")
+	spec, other := s.spec(contractPool), s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	s.Require().NoError(s.p.Spawn(ctx, other))
 	before := s.list(spec.Pool)
@@ -190,7 +197,7 @@ func (s *contractSuite) TestStartIsIdempotentAndCreatesNothing() {
 
 func (s *contractSuite) TestStartLeavesARunningWorkspaceAlone() {
 	ctx := s.T().Context()
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	s.Require().NoError(s.p.Start(ctx, spec.Pool, spec.Session))
 	first := s.workspace(spec)
@@ -205,26 +212,39 @@ func (s *contractSuite) TestStartLeavesARunningWorkspaceAlone() {
 
 func (s *contractSuite) TestStartStaysInItsOwnPoolAndSession() {
 	ctx := s.T().Context()
-	spec, stray := s.spec("a"), s.spec("a")
+	spec, stray := s.spec(contractPool), s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	before := s.workspace(spec)
-	for _, pool := range []string{"b", siblingPool} {
+	for _, pool := range []string{foreignPool, siblingPool} {
 		s.ErrorIs(s.p.Start(ctx, pool, spec.Session), provider.ErrInvalidSession, pool)
 	}
-	s.seed(provider.Resource{Kind: workspaceKind, Name: "wrong-pool", Labels: map[string]string{
-		provider.LabelPool: "b", provider.LabelSession: stray.Session,
-	}})
-	s.ErrorIs(s.p.Start(ctx, "a", stray.Session), provider.ErrNotFound)
-	s.seed(provider.Resource{Kind: workspaceKind, Name: "wrong-session", Labels: map[string]string{
-		provider.LabelPool: "a", provider.LabelSession: s.spec("a").Session,
-	}})
-	s.ErrorIs(s.p.Start(ctx, "a", stray.Session), provider.ErrNotFound)
+	s.seed(
+		provider.Resource{
+			Kind: workspaceKind,
+			Name: "p5a-test-wrong-pool",
+			Labels: map[string]string{
+				provider.LabelPool: foreignPool, provider.LabelSession: stray.Session,
+			},
+		},
+	)
+	s.ErrorIs(s.p.Start(ctx, contractPool, stray.Session), provider.ErrNotFound)
+	s.seed(
+		provider.Resource{
+			Kind: workspaceKind,
+			Name: "p5a-test-wrong-session",
+			Labels: map[string]string{
+				provider.LabelPool:    contractPool,
+				provider.LabelSession: s.spec(contractPool).Session,
+			},
+		},
+	)
+	s.ErrorIs(s.p.Start(ctx, contractPool, stray.Session), provider.ErrNotFound)
 	s.Equal(before, s.workspace(spec))
 }
 
 func (s *contractSuite) TestStartNeedsAWorkspace() {
 	ctx := s.T().Context()
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	s.ErrorIs(s.p.Start(ctx, spec.Pool, spec.Session), provider.ErrNotFound)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	s.Require().NoError(s.p.Reclaim(ctx, spec.Pool, spec.Session))
@@ -232,13 +252,47 @@ func (s *contractSuite) TestStartNeedsAWorkspace() {
 	s.Empty(s.list(spec.Pool))
 }
 
+func (s *contractSuite) TestSidecarCanBeListedDeletedAndReclaimedWithoutStarting() {
+	ctx := s.T().Context()
+	spec := s.spec(contractPool)
+	sidecar := provider.Resource{
+		Kind: sidecarKind, Name: "p5a-test-sidecar",
+		Labels: map[string]string{
+			provider.LabelPool: spec.Pool, provider.LabelSession: spec.Session,
+			provider.LabelRole: provider.RoleSidecar,
+		},
+	}
+	s.seed(sidecar)
+	only := s.list(spec.Pool)
+	s.Require().Len(only, 1)
+	s.Equal([]provider.Resource{sidecar}, s.withoutUIDs(only))
+	s.Require().ErrorIs(s.p.Start(ctx, spec.Pool, spec.Session), provider.ErrNotFound)
+	s.Require().NoError(s.p.Delete(ctx, spec.Pool, only[0]))
+	s.Empty(s.list(spec.Pool))
+	s.seed(sidecar)
+	s.Require().NoError(s.p.Reclaim(ctx, spec.Pool, spec.Session))
+	s.Empty(s.list(spec.Pool))
+}
+
+func (s *contractSuite) TestReleaseSharedIsIdempotentAndLeavesSessionsAlone() {
+	ctx := s.T().Context()
+	spec := s.spec(contractPool)
+	s.Require().NoError(s.p.ReleaseShared(ctx, spec.Pool))
+	s.Require().NoError(s.p.ReleaseShared(ctx, spec.Pool))
+	s.Require().NoError(s.p.Spawn(ctx, spec))
+	before := s.list(spec.Pool)
+	s.Require().NotEmpty(before)
+	s.Require().NoError(s.p.ReleaseShared(ctx, spec.Pool))
+	s.ElementsMatch(before, s.list(spec.Pool))
+}
+
 func (s *contractSuite) TestStartRejectsInvalidSessionIDs() {
 	for _, id := range s.invalidSessionIDs() {
 		s.Run(id, func() {
-			const pool = "a"
+			const pool = contractPool
 			s.seed(provider.Resource{
 				Kind: networkKind,
-				Name: id,
+				Name: "p5a-test-" + id,
 				Labels: map[string]string{
 					provider.LabelPool:    pool,
 					provider.LabelSession: id,
@@ -255,10 +309,10 @@ func (s *contractSuite) TestSpawnRejectsInvalidImages() {
 	ctx := s.T().Context()
 	for _, image := range []string{"", "-x", "--privileged", "a b", "a\tb", "a\nb", "a\x00b"} {
 		s.Run(fmt.Sprintf("%q", image), func() {
-			spec := s.spec("a")
+			spec := s.spec(contractPool)
 			spec.Image = image
 			s.ErrorIs(s.p.Spawn(ctx, spec), provider.ErrInvalidImage)
-			s.Empty(s.list("a"))
+			s.Empty(s.list(contractPool))
 		})
 	}
 }
@@ -266,10 +320,10 @@ func (s *contractSuite) TestSpawnRejectsInvalidImages() {
 func (s *contractSuite) TestReclaimRejectsInvalidSessionIDs() {
 	for _, id := range s.invalidSessionIDs() {
 		s.Run(id, func() {
-			const pool = "a"
+			const pool = contractPool
 			s.seed(provider.Resource{
 				Kind: networkKind,
-				Name: id,
+				Name: "p5a-test-" + id,
 				Labels: map[string]string{
 					provider.LabelPool:    pool,
 					provider.LabelSession: id,
@@ -285,7 +339,7 @@ func (s *contractSuite) TestReclaimRejectsInvalidSessionIDs() {
 
 func (s *contractSuite) TestDeleteRemovesOnlyOneAndIsIdempotent() {
 	ctx := s.T().Context()
-	spec, other := s.spec("a"), s.spec("a")
+	spec, other := s.spec(contractPool), s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	s.Require().NoError(s.p.Spawn(ctx, other))
 	before := s.list(spec.Pool)
@@ -298,19 +352,19 @@ func (s *contractSuite) TestDeleteRemovesOnlyOneAndIsIdempotent() {
 
 func (s *contractSuite) TestDeleteIgnoresForgedPoolLabels() {
 	ctx := s.T().Context()
-	victim, caller := s.spec("a-b"), s.spec("a")
+	victim, caller := s.spec(siblingPool), s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, victim))
 	s.Require().NoError(s.p.Spawn(ctx, caller))
 	s.seed(provider.Resource{
 		Kind: networkKind,
-		Name: "foreign-orphan",
+		Name: "p5a-test-foreign-orphan",
 		Labels: map[string]string{
 			provider.LabelPool: victim.Pool,
 		},
 	})
 	before := s.list(victim.Pool)
 	s.Require().
-		True(slices.ContainsFunc(before, func(r provider.Resource) bool { return r.Name == "foreign-orphan" }))
+		True(slices.ContainsFunc(before, func(r provider.Resource) bool { return r.Name == "p5a-test-foreign-orphan" }))
 	for _, live := range before {
 		forged := live
 		forged.Labels = map[string]string{
@@ -324,7 +378,7 @@ func (s *contractSuite) TestDeleteIgnoresForgedPoolLabels() {
 
 func (s *contractSuite) TestDeleteIgnoresAChangedSessionLabel() {
 	ctx := s.T().Context()
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	before := s.list(spec.Pool)
 	s.Require().NotEmpty(before)
@@ -332,7 +386,7 @@ func (s *contractSuite) TestDeleteIgnoresAChangedSessionLabel() {
 		stale := provider.Resource{
 			Kind: r.Kind, Name: r.Name, UID: r.UID, Labels: maps.Clone(r.Labels),
 		}
-		stale.Labels[provider.LabelSession] = s.spec("a").Session
+		stale.Labels[provider.LabelSession] = s.spec(contractPool).Session
 		s.Require().NoError(s.p.Delete(ctx, spec.Pool, stale))
 		delete(stale.Labels, provider.LabelSession)
 		s.Require().NoError(s.p.Delete(ctx, spec.Pool, stale))
@@ -342,7 +396,7 @@ func (s *contractSuite) TestDeleteIgnoresAChangedSessionLabel() {
 
 func (s *contractSuite) TestDeleteIgnoresStaleUID() {
 	ctx := s.T().Context()
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	first := s.list(spec.Pool)
 	s.Require().NotEmpty(first)
@@ -365,7 +419,7 @@ func (s *contractSuite) TestDeleteIgnoresStaleUID() {
 }
 
 func (s *contractSuite) TestDeleteRequiresUID() {
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	ctx := s.T().Context()
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	before := s.list(spec.Pool)
@@ -378,7 +432,7 @@ func (s *contractSuite) TestDeleteRequiresUID() {
 
 func (s *contractSuite) TestUnlabelledAndForeignObjectsAreNeverTouched() {
 	ctx := s.T().Context()
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	s.seed(provider.Resource{Kind: networkKind, Name: unlabelledName})
 	s.seed(provider.Resource{
@@ -410,7 +464,7 @@ func (s *contractSuite) TestUnlabelledAndForeignObjectsAreNeverTouched() {
 }
 
 func (s *contractSuite) TestListReturnsLabelCopies() {
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
 	before, changed := s.list(spec.Pool), s.list(spec.Pool)
 	s.Require().NotEmpty(changed)
@@ -422,13 +476,14 @@ func (s *contractSuite) TestListReturnsLabelCopies() {
 func (s *contractSuite) TestCanceledOperationsDoNotChangeResources() {
 	ctx, cancel := context.WithCancel(s.T().Context())
 	cancel()
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	s.Require().ErrorIs(s.p.Spawn(ctx, spec), context.Canceled)
 	s.Empty(s.list(spec.Pool))
 	s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
 	before := s.list(spec.Pool)
 	s.Require().NotEmpty(before)
 	s.Require().ErrorIs(s.p.Reclaim(ctx, spec.Pool, spec.Session), context.Canceled)
+	s.Require().ErrorIs(s.p.ReleaseShared(ctx, spec.Pool), context.Canceled)
 	s.Require().ErrorIs(s.p.Start(ctx, spec.Pool, spec.Session), context.Canceled)
 	_, err := s.p.List(ctx, spec.Pool)
 	s.Require().ErrorIs(err, context.Canceled)
@@ -437,7 +492,7 @@ func (s *contractSuite) TestCanceledOperationsDoNotChangeResources() {
 }
 
 func (s *contractSuite) TestCancellationInsideOperationsLeavesResourcesUnchanged() {
-	spec, pending := s.spec("a"), s.spec("a")
+	spec, pending := s.spec(contractPool), s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(s.T().Context(), spec))
 	before := s.list(spec.Pool)
 	s.Require().NotEmpty(before)
@@ -447,6 +502,7 @@ func (s *contractSuite) TestCancellationInsideOperationsLeavesResourcesUnchanged
 	}{
 		{"Spawn", func(ctx context.Context) error { return s.p.Spawn(ctx, pending) }},
 		{"Reclaim", func(ctx context.Context) error { return s.p.Reclaim(ctx, spec.Pool, spec.Session) }},
+		{"ReleaseShared", func(ctx context.Context) error { return s.p.ReleaseShared(ctx, spec.Pool) }},
 		{"Start", func(ctx context.Context) error { return s.p.Start(ctx, spec.Pool, spec.Session) }},
 		{"Delete", func(ctx context.Context) error { return s.p.Delete(ctx, spec.Pool, before[0]) }},
 		{"List", func(ctx context.Context) error {
@@ -466,15 +522,15 @@ func (s *contractSuite) TestCancellationInsideOperationsLeavesResourcesUnchanged
 
 func (s *contractSuite) TestRejectsInvalidPoolNames() {
 	ctx := s.T().Context()
-	spec := s.spec("a")
+	spec := s.spec(contractPool)
 	s.Require().NoError(s.p.Spawn(ctx, spec))
 	before := s.list(spec.Pool)
 	s.Require().NotEmpty(before)
-	for i, pool := range []string{"", "A", "a_b", strings.Repeat("a", 33)} {
+	for i, pool := range []string{"", "A", "a_b", strings.Repeat(contractPool, 33)} {
 		s.Run("pool="+pool, func() {
 			s.seed(provider.Resource{
 				Kind:   networkKind,
-				Name:   fmt.Sprintf("invalid-pool-%d", i),
+				Name:   fmt.Sprintf("p5a-test-invalid-pool-%d", i),
 				Labels: map[string]string{provider.LabelPool: pool},
 			})
 			s.ErrorIs(
@@ -483,6 +539,7 @@ func (s *contractSuite) TestRejectsInvalidPoolNames() {
 				"Spawn",
 			)
 			s.ErrorIs(s.p.Reclaim(ctx, pool, spec.Session), provider.ErrInvalidPool, "Reclaim")
+			s.ErrorIs(s.p.ReleaseShared(ctx, pool), provider.ErrInvalidPool, "ReleaseShared")
 			s.ErrorIs(s.p.Start(ctx, pool, spec.Session), provider.ErrInvalidPool, "Start")
 			resources, err := s.p.List(ctx, pool)
 			s.ErrorIs(err, provider.ErrInvalidPool, "List")
@@ -539,7 +596,7 @@ func (s *contractSuite) withoutUIDs(resources []provider.Resource) []provider.Re
 }
 
 func (s *contractSuite) invalidSessionIDs() []string {
-	return []string{s.spec("a-b").Session, s.spec("b").Session, "invalid"}
+	return []string{s.spec(siblingPool).Session, s.spec(foreignPool).Session, "invalid"}
 }
 
 func (s *contractSuite) list(pool string) []provider.Resource {

@@ -18,15 +18,16 @@ import (
 )
 
 const (
-	verbInspect = "inspect"
-	flagAll     = "--all"
-	flagForce   = "--force"
-	flagNoTrunc = "--no-trunc"
-	flagQuiet   = "--quiet"
-	flagFormat  = "--format"
-	flagVolumes = "--volumes"
-	spaced      = "a b"
-	shellBait   = "$(id)"
+	verbInspect     = "inspect"
+	simulatedSubnet = "172.30.0.0/16"
+	flagAll         = "--all"
+	flagForce       = "--force"
+	flagNoTrunc     = "--no-trunc"
+	flagQuiet       = "--quiet"
+	flagFormat      = "--format"
+	flagVolumes     = "--volumes"
+	spaced          = "a b"
+	shellBait       = "$(id)"
 )
 
 var (
@@ -40,6 +41,7 @@ type object struct {
 	name     string
 	labels   map[string]string
 	internal bool
+	icc      string
 	network  string
 	image    string
 	starts   int
@@ -260,6 +262,9 @@ func (o object) matches(filters map[string]string) bool {
 		if k == "id" && o.id != v {
 			return false
 		}
+		if k == "name" && o.name != strings.Trim(v, "^$") {
+			return false
+		}
 		if lk, ok := strings.CutPrefix(k, "label:"); ok && o.labels[lk] != v {
 			return false
 		}
@@ -277,17 +282,22 @@ func (d *daemon) inspect(kind string, args []string) ([]byte, error) {
 		if !ok {
 			return nil, errNoSuchObject
 		}
-		doc := map[string]any{"Id": o.id, "Name": o.name, "Labels": o.labels}
-		if kind == kindWorkspace {
-			doc = map[string]any{
-				"Id": o.id, "Name": "/" + o.name, "Config": map[string]any{"Labels": o.labels},
-			}
-		}
-		line, _ := json.Marshal(doc)
+		line, _ := json.Marshal(o.inspectDoc())
 		out.Write(line)
 		out.WriteString("\n")
 	}
 	return []byte(out.String()), nil
+}
+
+func (o object) inspectDoc() any {
+	if o.kind == kindWorkspace {
+		return inspected{ID: o.id, Name: "/" + o.name, Config: inspectedConfig{Labels: o.labels}}
+	}
+	return netInfo{
+		ID: o.id, Name: o.name, Labels: o.labels, Driver: driverNet, Internal: o.internal,
+		Options: map[string]string{optICC: o.icc},
+		IPAM:    ipam{Config: []ipamConfig{{Subnet: simulatedSubnet, Gateway: "172.30.0.1"}}},
+	}
 }
 
 func (d *daemon) rm(kind string, args []string) ([]byte, error) {
@@ -362,12 +372,20 @@ func labelsFor(pool, session string) map[string]string {
 }
 
 func (d *daemon) add(kind, name string, labels map[string]string) string {
+	labels = maps.Clone(labels)
+	if kind == kindSidecar {
+		kind = kindWorkspace
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		labels[provider.LabelRole] = provider.RoleSidecar
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.seq++
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s/%d", name, d.seq))
 	id := hex.EncodeToString(sum[:])
-	d.objs = append(d.objs, object{kind: kind, id: id, name: name, labels: maps.Clone(labels)})
+	d.objs = append(d.objs, object{kind: kind, id: id, name: name, labels: labels})
 	return id
 }
 
@@ -417,7 +435,7 @@ func (d *daemon) seed(kind, name string, labels map[string]string) {
 	d.mu.Lock()
 	d.objs = slices.DeleteFunc(
 		d.objs,
-		func(o object) bool { return o.kind == kind && o.name == name },
+		func(o object) bool { return o.resourceKind() == kind && o.name == name },
 	)
 	d.mu.Unlock()
 	d.add(kind, name, labels)
@@ -429,17 +447,24 @@ func (d *daemon) inventory() []provider.Resource {
 	out := make([]provider.Resource, 0, len(d.objs))
 	for _, o := range d.objs {
 		out = append(out, provider.Resource{
-			Kind: o.kind, Name: o.name, UID: o.id, Labels: maps.Clone(o.labels),
+			Kind: o.resourceKind(), Name: o.name, UID: o.id, Labels: maps.Clone(o.labels),
 		})
 	}
 	return out
+}
+
+func (o object) resourceKind() string {
+	if o.kind == kindWorkspace && o.labels[provider.LabelRole] == provider.RoleSidecar {
+		return kindSidecar
+	}
+	return o.kind
 }
 
 func (d *daemon) workspaceState(pool, id string) providertest.WorkspaceState {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, o := range d.objs {
-		if o.kind == kindWorkspace && o.labels[provider.LabelPool] == pool &&
+		if o.resourceKind() == kindWorkspace && o.labels[provider.LabelPool] == pool &&
 			o.labels[provider.LabelSession] == id {
 			return providertest.WorkspaceState{Running: o.began != 0, Began: strconv.Itoa(o.began)}
 		}
@@ -464,6 +489,7 @@ type createArgs struct {
 	network  string
 	operand  string
 	internal bool
+	icc      string
 	noPull   bool
 }
 
@@ -472,7 +498,7 @@ func (d *daemon) create(kind string, args []string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	o := object{kind: kind, name: c.name, labels: c.labels, internal: c.internal}
+	o := object{kind: kind, name: c.name, labels: c.labels, internal: c.internal, icc: c.icc}
 	if kind == kindWorkspace {
 		if _, ok := d.find(kindNetwork, c.network); !ok {
 			return nil, errNoSuchObject
@@ -483,7 +509,10 @@ func (d *daemon) create(kind string, args []string) ([]byte, error) {
 		d.objs,
 		func(x object) bool { return x.kind == kind && x.name == c.name },
 	) {
-		return nil, fmt.Errorf("name %q is already in use", c.name)
+		return nil, &CommandError{
+			Stderr: fmt.Sprintf("name %q is already in use", c.name),
+			Err:    errInjected,
+		}
 	}
 	d.seq++
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s/%d", c.name, d.seq))
@@ -511,16 +540,26 @@ func parseCreate(kind string, args []string) (createArgs, error) {
 func (c *createArgs) validate(kind string, args []string) error {
 	if kind == kindNetwork {
 		c.name = c.operand
-		if !c.internal {
-			return fmt.Errorf("a pool network must be internal: %v", args)
-		}
-		return nil
+		return c.validateNetwork(args)
 	}
 	if c.name == "" || c.network == "" {
 		return fmt.Errorf("container create needs --name and --network: %v", args)
 	}
 	if !c.noPull {
 		return fmt.Errorf("container create must not pull, got %v", args)
+	}
+	return nil
+}
+
+func (c *createArgs) validateNetwork(args []string) error {
+	if _, shared := c.labels[provider.LabelShared]; shared {
+		if c.internal || c.icc != iccDisabled || len(c.labels) != 1 {
+			return fmt.Errorf("unexpected shared bridge arguments: %v", args)
+		}
+		return nil
+	}
+	if !c.internal || c.icc != "" {
+		return fmt.Errorf("a session network must be internal: %v", args)
 	}
 	return nil
 }
@@ -552,6 +591,12 @@ func (c *createArgs) setters(kind string) map[string]func(string) {
 	if kind == kindWorkspace {
 		setters["--name"] = func(v string) { c.name = v }
 		setters["--network"] = func(v string) { c.network = v }
+	} else {
+		setters["--opt"] = func(v string) {
+			if option, ok := strings.CutPrefix(v, optICC+"="); ok {
+				c.icc = option
+			}
+		}
 	}
 	return setters
 }

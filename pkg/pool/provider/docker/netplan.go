@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	optICC    = "com.docker.network.bridge.enable_icc"
-	driverNet = "bridge"
-	proxyPort = 3128
+	iccDisabled = "false"
+	optICC      = "com.docker.network.bridge.enable_icc"
+	driverNet   = "bridge"
+	proxyPort   = 3128
 )
 
 // ErrNoAddressSpace reports that Docker has no address pool left for another
@@ -26,6 +27,7 @@ var ErrNoAddressSpace = errors.New(
 // netInfo is the part of docker network inspect the network plan reads.
 type netInfo struct {
 	ID       string            `json:"Id"`
+	Name     string            `json:"Name"`
 	Driver   string            `json:"Driver"`
 	Internal bool              `json:"Internal"`
 	IPv6     bool              `json:"EnableIPv6"`
@@ -91,7 +93,7 @@ func (n netInfo) checkBridge() error {
 		return fmt.Errorf("outbound network driver is %q, want %q", n.Driver, driverNet)
 	case n.Internal:
 		return errors.New("outbound network is internal and has no route out")
-	case n.Options[optICC] != "false":
+	case n.Options[optICC] != iccDisabled:
 		return errors.New("outbound network allows traffic between containers")
 	}
 	_, err := n.subnet()
