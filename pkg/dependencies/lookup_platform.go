@@ -281,10 +281,10 @@ var (
 
 // indirectLauncher reports whether path may be a version-manager shim. Dot
 // components hide the real location, so a path containing one counts as a
-// launcher. The match is textual: callers must resolve symlinks and expand
-// Windows 8.3 short names such as PROGRA~1 before asking, or a shim can look
-// direct. Case-insensitive matching on darwin can only add matches, which fails
-// closed.
+// launcher. The match is textual: callers must resolve symlinks before asking,
+// or a shim can look direct. The Windows walk refuses 8.3 short names such as
+// PROGRA~1, so no short spelling reaches this check. Case-insensitive matching
+// on darwin can only add matches, which fails closed.
 func (e LookupEnvironment) indirectLauncher(path string) bool {
 	if slices.ContainsFunc(
 		slices.Collect(strings.FieldsFuncSeq(path, e.separatorRune)), dotComponent,

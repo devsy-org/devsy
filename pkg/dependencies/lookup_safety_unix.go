@@ -18,10 +18,20 @@ const lookupOpenFlags = os.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_NONBLOCK | 
 
 var errLookupFileChanged = errors.New("file changed during inspection")
 
-type lookupOpener func(path string) (*os.File, error)
+// lookupHandle is the part of an opened file the inspector uses.
+type lookupHandle interface {
+	Stat() (os.FileInfo, error)
+	Close() error
+}
 
-func openLookupFile(path string) (*os.File, error) {
-	return os.OpenFile(filepath.Clean(path), lookupOpenFlags, 0)
+type lookupOpener func(path string) (lookupHandle, error)
+
+func openLookupFile(path string) (lookupHandle, error) {
+	file, err := os.OpenFile(filepath.Clean(path), lookupOpenFlags, 0)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
 }
 
 // inspectLookupFile reports what the path names without running it. A regular
