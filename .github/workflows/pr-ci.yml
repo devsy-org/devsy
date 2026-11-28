@@ -277,7 +277,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: 1.23.x
+          go-version: 1.27.x
           cache-dependency-path: logging/go.mod
       - name: Test Go floor
         run: go test -race ./... && go vet ./... && test -z "$(gofmt -l .)"
