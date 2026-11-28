@@ -297,10 +297,10 @@ func (c *client) response(s *ProxySuite, method string) (*http.Response, string)
 }
 
 // request sends one raw request on a new connection and reads the answer.
-func doRequest(s *ProxySuite, env *proxyEnv, raw, method string) (*http.Response, string) {
+func doRequest(s *ProxySuite, env *proxyEnv, raw string) (*http.Response, string) {
 	c := dialProxy(s, env)
 	c.send(s, raw)
-	return c.response(s, method)
+	return c.response(s, http.MethodConnect)
 }
 
 // tunnel opens a CONNECT and requires the 200.
@@ -402,7 +402,7 @@ func (s *ProxySuite) TestEveryRefusalReadsTheSame() {
 		"metadata.google.internal:443": BadRequest,
 	} {
 		env := startProxy(s, envCfg{})
-		resp, body := doRequest(s, env, connectLine(authority), http.MethodConnect)
+		resp, body := doRequest(s, env, connectLine(authority))
 		s.Equal(http.StatusForbidden, resp.StatusCode, authority)
 		s.Equal(denyBody, body, authority)
 		s.True(resp.Close, authority)
@@ -423,7 +423,7 @@ func (s *ProxySuite) TestMalformedTargetsAreRefusedByTheServer() {
 		"a b.com:443",
 	}
 	for _, authority := range malformed {
-		resp, body := doRequest(s, env, connectLine(authority), http.MethodConnect)
+		resp, body := doRequest(s, env, connectLine(authority))
 		s.Equal(http.StatusBadRequest, resp.StatusCode, authority)
 		s.NotContains(body, "SECRET", authority)
 		s.NotContains(body, "evil", authority)
@@ -448,7 +448,7 @@ func (s *ProxySuite) TestResolvedAddressRefusalsReadTheSame() {
 		"no answers":    {[]netip.Addr{}, nil, ResolveFailed},
 	} {
 		env := startProxy(s, envCfg{answers: cfg.answers, lookupErr: cfg.err})
-		resp, body := doRequest(s, env, connectLine(tunnelAuth), http.MethodConnect)
+		resp, body := doRequest(s, env, connectLine(tunnelAuth))
 		s.Equal(http.StatusForbidden, resp.StatusCode, name)
 		s.Equal(denyBody, body, name)
 		s.Empty(env.dialed.all(), name)
@@ -460,7 +460,7 @@ func (s *ProxySuite) TestResolvedAddressRefusalsReadTheSame() {
 func (s *ProxySuite) TestAnUnexpectedConnectFailureIsAFixed502() {
 	detail := errors.New("dial tcp 8.8.8.8:443: i/o timeout secret-detail")
 	env := startProxy(s, envCfg{connectErr: detail})
-	resp, body := doRequest(s, env, connectLine(tunnelAuth), http.MethodConnect)
+	resp, body := doRequest(s, env, connectLine(tunnelAuth))
 	s.Equal(http.StatusBadGateway, resp.StatusCode)
 	s.Equal(badGatewayBody, body)
 	s.NotContains(body, publicAddr)
@@ -478,10 +478,14 @@ func (s *ProxySuite) TestOnlyConnectIsAccepted() {
 		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
 		"POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n",
 	} {
-		resp, body := doRequest(s, env, raw, http.MethodGet)
+		c := dialProxy(s, env)
+		c.send(s, raw+raw)
+		resp, body := c.response(s, http.MethodGet)
 		s.Equal(http.StatusMethodNotAllowed, resp.StatusCode)
 		s.Equal("CONNECT", resp.Header.Get("Allow"))
+		s.True(resp.Close, "the refusal must not keep the connection open")
 		s.NotContains(body, "example.com")
+		c.closed(s)
 	}
 	s.Empty(env.dialed.all())
 }
@@ -502,7 +506,7 @@ func (s *ProxySuite) TestOversizedHeadersAreRefused() {
 		"a",
 		20000,
 	) + "\r\n\r\n"
-	resp, _ := doRequest(s, env, raw, http.MethodConnect)
+	resp, _ := doRequest(s, env, raw)
 	s.Equal(http.StatusRequestHeaderFieldsTooLarge, resp.StatusCode)
 	s.Empty(env.dialed.all())
 }
@@ -670,7 +674,7 @@ func (s *ProxySuite) TestRecorderSeesOnlySafeText() {
 	long := strings.Repeat("secretlabel", 30) + ".com:443"
 	authorities := []string{zonedAuthority, localAuthority, long}
 	for _, authority := range authorities {
-		doRequest(s, env, connectLine(authority), http.MethodConnect)
+		doRequest(s, env, connectLine(authority))
 	}
 	denied, _ := env.rec.snapshot()
 	s.Require().Len(denied, 3)
