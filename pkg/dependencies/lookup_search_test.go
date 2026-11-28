@@ -15,6 +15,7 @@ const (
 	envPath      = "PATH"
 	envPathMixed = "Path"
 	toolsDocker  = `C:\Tools\Docker.exe`
+	toolsDir     = `C:\Tools`
 )
 
 func (s *lookupModelSuite) recordingEnvironment(
@@ -138,6 +139,21 @@ func (s *lookupModelSuite) TestSearchRefusesAHugePathInsteadOfSearchingPartOfIt(
 	s.Empty(*seen)
 }
 
+func (s *lookupModelSuite) TestSearchAcceptsExactlyTheMaximumPathEntries() {
+	entries := make([]string, maxPathEntries)
+	for i := range entries {
+		entries[i] = filepath.Join(s.root, "d"+strconv.Itoa(i))
+	}
+	environment, seen := s.recordingEnvironment(s.environment(map[string]string{
+		envPath: strings.Join(entries, string(os.PathListSeparator)),
+	}), nil)
+
+	_, err := environment.Lookup(context.Background(), LookupRequest{Command: testDocker})
+
+	s.Require().NoError(err)
+	s.Len(*seen, maxPathEntries)
+}
+
 // Comparing every candidate with every earlier one took 37 s for 20000 entries.
 func (s *lookupModelSuite) TestResultAppendScalesLinearly() {
 	environment := s.environment(nil)
@@ -154,19 +170,34 @@ func (s *lookupModelSuite) TestResultAppendScalesLinearly() {
 	s.Less(time.Since(start), 5*time.Second)
 }
 
-func (s *lookupModelSuite) TestWindowsSearchRefusesTooManyExtensions() {
-	extensions := make([]string, maxExecutableName+1)
+func (s *lookupModelSuite) windowsExtensions(count int) string {
+	extensions := make([]string, count)
 	for i := range extensions {
 		extensions[i] = ".E" + strconv.Itoa(i)
 	}
+	return strings.Join(extensions, ";")
+}
+
+func (s *lookupModelSuite) TestWindowsSearchRefusesTooManyExtensions() {
 	environment, seen := s.recordingEnvironment(s.windowsEnvironment(map[string]string{
-		envPath: `C:\Tools`, testPathExt: strings.Join(extensions, ";"),
+		envPath: toolsDir, testPathExt: s.windowsExtensions(maxExecutableName + 1),
 	}), nil)
 
 	_, err := environment.Lookup(context.Background(), LookupRequest{Command: testDocker})
 
 	s.Require().Error(err)
 	s.Empty(*seen)
+}
+
+func (s *lookupModelSuite) TestWindowsSearchAcceptsExactlyTheMaximumExtensions() {
+	environment, seen := s.recordingEnvironment(s.windowsEnvironment(map[string]string{
+		envPath: toolsDir, testPathExt: s.windowsExtensions(maxExecutableName),
+	}), nil)
+
+	_, err := environment.Lookup(context.Background(), LookupRequest{Command: testDocker})
+
+	s.Require().NoError(err)
+	s.Len(*seen, maxExecutableName)
 }
 
 func (s *lookupModelSuite) TestWindowsSearchSkipsQuotedEntriesOnEveryBuild() {
@@ -279,6 +310,36 @@ func (s *lookupModelSuite) TestExplicitLookupResolvesAgainstTheSnapshotDirectory
 	s.Require().Len(result.Candidates, 1)
 	s.Equal(LookupExplicitEnv, result.Candidates[0].Origin)
 	s.Empty(result.ReasonCode)
+}
+
+func (s *lookupModelSuite) TestExplicitLookupDefaultsToTheExplicitOptionOrigin() {
+	path := filepath.Join(s.root, testDocker)
+	environment, _ := s.recordingEnvironment(s.environment(nil), map[string]bool{path: true})
+
+	result, err := environment.Lookup(context.Background(), LookupRequest{
+		Command: testDocker, Explicit: true,
+	})
+
+	s.Require().NoError(err)
+	s.Require().Len(result.Candidates, 1)
+	s.Equal(LookupExplicit, result.Candidates[0].Origin)
+	s.Equal(path, result.Candidates[0].LexicalPath)
+}
+
+func (s *lookupModelSuite) TestExplicitLookupNeverFallsBackToPath() {
+	directory := filepath.Join(s.root, "bin")
+	onPath := filepath.Join(directory, testDocker)
+	environment, seen := s.recordingEnvironment(
+		s.environment(map[string]string{envPath: directory}), map[string]bool{onPath: true})
+
+	result, err := environment.Lookup(context.Background(), LookupRequest{
+		Command: testDocker, Explicit: true,
+	})
+
+	s.Require().NoError(err)
+	s.Empty(result.Candidates)
+	s.Equal(LookupInvalidPath, result.ReasonCode)
+	s.Equal([]string{filepath.Join(s.root, testDocker)}, *seen)
 }
 
 func (s *lookupModelSuite) TestExplicitLookupKeepsIntentWhenEmptyOrMissing() {
