@@ -32,6 +32,9 @@ type Resolver interface {
 // is a failed connect to a target the policy allowed.
 type DeniedError struct {
 	Reason Reason
+	// Peer is the resolved or socket address that caused the refusal. It is
+	// the zero value when the refusal did not concern one address.
+	Peer netip.Addr
 }
 
 func (e *DeniedError) Error() string { return "egress denied: " + string(e.Reason) }
@@ -66,40 +69,88 @@ func NewDialer(p *Policy) *Dialer {
 	}
 }
 
+// Opened is a connection the policy allowed.
+type Opened struct {
+	Conn net.Conn
+	// Rule is the allow rule that permitted the target.
+	Rule Rule
+}
+
 // Dial connects to host and port. host is a bare name or IP address, with no
 // brackets or port. A policy refusal returns a *DeniedError. Any other error
 // names the resolved address and the OS error, so a caller must log it and
 // send the client a fixed message.
 func (d *Dialer) Dial(ctx context.Context, host string, port int) (net.Conn, error) {
+	o, err := d.Open(ctx, host, port)
+	if err != nil {
+		return nil, err
+	}
+	return o.Conn, nil
+}
+
+// Open is Dial that also reports which rule allowed the target.
+func (d *Dialer) Open(ctx context.Context, host string, port int) (Opened, error) {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		return d.dialLiteral(ctx, addr, port)
 	}
 	return d.dialName(ctx, host, port)
 }
 
-func (d *Dialer) dialLiteral(ctx context.Context, addr netip.Addr, port int) (net.Conn, error) {
+func (d *Dialer) dialLiteral(ctx context.Context, addr netip.Addr, port int) (Opened, error) {
 	if dec := d.policy.CheckAddr(addr, port); !dec.Allow {
-		return nil, denied(dec)
+		return Opened{}, denied(dec)
 	}
-	return d.dialChecked(ctx, []netip.Addr{addr}, port, func(a netip.Addr) Decision {
+	conn, err := d.dialChecked(ctx, []netip.Addr{addr}, port, func(a netip.Addr) Decision {
 		return d.policy.CheckAddr(a, port)
 	})
+	if err != nil {
+		return Opened{}, err
+	}
+	return Opened{Conn: conn, Rule: d.policy.AddrRule(addr, port)}, nil
 }
 
-func (d *Dialer) dialName(ctx context.Context, host string, port int) (net.Conn, error) {
+func (d *Dialer) dialName(ctx context.Context, host string, port int) (Opened, error) {
 	if dec := d.policy.CheckName(host, port); !dec.Allow {
-		return nil, denied(dec)
+		return Opened{}, denied(dec)
 	}
 	addrs, err := d.lookup(ctx, host)
 	if err != nil {
-		return nil, &DeniedError{Reason: ResolveFailed}
+		return Opened{}, &DeniedError{Reason: ResolveFailed}
 	}
 	if dec := d.policy.CheckResolved(host, port, addrs); !dec.Allow {
-		return nil, denied(dec)
+		return Opened{}, d.deniedAnswer(host, port, addrs, dec)
 	}
-	return d.dialChecked(ctx, addrs, port, func(a netip.Addr) Decision {
+	conn, err := d.dialChecked(ctx, addrs, port, func(a netip.Addr) Decision {
 		return d.policy.CheckResolved(host, port, []netip.Addr{a})
 	})
+	if err != nil {
+		return Opened{}, err
+	}
+	return Opened{Conn: conn, Rule: d.policy.NameRule(host, port)}, nil
+}
+
+// deniedAnswer names the first answer the policy refused. CheckResolved
+// refuses on the first bad answer in order, so that answer carries the same
+// reason.
+func (d *Dialer) deniedAnswer(host string, port int, addrs []netip.Addr, dec Decision) error {
+	refused := &DeniedError{Reason: dec.Reason}
+	if dec.Reason == ResolveFailed {
+		return refused
+	}
+	for _, a := range addrs {
+		if !d.policy.CheckResolved(host, port, []netip.Addr{a}).Allow {
+			refused.Peer = peerAddr(a)
+			break
+		}
+	}
+	return refused
+}
+
+// peerAddr returns addr in the form an audit event carries: unmapped and
+// without a zone, which is client-controlled text. An invalid address stays
+// invalid.
+func peerAddr(addr netip.Addr) netip.Addr {
+	return addr.WithZone("").Unmap()
 }
 
 // lookup asks for the fully qualified name, so no search domain applies.
@@ -173,11 +224,12 @@ func recheck(target netip.AddrPort, address string, check func(netip.Addr) Decis
 	if err != nil {
 		return &DeniedError{Reason: BadRequest}
 	}
+	peer := peerAddr(ap.Addr())
 	if dec := check(ap.Addr()); !dec.Allow {
-		return denied(dec)
+		return &DeniedError{Reason: dec.Reason, Peer: peer}
 	}
 	if ap.Addr().Unmap() != target.Addr() || ap.Port() != target.Port() {
-		return &DeniedError{Reason: NotAllowed}
+		return &DeniedError{Reason: NotAllowed, Peer: peer}
 	}
 	return nil
 }

@@ -56,7 +56,7 @@ func (b *syncBuffer) String() string {
 type recorderStub struct {
 	mu      sync.Mutex
 	denied  []Denial
-	allowed []Target
+	allowed []Allow
 }
 
 func (r *recorderStub) Denied(d Denial) {
@@ -65,16 +65,16 @@ func (r *recorderStub) Denied(d Denial) {
 	r.denied = append(r.denied, d)
 }
 
-func (r *recorderStub) Allowed(t Target) {
+func (r *recorderStub) Allowed(a Allow) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.allowed = append(r.allowed, t)
+	r.allowed = append(r.allowed, a)
 }
 
-func (r *recorderStub) snapshot() ([]Denial, []Target) {
+func (r *recorderStub) snapshot() ([]Denial, []Allow) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]Denial(nil), r.denied...), append([]Target(nil), r.allowed...)
+	return append([]Denial(nil), r.denied...), append([]Allow(nil), r.allowed...)
 }
 
 type dialLog struct {
@@ -379,7 +379,7 @@ func (s *ProxySuite) TestATunnelCarriesARealTLSSession() {
 
 	s.Equal([]netip.AddrPort{netip.MustParseAddrPort(publicAddr + ":443")}, env.dialed.all())
 	_, allowed := env.rec.snapshot()
-	s.Equal([]Target{{Host: tunnelHost, Port: 443}}, allowed)
+	s.Equal([]Target{{Host: tunnelHost, Port: 443}}, targetsOf(allowed))
 	denied, _ := env.rec.snapshot()
 	s.Empty(denied)
 }
@@ -575,7 +575,7 @@ func (s *ProxySuite) TestBytesAfterTheHelloReachTheUpstream() {
 	s.Eventually(func() bool { return up.done() == 1 }, waitFor, 10*time.Millisecond)
 	s.Equal(string(hello)+string(changeCipherSpec)+"later bytes", string(up.bytes()[0]))
 	_, allowed := env.rec.snapshot()
-	s.Equal([]Target{{Host: tunnelHost, Port: 443}}, allowed)
+	s.Equal([]Target{{Host: tunnelHost, Port: 443}}, targetsOf(allowed))
 }
 
 func (s *ProxySuite) TestAnIdleTunnelIsClosed() {
@@ -806,4 +806,49 @@ func (s *ProxySuite) TestParseConnect() {
 		s.Equal(c.host, req.host, c.in)
 		s.Equal(c.port, req.port, c.in)
 	}
+}
+
+func targetsOf(allowed []Allow) []Target {
+	out := make([]Target, 0, len(allowed))
+	for _, a := range allowed {
+		out = append(out, a.Target)
+	}
+	return out
+}
+
+func (s *ProxySuite) TestARefusedAnswerReachesTheRecorderAsThePeerOnly() {
+	env := startProxy(s, envCfg{answers: addrs(publicAddr, "172.17.0.9")})
+	resp, body := doRequest(s, env, connectLine(tunnelAuth))
+	s.Equal(http.StatusForbidden, resp.StatusCode)
+	s.Equal(denyBody, body)
+	s.NotContains(body, "172.17")
+	denied := expectDenials(s, env, PoolNetwork)
+	s.Equal("172.17.0.9", denied[0].Peer.String())
+	s.Equal(Target{Host: tunnelHost, Port: 443}, denied[0].Target)
+
+	env = startProxy(s, envCfg{})
+	_, _ = doRequest(s, env, connectLine("evil.example.org:443"))
+	denied = expectDenials(s, env, NotAllowed)
+	s.False(denied[0].Peer.IsValid())
+}
+
+func (s *ProxySuite) TestAnAllowedTunnelNamesItsRule() {
+	server, pool := tlsUpstream(s)
+	env := startProxy(s, envCfg{
+		upstream: server.Listener.Addr().String(),
+		rules:    []poolconfig.AllowRule{host("other.example.net"), host(tunnelHost)},
+	})
+	c := openTunnel(s, env, tunnelAuth)
+	conn := tls.Client(
+		c.conn,
+		&tls.Config{ServerName: tunnelHost, RootCAs: pool, MinVersion: tls.VersionTLS12},
+	)
+	s.Require().NoError(conn.Handshake())
+	s.Eventually(func() bool {
+		_, allowed := env.rec.snapshot()
+		return len(allowed) == 1
+	}, waitFor, 10*time.Millisecond)
+	_, allowed := env.rec.snapshot()
+	s.Equal(Target{Host: tunnelHost, Port: 443}, allowed[0].Target)
+	s.Equal(1, ruleIndex(allowed[0].Rule))
 }

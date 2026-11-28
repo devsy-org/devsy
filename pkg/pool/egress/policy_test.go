@@ -10,6 +10,9 @@ import (
 )
 
 const (
+	evilHost    = "evil.example.org"
+	poolAddr    = "172.17.0.5"
+	linkLocal   = "fe80::1"
 	hostGitHub  = "github.com"
 	hostWild    = "*.example.com"
 	hostPaaS    = "api.paas.example.org"
@@ -139,7 +142,7 @@ func (s *PolicySuite) TestAlwaysDenyIsCopiedByNew() {
 	p, err := New(poolconfig.Egress{Allow: []poolconfig.AllowRule{host(hostSub)}}, deny)
 	s.Require().NoError(err)
 	deny[0] = netip.MustParsePrefix(publicIP + "/32")
-	s.Equal(PoolNetwork, p.CheckResolved(hostSub, 443, addrs("172.17.0.5")).Reason)
+	s.Equal(PoolNetwork, p.CheckResolved(hostSub, 443, addrs(poolAddr)).Reason)
 	s.Equal(allowed, p.CheckResolved(hostSub, 443, addrs(publicIP)))
 }
 
@@ -279,7 +282,7 @@ func (s *PolicySuite) TestNoRuleReachesAReservedRange() {
 		cidr("0.0.0.0/8"), cidr("64:ff9b::/96"), cidr("fe80::/32"), cidr("100.100.100.200/32"),
 	})
 	for _, a := range []string{
-		metadataIP, loopback4, loopback6, "64:ff9b::808:808", "fe80::1", "100.100.100.200",
+		metadataIP, loopback4, loopback6, "64:ff9b::808:808", linkLocal, "100.100.100.200",
 		"::ffff:169.254.169.254", "0.0.0.0", "224.0.0.1", "255.255.255.255",
 	} {
 		s.Equal(deny(ReservedRange), p.CheckResolved(hostSub, 443, addrs(a)), a)
@@ -292,8 +295,8 @@ func (s *PolicySuite) TestAlwaysDenyBeatsEveryRule() {
 		[]poolconfig.AllowRule{host(hostWild), cidr("172.16.0.0/12"), cidr(publicIP + "/32")},
 		"172.17.0.0/16", publicIP+"/32", "fd00:1::/32",
 	)
-	s.Equal(deny(PoolNetwork), p.CheckResolved(hostSub, 443, addrs("172.17.0.5")))
-	s.Equal(deny(PoolNetwork), p.CheckAddr(netip.MustParseAddr("172.17.0.5"), 443))
+	s.Equal(deny(PoolNetwork), p.CheckResolved(hostSub, 443, addrs(poolAddr)))
+	s.Equal(deny(PoolNetwork), p.CheckAddr(netip.MustParseAddr(poolAddr), 443))
 	s.Equal(deny(PoolNetwork), p.CheckResolved(hostSub, 443, addrs(publicIP)))
 	s.Equal(deny(PoolNetwork), p.CheckAddr(netip.MustParseAddr(publicIP), 443))
 	s.Equal(deny(PoolNetwork), p.CheckAddr(netip.MustParseAddr("::ffff:172.17.0.5"), 443))
@@ -374,4 +377,61 @@ func (s *PolicySuite) TestLongNamesAreRefused() {
 	long := strings.Repeat("a", 64) + ".example.com"
 	s.Equal(deny(BadRequest), p.CheckName(long, 443))
 	s.Equal(deny(BadRequest), p.CheckName(strings.Repeat("a.", 130)+"example.com", 443))
+}
+
+func ruleIndex(r Rule) int {
+	if index, ok := r.Index(); ok {
+		return index
+	}
+	return -1
+}
+
+func (s *PolicySuite) TestRulesAreNamedByTheirConfigPosition() {
+	p := newPolicy(s.T(), []poolconfig.AllowRule{
+		host(hostGitHub),
+		cidr("140.82.112.0/24"),
+		host(hostWild, 443, 8443),
+		cidr(cidrPrivate, 8080),
+		host(hostSub),
+	})
+	names := []struct {
+		host string
+		port int
+		want int
+	}{
+		{hostGitHub, 443, 0},
+		{"GITHUB.COM.", 443, 0},
+		{hostSub, 443, 2},
+		{hostSub, 8443, 2},
+		{subdomainHost, 8443, 2},
+		{hostSub, 80, -1},
+		{evilHost, 443, -1},
+		{"a b.com", 443, -1},
+	}
+	for _, c := range names {
+		s.Equal(c.want, ruleIndex(p.NameRule(c.host, c.port)), "%s:%d", c.host, c.port)
+	}
+	literals := []struct {
+		addr string
+		port int
+		want int
+	}{
+		{publicIP, 443, 1},
+		{privateIP, 8080, 3},
+		{"::ffff:10.1.2.3", 8080, 3},
+		{privateIP, 443, -1},
+		{"8.8.8.8", 443, -1},
+	}
+	for _, c := range literals {
+		got := p.AddrRule(netip.MustParseAddr(c.addr), c.port)
+		s.Equal(c.want, ruleIndex(got), "%s:%d", c.addr, c.port)
+	}
+}
+
+func (s *PolicySuite) TestTheZeroRuleHasNoIndex() {
+	_, ok := Rule{}.Index()
+	s.False(ok)
+	index, ok := RuleAt(0).Index()
+	s.True(ok)
+	s.Zero(index)
 }

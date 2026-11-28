@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"net/netip"
 	"slices"
 	"sync"
 	"time"
@@ -77,6 +78,9 @@ type Stats struct {
 type dest struct {
 	host string
 	port int
+	// rule is set only on allowed destinations. Two rules never share a
+	// summary, so rule_index stays true for the whole count.
+	rule egress.Rule
 }
 
 type denyKey struct {
@@ -102,8 +106,12 @@ type pendingDeny struct {
 // Flush on their own timer, since a window ends only at a flush.
 //
 // A repeat of a denial in the same window is not written, and egress.deny has
-// no count key, so the repeat count is not recorded. Each reason has its own
-// key budget, so denials of one reason cannot hide those of another.
+// no count key, so the repeat count is not recorded. The peer address in the
+// event is the first one seen for that key in the window. Each reason has its
+// own key budget, so denials of one reason cannot hide those of another.
+//
+// rule_index on a summary is the first host or cidr rule that matched. For a
+// private answer the cidr rule that also had to allow it is not reported.
 type Recorder struct {
 	cfg Config
 
@@ -174,18 +182,21 @@ func (r *Recorder) Denied(d egress.Denial) {
 	}
 	data := destData(key.dest)
 	data[attrkey.EgressReason] = string(key.reason)
+	if peer, ok := peerText(d.Peer); ok {
+		data[attrkey.NetworkPeerAddress] = peer
+	}
 	if err := r.write(envelope.AuditEgressDeny, data); err != nil {
 		r.queueRetry(key, pendingDeny{data: data, tries: 1})
 	}
 }
 
 // Allowed counts one tunnel that passed every check.
-func (r *Recorder) Allowed(t egress.Target) {
-	if !validPort(t.Port) {
+func (r *Recorder) Allowed(a egress.Allow) {
+	if !validPort(a.Port) {
 		r.unrecorded()
 		return
 	}
-	d := dest{host: r.visible(t), port: t.Port}
+	d := dest{host: r.visible(a.Target), port: a.Port, rule: a.Rule}
 	now := r.cfg.Now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -424,6 +435,9 @@ func destData(d dest) map[string]any {
 
 func summaryData(d dest, t tally) map[string]any {
 	data := destData(d)
+	if index, ok := d.rule.Index(); ok {
+		data[attrkey.EgressRuleIndex] = index
+	}
 	data[attrkey.EgressCount] = t.count
 	data[attrkey.EgressFirstSeen] = envelope.FormatTime(t.first)
 	data[attrkey.EgressLastSeen] = envelope.FormatTime(t.last)
@@ -431,7 +445,28 @@ func summaryData(d dest, t tally) map[string]any {
 }
 
 func compareDest(a, b dest) int {
-	return cmp.Or(cmp.Compare(a.host, b.host), cmp.Compare(a.port, b.port))
+	return cmp.Or(
+		cmp.Compare(a.host, b.host),
+		cmp.Compare(a.port, b.port),
+		cmp.Compare(ruleOrder(a.rule), ruleOrder(b.rule)),
+	)
+}
+
+func ruleOrder(r egress.Rule) int {
+	if index, ok := r.Index(); ok {
+		return index
+	}
+	return -1
+}
+
+// peerText returns the address text for network.peer.address. A zone is
+// client-controlled text and an IPv4-mapped form is not the address dialed,
+// so neither is passed on.
+func peerText(addr netip.Addr) (string, bool) {
+	if !addr.IsValid() || addr.Zone() != "" {
+		return "", false
+	}
+	return addr.Unmap().String(), true
 }
 
 func compareDenyKey(a, b denyKey) int {

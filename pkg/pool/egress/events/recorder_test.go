@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,8 @@ import (
 )
 
 const (
+	peerV4      = "172.17.0.9"
+	peerV6      = "2001:db8::1"
 	testSession = "p-test-pool-abcdefghij"
 	hostA       = "a.example.com"
 	hostB       = "b.example.com"
@@ -204,7 +207,7 @@ func (s *RecorderSuite) TestWhatTheAllowListCannotHoldIsCountedNotWritten() {
 	r.Denied(denial(hostA, 65536, egress.NotAllowed))
 	r.Denied(denial(hostA, 443, egress.Reason("made_up")))
 	r.Denied(denial(hostA, 443, ""))
-	r.Allowed(egress.Target{Host: hostA, Port: 0})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 0}})
 	s.Empty(s.sink.written())
 	s.Equal(5, r.Stats().Unrecorded)
 	s.Require().NoError(r.Flush())
@@ -228,13 +231,13 @@ func (s *RecorderSuite) TestEveryProxyReasonIsAccepted() {
 func (s *RecorderSuite) TestAllowedConnectionsAreSummarizedPerDestination() {
 	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
 	first := s.clock.Now()
-	r.Allowed(egress.Target{Host: hostB, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostB, Port: 443}})
 	s.clock.advance(time.Second)
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
 	s.clock.advance(time.Second)
-	r.Allowed(egress.Target{Host: hostB, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostB, Port: 443}})
 	s.clock.advance(time.Second)
-	r.Allowed(egress.Target{Host: hostA, Port: 8443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 8443}})
 	last := s.clock.Now()
 	s.Empty(s.sink.written(), "nothing is written per connection")
 
@@ -272,9 +275,9 @@ func (s *RecorderSuite) TestAllowedConnectionsAreSummarizedPerDestination() {
 
 func (s *RecorderSuite) TestRedactedAllowsShareOneSummaryPerPort() {
 	r := newRecorder(s, nil)
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
-	r.Allowed(egress.Target{Host: hostB, Port: 443})
-	r.Allowed(egress.Target{Port: 443, AddressRedacted: true})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostB, Port: 443}})
+	r.Allowed(egress.Allow{Target: egress.Target{Port: 443, AddressRedacted: true}})
 	s.Require().NoError(r.Flush())
 	events := s.sink.written()
 	s.Require().Len(events, 1)
@@ -286,7 +289,7 @@ func (s *RecorderSuite) TestRedactedAllowsShareOneSummaryPerPort() {
 func (s *RecorderSuite) TestNamedDestinationsPastTheCapFoldIntoARedactedBucket() {
 	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll; c.MaxKeys = 2 })
 	for _, host := range []string{hostA, hostB, hostC, hostC, hostA} {
-		r.Allowed(egress.Target{Host: host, Port: 443})
+		r.Allowed(egress.Allow{Target: egress.Target{Host: host, Port: 443}})
 	}
 	s.Require().NoError(r.Flush())
 	counts := map[string]int{}
@@ -341,8 +344,8 @@ func (s *RecorderSuite) TestASummaryTheWriterKeepsRefusingDoesNotBlockTheRest() 
 		}
 		return nil
 	}
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
-	r.Allowed(egress.Target{Host: hostB, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostB, Port: 443}})
 	for range 3 {
 		s.Require().Error(r.Flush())
 	}
@@ -357,7 +360,7 @@ func (s *RecorderSuite) TestAFailedDenialRetryKeepsTheSummaries() {
 	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
 	s.sink.setFail(errors.New("disk full"))
 	r.Denied(denial(hostA, 443, egress.NotAllowed))
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
 	s.Require().Error(r.Flush())
 
 	s.sink.setFail(nil)
@@ -372,9 +375,9 @@ func (s *RecorderSuite) TestAFailedDenialRetryKeepsTheSummaries() {
 func (s *RecorderSuite) TestNewTrafficDoesNotResetTheAttemptsOfARefusedSummary() {
 	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
 	s.sink.failIf = func(audit.Event) error { return errors.New("refused") }
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
 	for range 3 {
-		s.sink.during = func() { r.Allowed(egress.Target{Host: hostA, Port: 443}) }
+		s.sink.during = func() { r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}}) }
 		s.Require().Error(r.Flush())
 	}
 	s.Equal(1, r.Stats().Lost, "traffic during a flush must not keep a refused event alive")
@@ -418,7 +421,7 @@ func (s *RecorderSuite) TestAFlushLogsWhatWasNotRecordedOnce() {
 func (s *RecorderSuite) TestRedactedAllowedBucketsAreBounded() {
 	r := newRecorder(s, func(c *Config) { c.MaxKeys = 2 })
 	for port := 2000; port < 2006; port++ {
-		r.Allowed(egress.Target{Host: hostA, Port: port})
+		r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: port}})
 	}
 	s.Equal(2, r.Stats().Dropped)
 	s.Require().NoError(r.Flush())
@@ -428,14 +431,14 @@ func (s *RecorderSuite) TestRedactedAllowedBucketsAreBounded() {
 func (s *RecorderSuite) TestAFailedFlushKeepsTheCountsForTheNextOne() {
 	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
 	first := s.clock.Now()
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
-	r.Allowed(egress.Target{Host: hostB, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostB, Port: 443}})
 	s.sink.setFail(errors.New("disk full"))
 	s.Require().Error(r.Flush())
 	s.Equal(1, s.sink.attempts(), "a failed flush stops at the first failure")
 
 	s.clock.advance(time.Minute)
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
 	s.sink.setFail(nil)
 	s.Require().NoError(r.Flush())
 
@@ -450,11 +453,11 @@ func (s *RecorderSuite) TestAFailedFlushKeepsTheCountsForTheNextOne() {
 func (s *RecorderSuite) TestARestoredCountKeepsTheEarliestAndLatestTimes() {
 	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
 	first := s.clock.Now()
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
 	s.clock.advance(time.Minute)
 	later := s.clock.Now()
 	s.sink.setFail(errors.New("disk full"))
-	s.sink.during = func() { r.Allowed(egress.Target{Host: hostA, Port: 443}) }
+	s.sink.during = func() { r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}}) }
 	s.Require().Error(r.Flush())
 
 	s.sink.setFail(nil)
@@ -472,14 +475,14 @@ func (s *RecorderSuite) TestRunFlushesOnTheIntervalAndAtTheEnd() {
 	done := make(chan error, 1)
 	go func() { done <- r.Run(ctx) }()
 
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
 	s.Eventually(
 		func() bool { return len(s.sink.written()) == 1 },
 		5*time.Second,
 		5*time.Millisecond,
 	)
 
-	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
 	cancel()
 	s.Require().NoError(<-done)
 	events := s.sink.written()
@@ -494,7 +497,7 @@ func (s *RecorderSuite) TestConcurrentUseLosesNoCount() {
 	for range workers {
 		wg.Go(func() {
 			for i := range each {
-				r.Allowed(egress.Target{Host: hostA, Port: 443})
+				r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
 				r.Denied(denial(hostB, 443+i%3, egress.NotAllowed))
 				if i%50 == 0 {
 					_ = r.Flush()
@@ -541,4 +544,93 @@ func (s *RecorderSuite) TestNewChecksItsConfig() {
 		_, err := New(cfg)
 		s.Error(err, name)
 	}
+}
+
+func (s *RecorderSuite) TestADenialCarriesThePeerAddressEvenWithTheHostRedacted() {
+	r := newRecorder(s, nil)
+	for peer, want := range map[string]string{
+		peerV4:            peerV4,
+		peerV6:            peerV6,
+		"::ffff:10.0.0.1": "10.0.0.1",
+	} {
+		d := denial(hostA, 443, egress.PoolNetwork)
+		d.Peer = netip.MustParseAddr(peer)
+		d.Port = 443 + len(want)
+		r.Denied(d)
+	}
+	events := s.sink.written()
+	s.Require().Len(events, 3)
+	got := map[string]bool{}
+	for _, e := range events {
+		s.Equal(true, e.Data[attrkey.EgressAddressRedacted])
+		s.NotContains(e.Data, attrkey.ServerAddress)
+		got[e.Data[attrkey.NetworkPeerAddress].(string)] = true
+	}
+	s.Equal(map[string]bool{peerV4: true, peerV6: true, "10.0.0.1": true}, got)
+}
+
+func (s *RecorderSuite) TestAPeerWithAZoneOrNoValueIsLeftOut() {
+	r := newRecorder(s, nil)
+	zoned := denial(hostA, 443, egress.ReservedRange)
+	zoned.Peer = netip.MustParseAddr("fe80::1%eth0")
+	r.Denied(zoned)
+	r.Denied(denial(hostA, 444, egress.NotAllowed))
+	events := s.sink.written()
+	s.Require().Len(events, 2)
+	for _, e := range events {
+		s.NotContains(e.Data, attrkey.NetworkPeerAddress)
+	}
+}
+
+func (s *RecorderSuite) TestTheFirstPeerOfACoalescedDenialWins() {
+	r := newRecorder(s, nil)
+	for _, peer := range []string{peerV4, "172.17.0.10"} {
+		d := denial(hostA, 443, egress.PoolNetwork)
+		d.Peer = netip.MustParseAddr(peer)
+		r.Denied(d)
+	}
+	events := s.sink.written()
+	s.Require().Len(events, 1)
+	s.Equal(peerV4, events[0].Data[attrkey.NetworkPeerAddress])
+}
+
+func (s *RecorderSuite) TestASummaryNamesItsRuleAndRulesDoNotShareOne() {
+	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
+	allow := func(host string, rule egress.Rule) egress.Allow {
+		return egress.Allow{Target: egress.Target{Host: host, Port: 443}, Rule: rule}
+	}
+	r.Allowed(allow(hostA, egress.RuleAt(2)))
+	r.Allowed(allow(hostA, egress.RuleAt(1)))
+	r.Allowed(allow(hostA, egress.RuleAt(2)))
+	r.Allowed(allow(hostB, egress.Rule{}))
+	s.Require().NoError(r.Flush())
+
+	events := s.sink.written()
+	s.Require().Len(events, 3)
+	type row struct {
+		host  string
+		rule  any
+		count int
+	}
+	var got []row
+	for _, e := range events {
+		got = append(got, row{
+			e.Data[attrkey.ServerAddress].(string),
+			e.Data[attrkey.EgressRuleIndex],
+			e.Data[attrkey.EgressCount].(int),
+		})
+	}
+	s.Equal([]row{{hostA, 1, 1}, {hostA, 2, 2}, {hostB, nil, 1}}, got)
+}
+
+func (s *RecorderSuite) TestARuleSurvivesTheFoldIntoARedactedBucket() {
+	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll; c.MaxKeys = 1 })
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}, Rule: egress.RuleAt(0)})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostB, Port: 443}, Rule: egress.RuleAt(3)})
+	s.Require().NoError(r.Flush())
+	rules := map[any]bool{}
+	for _, e := range s.sink.written() {
+		rules[e.Data[attrkey.EgressRuleIndex]] = true
+	}
+	s.Equal(map[any]bool{0: true, 3: true}, rules)
 }

@@ -47,6 +47,17 @@ type Target struct {
 type Denial struct {
 	Target
 	Reason Reason
+	// Peer is the resolved or socket address that caused the refusal, with no
+	// zone and no IPv4-mapped form. It is the zero value when the refusal did
+	// not concern one address.
+	Peer netip.Addr
+}
+
+// Allow is one tunnel that passed every check.
+type Allow struct {
+	Target
+	// Rule is the allow rule that permitted the target.
+	Rule Rule
 }
 
 // Recorder receives the proxy's decisions. Calls come from many goroutines.
@@ -55,13 +66,13 @@ type Recorder interface {
 	// sees the refusal or the connection closes.
 	Denied(Denial)
 	// Allowed is called once for every tunnel that passed every check.
-	Allowed(Target)
+	Allowed(Allow)
 }
 
 type discardRecorder struct{}
 
-func (discardRecorder) Denied(Denial)  {}
-func (discardRecorder) Allowed(Target) {}
+func (discardRecorder) Denied(Denial) {}
+func (discardRecorder) Allowed(Allow) {}
 
 // Config holds what one proxy needs. Zero limits mean the defaults.
 type Config struct {
@@ -278,7 +289,7 @@ func (p *Proxy) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	req, reason := parseConnect(r.RequestURI)
 	if reason != "" {
-		p.deny(w, req.target, reason)
+		p.deny(w, Denial{Target: req.target, Reason: reason})
 		return
 	}
 	p.connect(w, r, req)
@@ -287,11 +298,13 @@ func (p *Proxy) handle(w http.ResponseWriter, r *http.Request) {
 // connect dials before it answers, so a refusal or a failed connect can still
 // be a plain HTTP status. The ClientHello is checked after the 200.
 func (p *Proxy) connect(w http.ResponseWriter, r *http.Request, req connectRequest) {
-	upstream, err := p.dialer.Dial(r.Context(), req.host, req.port)
+	opened, err := p.dialer.Open(r.Context(), req.host, req.port)
 	if err != nil {
 		p.dialFailed(w, req, err)
 		return
 	}
+	req.rule = opened.Rule
+	upstream := opened.Conn
 	client, in, err := hijack(w)
 	if err != nil {
 		_ = upstream.Close()
@@ -303,7 +316,7 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request, req connectReque
 
 func (p *Proxy) dialFailed(w http.ResponseWriter, req connectRequest, err error) {
 	if refused, ok := errors.AsType[*DeniedError](err); ok {
-		p.deny(w, req.target, refused.Reason)
+		p.deny(w, Denial{Target: req.target, Reason: refused.Reason, Peer: refused.Peer})
 		return
 	}
 	p.log.Warn("egress upstream connect failed",
@@ -311,14 +324,15 @@ func (p *Proxy) dialFailed(w http.ResponseWriter, req connectRequest, err error)
 	p.reply(w, http.StatusBadGateway, "egress upstream unavailable for session "+p.session+"\n")
 }
 
-func (p *Proxy) deny(w http.ResponseWriter, target Target, reason Reason) {
-	p.recordDenied(target, reason)
+func (p *Proxy) deny(w http.ResponseWriter, d Denial) {
+	p.recordDenied(d)
 	p.reply(w, http.StatusForbidden, "egress denied for session "+p.session+"\n")
 }
 
-func (p *Proxy) recordDenied(target Target, reason Reason) {
-	p.rec.Denied(Denial{Target: target, Reason: reason})
-	p.log.Debug("egress denied", "reason", string(reason), "host", target.Host, "port", target.Port)
+func (p *Proxy) recordDenied(d Denial) {
+	p.rec.Denied(d)
+	p.log.Debug("egress denied",
+		"reason", string(d.Reason), "host", d.Host, "port", d.Port, "peer", d.Peer.String())
 }
 
 // reply writes a fixed body. It never echoes client text.
@@ -337,6 +351,8 @@ type connectRequest struct {
 	host   string
 	port   int
 	target Target
+	// rule is set once the dialer has allowed the target.
+	rule Rule
 }
 
 // parseConnect reads the raw request target of a CONNECT. A refusal still

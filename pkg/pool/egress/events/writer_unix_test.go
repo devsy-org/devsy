@@ -3,6 +3,7 @@
 package events
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,9 +59,9 @@ func TestShownAddressesPassTheAuditWriter(t *testing.T) {
 	store, writer, _ := openStore(t)
 	rec := newTestRecorder(t, writer, showAll)
 
-	for _, host := range []string{"a.example.com", "203.0.113.7", "2001:db8::1"} {
+	for _, host := range []string{"a.example.com", "203.0.113.7", peerV6} {
 		rec.Denied(denial(host, 443, egress.NotAllowed))
-		rec.Allowed(egress.Target{Host: host, Port: 443})
+		rec.Allowed(egress.Allow{Target: egress.Target{Host: host, Port: 443}})
 	}
 	require.NoError(t, rec.Flush())
 	require.Zero(t, rec.Stats().Failures)
@@ -80,7 +81,7 @@ func TestEventsPassTheAuditWriter(t *testing.T) {
 	} {
 		rec.Denied(denial(canary, 443, reason))
 	}
-	rec.Allowed(egress.Target{Host: canary, Port: 443})
+	rec.Allowed(egress.Allow{Target: egress.Target{Host: canary, Port: 443}})
 	require.NoError(t, rec.Flush())
 	require.Zero(t, rec.Stats().Failures)
 
@@ -93,4 +94,28 @@ func TestEventsPassTheAuditWriter(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
 	require.True(t, strings.Contains(lines[len(lines)-1], "egress.allow.summary"))
+}
+
+// A peer address and a rule index must pass the real writer's checks.
+func TestPeerAndRuleIndexPassTheAuditWriter(t *testing.T) {
+	store, writer, _ := openStore(t)
+	rec := newTestRecorder(t, writer, nil)
+
+	for _, peer := range []string{peerV4, peerV6, "::ffff:10.0.0.1", "fe80::1%eth0"} {
+		d := denial("a.example.com", 443, egress.PoolNetwork)
+		d.Peer = netip.MustParseAddr(peer)
+		d.Port += len(peer)
+		rec.Denied(d)
+	}
+	rec.Allowed(egress.Allow{
+		Target: egress.Target{Host: "a.example.com", Port: 443},
+		Rule:   egress.RuleAt(7),
+	})
+	require.NoError(t, rec.Flush())
+	require.Zero(t, rec.Stats().Failures)
+
+	lines := scanAll(t, store)
+	require.Len(t, lines, 5)
+	require.Contains(t, lines[0], peerV4)
+	require.Contains(t, lines[4], "devsy.egress.rule_index")
 }
