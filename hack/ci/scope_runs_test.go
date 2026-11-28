@@ -3,10 +3,25 @@ package main
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/stretchr/testify/require"
 )
+
+var nextTopLevelEntry = regexp.MustCompile(`\n\n  \S`)
+
+// workflowJob returns the text of one job, up to the next top-level entry.
+func workflowJob(raw, id string) string {
+	_, rest, found := strings.Cut(raw, "\n  "+id+":\n")
+	if !found {
+		return ""
+	}
+	if end := nextTopLevelEntry.FindStringIndex(rest); end != nil {
+		return rest[:end[0]]
+	}
+	return rest
+}
 
 type fakeRuns struct {
 	conclusions []string
@@ -97,6 +112,24 @@ func (s *scopeSuite) TestWorkflowSharesOneNonCancellingMainGroup() {
 		"    permissions:\n      actions: read\n      contents: read\n      pull-requests: read",
 	)
 	require.NotContains(s.T(), raw, "cancel-in-progress: true")
+}
+
+func (s *scopeSuite) TestWorkflowLintsOnlyChangesOutsidePullRequests() {
+	raw, err := readWorkflow()
+	s.Require().NoError(err)
+	lint := workflowJob(raw, "lint")
+
+	s.Contains(lint, "fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '2' }}")
+	s.Contains(
+		lint,
+		"if: github.event_name == 'pull_request'\n        run: go run ./hack/ci lint-patch",
+	)
+	s.Contains(lint, "          only-new-issues: false\n")
+	s.Contains(
+		lint,
+		"args: ${{ github.event_name == 'pull_request' && steps.lint-patch.outputs.args || '--new-from-rev=HEAD~1' }}",
+	)
+	s.NotContains(lint, "github.event_name != 'pull_request' }}\n          args")
 }
 
 func (s *scopeSuite) TestWorkflowEnsuresMainsTipHasARun() {
