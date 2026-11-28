@@ -60,7 +60,7 @@ func (p *Proxy) tunnel(ctx context.Context, t tunnelConns, req connectRequest) {
 	if !p.open(t, req) {
 		return
 	}
-	p.rec.Allowed(req.target)
+	p.rec.Allowed(Allow{Target: req.target, Rule: req.rule})
 	t.splice(p.idle)
 }
 
@@ -77,7 +77,7 @@ func (p *Proxy) open(t tunnelConns, req connectRequest) bool {
 		reason = SNIMismatch
 	}
 	if reason != "" {
-		p.recordDenied(req.target, reason)
+		p.recordDenied(Denial{Target: req.target, Reason: reason})
 		return false
 	}
 	return p.sendHello(t.up, hello, deadline, req)

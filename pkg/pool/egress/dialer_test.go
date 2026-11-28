@@ -105,7 +105,7 @@ func reasonOf(tb testing.TB, err error) Reason {
 
 func (s *DialerSuite) TestADeniedNameCausesNoLookupAndNoConnect() {
 	d, res, sock := newTestDialer(s.T(), addrs(publicAddr), host(hostGitHub))
-	for _, h := range []string{"evil.example.org", "localhost", "a b.com", ""} {
+	for _, h := range []string{evilHost, "localhost", "a b.com", ""} {
 		_, err := d.Dial(context.Background(), h, 443)
 		s.Require().Error(err, h)
 		s.Contains([]Reason{NotAllowed, BadRequest}, reasonOf(s.T(), err), h)
@@ -140,7 +140,7 @@ func (s *DialerSuite) TestALookupErrorDenies() {
 }
 
 func (s *DialerSuite) TestOneBadAnswerDeniesTheWholeRequest() {
-	for _, bad := range []string{loopback4, metadataIP, "172.17.0.5", zonedLL, mappedLoop, privateIP} {
+	for _, bad := range []string{loopback4, metadataIP, poolAddr, zonedLL, mappedLoop, privateIP} {
 		d, _, sock := newTestDialer(s.T(), addrs(publicAddr, bad, "8.8.4.4"), host(hostWild))
 		_, err := d.Dial(context.Background(), checkedHost, 443)
 		s.Require().Error(err, bad)
@@ -390,4 +390,98 @@ func (s *DialerSuite) TestADefaultDialerRefusesWithoutTouchingTheNetwork() {
 		s.Require().Error(err, h)
 		s.NotEmpty(reasonOf(s.T(), err), h)
 	}
+}
+
+func peerOf(tb testing.TB, err error) netip.Addr {
+	tb.Helper()
+	refused, ok := errors.AsType[*DeniedError](err)
+	if !ok {
+		tb.Fatalf("not a denial: %v", err)
+	}
+	return refused.Peer
+}
+
+func (s *DialerSuite) TestOpenNamesTheRuleThatAllowedTheTarget() {
+	d, _, _ := newTestDialer(s.T(), addrs(publicAddr), host(hostGitHub), host(hostWild))
+	opened, err := d.Open(context.Background(), checkedHost, 443)
+	s.Require().NoError(err)
+	s.Require().NoError(opened.Conn.Close())
+	s.Equal(1, ruleIndex(opened.Rule))
+
+	d, _, _ = newTestDialer(s.T(), addrs(privateIP), host(hostWild), cidr(cidrPrivate))
+	opened, err = d.Open(context.Background(), checkedHost, 443)
+	s.Require().NoError(err)
+	s.Require().NoError(opened.Conn.Close())
+	s.Equal(0, ruleIndex(opened.Rule), "a private answer reports the host rule")
+
+	d, _, _ = newTestDialer(s.T(), nil, host(hostWild), cidr("8.8.8.0/24"))
+	opened, err = d.Open(context.Background(), publicAddr, 443)
+	s.Require().NoError(err)
+	s.Require().NoError(opened.Conn.Close())
+	s.Equal(1, ruleIndex(opened.Rule))
+}
+
+func (s *DialerSuite) TestARefusedAnswerIsNamedAsThePeer() {
+	for answer, want := range map[string]string{
+		loopback4:  loopback4,
+		metadataIP: metadataIP,
+		poolAddr:   poolAddr,
+		privateIP:  privateIP,
+		mappedLoop: loopback4,
+		zonedLL:    linkLocal,
+	} {
+		d, _, _ := newTestDialer(s.T(), addrs(publicAddr, answer, "8.8.4.4"), host(hostWild))
+		_, err := d.Dial(context.Background(), checkedHost, 443)
+		peer := peerOf(s.T(), err)
+		s.Equal(want, peer.String(), answer)
+		s.Empty(peer.Zone(), answer)
+	}
+}
+
+func (s *DialerSuite) TestARefusalOfNoParticularAddressHasNoPeer() {
+	many := make([]netip.Addr, maxAnswers+1)
+	for i := range many {
+		many[i] = netip.MustParseAddr(publicAddr)
+	}
+	many[0] = netip.MustParseAddr(loopback4)
+	for name, answers := range map[string][]netip.Addr{
+		"no answers": {}, "too many answers": many,
+	} {
+		d, _, _ := newTestDialer(s.T(), answers, host(hostWild))
+		_, err := d.Dial(context.Background(), checkedHost, 443)
+		s.Equal(ResolveFailed, reasonOf(s.T(), err), name)
+		s.False(peerOf(s.T(), err).IsValid(), name)
+	}
+	d, res, _ := newTestDialer(s.T(), addrs(publicAddr), host(hostWild))
+	res.err = errors.New("no such host")
+	_, err := d.Dial(context.Background(), checkedHost, 443)
+	s.False(peerOf(s.T(), err).IsValid(), "lookup failed")
+
+	d, _, _ = newTestDialer(s.T(), addrs(publicAddr), host(hostWild))
+	for _, target := range []string{evilHost, publicAddr, loopback4} {
+		_, err = d.Dial(context.Background(), target, 443)
+		s.False(peerOf(s.T(), err).IsValid(), target)
+	}
+}
+
+func (s *DialerSuite) TestARefusedSocketAddressIsNamedAsThePeer() {
+	for probe, want := range map[string]string{
+		metadataIP + ":443":     metadataIP,
+		"[" + zonedLL + "]:443": linkLocal,
+		"172.17.0.5:443":        poolAddr,
+		"8.8.4.4:443":           "8.8.4.4",
+		"[::ffff:8.8.4.4]:443":  "8.8.4.4",
+		publicAddr + ":80":      publicAddr,
+	} {
+		d, _, sock := newTestDialer(s.T(), addrs(publicAddr), host(hostWild))
+		sock.probe = probe
+		_, err := d.Dial(context.Background(), checkedHost, 443)
+		peer := peerOf(s.T(), err)
+		s.Equal(want, peer.String(), probe)
+		s.Empty(peer.Zone(), probe)
+	}
+	d, _, sock := newTestDialer(s.T(), addrs(publicAddr), host(hostWild))
+	sock.probe = "not an address"
+	_, err := d.Dial(context.Background(), checkedHost, 443)
+	s.False(peerOf(s.T(), err).IsValid())
 }

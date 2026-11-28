@@ -38,6 +38,20 @@ type Decision struct {
 
 var allowed = Decision{Allow: true}
 
+// Rule names the allow rule that permitted a request by its position in the
+// config list. The zero value means no rule.
+type Rule struct {
+	index int
+	set   bool
+}
+
+// RuleAt returns the rule at position i in the config allow list.
+func RuleAt(i int) Rule { return Rule{index: i, set: true} }
+
+// Index returns the position in the config allow list and whether there is
+// one.
+func (r Rule) Index() (int, bool) { return r.index, r.set }
+
 func deny(r Reason) Decision { return Decision{Reason: r} }
 
 const (
@@ -51,11 +65,13 @@ const (
 type hostRule struct {
 	pattern string
 	ports   []int
+	index   int
 }
 
 type cidrRule struct {
 	prefix netip.Prefix
 	ports  []int
+	index  int
 }
 
 // Policy is an immutable allow list. Everything not allowed is denied.
@@ -77,7 +93,7 @@ func New(cfg poolconfig.Egress, alwaysDeny []netip.Prefix) (*Policy, error) {
 	}
 	p := &Policy{}
 	for i, rule := range cfg.Allow {
-		if err := p.add(rule); err != nil {
+		if err := p.add(i, rule); err != nil {
 			return nil, fmt.Errorf("egress allow rule %d: %w", i, err)
 		}
 	}
@@ -155,7 +171,28 @@ func (p *Policy) CheckAddr(addr netip.Addr, port int) Decision {
 	return allowed
 }
 
-func (p *Policy) add(rule poolconfig.AllowRule) error {
+// NameRule returns the first host rule that covers a name target. Call it
+// after the target was allowed, to say which rule allowed it. A private
+// answer also needs a cidr rule, which this does not report.
+func (p *Policy) NameRule(host string, port int) Rule {
+	if i := p.hostRuleAt(host, port); i >= 0 {
+		return RuleAt(i)
+	}
+	return Rule{}
+}
+
+// AddrRule returns the first cidr rule that covers an IP literal target.
+func (p *Policy) AddrRule(addr netip.Addr, port int) Rule {
+	i := slices.IndexFunc(p.cidrs, func(r cidrRule) bool {
+		return r.prefix.Contains(addr.Unmap()) && slices.Contains(r.ports, port)
+	})
+	if i < 0 {
+		return Rule{}
+	}
+	return RuleAt(p.cidrs[i].index)
+}
+
+func (p *Policy) add(index int, rule poolconfig.AllowRule) error {
 	if (rule.Host == "") == (rule.CIDR == "") {
 		return errors.New("must set exactly one of host or cidr")
 	}
@@ -167,7 +204,7 @@ func (p *Policy) add(rule poolconfig.AllowRule) error {
 		if !poolconfig.ValidHostPattern(rule.Host) {
 			return errors.New("host is not a valid pattern")
 		}
-		p.hosts = append(p.hosts, hostRule{pattern: rule.Host, ports: ports})
+		p.hosts = append(p.hosts, hostRule{pattern: rule.Host, ports: ports, index: index})
 		return nil
 	}
 	prefix, err := netip.ParsePrefix(rule.CIDR)
@@ -177,14 +214,24 @@ func (p *Policy) add(rule poolconfig.AllowRule) error {
 	if poolconfig.PrefixTooWide(prefix) {
 		return errors.New("cidr is wider than /8 for IPv4 or /32 for IPv6")
 	}
-	p.cidrs = append(p.cidrs, cidrRule{prefix: prefix.Masked(), ports: ports})
+	p.cidrs = append(p.cidrs, cidrRule{prefix: prefix.Masked(), ports: ports, index: index})
 	return nil
 }
 
 func (p *Policy) hostAllows(name string, port int) bool {
-	return slices.ContainsFunc(p.hosts, func(r hostRule) bool {
+	return p.hostRuleAt(name, port) >= 0
+}
+
+// hostRuleAt returns the config position of the first host rule that covers
+// name and port, or -1. HostMatches normalizes name.
+func (p *Policy) hostRuleAt(name string, port int) int {
+	i := slices.IndexFunc(p.hosts, func(r hostRule) bool {
 		return slices.Contains(r.ports, port) && poolconfig.HostMatches(r.pattern, name)
 	})
+	if i < 0 {
+		return -1
+	}
+	return p.hosts[i].index
 }
 
 func (p *Policy) checkAnswer(addr netip.Addr, port int) Decision {
