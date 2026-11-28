@@ -172,7 +172,7 @@ func (s *PolicySuite) TestHostMatching() {
 		{"evil-github.com", 443, deny(NotAllowed)},
 		{"github.com.evil.com", 443, deny(NotAllowed)},
 		{hostSub, 443, allowed},
-		{"a.b.c.example.com", 8443, allowed},
+		{subdomainHost, 8443, allowed},
 		{"A.Example.COM.", 443, allowed},
 		{"example.com", 443, deny(NotAllowed)},
 		{"evil-example.com", 443, deny(NotAllowed)},
@@ -204,8 +204,8 @@ func (s *PolicySuite) TestPortBounds() {
 	s.Equal(deny(BadRequest), p.CheckName(hostGitHub, 0))
 	s.Equal(deny(BadRequest), p.CheckName(hostGitHub, 65536))
 	c := newPolicy(s.T(), []poolconfig.AllowRule{cidr("8.8.8.0/24", 1, 65535)})
-	s.Equal(allowed, c.CheckAddr(netip.MustParseAddr("8.8.8.8"), 65535))
-	s.Equal(deny(BadRequest), c.CheckAddr(netip.MustParseAddr("8.8.8.8"), 65536))
+	s.Equal(allowed, c.CheckAddr(netip.MustParseAddr(publicAddr), 65535))
+	s.Equal(deny(BadRequest), c.CheckAddr(netip.MustParseAddr(publicAddr), 65536))
 }
 
 func (s *PolicySuite) TestAnAddressIsNeverAName() {
@@ -237,7 +237,7 @@ func (s *PolicySuite) TestOneForbiddenAnswerDeniesTheRequest() {
 	}{
 		{[]string{publicIP, metadataIP}, ReservedRange},
 		{[]string{metadataIP, publicIP}, ReservedRange},
-		{[]string{publicIP, "127.0.0.1"}, ReservedRange},
+		{[]string{publicIP, loopback4}, ReservedRange},
 		{[]string{publicIP, loopback6}, ReservedRange},
 		{[]string{publicIP, "::ffff:127.0.0.1"}, ReservedRange},
 		{[]string{publicIP, "::ffff:169.254.169.254"}, ReservedRange},
@@ -279,7 +279,7 @@ func (s *PolicySuite) TestNoRuleReachesAReservedRange() {
 		cidr("0.0.0.0/8"), cidr("64:ff9b::/96"), cidr("fe80::/32"), cidr("100.100.100.200/32"),
 	})
 	for _, a := range []string{
-		metadataIP, "127.0.0.1", loopback6, "64:ff9b::808:808", "fe80::1", "100.100.100.200",
+		metadataIP, loopback4, loopback6, "64:ff9b::808:808", "fe80::1", "100.100.100.200",
 		"::ffff:169.254.169.254", "0.0.0.0", "224.0.0.1", "255.255.255.255",
 	} {
 		s.Equal(deny(ReservedRange), p.CheckResolved(hostSub, 443, addrs(a)), a)
@@ -313,7 +313,7 @@ func (s *PolicySuite) TestALiteralNeedsACidrAndAPort() {
 		{publicIP, 443, allowed},
 		{publicIP, 80, deny(IPLiteral)},
 		{"140.82.113.1", 443, deny(IPLiteral)},
-		{"8.8.8.8", 443, deny(IPLiteral)},
+		{publicAddr, 443, deny(IPLiteral)},
 		{privateIP, 8080, allowed},
 		{privateIP, 443, deny(IPLiteral)},
 		{"::ffff:10.1.2.3", 8080, allowed},
