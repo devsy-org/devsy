@@ -114,20 +114,15 @@ func (d *Dialer) lookup(ctx context.Context, host string) ([]netip.Addr, error) 
 func (d *Dialer) dialChecked(
 	ctx context.Context, addrs []netip.Addr, port int, check func(netip.Addr) Decision,
 ) (net.Conn, error) {
-	if port < 1 || port > math.MaxUint16 {
-		return nil, &DeniedError{Reason: BadRequest}
+	checkedPort, err := validTargets(addrs, port)
+	if err != nil {
+		return nil, err
 	}
-	if len(addrs) == 0 {
-		return nil, &DeniedError{Reason: ResolveFailed}
-	}
-	if d.budget > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, d.budget)
-		defer cancel()
-	}
+	ctx, cancel := d.withBudget(ctx)
+	defer cancel()
 	var last error
 	for _, addr := range addrs {
-		target := netip.AddrPortFrom(addr.Unmap(), uint16(port))
+		target := netip.AddrPortFrom(addr.Unmap(), checkedPort)
 		conn, err := d.connectOne(ctx, target, check)
 		if err == nil {
 			return conn, nil
@@ -140,6 +135,23 @@ func (d *Dialer) dialChecked(
 		}
 	}
 	return nil, fmt.Errorf("egress connect: %w", last)
+}
+
+func validTargets(addrs []netip.Addr, port int) (uint16, error) {
+	if port < 1 || port > math.MaxUint16 {
+		return 0, &DeniedError{Reason: BadRequest}
+	}
+	if len(addrs) == 0 {
+		return 0, &DeniedError{Reason: ResolveFailed}
+	}
+	return uint16(port), nil
+}
+
+func (d *Dialer) withBudget(ctx context.Context) (context.Context, context.CancelFunc) {
+	if d.budget <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d.budget)
 }
 
 func (d *Dialer) connectOne(
