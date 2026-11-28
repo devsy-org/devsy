@@ -26,6 +26,8 @@ const (
 	IPLiteral     Reason = "ip_literal"
 	ResolveFailed Reason = "resolve_failed"
 	BadRequest    Reason = "bad_request"
+	SNIMismatch   Reason = "sni_mismatch"
+	SNIMissing    Reason = "sni_missing"
 )
 
 // Decision is the verdict for one request.

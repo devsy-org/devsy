@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	checkedHost = "a.example.com"
-	publicAddr  = "8.8.8.8"
-	loopback4   = "127.0.0.1"
-	mappedLoop  = "::ffff:127.0.0.1"
+	checkedHost   = "a.example.com"
+	publicAddr    = "8.8.8.8"
+	subdomainHost = "a.b.c.example.com"
+	loopback4     = "127.0.0.1"
+	mappedLoop    = "::ffff:127.0.0.1"
 )
 
 type fakeResolver struct {
@@ -159,13 +160,13 @@ func (s *DialerSuite) TestAPrivateAnswerNeedsACoveringCidr() {
 func (s *DialerSuite) TestItDialsOnlyTheUnmappedCheckedAddresses() {
 	answers := addrs("::ffff:8.8.8.8", "2606:4700::1111", publicAddr)
 	d, _, sock := newTestDialer(s.T(), answers, host(hostWild))
-	sock.fail[netip.MustParseAddrPort("8.8.8.8:443")] = errors.New("refused")
+	sock.fail[netip.MustParseAddrPort(publicHostPort)] = errors.New("refused")
 	sock.fail[netip.MustParseAddrPort("[2606:4700::1111]:443")] = errors.New("refused")
 	_, err := d.Dial(context.Background(), checkedHost, 443)
 	s.Require().Error(err)
 	_, isDenial := errors.AsType[*DeniedError](err)
 	s.False(isDenial)
-	want := []string{"8.8.8.8:443", "[2606:4700::1111]:443", "8.8.8.8:443"}
+	want := []string{publicHostPort, "[2606:4700::1111]:443", publicHostPort}
 	s.Require().Len(sock.targets, len(want))
 	for i, target := range sock.targets {
 		s.Equal(want[i], target.String())
