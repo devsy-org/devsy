@@ -106,6 +106,8 @@ func (s *ConfigSuite) TestEgressRulesFollowThePoolConfigRules() {
 		"internal host": {rule(keyHost, "db.internal")},
 		"uppercase":     {rule(keyHost, "A.example.com")},
 		"ip as host":    {rule(keyHost, "20.1.1.1")},
+		"mapped cidr":   {rule("cidr", "::ffff:20.0.0.0/104")},
+		"v6 metadata":   {rule("cidr", "fd00:ec2::254/128")},
 	}
 	for name, allow := range cases {
 		doc := s.valid()
@@ -113,6 +115,20 @@ func (s *ConfigSuite) TestEgressRulesFollowThePoolConfigRules() {
 		_, err := s.parse(doc)
 		s.Error(err, name)
 	}
+}
+
+func (s *ConfigSuite) TestARuleWithNoPortsIsAccepted() {
+	doc := s.valid()
+	doc["egress"] = map[string]any{
+		keyDefault: valDeny,
+		keyAllow:   []any{map[string]any{keyHost: hostA}},
+	}
+	cfg, err := s.parse(doc)
+	s.Require().NoError(err)
+	policy, err := cfg.policy()
+	s.Require().NoError(err)
+	s.True(policy.CheckName(hostA, 443).Allow)
+	s.False(policy.CheckName(hostA, 8443).Allow)
 }
 
 func (s *ConfigSuite) TestAMissingDefaultIsRefused() {
