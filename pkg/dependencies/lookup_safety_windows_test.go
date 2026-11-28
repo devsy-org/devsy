@@ -127,10 +127,10 @@ func (s *lookupNativeSuite) TestAJunctionIsDeferredNotFollowed() {
 }
 
 func (s *lookupNativeSuite) TestALinkedFinalFileIsDeferredNotFollowed() {
-	real := s.write(filepath.Join(s.root, "real", "tool.exe"))
+	tool := s.write(filepath.Join(s.root, "real", "tool.exe"))
 	link := filepath.Join(s.root, "bin", "docker.exe")
 	s.Require().NoError(os.MkdirAll(filepath.Dir(link), 0o700))
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(tool, link); err != nil {
 		s.T().Skipf("symbolic links are not available here: %v", err)
 	}
 
