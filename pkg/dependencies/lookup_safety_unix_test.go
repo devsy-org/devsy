@@ -246,6 +246,81 @@ func (s *lookupUnixSuite) TestLookupReportsRealFilesInPathOrder() {
 	s.False(result.Executed)
 }
 
+func (s *lookupUnixSuite) TestOpenFlagsNeverBlockFollowOrAttachATerminal() {
+	for name, flag := range map[string]int{
+		"nonblock": syscall.O_NONBLOCK, "nofollow": syscall.O_NOFOLLOW, "noctty": syscall.O_NOCTTY,
+	} {
+		s.NotZero(lookupOpenFlags&flag, name)
+	}
+}
+
+// Without O_NONBLOCK, opening a pipe for reading waits for a writer forever.
+func (s *lookupUnixSuite) TestAPipeSwappedInBeforeTheOpenNeverBlocks() {
+	path := s.write(filepath.Join(s.root, testDocker), 0o755)
+	named, err := os.Lstat(path)
+	s.Require().NoError(err)
+	swapInAPipe := func(path string) (*os.File, error) {
+		if err := os.Remove(path); err != nil {
+			return nil, err
+		}
+		if err := syscall.Mkfifo(path, 0o755); err != nil {
+			return nil, err
+		}
+		return openLookupFile(path)
+	}
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := statOpenedFile(context.Background(), path, named, swapInAPipe)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		s.Require().ErrorIs(err, errLookupFileChanged)
+	case <-time.After(3 * time.Second):
+		writer, err := os.OpenFile(filepath.Clean(path), os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		if err == nil {
+			_ = writer.Close()
+		}
+		s.FailNow("opening a pipe swapped in before the open blocked")
+	}
+}
+
+func (s *lookupUnixSuite) TestTheDescriptorIsClosedOnEveryPath() {
+	named := s.write(filepath.Join(s.root, "named"), 0o755)
+	other := s.write(filepath.Join(s.root, "other"), 0o755)
+	namedInfo, err := os.Lstat(named)
+	s.Require().NoError(err)
+	closeFirst := func(file *os.File, _ context.CancelFunc) { _ = file.Close() }
+	cancelAfter := func(_ *os.File, cancel context.CancelFunc) { cancel() }
+	for name, c := range map[string]struct {
+		path  string
+		after func(*os.File, context.CancelFunc)
+		want  error
+	}{
+		"success":            {path: named},
+		"another file":       {path: other, want: errLookupFileChanged},
+		"canceled after":     {path: named, after: cancelAfter, want: context.Canceled},
+		"descriptor failure": {path: named, after: closeFirst, want: os.ErrClosed},
+	} {
+		var files []*os.File
+		ctx, cancel := context.WithCancel(context.Background())
+
+		_, err := statOpenedFile(ctx, c.path, namedInfo, recordingOpener(&files, cancel, c.after))
+		cancel()
+
+		if c.want == nil {
+			s.Require().NoError(err, name)
+		} else {
+			s.Require().ErrorIs(err, c.want, name)
+		}
+		s.Require().Len(files, 1, name)
+		_, statErr := files[0].Stat()
+		s.Require().ErrorIs(statErr, os.ErrClosed, name)
+	}
+}
+
 func (s *lookupUnixSuite) write(path string, mode os.FileMode) string {
 	s.Require().NoError(os.MkdirAll(filepath.Dir(path), 0o700))
 	s.Require().NoError(os.WriteFile(path, []byte("data"), mode))
@@ -268,5 +343,23 @@ func (s *lookupUnixSuite) observe(path string) ExecutableCandidate {
 func (s *lookupUnixSuite) skipAsRoot() {
 	if os.Geteuid() == 0 {
 		s.T().Skip("permission checks do not apply to root")
+	}
+}
+
+func recordingOpener(
+	files *[]*os.File,
+	cancel context.CancelFunc,
+	after func(*os.File, context.CancelFunc),
+) lookupOpener {
+	return func(path string) (*os.File, error) {
+		file, err := openLookupFile(path)
+		if err != nil {
+			return nil, err
+		}
+		*files = append(*files, file)
+		if after != nil {
+			after(file, cancel)
+		}
+		return file, nil
 	}
 }
