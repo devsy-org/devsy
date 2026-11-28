@@ -287,6 +287,19 @@ func (s *lookupUnixSuite) TestAPipeSwappedInBeforeTheOpenNeverBlocks() {
 	}
 }
 
+// A file system may hand the inode number of a removed file to the pipe that
+// replaces it, so the identity comparison alone cannot catch the swap.
+func (s *lookupUnixSuite) TestAnOpenedFileThatIsNotRegularIsRefusedEvenWithTheSameIdentity() {
+	path := filepath.Join(s.root, "pipe")
+	s.Require().NoError(syscall.Mkfifo(path, 0o755))
+	named, err := os.Lstat(path)
+	s.Require().NoError(err)
+
+	_, err = statOpenedFile(context.Background(), path, named, openLookupFile)
+
+	s.Require().ErrorIs(err, errLookupFileChanged)
+}
+
 func (s *lookupUnixSuite) TestTheDescriptorIsClosedOnEveryPath() {
 	named := s.write(filepath.Join(s.root, "named"), 0o755)
 	other := s.write(filepath.Join(s.root, "other"), 0o755)

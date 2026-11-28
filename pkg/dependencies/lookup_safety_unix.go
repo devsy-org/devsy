@@ -66,7 +66,9 @@ func openedFileInfo(
 }
 
 // statOpenedFile fails when the opened file is not the one the path named a
-// moment ago, so a swap between the two calls is reported instead of used.
+// moment ago, so a swap between the two calls is reported instead of used. A
+// freed inode number can be reused by the swapped-in file, so the opened file
+// must also still be regular.
 func statOpenedFile(
 	ctx context.Context,
 	path string,
@@ -85,7 +87,7 @@ func statOpenedFile(
 	if err != nil {
 		return nil, err
 	}
-	if !os.SameFile(named, info) {
+	if !os.SameFile(named, info) || !info.Mode().IsRegular() {
 		return nil, &os.PathError{Op: "open", Path: path, Err: errLookupFileChanged}
 	}
 	return info, nil
