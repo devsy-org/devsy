@@ -159,10 +159,24 @@ func windowsLookupComponents(rest string) ([]string, bool) {
 }
 
 // windowsLookupComponent applies the platform path rules to one component. A
-// colon would name an alternate data stream, so it is refused as well.
+// colon would name an alternate data stream, so it is refused as well, and so
+// is an 8.3 short name: the classification of a launcher directory works on the
+// long spelling, which a short name hides.
 func windowsLookupComponent(part string) bool {
 	return len(utf16.Encode([]rune(part))) <= maxWindowsLookupComponent &&
-		!dotComponent(part) && !strings.Contains(part, ":") && !unsafeWindowsComponent(part)
+		!dotComponent(part) && !strings.Contains(part, ":") && !unsafeWindowsComponent(part) &&
+		!shortNameComponent(part)
+}
+
+// shortNameComponent reports a tilde followed by a digit, the form of every
+// generated 8.3 name. It also refuses a long name that merely looks like one.
+func shortNameComponent(part string) bool {
+	for i := 0; i+1 < len(part); i++ {
+		if part[i] == '~' && part[i+1] >= '0' && part[i+1] <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 // localWindowsVolume accepts only a volume of a local disk. Mapped drives,

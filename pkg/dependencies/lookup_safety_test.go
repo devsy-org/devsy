@@ -132,6 +132,78 @@ func (s *lookupModelSuite) TestWindowsWalkRequiresADirectoryForEveryEntryWithChi
 	s.Equal([]bool{true, true, true, false}, spy.directories)
 }
 
+func (s *lookupModelSuite) TestWindowsWalkOpensEachChildFromThePreviousHandle() {
+	spy := s.walkSpy()
+
+	_, err := inspectWindowsLookup(context.Background(), walkSafeFile, spy)
+
+	s.Require().NoError(err)
+	s.Equal([]uintptr{0, 1, 2, 3}, spy.parents)
+}
+
+func (s *lookupModelSuite) TestWindowsWalkStopsWhenCanceledWhileClosingAParent() {
+	for closeAt := 1; closeAt <= 3; closeAt++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		spy := s.walkSpy()
+		closes := 0
+		spy.onClose = func() {
+			closes++
+			if closes == closeAt {
+				cancel()
+			}
+		}
+
+		_, err := inspectWindowsLookup(ctx, walkSafeFile, spy)
+		cancel()
+
+		s.Require().ErrorIs(err, context.Canceled, closeAt)
+		s.Empty(spy.live, closeAt)
+		s.Len(spy.parents, closeAt+1, closeAt)
+	}
+}
+
+func (s *lookupModelSuite) TestWindowsWalkStepsRefuseACanceledContextBeforeCalling() {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	spy := &lookupMetadataSpy{t: s.T(), forbidCalls: true}
+
+	_, inspectErr := inspectWindowsLookup(ctx, walkSafeFile, spy)
+	_, openErr := openWindowsLookup(ctx, windowsLookupOpen{name: "x"}, spy)
+	_, _, statErr := statWindowsLookup(ctx, 1, spy)
+
+	s.Require().ErrorIs(inspectErr, context.Canceled)
+	s.Require().ErrorIs(openErr, context.Canceled)
+	s.Require().ErrorIs(statErr, context.Canceled)
+	s.Empty(spy.calls)
+}
+
+func (s *lookupModelSuite) TestWindowsWalkRefusesShortNamesBeforeAnyMetadata() {
+	for _, path := range []string{
+		`C:\PROGRA~1\Volta\volta.exe`,
+		`C:\Users\x\APPDAT~1\Local\Volta\bin\node.exe`,
+		`C:\safe\a~1b\docker.exe`,
+		`C:\safe\docker~2.exe`,
+		`C:\safe\~0`,
+		`C:/PROGRA~1/Volta/volta.exe`,
+	} {
+		spy := &lookupMetadataSpy{t: s.T(), forbidCalls: true}
+
+		_, err := inspectWindowsLookup(context.Background(), path, spy)
+
+		s.Require().ErrorIs(err, errLookupDeferred, path)
+		s.Empty(spy.calls, path)
+	}
+}
+
+func (s *lookupModelSuite) TestWindowsWalkKeepsNamesWithATildeThatIsNotAShortName() {
+	for _, part := range []string{"a~b", "~", "tilde~", "~x1", "docker~.exe"} {
+		s.True(windowsLookupComponent(part), part)
+	}
+	for _, part := range []string{"PROGRA~1", "a~1b", "x~9", "~0"} {
+		s.False(windowsLookupComponent(part), part)
+	}
+}
+
 func (s *lookupModelSuite) TestWindowsWalkNormalizesTheResolvedSpelling() {
 	spy := s.walkSpy()
 
@@ -298,6 +370,8 @@ type lookupMetadataSpy struct {
 	failure     string
 	failAt      int
 	directories []bool
+	parents     []uintptr
+	onClose     func()
 	afterCall   func()
 	lastInfo    fs.FileInfo
 }
@@ -324,6 +398,7 @@ func (m *lookupMetadataSpy) driveTarget(drive string) (string, error) {
 func (m *lookupMetadataSpy) open(request windowsLookupOpen) (uintptr, error) {
 	m.record("open " + request.name)
 	m.directories = append(m.directories, request.directory)
+	m.parents = append(m.parents, request.parent)
 	if request.parent != 0 {
 		m.expect(m.live[request.parent], "open below a closed handle")
 		m.expect(m.reparseAt != request.parent, "open below a reparse point")
@@ -359,6 +434,9 @@ func (m *lookupMetadataSpy) stat(handle uintptr) (fs.FileInfo, bool, error) {
 func (m *lookupMetadataSpy) close(handle uintptr) {
 	m.expect(m.live[handle], "close of a handle that is not open")
 	delete(m.live, handle)
+	if m.onClose != nil {
+		m.onClose()
+	}
 }
 
 func (m *lookupMetadataSpy) expect(ok bool, message string) {
