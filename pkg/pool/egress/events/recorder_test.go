@@ -2,10 +2,14 @@ package events
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -633,4 +637,202 @@ func (s *RecorderSuite) TestARuleSurvivesTheFoldIntoARedactedBucket() {
 		rules[e.Data[attrkey.EgressRuleIndex]] = true
 	}
 	s.Equal(map[any]bool{0: true, 3: true}, rules)
+}
+
+func (s *RecorderSuite) TestALossInAFlushIsLoggedByThatFlush() {
+	var logs bytes.Buffer
+	r := newRecorder(s, func(c *Config) { c.Logger = slog.New(slog.NewTextHandler(&logs, nil)) })
+	s.sink.setFail(errors.New("refused"))
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Require().Error(r.Flush())
+	s.NotContains(logs.String(), "lost=1")
+	s.Require().Error(r.Flush())
+	s.Contains(logs.String(), "lost=1", "the flush that gave the event up reports it")
+}
+
+func (s *RecorderSuite) TestAStopWithUnwrittenEventsLogsThem() {
+	var logs bytes.Buffer
+	r := newRecorder(s, func(c *Config) {
+		c.Interval = time.Hour
+		c.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+	s.sink.setFail(errors.New("disk full"))
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.Require().Error(r.Run(ctx))
+	s.Contains(logs.String(), "left unwritten at stop")
+	s.Contains(logs.String(), "summaries=1")
+	s.Contains(logs.String(), "denials=1")
+}
+
+func (s *RecorderSuite) TestARetryQueuedAfterTheWindowEndedIsHeldAgainstItsBudget() {
+	r := newRecorder(s, nil)
+	s.sink.setFail(errors.New("disk full"))
+	s.sink.during = func() { s.Require().NoError(r.Flush()) }
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Equal(1, s.sink.attempts())
+
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Equal(1, s.sink.attempts(), "the queued denial holds its key in the new window")
+}
+
+func refusal() error { return fmt.Errorf("write audit event: %w", audit.ErrInvalidEvent) }
+
+func (s *RecorderSuite) TestARefusedDenialIsGivenUpAtOnce() {
+	r := newRecorder(s, nil)
+	s.sink.setFail(refusal())
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Equal(1, r.Stats().Lost)
+	s.Zero(r.Stats().Failures, "a refused event is not a store fault")
+
+	s.sink.setFail(nil)
+	s.Require().NoError(r.Flush())
+	s.Empty(s.sink.written())
+	s.Equal(1, s.sink.attempts(), "it is not written again")
+}
+
+func (s *RecorderSuite) TestARefusedDenialDoesNotBlockTheDenialsBehindIt() {
+	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
+	s.sink.setFail(errors.New("disk full"))
+	for _, host := range []string{hostA, hostB, hostC} {
+		r.Denied(denial(host, 443, egress.NotAllowed))
+	}
+	s.Equal(3, r.Stats().Failures)
+
+	s.sink.setFail(nil)
+	s.sink.failIf = func(e audit.Event) error {
+		if e.Data[attrkey.ServerAddress] == hostA {
+			return refusal()
+		}
+		return nil
+	}
+	s.Require().NoError(r.Flush(), "one flush writes what it can")
+	var hosts []any
+	for _, e := range s.sink.written() {
+		hosts = append(hosts, e.Data[attrkey.ServerAddress])
+	}
+	s.Equal([]any{hostB, hostC}, hosts)
+	s.Equal(1, r.Stats().Lost)
+	s.Zero(r.Stats().Failures)
+}
+
+func (s *RecorderSuite) TestARefusedSummaryDoesNotBlockTheSummariesBehindIt() {
+	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
+	s.sink.failIf = func(e audit.Event) error {
+		if e.Data[attrkey.ServerAddress] == hostA {
+			return refusal()
+		}
+		return nil
+	}
+	for _, host := range []string{hostA, hostB, hostC} {
+		r.Allowed(egress.Allow{Target: egress.Target{Host: host, Port: 443}})
+	}
+	s.Require().NoError(r.Flush())
+	s.Len(s.sink.written(), 2)
+	s.Equal(1, r.Stats().Lost)
+	s.Require().NoError(r.Flush())
+	s.Len(s.sink.written(), 2, "the refused summary is not kept")
+}
+
+func (s *RecorderSuite) TestARefusedDenialDoesNotHoldBackTheSummaries() {
+	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
+	s.sink.setFail(errors.New("disk full"))
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostB, Port: 443}})
+	s.sink.setFail(nil)
+	s.sink.failIf = func(e audit.Event) error {
+		if e.Type == envelope.AuditEgressDeny {
+			return refusal()
+		}
+		return nil
+	}
+	s.Require().NoError(r.Flush())
+	events := s.sink.written()
+	s.Require().Len(events, 1)
+	s.Equal(envelope.AuditEgressAllowSummary, events[0].Type)
+}
+
+func (s *RecorderSuite) TestARefusalLeavesTheRunOfStoreFailuresAlone() {
+	r := newRecorder(s, nil)
+	s.sink.setFail(errors.New("disk full"))
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Equal(1, r.Stats().Failures)
+	s.sink.setFail(refusal())
+	r.Denied(denial(hostB, 443, egress.NotAllowed))
+	s.Equal(1, r.Stats().Failures)
+}
+
+func (s *RecorderSuite) TestDecisionsAfterTheFinalFlushAreCountedAndLoggedOnce() {
+	var logs bytes.Buffer
+	r := newRecorder(s, func(c *Config) {
+		c.Interval = time.Hour
+		c.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.Require().NoError(r.Run(ctx))
+	s.Len(s.sink.written(), 1)
+	s.Zero(r.Stats().Late)
+
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostB, Port: 443}})
+	s.Equal(2, r.Stats().Late)
+	s.Equal(1, strings.Count(logs.String(), "after the recorder stopped"))
+	s.Require().NoError(r.Flush())
+	s.Len(s.sink.written(), 1, "a late count is not written")
+}
+
+func (s *RecorderSuite) TestADenialStillWritesAfterTheFinalFlushButItsRetryIsCountedLate() {
+	r := newRecorder(s, func(c *Config) { c.Interval = time.Hour })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.Require().NoError(r.Run(ctx))
+
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Len(s.sink.written(), 1)
+	s.Zero(r.Stats().Late)
+
+	s.sink.setFail(errors.New("disk full"))
+	r.Denied(denial(hostB, 444, egress.NotAllowed))
+	s.Equal(1, r.Stats().Late, "a retry no flush will make")
+}
+
+func (s *RecorderSuite) TestAFailedFinalFlushKeepsItsCountsForTheLeftoverLog() {
+	r := newRecorder(s, func(c *Config) { c.Interval = time.Hour })
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
+	s.sink.setFail(errors.New("disk full"))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.Require().Error(r.Run(ctx))
+	s.Zero(r.Stats().Late, "what the final flush restores is not late")
+	s.sink.setFail(nil)
+	s.Require().NoError(r.Flush())
+	s.Len(s.sink.written(), 1)
+}
+
+func (s *RecorderSuite) TestDestinationsSortByHostThenPortThenRule() {
+	at := func(host string, port int, rule egress.Rule) dest {
+		return dest{host: host, port: port, rule: rule}
+	}
+	sorted := []dest{
+		at("", 443, egress.Rule{}),
+		at(hostA, 80, egress.RuleAt(5)),
+		at(hostA, 443, egress.Rule{}),
+		at(hostA, 443, egress.RuleAt(0)),
+		at(hostA, 443, egress.RuleAt(1)),
+		at(hostA, 443, egress.RuleAt(10)),
+		at(hostB, 80, egress.Rule{}),
+	}
+	for i, a := range sorted {
+		for j, b := range sorted {
+			s.Equal(cmp.Compare(i, j), compareDest(a, b), "%d vs %d", i, j)
+		}
+	}
+	shuffled := []dest{sorted[4], sorted[6], sorted[2], sorted[0], sorted[5], sorted[3], sorted[1]}
+	slices.SortFunc(shuffled, compareDest)
+	s.Equal(sorted, shuffled)
 }

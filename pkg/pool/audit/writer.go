@@ -31,6 +31,21 @@ type Event struct {
 	Data        map[string]any
 }
 
+// ErrInvalidEvent matches an error from Writer.Write that refused the event
+// before it reached the store. Retrying the same event cannot succeed.
+var ErrInvalidEvent = errors.New("audit event refused")
+
+// refusal keeps its own text, which names a field or type and never a value.
+type refusal string
+
+func (r refusal) Error() string { return string(r) }
+
+func (refusal) Is(target error) bool { return target == ErrInvalidEvent }
+
+func refuse(format string, args ...any) error {
+	return refusal(fmt.Sprintf(format, args...))
+}
+
 // Writer validates typed events and appends them to the local audit store.
 type Writer struct {
 	store *Store
@@ -55,7 +70,9 @@ func NewWriter(store *Store, cfg WriterConfig) (*Writer, error) {
 }
 
 // Write appends an event, including local-only events. On error the caller
-// must refuse the action. A store sync failure may leave the record on disk.
+// must refuse the action. An error that matches ErrInvalidEvent means the
+// event itself was refused before the store was touched, so writing it again
+// cannot succeed; any other error may be a store fault. A store sync failure may leave the record on disk.
 // The envelope must pass envelope.Validate. The caller keeps e.Data and its
 // values unchanged until Write returns, and the configured callbacks must be
 // safe for concurrent use.
@@ -70,11 +87,11 @@ func (w *Writer) Write(e Event) error {
 	env := w.envelope(e, id)
 	// Validation and JSON errors can contain raw event values.
 	if err := env.Validate(); err != nil {
-		return fmt.Errorf("write audit event %s: validation failed", e.Type)
+		return refuse("write audit event %s: validation failed", e.Type)
 	}
 	line, err := env.MarshalJSON()
 	if err != nil {
-		return fmt.Errorf("write audit event %s: marshal envelope failed", e.Type)
+		return refuse("write audit event %s: marshal envelope failed", e.Type)
 	}
 	if err := w.store.Append(line); err != nil {
 		return appendFailure(e.Type, err)
@@ -109,13 +126,13 @@ func (w *Writer) checkFields(e Event) error {
 func checkEvent(e Event) error {
 	switch {
 	case !slices.Contains(envelope.AuditTypes(), e.Type):
-		return errors.New("write audit event: unregistered type")
+		return refuse("write audit event: unregistered type")
 	case envelope.AuditTypeRequiresSession(e.Type) && e.Session == "":
-		return fmt.Errorf("write audit event %s: session is required", e.Type)
+		return refuse("write audit event %s: session is required", e.Type)
 	case !e.Actor.Kind.Known():
-		return fmt.Errorf("write audit event %s: unknown actor kind", e.Type)
+		return refuse("write audit event %s: unknown actor kind", e.Type)
 	case e.Actor.ID == "":
-		return fmt.Errorf("write audit event %s: actor id is empty", e.Type)
+		return refuse("write audit event %s: actor id is empty", e.Type)
 	}
 	return nil
 }

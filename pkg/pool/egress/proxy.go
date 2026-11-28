@@ -88,6 +88,11 @@ type Config struct {
 	// such as a resolved address in a connect error, goes only to Logger.
 	Recorder Recorder
 	Logger   *slog.Logger
+	// Healthy is optional. While it returns false the proxy answers every new
+	// request with a fixed 503 and does no lookup, dial or recording, because
+	// a decision that cannot be recorded must not be acted on. Tunnels
+	// already open run to their limits.
+	Healthy func() bool
 	// MaxConns caps open client connections, tunnels included.
 	MaxConns int
 	// IdleTimeout closes a tunnel with no bytes in either direction.
@@ -110,6 +115,7 @@ type Proxy struct {
 	dialer        *Dialer
 	rec           Recorder
 	log           *slog.Logger
+	healthy       func() bool
 	maxConns      int
 	idle          time.Duration
 	lifetime      time.Duration
@@ -136,6 +142,7 @@ func NewProxy(cfg Config) (*Proxy, error) {
 		dialer:        cfg.Dialer,
 		rec:           cfg.Recorder,
 		log:           cfg.Logger,
+		healthy:       cfg.Healthy,
 		maxConns:      cfg.MaxConns,
 		idle:          cfg.IdleTimeout,
 		lifetime:      cfg.MaxLifetime,
@@ -202,6 +209,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.Logger == nil {
 		c.Logger = slog.New(slog.DiscardHandler)
+	}
+	if c.Healthy == nil {
+		c.Healthy = func() bool { return true }
 	}
 	return c
 }
@@ -282,6 +292,14 @@ func (p *Proxy) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer p.active.Done()
+	if !p.healthy() {
+		p.reply(
+			w,
+			http.StatusServiceUnavailable,
+			"egress audit unavailable for session "+p.session+"\n",
+		)
+		return
+	}
 	if r.Method != http.MethodConnect {
 		w.Header().Set("Allow", http.MethodConnect)
 		p.reply(w, http.StatusMethodNotAllowed, "egress proxy accepts CONNECT only\n")

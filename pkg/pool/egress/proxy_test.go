@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -175,6 +176,7 @@ type envCfg struct {
 	lifetime     time.Duration
 	helloTimeout time.Duration
 	headerWait   time.Duration
+	healthy      func() bool
 }
 
 type proxyEnv struct {
@@ -245,6 +247,7 @@ func startProxy(s *ProxySuite, cfg envCfg) *proxyEnv {
 		Logger: slog.New(
 			slog.NewTextHandler(env.logs, &slog.HandlerOptions{Level: slog.LevelDebug}),
 		),
+		Healthy:     cfg.healthy,
 		MaxConns:    cfg.maxConns,
 		IdleTimeout: cfg.idle,
 		MaxLifetime: cfg.lifetime,
@@ -851,4 +854,54 @@ func (s *ProxySuite) TestAnAllowedTunnelNamesItsRule() {
 	_, allowed := env.rec.snapshot()
 	s.Equal(Target{Host: tunnelHost, Port: 443}, allowed[0].Target)
 	s.Equal(1, ruleIndex(allowed[0].Rule))
+}
+
+const unavailableBody = "egress audit unavailable for session " + testSession + "\n"
+
+func (s *ProxySuite) TestAnUnhealthyProxyRefusesEveryNewRequestWithAFixed503() {
+	var healthy atomic.Bool
+	env := startProxy(s, envCfg{healthy: healthy.Load})
+	for _, raw := range []string{
+		connectLine(tunnelAuth),
+		connectLine("evil.example.org:443"),
+		connectLine("bad..host:443"),
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+	} {
+		resp, body := doRequest(s, env, raw)
+		s.Equal(http.StatusServiceUnavailable, resp.StatusCode, raw)
+		s.Equal(unavailableBody, body, raw)
+		s.True(resp.Close, raw)
+	}
+	s.Empty(env.dialed.all(), "no dial while unhealthy")
+	denied, allowed := env.rec.snapshot()
+	s.Empty(denied, "nothing is recorded while unhealthy")
+	s.Empty(allowed)
+
+	healthy.Store(true)
+	resp, body := doRequest(s, env, connectLine("evil.example.org:443"))
+	s.Equal(http.StatusForbidden, resp.StatusCode)
+	s.Equal(denyBody, body)
+	expectDenials(s, env, NotAllowed)
+}
+
+func (s *ProxySuite) TestATunnelOpenBeforeTheProxyTurnsUnhealthyKeepsRunning() {
+	server, pool := tlsUpstream(s)
+	var healthy atomic.Bool
+	healthy.Store(true)
+	env := startProxy(s, envCfg{
+		upstream: server.Listener.Addr().String(),
+		healthy:  healthy.Load,
+	})
+	c := openTunnel(s, env, tunnelAuth)
+	healthy.Store(false)
+	conn := tls.Client(
+		c.conn,
+		&tls.Config{ServerName: tunnelHost, RootCAs: pool, MinVersion: tls.VersionTLS12},
+	)
+	s.Require().NoError(conn.Handshake())
+	_, err := io.WriteString(
+		conn, "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+	s.Require().NoError(err)
+	body, _ := io.ReadAll(conn)
+	s.Contains(string(body), "hello from upstream")
 }

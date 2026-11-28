@@ -485,3 +485,19 @@ func (s *DialerSuite) TestARefusedSocketAddressIsNamedAsThePeer() {
 	_, err := d.Dial(context.Background(), checkedHost, 443)
 	s.False(peerOf(s.T(), err).IsValid())
 }
+
+func (s *DialerSuite) TestTwoRefusedAnswersReportTheFirstOne() {
+	for name, c := range map[string]struct {
+		answers []netip.Addr
+		want    string
+	}{
+		"loopback first": {addrs(publicAddr, loopback4, metadataIP), loopback4},
+		"metadata first": {addrs(publicAddr, metadataIP, loopback4), metadataIP},
+		"mapped first":   {addrs(mappedLoop, metadataIP, publicAddr), loopback4},
+		"bad at the end": {addrs(publicAddr, "8.8.4.4", poolAddr, privateIP), poolAddr},
+	} {
+		d, _, _ := newTestDialer(s.T(), c.answers, host(hostWild))
+		_, err := d.Dial(context.Background(), checkedHost, 443)
+		s.Equal(c.want, peerOf(s.T(), err).String(), name)
+	}
+}
