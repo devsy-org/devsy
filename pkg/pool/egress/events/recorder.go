@@ -212,8 +212,8 @@ func (r *Recorder) Allowed(a egress.Allow) {
 func (r *Recorder) Flush() error {
 	r.flushMu.Lock()
 	defer r.flushMu.Unlock()
+	defer r.reportLoss()
 	retries, pending := r.take()
-	r.reportLoss()
 	dests := slices.SortedFunc(maps.Keys(pending), compareDest)
 	if err := r.flushDenials(retries); err != nil {
 		r.restore(dests, pending, false)
@@ -239,7 +239,11 @@ func (r *Recorder) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return r.Flush()
+			err := r.Flush()
+			if err != nil {
+				r.reportLeftover()
+			}
+			return err
 		case <-ticker.C:
 			if err := r.Flush(); err != nil {
 				r.cfg.Logger.Warn("egress summary flush failed", "error", err.Error())
@@ -274,8 +278,16 @@ func (r *Recorder) reportLoss() {
 		"lost", now.Lost-before.Lost)
 }
 
+func (r *Recorder) reportLeftover() {
+	r.mu.Lock()
+	summaries, denials := len(r.allowed), len(r.retry)
+	r.mu.Unlock()
+	r.cfg.Logger.Warn("egress audit events left unwritten at stop",
+		"summaries", summaries, "denials", denials)
+}
+
 func (r *Recorder) denyKey(d egress.Denial) (denyKey, bool) {
-	if !validPort(d.Port) || !validReason(d.Reason) {
+	if !validPort(d.Port) || !d.Reason.Valid() {
 		r.unrecorded()
 		return denyKey{}, false
 	}
@@ -310,9 +322,15 @@ func (r *Recorder) claimLocked(key denyKey) {
 	r.budget[key.reason]++
 }
 
+// queueRetry holds a denial whose write failed. If a flush ended its window
+// while the write ran, the key is claimed again in the new one, so the retry
+// counts against that window's budget and a repeat is still coalesced.
 func (r *Recorder) queueRetry(key denyKey, p pendingDeny) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, ok := r.seen[key]; !ok {
+		r.claimLocked(key)
+	}
 	r.retry[key] = p
 }
 
@@ -474,13 +492,3 @@ func compareDenyKey(a, b denyKey) int {
 }
 
 func validPort(port int) bool { return port >= 1 && port <= maxPort }
-
-func validReason(r egress.Reason) bool {
-	switch r {
-	case egress.NotAllowed, egress.ReservedRange, egress.PrivateRange, egress.PoolNetwork,
-		egress.IPLiteral, egress.ResolveFailed, egress.BadRequest, egress.SNIMismatch,
-		egress.SNIMissing:
-		return true
-	}
-	return false
-}

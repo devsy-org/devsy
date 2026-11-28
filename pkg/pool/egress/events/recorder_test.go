@@ -634,3 +634,43 @@ func (s *RecorderSuite) TestARuleSurvivesTheFoldIntoARedactedBucket() {
 	}
 	s.Equal(map[any]bool{0: true, 3: true}, rules)
 }
+
+func (s *RecorderSuite) TestALossInAFlushIsLoggedByThatFlush() {
+	var logs bytes.Buffer
+	r := newRecorder(s, func(c *Config) { c.Logger = slog.New(slog.NewTextHandler(&logs, nil)) })
+	s.sink.setFail(errors.New("refused"))
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Require().Error(r.Flush())
+	s.NotContains(logs.String(), "lost=1")
+	s.Require().Error(r.Flush())
+	s.Contains(logs.String(), "lost=1", "the flush that gave the event up reports it")
+}
+
+func (s *RecorderSuite) TestAStopWithUnwrittenEventsLogsThem() {
+	var logs bytes.Buffer
+	r := newRecorder(s, func(c *Config) {
+		c.Interval = time.Hour
+		c.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+	s.sink.setFail(errors.New("disk full"))
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	r.Allowed(egress.Allow{Target: egress.Target{Host: hostA, Port: 443}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.Require().Error(r.Run(ctx))
+	s.Contains(logs.String(), "left unwritten at stop")
+	s.Contains(logs.String(), "summaries=1")
+	s.Contains(logs.String(), "denials=1")
+}
+
+func (s *RecorderSuite) TestARetryQueuedAfterTheWindowEndedIsHeldAgainstItsBudget() {
+	r := newRecorder(s, nil)
+	s.sink.setFail(errors.New("disk full"))
+	s.sink.during = func() { s.Require().NoError(r.Flush()) }
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Equal(1, s.sink.attempts())
+
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Equal(1, s.sink.attempts(), "the queued denial holds its key in the new window")
+}

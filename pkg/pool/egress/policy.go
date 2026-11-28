@@ -30,6 +30,17 @@ const (
 	SNIMissing    Reason = "sni_missing"
 )
 
+// Valid reports whether r is one of the audit devsy.egress.reason values a
+// refusal can carry.
+func (r Reason) Valid() bool {
+	switch r {
+	case NotAllowed, ReservedRange, PrivateRange, PoolNetwork, IPLiteral,
+		ResolveFailed, BadRequest, SNIMismatch, SNIMissing:
+		return true
+	}
+	return false
+}
+
 // Decision is the verdict for one request.
 type Decision struct {
 	Allow  bool
