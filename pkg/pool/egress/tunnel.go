@@ -48,9 +48,10 @@ func hijack(w http.ResponseWriter) (net.Conn, io.Reader, error) {
 	return conn, io.MultiReader(bytes.NewReader(bytes.Clone(buffered)), conn), nil
 }
 
-// tunnel answers 200, requires a ClientHello for the CONNECT host, forwards it
-// and then copies bytes both ways until either side ends, the tunnel idles or
-// ctx ends. Nothing is sent upstream before the hello has passed.
+// tunnel answers 200, requires a ClientHello for the CONNECT host, records the
+// allow, forwards the hello and then copies bytes both ways until either side
+// ends, the tunnel idles or ctx ends. Nothing is sent upstream before the
+// hello has passed and the pool has the allow.
 func (p *Proxy) tunnel(ctx context.Context, t tunnelConns, req connectRequest) {
 	ctx, cancel := context.WithTimeout(ctx, p.lifetime)
 	defer cancel()
@@ -58,12 +59,6 @@ func (p *Proxy) tunnel(ctx context.Context, t tunnelConns, req connectRequest) {
 	stop := context.AfterFunc(ctx, t.close)
 	defer stop()
 	if !p.open(t, req) {
-		return
-	}
-	p.rec.Allowed(Allow{Target: req.target, Rule: req.rule})
-	// The recorder turns unhealthy when it cannot deliver, and drops what it is
-	// given from then on. No byte passes for an allow the pool never saw.
-	if !p.healthy() {
 		return
 	}
 	t.splice(p.idle)
@@ -83,6 +78,10 @@ func (p *Proxy) open(t tunnelConns, req connectRequest) bool {
 	}
 	if reason != "" {
 		p.recordDenied(Denial{Target: req.target, Reason: reason})
+		return false
+	}
+	// An allow the pool did not get must not carry a byte, the hello included.
+	if !p.rec.Allowed(Allow{Target: req.target, Rule: req.rule}) {
 		return false
 	}
 	return p.sendHello(t.up, hello, deadline, req)

@@ -36,10 +36,11 @@ func (k *sinkStub) Denied(d egress.Denial) {
 	k.denials = append(k.denials, d)
 }
 
-func (k *sinkStub) Allowed(a egress.Allow) {
+func (k *sinkStub) Allowed(a egress.Allow) bool {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.allows = append(k.allows, a)
+	return true
 }
 
 func (k *sinkStub) counts() (int, int) {
