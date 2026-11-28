@@ -210,6 +210,30 @@ func (s *DialerSuite) TestARefusedSocketAddressStopsTheLoop() {
 	s.Len(sock.targets, 1)
 }
 
+func (s *DialerSuite) TestTheWholeDialHasATimeBudget() {
+	d, _, sock := newTestDialer(s.T(), addrs("8.8.4.4", publicAddr, "8.8.8.9"), host(hostWild))
+	d.budget = 50 * time.Millisecond
+	d.connect = func(ctx context.Context, t netip.AddrPort, _ func(string) error) (net.Conn, error) {
+		sock.targets = append(sock.targets, t)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	start := time.Now()
+	_, err := d.Dial(context.Background(), checkedHost, 443)
+	s.Require().Error(err)
+	s.Less(time.Since(start), 5*time.Second)
+	s.Len(sock.targets, 1)
+	s.ErrorIs(err, context.DeadlineExceeded)
+}
+
+func (s *DialerSuite) TestNoAddressesIsRefused() {
+	d, _, sock := newTestDialer(s.T(), nil, host(hostWild))
+	_, err := d.dialChecked(context.Background(), nil, 443,
+		func(netip.Addr) Decision { return allowed })
+	s.Equal(ResolveFailed, reasonOf(s.T(), err))
+	s.Empty(sock.targets)
+}
+
 func (s *DialerSuite) TestTheConnectStepRefusesABadPortToo() {
 	d, _, sock := newTestDialer(s.T(), nil, host(hostWild))
 	for _, port := range []int{0, -1, 65536} {

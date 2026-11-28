@@ -16,6 +16,9 @@ import (
 const (
 	resolveTimeout = 5 * time.Second
 	dialTimeout    = 10 * time.Second
+	// dialBudget bounds all connect attempts for one request, so a name with
+	// many unreachable answers cannot hold the caller for answers x dialTimeout.
+	dialBudget = 30 * time.Second
 )
 
 // Resolver is the part of net.Resolver the dialer uses.
@@ -47,15 +50,24 @@ type Dialer struct {
 	policy   *Policy
 	resolver Resolver
 	connect  connectFunc
+	budget   time.Duration
 }
 
-// NewDialer returns a Dialer that resolves with the pure-Go resolver.
+// NewDialer returns a Dialer that resolves with the pure-Go resolver. p must
+// not be nil.
 func NewDialer(p *Policy) *Dialer {
-	return &Dialer{policy: p, resolver: &net.Resolver{PreferGo: true}, connect: connectTCP}
+	return &Dialer{
+		policy:   p,
+		resolver: &net.Resolver{PreferGo: true},
+		connect:  connectTCP,
+		budget:   dialBudget,
+	}
 }
 
 // Dial connects to host and port. host is a bare name or IP address, with no
-// brackets or port. A policy refusal returns a *DeniedError.
+// brackets or port. A policy refusal returns a *DeniedError. Any other error
+// names the resolved address and the OS error, so a caller must log it and
+// send the client a fixed message.
 func (d *Dialer) Dial(ctx context.Context, host string, port int) (net.Conn, error) {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		return d.dialLiteral(ctx, addr, port)
@@ -104,6 +116,14 @@ func (d *Dialer) dialChecked(
 ) (net.Conn, error) {
 	if port < 1 || port > math.MaxUint16 {
 		return nil, &DeniedError{Reason: BadRequest}
+	}
+	if len(addrs) == 0 {
+		return nil, &DeniedError{Reason: ResolveFailed}
+	}
+	if d.budget > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d.budget)
+		defer cancel()
 	}
 	var last error
 	for _, addr := range addrs {
