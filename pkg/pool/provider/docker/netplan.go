@@ -7,14 +7,21 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+
+	"github.com/devsy-org/devsy/pkg/pool/provider"
 )
 
 const (
 	iccDisabled = "false"
 	optICC      = "com.docker.network.bridge.enable_icc"
+	optMasq     = "com.docker.network.bridge.enable_ip_masquerade"
 	driverNet   = "bridge"
 	proxyPort   = 3128
 )
+
+func bridgeName(pool string) string {
+	return resourcePrefix + pool + "-out"
+}
 
 // ErrNoAddressSpace reports that Docker has no address pool left for another
 // network. A default Docker Engine has pools for about 30 networks, so a pool
@@ -84,10 +91,15 @@ func (c ipamConfig) parse() (subnet, error) {
 	return subnet{prefix: prefix, gateway: gw}, nil
 }
 
-// checkBridge verifies a shared outbound bridge is what the provider needs:
-// a plain bridge that is not internal, that blocks traffic between its
-// containers and that has one IPv4 subnet and no IPv6.
-func (n netInfo) checkBridge() error {
+// checkBridge verifies a network is the pool's shared outbound bridge: it
+// carries the pool's shared label and no session label, has the bridge name,
+// is a plain bridge that is not internal, blocks traffic between its
+// containers, keeps masquerade on and has one IPv4 subnet and no IPv6.
+// A network that fails any of this is never adopted.
+func (n netInfo) checkBridge(pool string) error {
+	if err := n.checkBridgeIdentity(pool); err != nil {
+		return err
+	}
 	switch {
 	case n.Driver != driverNet:
 		return fmt.Errorf("outbound network driver is %q, want %q", n.Driver, driverNet)
@@ -95,9 +107,24 @@ func (n netInfo) checkBridge() error {
 		return errors.New("outbound network is internal and has no route out")
 	case n.Options[optICC] != iccDisabled:
 		return errors.New("outbound network allows traffic between containers")
+	case n.Options[optMasq] == "false":
+		return errors.New("outbound network has no address translation")
 	}
 	_, err := n.subnet()
 	return err
+}
+
+func (n netInfo) checkBridgeIdentity(pool string) error {
+	if n.Name != bridgeName(pool) {
+		return errors.New("outbound network name does not match")
+	}
+	if n.Labels[provider.LabelShared] != pool {
+		return errors.New("outbound network does not carry this pool's shared label")
+	}
+	if _, ok := n.Labels[provider.LabelPool]; ok {
+		return errors.New("outbound network carries a session pool label")
+	}
+	return nil
 }
 
 // checkInternal verifies a session network has no route out.
@@ -166,8 +193,17 @@ func mapCreateError(err error) error {
 		return err
 	}
 	text := strings.ToLower(ce.Stderr)
-	if strings.Contains(text, "all predefined address pools have been fully subnetted") {
-		return errors.Join(ErrNoAddressSpace, err)
+	for _, capacity := range capacityMessages {
+		if strings.Contains(text, capacity) {
+			return errors.Join(ErrNoAddressSpace, err)
+		}
 	}
 	return err
+}
+
+// capacityMessages are Docker's out-of-pool errors: the first from Docker 27
+// and later, the second from Docker 23 to 26.
+var capacityMessages = []string{
+	"all predefined address pools have been fully subnetted",
+	"could not find an available, non-overlapping ipv4 address pool",
 }

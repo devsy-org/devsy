@@ -10,10 +10,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/pool/provider"
 )
 
-func bridgeName(pool string) string {
-	return resourcePrefix + pool + "-out"
-}
-
 // lockBridge must span ensureBridge and sidecar creation so release cannot remove the bridge in between.
 func (p *Provider) lockBridge(ctx context.Context, pool string) (func(), error) {
 	return p.bridgeLocks.lock(ctx, pool)
@@ -127,13 +123,10 @@ func (p *Provider) bridgeIDs(ctx context.Context, pool string) ([]string, error)
 }
 
 func (n netInfo) verifyBridge(pool, id string) error {
-	if n.ID != id || n.Name != bridgeName(pool) || n.Labels[provider.LabelShared] != pool {
-		return errors.New("network identity, name, or shared pool label does not match")
+	if n.ID != id {
+		return errors.New("network identity does not match")
 	}
-	if _, exists := n.Labels[provider.LabelPool]; exists {
-		return errors.New("shared network carries a session pool label")
-	}
-	return n.checkBridge()
+	return n.checkBridge(pool)
 }
 
 func dockerReports(err error, message string) bool {
