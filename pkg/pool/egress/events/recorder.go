@@ -199,11 +199,12 @@ func (r *Recorder) Denied(d egress.Denial) {
 	}
 }
 
-// Allowed counts one tunnel that passed every check.
-func (r *Recorder) Allowed(a egress.Allow) {
+// Allowed counts one tunnel that passed every check. It reports false when
+// the tunnel could not be counted: an invalid port, or a closed recorder.
+func (r *Recorder) Allowed(a egress.Allow) bool {
 	if !validPort(a.Port) {
 		r.unrecorded()
-		return
+		return false
 	}
 	d := dest{host: r.visible(a.Target), port: a.Port, rule: a.Rule}
 	now := r.cfg.Now()
@@ -211,9 +212,10 @@ func (r *Recorder) Allowed(a egress.Allow) {
 	defer r.mu.Unlock()
 	if r.closed {
 		r.lateLocked()
-		return
+		return false
 	}
 	r.addLocked(d, tally{count: 1, first: now, last: now})
+	return true
 }
 
 // Flush writes the denials whose first write failed, then one

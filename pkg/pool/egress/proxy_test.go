@@ -58,6 +58,8 @@ type recorderStub struct {
 	mu      sync.Mutex
 	denied  []Denial
 	allowed []Allow
+	// refuse makes Allowed report that the pool did not get the decision.
+	refuse bool
 }
 
 func (r *recorderStub) Denied(d Denial) {
@@ -66,10 +68,11 @@ func (r *recorderStub) Denied(d Denial) {
 	r.denied = append(r.denied, d)
 }
 
-func (r *recorderStub) Allowed(a Allow) {
+func (r *recorderStub) Allowed(a Allow) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.allowed = append(r.allowed, a)
+	return !r.refuse
 }
 
 func (r *recorderStub) snapshot() ([]Denial, []Allow) {
@@ -177,6 +180,8 @@ type envCfg struct {
 	helloTimeout time.Duration
 	headerWait   time.Duration
 	healthy      func() bool
+	// refuseAllow makes the recorder report that no allow was delivered.
+	refuseAllow bool
 }
 
 type proxyEnv struct {
@@ -213,7 +218,7 @@ func TestProxySuite(t *testing.T) {
 
 func startProxy(s *ProxySuite, cfg envCfg) *proxyEnv {
 	env := &proxyEnv{
-		rec:    &recorderStub{},
+		rec:    &recorderStub{refuse: cfg.refuseAllow},
 		logs:   &syncBuffer{},
 		dialed: &dialLog{},
 		done:   make(chan error, 1),
@@ -884,22 +889,48 @@ func (s *ProxySuite) TestAnUnhealthyProxyRefusesEveryNewRequestWithAFixed503() {
 	expectDenials(s, env, NotAllowed)
 }
 
+// countingUpstream accepts connections and counts every byte they send. The
+// returned func waits for the first connection to end and returns the count.
+func countingUpstream(s *ProxySuite) (string, func() int) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = ln.Close() })
+	counted := make(chan int, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		n, _ := io.Copy(io.Discard, conn)
+		counted <- int(n)
+	}()
+	return ln.Addr().String(), func() int {
+		select {
+		case n := <-counted:
+			return n
+		case <-time.After(5 * time.Second):
+			s.FailNow("the upstream connection never ended")
+			return -1
+		}
+	}
+}
+
 func (s *ProxySuite) TestATunnelWhoseAllowCannotBeRecordedCarriesNoBytes() {
-	server, pool := tlsUpstream(s)
-	var healthy atomic.Bool
-	healthy.Store(true)
-	env := startProxy(s, envCfg{
-		upstream: server.Listener.Addr().String(),
-		healthy:  healthy.Load,
-	})
+	addr, upstreamBytes := countingUpstream(s)
+	env := startProxy(s, envCfg{upstream: addr, refuseAllow: true})
 	c := openTunnel(s, env, tunnelAuth)
-	healthy.Store(false)
 	conn := tls.Client(
 		c.conn,
-		&tls.Config{ServerName: tunnelHost, RootCAs: pool, MinVersion: tls.VersionTLS12},
+		&tls.Config{
+			ServerName: tunnelHost, RootCAs: x509.NewCertPool(), MinVersion: tls.VersionTLS12,
+		},
 	)
 	s.Error(conn.Handshake(), "no upstream byte reaches a client whose allow went unrecorded")
 	c.closed(s)
+	s.Equal(0, upstreamBytes(), "not even the ClientHello reaches the upstream")
+	_, allowed := env.rec.snapshot()
+	s.Len(allowed, 1, "the allow was offered to the recorder before any forward")
 }
 
 func (s *ProxySuite) TestATunnelOpenBeforeTheProxyTurnsUnhealthyKeepsRunning() {

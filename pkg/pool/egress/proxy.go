@@ -65,14 +65,16 @@ type Recorder interface {
 	// Denied is called once for every refused request, before the client
 	// sees the refusal or the connection closes.
 	Denied(Denial)
-	// Allowed is called once for every tunnel that passed every check.
-	Allowed(Allow)
+	// Allowed is called once for every tunnel that passed every check, before
+	// the proxy forwards a byte upstream. It reports whether the decision was
+	// delivered. On false the proxy closes the tunnel without forwarding.
+	Allowed(Allow) bool
 }
 
 type discardRecorder struct{}
 
-func (discardRecorder) Denied(Denial) {}
-func (discardRecorder) Allowed(Allow) {}
+func (discardRecorder) Denied(Denial)      {}
+func (discardRecorder) Allowed(Allow) bool { return true }
 
 // Config holds what one proxy needs. Zero limits mean the defaults.
 type Config struct {

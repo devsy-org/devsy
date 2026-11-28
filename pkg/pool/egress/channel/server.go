@@ -33,7 +33,9 @@ const (
 // Sink.
 type Sink interface {
 	Denied(egress.Denial)
-	Allowed(egress.Allow)
+	// Allowed reports whether the decision was counted. The server does not
+	// act on it.
+	Allowed(egress.Allow) bool
 }
 
 // ServerStats counts what a Server read.
@@ -237,7 +239,7 @@ func (s *Server) dispatch(raw []byte) {
 	case KindDeny:
 		s.sink.Denied(ev.Denial)
 	case KindAllow:
-		s.sink.Allowed(ev.Allow)
+		_ = s.sink.Allowed(ev.Allow)
 	}
 	s.count(func(st *ServerStats) { st.Events++ })
 }

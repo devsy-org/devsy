@@ -93,9 +93,10 @@ func (s *Sender) Denied(d egress.Denial) {
 	s.send(EncodeDenial(d))
 }
 
-// Allowed sends an allowed tunnel to the pool.
-func (s *Sender) Allowed(a egress.Allow) {
-	s.send(EncodeAllow(a))
+// Allowed sends an allowed tunnel to the pool and reports whether the pool
+// got it.
+func (s *Sender) Allowed(a egress.Allow) bool {
+	return s.send(EncodeAllow(a))
 }
 
 // Run connects, sends the ready line, and reconnects whenever the Sender is
@@ -143,12 +144,12 @@ func (s *Sender) dial(ctx context.Context) (net.Conn, error) {
 	return (&net.Dialer{}).DialContext(ctx, "unix", s.cfg.Path)
 }
 
-func (s *Sender) send(line []byte, encodeErr error) {
+func (s *Sender) send(line []byte, encodeErr error) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if encodeErr != nil || !s.healthy.Load() {
 		s.stats.Dropped++
-		return
+		return false
 	}
 	if err := s.writeLocked(line); err != nil {
 		s.stats.Dropped++
@@ -157,9 +158,10 @@ func (s *Sender) send(line []byte, encodeErr error) {
 		// stop at once; Run brings it back when the pool answers.
 		s.healthy.Store(false)
 		s.cfg.Logger.Warn("egress channel send failed", "error", err.Error())
-		return
+		return false
 	}
 	s.stats.Sent++
+	return true
 }
 
 // writeLocked writes one line, connecting first if there is no connection.

@@ -55,7 +55,7 @@ func (s *SenderSuite) TestASenderIsNotHealthyUntilItHasConnected() {
 	sender := s.newSender(filepath.Join(s.dir, "none.sock"))
 	s.False(sender.Healthy())
 	sender.Denied(senderDeny)
-	sender.Allowed(senderAllow)
+	s.False(sender.Allowed(senderAllow), "an allow the pool cannot get must be reported")
 	s.Equal(SenderStats{Dropped: 2}, sender.Stats())
 }
 
@@ -70,7 +70,7 @@ func (s *SenderSuite) TestRunConnectsAnnouncesReadyAndDeliversDecisions() {
 		s.Fail("the pool never saw ready")
 	}
 	sender.Denied(senderDeny)
-	sender.Allowed(senderAllow)
+	s.True(sender.Allowed(senderAllow))
 	s.Eventually(func() bool {
 		d, a := env.sink.counts()
 		return d == 1 && a == 1
@@ -99,7 +99,7 @@ func (s *SenderSuite) TestOneSendToAnUnreachablePoolMakesItUnhealthy() {
 	s.waitHealthy(sender, true)
 	env.stop()
 
-	sender.Allowed(senderAllow)
+	s.False(sender.Allowed(senderAllow))
 	s.False(sender.Healthy(), "the first lost decision must stop the proxy serving")
 	s.Equal(SenderStats{Dropped: 1}, sender.Stats())
 }
@@ -169,14 +169,14 @@ func (s *SenderSuite) TestOneWriteFailureOnAFreshConnectionMakesItUnhealthy() {
 
 func (s *SenderSuite) TestAFailedResendMakesItUnhealthy() {
 	sender := failingSender(s, true, false)
-	sender.Allowed(senderAllow)
+	s.False(sender.Allowed(senderAllow))
 	s.False(sender.Healthy())
 	s.Equal(SenderStats{Dropped: 1}, sender.Stats())
 }
 
 func (s *SenderSuite) TestAResendOnANewConnectionKeepsItHealthy() {
 	sender := failingSender(s, true, true)
-	sender.Denied(senderDeny)
+	s.True(sender.Allowed(senderAllow), "the resend delivered it")
 	s.True(sender.Healthy())
 	s.Equal(SenderStats{Sent: 1}, sender.Stats())
 }
