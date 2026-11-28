@@ -83,8 +83,8 @@ func (c ipamConfig) parse() (subnet, error) {
 }
 
 // checkBridge verifies a shared outbound bridge is what the provider needs:
-// a plain bridge that is not internal and that blocks traffic between its
-// containers.
+// a plain bridge that is not internal, that blocks traffic between its
+// containers and that has one IPv4 subnet and no IPv6.
 func (n netInfo) checkBridge() error {
 	switch {
 	case n.Driver != driverNet:
@@ -94,7 +94,8 @@ func (n netInfo) checkBridge() error {
 	case n.Options[optICC] != "false":
 		return errors.New("outbound network allows traffic between containers")
 	}
-	return nil
+	_, err := n.subnet()
+	return err
 }
 
 // checkInternal verifies a session network has no route out.
@@ -102,7 +103,8 @@ func (n netInfo) checkInternal() error {
 	if !n.Internal {
 		return errors.New("session network is not internal")
 	}
-	return nil
+	_, err := n.subnet()
+	return err
 }
 
 // sidecarAddr returns the first host address after the gateway that is not
@@ -162,7 +164,7 @@ func mapCreateError(err error) error {
 		return err
 	}
 	text := strings.ToLower(ce.Stderr)
-	if strings.Contains(text, "fully subnetted") || strings.Contains(text, "pool overlaps") {
+	if strings.Contains(text, "all predefined address pools have been fully subnetted") {
 		return errors.Join(ErrNoAddressSpace, err)
 	}
 	return err

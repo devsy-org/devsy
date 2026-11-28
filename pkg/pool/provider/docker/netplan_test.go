@@ -101,6 +101,23 @@ func (s *NetplanSuite) TestTheSidecarAddressNeverIsTheBroadcastOrOutsideTheSubne
 	s.Error(err)
 }
 
+func (s *NetplanSuite) TestTinySubnetsHaveNoSidecarAddress() {
+	for _, in := range [][2]string{
+		{"10.0.0.0/31", "10.0.0.0"},
+		{"10.0.0.4/32", "10.0.0.4"},
+		{"255.255.255.252/30", "255.255.255.253"},
+	} {
+		sub := subnet{netip.MustParsePrefix(in[0]), netip.MustParseAddr(in[1])}
+		got, err := sidecarAddr(sub, nil)
+		if in[0] == "255.255.255.252/30" {
+			s.Require().NoError(err)
+			s.Equal(netip.MustParseAddr("255.255.255.254"), got)
+			continue
+		}
+		s.Error(err, in[0])
+	}
+}
+
 func (s *NetplanSuite) TestLastAddrIsTheBroadcastAddress() {
 	for in, want := range map[string]string{
 		"172.21.0.0/16":  "172.21.255.255",
@@ -108,6 +125,7 @@ func (s *NetplanSuite) TestLastAddrIsTheBroadcastAddress() {
 		"192.168.1.0/24": "192.168.1.255",
 		"10.0.0.4/32":    "10.0.0.4",
 		"10.0.0.0/8":     "10.255.255.255",
+		"0.0.0.0/0":      "255.255.255.255",
 	} {
 		s.Equal(netip.MustParseAddr(want), lastAddr(netip.MustParsePrefix(in)), in)
 	}
@@ -135,7 +153,6 @@ func (s *NetplanSuite) TestAlwaysDenyHoldsEverySessionSubnetTheBridgeAndTheGatew
 func (s *NetplanSuite) TestACapacityFailureMapsToTheAddressSpaceError() {
 	for _, text := range []string{
 		"Error response from daemon: all predefined address pools have been fully subnetted",
-		"Error response from daemon: Pool overlaps with other one on this address space",
 	} {
 		err := mapCreateError(
 			&CommandError{Command: kindNetwork + " " + verbCreate, Stderr: text, Err: errInjected},
@@ -143,6 +160,28 @@ func (s *NetplanSuite) TestACapacityFailureMapsToTheAddressSpaceError() {
 		s.ErrorIs(err, ErrNoAddressSpace, text)
 		s.ErrorIs(err, errInjected, "the cause stays in the chain")
 	}
+}
+
+func (s *NetplanSuite) TestAnExplicitSubnetOverlapIsNotACapacityError() {
+	overlap := &CommandError{
+		Command: kindNetwork + " " + verbCreate,
+		Stderr:  "Error response from daemon: Pool overlaps with other one on this address space",
+		Err:     errInjected,
+	}
+	s.NotErrorIs(mapCreateError(overlap), ErrNoAddressSpace)
+}
+
+func (s *NetplanSuite) TestABridgeOrSessionNetworkWithIPv6OrNoSubnetIsRefused() {
+	v6 := `{"Driver":"bridge","EnableIPv6":true,"Options":{"com.docker.network.bridge.enable_icc":"false"},` +
+		`"IPAM":{"Config":[{"Subnet":"172.20.0.0/16","Gateway":"172.20.0.1"}]}}`
+	noSubnet := `{"Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"false"}}`
+	s.Error(s.parse(v6).checkBridge())
+	s.Error(s.parse(noSubnet).checkBridge())
+	s.Error(
+		s.parse(`{"Internal":true,"EnableIPv6":true,"IPAM":{"Config":[{"Subnet":"10.0.0.0/24","Gateway":"10.0.0.1"}]}}`).
+			checkInternal(),
+	)
+	s.Error(s.parse(`{"Internal":true}`).checkInternal())
 }
 
 func (s *NetplanSuite) TestOtherErrorsAreLeftAlone() {
