@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"reflect"
 	"testing"
 	"time"
 
@@ -41,16 +42,21 @@ func (f *fakeResolver) LookupNetIP(
 // verify hook with the address it is about to connect.
 type fakeNet struct {
 	targets []netip.AddrPort
-	fail    map[netip.AddrPort]error
-	probe   string
+	// deadlines holds the time left on each connect context when it started.
+	deadlines []time.Duration
+	fail      map[netip.AddrPort]error
+	probe     string
 	// probeFirst applies probe to the first connect only.
 	probeFirst bool
 }
 
 func (f *fakeNet) connect(
-	_ context.Context, target netip.AddrPort, verify func(string) error,
+	ctx context.Context, target netip.AddrPort, verify func(string) error,
 ) (net.Conn, error) {
 	f.targets = append(f.targets, target)
+	if dl, ok := ctx.Deadline(); ok {
+		f.deadlines = append(f.deadlines, time.Until(dl))
+	}
 	address := target.String()
 	if f.probe != "" && (!f.probeFirst || len(f.targets) == 1) {
 		address = f.probe
@@ -224,6 +230,49 @@ func (s *DialerSuite) TestTheWholeDialHasATimeBudget() {
 	s.Less(time.Since(start), 5*time.Second)
 	s.Len(sock.targets, 1)
 	s.ErrorIs(err, context.DeadlineExceeded)
+}
+
+func (s *DialerSuite) TestNewDialerWiring() {
+	d := NewDialer(newPolicy(s.T(), nil))
+	resolver, ok := d.resolver.(*net.Resolver)
+	s.Require().True(ok, "the default resolver is a net.Resolver")
+	s.True(resolver.PreferGo, "the pure-Go resolver")
+	s.Equal(30*time.Second, d.budget)
+	s.Equal(5*time.Second, resolveTimeout)
+	s.Equal(10*time.Second, dialTimeout)
+	s.Equal(reflect.ValueOf(connectTCP).Pointer(), reflect.ValueOf(d.connect).Pointer())
+}
+
+func (s *DialerSuite) TestEachConnectGetsItsOwnTimeoutInsideTheTotalBudget() {
+	d, _, sock := newTestDialer(s.T(), addrs("8.8.4.4", publicAddr), host(hostWild))
+	d.budget = dialBudget
+	sock.fail[netip.MustParseAddrPort("8.8.4.4:443")] = errors.New("refused")
+	conn, err := d.Dial(context.Background(), checkedHost, 443)
+	s.Require().NoError(err)
+	s.Require().NoError(conn.Close())
+	s.Require().Len(sock.deadlines, 2)
+	for i, left := range sock.deadlines {
+		s.LessOrEqual(left, dialTimeout, "connect %d", i)
+		s.Greater(left, dialTimeout-2*time.Second, "connect %d", i)
+	}
+}
+
+func (s *DialerSuite) TestALookupErrorWithAnswersStillDenies() {
+	d, res, sock := newTestDialer(s.T(), addrs(publicAddr), host(hostWild))
+	res.err = errors.New("partial failure")
+	_, err := d.Dial(context.Background(), checkedHost, 443)
+	s.Equal(ResolveFailed, reasonOf(s.T(), err))
+	s.Empty(sock.targets)
+}
+
+func (s *DialerSuite) TestThePortRangeEndsAt65535() {
+	d, _, sock := newTestDialer(s.T(), addrs(publicAddr), host(hostWild, 65535))
+	conn, err := d.Dial(context.Background(), checkedHost, 65535)
+	s.Require().NoError(err)
+	s.Require().NoError(conn.Close())
+	s.Equal(publicAddr+":65535", sock.targets[0].String())
+	_, err = d.Dial(context.Background(), checkedHost, 65536)
+	s.Equal(BadRequest, reasonOf(s.T(), err))
 }
 
 func (s *DialerSuite) TestNoAddressesIsRefused() {

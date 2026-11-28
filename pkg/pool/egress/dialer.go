@@ -18,6 +18,8 @@ const (
 	dialTimeout    = 10 * time.Second
 	// dialBudget bounds all connect attempts for one request, so a name with
 	// many unreachable answers cannot hold the caller for answers x dialTimeout.
+	// It does not cover the lookup, so one Dial takes at most resolveTimeout
+	// plus dialBudget, about 35 seconds.
 	dialBudget = 30 * time.Second
 )
 
