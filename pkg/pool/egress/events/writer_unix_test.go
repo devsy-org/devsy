@@ -119,3 +119,24 @@ func TestPeerAndRuleIndexPassTheAuditWriter(t *testing.T) {
 	require.Contains(t, lines[0], peerV4)
 	require.Contains(t, lines[4], "devsy.egress.rule_index")
 }
+
+// The real writer refuses a host name shaped like a credential. That must
+// cost only that event, and must not count as a store fault.
+func TestAnEventTheRealWriterRefusesDoesNotBlockTheRest(t *testing.T) {
+	keyShaped := "AKIA" + strings.Repeat("A", 16) + ".example.com"
+	store, writer, _ := openStore(t)
+	rec := newTestRecorder(t, writer, showAll)
+
+	rec.Denied(denial(keyShaped, 443, egress.NotAllowed))
+	rec.Allowed(egress.Allow{Target: egress.Target{Host: keyShaped, Port: 443}})
+	rec.Denied(denial("a.example.com", 443, egress.NotAllowed))
+	require.Equal(t, 1, rec.Stats().Lost, "the first denial is given up at once")
+	require.NoError(t, rec.Flush())
+
+	stats := rec.Stats()
+	require.Zero(t, stats.Failures)
+	require.Equal(t, 2, stats.Lost)
+	lines := scanAll(t, store)
+	require.NotEmpty(t, lines)
+	require.Contains(t, lines[len(lines)-1], "a.example.com")
+}

@@ -319,6 +319,39 @@ func (s *WriterSuite) TestStoreFailureDoesNotExposeThePath() {
 	s.Equal(syscall.ENOENT, errors.Unwrap(err))
 }
 
+func (s *WriterSuite) TestOnlyAnEventRefusalMatchesErrInvalidEvent() {
+	w := s.writer()
+	refused := map[string]func(*Event){
+		"unregistered type": func(e *Event) { e.Type = writerTestCanary },
+		"no session":        func(e *Event) { e.Session = "" },
+		"other pool":        func(e *Event) { e.Session = "p-other-pool-" + sessionSuffix },
+		"actor kind":        func(e *Event) { e.Actor.Kind = writerTestCanary },
+		"no actor id":       func(e *Event) { e.Actor.ID = "" },
+		"hidden text":       func(e *Event) { e.Workspace = "ws\u202e" },
+		"charset":           func(e *Event) { e.Data[writerTestAgent] = "A b" },
+		"envelope":          func(e *Event) { e.Data["not.allowed"] = "x" },
+		"marshal": func(e *Event) {
+			e.Data[writerTestAgent] = failingAuditValueForTest(writerTestCanary)
+		},
+	}
+	for name, mutate := range refused {
+		event := writerTestEvent(envelope.AuditSessionRequest)
+		mutate(&event)
+		err := w.Write(event)
+		s.Require().Error(err, name)
+		s.ErrorIs(err, ErrInvalidEvent, name)
+	}
+	s.Empty(s.lines())
+
+	failSyncOnce(s.T())
+	err := w.Write(writerTestEvent(envelope.AuditSessionRequest))
+	s.Require().Error(err)
+	s.NotErrorIs(err, ErrInvalidEvent, "a store fault")
+
+	s.Require().NoError(os.RemoveAll(s.store.dir))
+	s.NotErrorIs(w.Write(writerTestEvent(envelope.AuditSessionRequest)), ErrInvalidEvent)
+}
+
 func (s *WriterSuite) TestConcurrentWritesDoNotInterleave() {
 	const writers, perWriter = 8, 10
 	s.cfg.NewID = nil

@@ -1,7 +1,6 @@
 package audit
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -74,7 +73,7 @@ func checkSession(e Event, pool string) error {
 		len(e.Session) == len(prefix)+sessionIDSuffixLen {
 		return nil
 	}
-	return fmt.Errorf("write audit event %s: session is not a session ID of this pool", e.Type)
+	return refuse("write audit event %s: session is not a session ID of this pool", e.Type)
 }
 
 func validLocalUser(v string) bool {
@@ -82,5 +81,5 @@ func validLocalUser(v string) bool {
 }
 
 func charsetError(typ, key string) error {
-	return fmt.Errorf("write audit event %s: %s has characters outside its allowed set", typ, key)
+	return refuse("write audit event %s: %s has characters outside its allowed set", typ, key)
 }

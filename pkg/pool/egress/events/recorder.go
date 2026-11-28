@@ -27,8 +27,7 @@ const (
 	DefaultMaxKeys = 256
 	maxPort        = 65535
 	// maxAttempts is how many times one event is written before it is given
-	// up. The audit writer has no typed validation error, so a poison event
-	// is told from a down store only by repeated failure.
+	// up after store errors. An event the writer refuses is given up at once.
 	maxAttempts = 3
 )
 
@@ -53,7 +52,9 @@ type Config struct {
 	// ShowAddress says whether a host name or IP literal may appear in an
 	// audit event. Nil means never, so every event carries
 	// devsy.egress.address_redacted. Set it to the devsy-signals token scan
-	// once that exists.
+	// once that exists. The audit writer refuses some hosts, such as a name
+	// shaped like a credential, and a refused event is lost, so the filter
+	// must be at least as strict as the writer.
 	ShowAddress func(host string) bool
 	Now         func() time.Time
 	Logger      *slog.Logger
@@ -70,8 +71,13 @@ type Stats struct {
 	// Unrecorded counts decisions the audit allow-list cannot hold: a
 	// destination with no valid port or an unknown reason.
 	Unrecorded int
+	// Late counts decisions that reached the recorder after Run ended. Their
+	// counts are not written, so the caller stops the source of decisions
+	// before it stops Run.
+	Late int
 	// Failures counts consecutive failed audit writes. A write that succeeds
-	// sets it to 0.
+	// sets it to 0. An event the writer refuses is not a store fault and
+	// leaves it unchanged.
 	Failures int
 }
 
@@ -123,6 +129,8 @@ type Recorder struct {
 	retry    map[denyKey]pendingDeny
 	stats    Stats
 	reported Stats
+	closed   bool
+	lateSeen bool
 }
 
 // New checks the config.
@@ -185,7 +193,8 @@ func (r *Recorder) Denied(d egress.Denial) {
 	if peer, ok := peerText(d.Peer); ok {
 		data[attrkey.NetworkPeerAddress] = peer
 	}
-	if err := r.write(envelope.AuditEgressDeny, data); err != nil {
+	err := r.write(envelope.AuditEgressDeny, data)
+	if err != nil && !r.refused(envelope.AuditEgressDeny, err) {
 		r.queueRetry(key, pendingDeny{data: data, tries: 1})
 	}
 }
@@ -200,46 +209,33 @@ func (r *Recorder) Allowed(a egress.Allow) {
 	now := r.cfg.Now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		r.lateLocked()
+		return
+	}
 	r.addLocked(d, tally{count: 1, first: now, last: now})
 }
 
 // Flush writes the denials whose first write failed, then one
 // egress.allow.summary per destination counted since the last flush, and
-// starts a new window. After a failed write, that event and every one after
-// it stay queued for the next flush. An event that fails maxAttempts times is
-// given up and counted in Stats.Lost, so one event the writer refuses cannot
-// block the rest. Flush logs any rise in Dropped, Unrecorded and Lost.
-func (r *Recorder) Flush() error {
-	r.flushMu.Lock()
-	defer r.flushMu.Unlock()
-	defer r.reportLoss()
-	retries, pending := r.take()
-	dests := slices.SortedFunc(maps.Keys(pending), compareDest)
-	if err := r.flushDenials(retries); err != nil {
-		r.restore(dests, pending, false)
-		return err
-	}
-	for i, d := range dests {
-		if err := r.write(
-			envelope.AuditEgressAllowSummary,
-			summaryData(d, pending[d]),
-		); err != nil {
-			r.restore(dests[i:], pending, true)
-			return err
-		}
-	}
-	return nil
-}
+// starts a new window. An event the writer refuses is given up at once and
+// counted in Stats.Lost, and the flush goes on with the next one. After a
+// failed write of any other kind, that event and every one after it stay
+// queued for the next flush, and an event that fails maxAttempts times is
+// given up too. Flush logs any rise in Dropped, Unrecorded and Lost.
+func (r *Recorder) Flush() error { return r.flush(false) }
 
 // Run flushes every Interval until ctx ends, then flushes once more and
-// returns that flush's error.
+// returns that flush's error. Stop whatever calls Denied and Allowed before
+// ctx ends: an allowed connection counted afterwards is never written, and
+// is counted in Stats.Late.
 func (r *Recorder) Run(ctx context.Context) error {
 	ticker := time.NewTicker(r.cfg.Interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			err := r.Flush()
+			err := r.flush(true)
 			if err != nil {
 				r.reportLeftover()
 			}
@@ -252,15 +248,56 @@ func (r *Recorder) Run(ctx context.Context) error {
 	}
 }
 
+// flush runs one flush. The final one ends the recorder, so a decision that
+// arrives afterwards is counted as late instead of waiting for a flush that
+// will not come.
+func (r *Recorder) flush(final bool) error {
+	r.flushMu.Lock()
+	defer r.flushMu.Unlock()
+	defer r.reportLoss()
+	retries, pending := r.take(final)
+	dests := slices.SortedFunc(maps.Keys(pending), compareDest)
+	if err := r.flushDenials(retries); err != nil {
+		r.restore(dests, pending, false)
+		return err
+	}
+	return r.flushSummaries(dests, pending)
+}
+
 func (r *Recorder) flushDenials(retries map[denyKey]pendingDeny) error {
 	keys := slices.SortedFunc(maps.Keys(retries), compareDenyKey)
 	for i, key := range keys {
-		if err := r.write(envelope.AuditEgressDeny, retries[key].data); err != nil {
+		err := r.write(envelope.AuditEgressDeny, retries[key].data)
+		if err != nil && !r.refused(envelope.AuditEgressDeny, err) {
 			r.requeue(keys[i:], retries)
 			return err
 		}
 	}
 	return nil
+}
+
+func (r *Recorder) flushSummaries(dests []dest, pending map[dest]tally) error {
+	for i, d := range dests {
+		err := r.write(envelope.AuditEgressAllowSummary, summaryData(d, pending[d]))
+		if err != nil && !r.refused(envelope.AuditEgressAllowSummary, err) {
+			r.restore(dests[i:], pending, true)
+			return err
+		}
+	}
+	return nil
+}
+
+// refused reports whether the writer rejected the event itself. Writing it
+// again cannot succeed, so it is given up at once and the events behind it
+// are still written.
+func (r *Recorder) refused(typ string, err error) bool {
+	if !errors.Is(err, audit.ErrInvalidEvent) {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.loseLocked(typ)
+	return true
 }
 
 func (r *Recorder) reportLoss() {
@@ -328,6 +365,10 @@ func (r *Recorder) claimLocked(key denyKey) {
 func (r *Recorder) queueRetry(key denyKey, p pendingDeny) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		r.lateLocked()
+		return
+	}
 	if _, ok := r.seen[key]; !ok {
 		r.claimLocked(key)
 	}
@@ -356,6 +397,17 @@ func (r *Recorder) requeue(keys []denyKey, retries map[denyKey]pendingDeny) {
 func (r *Recorder) loseLocked(typ string) {
 	r.stats.Lost++
 	r.cfg.Logger.Warn("egress audit event given up", "type", typ)
+}
+
+// lateLocked counts a decision that came after the final flush. The first one
+// is logged at once, since no later flush will report it.
+func (r *Recorder) lateLocked() {
+	r.stats.Late++
+	if r.lateSeen {
+		return
+	}
+	r.lateSeen = true
+	r.cfg.Logger.Warn("egress decision recorded after the recorder stopped")
 }
 
 func (r *Recorder) unrecorded() {
@@ -392,9 +444,10 @@ func (r *Recorder) addLocked(d dest, t tally) {
 	r.allowed[d] = cur
 }
 
-func (r *Recorder) take() (map[denyKey]pendingDeny, map[dest]tally) {
+func (r *Recorder) take(final bool) (map[denyKey]pendingDeny, map[dest]tally) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.closed = r.closed || final
 	retries, pending := r.retry, r.allowed
 	r.retry = map[denyKey]pendingDeny{}
 	r.allowed = map[dest]tally{}
@@ -429,10 +482,11 @@ func (r *Recorder) write(typ string, data map[string]any) error {
 		Data:    data,
 	})
 	r.mu.Lock()
-	if err != nil {
-		r.stats.Failures++
-	} else {
+	switch {
+	case err == nil:
 		r.stats.Failures = 0
+	case !errors.Is(err, audit.ErrInvalidEvent):
+		r.stats.Failures++
 	}
 	r.mu.Unlock()
 	if err != nil {

@@ -1,7 +1,6 @@
 package audit
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -39,5 +38,5 @@ func hidden(r rune) bool {
 }
 
 func textError(typ, field string) error {
-	return fmt.Errorf("write audit event %s: %s is too long or has hidden characters", typ, field)
+	return refuse("write audit event %s: %s is too long or has hidden characters", typ, field)
 }
