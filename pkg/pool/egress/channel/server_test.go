@@ -4,6 +4,7 @@ package channel
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -109,6 +110,41 @@ func (s *ServerSuite) TestListenRefusesADirectoryOthersCanReach() {
 	s.ErrorIs(err, errParentNotPrivate)
 	_, err = Listen(filepath.Join(s.dir, "missing", "a.sock"))
 	s.ErrorIs(err, errParentNotPrivate)
+}
+
+func (s *ServerSuite) TestListenRefusesADirectoryWithOnlyOtherBitsSet() {
+	for _, mode := range []os.FileMode{0o701, 0o702, 0o704, 0o707} {
+		dir := filepath.Join(s.dir, fmt.Sprintf("d%o", mode))
+		s.Require().NoError(os.Mkdir(dir, 0o700))
+		s.Require().NoError(os.Chmod(dir, mode))
+		_, err := Listen(filepath.Join(dir, "a.sock"))
+		s.ErrorIs(err, errParentNotPrivate, "mode %o", mode)
+	}
+}
+
+func (s *ServerSuite) TestManyRefusedConnectionsAreClosedAndLeaveNothingTracked() {
+	env := s.start()
+	var held []net.Conn
+	for range maxConns {
+		held = append(held, s.dial(env))
+	}
+	for _, c := range held {
+		s.write(c, `{"t":"ready"}`+"\n")
+	}
+	const extra = 40
+	for range extra {
+		c, err := net.Dial("unix", env.path)
+		s.Require().NoError(err)
+		s.Require().NoError(c.SetReadDeadline(time.Now().Add(waitFor)))
+		_, err = c.Read(make([]byte, 1))
+		s.Require().ErrorIs(err, io.EOF, "a refused connection is closed by the server")
+		_ = c.Close()
+	}
+	s.Equal(extra, env.server.Stats().Refused)
+	env.server.mu.Lock()
+	tracked := len(env.server.conns)
+	env.server.mu.Unlock()
+	s.LessOrEqual(tracked, maxConns, "refused connections are never tracked")
 }
 
 func (s *ServerSuite) TestIdleConnectionsAreClosedAndTheirSlotsReused() {

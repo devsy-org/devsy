@@ -61,6 +61,11 @@ func (p *Proxy) tunnel(ctx context.Context, t tunnelConns, req connectRequest) {
 		return
 	}
 	p.rec.Allowed(Allow{Target: req.target, Rule: req.rule})
+	// The recorder turns unhealthy when it cannot deliver, and drops what it is
+	// given from then on. No byte passes for an allow the pool never saw.
+	if !p.healthy() {
+		return
+	}
 	t.splice(p.idle)
 }
 
