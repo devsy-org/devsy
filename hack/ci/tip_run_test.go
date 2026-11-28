@@ -33,8 +33,14 @@ type fakeTip struct {
 
 func (f *fakeTip) Tip(context.Context) (string, error) { return f.tip, f.tipErr }
 
-func (f *fakeTip) Conclusions(context.Context, string) ([]string, error) {
-	return f.conclusions, f.runsErr
+func (f *fakeTip) Conclusions(_ context.Context, sha string) ([]string, error) {
+	if f.runsErr != nil {
+		return nil, f.runsErr
+	}
+	if sha != f.tip {
+		return nil, nil
+	}
+	return f.conclusions, nil
 }
 
 func (f *fakeTip) Dispatch(context.Context) error {
