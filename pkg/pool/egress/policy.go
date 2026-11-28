@@ -1,6 +1,7 @@
 // Package egress decides whether the egress proxy may reach a destination.
-// It holds no sockets and does no DNS: the caller resolves once and passes
-// the answers back for a second check.
+// Policy holds no sockets and does no DNS: the caller resolves once and
+// passes the answers back for a second check. Dialer does that for a TCP
+// connect.
 package egress
 
 import (
