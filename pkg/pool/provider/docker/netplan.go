@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	scopeLocal  = "local"
 	iccDisabled = "false"
 	optICC      = "com.docker.network.bridge.enable_icc"
 	optMasq     = "com.docker.network.bridge.enable_ip_masquerade"
@@ -37,10 +38,19 @@ type netInfo struct {
 	Name     string            `json:"Name"`
 	Driver   string            `json:"Driver"`
 	Internal bool              `json:"Internal"`
+	Scope    string            `json:"Scope"`
+	Attach   bool              `json:"Attachable"`
+	Ingress  bool              `json:"Ingress"`
+	CfgOnly  bool              `json:"ConfigOnly"`
+	CfgFrom  configFrom        `json:"ConfigFrom"`
 	IPv6     bool              `json:"EnableIPv6"`
 	Options  map[string]string `json:"Options"`
 	Labels   map[string]string `json:"Labels"`
 	IPAM     ipam              `json:"IPAM"`
+}
+
+type configFrom struct {
+	Network string `json:"Network"`
 }
 
 type ipam struct {
@@ -100,21 +110,49 @@ func (n netInfo) checkBridge(pool string) error {
 	if err := n.checkBridgeIdentity(pool); err != nil {
 		return err
 	}
-	switch {
-	case n.Driver != driverNet:
-		return fmt.Errorf("outbound network driver is %q, want %q", n.Driver, driverNet)
-	case n.Internal:
-		return errors.New("outbound network is internal and has no route out")
-	case n.Options[optICC] != iccDisabled:
-		return errors.New("outbound network allows traffic between containers")
-	case n.Options[optMasq] == "false":
-		return errors.New("outbound network has no address translation")
+	if err := n.checkBridgeSettings(); err != nil {
+		return err
 	}
 	_, err := n.subnet()
 	return err
 }
 
+// checkBridgeSettings accepts only the options the provider sets itself, so
+// an option that reroutes or exposes the bridge is refused by default.
+func (n netInfo) checkBridgeSettings() error {
+	switch {
+	case n.Driver != driverNet:
+		return fmt.Errorf("outbound network driver is %q, want %q", n.Driver, driverNet)
+	case n.Internal:
+		return errors.New("outbound network is internal and has no route out")
+	case !n.plainLocal():
+		return errors.New("outbound network is not a plain local bridge")
+	case n.Options[optICC] != iccDisabled:
+		return errors.New("outbound network allows traffic between containers")
+	}
+	return n.checkBridgeOptions()
+}
+
+func (n netInfo) plainLocal() bool {
+	return n.Scope == scopeLocal && !n.Attach && !n.Ingress && !n.CfgOnly && n.CfgFrom.Network == ""
+}
+
+func (n netInfo) checkBridgeOptions() error {
+	for key, value := range n.Options {
+		switch {
+		case key == optICC && value == iccDisabled:
+		case key == optMasq && value == "true":
+		default:
+			return fmt.Errorf("outbound network has the unexpected option %q", key)
+		}
+	}
+	return nil
+}
+
 func (n netInfo) checkBridgeIdentity(pool string) error {
+	if pool == "" {
+		return errors.New("outbound network pool name is empty")
+	}
 	if n.Name != bridgeName(pool) {
 		return errors.New("outbound network name does not match")
 	}
