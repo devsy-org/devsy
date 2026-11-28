@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "check-links": "tsx scripts/check-links.mts"
+    "check-links": "tsx scripts/check-links.mts",
+    "test": "tsx --test \"app/**/*.test.mts\""
   },
   "dependencies": {
     "cnfast": "^0.1.0",
