@@ -9,6 +9,7 @@ import (
 const (
 	LabelPool    = "devsy.sh/pool"
 	LabelSession = "devsy.sh/pool-session"
+	LabelShared  = "devsy.sh/pool-shared"
 )
 
 // ErrExists reports that a session already has resources.

@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/pool/provider"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -19,7 +20,8 @@ func TestNetplanSuite(t *testing.T) {
 const (
 	twoSubnets = `{"Subnet":"10.0.0.0/24","Gateway":"10.0.0.1"},` +
 		`{"Subnet":"10.0.1.0/24","Gateway":"10.0.1.1"}`
-	inspectOK = `{"Id":"x","Driver":"bridge","Internal":false,"EnableIPv6":false,` +
+	inspectOK = `{"Id":"x","Name":"devsy-pool-a-out","Driver":"bridge","Internal":false,` +
+		`"EnableIPv6":false,"Labels":{"devsy.sh/pool-shared":"a"},` +
 		`"Options":{"com.docker.network.bridge.enable_icc":"false"},` +
 		`"IPAM":{"Config":[{"Subnet":"172.20.0.0/16","Gateway":"172.20.0.1"}]}}`
 	sessionNetOK = `{"Id":"y","Driver":"bridge","Internal":true,` +
@@ -28,25 +30,80 @@ const (
 
 func (s *NetplanSuite) TestAGoodBridgePassesTheCheck() {
 	n := s.parse(inspectOK)
-	s.NoError(n.checkBridge())
+	s.NoError(n.checkBridge("a"))
 	sub, err := n.subnet()
 	s.Require().NoError(err)
 	s.Equal(netip.MustParsePrefix("172.20.0.0/16"), sub.prefix)
 	s.Equal(netip.MustParseAddr("172.20.0.1"), sub.gateway)
 }
 
-func (s *NetplanSuite) TestABridgeThatDiffersInAnyCheckedSettingIsRefused() {
-	cases := map[string]string{
-		"driver":        `{"Driver":"macvlan","Options":{"com.docker.network.bridge.enable_icc":"false"}}`,
-		"internal":      `{"Driver":"bridge","Internal":true,"Options":{"com.docker.network.bridge.enable_icc":"false"}}`,
-		"icc true":      `{"Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"true"}}`,
-		"icc missing":   `{"Driver":"bridge"}`,
-		"icc uppercase": `{"Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"False"}}`,
-		"empty":         `{}`,
+const (
+	wantICC    = "between containers"
+	wantShared = "shared label"
+	flagTrue   = "true"
+)
+
+type bridgeCase struct {
+	mutate func(*netInfo)
+	want   string
+}
+
+func bridgeCases() map[string]bridgeCase {
+	return map[string]bridgeCase{
+		"driver":        {func(n *netInfo) { n.Driver = "macvlan" }, "driver"},
+		"internal":      {func(n *netInfo) { n.Internal = true }, "internal"},
+		"icc true":      {func(n *netInfo) { n.Options[optICC] = flagTrue }, wantICC},
+		"icc missing":   {func(n *netInfo) { delete(n.Options, optICC) }, wantICC},
+		"icc uppercase": {func(n *netInfo) { n.Options[optICC] = "False" }, wantICC},
+		"no masquerade": {func(n *netInfo) { n.Options[optMasq] = "false" }, "address translation"},
+		"wrong name":    {func(n *netInfo) { n.Name = "devsy-pool-a-other" }, "name"},
+		"no shared label": {
+			func(n *netInfo) { n.Labels = nil }, wantShared,
+		},
+		"other pool's label": {
+			func(n *netInfo) { n.Labels[provider.LabelShared] = "b" }, wantShared,
+		},
+		"empty label value": {
+			func(n *netInfo) { n.Labels[provider.LabelShared] = "" }, wantShared,
+		},
+		"unrelated label only": {
+			func(n *netInfo) { n.Labels = map[string]string{"owner": "someone"} }, wantShared,
+		},
+		"session pool label": {
+			func(n *netInfo) { n.Labels[provider.LabelPool] = "a" }, "session pool label",
+		},
+		"ipv6":      {func(n *netInfo) { n.IPv6 = true }, "IPv6"},
+		"no subnet": {func(n *netInfo) { n.IPAM.Config = nil }, "0 subnets"},
+		"two subnets": {func(n *netInfo) {
+			n.IPAM.Config = append(n.IPAM.Config, ipamConfig{"10.9.0.0/24", "10.9.0.1"})
+		}, "2 subnets"},
+		"gateway outside": {func(n *netInfo) { n.IPAM.Config[0].Gateway = "10.9.0.1" }, "gateway"},
 	}
-	for name, doc := range cases {
-		s.Error(s.parse(doc).checkBridge(), name)
+}
+
+// Each case starts from a bridge that passes and breaks one field, so a case
+// can only fail on the check it names.
+func (s *NetplanSuite) TestABridgeThatDiffersInOneCheckedSettingIsRefused() {
+	s.Require().NoError(s.parse(inspectOK).checkBridge("a"), "the base bridge must pass")
+	for name, tc := range bridgeCases() {
+		n := s.parse(inspectOK)
+		tc.mutate(&n)
+		err := n.checkBridge("a")
+		s.Require().Error(err, name)
+		s.Contains(err.Error(), tc.want, name)
 	}
+}
+
+func (s *NetplanSuite) TestABridgeOfAnotherPoolIsRefused() {
+	err := s.parse(inspectOK).checkBridge("b")
+	s.Require().Error(err)
+	s.Contains(err.Error(), "name")
+}
+
+func (s *NetplanSuite) TestMasqueradeMayBeExplicitlyOn() {
+	n := s.parse(inspectOK)
+	n.Options[optMasq] = flagTrue
+	s.NoError(n.checkBridge("a"))
 }
 
 func (s *NetplanSuite) TestASessionNetworkMustBeInternal() {
@@ -153,6 +210,8 @@ func (s *NetplanSuite) TestAlwaysDenyHoldsEverySessionSubnetTheBridgeAndTheGatew
 func (s *NetplanSuite) TestACapacityFailureMapsToTheAddressSpaceError() {
 	for _, text := range []string{
 		"Error response from daemon: all predefined address pools have been fully subnetted",
+		"Error response from daemon: could not find an available, non-overlapping IPv4 address " +
+			"pool among the defined address pools: [{172.17.0.0 16}]",
 	} {
 		err := mapCreateError(
 			&CommandError{Command: kindNetwork + " " + verbCreate, Stderr: text, Err: errInjected},
@@ -171,12 +230,7 @@ func (s *NetplanSuite) TestAnExplicitSubnetOverlapIsNotACapacityError() {
 	s.NotErrorIs(mapCreateError(overlap), ErrNoAddressSpace)
 }
 
-func (s *NetplanSuite) TestABridgeOrSessionNetworkWithIPv6OrNoSubnetIsRefused() {
-	v6 := `{"Driver":"bridge","EnableIPv6":true,"Options":{"com.docker.network.bridge.enable_icc":"false"},` +
-		`"IPAM":{"Config":[{"Subnet":"172.20.0.0/16","Gateway":"172.20.0.1"}]}}`
-	noSubnet := `{"Driver":"bridge","Options":{"com.docker.network.bridge.enable_icc":"false"}}`
-	s.Error(s.parse(v6).checkBridge())
-	s.Error(s.parse(noSubnet).checkBridge())
+func (s *NetplanSuite) TestASessionNetworkWithIPv6OrNoSubnetIsRefused() {
 	s.Error(
 		s.parse(`{"Internal":true,"EnableIPv6":true,"IPAM":{"Config":[{"Subnet":"10.0.0.0/24","Gateway":"10.0.0.1"}]}}`).
 			checkInternal(),
