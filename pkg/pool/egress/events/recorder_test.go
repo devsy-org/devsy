@@ -2,11 +2,13 @@ package events
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -810,4 +812,27 @@ func (s *RecorderSuite) TestAFailedFinalFlushKeepsItsCountsForTheLeftoverLog() {
 	s.sink.setFail(nil)
 	s.Require().NoError(r.Flush())
 	s.Len(s.sink.written(), 1)
+}
+
+func (s *RecorderSuite) TestDestinationsSortByHostThenPortThenRule() {
+	at := func(host string, port int, rule egress.Rule) dest {
+		return dest{host: host, port: port, rule: rule}
+	}
+	sorted := []dest{
+		at("", 443, egress.Rule{}),
+		at(hostA, 80, egress.RuleAt(5)),
+		at(hostA, 443, egress.Rule{}),
+		at(hostA, 443, egress.RuleAt(0)),
+		at(hostA, 443, egress.RuleAt(1)),
+		at(hostA, 443, egress.RuleAt(10)),
+		at(hostB, 80, egress.Rule{}),
+	}
+	for i, a := range sorted {
+		for j, b := range sorted {
+			s.Equal(cmp.Compare(i, j), compareDest(a, b), "%d vs %d", i, j)
+		}
+	}
+	shuffled := []dest{sorted[4], sorted[6], sorted[2], sorted[0], sorted[5], sorted[3], sorted[1]}
+	slices.SortFunc(shuffled, compareDest)
+	s.Equal(sorted, shuffled)
 }
