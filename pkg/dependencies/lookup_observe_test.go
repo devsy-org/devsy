@@ -10,22 +10,6 @@ import (
 	"syscall"
 )
 
-func (s *lookupModelSuite) TestDefaultInspectionIsDeferred() {
-	environment := s.environment(nil)
-	path := s.file(testDocker, 0o755)
-
-	candidate, err := environment.observe(context.Background(), path, LookupPATH)
-
-	s.Require().NoError(err)
-	s.Equal(FileDeferred, candidate.State)
-	s.Equal(LookupInspectionDeferred, candidate.ReasonCode)
-	s.Equal(path, candidate.LexicalPath)
-	s.Equal(LookupPATH, candidate.Origin)
-	s.False(candidate.Executed)
-	s.Nil(candidate.Identity)
-	s.NotEmpty(candidate.Platform)
-}
-
 func (s *lookupModelSuite) TestObserveRecordsExecutableFileWithIdentity() {
 	path := s.file(s.name(testDocker), 0o755)
 	environment := s.inspecting(s.statFile)

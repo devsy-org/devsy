@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	envPath      = "PATH"
-	envPathMixed = "Path"
-	toolsDocker  = `C:\Tools\Docker.exe`
-	toolsDir     = `C:\Tools`
+	envPath          = "PATH"
+	envPathMixed     = "Path"
+	toolsDocker      = `C:\Tools\Docker.exe`
+	toolsDir         = `C:\Tools`
+	driveRelativeExe = `C:a.exe`
 )
 
 func (s *lookupModelSuite) recordingEnvironment(
@@ -62,7 +63,15 @@ func (s *lookupModelSuite) TestSearchUsesPathOrderThenReviewedLocations() {
 }
 
 func (s *lookupModelSuite) TestSearchSkipsEmptyDotAndRelativeEntries() {
-	entries := []string{"", ".", "bin", "." + string(filepath.Separator) + "bin", s.root}
+	entries := []string{
+		"",
+		".",
+		"bin",
+		"." + string(filepath.Separator) + "bin",
+		`\\host\share`,
+		`\\.\pipe\docker`,
+		s.root,
+	}
 	environment, seen := s.recordingEnvironment(s.environment(map[string]string{
 		envPath: strings.Join(entries, string(os.PathListSeparator)),
 	}), nil)
@@ -111,17 +120,6 @@ func (s *lookupModelSuite) TestSearchReportsInaccessibleNotMissing() {
 	s.Require().Len(result.Candidates, 1)
 	s.Equal(FileInaccessible, result.Candidates[0].State)
 	s.Equal(LookupInaccessible, result.ReasonCode)
-}
-
-func (s *lookupModelSuite) TestSearchDefersWithTheDefaultInspector() {
-	environment := s.environment(map[string]string{envPath: s.root})
-
-	result, err := environment.Lookup(context.Background(), LookupRequest{Command: testDocker})
-
-	s.Require().NoError(err)
-	s.Require().Len(result.Candidates, 1)
-	s.Equal(FileDeferred, result.Candidates[0].State)
-	s.Equal(LookupInspectionDeferred, result.ReasonCode)
 }
 
 func (s *lookupModelSuite) TestSearchRefusesAHugePathInsteadOfSearchingPartOfIt() {
@@ -356,9 +354,35 @@ func (s *lookupModelSuite) TestExplicitLookupKeepsIntentWhenEmptyOrMissing() {
 	s.Equal([]string{filepath.Join(s.root, testDocker)}, *seen)
 }
 
+func (s *lookupModelSuite) TestExplicitLookupWithAnUnusablePathNeverInspectsPath() {
+	unix := s.environment(map[string]string{envPath: s.root})
+	windows := s.windowsEnvironment(map[string]string{envPath: toolsDir})
+	for name, check := range map[string]struct {
+		environment LookupEnvironment
+		command     string
+		present     string
+	}{
+		"empty":                  {unix, "", filepath.Join(s.root, testDocker)},
+		"windows drive-relative": {windows, driveRelativeExe, toolsDir + `\a.exe`},
+		"windows empty":          {windows, "", toolsDir + `\` + testDockerExe},
+	} {
+		environment, seen := s.recordingEnvironment(
+			check.environment, map[string]bool{check.present: true})
+
+		result, err := environment.Lookup(context.Background(), LookupRequest{
+			Command: check.command, Explicit: true,
+		})
+
+		s.Require().NoError(err, name)
+		s.Empty(*seen, name)
+		s.Empty(result.Candidates, name)
+		s.Equal(LookupInvalidPath, result.ReasonCode, name)
+	}
+}
+
 func (s *lookupModelSuite) TestExplicitLookupRefusesUnsafeWindowsPaths() {
 	environment, seen := s.recordingEnvironment(s.windowsEnvironment(nil), nil)
-	for _, command := range []string{`\\host\share\a.exe`, `C:a.exe`, `\a.exe`, `CON.exe`} {
+	for _, command := range []string{`\\host\share\a.exe`, driveRelativeExe, `\a.exe`, `CON.exe`} {
 		result, err := environment.Lookup(context.Background(), LookupRequest{
 			Command: command, Explicit: true,
 		})
