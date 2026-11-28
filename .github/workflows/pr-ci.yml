@@ -307,7 +307,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
-          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '2' }}
           persist-credentials: ${{ github.event_name != 'pull_request' }}
 
       - uses: ./.github/actions/relocate-tmp
@@ -346,12 +346,15 @@ jobs:
         if: github.event_name == 'pull_request'
         run: go run ./hack/ci lint-patch >> "$GITHUB_OUTPUT"
 
+      # The action only builds a diff for pull requests and pushes, so scheduled
+      # and manual runs would report the whole baseline. Every other event lints
+      # what the checked-out commit changed.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.14.0
-          only-new-issues: ${{ github.event_name != 'pull_request' }}
-          args: ${{ steps.lint-patch.outputs.args }}
+          only-new-issues: false
+          args: ${{ github.event_name == 'pull_request' && steps.lint-patch.outputs.args || '--new-from-rev=HEAD~1' }}
 
   # Native host tests: they execute the real `gh` CLI, so they run per host OS
   # outside the unit tier's package list. macOS runs them in its unit job.
