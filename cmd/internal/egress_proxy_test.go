@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/pool/poolconfig"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/suite"
 )
@@ -36,6 +38,11 @@ func (s *EgressProxyCmdSuite) TestTheCommandIsHiddenAndSkipsTheSharedPreRun() {
 	found, _, err := NewInternalCmd(nil).Find([]string{"egress-proxy"})
 	s.Require().NoError(err)
 	s.Equal("egress-proxy", found.Name())
+}
+
+func (s *EgressProxyCmdSuite) TestTheCommandNeverSendsTelemetry() {
+	cmd := NewEgressProxyCmd()
+	s.Equal(config.BoolTrue, cmd.Annotations[telemetry.AnnotationNoTelemetry])
 }
 
 func (s *EgressProxyCmdSuite) TestTheConfigFlagIsRequiredAndArgsAreRefused() {

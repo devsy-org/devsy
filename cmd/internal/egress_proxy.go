@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/devsy-org/devsy/pkg/pool/egress/sidecar"
+	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,7 @@ func NewEgressProxyCmd() *cobra.Command {
 		Hidden:            true,
 		Args:              cobra.NoArgs,
 		SilenceUsage:      true,
+		Annotations:       telemetry.NoTelemetryAnnotation(),
 		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
 			return runEgressProxy(cobraCmd.Context(), configPath)

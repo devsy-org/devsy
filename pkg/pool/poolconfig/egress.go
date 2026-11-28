@@ -104,6 +104,15 @@ func (s *Spec) applyEgressDefaults() {
 	}
 }
 
+// ValidateEgress checks an egress policy with the rules pool.yaml follows and
+// returns every problem found. It does not fill defaults, so an allow rule
+// with no ports is accepted and means port 443.
+func ValidateEgress(e Egress) error {
+	var errs fieldErrors
+	(&Spec{Egress: e}).validateEgress(&errs)
+	return errs.join(nil)
+}
+
 func (s *Spec) validateEgress(errs *fieldErrors) {
 	if s.Egress.Default != EgressDeny {
 		errs.add("spec.egress.default", "must be %q", EgressDeny)

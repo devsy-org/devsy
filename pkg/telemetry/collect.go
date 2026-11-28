@@ -27,6 +27,23 @@ func SkipInUIAnnotation() map[string]string {
 	return map[string]string{AnnotationSkipInUI: config.BoolTrue}
 }
 
+// Set on cobra commands that must never send telemetry, such as the egress
+// proxy that runs inside a locked-down sidecar.
+const AnnotationNoTelemetry = "telemetry.disabled"
+
+// NoTelemetryAnnotation returns the cobra Annotations map that turns
+// telemetry off for a command.
+func NoTelemetryAnnotation() map[string]string {
+	return map[string]string{AnnotationNoTelemetry: config.BoolTrue}
+}
+
+func telemetryOff(cmd *cobra.Command) bool {
+	if os.Getenv(config.EnvDisableTelemetry) == config.BoolTrue {
+		return true
+	}
+	return cmd != nil && cmd.Annotations[AnnotationNoTelemetry] == config.BoolTrue
+}
+
 type ErrorSeverityType string
 
 const (
@@ -60,8 +77,7 @@ func FromContext(ctx context.Context) CLICollector {
 // Call before LoadConfig so config-load failures still get recorded.
 // Always returns a non-nil collector.
 func BootstrapCLI(cmd *cobra.Command) CLICollector {
-	if version.GetVersion() == version.DevVersion ||
-		os.Getenv(config.EnvDisableTelemetry) == config.BoolTrue {
+	if version.GetVersion() == version.DevVersion || telemetryOff(cmd) {
 		return &noopCollector{}
 	}
 
