@@ -21,7 +21,7 @@ const (
 	twoSubnets = `{"Subnet":"10.0.0.0/24","Gateway":"10.0.0.1"},` +
 		`{"Subnet":"10.0.1.0/24","Gateway":"10.0.1.1"}`
 	inspectOK = `{"Id":"x","Name":"devsy-pool-a-out","Driver":"bridge","Internal":false,` +
-		`"EnableIPv6":false,"Labels":{"devsy.sh/pool-shared":"a"},` +
+		`"EnableIPv6":false,"Labels":{"devsy.sh/pool-shared":"a"},"Scope":"local",` +
 		`"Options":{"com.docker.network.bridge.enable_icc":"false"},` +
 		`"IPAM":{"Config":[{"Subnet":"172.20.0.0/16","Gateway":"172.20.0.1"}]}}`
 	sessionNetOK = `{"Id":"y","Driver":"bridge","Internal":true,` +
@@ -40,6 +40,8 @@ func (s *NetplanSuite) TestAGoodBridgePassesTheCheck() {
 const (
 	wantICC    = "between containers"
 	wantShared = "shared label"
+	wantOption = "unexpected option"
+	wantPlain  = "not a plain local bridge"
 	flagTrue   = "true"
 )
 
@@ -50,13 +52,37 @@ type bridgeCase struct {
 
 func bridgeCases() map[string]bridgeCase {
 	return map[string]bridgeCase{
-		"driver":        {func(n *netInfo) { n.Driver = "macvlan" }, "driver"},
-		"internal":      {func(n *netInfo) { n.Internal = true }, "internal"},
-		"icc true":      {func(n *netInfo) { n.Options[optICC] = flagTrue }, wantICC},
-		"icc missing":   {func(n *netInfo) { delete(n.Options, optICC) }, wantICC},
-		"icc uppercase": {func(n *netInfo) { n.Options[optICC] = "False" }, wantICC},
-		"no masquerade": {func(n *netInfo) { n.Options[optMasq] = "false" }, "address translation"},
-		"wrong name":    {func(n *netInfo) { n.Name = "devsy-pool-a-other" }, "name"},
+		"driver":          {func(n *netInfo) { n.Driver = "macvlan" }, "driver"},
+		"internal":        {func(n *netInfo) { n.Internal = true }, "internal"},
+		"icc true":        {func(n *netInfo) { n.Options[optICC] = flagTrue }, wantICC},
+		"icc missing":     {func(n *netInfo) { delete(n.Options, optICC) }, wantICC},
+		"icc uppercase":   {func(n *netInfo) { n.Options[optICC] = "False" }, wantICC},
+		"no masquerade":   {func(n *netInfo) { n.Options[optMasq] = "false" }, wantOption},
+		"masquerade 0":    {func(n *netInfo) { n.Options[optMasq] = "0" }, wantOption},
+		"masquerade caps": {func(n *netInfo) { n.Options[optMasq] = "False" }, wantOption},
+		"routed gateway": {
+			func(n *netInfo) { n.Options["com.docker.network.bridge.gateway_mode_ipv4"] = "routed" },
+			wantOption,
+		},
+		"host bridge name": {
+			func(n *netInfo) { n.Options["com.docker.network.bridge.name"] = "docker0" },
+			wantOption,
+		},
+		"host binding": {
+			func(n *netInfo) { n.Options["com.docker.network.bridge.host_binding_ipv4"] = "0.0.0.0" },
+			wantOption,
+		},
+		"mtu": {
+			func(n *netInfo) { n.Options["com.docker.network.driver.mtu"] = "1500" },
+			wantOption,
+		},
+		"swarm scope": {func(n *netInfo) { n.Scope = "swarm" }, wantPlain},
+		"no scope":    {func(n *netInfo) { n.Scope = "" }, wantPlain},
+		"attachable":  {func(n *netInfo) { n.Attach = true }, wantPlain},
+		"ingress":     {func(n *netInfo) { n.Ingress = true }, wantPlain},
+		"config only": {func(n *netInfo) { n.CfgOnly = true }, wantPlain},
+		"config from": {func(n *netInfo) { n.CfgFrom.Network = "template" }, wantPlain},
+		"wrong name":  {func(n *netInfo) { n.Name = "devsy-pool-a-other" }, "name"},
 		"no shared label": {
 			func(n *netInfo) { n.Labels = nil }, wantShared,
 		},
@@ -92,6 +118,15 @@ func (s *NetplanSuite) TestABridgeThatDiffersInOneCheckedSettingIsRefused() {
 		s.Require().Error(err, name)
 		s.Contains(err.Error(), tc.want, name)
 	}
+}
+
+func (s *NetplanSuite) TestAnEmptyPoolNeverMatchesAnUnlabelledNetwork() {
+	n := s.parse(inspectOK)
+	n.Name = "devsy-pool--out"
+	n.Labels = nil
+	err := n.checkBridge("")
+	s.Require().Error(err)
+	s.Contains(err.Error(), "empty")
 }
 
 func (s *NetplanSuite) TestABridgeOfAnotherPoolIsRefused() {
