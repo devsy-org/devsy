@@ -4,6 +4,7 @@ package dependencies
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -112,7 +113,7 @@ func (s *lookupUnixSuite) TestOnlyRegularFilesAreOpened() {
 	s.Require().NoError(os.Mkdir(directory, 0o700))
 	regular := s.write(filepath.Join(s.root, "regular"), 0o755)
 	var opened []string
-	count := func(path string) (*os.File, error) {
+	count := func(path string) (lookupHandle, error) {
 		opened = append(opened, path)
 		return openLookupFile(path)
 	}
@@ -259,7 +260,7 @@ func (s *lookupUnixSuite) TestAPipeSwappedInBeforeTheOpenNeverBlocks() {
 	path := s.write(filepath.Join(s.root, testDocker), 0o755)
 	named, err := os.Lstat(path)
 	s.Require().NoError(err)
-	swapInAPipe := func(path string) (*os.File, error) {
+	swapInAPipe := func(path string) (lookupHandle, error) {
 		if err := os.Remove(path); err != nil {
 			return nil, err
 		}
@@ -300,27 +301,28 @@ func (s *lookupUnixSuite) TestAnOpenedFileThatIsNotRegularIsRefusedEvenWithTheSa
 	s.Require().ErrorIs(err, errLookupFileChanged)
 }
 
-func (s *lookupUnixSuite) TestTheDescriptorIsClosedOnEveryPath() {
+func (s *lookupUnixSuite) TestTheDescriptorIsClosedExactlyOnceOnEveryPath() {
 	named := s.write(filepath.Join(s.root, "named"), 0o755)
 	other := s.write(filepath.Join(s.root, "other"), 0o755)
 	namedInfo, err := os.Lstat(named)
 	s.Require().NoError(err)
-	closeFirst := func(file *os.File, _ context.CancelFunc) { _ = file.Close() }
-	cancelAfter := func(_ *os.File, cancel context.CancelFunc) { cancel() }
+	errFstat := errors.New("fstat failed")
+	cancelAfter := func(_ *trackedHandle, cancel context.CancelFunc) { cancel() }
+	failFstat := func(handle *trackedHandle, _ context.CancelFunc) { handle.statErr = errFstat }
 	for name, c := range map[string]struct {
 		path  string
-		after func(*os.File, context.CancelFunc)
+		after func(*trackedHandle, context.CancelFunc)
 		want  error
 	}{
-		"success":            {path: named},
-		"another file":       {path: other, want: errLookupFileChanged},
-		"canceled after":     {path: named, after: cancelAfter, want: context.Canceled},
-		"descriptor failure": {path: named, after: closeFirst, want: os.ErrClosed},
+		"success":        {path: named},
+		"another file":   {path: other, want: errLookupFileChanged},
+		"canceled after": {path: named, after: cancelAfter, want: context.Canceled},
+		"fstat failure":  {path: named, after: failFstat, want: errFstat},
 	} {
-		var files []*os.File
+		var handles []*trackedHandle
 		ctx, cancel := context.WithCancel(context.Background())
 
-		_, err := statOpenedFile(ctx, c.path, namedInfo, recordingOpener(&files, cancel, c.after))
+		_, err := statOpenedFile(ctx, c.path, namedInfo, trackingOpener(&handles, cancel, c.after))
 		cancel()
 
 		if c.want == nil {
@@ -328,9 +330,8 @@ func (s *lookupUnixSuite) TestTheDescriptorIsClosedOnEveryPath() {
 		} else {
 			s.Require().ErrorIs(err, c.want, name)
 		}
-		s.Require().Len(files, 1, name)
-		_, statErr := files[0].Stat()
-		s.Require().ErrorIs(statErr, os.ErrClosed, name)
+		s.Require().Len(handles, 1, name)
+		s.Equal(1, handles[0].closes, name)
 	}
 }
 
@@ -359,20 +360,40 @@ func (s *lookupUnixSuite) skipAsRoot() {
 	}
 }
 
-func recordingOpener(
-	files *[]*os.File,
+// trackedHandle counts closes and can fail the descriptor stat on demand.
+type trackedHandle struct {
+	lookupHandle
+	statErr error
+	closes  int
+}
+
+func (h *trackedHandle) Stat() (os.FileInfo, error) {
+	if h.statErr != nil {
+		return nil, h.statErr
+	}
+	return h.lookupHandle.Stat()
+}
+
+func (h *trackedHandle) Close() error {
+	h.closes++
+	return h.lookupHandle.Close()
+}
+
+func trackingOpener(
+	handles *[]*trackedHandle,
 	cancel context.CancelFunc,
-	after func(*os.File, context.CancelFunc),
+	after func(*trackedHandle, context.CancelFunc),
 ) lookupOpener {
-	return func(path string) (*os.File, error) {
+	return func(path string) (lookupHandle, error) {
 		file, err := openLookupFile(path)
 		if err != nil {
 			return nil, err
 		}
-		*files = append(*files, file)
+		handle := &trackedHandle{lookupHandle: file}
+		*handles = append(*handles, handle)
 		if after != nil {
-			after(file, cancel)
+			after(handle, cancel)
 		}
-		return file, nil
+		return handle, nil
 	}
 }
