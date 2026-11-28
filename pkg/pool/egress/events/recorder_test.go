@@ -1,8 +1,10 @@
 package events
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +31,8 @@ type fakeSink struct {
 	fail   error
 	// during runs inside the first Write, before it fails, with no lock held.
 	during func()
+	// failIf fails the writes it returns an error for.
+	failIf func(audit.Event) error
 }
 
 func (f *fakeSink) Write(e audit.Event) error {
@@ -44,6 +48,11 @@ func (f *fakeSink) Write(e audit.Event) error {
 	f.calls++
 	if f.fail != nil {
 		return f.fail
+	}
+	if f.failIf != nil {
+		if err := f.failIf(e); err != nil {
+			return err
+		}
 	}
 	f.events = append(f.events, e)
 	return nil
@@ -288,18 +297,132 @@ func (s *RecorderSuite) TestNamedDestinationsPastTheCapFoldIntoARedactedBucket()
 	s.Equal(map[string]int{hostA: 2, hostB: 1, "": 2}, counts)
 }
 
-func (s *RecorderSuite) TestAFailedDenialWriteIsCountedAndRetried() {
+func (s *RecorderSuite) TestAFailedDenialWriteIsRetriedAtTheNextFlush() {
 	r := newRecorder(s, nil)
 	s.sink.setFail(errors.New("disk full"))
-	r.Denied(denial(hostA, 443, egress.NotAllowed))
-	r.Denied(denial(hostA, 443, egress.NotAllowed))
-	s.Equal(2, s.sink.attempts(), "the same denial is tried again after a failure")
-	s.Equal(2, r.Stats().Failures)
+	for range 5 {
+		r.Denied(denial(hostA, 443, egress.NotAllowed))
+	}
+	s.Equal(1, s.sink.attempts(), "an agent cannot drive retries by repeating the denial")
+	s.Equal(1, r.Stats().Failures)
 
 	s.sink.setFail(nil)
-	r.Denied(denial(hostA, 443, egress.NotAllowed))
-	s.Len(s.sink.written(), 1)
+	s.Require().NoError(r.Flush())
+	events := s.sink.written()
+	s.Require().Len(events, 1)
+	s.Equal(envelope.AuditEgressDeny, events[0].Type)
 	s.Zero(r.Stats().Failures, "a success ends the run of failures")
+
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Len(s.sink.written(), 2, "the retried denial opened a new window")
+	s.Require().NoError(r.Flush())
+	s.Len(s.sink.written(), 2, "a written denial is not retried again")
+}
+
+func (s *RecorderSuite) TestADenialTheWriterKeepsRefusingIsGivenUp() {
+	r := newRecorder(s, nil)
+	s.sink.setFail(errors.New("refused"))
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	s.Require().Error(r.Flush())
+	s.Zero(r.Stats().Lost)
+	s.Require().Error(r.Flush())
+	s.Equal(1, r.Stats().Lost, "the write at denial time was the first of three")
+
+	s.sink.setFail(nil)
+	s.Require().NoError(r.Flush())
+	s.Empty(s.sink.written())
+}
+
+func (s *RecorderSuite) TestASummaryTheWriterKeepsRefusingDoesNotBlockTheRest() {
+	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
+	s.sink.failIf = func(e audit.Event) error {
+		if e.Data[attrkey.ServerAddress] == hostA {
+			return errors.New("refused")
+		}
+		return nil
+	}
+	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	r.Allowed(egress.Target{Host: hostB, Port: 443})
+	for range 3 {
+		s.Require().Error(r.Flush())
+	}
+	s.Equal(1, r.Stats().Lost)
+	s.Require().NoError(r.Flush())
+	events := s.sink.written()
+	s.Require().Len(events, 1)
+	s.Equal(hostB, events[0].Data[attrkey.ServerAddress])
+}
+
+func (s *RecorderSuite) TestAFailedDenialRetryKeepsTheSummaries() {
+	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
+	s.sink.setFail(errors.New("disk full"))
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	s.Require().Error(r.Flush())
+
+	s.sink.setFail(nil)
+	s.Require().NoError(r.Flush())
+	events := s.sink.written()
+	s.Require().Len(events, 2)
+	s.Equal(envelope.AuditEgressDeny, events[0].Type)
+	s.Equal(envelope.AuditEgressAllowSummary, events[1].Type)
+	s.Equal(1, events[1].Data[attrkey.EgressCount])
+}
+
+func (s *RecorderSuite) TestNewTrafficDoesNotResetTheAttemptsOfARefusedSummary() {
+	r := newRecorder(s, func(c *Config) { c.ShowAddress = showAll })
+	s.sink.failIf = func(audit.Event) error { return errors.New("refused") }
+	r.Allowed(egress.Target{Host: hostA, Port: 443})
+	for range 3 {
+		s.sink.during = func() { r.Allowed(egress.Target{Host: hostA, Port: 443}) }
+		s.Require().Error(r.Flush())
+	}
+	s.Equal(1, r.Stats().Lost, "traffic during a flush must not keep a refused event alive")
+}
+
+func (s *RecorderSuite) TestJunkDenialsOfOneReasonCannotHideAnother() {
+	r := newRecorder(s, func(c *Config) { c.MaxKeys = 2 })
+	for port := 1000; port < 1005; port++ {
+		r.Denied(denial(hostA, port, egress.NotAllowed))
+	}
+	s.Len(s.sink.written(), 2)
+	s.Equal(3, r.Stats().Dropped)
+
+	r.Denied(denial(hostA, 443, egress.PoolNetwork))
+	r.Denied(denial(hostA, 443, egress.SNIMismatch))
+	events := s.sink.written()
+	s.Require().Len(events, 4)
+	s.Equal("pool_network", events[2].Data[attrkey.EgressReason])
+	s.Equal("sni_mismatch", events[3].Data[attrkey.EgressReason])
+}
+
+func (s *RecorderSuite) TestAFlushLogsWhatWasNotRecordedOnce() {
+	var logs bytes.Buffer
+	r := newRecorder(s, func(c *Config) {
+		c.MaxKeys = 1
+		c.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+	r.Denied(denial(hostA, 443, egress.NotAllowed))
+	r.Denied(denial(hostA, 444, egress.NotAllowed))
+	r.Denied(denial(hostA, 0, egress.NotAllowed))
+	s.Require().NoError(r.Flush())
+	s.Contains(logs.String(), "egress audit events not recorded")
+	s.Contains(logs.String(), "dropped=1")
+	s.Contains(logs.String(), "unrecorded=1")
+
+	logs.Reset()
+	s.Require().NoError(r.Flush())
+	s.Empty(logs.String(), "an unchanged count is not logged again")
+}
+
+func (s *RecorderSuite) TestRedactedAllowedBucketsAreBounded() {
+	r := newRecorder(s, func(c *Config) { c.MaxKeys = 2 })
+	for port := 2000; port < 2006; port++ {
+		r.Allowed(egress.Target{Host: hostA, Port: port})
+	}
+	s.Equal(2, r.Stats().Dropped)
+	s.Require().NoError(r.Flush())
+	s.Len(s.sink.written(), 4)
 }
 
 func (s *RecorderSuite) TestAFailedFlushKeepsTheCountsForTheNextOne() {

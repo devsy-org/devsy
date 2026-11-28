@@ -21,9 +21,14 @@ const (
 	// DefaultInterval is the window for coalescing denials and for allow
 	// summaries.
 	DefaultInterval = time.Minute
-	// DefaultMaxKeys caps the distinct keys held in one window.
+	// DefaultMaxKeys caps the distinct denial keys held per reason in one
+	// window, and the distinct named destinations counted as allowed.
 	DefaultMaxKeys = 256
 	maxPort        = 65535
+	// maxAttempts is how many times one event is written before it is given
+	// up. The audit writer has no typed validation error, so a poison event
+	// is told from a down store only by repeated failure.
+	maxAttempts = 3
 )
 
 var _ egress.Recorder = (*Recorder)(nil)
@@ -40,7 +45,9 @@ type Config struct {
 	Actor   envelope.Actor
 	// Interval is the coalescing window. Zero means DefaultInterval.
 	Interval time.Duration
-	// MaxKeys caps distinct keys per window. Zero means DefaultMaxKeys.
+	// MaxKeys caps distinct denial keys per reason and distinct named
+	// allowed destinations per window. Redacted allowed destinations may
+	// double that. Zero means DefaultMaxKeys.
 	MaxKeys int
 	// ShowAddress says whether a host name or IP literal may appear in an
 	// audit event. Nil means never, so every event carries
@@ -53,8 +60,12 @@ type Config struct {
 
 // Stats counts what the recorder could not write as events.
 type Stats struct {
-	// Dropped counts denials past the key cap in a window.
+	// Dropped counts decisions past a window's key budget: denials past the
+	// budget of their reason, and allowed connections past the destination
+	// limit. A flush logs any increase.
 	Dropped int
+	// Lost counts events given up after maxAttempts failed writes.
+	Lost int
 	// Unrecorded counts decisions the audit allow-list cannot hold: a
 	// destination with no valid port or an unknown reason.
 	Unrecorded int
@@ -77,20 +88,33 @@ type tally struct {
 	count int
 	first time.Time
 	last  time.Time
+	tries int
+}
+
+type pendingDeny struct {
+	data  map[string]any
+	tries int
 }
 
 // Recorder implements egress.Recorder for one session. It writes the first
 // denial of each kind in a window at once, counts allowed connections and
 // writes one summary per destination when Flush runs. Callers run Run, or call
 // Flush on their own timer, since a window ends only at a flush.
+//
+// A repeat of a denial in the same window is not written, and egress.deny has
+// no count key, so the repeat count is not recorded. Each reason has its own
+// key budget, so denials of one reason cannot hide those of another.
 type Recorder struct {
 	cfg Config
 
-	flushMu sync.Mutex
-	mu      sync.Mutex
-	allowed map[dest]tally
-	seen    map[denyKey]struct{}
-	stats   Stats
+	flushMu  sync.Mutex
+	mu       sync.Mutex
+	allowed  map[dest]tally
+	seen     map[denyKey]struct{}
+	budget   map[egress.Reason]int
+	retry    map[denyKey]pendingDeny
+	stats    Stats
+	reported Stats
 }
 
 // New checks the config.
@@ -102,6 +126,8 @@ func New(cfg Config) (*Recorder, error) {
 		cfg:     cfg.withDefaults(),
 		allowed: map[dest]tally{},
 		seen:    map[denyKey]struct{}{},
+		budget:  map[egress.Reason]int{},
+		retry:   map[denyKey]pendingDeny{},
 	}, nil
 }
 
@@ -139,8 +165,8 @@ func (r *Recorder) Stats() Stats {
 }
 
 // Denied writes an egress.deny event unless the same destination and reason
-// was already written in this window. A failed write is counted, and the next
-// matching denial tries again.
+// was already written in this window. A failed write is counted and the event
+// is tried again at the next flush, not on the next matching denial.
 func (r *Recorder) Denied(d egress.Denial) {
 	key, ok := r.denyKey(d)
 	if !ok || !r.claim(key) {
@@ -149,7 +175,7 @@ func (r *Recorder) Denied(d egress.Denial) {
 	data := destData(key.dest)
 	data[attrkey.EgressReason] = string(key.reason)
 	if err := r.write(envelope.AuditEgressDeny, data); err != nil {
-		r.release(key)
+		r.queueRetry(key, pendingDeny{data: data, tries: 1})
 	}
 }
 
@@ -166,20 +192,28 @@ func (r *Recorder) Allowed(t egress.Target) {
 	r.addLocked(d, tally{count: 1, first: now, last: now})
 }
 
-// Flush writes one egress.allow.summary per destination counted since the last
-// flush and starts a new window. A destination whose write fails, and every
-// one after it, stays counted for the next flush.
+// Flush writes the denials whose first write failed, then one
+// egress.allow.summary per destination counted since the last flush, and
+// starts a new window. After a failed write, that event and every one after
+// it stay queued for the next flush. An event that fails maxAttempts times is
+// given up and counted in Stats.Lost, so one event the writer refuses cannot
+// block the rest. Flush logs any rise in Dropped, Unrecorded and Lost.
 func (r *Recorder) Flush() error {
 	r.flushMu.Lock()
 	defer r.flushMu.Unlock()
-	pending := r.take()
+	retries, pending := r.take()
+	r.reportLoss()
 	dests := slices.SortedFunc(maps.Keys(pending), compareDest)
+	if err := r.flushDenials(retries); err != nil {
+		r.restore(dests, pending, false)
+		return err
+	}
 	for i, d := range dests {
 		if err := r.write(
 			envelope.AuditEgressAllowSummary,
 			summaryData(d, pending[d]),
 		); err != nil {
-			r.restore(dests[i:], pending)
+			r.restore(dests[i:], pending, true)
 			return err
 		}
 	}
@@ -201,6 +235,32 @@ func (r *Recorder) Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (r *Recorder) flushDenials(retries map[denyKey]pendingDeny) error {
+	keys := slices.SortedFunc(maps.Keys(retries), compareDenyKey)
+	for i, key := range keys {
+		if err := r.write(envelope.AuditEgressDeny, retries[key].data); err != nil {
+			r.requeue(keys[i:], retries)
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Recorder) reportLoss() {
+	r.mu.Lock()
+	now, before := r.stats, r.reported
+	r.reported = now
+	r.mu.Unlock()
+	if now.Dropped == before.Dropped && now.Unrecorded == before.Unrecorded &&
+		now.Lost == before.Lost {
+		return
+	}
+	r.cfg.Logger.Warn("egress audit events not recorded",
+		"dropped", now.Dropped-before.Dropped,
+		"unrecorded", now.Unrecorded-before.Unrecorded,
+		"lost", now.Lost-before.Lost)
 }
 
 func (r *Recorder) denyKey(d egress.Denial) (denyKey, bool) {
@@ -226,18 +286,47 @@ func (r *Recorder) claim(key denyKey) bool {
 	if _, ok := r.seen[key]; ok {
 		return false
 	}
-	if len(r.seen) >= r.cfg.MaxKeys {
+	if r.budget[key.reason] >= r.cfg.MaxKeys {
 		r.stats.Dropped++
 		return false
 	}
-	r.seen[key] = struct{}{}
+	r.claimLocked(key)
 	return true
 }
 
-func (r *Recorder) release(key denyKey) {
+func (r *Recorder) claimLocked(key denyKey) {
+	r.seen[key] = struct{}{}
+	r.budget[key.reason]++
+}
+
+func (r *Recorder) queueRetry(key denyKey, p pendingDeny) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.seen, key)
+	r.retry[key] = p
+}
+
+// requeue holds the denials from a failed flush for the next one. The first
+// is the one that failed, so it has used another attempt.
+func (r *Recorder) requeue(keys []denyKey, retries map[denyKey]pendingDeny) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, key := range keys {
+		p := retries[key]
+		if i == 0 {
+			p.tries++
+		}
+		if p.tries >= maxAttempts {
+			r.loseLocked(envelope.AuditEgressDeny)
+			continue
+		}
+		r.claimLocked(key)
+		r.retry[key] = p
+	}
+}
+
+func (r *Recorder) loseLocked(typ string) {
+	r.stats.Lost++
+	r.cfg.Logger.Warn("egress audit event given up", "type", typ)
 }
 
 func (r *Recorder) unrecorded() {
@@ -246,19 +335,25 @@ func (r *Recorder) unrecorded() {
 	r.stats.Unrecorded++
 }
 
-// addLocked merges t into the allowed counts. A new named destination past the
-// cap folds into the redacted bucket of its port, so the count stays right and
-// the map stays bounded by the number of allowed ports.
+// addLocked merges t into the allowed counts. A new named destination past
+// MaxKeys folds into the redacted bucket of its port, so the count stays
+// right. A new bucket past twice MaxKeys is not kept and is counted in
+// Stats.Dropped, so the map stays bounded whatever ports the policy allows.
 func (r *Recorder) addLocked(d dest, t tally) {
 	if _, ok := r.allowed[d]; !ok && d.host != "" && len(r.allowed) >= r.cfg.MaxKeys {
 		d.host = ""
 	}
 	cur, ok := r.allowed[d]
 	if !ok {
+		if len(r.allowed) >= 2*r.cfg.MaxKeys {
+			r.stats.Dropped += t.count
+			return
+		}
 		r.allowed[d] = t
 		return
 	}
 	cur.count += t.count
+	cur.tries = max(cur.tries, t.tries)
 	if t.first.Before(cur.first) {
 		cur.first = t.first
 	}
@@ -268,20 +363,32 @@ func (r *Recorder) addLocked(d dest, t tally) {
 	r.allowed[d] = cur
 }
 
-func (r *Recorder) take() map[dest]tally {
+func (r *Recorder) take() (map[denyKey]pendingDeny, map[dest]tally) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	pending := r.allowed
+	retries, pending := r.retry, r.allowed
+	r.retry = map[denyKey]pendingDeny{}
 	r.allowed = map[dest]tally{}
 	r.seen = map[denyKey]struct{}{}
-	return pending
+	r.budget = map[egress.Reason]int{}
+	return retries, pending
 }
 
-func (r *Recorder) restore(dests []dest, pending map[dest]tally) {
+// restore puts counts back for the next flush. When failed is set the first
+// destination is the one whose write failed, so it has used another attempt.
+func (r *Recorder) restore(dests []dest, pending map[dest]tally, failed bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, d := range dests {
-		r.addLocked(d, pending[d])
+	for i, d := range dests {
+		t := pending[d]
+		if failed && i == 0 {
+			t.tries++
+		}
+		if t.tries >= maxAttempts {
+			r.loseLocked(envelope.AuditEgressAllowSummary)
+			continue
+		}
+		r.addLocked(d, t)
 	}
 }
 
@@ -325,6 +432,10 @@ func summaryData(d dest, t tally) map[string]any {
 
 func compareDest(a, b dest) int {
 	return cmp.Or(cmp.Compare(a.host, b.host), cmp.Compare(a.port, b.port))
+}
+
+func compareDenyKey(a, b denyKey) int {
+	return cmp.Or(compareDest(a.dest, b.dest), cmp.Compare(a.reason, b.reason))
 }
 
 func validPort(port int) bool { return port >= 1 && port <= maxPort }
