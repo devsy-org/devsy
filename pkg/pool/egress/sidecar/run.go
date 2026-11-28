@@ -66,19 +66,26 @@ func assemble(cfg Config, opts Options) (*egress.Proxy, *channel.Sender, error) 
 	if opts.WrapRecorder != nil {
 		rec = opts.WrapRecorder(sender)
 	}
-	proxy, err := egress.NewProxy(egress.Config{
-		Bind:        cfg.Bind,
-		SessionID:   cfg.SessionID,
-		Dialer:      egress.NewDialer(policy),
-		Recorder:    rec,
-		Logger:      opts.Logger,
-		Healthy:     sender.Healthy,
-		MaxConns:    cfg.MaxConns,
-		IdleTimeout: time.Duration(cfg.IdleSeconds) * time.Second,
-		MaxLifetime: time.Duration(cfg.LifetimeSeconds) * time.Second,
-	})
+	pc := proxyConfig(cfg)
+	pc.Dialer = egress.NewDialer(policy)
+	pc.Recorder = rec
+	pc.Logger = opts.Logger
+	pc.Healthy = sender.Healthy
+	proxy, err := egress.NewProxy(pc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("egress proxy: %w", err)
 	}
 	return proxy, sender, nil
+}
+
+// proxyConfig maps the config fields the proxy reads. Zero limits keep the
+// proxy defaults.
+func proxyConfig(cfg Config) egress.Config {
+	return egress.Config{
+		Bind:        cfg.Bind,
+		SessionID:   cfg.SessionID,
+		MaxConns:    cfg.MaxConns,
+		IdleTimeout: time.Duration(cfg.IdleSeconds) * time.Second,
+		MaxLifetime: time.Duration(cfg.LifetimeSeconds) * time.Second,
+	}
 }

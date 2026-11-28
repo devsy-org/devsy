@@ -99,6 +99,9 @@ func (c Config) validate() error {
 	if err := c.validateLimits(); err != nil {
 		return err
 	}
+	if err := poolconfig.ValidateEgress(c.Egress); err != nil {
+		return fmt.Errorf("egress config egress: %w", err)
+	}
 	_, _, err := assemble(c, Options{})
 	return err
 }
