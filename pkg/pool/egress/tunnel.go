@@ -81,6 +81,7 @@ func (p *Proxy) open(t tunnelConns, req connectRequest) bool {
 		return false
 	}
 	// An allow the pool did not get must not carry a byte, the hello included.
+	// A hello write that fails after this still leaves the allow counted.
 	if !p.rec.Allowed(Allow{Target: req.target, Rule: req.rule}) {
 		return false
 	}
