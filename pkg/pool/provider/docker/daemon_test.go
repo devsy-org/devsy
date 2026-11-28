@@ -294,9 +294,14 @@ func (o object) inspectDoc() any {
 		return inspected{ID: o.id, Name: "/" + o.name, Config: inspectedConfig{Labels: o.labels}}
 	}
 	return netInfo{
-		ID: o.id, Name: o.name, Labels: o.labels, Driver: driverNet, Internal: o.internal,
-		Options: map[string]string{optICC: o.icc},
-		IPAM:    ipam{Config: []ipamConfig{{Subnet: simulatedSubnet, Gateway: "172.30.0.1"}}},
+		ID:       o.id,
+		Name:     o.name,
+		Labels:   o.labels,
+		Driver:   driverNet,
+		Internal: o.internal,
+		Scope:    scopeLocal,
+		Options:  map[string]string{optICC: o.icc},
+		IPAM:     ipam{Config: []ipamConfig{{Subnet: simulatedSubnet, Gateway: "172.30.0.1"}}},
 	}
 }
 
