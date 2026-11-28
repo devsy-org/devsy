@@ -119,6 +119,20 @@ func (s *ProviderSuite) TestReleaseBridgeReportsOtherRemoveErrors() {
 	s.Equal(1, s.d.count())
 }
 
+func (s *ProviderSuite) TestASidecarOnlyPoolKeepsTheBridge() {
+	ctx := s.T().Context()
+	_, err := s.p.ensureBridge(ctx, "a")
+	s.Require().NoError(err)
+	labels := labelsFor("a", "")
+	labels[provider.LabelRole] = provider.RoleSidecar
+	s.d.add(kindWorkspace, "sidecar-only", labels)
+
+	s.Require().NoError(s.p.ReleaseShared(ctx, "a"))
+	_, err = s.p.findBridge(ctx, "a")
+	s.Require().NoError(err)
+	s.Equal(2, s.d.count(), "bridge and sidecar both remain")
+}
+
 func (s *ProviderSuite) TestReleaseSharedWaitsForTheSamePoolOnly() {
 	ctx := s.T().Context()
 	unlock, err := s.p.lockBridge(ctx, "a")
