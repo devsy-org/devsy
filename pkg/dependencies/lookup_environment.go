@@ -1,6 +1,7 @@
 package dependencies
 
 import (
+	"context"
 	"errors"
 	"maps"
 	"runtime"
@@ -13,6 +14,7 @@ type LookupEnvironment struct {
 	values  map[string]string
 	cwd     string
 	windows bool
+	inspect func(context.Context, string) (lookupFile, error)
 }
 
 func NewLookupEnvironment(values map[string]string, cwd string) (LookupEnvironment, error) {
@@ -73,4 +75,19 @@ func (e LookupEnvironment) absolute(path string) (string, bool) {
 		return "", false
 	}
 	return joined, true
+}
+
+func (e LookupEnvironment) inspectFile(ctx context.Context, path string) (lookupFile, error) {
+	if err := ctx.Err(); err != nil {
+		return lookupFile{}, err
+	}
+	inspect := e.inspect
+	if inspect == nil {
+		inspect = inspectLookupFile
+	}
+	observed, err := inspect(ctx, path)
+	if canceled := ctx.Err(); canceled != nil {
+		return lookupFile{}, canceled
+	}
+	return observed, err
 }
